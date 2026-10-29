@@ -34,6 +34,10 @@ export const DAEMON_AGENTS_FILTER_NODE = 'node'
 export const DAEMON_AGENT_ID_FIELD = 'agentId'
 /** Row payload key of the master's open restart mark. */
 export const DAEMON_AGENT_RESTARTING_FIELD = 'restarting'
+/** Row payload key of the server's sentence why a restart is refused now. */
+const DAEMON_AGENT_RESTART_DISABLED_REASON_FIELD = 'restartDisabledReason'
+/** Row payload key of the server's sentence for a restart the table cannot vouch for. */
+const DAEMON_AGENT_RESTART_UNAVAILABLE_REASON_FIELD = 'restartUnavailableReason'
 /** Row payload key of the hosting worker index. */
 export const DAEMON_AGENT_WORKER_INDEX_FIELD = 'workerIndex'
 /** Row payload key of the hosting worker kind. */
@@ -78,6 +82,14 @@ export interface HilosDaemonAgentRow {
   readonly rowKey: string
   readonly agentId: string
   readonly restarting: boolean
+  /** Why the node or the agent refuses a restart now, in the server's words; null when it does not. */
+  readonly restartDisabledReason: string | null
+  /**
+   * The server's sentence, delivered ahead, for a restart while the table itself
+   * cannot be trusted — the node silent or unknown, the window loading, unavailable
+   * or frozen.
+   */
+  readonly restartUnavailableReason: string
   readonly workerIndex: number | null
   readonly workerKind: string | null
   readonly placement: string
@@ -119,6 +131,14 @@ export function resolveHilosDaemonAgentRow(row: TableRow): HilosDaemonAgentRow {
     rowKey: String(row.rowKey),
     agentId: readString(slot, DAEMON_AGENT_ID_FIELD),
     restarting: readBoolean(slot, DAEMON_AGENT_RESTARTING_FIELD),
+    restartDisabledReason: readStringOrNull(
+      slot,
+      DAEMON_AGENT_RESTART_DISABLED_REASON_FIELD,
+    ),
+    restartUnavailableReason: readString(
+      slot,
+      DAEMON_AGENT_RESTART_UNAVAILABLE_REASON_FIELD,
+    ),
     workerIndex: readNumberOrNull(slot, DAEMON_AGENT_WORKER_INDEX_FIELD),
     workerKind: readStringOrNull(slot, DAEMON_AGENT_WORKER_KIND_FIELD),
     placement: readString(slot, DAEMON_AGENT_PLACEMENT_FIELD),
@@ -162,10 +182,13 @@ export function createHilosDaemonAgentsTable(
     {
       key: HILOS_TABLE_ACTIONS_KEY,
       label: '',
+      // Restart is off while the agent restarts, and tells the server's reason.
       reads: [
         DAEMON_AGENT_ID_FIELD,
         DAEMON_AGENT_LOG_STREAM_FIELD,
         DAEMON_AGENT_RESTARTING_FIELD,
+        DAEMON_AGENT_RESTART_DISABLED_REASON_FIELD,
+        DAEMON_AGENT_RESTART_UNAVAILABLE_REASON_FIELD,
       ],
     },
   ]

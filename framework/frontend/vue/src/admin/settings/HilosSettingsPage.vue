@@ -27,12 +27,13 @@ import {
   type HilosSettingRow,
   type HilosSettingsContext,
 } from '@hilos/core/admin/settings'
-import { HilosPages } from '@hilos/core/base'
+import { type Hideable, HilosPages } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
+import HilosActionReason from '../../HilosActionReason.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosModal from '../../HilosModal.vue'
@@ -219,6 +220,15 @@ async function submitDelete(): Promise<void> {
   }
 }
 
+/**
+ * Why the row's reset is off, in the server's words, or null while it applies:
+ * read only while the button is off, so the ? and the disabled reset follow
+ * one current state of the row.
+ */
+function resetReason(row: HilosSettingRow): Hideable<string | null> {
+  return hasCustomValue(row) ? null : row.resetDisabledReason
+}
+
 function openReset(row: HilosSettingRow): void {
   // Flush pending and take the row into focus; a row already removed by someone
   // else does not open a reset.
@@ -289,6 +299,10 @@ async function submitReset(): Promise<void> {
             aria-hidden="true"
           ></i>
         </button>
+        <HilosActionReason
+          v-if="!isOrphanSetting(row)"
+          :reason="resetReason(row)"
+        />
         <button
           v-if="!isOrphanSetting(row)"
           type="button"

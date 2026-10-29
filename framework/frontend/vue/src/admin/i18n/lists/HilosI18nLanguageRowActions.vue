@@ -4,7 +4,7 @@ slot twice, so a language-code id would join two distinct DOM nodes. -->
 import {
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
-  hilosI18nLanguageDelete,
+  hilosI18nLanguageRowDelete,
   type HilosI18nLanguageRow,
 } from '@hilos/core/admin/i18n'
 import { computed, useId } from 'vue'
@@ -15,7 +15,7 @@ const props = defineProps<{ row: HilosI18nLanguageRow }>()
 const emit = defineEmits<{ edit: []; delete: [] }>()
 const copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
 const deleteCopy = HILOS_I18N_LANGUAGE_DELETE_COPY
-const verdict = computed(() => hilosI18nLanguageDelete(props.row))
+const verdict = computed(() => hilosI18nLanguageRowDelete(props.row))
 const reasonId = useId()
 </script>
 

@@ -43,6 +43,7 @@ use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\DTO\LanguageCardSummary;
 
 /**
  * Framework table of every language of the system (HIL-1474).
@@ -89,6 +90,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
                     HilosI18nLanguagesTableRow::isOwn,
                     HilosI18nLanguagesTableRow::canDelete,
                     HilosI18nLanguagesTableRow::deleteReason,
+                    HilosI18nLanguagesTableRow::deleteDisabledReason,
                 ],
             ],
         ],
@@ -236,7 +238,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
 
     /**
      * The four stored fields are columns of hilos_language, none of them personal.
-     * The marks and deletion verdict are computed, nonpersonal facts.
+     * The marks, deletion verdict and its sentence are computed, nonpersonal facts.
      *
      * @return array<string, WireField> Row field to where it comes from
      */
@@ -256,6 +258,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
             HilosI18nLanguagesTableRow::isOwn => WireField::notPersonal(),
             HilosI18nLanguagesTableRow::canDelete => WireField::notPersonal(),
             HilosI18nLanguagesTableRow::deleteReason => WireField::notPersonal(),
+            HilosI18nLanguagesTableRow::deleteDisabledReason => WireField::notPersonal(),
         ];
     }
 
@@ -383,6 +386,28 @@ final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowV
             isOwn: BuiltInI18nCatalog::language($language->code) === null,
             canDelete: $summary->canDelete,
             deleteReason: $summary->deleteReason,
+            deleteDisabledReason: self::deleteDisabledReason($summary->deleteReason),
         );
+    }
+
+    /**
+     * Says why a language with this deletion verdict cannot be deleted, in the words the screen shows.
+     *
+     * The sentence names no row and no value, so it says nothing the verdict code does not.
+     *
+     * @param ?string $deleteReason Verdict code (LanguageCardSummary::DELETE_*), or null when deletion is allowed
+     * @return ?string Full sentence why deletion is off, or null when deletion is allowed
+     */
+    private static function deleteDisabledReason(?string $deleteReason): ?string
+    {
+        return match ($deleteReason) {
+            LanguageCardSummary::DELETE_DEFAULT
+                => 'This language cannot be deleted because it is the default language.',
+            LanguageCardSummary::DELETE_LOCALES
+                => 'This language cannot be deleted because it has locales.',
+            LanguageCardSummary::DELETE_NAMES
+                => 'This language cannot be deleted because names written by a person reference it.',
+            null => null,
+        };
     }
 }

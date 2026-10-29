@@ -18,6 +18,11 @@ use Hilos\Notification\Delivery\ChannelConfigField;
  * set/not-set state) and {@see editable} is false for it. The identity rides
  * {@see rowKey}, the field's globally-unique setting key, never a field named `id`
  * that the frontend normalizer would treat as an entity fragment.
+ *
+ * {@see resetDisabledReason} is the full sentence the screen shows when it explains why an
+ * editable field has no reset: no settings override stands over it, and the sentence says
+ * whether the value comes from the environment or from the field's default without naming it.
+ * It is null when reset applies and for a field that is not editable, which has no reset at all.
  */
 final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
 {
@@ -41,6 +46,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
 
     public const string defaultValue = 'defaultValue';
     public const string defaultValueSource = 'defaultValueSource';
+    public const string resetDisabledReason = 'resetDisabledReason';
 
     /**
      * @param string $rowKey Field settings key (row key, globally unique)
@@ -54,6 +60,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
      * @param bool $editable Whether the field can be edited in the admin (false for a secret)
      * @param bool|float|int|string|null $defaultValue Value without the settings override, or null for a secret
      * @param string $defaultValueSource Fallback layer (env|default)
+     * @param ?string $resetDisabledReason Why the field has no override to reset, or null when that refusal does not apply
      */
     public function __construct(
         public string $rowKey,
@@ -67,6 +74,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
         public bool $editable,
         public bool|float|int|string|null $defaultValue,
         public string $defaultValueSource,
+        public ?string $resetDisabledReason,
     ) {
     }
 
@@ -107,6 +115,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
             self::editable => $this->editable,
             self::defaultValue => $this->defaultValue,
             self::defaultValueSource => $this->defaultValueSource,
+            self::resetDisabledReason => $this->resetDisabledReason,
         ];
     }
 
@@ -133,6 +142,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
             editable: (bool) ($data[self::editable] ?? false),
             defaultValue: is_scalar($defaultValue) ? $defaultValue : null,
             defaultValueSource: (string) $data[self::defaultValueSource],
+            resetDisabledReason: isset($data[self::resetDisabledReason]) ? (string) $data[self::resetDisabledReason] : null,
         );
     }
 }

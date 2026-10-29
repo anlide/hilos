@@ -467,6 +467,11 @@ only in cluster mode.
 Restart is disabled while a request is pending, the node is silent, the agent
 is restarting, or the viewer is in the admin view mode. The ordinary ADMIN
 action gate refuses a viewer's forged submit too; restart is not a reading action.
+The agent row carries the server's words: `restartDisabledReason` (the silent
+node first, then a restart in progress, otherwise null) and
+`restartUnavailableReason`, the phrase for a table that cannot vouch (no or silent
+head, loading or unavailable body, freeze). The core restart surface hands them
+out as `unavailable` and `reasonFor(row)`; a pending request is not a reason.
 
 The page sends the typed request through its registered worker's control
 connection to its own master. The master bridge invokes the existing

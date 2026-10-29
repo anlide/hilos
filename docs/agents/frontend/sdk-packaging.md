@@ -406,6 +406,14 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   its normal focus and scroll cleanup. The primitive does not dispatch an
   action, confirm a mutation, show a toast or write runtime state.
 
+  The Vue `HilosActionReason` also takes `reason: Hideable<string | null>`
+  (`@hilos/core/base`), for a reason the server hides from a viewer of the admin
+  view mode. A hidden reason still gives the opener, but with no `title`: the
+  words are never turned into a string, a title or markup. The modal body draws
+  the snapshot through `HilosHideable`, so the standard hidden mark stands in
+  the dialog. A plain `string | null` works as before; the React and Angular
+  inputs stay `string | null`.
+
   Vue and React render a wrapperless native opener beside the modal. Angular's
   selector is `button[hilosActionReason]`; the caller owns that native button
   and its static `data-id`. The Angular primitive creates a local embedded view

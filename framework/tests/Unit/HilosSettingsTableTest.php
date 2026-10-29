@@ -31,6 +31,7 @@ final class HilosSettingsTableTest extends TestCase
             defaultValue: 'off',
             defaultReferenceKey: null,
             valueSource: HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
+            resetDisabledReason: null,
         );
 
         $browserRow = new HilosSettingsTable()->browserRow($row);
@@ -45,6 +46,8 @@ final class HilosSettingsTableTest extends TestCase
         // Whether a DB row backs the key is not on the wire: the screen asks overrideValue
         // whether the key carries a value of its own.
         $this->assertSame('on', $slot[HilosSettingTableRow::overrideValue]);
+        $this->assertArrayHasKey(HilosSettingTableRow::resetDisabledReason, $slot);
+        $this->assertNull($slot[HilosSettingTableRow::resetDisabledReason]);
     }
 
     public function testViewerValueDefaultAndReferenceFollowTheRowKeyButCannotBeSearchedOrSorted(): void
@@ -60,6 +63,7 @@ final class HilosSettingsTableTest extends TestCase
             defaultValue: 'fallback',
             defaultReferenceKey: 'parent',
             valueSource: HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
+            resetDisabledReason: null,
         );
         $columnShown = static fn(string $collection, string $field): bool => true;
         $settingShown = static fn(string $key): bool => $key === 'open';
@@ -70,6 +74,7 @@ final class HilosSettingsTableTest extends TestCase
             HilosSettingTableRow::overrideValue => 'live',
             HilosSettingTableRow::defaultValue => 'fallback',
             HilosSettingTableRow::defaultReferenceKey => 'parent',
+            HilosSettingTableRow::resetDisabledReason => null,
         ] as $name => $expected) {
             $this->assertSame($expected, $visible[$name]);
         }
@@ -81,6 +86,7 @@ final class HilosSettingsTableTest extends TestCase
             HilosSettingTableRow::overrideValue,
             HilosSettingTableRow::defaultValue,
             HilosSettingTableRow::defaultReferenceKey,
+            HilosSettingTableRow::resetDisabledReason,
         ] as $name) {
             $this->assertSame(HiddenValue::mark(), $hidden[$name]);
         }

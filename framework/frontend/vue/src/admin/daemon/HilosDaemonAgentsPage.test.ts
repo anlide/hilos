@@ -244,6 +244,10 @@ describe('HilosDaemonAgentsPage', () => {
   })
 })
 
+/** The server's sentence, delivered ahead, for a restart the table cannot vouch for. */
+const UNAVAILABLE_REASON =
+  'The node is not answering, so this list cannot be trusted for a restart.'
+
 function restartHarness(clustered = false, placement = 'node', viewer = false) {
   const scopes = markRaw(new ScopeManager())
   releases.push(bindAdminAccess(scopes))
@@ -317,7 +321,11 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
     },
   })
   views.push(view)
-  const window = (restarting = false, absent = false) =>
+  const window = (
+    restarting = false,
+    absent = false,
+    fields: Record<string, unknown> = {},
+  ) =>
     listeners.get('tableWindow')?.({
       data: {
         page: HilosPages.DAEMON_AGENTS,
@@ -338,6 +346,9 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
                     ownsRt: [],
                     ownsDb: [],
                     logStream: 'agent-agent_1.log',
+                    restartDisabledReason: null,
+                    restartUnavailableReason: UNAVAILABLE_REASON,
+                    ...fields,
                   },
                 },
               },
@@ -360,6 +371,14 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
           'Restart refused',
         ),
       ),
+    freeze: () =>
+      listeners.get('tableViewportFrozen')?.({
+        data: {
+          page: HilosPages.DAEMON_AGENTS,
+          tableKey: 'hilosDaemonAgents',
+          since: 1000,
+        },
+      }),
     gone: () =>
       listeners.get('tableViewportDelta')?.({
         data: {
@@ -493,6 +512,109 @@ describe('HilosDaemonAgentsPage restart', () => {
         .get('[data-id="hilos-daemon-agent-restart-agent:1"]')
         .attributes('disabled'),
     ).toBeDefined()
+  })
+
+  /** The ? beside the row's Restart: its own native button in the row's controls. */
+  function reasonOpener(
+    h: ReturnType<typeof restartHarness>,
+  ): HTMLButtonElement | null {
+    return (
+      h.view
+        .get('[data-id="hilos-daemon-agent-restart-agent:1"]')
+        .element.parentElement?.querySelector<HTMLButtonElement>(
+          '[data-id="hilos-action-reason"]',
+        ) ?? null
+    )
+  }
+
+  function restartButton(
+    h: ReturnType<typeof restartHarness>,
+  ): HTMLButtonElement {
+    return h.view.get('[data-id="hilos-daemon-agent-restart-agent:1"]')
+      .element as HTMLButtonElement
+  }
+
+  it('explains a refused restart with the server sentence and sends nothing, with no ? while it is allowed', async () => {
+    const refused = 'The agent belongs to the leader; restart it there.'
+    const h = restartHarness()
+    await nextTick()
+    expect(restartButton(h).disabled).toBe(false)
+    expect(reasonOpener(h)).toBeNull()
+
+    h.window(false, false, { restartDisabledReason: refused })
+    await nextTick()
+    expect(restartButton(h).disabled).toBe(true)
+    const opener = reasonOpener(h) as HTMLButtonElement
+    expect(opener.type).toBe('button')
+    expect(opener.disabled).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+
+    opener.click()
+    await nextTick()
+    expect(modal('hilos-action-reason-body').textContent?.trim()).toBe(refused)
+    expect(
+      document.querySelector('[data-id="hilos-daemon-restart-agent"]'),
+    ).toBeNull()
+    expect(h.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('tells the unavailable sentence on a silent node or a frozen table, whatever the stale row says', async () => {
+    const h = restartHarness()
+    await nextTick()
+    h.scope.data.set(DAEMON_NODE_DATA, {
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 10000,
+    })
+    await nextTick()
+    expect(restartButton(h).disabled).toBe(true)
+    expect(reasonOpener(h)?.title).toBe(UNAVAILABLE_REASON)
+
+    h.scope.data.set(DAEMON_NODE_DATA, {
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+    })
+    await nextTick()
+    expect(restartButton(h).disabled).toBe(false)
+    expect(reasonOpener(h)).toBeNull()
+
+    h.freeze()
+    await nextTick()
+    expect(restartButton(h).disabled).toBe(true)
+    expect(reasonOpener(h)?.title).toBe(UNAVAILABLE_REASON)
+    expect(h.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('explains an agent that is already restarting with the server sentence and sends nothing', async () => {
+    const restarting = 'This agent is already restarting.'
+    const h = restartHarness()
+    h.window(true, false, { restartDisabledReason: restarting })
+    await nextTick()
+    expect(restartButton(h).disabled).toBe(true)
+    const opener = reasonOpener(h) as HTMLButtonElement
+    expect(opener.title).toBe(restarting)
+
+    opener.click()
+    await nextTick()
+    expect(modal('hilos-action-reason-body').textContent?.trim()).toBe(
+      restarting,
+    )
+    expect(h.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('locks Restart without a ? while a restart request is in flight', async () => {
+    const h = restartHarness()
+    await open(h)
+    modal('hilos-daemon-restart-confirm').click()
+    await nextTick()
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
+    expect(restartButton(h).disabled).toBe(true)
+    expect(reasonOpener(h)).toBeNull()
   })
 
   it('keeps a disappeared target visible by identity and refuses confirm', async () => {

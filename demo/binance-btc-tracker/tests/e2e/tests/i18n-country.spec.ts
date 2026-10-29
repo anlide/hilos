@@ -404,10 +404,16 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       languageId: englishId,
       countryId: companion.id,
     })
-    for (const [code, reason] of [
-      ['qr', 'Cannot delete: locales refer to this country'],
+    // The row reads the server's sentence; the card keeps its own verdict copy.
+    for (const [code, reason, verdict] of [
+      [
+        'qr',
+        'This country cannot be deleted because locales refer to it.',
+        'Cannot delete: locales refer to this country',
+      ],
       [
         'us',
+        'This country cannot be deleted because the built-in catalog knows it and the reflow would bring it back; switch it off instead.',
         'Cannot delete: the built-in catalog knows this country and the reflow would bring it back; switch it off instead',
       ],
     ]) {
@@ -419,7 +425,7 @@ test('country.life', async ({ page, i18n }, testInfo) => {
         page,
         `i18n-countries-delete-reason-${code}`,
       )
-      await expect(remove).toHaveAttribute('aria-disabled', 'true')
+      await expect(remove).toBeDisabled()
       await expect(description).toHaveText(reason!)
       await expectCountryDeleteDescription(expect, page, code!)
       await remove.focus()
@@ -449,7 +455,7 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       await gotoPage(expect, page, `/hilos/i18n/countries/${code}`, PAGE_READY)
       await expect(
         page.getByTestId('country-card-delete-verdict'),
-      ).toContainText(reason!)
+      ).toContainText(verdict!)
       await expect(page.getByTestId('country-card-delete')).toHaveAttribute(
         'aria-disabled',
         'true',

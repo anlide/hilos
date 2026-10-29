@@ -101,6 +101,11 @@ export interface HilosOAuthFieldRow {
   readonly defaultSource: Exclude<OAuthValueSource, 'db'>
   /** Whether the fallback value is non-empty. */
   readonly defaultSetState: boolean
+  /**
+   * The server's sentence why no stored value is there to reset, or null when the stored
+   * value is in force. It names no value, so the secret field carries it too.
+   */
+  readonly resetDisabledReason: Hideable<string | null>
 }
 
 /** The one row of the return-address table. */
@@ -232,6 +237,7 @@ const HilosOAuthFieldRowKey = {
   defaultValue: 'defaultValue',
   defaultSource: 'defaultSource',
   defaultSetState: 'defaultSetState',
+  resetDisabledReason: 'resetDisabledReason',
 } as const
 
 /** Payload keys of the return-address row slot (mirrors the backend row shape). */
@@ -309,6 +315,10 @@ export function resolveHilosOAuthFieldRow(row: TableRow): HilosOAuthFieldRow {
     defaultSource:
       slot[HilosOAuthFieldRowKey.defaultSource] === 'env' ? 'env' : 'default',
     defaultSetState: readBoolean(slot, HilosOAuthFieldRowKey.defaultSetState),
+    resetDisabledReason: readHideableStringOrNull(
+      slot,
+      HilosOAuthFieldRowKey.resetDisabledReason,
+    ),
   }
 }
 
@@ -411,7 +421,8 @@ const FIELDS_COLUMNS: HilosTableColumnOf<HilosOAuthFieldRow>[] = [
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
-    // Edit (or Replace) opens the dialog, reset is armed by the source.
+    // Edit (or Replace) opens the dialog, reset is armed by the source and tells the
+    // server's reason when it is not.
     reads: [
       HilosOAuthFieldRowKey.providerKey,
       HilosOAuthFieldRowKey.field,
@@ -419,6 +430,7 @@ const FIELDS_COLUMNS: HilosTableColumnOf<HilosOAuthFieldRow>[] = [
       HilosOAuthFieldRowKey.secret,
       HilosOAuthFieldRowKey.value,
       HilosOAuthFieldRowKey.source,
+      HilosOAuthFieldRowKey.resetDisabledReason,
       HilosOAuthFieldRowKey.defaultValue,
       HilosOAuthFieldRowKey.defaultSource,
       HilosOAuthFieldRowKey.defaultSetState,

@@ -40,6 +40,7 @@ export const HilosI18nCountryRowKey = {
   catalogDefaultLocaleCode: 'catalogDefaultLocaleCode',
   canDelete: 'canDelete',
   deleteReason: 'deleteReason',
+  deleteDisabledReason: 'deleteDisabledReason',
 } as const
 
 const countrySlotSchema = z.object({
@@ -69,6 +70,7 @@ const countrySlotSchema = z.object({
   [HilosI18nCountryRowKey.deleteReason]: z
     .enum(['known', 'locales', 'names'])
     .nullable(),
+  [HilosI18nCountryRowKey.deleteDisabledReason]: z.string().nullable(),
 })
 
 /** One locale belonging to a country, whether switched on or off. */
@@ -106,6 +108,8 @@ export interface HilosI18nCountryRow {
   readonly canDelete: boolean
   /** Why deletion is blocked, in server-defined order. */
   readonly deleteReason: 'known' | 'locales' | 'names' | null
+  /** The server's sentence for {@link deleteReason}, or null when deletion is allowed. */
+  readonly deleteDisabledReason: string | null
 }
 
 /**
@@ -163,6 +167,7 @@ export const HILOS_I18N_COUNTRIES_COLUMNS: readonly HilosTableColumnOf<HilosI18n
       reads: [
         HilosI18nCountryRowKey.canDelete,
         HilosI18nCountryRowKey.deleteReason,
+        HilosI18nCountryRowKey.deleteDisabledReason,
         HilosI18nCountryRowKey.name,
         HilosI18nCountryRowKey.code,
         HilosI18nCountryRowKey.enabled,

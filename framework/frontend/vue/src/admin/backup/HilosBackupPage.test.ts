@@ -894,6 +894,155 @@ describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
   })
 })
 
+describe('HilosBackupPage why a restore is blocked', () => {
+  const RESTORE_GATE = { backupRestore: { uiEnabled: true, targetEnv: 'dev' } }
+  const REFUSED = {
+    restoreMigrationDecision: 'refuse',
+    restoreMigrationNotice:
+      'This archive was taken at migration 0102; this code stops at 0101.',
+  }
+  const run: HilosTableProgressFrame = {
+    scope: 'table',
+    progressKey: 'backup-run',
+    current: 10,
+    total: 100,
+    detail: {
+      backupId: '2026-10-28_14-20-00',
+      env: 'dev',
+      scope: 'full',
+      phase: 'archiving',
+    },
+  }
+
+  /** The modal standing on the page, or null. */
+  function modal(): HTMLElement | null {
+    return document.querySelector('[data-id="modal"]')
+  }
+
+  /** One control of the archive's table row, or null. */
+  function inRow(dataId: string): HTMLButtonElement | null {
+    return document.querySelector<HTMLButtonElement>(
+      `table [data-id="hilos-table-row-${ARCHIVE_ID}"] [data-id="${dataId}"]`,
+    )
+  }
+
+  it.each([
+    [
+      'out of reach before a checksum mismatch',
+      { holderNode: 'node-2', checksumState: 'mismatch', ...REFUSED },
+      [],
+      'Stored on node node-2 - the backup agent runs elsewhere, so this archive cannot be reached from here',
+    ],
+    [
+      'a checksum mismatch before a migration refusal',
+      { checksumState: 'mismatch', ...REFUSED },
+      [],
+      'This archive does not match its recorded checksum',
+    ],
+    [
+      'a migration refusal in its notice before a busy subsystem',
+      REFUSED,
+      [run],
+      REFUSED.restoreMigrationNotice,
+    ],
+    [
+      'a migration refusal without a notice',
+      { restoreMigrationDecision: 'refuse' },
+      [],
+      'This archive was taken on newer code; there is no downgrade path',
+    ],
+    [
+      'a busy subsystem',
+      {},
+      [run],
+      'The backup subsystem is busy; wait for the current run to end',
+    ],
+  ])(
+    'opens %s in the shared dialog and sends nothing',
+    async (_case, slot, progress, reason) => {
+      const { actions, dispatched } = makeActions()
+      const { context } = seededContext(
+        [{ id: ARCHIVE_ID, backup: { ...ARCHIVE_FIXTURE.backup, ...slot } }],
+        actions,
+        { ...RESTORE_GATE, progress },
+      )
+      await mountPage(context)
+
+      expect(inRow(`hilos-backup-restore-${ARCHIVE_ID}`)?.disabled).toBe(true)
+      const opener = inRow('hilos-action-reason')
+      expect(opener).not.toBeNull()
+      expect(opener?.disabled).toBe(false)
+      expect(opener?.getAttribute('aria-label')).toBe(
+        'Why this backup cannot be restored',
+      )
+      expect(opener?.getAttribute('title')).toBe(reason)
+      opener!.focus()
+      opener!.click()
+      await settled()
+
+      const dialog = modal()
+      expect(dialog?.getAttribute('aria-label')).toBe(
+        `Cannot restore · ${ARCHIVE_ID}`,
+      )
+      expect(document.activeElement).toBe(dialog)
+      expect(
+        dialog
+          ?.querySelector('[data-id="hilos-action-reason-body"]')
+          ?.textContent?.trim(),
+      ).toBe(reason)
+      dialog!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+      await settled()
+      expect(modal()).toBeNull()
+      expect(document.activeElement).toBe(opener)
+      expect(dispatched).toHaveLength(0)
+    },
+  )
+
+  it('keeps the opener of a hidden migration notice and shows the mark', async () => {
+    const { context } = seededContext(
+      [
+        {
+          id: ARCHIVE_ID,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            restoreMigrationDecision: 'refuse',
+            restoreMigrationNotice: { _hidden: true },
+          },
+        },
+      ],
+      undefined,
+      RESTORE_GATE,
+    )
+    await mountPage(context)
+
+    expect(inRow(`hilos-backup-restore-${ARCHIVE_ID}`)?.disabled).toBe(true)
+    const opener = inRow('hilos-action-reason')
+    expect(opener).not.toBeNull()
+    expect(opener?.hasAttribute('title')).toBe(false)
+    opener!.click()
+    await settled()
+    const body = modal()?.querySelector('[data-id="hilos-action-reason-body"]')
+    expect(
+      body?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(body?.textContent).not.toContain('newer code')
+  })
+
+  it('gives a restorable archive a live restore and no opener', async () => {
+    const { context } = seededContext(
+      [ARCHIVE_FIXTURE],
+      undefined,
+      RESTORE_GATE,
+    )
+    await mountPage(context)
+
+    expect(inRow(`hilos-backup-restore-${ARCHIVE_ID}`)?.disabled).toBe(false)
+    expect(document.querySelector('[data-id="hilos-action-reason"]')).toBeNull()
+  })
+})
+
 describe('HilosBackupPage in the admin view mode', () => {
   const releases: (() => void)[] = []
 

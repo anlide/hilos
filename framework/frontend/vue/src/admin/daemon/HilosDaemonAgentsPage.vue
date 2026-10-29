@@ -20,6 +20,7 @@ import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
+import HilosActionReason from '../../HilosActionReason.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -55,6 +56,7 @@ const restart = createHilosDaemonAgentRestart(
 const restartOpen = useSignal(restart.opened)
 const restartTarget = useSignal(restart.target)
 const canRestart = useSignal(restart.canSubmit)
+const tableCannotVouch = useSignal(restart.unavailable)
 const restartAction = useTrackedAction()
 const { busy: restartBusy } = restartAction
 const restartIdentity = ref<HilosDaemonAgentRow | null>(null)
@@ -93,16 +95,22 @@ onUnmounted(() => {
   agents.dispose()
 })
 
+/**
+ * Why the row's restart is off, in the server's words, or null while the
+ * server refuses nothing — the core's one answer, which the disabled Restart
+ * and its ? both follow. A restart in flight locks the button without a reason.
+ *
+ * @param row The row whose Restart asks.
+ */
+function restartReason(row: HilosDaemonAgentRow): string | null {
+  // The core answer reads whether the table can vouch; read it here too so the
+  // template redraws when that changes.
+  void tableCannotVouch.value
+  return restart.reasonFor(row)
+}
+
 function openRestart(row: HilosDaemonAgentRow): void {
-  if (
-    restartBusy.value ||
-    row.restarting ||
-    heading.value === null ||
-    heading.value.state === 'silent' ||
-    tableBody.value === 'loading' ||
-    frozenSince.value !== null
-  )
-    return
+  if (restartBusy.value || row.restarting || restartReason(row) !== null) return
   restart.open(row.rowKey)
   if (restart.opened.get()) {
     restartIdentity.value = restart.target.get() ?? null
@@ -175,15 +183,11 @@ async function submitRestart(): Promise<void> {
           :data-id="`hilos-daemon-agent-log-${row.rowKey}`"
           >Log</HilosLink
         >
+        <HilosActionReason :reason="restartReason(row)" />
         <LoadingButton
           class="btn-sm btn-outline-secondary"
           :disabled="
-            restartBusy ||
-            row.restarting ||
-            heading === null ||
-            heading.state === 'silent' ||
-            tableBody === 'loading' ||
-            frozenSince !== null
+            restartBusy || row.restarting || restartReason(row) !== null
           "
           :data-id="`hilos-daemon-agent-restart-${row.rowKey}`"
           @click="openRestart(row)"

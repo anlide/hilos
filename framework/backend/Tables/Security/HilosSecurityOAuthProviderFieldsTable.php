@@ -7,6 +7,7 @@ namespace Hilos\Tables\Security;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\OAuth\OAuthConfigField;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
+use Hilos\Auth\OAuth\OAuthConfigSource;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -134,7 +135,7 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
      * Field identity, provider key, descriptor label, type, secret flag, source layer and set-state flag are not personal;
      * value of client_id and scope comes from the columns (or env/defaults) which are not personal (OAuthProvider._piiNotPersonal);
      * declared by the client_id column so only an entity verdict making it personal would close both (closing, not opening);
-     * secret value is null anyway.
+     * secret value is null anyway. resetDisabledReason is declared by the same column as value, and carries no secret text.
      *
      * @return array<string, WireField>
      */
@@ -159,6 +160,10 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
             ),
             HilosSecurityOAuthProviderFieldsTableRow::defaultSource => WireField::notPersonal(),
             HilosSecurityOAuthProviderFieldsTableRow::defaultSetState => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::resetDisabledReason => WireField::column(
+                HilosDbContext::oauthProviders,
+                ObjectOAuthProvider::clientId,
+            ),
         ];
     }
 
@@ -254,6 +259,7 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
             defaultValue: $default->value,
             defaultSource: $default->source->value,
             defaultSetState: $default->isSet,
+            resetDisabledReason: self::resetDisabledReason($resolved->source),
         );
     }
 
@@ -294,6 +300,25 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
         }
 
         return null;
+    }
+
+    /**
+     * Says why a field resolved from this layer has no stored value to reset, in the words the screen shows.
+     *
+     * Reset removes the value stored in the database; a field whose value comes from elsewhere has
+     * nothing to remove. The sentence tells the environment from an unset field and names neither
+     * the value nor the variable, which keeps it the same for the client secret as for any field.
+     *
+     * @param OAuthConfigSource $source Layer the field's effective value came from
+     * @return ?string Full sentence why reset is unavailable, or null when the stored value is in force
+     */
+    private static function resetDisabledReason(OAuthConfigSource $source): ?string
+    {
+        return match ($source) {
+            OAuthConfigSource::DB => null,
+            OAuthConfigSource::ENV => 'This value comes from the environment, not from the database, so there is no stored value to reset.',
+            OAuthConfigSource::DEFAULT => 'No value is stored in the database for this field, so there is nothing to reset.',
+        };
     }
 
     /**

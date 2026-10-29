@@ -129,6 +129,38 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
         }
     }
 
+    /**
+     * A field with no override is told why it has no reset; the words move with the layer its value
+     * comes from and never carry the value, and a secret is told nothing.
+     */
+    public function testResetReasonFollowsTheLayerWithoutTheValue(): void
+    {
+        $defaultReason = 'This field uses its default value, so there is no admin override to reset.';
+        $envReason = 'This field takes its value from the environment, so there is no admin override to reset.';
+        self::assertSame($defaultReason, $this->rowFor(MailDeliveryChannel::FIELD_SMTP_PORT)->resetDisabledReason);
+        self::assertNull($this->rowFor(MailDeliveryChannel::FIELD_SMTP_PASSWORD)->resetDisabledReason);
+
+        putenv(EnvConstants::MAIL_SMTP_PORT->name . '=2525');
+        putenv(EnvConstants::MAIL_SMTP_PASSWORD->name . '=private-env-password');
+        try {
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+            $key = DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_PORT);
+            $mutation = $this->table(new MailDeliveryChannel())->buildMutationForSourceEvent(
+                SourceChange::dbUpdated(HilosDbContext::settings, '7', [ObjectSetting::key => $key]),
+            );
+            self::assertNotNull($mutation);
+            self::assertInstanceOf(HilosCommunicationsChannelFieldsTableRow::class, $mutation->row);
+            self::assertSame($envReason, $mutation->row->resetDisabledReason);
+            $secret = $this->rowFor(MailDeliveryChannel::FIELD_SMTP_PASSWORD);
+            self::assertSame(ChannelConfigSource::ENV->value, $secret->valueSource);
+            self::assertNull($secret->resetDisabledReason);
+            self::assertStringNotContainsString('private-env-password', json_encode($secret->toArray(), JSON_THROW_ON_ERROR));
+        } finally {
+            putenv(EnvConstants::MAIL_SMTP_PORT->name);
+            putenv(EnvConstants::MAIL_SMTP_PASSWORD->name);
+        }
+    }
+
     public function testBrowserRowRidesSingleFieldSlot(): void
     {
         $envelope = $this->table(new MailDeliveryChannel())->browserRow($this->rowFor(MailDeliveryChannel::FIELD_SMTP_HOST));

@@ -41,12 +41,18 @@ import {
   type HilosTwoFactorContext,
   type HilosTwoFactorSettingRow,
 } from '@hilos/core/admin/security'
-import { focusInitial, HILOS_STEP_UP_COPY, HilosPages } from '@hilos/core/base'
+import {
+  focusInitial,
+  type Hideable,
+  HILOS_STEP_UP_COPY,
+  HilosPages,
+} from '@hilos/core/base'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
+import HilosActionReason from '../../HilosActionReason.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
@@ -97,6 +103,17 @@ function labelOf(row: HilosTwoFactorSettingRow): string {
  */
 function isLocked(row: HilosTwoFactorSettingRow): boolean {
   return locked.value.includes(row.rowKey)
+}
+
+/**
+ * Why the row's pencil is locked, in the server's words, or null while it is
+ * not: read only while the row is locked, so the ? and the disabled pencil
+ * follow one current state of the row.
+ *
+ * @param row The row of the setting.
+ */
+function editReason(row: HilosTwoFactorSettingRow): Hideable<string | null> {
+  return isLocked(row) ? row.editDisabledReason : null
 }
 
 // One tracked runner for both switches: a single in-flight guard is enough,
@@ -261,6 +278,10 @@ function submitEdit(): void {
         </span>
       </template>
       <template #cell-actions="{ row }">
+        <HilosActionReason
+          v-if="!isHilosSecondFactorSwitch(row.rowKey)"
+          :reason="editReason(row)"
+        />
         <button
           v-if="!isHilosSecondFactorSwitch(row.rowKey)"
           type="button"

@@ -31,6 +31,10 @@ use ReflectionProperty;
 /** The agents table projects live instances and their class declarations. */
 final class HilosDaemonAgentsTableTest extends TestCase
 {
+    private const string SILENT_REASON = 'This node is not responding, so its agents cannot be restarted right now.';
+    private const string RESTARTING_REASON = 'This agent is already restarting.';
+    private const string UNAVAILABLE_REASON = 'Node data is unavailable; wait for it to refresh.';
+
     /** @var class-string<Hilos> */
     private string $previousAppClass;
 
@@ -149,7 +153,9 @@ final class HilosDaemonAgentsTableTest extends TestCase
 
     public function testMalformedOwnershipWidthIsRejected(): void
     {
-        $row = new HilosDaemonAgentsTableRow('x:1', 'x:1', false, 1, 'regular', 'node', false, [], [], 'agent-x_1.log');
+        $row = new HilosDaemonAgentsTableRow(
+            'x:1', 'x:1', false, 1, 'regular', 'node', false, [], [], 'agent-x_1.log', null, self::UNAVAILABLE_REASON,
+        );
         $data = $row->toArray();
         $data[HilosDaemonAgentsTableRow::ownsRt] = [['collection' => 'rt_a', 'width' => 'other']];
         $this->expectException(InvalidFormatException::class);
@@ -237,8 +243,14 @@ final class HilosDaemonAgentsTableTest extends TestCase
 
     public function testRequiredNullableWorkerFieldsRejectAbsenceAndWrongTypes(): void
     {
-        $row = new HilosDaemonAgentsTableRow('x:1', 'x:1', true, null, null, 'node', false, [], [], 'agent-x_1.log');
-        foreach ([HilosDaemonAgentsTableRow::workerIndex, HilosDaemonAgentsTableRow::workerKind] as $field) {
+        $row = new HilosDaemonAgentsTableRow(
+            'x:1', 'x:1', true, null, null, 'node', false, [], [], 'agent-x_1.log', null, self::UNAVAILABLE_REASON,
+        );
+        foreach ([
+            HilosDaemonAgentsTableRow::workerIndex,
+            HilosDaemonAgentsTableRow::workerKind,
+            HilosDaemonAgentsTableRow::restartDisabledReason,
+        ] as $field) {
             foreach (['absent', 'wrong'] as $invalid) {
                 $data = $row->toArray();
                 if ($invalid === 'absent') {
@@ -254,6 +266,76 @@ final class HilosDaemonAgentsTableTest extends TestCase
                 }
             }
         }
+    }
+
+    public function testSilentNodeExplainsRestartOnEveryRowAndItsReturnClearsTheReason(): void
+    {
+        $roster = new DaemonProcessRoster([
+            new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, null, null, [
+                new DaemonAgentPicture('x:1', DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::PLACEMENT_NODE),
+                new DaemonAgentPicture('x:2', DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::PLACEMENT_NODE),
+            ]),
+        ], [], 0);
+        $query = new TableQueryDTO(filter: [HilosDaemonAgentsTable::FILTER_NODE => 'n1']);
+        $table = new HilosDaemonAgentsTable();
+        $this->picture($this->node('n1', $roster));
+        self::assertSame([[null, self::UNAVAILABLE_REASON], [null, self::UNAVAILABLE_REASON]], $this->reasons('n1'));
+
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', $roster, online: false));
+        self::assertSame(
+            [[self::SILENT_REASON, self::UNAVAILABLE_REASON], [self::SILENT_REASON, self::UNAVAILABLE_REASON]],
+            $this->reasons('n1'),
+        );
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertSame(['update', 'update'], array_map(static fn ($mutation): string => $mutation->type->value, $mutations));
+        self::assertSame(self::SILENT_REASON, $mutations[0]->row->toArray()[HilosDaemonAgentsTableRow::restartDisabledReason]);
+
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', $roster));
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertCount(2, $mutations);
+        self::assertNull($mutations[1]->row->toArray()[HilosDaemonAgentsTableRow::restartDisabledReason]);
+        self::assertSame(self::UNAVAILABLE_REASON, $mutations[1]->row->toArray()[HilosDaemonAgentsTableRow::restartUnavailableReason]);
+    }
+
+    public function testRestartMarkExplainsItsRowsUnderTheSilentNodeAndLeavesWithTheMark(): void
+    {
+        $worker = new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, null, null, [
+            new DaemonAgentPicture('x:1', DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::PLACEMENT_NODE),
+            new DaemonAgentPicture('x:2', DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::PLACEMENT_NODE),
+        ]);
+        $marks = [new DaemonRestartingAgent('x:1', 'n1'), new DaemonRestartingAgent('x:3', 'n1')];
+        $query = new TableQueryDTO(filter: [HilosDaemonAgentsTable::FILTER_NODE => 'n1']);
+        $table = new HilosDaemonAgentsTable();
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0)));
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0, $marks)));
+        self::assertSame([
+            [self::RESTARTING_REASON, self::UNAVAILABLE_REASON],
+            [null, self::UNAVAILABLE_REASON],
+            [self::RESTARTING_REASON, self::UNAVAILABLE_REASON],
+        ], $this->reasons('n1'));
+        $mutations = $table->pictureMutations($before, $query);
+        self::assertSame([['update', 'x:1'], ['create', 'x:3']], array_map(
+            static fn ($mutation): array => [$mutation->type->value, $mutation->rowKey],
+            $mutations,
+        ));
+        self::assertSame(self::RESTARTING_REASON, $mutations[1]->row->toArray()[HilosDaemonAgentsTableRow::restartDisabledReason]);
+
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0, $marks), online: false));
+        self::assertSame(
+            [self::SILENT_REASON, self::SILENT_REASON, self::SILENT_REASON],
+            array_column($this->reasons('n1'), 0),
+        );
+
+        $before = ClusterDaemonPictureMirror::picture();
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0)));
+        self::assertSame([[null, self::UNAVAILABLE_REASON], [null, self::UNAVAILABLE_REASON]], $this->reasons('n1'));
+        self::assertSame([['update', 'x:1'], ['update', 'x:2'], ['delete', 'x:3']], array_map(
+            static fn ($mutation): array => [$mutation->type->value, $mutation->rowKey],
+            $table->pictureMutations($before, $query),
+        ));
     }
 
     public function testRegistryEntryWithoutAWorkerClassHasNoDeclaration(): void
@@ -279,6 +361,15 @@ final class HilosDaemonAgentsTableTest extends TestCase
         ))->rows;
 
         return $rows;
+    }
+
+    /** @return list<array{?string, string}> Disabled and unavailable restart sentences of the node's rows */
+    private function reasons(string $node): array
+    {
+        return array_map(
+            static fn (HilosDaemonAgentsTableRow $row): array => [$row->restartDisabledReason, $row->restartUnavailableReason],
+            $this->rows($node),
+        );
     }
 
     /** @param ClusterDaemonNodeView ...$nodes Node views in a whole picture */

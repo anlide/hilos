@@ -44,6 +44,23 @@ export function hilosI18nLanguageDelete(
 }
 
 /**
+ * Read a table row's deletion hint with the server's own sentence. A row
+ * carries the words the server wrote for its blocking dependency, so the
+ * reason is taken as it came, never looked up in the copy by code; the card
+ * summary keeps {@link hilosI18nLanguageDelete}.
+ *
+ * @param row The live row, or null when the language has disappeared.
+ */
+export function hilosI18nLanguageRowDelete(
+  row: Pick<HilosI18nLanguageRow, 'canDelete' | 'deleteDisabledReason'> | null,
+): { disabled: boolean; reason: string | null } {
+  return {
+    disabled: row?.canDelete !== true,
+    reason: row?.deleteDisabledReason ?? null,
+  }
+}
+
+/**
  * Bind deletion to the page's tracked dispatcher without changing local data.
  *
  * @param context The project's action lifecycle.

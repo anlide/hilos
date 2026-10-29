@@ -8,6 +8,7 @@ use Closure;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Auth\Method\AuthMethodSettings;
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
@@ -27,6 +28,10 @@ use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTableRow;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTableRow;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTableRow;
+use Hilos\Tables\Settings\HilosSettingTableRow;
+use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -77,6 +82,7 @@ final class SettingOriginFieldsTest extends TestCase
                 HilosCommunicationsChannelFieldsTableRow::value => 'stored.example',
                 HilosCommunicationsChannelFieldsTableRow::defaultValue => 'env.example',
                 HilosCommunicationsChannelFieldsTableRow::defaultValueSource => 'env',
+                HilosCommunicationsChannelFieldsTableRow::resetDisabledReason => null,
             ], HilosCommunicationsChannelFieldsTableRow::defaultValueSource],
             [new HilosSecurityOAuthRedirectTable(), [
                 HilosSecurityOAuthRedirectTableRow::rowKey => 'oauth_redirect_uri',
@@ -97,6 +103,9 @@ final class SettingOriginFieldsTest extends TestCase
                 self::assertSame($shown ? $row['value'] : HiddenValue::mark(), $masked['value']);
                 self::assertSame($shown ? $row['defaultValue'] : HiddenValue::mark(), $masked['defaultValue']);
                 self::assertSame($row[$sourceKey], $masked[$sourceKey]);
+                if (array_key_exists('resetDisabledReason', $row)) {
+                    self::assertSame($shown ? null : HiddenValue::mark(), $masked['resetDisabledReason']);
+                }
                 if (array_key_exists('defaultSetState', $row)) {
                     self::assertFalse($masked['defaultSetState']);
                 }
@@ -113,6 +122,9 @@ final class SettingOriginFieldsTest extends TestCase
                 HilosSecurityOAuthProviderFieldsTableRow::defaultValue => $defaultValue,
                 HilosSecurityOAuthProviderFieldsTableRow::defaultSource => 'env',
                 HilosSecurityOAuthProviderFieldsTableRow::defaultSetState => true,
+                HilosSecurityOAuthProviderFieldsTableRow::resetDisabledReason => $defaultValue === null
+                    ? 'This value comes from the environment, not from the database, so there is no stored value to reset.'
+                    : null,
             ];
             foreach ([false, true] as $shown) {
                 $masked = ViewerFields::hide(
@@ -123,10 +135,81 @@ final class SettingOriginFieldsTest extends TestCase
                 );
                 self::assertSame($shown ? $row['value'] : HiddenValue::mark(), $masked['value']);
                 self::assertSame($shown ? $defaultValue : HiddenValue::mark(), $masked['defaultValue']);
+                self::assertSame($shown ? $row['resetDisabledReason'] : HiddenValue::mark(), $masked['resetDisabledReason']);
                 self::assertSame('env', $masked['defaultSource']);
                 self::assertTrue($masked['defaultSetState']);
             }
         }
+    }
+
+    /**
+     * A reset reason says where a value stands, so it is shown exactly when that value's own setting key is open.
+     */
+    public function testSettingAndChannelResetReasonsFollowTheValueSettingKey(): void
+    {
+        $cases = [
+            [new HilosSettingsTable()->wireFields(), [
+                HilosSettingTableRow::key => 'open.key',
+                HilosSettingTableRow::value => 'fallback',
+                HilosSettingTableRow::valueSource => HilosSettingTableRow::VALUE_SOURCE_DEFAULT,
+                HilosSettingTableRow::resetDisabledReason => 'This setting already uses its default value, so there is no override to reset.',
+            ], HilosSettingTableRow::valueSource],
+            [new HilosCommunicationsChannelFieldsTable()->wireFields(), [
+                HilosCommunicationsChannelFieldsTableRow::rowKey => 'open.key',
+                HilosCommunicationsChannelFieldsTableRow::value => 'env.example',
+                HilosCommunicationsChannelFieldsTableRow::valueSource => 'env',
+                HilosCommunicationsChannelFieldsTableRow::resetDisabledReason
+                    => 'This field takes its value from the environment, so there is no admin override to reset.',
+            ], HilosCommunicationsChannelFieldsTableRow::valueSource],
+        ];
+        foreach ($cases as [$fields, $row, $sourceKey]) {
+            foreach ([false, true] as $shown) {
+                $masked = ViewerFields::hide(
+                    $row,
+                    $fields,
+                    self::columnsShown(),
+                    static fn(string $key): bool => $shown && $key === 'open.key',
+                );
+                self::assertSame($shown ? $row['value'] : HiddenValue::mark(), $masked['value']);
+                self::assertSame($shown ? $row['resetDisabledReason'] : HiddenValue::mark(), $masked['resetDisabledReason']);
+                self::assertSame($row[$sourceKey], $masked[$sourceKey]);
+            }
+        }
+    }
+
+    /**
+     * A two-factor lock reason tells whether the general switch is off, so it follows that switch's key, not its own row's.
+     */
+    public function testTwoFactorLockReasonFollowsTheGeneralSwitchKey(): void
+    {
+        $fields = new HilosSecurityTwoFactorTable()->wireFields();
+        $row = [
+            HilosSecurityTwoFactorTableRow::rowKey => SecondFactorSettings::TRUST_DAYS_KEY,
+            HilosSecurityTwoFactorTableRow::value => '30',
+            HilosSecurityTwoFactorTableRow::defaultValue => '30',
+            HilosSecurityTwoFactorTableRow::editDisabledReason => 'Turn on two-step verification to change this setting.',
+        ];
+
+        $switchClosed = ViewerFields::hide(
+            $row,
+            $fields,
+            self::columnsShown(),
+            static fn(string $key): bool => $key === SecondFactorSettings::TRUST_DAYS_KEY,
+        );
+        self::assertSame('30', $switchClosed[HilosSecurityTwoFactorTableRow::value]);
+        self::assertSame(HiddenValue::mark(), $switchClosed[HilosSecurityTwoFactorTableRow::editDisabledReason]);
+
+        $switchOpen = ViewerFields::hide(
+            $row,
+            $fields,
+            self::columnsShown(),
+            static fn(string $key): bool => $key === SecondFactorSettings::ENABLED_KEY,
+        );
+        self::assertSame(HiddenValue::mark(), $switchOpen[HilosSecurityTwoFactorTableRow::value]);
+        self::assertSame(
+            'Turn on two-step verification to change this setting.',
+            $switchOpen[HilosSecurityTwoFactorTableRow::editDisabledReason],
+        );
     }
 
     public function testStepUpSwitchNeedsBothSettingsOpen(): void

@@ -10,7 +10,8 @@
 // whichever door wrote it, so the screen needs no signal of its own. The
 // switches write at once (a mutation without a parameter), but turning the
 // factor off goes through its own window (hilosSecurityTwoFactorDisable.ts);
-// off, every row below the first is locked (HIL-1303). Editing a value is a
+// off, every row below the first is locked (HIL-1303), and the server says so
+// on each such row with its reason. Editing a value is a
 // modal per row (the modal-only editing rule), and a value a setting's rule
 // refuses is answered on the action's `::fail` — the modal keeps it and says
 // why.
@@ -26,7 +27,11 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readHideableString, readString } from '../../state/fieldReaders.js'
+import {
+  readHideableString,
+  readHideableStringOrNull,
+  readString,
+} from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -56,9 +61,6 @@ export const HilosSecondFactorSettingKey = {
 
 /** The text a switch row carries when it is on. */
 const SWITCH_ON = 'true'
-
-/** The text a switch row carries when it is off. */
-const SWITCH_OFF = 'false'
 
 /** Who must use a second factor — the values of the `required` setting. */
 export const HILOS_SECOND_FACTOR_REQUIRED_VALUES = [
@@ -184,6 +186,8 @@ export interface HilosTwoFactorSettingRow {
   readonly defaultValue: Hideable<string>
   /** For a switch, whether it is on; false for the other six. */
   readonly enabled: Hideable<boolean>
+  /** The server's sentence why the setting is locked, or null when it may be changed. */
+  readonly editDisabledReason: Hideable<string | null>
 }
 
 // Wire keys: the framework two-step verification table, its inline row slot, and
@@ -202,6 +206,7 @@ export const HilosTwoFactorSettingRowKey = {
   rowKey: 'rowKey',
   value: 'value',
   defaultValue: 'defaultValue',
+  editDisabledReason: 'editDisabledReason',
 } as const
 
 /**
@@ -272,13 +277,12 @@ export function resolveHilosTwoFactorSettingRow(
     enabled: isHiddenValue(value)
       ? HIDDEN_VALUE
       : isHilosSecondFactorSwitch(rowKey) && value === SWITCH_ON,
+    editDisabledReason: readHideableStringOrNull(
+      slot,
+      HilosTwoFactorSettingRowKey.editDisabledReason,
+    ),
   }
 }
-
-/** Every row but the first, locked while the factor is off. */
-const LOCKED_WHEN_OFF: readonly string[] = Object.values(
-  HilosSecondFactorSettingKey,
-).filter((settingKey) => settingKey !== HilosSecondFactorSettingKey.enabled)
 
 /** No row locked. */
 const NONE_LOCKED: readonly string[] = []
@@ -288,10 +292,11 @@ export interface HilosTwoFactorTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
   readonly controller: TableViewportController<HilosTwoFactorSettingRow>
   /**
-   * The keys of the rows that are locked, live: every row below the first
-   * while the first says the factor is off — the row dimmed, its pencil or
-   * switch locked (HIL-1303). Empty while it is on, and while that row is not
-   * shown or hidden from a viewer.
+   * The keys of the shown rows that are locked, live: each row the server
+   * gives a reason why it cannot be changed — every row below the first while
+   * the factor is off — the row dimmed, its pencil or switch locked
+   * (HIL-1303). Empty while it is on; a reason hidden from a viewer locks
+   * nothing.
    */
   readonly locked: ReadonlySignal<readonly string[]>
   /** Bind the table to the connection — call on mount. */
@@ -309,8 +314,12 @@ const TWO_FACTOR_COLUMNS: HilosTableColumnOf<HilosTwoFactorSettingRow>[] = [
   {
     key: HilosTwoFactorSettingRowKey.value,
     label: 'Value',
-    // The value is told apart from the default beside it.
-    reads: [HilosTwoFactorSettingRowKey.defaultValue],
+    // The value is told apart from the default beside it, and a locked switch
+    // drawn in it tells the server's reason.
+    reads: [
+      HilosTwoFactorSettingRowKey.defaultValue,
+      HilosTwoFactorSettingRowKey.editDisabledReason,
+    ],
   },
   {
     // The pencil that opens the row's modal (the modal-only editing rule); the
@@ -319,9 +328,11 @@ const TWO_FACTOR_COLUMNS: HilosTableColumnOf<HilosTwoFactorSettingRow>[] = [
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // A locked row's pencil or switch tells the server's reason.
     reads: [
       HilosTwoFactorSettingRowKey.value,
       HilosTwoFactorSettingRowKey.defaultValue,
+      HilosTwoFactorSettingRowKey.editDisabledReason,
     ],
   },
 ]
@@ -370,14 +381,14 @@ export function createHilosSecurityTwoFactorTable(
 
   return {
     controller,
-    locked: computedSignal(() =>
-      controller.rows
+    locked: computedSignal(() => {
+      const keys = controller.rows
         .get()
-        .find((entry) => entry.rowKey === HilosSecondFactorSettingKey.enabled)
-        ?.row?.value === SWITCH_OFF
-        ? LOCKED_WHEN_OFF
-        : NONE_LOCKED,
-    ),
+        .filter((entry) => typeof entry.row?.editDisabledReason === 'string')
+        .map((entry) => entry.rowKey)
+
+      return keys.length > 0 ? keys : NONE_LOCKED
+    }),
     start() {
       teardown = [
         bindTableViewport(

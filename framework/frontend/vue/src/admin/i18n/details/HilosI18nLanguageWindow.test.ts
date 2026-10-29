@@ -30,6 +30,7 @@ const known: HilosI18nLanguageRow = {
   isOwn: false,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 interface Dispatch {
   name: string

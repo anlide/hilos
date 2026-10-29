@@ -94,6 +94,7 @@ const secret: HilosOAuthFieldRow = {
   defaultValue: null,
   defaultSource: 'default',
   defaultSetState: false,
+  resetDisabledReason: null,
 }
 
 describe('OAuth provider field window', () => {

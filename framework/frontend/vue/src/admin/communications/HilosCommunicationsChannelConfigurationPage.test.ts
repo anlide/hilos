@@ -70,6 +70,7 @@ interface FieldSlot {
   defaultValueSource: 'env' | 'default'
   secret: boolean
   editable: boolean
+  resetDisabledReason?: Hideable<string | null>
 }
 
 /** The `from` field of the sms channel, with the given effective value and source. */
@@ -609,6 +610,7 @@ describe('HilosCommunicationsChannelConfigurationPage surface', () => {
     expect(
       view.find('[data-id="hilos-channel-field-reset-from"]').exists(),
     ).toBe(false)
+    expect(view.find('[data-id="hilos-action-reason"]').exists()).toBe(false)
     expect(sent).toEqual([])
   })
 
@@ -825,6 +827,61 @@ describe('HilosCommunicationsChannelConfigurationPage reset dialog', () => {
     await mountPage(context)
 
     expect(resetButton().disabled).toBe(true)
+  })
+
+  // The ? beside a locked ↺: its own native button in the row's controls.
+  function reasonOpener(): HTMLButtonElement | null {
+    return (
+      resetButton().parentElement?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      ) ?? null
+    )
+  }
+
+  const ENV_REASON = 'The value comes from the environment, not from settings.'
+
+  it('explains a locked ↺ with the server sentence, sending nothing', async () => {
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+env', 'env'), resetDisabledReason: ENV_REASON },
+    ])
+    await mountPage(context)
+
+    const opener = reasonOpener() as HTMLButtonElement
+    expect(opener.type).toBe('button')
+    expect(opener.disabled).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(resetButton().disabled).toBe(true)
+
+    opener.click()
+    await settle()
+
+    expect(modalEl('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      ENV_REASON,
+    )
+    expect(modalEl('hilos-channel-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([])
+  })
+
+  it('offers no ? on a live ↺ and brings it back once the value leaves settings', async () => {
+    const { context, pushUpdate } = seededContext([
+      { ...fromField('+1000'), resetDisabledReason: null },
+    ])
+    await mountPage(context)
+    expect(resetButton().disabled).toBe(false)
+    expect(reasonOpener()).toBeNull()
+
+    pushUpdate({ ...fromField('+env', 'env'), resetDisabledReason: ENV_REASON })
+    await settle()
+    expect(resetButton().disabled).toBe(true)
+    expect(reasonOpener()).not.toBeNull()
+
+    pushUpdate({ ...fromField('+2000'), resetDisabledReason: null })
+    await settle()
+    expect(resetButton().disabled).toBe(false)
+    expect(reasonOpener()).toBeNull()
   })
 })
 

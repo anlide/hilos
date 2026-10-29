@@ -23,6 +23,7 @@ gone. Bootstrap classes only (styling-rules.md). -->
 import {
   bindPageInstanceName,
   computedSignal,
+  type Hideable,
   HilosPages,
 } from '@hilos/core/base'
 import {
@@ -40,6 +41,7 @@ import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
+import HilosActionReason from '../../HilosActionReason.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHideable from '../../HilosHideable.vue'
@@ -237,6 +239,20 @@ function submitEdit(): void {
   void editor.save(runEditAction)
 }
 
+/** Whether a stored value is in force — the only one a reset removes. */
+function canReset(row: HilosOAuthFieldRow): boolean {
+  return row.source === 'db'
+}
+
+/**
+ * Why the field's reset is off, in the server's words, or null while it
+ * applies: read only while the button is off, so the ? and the disabled reset
+ * follow one current state of the row.
+ */
+function resetReason(row: HilosOAuthFieldRow): Hideable<string | null> {
+  return canReset(row) ? null : row.resetDisabledReason
+}
+
 function openReset(row: HilosOAuthFieldRow): void {
   // Flush pending and take the row into focus; a row that is gone declines to
   // open.
@@ -356,12 +372,13 @@ async function submitReset(): Promise<void> {
               aria-hidden="true"
             ></i>
           </button>
+          <HilosActionReason :reason="resetReason(row)" />
           <button
             type="button"
             class="btn btn-sm btn-outline-secondary"
             title="Reset to default"
             aria-label="Reset to default"
-            :disabled="row.source !== 'db'"
+            :disabled="!canReset(row)"
             :data-id="`hilos-oauth-field-reset-${row.field}`"
             @click="openReset(row)"
           >

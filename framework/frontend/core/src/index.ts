@@ -130,6 +130,7 @@ export {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   createHilosI18nLanguageDelete,
   hilosI18nLanguageDelete,
+  hilosI18nLanguageRowDelete,
 } from './admin/i18n/hilosI18nLanguageDelete.js'
 export {
   HILOS_I18N_LANGUAGE_NAME_DELETE_ACTION,
@@ -177,6 +178,7 @@ export {
   createHilosI18nCountryRowDelete,
   hilosI18nCountryDeleteLabel,
   hilosI18nCountryDeleteReason,
+  hilosI18nCountryRowDeleteReason,
   hilosI18nCountryDeleteFromRow,
   hilosI18nCountryDeleteFromCard,
   type HilosI18nCountryDeleteTarget,

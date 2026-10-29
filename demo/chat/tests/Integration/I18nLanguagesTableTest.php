@@ -57,6 +57,9 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
     private const string SEARCH_MISS = 'languages-search-miss';
     private const string SEARCH_HIT = 'languages-search-hit';
     private const string VIEWER = 'languages-viewer';
+    private const string DEFAULT_REFUSAL = 'This language cannot be deleted because it is the default language.';
+    private const string LOCALES_REFUSAL = 'This language cannot be deleted because it has locales.';
+    private const string NAMES_REFUSAL = 'This language cannot be deleted because names written by a person reference it.';
 
     private I18nLibraryAgent $agent;
     private string|false $previousDefaultLanguage;
@@ -118,6 +121,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         self::assertFalse($english->isOwn);
         self::assertFalse($english->canDelete);
         self::assertSame('default', $english->deleteReason);
+        self::assertSame(self::DEFAULT_REFUSAL, $english->deleteDisabledReason);
         self::assertSame('Qx own tongue', $own->nativeName);
         self::assertTrue($own->rtl);
         self::assertFalse($own->enabled);
@@ -125,6 +129,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         self::assertTrue($own->isOwn);
         self::assertTrue($own->canDelete);
         self::assertNull($own->deleteReason);
+        self::assertNull($own->deleteDisabledReason);
         self::assertSame($own->toArray(), HilosI18nLanguagesTableRow::fromArray($own->toArray())->toArray());
         self::assertSame(['en', 'qx'], $this->picked($this->codes($rows->rows), ['en', 'qx']));
 
@@ -359,6 +364,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
                     HilosI18nLanguagesTableRow::isOwn,
                     HilosI18nLanguagesTableRow::canDelete,
                     HilosI18nLanguagesTableRow::deleteReason,
+                    HilosI18nLanguagesTableRow::deleteDisabledReason,
                 ] as $field) {
                     self::assertFalse(HiddenValue::isMark($language[$field]), $field);
                 }
@@ -377,20 +383,20 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             Hilos::$db->languages['qx'], Hilos::$db->languages['zz'], null, 'Named language',
         ));
         $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::languageNames, (string) $name->id, []), [
-            'qx' => [false, 'names'], 'zz' => [false, 'names'],
+            'qx' => [false, 'names', self::NAMES_REFUSAL], 'zz' => [false, 'names', self::NAMES_REFUSAL],
         ]);
 
         $deletedRow = $name->toArray();
         $this->underAgent($this->agent, static fn () => $name->actions->delete());
         $this->assertLiveVerdicts(SourceChange::dbDeleted(HilosDbContext::languageNames, (string) $name->id, $deletedRow), [
-            'qx' => [true, null], 'zz' => [true, null],
+            'qx' => [true, null, null], 'zz' => [true, null, null],
         ]);
 
         $sameLanguage = $this->underAgent($this->agent, static fn () => Hilos::$db->languageNames->actions->createManual(
             Hilos::$db->languages['qx'], Hilos::$db->languages['qx'], null, 'Self name',
         ));
         $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::languageNames, (string) $sameLanguage->id, []), [
-            'qx' => [false, 'names'],
+            'qx' => [false, 'names', self::NAMES_REFUSAL],
         ]);
     }
 
@@ -402,12 +408,12 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
         ));
         $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::locales, (string) $locale->id, []), [
-            'qx' => [false, 'locales'],
+            'qx' => [false, 'locales', self::LOCALES_REFUSAL],
         ]);
         $localeRow = $locale->toArray();
         $this->underAgent($this->agent, static fn () => $locale->actions->delete());
         $this->assertLiveVerdicts(SourceChange::dbDeleted(HilosDbContext::locales, (string) $locale->id, $localeRow), [
-            'qx' => [true, null],
+            'qx' => [true, null, null],
         ]);
 
         $catalog = $this->underAgent($this->agent, static function () {
@@ -422,6 +428,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbCreated(HilosDbContext::countryNames, (string) $catalog->id, []));
         self::assertCount(1, $mutations);
         self::assertTrue($mutations[0]->row->canDelete);
+        self::assertNull($mutations[0]->row->deleteDisabledReason);
         Hilos::$browser->record(SourceChange::dbCreated(HilosDbContext::countryNames, (string) $catalog->id, []));
         Hilos::$browser->flushToSignalRouter();
         self::assertSame([], $this->deltasOf($this->drain(), self::OPEN));
@@ -429,11 +436,11 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         $this->underAgent($this->agent, static fn () => $catalog->actions->edit('Manual Britain'));
         $this->assertLiveVerdicts(SourceChange::dbUpdated(HilosDbContext::countryNames, (string) $catalog->id, [
             EntityCountryName::locked => true,
-        ]), ['qx' => [false, 'names']]);
+        ]), ['qx' => [false, 'names', self::NAMES_REFUSAL]]);
         $countryRow = $catalog->toArray();
         $this->underAgent($this->agent, static fn () => $catalog->actions->delete());
         $this->assertLiveVerdicts(SourceChange::dbDeleted(HilosDbContext::countryNames, (string) $catalog->id, $countryRow), [
-            'qx' => [true, null],
+            'qx' => [true, null, null],
         ]);
 
         $languageId = Hilos::$db->languages['qx']->id;
@@ -501,7 +508,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
 
     /**
      * @param SourceChange $change Dependency fact
-     * @param array<string, array{bool, ?string}> $expected Verdicts by code
+     * @param array<string, array{bool, ?string, ?string}> $expected Verdicts and their sentences by code
      */
     private function assertLiveVerdicts(SourceChange $change, array $expected): void
     {
@@ -518,6 +525,7 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
                 self::assertSame((string) $row[HilosI18nLanguagesTableRow::languageId], $delta->rowKey);
                 $actual[$row[HilosI18nLanguagesTableRow::code]] = [
                     $row[HilosI18nLanguagesTableRow::canDelete], $row[HilosI18nLanguagesTableRow::deleteReason],
+                    $row[HilosI18nLanguagesTableRow::deleteDisabledReason],
                 ];
             }
             self::assertSame($expected, $actual);

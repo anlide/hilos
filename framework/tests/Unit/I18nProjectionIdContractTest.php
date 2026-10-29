@@ -20,10 +20,11 @@ final class I18nProjectionIdContractTest extends TestCase
     /** @throws HilosException When a row cannot roundtrip */
     public function testFourRowContractsAndMissingChildren(): void
     {
-        $language = new HilosI18nLanguagesTableRow(11, 'en', 'English', false, false, false, false, true, null);
+        $language = new HilosI18nLanguagesTableRow(11, 'en', 'English', false, false, false, false, true, null, null);
         $country = new HilosI18nCountriesTableRow(
             12, 'gb', 'UK', '£', 'GBP', 21, 'en-GB', false, false,
             [new CountryLocaleChoice(21, 'en-GB', false)], 'en-GB', false, 'locales',
+            'This country cannot be deleted because locales refer to it.',
         );
         $locale = new HilosI18nLanguageLocalesTableRow('11:null', 11, null, null, null, null, null, null, false, null, null);
         $name = new HilosI18nNameTableRow(11, 'en', 'English', 31, '', [

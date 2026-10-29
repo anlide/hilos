@@ -412,7 +412,7 @@ test('the default language deletion explanation is named, keyboard readable and 
   const trash = row.getByTestId('i18n-languages-delete-en')
   await expect(trash).toBeDisabled()
   await expect(trash).toHaveAccessibleDescription(
-    'Cannot delete: this is the default language.',
+    'This language cannot be deleted because it is the default language.',
   )
   const why = row.getByTestId('hilos-action-reason')
   await expect(why).toHaveAccessibleName('Why this action is unavailable')
@@ -424,7 +424,7 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(dialog).toHaveAccessibleName('Action unavailable')
   await expect(dialog).toBeFocused()
   await expect(page.getByTestId('hilos-action-reason-body')).toHaveText(
-    'Cannot delete: this is the default language.',
+    'This language cannot be deleted because it is the default language.',
   )
   await dialog.press('Tab')
   await expect(page.getByTestId('modal-close')).toBeFocused()

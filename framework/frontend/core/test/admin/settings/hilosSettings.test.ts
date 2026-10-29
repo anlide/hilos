@@ -35,6 +35,7 @@ function rowWithSource(
     defaultValue: null,
     defaultReferenceKey: null,
     valueSource,
+    resetDisabledReason: null,
   }
 }
 
@@ -49,6 +50,7 @@ describe('resolveHilosSettingRow', () => {
         defaultValue: '1.0',
         defaultReferenceKey: 'default_bot_timeout_sec',
         valueSource: 'reference',
+        resetDisabledReason: 'Nothing to reset: a sentence of the server.',
       }),
     )
 
@@ -60,7 +62,20 @@ describe('resolveHilosSettingRow', () => {
       defaultValue: '1.0',
       defaultReferenceKey: 'default_bot_timeout_sec',
       valueSource: 'reference',
+      resetDisabledReason: 'Nothing to reset: a sentence of the server.',
     })
+  })
+
+  it('keeps a null reset reason as null', () => {
+    const row = resolveHilosSettingRow(
+      settingsRow('k', {
+        key: 'k',
+        valueSource: 'override',
+        resetDisabledReason: null,
+      }),
+    )
+
+    expect(row.resetDisabledReason).toBeNull()
   })
 
   it('maps hidden mark values to the canonical HIDDEN_VALUE', () => {
@@ -73,6 +88,7 @@ describe('resolveHilosSettingRow', () => {
         defaultValue: { _hidden: true },
         defaultReferenceKey: { _hidden: true },
         valueSource: 'override',
+        resetDisabledReason: { _hidden: true },
       }),
     )
 
@@ -83,6 +99,7 @@ describe('resolveHilosSettingRow', () => {
     expect(row.defaultValue).toBe(HIDDEN_VALUE)
     expect(row.defaultReferenceKey).toBe(HIDDEN_VALUE)
     expect(row.valueSource).toBe('override')
+    expect(row.resetDisabledReason).toBe(HIDDEN_VALUE)
   })
 
   it('falls back to the row key and orphan source when the slot is absent', () => {
@@ -95,6 +112,7 @@ describe('resolveHilosSettingRow', () => {
     expect(row.defaultValue).toBeNull()
     expect(row.defaultReferenceKey).toBeNull()
     expect(row.valueSource).toBe('orphan')
+    expect(row.resetDisabledReason).toBeNull()
   })
 
   it('narrows an unknown valueSource to orphan', () => {
@@ -155,6 +173,51 @@ describe('createHilosSettingsTable', () => {
     controller.ingestWindow([], 0, true, null, null, 10)
 
     expect(controller.frame.body.get()).toBe('empty')
+    controller.dispose()
+  })
+
+  it('asks for the reset reason with the row actions and follows it live', () => {
+    const context = {
+      connection: { sendTableViewport: () => undefined },
+      scopes: {},
+      actions: {},
+    } as unknown as HilosSettingsContext
+    const { controller } = createHilosSettingsTable(context)
+    const reason =
+      'This setting is on its default, so there is nothing to reset.'
+    const slot = { key: 'k', type: 'string', value: 'v' }
+
+    expect(
+      controller.frame.columns.get().find((column) => column.key === 'actions')
+        ?.reads,
+    ).toContain('resetDisabledReason')
+
+    controller.ingestWindow(
+      [
+        settingsRow('k', {
+          ...slot,
+          valueSource: 'default',
+          resetDisabledReason: reason,
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    expect(controller.rows.get()[0]?.row?.resetDisabledReason).toBe(reason)
+
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'k',
+      row: settingsRow('k', {
+        ...slot,
+        valueSource: 'override',
+        resetDisabledReason: null,
+      }),
+    })
+    expect(controller.rows.get()[0]?.row?.resetDisabledReason).toBeNull()
     controller.dispose()
   })
 })

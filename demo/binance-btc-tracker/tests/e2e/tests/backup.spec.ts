@@ -1141,7 +1141,10 @@ test('keeps the page of another tab standing through a backup that ends', async 
     shownByTestId(tabB, `hilos-backup-restore-${floorId}`),
   ).toBeEnabled({ timeout: 60_000 })
   await expect(
-    tabB.getByTestId(`hilos-backup-blocked-why-${floorId}`),
+    tabB
+      .getByTestId(floorKey)
+      .or(tabB.getByTestId(`hilos-table-card-${floorId}`))
+      .getByTestId('hilos-action-reason'),
   ).toHaveCount(0)
 
   expect(await pageLifeRecord(tabB)).toEqual({ connected: true, states: [] })
@@ -1176,7 +1179,10 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
   const restoreButton = shownByTestId(page, `hilos-backup-restore-${backupId}`)
   await expect(restoreButton).toBeEnabled()
   await expect(
-    page.locator(`[data-id="hilos-backup-blocked-why-${backupId}"]`),
+    page
+      .getByTestId(`hilos-table-row-${backupId}`)
+      .or(page.getByTestId(`hilos-table-card-${backupId}`))
+      .getByTestId('hilos-action-reason'),
   ).toHaveCount(0)
   await expect(restoreButton).toHaveAttribute(
     'aria-label',

@@ -387,7 +387,7 @@ test('language.life', async ({ page, i18n }) => {
       (await reason.getAttribute('id'))!,
     )
     await expect(remove).toHaveAccessibleDescription(
-      'Cannot delete: the language has locales.',
+      'This language cannot be deleted because it has locales.',
     )
     await expect(reason).not.toHaveAttribute('aria-hidden')
     const ids = await page
@@ -399,7 +399,7 @@ test('language.life', async ({ page, i18n }) => {
     await expect(why).toHaveAccessibleName('Why this action is unavailable')
     await expect(why).toHaveAttribute(
       'title',
-      'Cannot delete: the language has locales.',
+      'This language cannot be deleted because it has locales.',
     )
     await expect(why.locator('i')).toHaveAttribute('aria-hidden', 'true')
     for (const gesture of ['click', 'Enter', 'Space']) {
@@ -412,7 +412,7 @@ test('language.life', async ({ page, i18n }) => {
       await expect(modal).toHaveAccessibleName('Action unavailable')
       await expect(modal).toBeFocused()
       await expect(page.getByTestId('hilos-action-reason-body')).toHaveText(
-        'Cannot delete: the language has locales.',
+        'This language cannot be deleted because it has locales.',
       )
       await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(
         0,

@@ -4,7 +4,6 @@ import {
   BUILT_IN_LANGUAGES_DATA,
   HILOS_I18N_LANGUAGES_TABLE,
   HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
-  HILOS_I18N_LANGUAGE_DELETE_COPY,
   type HilosI18nLanguageContext,
 } from '@hilos/core/admin/i18n'
 import {
@@ -37,7 +36,17 @@ interface LanguageSlot {
   isOwn: boolean
   canDelete: boolean
   deleteReason: 'default' | 'locales' | 'names' | null
+  deleteDisabledReason: string | null
 }
+
+/** The sentence the server sends with each deletion verdict. */
+const SERVER_REASONS = {
+  default:
+    'This language cannot be deleted because it is the default language.',
+  locales: 'This language cannot be deleted because it has locales.',
+  names:
+    'This language cannot be deleted because names written by a person reference it.',
+} as const
 
 const ENGLISH: LanguageSlot = {
   languageId: 11,
@@ -50,6 +59,7 @@ const ENGLISH: LanguageSlot = {
   isOwn: false,
   canDelete: false,
   deleteReason: 'default',
+  deleteDisabledReason: SERVER_REASONS.default,
 }
 
 const OWN: LanguageSlot = {
@@ -63,6 +73,7 @@ const OWN: LanguageSlot = {
   isOwn: true,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 
 type Listener = (signal: { data: unknown }) => void
@@ -243,7 +254,14 @@ describe('HilosI18nLanguagesPage', () => {
   it.each(['default', 'locales', 'names'] as const)(
     'keeps the accessible %s refusal in distinct table and card action groups',
     async (deleteReason) => {
-      const c = context([{ ...OWN, canDelete: false, deleteReason }])
+      const c = context([
+        {
+          ...OWN,
+          canDelete: false,
+          deleteReason,
+          deleteDisabledReason: SERVER_REASONS[deleteReason],
+        },
+      ])
       const view = mount(HilosI18nLanguagesPage, {
         props: { context: c.context },
         global: {
@@ -269,9 +287,7 @@ describe('HilosI18nLanguagesPage', () => {
           'Delete language Qx own tongue',
         )
         expect(opener.attributes('aria-describedby')).toBe(reasonId)
-        expect(reason.text()).toBe(
-          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
-        )
+        expect(reason.text()).toBe(SERVER_REASONS[deleteReason])
         expect(reason.classes()).toEqual(['visually-hidden'])
         expect(reason.attributes('hidden')).toBeUndefined()
         expect(reason.attributes('aria-hidden')).toBeUndefined()
@@ -301,9 +317,7 @@ describe('HilosI18nLanguagesPage', () => {
       ])
       const why = group.get('button[data-id="hilos-action-reason"]')
       expect((why.element as HTMLButtonElement).disabled).toBe(false)
-      expect(why.attributes('title')).toBe(
-        HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
-      )
+      expect(why.attributes('title')).toBe(SERVER_REASONS[deleteReason])
       expect(c.focused).toEqual([])
       expect(
         document.querySelector('[data-id="i18n-language-delete-confirm"]'),

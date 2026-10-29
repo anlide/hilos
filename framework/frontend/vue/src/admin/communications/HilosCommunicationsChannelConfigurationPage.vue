@@ -2,7 +2,7 @@
 and reset dialogs. The summary from the same page answer supplies the shared
 channel head; values still change only on the backend echo. -->
 <script setup lang="ts">
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import { computedSignal, type Hideable, HilosPages } from '@hilos/core/base'
 import {
   createHilosChannelFieldEdit,
   createHilosChannelFields,
@@ -17,6 +17,7 @@ import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
+import HilosActionReason from '../../HilosActionReason.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
@@ -174,6 +175,20 @@ function submitEdit(): void {
   void editor.save(runEditAction)
 }
 
+/** Whether the field holds a value of its own in settings — the only one a reset removes. */
+function canReset(row: HilosChannelFieldRow): boolean {
+  return row.valueSource === 'settings'
+}
+
+/**
+ * Why the field's reset is off, in the server's words, or null while it
+ * applies: read only while the button is off, so the ? and the disabled reset
+ * follow one current state of the row.
+ */
+function resetReason(row: HilosChannelFieldRow): Hideable<string | null> {
+  return canReset(row) ? null : row.resetDisabledReason
+}
+
 function openReset(row: HilosChannelFieldRow): void {
   // Flush pending and take the row into focus; a row already removed by someone
   // else does not open a reset.
@@ -240,12 +255,13 @@ async function submitReset(): Promise<void> {
           >
             <i class="bi bi-pencil" aria-hidden="true"></i>
           </button>
+          <HilosActionReason :reason="resetReason(row)" />
           <button
             type="button"
             class="btn btn-sm btn-outline-secondary"
             title="Reset to default"
             aria-label="Reset to default"
-            :disabled="row.valueSource !== 'settings'"
+            :disabled="!canReset(row)"
             :data-id="`hilos-channel-field-reset-${row.field}`"
             @click="openReset(row)"
           >

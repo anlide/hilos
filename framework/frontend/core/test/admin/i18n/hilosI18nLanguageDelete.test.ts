@@ -6,6 +6,7 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   createHilosI18nLanguageDelete,
   hilosI18nLanguageDelete,
+  hilosI18nLanguageRowDelete,
 } from '../../../src/admin/i18n/hilosI18nLanguageDelete.js'
 import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18nLanguage.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
@@ -24,6 +25,25 @@ describe('language deletion', () => {
       })
     }
     expect(hilosI18nLanguageDelete(null)).toEqual({
+      disabled: true,
+      reason: null,
+    })
+  })
+
+  it("takes a row's reason as the server wrote it, not from the copy", () => {
+    expect(
+      hilosI18nLanguageRowDelete({
+        canDelete: false,
+        deleteDisabledReason: 'A sentence the server wrote.',
+      }),
+    ).toEqual({ disabled: true, reason: 'A sentence the server wrote.' })
+    expect(
+      hilosI18nLanguageRowDelete({
+        canDelete: true,
+        deleteDisabledReason: null,
+      }),
+    ).toEqual({ disabled: false, reason: null })
+    expect(hilosI18nLanguageRowDelete(null)).toEqual({
       disabled: true,
       reason: null,
     })

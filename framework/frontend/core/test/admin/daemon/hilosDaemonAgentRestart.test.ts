@@ -11,6 +11,12 @@ import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
+/** The sentence the server delivers ahead for a table it cannot vouch for. */
+const UNAVAILABLE = 'A sentence the server wrote ahead.'
+
+/** The sentence the server writes for an agent that refuses a restart now. */
+const REFUSED = 'A sentence the server wrote about the agent.'
+
 function raw(overrides: Record<string, unknown> = {}): TableRow {
   return {
     rowKey: 'agent:1',
@@ -18,6 +24,8 @@ function raw(overrides: Record<string, unknown> = {}): TableRow {
       agent: {
         agentId: 'agent:1',
         restarting: false,
+        restartDisabledReason: null,
+        restartUnavailableReason: UNAVAILABLE,
         workerIndex: 1,
         workerKind: 'regular',
         placement: 'node',
@@ -189,5 +197,73 @@ describe('daemon restart confirmation', () => {
     expect(h.sendAction).not.toHaveBeenCalled()
     h.restart.close()
     vi.useRealTimers()
+  })
+
+  it('refuses a target the server gives a reason, and opens again when it takes it back', () => {
+    const h = harness()
+    h.restart.open('agent:1')
+    expect(h.restart.canSubmit.get()).toBe(true)
+    h.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'agent:1',
+      row: raw({ restartDisabledReason: REFUSED }),
+    })
+    expect(h.restart.canSubmit.get()).toBe(false)
+    expect(() => h.restart.sendRestart()).toThrow('unavailable')
+    h.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'agent:1',
+      row: raw(),
+    })
+    expect(h.restart.canSubmit.get()).toBe(true)
+    expect(h.sendAction).not.toHaveBeenCalled()
+    h.restart.close()
+  })
+
+  it("tells a row's current reason, and the sentence delivered ahead while the table cannot vouch", () => {
+    const h = harness()
+    const reason = () => {
+      const row = h.controller.rows.get()[0]?.row
+      return row == null ? undefined : h.restart.reasonFor(row)
+    }
+    expect(h.restart.unavailable.get()).toBe(false)
+    expect(reason()).toBeNull()
+
+    h.window([raw({ restartDisabledReason: REFUSED })])
+    expect(reason()).toBe(REFUSED)
+
+    h.page.data.set('node', {
+      clustered: true,
+      role: null,
+      state: 'silent',
+      silentSince: 10000,
+    })
+    expect(h.restart.unavailable.get()).toBe(true)
+    expect(reason()).toBe(UNAVAILABLE)
+    h.page.data.set('node', {
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+    })
+    expect(reason()).toBe(REFUSED)
+
+    h.window()
+    expect(reason()).toBeNull()
+    h.controller.ingestFrozen(1000)
+    expect(h.restart.unavailable.get()).toBe(true)
+    expect(reason()).toBe(UNAVAILABLE)
+    h.window()
+    expect(h.restart.unavailable.get()).toBe(false)
+    expect(reason()).toBeNull()
+  })
+
+  it('gives no reason of its own while its own restart is in flight', () => {
+    const h = harness()
+    h.restart.open('agent:1')
+    h.restart.sendRestart()
+    expect(h.restart.canSubmit.get()).toBe(false)
+    const row = h.restart.target.get()
+    expect(row === undefined ? undefined : h.restart.reasonFor(row)).toBeNull()
   })
 })

@@ -43,7 +43,16 @@ interface CountrySlot {
   catalogDefaultLocaleCode: string | null
   canDelete: boolean
   deleteReason: 'known' | 'locales' | 'names' | null
+  deleteDisabledReason: string | null
 }
+
+/** The sentence the server sends with each deletion verdict. */
+const SERVER_REASONS = {
+  known:
+    'This country cannot be deleted because the built-in catalog knows it and the reflow would bring it back; switch it off instead.',
+  locales: 'This country cannot be deleted because locales refer to it.',
+  names: 'This country cannot be deleted because names refer to it.',
+} as const
 
 const UNITED_STATES: CountrySlot = {
   countryId: 102,
@@ -60,6 +69,7 @@ const UNITED_STATES: CountrySlot = {
   catalogDefaultLocaleCode: 'en-US',
   canDelete: false,
   deleteReason: 'known',
+  deleteDisabledReason: SERVER_REASONS.known,
 }
 
 const OWN: CountrySlot = {
@@ -77,6 +87,7 @@ const OWN: CountrySlot = {
   catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 
 type Listener = (signal: { data: unknown }) => void
@@ -461,9 +472,17 @@ describe('HilosI18nCountriesPage', () => {
     'explains a blocked %s basket to keyboard readers without sending or opening',
     async (deleteReason) => {
       const dispatch = vi.fn()
-      const c = context([{ ...OWN, canDelete: false, deleteReason }], {
-        dispatch,
-      } as unknown as ActionLifecycle)
+      const c = context(
+        [
+          {
+            ...OWN,
+            canDelete: false,
+            deleteReason,
+            deleteDisabledReason: SERVER_REASONS[deleteReason],
+          },
+        ],
+        { dispatch } as unknown as ActionLifecycle,
+      )
       const view = mount(HilosI18nCountriesPage, {
         props: { context: c },
         global: {
@@ -476,18 +495,36 @@ describe('HilosI18nCountriesPage', () => {
       const ids = buttons.map((button) => button.attributes('aria-describedby'))
       expect(new Set(ids).size).toBe(buttons.length)
       for (const button of buttons) {
-        expect(button.attributes('aria-disabled')).toBe('true')
-        expect((button.element as HTMLButtonElement).disabled).toBe(false)
+        expect((button.element as HTMLButtonElement).disabled).toBe(true)
         const reason = view.find(
           `[id="${button.attributes('aria-describedby')}"]`,
         )
-        expect(reason.text()).toContain(
-          deleteReason === 'known'
-            ? 'built-in catalog'
-            : `${deleteReason} refer`,
-        )
+        expect(reason.text()).toBe(SERVER_REASONS[deleteReason])
         await button.trigger('click')
       }
+
+      // The ? stands left of the bin in the card's one button group, beside
+      // the row's edit control, as it does in a language row.
+      const card = view.get('[data-id="hilos-table-card-141"]')
+      const actionRow = card.get('.hilos-button-row')
+      const groups = actionRow.findAll('.hilos-button-group')
+      expect(groups).toHaveLength(1)
+      const group = groups[0]!
+      expect([...actionRow.element.children]).toEqual([group.element])
+      expect(
+        [...group.element.children].map((child) => [
+          child.tagName,
+          child.getAttribute('data-id'),
+        ]),
+      ).toEqual([
+        ['BUTTON', 'i18n-countries-view-qx'],
+        ['BUTTON', 'hilos-action-reason'],
+        ['BUTTON', 'i18n-countries-delete-qx'],
+        ['SPAN', 'i18n-countries-delete-reason-qx'],
+      ])
+      expect(
+        group.get('button[data-id="hilos-action-reason"]').attributes('title'),
+      ).toBe(SERVER_REASONS[deleteReason])
       expect(c.focused).toEqual([])
       expect(dispatch).not.toHaveBeenCalled()
       expect(
@@ -568,7 +605,12 @@ describe('HilosI18nCountriesPage', () => {
     })
     await nextTick()
     const opener = view.get('[data-id="i18n-countries-delete-qx"]')
-    c.delta({ ...OWN, canDelete: false, deleteReason: 'names' })
+    c.delta({
+      ...OWN,
+      canDelete: false,
+      deleteReason: 'names',
+      deleteDisabledReason: SERVER_REASONS.names,
+    })
     await opener.trigger('click')
     expect(
       document.querySelector('[data-id="i18n-country-delete-window"]'),

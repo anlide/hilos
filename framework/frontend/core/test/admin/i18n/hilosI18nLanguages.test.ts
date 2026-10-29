@@ -37,6 +37,7 @@ describe('resolveHilosI18nLanguageRow', () => {
           isOwn: false,
           canDelete: false,
           deleteReason: 'default',
+          deleteDisabledReason: 'A sentence the server wrote.',
         }),
       ),
     ).toEqual({
@@ -50,6 +51,7 @@ describe('resolveHilosI18nLanguageRow', () => {
       isOwn: false,
       canDelete: false,
       deleteReason: 'default',
+      deleteDisabledReason: 'A sentence the server wrote.',
     })
   })
 
@@ -68,10 +70,14 @@ describe('resolveHilosI18nLanguageRow', () => {
           isOwn: false,
           canDelete: deleteReason === null,
           deleteReason,
+          deleteDisabledReason: deleteReason === null ? null : 'Any sentence.',
         }),
       )
       expect(resolved.canDelete).toBe(deleteReason === null)
       expect(resolved.deleteReason).toBe(deleteReason)
+      expect(resolved.deleteDisabledReason).toBe(
+        deleteReason === null ? null : 'Any sentence.',
+      )
     },
   )
 
@@ -87,6 +93,7 @@ describe('resolveHilosI18nLanguageRow', () => {
       isOwn: false,
       canDelete: true,
       deleteReason: null,
+      deleteDisabledReason: null,
     }
     for (const languageId of ['19', 0, -1, 1.5, true, null, undefined]) {
       expect(() =>
@@ -105,6 +112,8 @@ describe('resolveHilosI18nLanguageRow', () => {
       { canDelete: true, deleteReason: 'unknown' },
       { canDelete: 'true', deleteReason: null },
       { canDelete: undefined, deleteReason: undefined },
+      { deleteDisabledReason: undefined },
+      { deleteDisabledReason: 7 },
     ]) {
       expect(() =>
         resolveHilosI18nLanguageRow(
@@ -146,6 +155,7 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
       'isOwn',
       'canDelete',
       'deleteReason',
+      'deleteDisabledReason',
     ])
     expect(HILOS_I18N_LANGUAGES_COLUMNS[0]?.card).toBe('title')
   })
@@ -169,6 +179,7 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
           isOwn: false,
           canDelete: true,
           deleteReason: null,
+          deleteDisabledReason: null,
         }),
       ],
       1,

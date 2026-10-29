@@ -101,6 +101,7 @@ describe('resolveHilosChannelFieldRow', () => {
         defaultValueSource: 'env',
         secret: false,
         editable: true,
+        resetDisabledReason: 'A sentence the server wrote about the env.',
       }),
     )
 
@@ -116,7 +117,20 @@ describe('resolveHilosChannelFieldRow', () => {
       defaultValueSource: 'env',
       secret: false,
       editable: true,
+      resetDisabledReason: 'A sentence the server wrote about the env.',
     })
+  })
+
+  it.each([
+    [null, null],
+    [{ _hidden: true }, HIDDEN_VALUE],
+    [undefined, null],
+  ])('reads the reset reason %j as %j', (resetDisabledReason, expected) => {
+    const row = resolveHilosChannelFieldRow(
+      fieldRow('k', { valueSource: 'settings', resetDisabledReason }),
+    )
+
+    expect(row.resetDisabledReason).toBe(expected)
   })
 
   it('never surfaces a secret value and marks it non-editable', () => {
@@ -421,6 +435,7 @@ describe('createHilosChannelFields', () => {
     ).toEqual([
       'editable',
       'valueSource',
+      'resetDisabledReason',
       'channel',
       'field',
       'type',

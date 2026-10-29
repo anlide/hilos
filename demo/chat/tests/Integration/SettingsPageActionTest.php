@@ -54,6 +54,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTableRow;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
@@ -288,6 +289,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertSame($default, $row?->defaultValue);
                 $this->assertNull($row?->overrideValue);
                 $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $row?->valueSource);
+                $this->assertSame(
+                    'This setting already uses its default value, so there is no override to reset.',
+                    $row?->resetDisabledReason,
+                );
             }
 
             $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_ADD,
@@ -306,6 +311,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertSame($override, $row?->value);
                 $this->assertSame($override, $row?->overrideValue);
                 $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $row?->valueSource);
+                $this->assertNull($row?->resetDisabledReason);
             }
 
             $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_UPDATE,
@@ -333,6 +339,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $row = Hilos::$table->settings->rowForKey($key);
                 $this->assertNull($row?->id);
                 $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $row?->valueSource);
+                $this->assertSame(
+                    'This setting already uses its default value, so there is no override to reset.',
+                    $row?->resetDisabledReason,
+                );
             }
             $this->assertNull($this->submit('theme-repeat-ak', HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO($defaultKey, ThemeSettingsCatalog::SYSTEM)));
@@ -563,6 +573,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertInstanceOf(CodeDeliverySignalData::class, $frames[0]->data->data);
                 $this->assertTrue($frames[0]->data->data->codeDelivery[CodeDeliverySignalData::phone]);
                 $this->assertSame(CodeDeliverySignalData::current()->toArray(), $frames[0]->data->data->toArray());
+                $this->assertNull($this->channelFieldRow($key)->resetDisabledReason);
 
                 $this->assertNull($this->submit(
                     'delivery-reset-ak',
@@ -572,6 +583,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $frames = $this->framesNamed(HilosSignalConstants::HILOS_CODE_DELIVERY);
                 $this->assertCount(1, $frames);
                 $this->assertFalse($frames[0]->data->data->codeDelivery[CodeDeliverySignalData::phone]);
+                $this->assertSame(
+                    'This field takes its value from the environment, so there is no admin override to reset.',
+                    $this->channelFieldRow($key)->resetDisabledReason,
+                );
             }, [$key]);
         } finally {
             $this->restoreEnv($previous);
@@ -1148,6 +1163,23 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }
 
         return $frames;
+    }
+
+    /**
+     * Reads the channel-config fields table row of one field, as the channel page would be sent it now.
+     *
+     * @param string $key Field settings key, which is the row key
+     * @return HilosCommunicationsChannelFieldsTableRow The field's row
+     */
+    private function channelFieldRow(string $key): HilosCommunicationsChannelFieldsTableRow
+    {
+        foreach (Hilos::$table->hilosCommunicationsChannelFields->getFullSnapshot()->rows as $row) {
+            if ($row instanceof HilosCommunicationsChannelFieldsTableRow && $row->getRowKey() === $key) {
+                return $row;
+            }
+        }
+
+        $this->fail("No channel field row for {$key}");
     }
 
     /**

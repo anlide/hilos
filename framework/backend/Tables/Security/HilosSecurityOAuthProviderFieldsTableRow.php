@@ -15,6 +15,11 @@ use Hilos\Core\Table\Row\AbstractTableRow;
  * layer it came from; {@see value} is always null for the {@see secret} field, whose
  * {@see setState} says whether one is in force - the secret is replaced from the admin,
  * never read back. The identity rides {@see rowKey}, never a field named `id`.
+ *
+ * {@see resetDisabledReason} is the full sentence the screen shows when it explains why a
+ * field has no reset: nothing is stored for it in the database, and the sentence says whether
+ * the value comes from the environment or nothing is set, never the value itself. It is null
+ * only when the stored value is in force, which is the one case reset applies to.
  */
 final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
 {
@@ -33,6 +38,7 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
     public const string defaultValue = 'defaultValue';
     public const string defaultSource = 'defaultSource';
     public const string defaultSetState = 'defaultSetState';
+    public const string resetDisabledReason = 'resetDisabledReason';
 
     /**
      * @param string $rowKey Row key: the provider key and the field name
@@ -47,6 +53,7 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
      * @param ?string $defaultValue Value without the DB override, or null for a secret
      * @param string $defaultSource Fallback layer (env|default)
      * @param bool $defaultSetState Whether the fallback value is non-empty
+     * @param ?string $resetDisabledReason Why no stored value can be reset, or null when the stored value is in force
      */
     public function __construct(
         public string $rowKey,
@@ -61,6 +68,7 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
         public ?string $defaultValue,
         public string $defaultSource,
         public bool $defaultSetState,
+        public ?string $resetDisabledReason,
     ) {
     }
 
@@ -102,6 +110,7 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
             self::defaultValue => $this->defaultValue,
             self::defaultSource => $this->defaultSource,
             self::defaultSetState => $this->defaultSetState,
+            self::resetDisabledReason => $this->resetDisabledReason,
         ];
     }
 
@@ -129,6 +138,7 @@ final class HilosSecurityOAuthProviderFieldsTableRow extends AbstractTableRow
             defaultValue: is_string($defaultValue) ? $defaultValue : null,
             defaultSource: (string) $data[self::defaultSource],
             defaultSetState: (bool) $data[self::defaultSetState],
+            resetDisabledReason: isset($data[self::resetDisabledReason]) ? (string) $data[self::resetDisabledReason] : null,
         );
     }
 }

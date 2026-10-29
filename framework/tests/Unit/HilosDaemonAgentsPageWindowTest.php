@@ -145,7 +145,7 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
     }
 
-    public function testSilentNodePublishesItsDataWithoutAnotherWindow(): void
+    public function testSilentNodePublishesItsDataAndRedrawsTheRestartReasonsOnce(): void
     {
         $this->subscribe(self::VIEWER, 'n1');
         $agent = new DaemonAgentsWindowTestAgent();
@@ -158,7 +158,8 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         $this->browser()->pageData = [];
         $this->deliverNodes($agent, [$this->node('n1', false, $roster)]);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->pageData);
-        self::assertSame([], $this->browser()->mutations);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->mutations);
+        $this->browser()->mutations = [];
 
         $this->browser()->pageData = [];
         $this->deliverNodes($agent, [$this->node('n1', false, $roster)]);

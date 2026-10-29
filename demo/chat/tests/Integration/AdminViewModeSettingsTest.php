@@ -206,11 +206,27 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             self::assertTrue(HiddenValue::isMark($overrideRow[HilosSettingTableRow::overrideValue]));
             self::assertTrue(HiddenValue::isMark($overrideRow[HilosSettingTableRow::defaultValue]));
             self::assertTrue(HiddenValue::isMark($overrideRow[HilosSettingTableRow::defaultReferenceKey]));
+            self::assertTrue(HiddenValue::isMark($overrideRow[HilosSettingTableRow::resetDisabledReason]));
 
             self::assertSame(self::ORPHAN_SETTING_KEY, $orphanRow[HilosSettingTableRow::key]);
             self::assertSame(HilosSettingTableRow::VALUE_SOURCE_ORPHAN, $orphanRow[HilosSettingTableRow::valueSource]);
             self::assertTrue(HiddenValue::isMark($orphanRow[HilosSettingTableRow::value]));
             self::assertTrue(HiddenValue::isMark($orphanRow[HilosSettingTableRow::overrideValue]));
+            self::assertTrue(HiddenValue::isMark($orphanRow[HilosSettingTableRow::resetDisabledReason]));
+            $openDefaultReasons = 0;
+            foreach ($settingsRows as $row) {
+                $slot = self::rowSlot($row);
+                self::assertSame(
+                    HiddenValue::isMark($slot[HilosSettingTableRow::value]),
+                    HiddenValue::isMark($slot[HilosSettingTableRow::resetDisabledReason]),
+                );
+                if (!HiddenValue::isMark($slot[HilosSettingTableRow::resetDisabledReason])
+                    && $slot[HilosSettingTableRow::valueSource] === HilosSettingTableRow::VALUE_SOURCE_DEFAULT) {
+                    self::assertIsString($slot[HilosSettingTableRow::resetDisabledReason]);
+                    $openDefaultReasons++;
+                }
+            }
+            self::assertGreaterThan(0, $openDefaultReasons);
 
             $logsFrames = $this->subscribe(LogsSettingsPage::class, [], $acceptKey);
             $logsFrameIndex = array_search(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_SETTINGS, array_column($logsFrames, 'name'), true);
@@ -267,6 +283,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 self::assertFalse(HiddenValue::isMark($slot[HilosCommunicationsChannelFieldsTableRow::secret]));
                 self::assertFalse(HiddenValue::isMark($slot[HilosCommunicationsChannelFieldsTableRow::editable]));
                 self::assertTrue(HiddenValue::isMark($slot[HilosCommunicationsChannelFieldsTableRow::value]));
+                self::assertTrue(HiddenValue::isMark($slot[HilosCommunicationsChannelFieldsTableRow::resetDisabledReason]));
             }
 
             $signInFrames = $this->subscribe(SecuritySignInMethodsPage::class, [], $acceptKey, [
@@ -308,6 +325,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::rowKey]));
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::value]));
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::defaultValue]));
+                self::assertNull($slot[HilosSecurityTwoFactorTableRow::editDisabledReason]);
             }
 
             $oauthFrames = $this->subscribe(SecurityOAuthPage::class, [], $acceptKey, [
@@ -360,6 +378,10 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 if ($slot[HilosSecurityOAuthProviderFieldsTableRow::field] === 'client_id') {
                     self::assertFalse(HiddenValue::isMark($slot[HilosSecurityOAuthProviderFieldsTableRow::value]));
                 }
+                self::assertSame(
+                    HiddenValue::isMark($slot[HilosSecurityOAuthProviderFieldsTableRow::value]),
+                    HiddenValue::isMark($slot[HilosSecurityOAuthProviderFieldsTableRow::resetDisabledReason]),
+                );
             }
 
             $impersonationFrames = $this->subscribe(SecurityImpersonationPage::class, [], $acceptKey, [

@@ -70,6 +70,7 @@ import {
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
+import HilosActionReason from '../../HilosActionReason.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
@@ -281,17 +282,6 @@ const detailsRow = ref<HilosBackupRow | null>(null)
 function openDetails(row: HilosBackupRow): void {
   detailsRow.value = row
   detailsOpen.value = true
-}
-
-// Blocked-restore dialog: the sentence behind the "why" button of a dark restore
-// button. It shows whatever restoreBlockedReason() returns rather than knowing the
-// cases, so a reason added there is shown here without a word changed.
-const blockedOpen = ref(false)
-const blockedRow = ref<HilosBackupRow | null>(null)
-
-function openBlocked(row: HilosBackupRow): void {
-  blockedRow.value = row
-  blockedOpen.value = true
 }
 
 // Copy-failure dialog: why the last copy of an archive off the machine did not make
@@ -639,17 +629,14 @@ function openOutcome(row: HilosBackupRow): void {
         </button>
         <template v-if="offersBackupRestore(row)">
           <template v-if="restoreGate.uiEnabled">
-            <button
-              v-if="restoreBlockedReason(row) !== null"
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              title="Why this backup cannot be restored"
-              aria-label="Why this backup cannot be restored"
-              :data-id="`hilos-backup-blocked-why-${row.id}`"
-              @click="openBlocked(row)"
-            >
-              <i class="bi bi-question-circle" aria-hidden="true"></i>
-            </button>
+            <!-- The shared "why" of a dark restore button shows whatever
+            restoreBlockedReason() returns rather than knowing the cases, so a
+            reason added there is shown here without a word changed. -->
+            <HilosActionReason
+              :reason="restoreBlockedReason(row)"
+              label="Why this backup cannot be restored"
+              :title="`Cannot restore · ${row.id}`"
+            />
             <button
               type="button"
               class="btn btn-sm btn-outline-warning"
@@ -749,30 +736,6 @@ function openOutcome(row: HilosBackupRow): void {
           data-id="hilos-backup-details-close"
           @click="requestClose"
         >
-          Close
-        </button>
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="blockedOpen"
-      :title="
-        blockedRow ? `Cannot restore · ${blockedRow.id}` : 'Cannot restore'
-      "
-      initial-focus="dialog"
-    >
-      <HilosHideable
-        v-slot="{ value }"
-        :value="blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''"
-      >
-        <HilosLongText
-          kind="prose"
-          :text="value"
-          data-id="hilos-backup-blocked-reason-text"
-        />
-      </HilosHideable>
-      <template #actions="{ requestClose }">
-        <button type="button" class="btn btn-secondary" @click="requestClose">
           Close
         </button>
       </template>

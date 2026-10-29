@@ -58,6 +58,8 @@ export interface HilosSettingRow {
   readonly defaultReferenceKey: Hideable<string | null>
   /** Where the effective value comes from. */
   readonly valueSource: SettingValueSource
+  /** The server's sentence why reset is off for this setting, or null when reset applies. */
+  readonly resetDisabledReason: Hideable<string | null>
 }
 
 // Wire keys: the framework settings table and its single inline `settings` slot
@@ -95,6 +97,9 @@ const SETTING_DEFAULT_REFERENCE_KEY_FIELD = 'defaultReferenceKey'
 
 /** Row payload key of the effective value's origin. */
 const SETTING_VALUE_SOURCE_FIELD = 'valueSource'
+
+/** Row payload key of the server's sentence why reset is off. */
+const SETTING_RESET_DISABLED_REASON_FIELD = 'resetDisabledReason'
 
 /**
  * The project-supplied context the settings admin reads from: the scope-partitioned
@@ -177,6 +182,10 @@ export function resolveHilosSettingRow(row: TableRow): HilosSettingRow {
       SETTING_DEFAULT_REFERENCE_KEY_FIELD,
     ),
     valueSource: toValueSource(slot[SETTING_VALUE_SOURCE_FIELD]),
+    resetDisabledReason: readHideableStringOrNull(
+      slot,
+      SETTING_RESET_DISABLED_REASON_FIELD,
+    ),
   }
 }
 
@@ -229,14 +238,16 @@ const SETTINGS_COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
-    // The buttons follow the override and the origin; the edit dialog they open shows the
-    // catalog default beside the value and merges against the live override.
+    // The buttons follow the override and the origin, and an unavailable reset tells the
+    // server's reason; the edit dialog they open shows the catalog default beside the value
+    // and merges against the live override.
     reads: [
       SETTING_OVERRIDE_VALUE_FIELD,
       SETTING_VALUE_SOURCE_FIELD,
       SETTING_TYPE_FIELD,
       SETTING_DEFAULT_VALUE_FIELD,
       SETTING_DEFAULT_REFERENCE_KEY_FIELD,
+      SETTING_RESET_DISABLED_REASON_FIELD,
     ],
   },
 ]

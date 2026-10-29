@@ -30,6 +30,7 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
   readHideableBoolean,
+  readHideableStringOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -93,6 +94,8 @@ export interface HilosChannelFieldRow {
   readonly secret: boolean
   /** Whether the field can be edited in the admin (false for a secret). */
   readonly editable: boolean
+  /** The server's sentence why the field has no override to reset, or null when reset applies. */
+  readonly resetDisabledReason: Hideable<string | null>
 }
 
 // Wire keys: the framework channels hub table and channel-fields table, their
@@ -207,6 +210,7 @@ const HilosChannelFieldRowKey = {
   defaultValueSource: 'defaultValueSource',
   secret: 'secret',
   editable: 'editable',
+  resetDisabledReason: 'resetDisabledReason',
 } as const
 
 /** Read a current or fallback field value, keeping its scalar type and hidden marker. */
@@ -281,6 +285,10 @@ export function resolveHilosChannelFieldRow(
         : 'default',
     secret: readBoolean(slot, HilosChannelFieldRowKey.secret),
     editable: readBoolean(slot, HilosChannelFieldRowKey.editable),
+    resetDisabledReason: readHideableStringOrNull(
+      slot,
+      HilosChannelFieldRowKey.resetDisabledReason,
+    ),
   }
 }
 
@@ -386,11 +394,13 @@ const FIELDS_COLUMNS: HilosTableColumnOf<HilosChannelFieldRow>[] = [
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
-    // The buttons stand on an editable field, reset is armed by the source, and the edit
-    // dialog they open reads the field's type, label and value.
+    // The buttons stand on an editable field, reset is armed by the source and tells the
+    // server's reason when it is not, and the edit dialog they open reads the field's type,
+    // label and value.
     reads: [
       HilosChannelFieldRowKey.editable,
       HilosChannelFieldRowKey.valueSource,
+      HilosChannelFieldRowKey.resetDisabledReason,
       HilosChannelFieldRowKey.channel,
       HilosChannelFieldRowKey.field,
       HilosChannelFieldRowKey.type,

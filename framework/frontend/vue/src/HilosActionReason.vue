@@ -1,15 +1,19 @@
 <!-- Keep the primitive mounted when the source reason clears: an open explanation
 belongs to its reader until they close it. Only the native opener follows the
-current reason; HilosModal owns focus, closing, and unmount cleanup. -->
+current reason; HilosModal owns focus, closing, and unmount cleanup. A reason the
+server hid (Hideable) still gives the opener, but its words reach neither the
+title nor a string: the dialog draws the mark through HilosHideable. -->
 <script setup lang="ts">
+import { type Hideable, isHiddenValue } from '@hilos/core/base'
 import { ref } from 'vue'
 
+import HilosHideable from './HilosHideable.vue'
 import HilosModal from './HilosModal.vue'
 
 const props = withDefaults(
   defineProps<{
-    /** The current refusal; null hides only the opener. */
-    reason: string | null
+    /** The current refusal, or its hidden mark; null hides only the opener. */
+    reason: Hideable<string | null>
     /** Accessible name of the native explanation button. */
     label?: string
     /** Visible and accessible name of the explanation dialog. */
@@ -22,7 +26,7 @@ const props = withDefaults(
 )
 
 const open = ref(false)
-const explanation = ref('')
+const explanation = ref<Hideable<string>>('')
 
 /** Read the current reason once, for this visit to the dialog. */
 function showReason(): void {
@@ -37,7 +41,7 @@ function showReason(): void {
     v-if="reason !== null"
     type="button"
     class="btn btn-sm btn-outline-secondary"
-    :title="reason"
+    :title="isHiddenValue(reason) ? undefined : reason"
     :aria-label="label"
     data-id="hilos-action-reason"
     @click="showReason"
@@ -46,7 +50,7 @@ function showReason(): void {
   </button>
   <HilosModal v-model="open" :title="title" initial-focus="dialog">
     <p class="mb-0 text-break" data-id="hilos-action-reason-body">
-      {{ explanation }}
+      <HilosHideable :value="explanation" />
     </p>
     <template #actions="{ requestClose }">
       <button

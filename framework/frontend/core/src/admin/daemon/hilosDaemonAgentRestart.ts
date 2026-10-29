@@ -19,6 +19,20 @@ export interface HilosDaemonAgentRestart {
   readonly opened: ReadonlySignal<boolean>
   readonly target: ReadonlySignal<HilosDaemonAgentRow | undefined>
   readonly canSubmit: ReadonlySignal<boolean>
+  /**
+   * Whether the table cannot vouch for any restart now: the node heading is
+   * missing or silent, the window is loading or unavailable, or it is frozen.
+   */
+  readonly unavailable: ReadonlySignal<boolean>
+  /**
+   * Why a row's restart is off, in the server's words: the delivered
+   * `restartUnavailableReason` while the table is {@link unavailable}, else the
+   * row's current `restartDisabledReason`. Null when the server refuses nothing;
+   * a restart in flight from this page gives no reason of its own.
+   *
+   * @param row The row whose restart opener asks.
+   */
+  reasonFor(row: HilosDaemonAgentRow): string | null
   open(rowKey: string): void
   close(): void
   sendRestart(): ActionHandle
@@ -44,6 +58,14 @@ export function createHilosDaemonAgentRestart(
     const row = controller.focusedRow.get()
     return row?.rowKey === key.get() ? row : undefined
   })
+  const unavailable = computedSignal(
+    () =>
+      heading.get() === null ||
+      heading.get()?.state === 'silent' ||
+      controller.frame.body.get() === 'loading' ||
+      controller.frame.body.get() === 'unavailable' ||
+      controller.frozenSince.get() !== null,
+  )
   const canSubmit = computedSignal(() => {
     const row = target.get()
     return (
@@ -51,11 +73,8 @@ export function createHilosDaemonAgentRestart(
       !pending.get() &&
       row !== undefined &&
       !row.restarting &&
-      heading.get() !== null &&
-      heading.get()?.state !== 'silent' &&
-      controller.frame.body.get() !== 'loading' &&
-      controller.frame.body.get() !== 'unavailable' &&
-      controller.frozenSince.get() === null
+      row.restartDisabledReason === null &&
+      !unavailable.get()
     )
   })
 
@@ -63,6 +82,12 @@ export function createHilosDaemonAgentRestart(
     opened,
     target,
     canSubmit,
+    unavailable,
+    reasonFor(row) {
+      return unavailable.get()
+        ? row.restartUnavailableReason
+        : row.restartDisabledReason
+    },
     open(rowKey) {
       if (pending.get()) return
       const row = controller.focusRow(rowKey)

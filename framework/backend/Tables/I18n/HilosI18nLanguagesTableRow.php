@@ -7,7 +7,13 @@ namespace Hilos\Tables\I18n;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
-/** One language, keyed by its decimal primary ID without an entity-fragment id field. */
+/**
+ * One language, keyed by its decimal primary ID without an entity-fragment id field.
+ *
+ * {@see deleteDisabledReason} is the full sentence the screen shows when it explains why deletion
+ * is off for the row; it says in words what {@see deleteReason} names by code, and is null when
+ * deletion is allowed.
+ */
 final class HilosI18nLanguagesTableRow extends AbstractTableRow
 {
     public const string rowKey = 'rowKey';
@@ -20,6 +26,7 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
     public const string isOwn = 'isOwn';
     public const string canDelete = 'canDelete';
     public const string deleteReason = 'deleteReason';
+    public const string deleteDisabledReason = 'deleteDisabledReason';
 
     /**
      * @param int $languageId Persisted language ID
@@ -31,6 +38,7 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
      * @param bool $isOwn Whether the code is absent from the built-in catalog
      * @param bool $canDelete Whether the current deletion verdict permits removal
      * @param ?string $deleteReason Default, locales or names; null when deletion is allowed
+     * @param ?string $deleteDisabledReason Full sentence why deletion is off, or null when deletion is allowed
      * @throws InvalidFormatException When a row ID is not positive
      */
     public function __construct(
@@ -43,6 +51,7 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
         public bool $isOwn,
         public bool $canDelete,
         public ?string $deleteReason,
+        public ?string $deleteDisabledReason,
     ) {
         if ($languageId <= 0) {
             throw new InvalidFormatException('Invalid language ID');
@@ -81,6 +90,7 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
             self::isOwn => $this->isOwn,
             self::canDelete => $this->canDelete,
             self::deleteReason => $this->deleteReason,
+            self::deleteDisabledReason => $this->deleteDisabledReason,
         ];
     }
 
@@ -104,6 +114,7 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
             isOwn: self::requireBool($data, self::isOwn),
             canDelete: self::requireBool($data, self::canDelete),
             deleteReason: self::optionalString($data, self::deleteReason),
+            deleteDisabledReason: self::optionalString($data, self::deleteDisabledReason),
         );
     }
 }

@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 // Match HilosModal's environment so native disabled and focus return are real.
-import { registerFocusReturnFallback } from '@hilos/core/base'
+import {
+  type Hideable,
+  HIDDEN_VALUE,
+  registerFocusReturnFallback,
+} from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -22,7 +26,7 @@ function element(id: string): HTMLElement {
 }
 
 /** Mount the primitive in the document so its native opener can take focus. */
-function mountReason(source: string | null = reason) {
+function mountReason(source: Hideable<string | null> = reason) {
   return mount(HilosActionReason, {
     props: { reason: source },
     attachTo: document.body,
@@ -152,6 +156,68 @@ describe('HilosActionReason', () => {
     await openReason()
     expect(element('hilos-action-reason-body').textContent?.trim()).toBe(
       'Cannot delete: this is the default language.',
+    )
+  })
+
+  it('opens a hidden reason on the standard mark, with no title and no leaked words', async () => {
+    const view = mountReason(HIDDEN_VALUE)
+    const opener = element('hilos-action-reason')
+    expect(opener.hasAttribute('title')).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    await openReason()
+    const body = element('hilos-action-reason-body')
+    expect(body.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object')
+    expect(element('modal').getAttribute('aria-label')).toBe(
+      'Action unavailable',
+    )
+    element('hilos-action-reason-close').click()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    view.unmount()
+  })
+
+  it('keeps a hidden snapshot when the reason turns open or null, and reads the latest on reopening', async () => {
+    const view = mountReason(HIDDEN_VALUE)
+    await openReason()
+    await view.setProps({ reason })
+    expect(element('hilos-action-reason').getAttribute('title')).toBe(reason)
+    expect(
+      element('hilos-action-reason-body').querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    await view.setProps({ reason: null })
+    expect(view.find('button').exists()).toBe(false)
+    expect(
+      element('hilos-action-reason-body').querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    element('hilos-action-reason-close').click()
+    await flushPromises()
+    await view.setProps({ reason })
+    await openReason()
+    const body = element('hilos-action-reason-body')
+    expect(body.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+    expect(body.textContent?.trim()).toBe(reason)
+    element('hilos-action-reason-close').click()
+    await flushPromises()
+    await view.setProps({ reason: HIDDEN_VALUE })
+    expect(element('hilos-action-reason').hasAttribute('title')).toBe(false)
+  })
+
+  it('prints an open reason as text, not markup', async () => {
+    mountReason('<b data-id="injected">no</b>')
+    await openReason()
+    expect(document.querySelector('[data-id="injected"]')).toBeNull()
+    expect(element('hilos-action-reason-body').textContent?.trim()).toBe(
+      '<b data-id="injected">no</b>',
     )
   })
 

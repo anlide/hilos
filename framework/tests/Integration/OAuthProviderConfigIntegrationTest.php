@@ -301,6 +301,7 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutation->row->field);
         $this->assertTrue($mutation->row->setState);
         $this->assertSame('db', $mutation->row->source);
+        $this->assertNull($mutation->row->resetDisabledReason);
         $this->assertNull($mutation->row->value);
         $this->assertNull($mutation->row->defaultValue);
         $this->assertSame('env', $mutation->row->defaultSource);
@@ -337,6 +338,12 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutationAfterReset->row->field);
         $this->assertTrue($mutationAfterReset->row->setState);
         $this->assertSame('env', $mutationAfterReset->row->source);
+        $this->assertSame(
+            'This value comes from the environment, not from the database, so there is no stored value to reset.',
+            $mutationAfterReset->row->resetDisabledReason,
+        );
+        $this->assertNotContains('admin-secret', $mutationAfterReset->row->toArray());
+        $this->assertNotContains('env-secret', $mutationAfterReset->row->toArray());
         $this->assertNull($mutationAfterReset->row->defaultValue);
         $this->assertSame('env', $mutationAfterReset->row->defaultSource);
         $this->assertTrue($mutationAfterReset->row->defaultSetState);

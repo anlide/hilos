@@ -26,6 +26,8 @@ function row(
     rowKey: 'bot:1',
     agentId: 'bot:1',
     restarting: false,
+    restartDisabledReason: null,
+    restartUnavailableReason: '',
     workerIndex: 1,
     workerKind: 'regular',
     placement: 'node',
@@ -98,6 +100,35 @@ describe('daemon agent row', () => {
     ).toBe(false)
     expect(formatDaemonAgentWorker(row({ workerKind: null }))).toBe('—')
     expect(formatDaemonAgentWorker(row({ workerIndex: null }))).toBe('—')
+  })
+
+  it('reads the two restart sentences as the server wrote them', () => {
+    const refused = resolveHilosDaemonAgentRow(
+      rawRow('bot:1', {
+        agentId: 'bot:1',
+        restarting: true,
+        restartDisabledReason: 'A sentence the server wrote about the agent.',
+        restartUnavailableReason: 'A sentence the server wrote ahead.',
+      }),
+    )
+    expect(refused.restartDisabledReason).toBe(
+      'A sentence the server wrote about the agent.',
+    )
+    expect(refused.restartUnavailableReason).toBe(
+      'A sentence the server wrote ahead.',
+    )
+
+    const allowed = resolveHilosDaemonAgentRow(
+      rawRow('bot:1', {
+        agentId: 'bot:1',
+        restartDisabledReason: null,
+        restartUnavailableReason: 'A sentence the server wrote ahead.',
+      }),
+    )
+    expect(allowed.restartDisabledReason).toBeNull()
+    expect(allowed.restartUnavailableReason).toBe(
+      'A sentence the server wrote ahead.',
+    )
   })
 
   it('reads the inline ownership lists and fragment identity', () => {
@@ -212,7 +243,13 @@ describe('daemon agents viewport', () => {
     expect(columns[1]?.reads).toEqual(['workerKind'])
     expect(columns[2]?.card).toBe('badge')
     expect(columns[2]?.reads).toEqual(['idle'])
-    expect(columns[5]?.reads).toEqual(['agentId', 'logStream', 'restarting'])
+    expect(columns[5]?.reads).toEqual([
+      'agentId',
+      'logStream',
+      'restarting',
+      'restartDisabledReason',
+      'restartUnavailableReason',
+    ])
   })
 })
 

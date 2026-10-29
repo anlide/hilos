@@ -30,6 +30,7 @@ function row(partial: Partial<HilosChannelFieldRow>): HilosChannelFieldRow {
     defaultValueSource: 'default',
     secret: false,
     editable: true,
+    resetDisabledReason: null,
     ...partial,
   }
 }

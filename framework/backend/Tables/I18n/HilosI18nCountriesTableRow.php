@@ -9,7 +9,13 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\DTO\CountryLocaleChoice;
 
-/** One country, keyed by its decimal primary ID without an entity-fragment id field. */
+/**
+ * One country, keyed by its decimal primary ID without an entity-fragment id field.
+ *
+ * {@see deleteDisabledReason} is the full sentence the screen shows when it explains why deletion
+ * is off for the row; it says in words what {@see deleteReason} names by code, and is null when
+ * deletion is permitted.
+ */
 final class HilosI18nCountriesTableRow extends AbstractTableRow
 {
     public const string rowKey = 'rowKey';
@@ -26,6 +32,7 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
     public const string catalogDefaultLocaleCode = 'catalogDefaultLocaleCode';
     public const string canDelete = 'canDelete';
     public const string deleteReason = 'deleteReason';
+    public const string deleteDisabledReason = 'deleteDisabledReason';
 
     /**
      * @param int $countryId Persisted country ID
@@ -41,6 +48,7 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      * @param ?string $catalogDefaultLocaleCode Built-in catalog suggestion, whether created or not
      * @param bool $canDelete Whether the country rule permits deletion
      * @param ?string $deleteReason Catalog or dependency refusal, or null when deletion is permitted
+     * @param ?string $deleteDisabledReason Full sentence why deletion is off, or null when deletion is permitted
      * @throws InvalidFormatException When a row ID is not positive
      */
     public function __construct(
@@ -57,6 +65,7 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
         public ?string $catalogDefaultLocaleCode,
         public bool $canDelete,
         public ?string $deleteReason,
+        public ?string $deleteDisabledReason,
     ) {
         if ($countryId <= 0 || ($defaultLocaleId !== null && $defaultLocaleId <= 0)) {
             throw new InvalidFormatException('Invalid country ID');
@@ -99,6 +108,7 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
             self::catalogDefaultLocaleCode => $this->catalogDefaultLocaleCode,
             self::canDelete => $this->canDelete,
             self::deleteReason => $this->deleteReason,
+            self::deleteDisabledReason => $this->deleteDisabledReason,
         ];
     }
 
@@ -131,6 +141,9 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
         if (!array_key_exists(self::deleteReason, $data)) {
             throw new InvalidFormatException('Missing country deleteReason');
         }
+        if (!array_key_exists(self::deleteDisabledReason, $data)) {
+            throw new InvalidFormatException('Missing country deleteDisabledReason');
+        }
         $deleteReason = self::optionalString($data, self::deleteReason);
         if (!in_array($deleteReason, [
             null,
@@ -155,6 +168,7 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
             catalogDefaultLocaleCode: self::optionalString($data, self::catalogDefaultLocaleCode),
             canDelete: self::requireBool($data, self::canDelete),
             deleteReason: $deleteReason,
+            deleteDisabledReason: self::optionalString($data, self::deleteDisabledReason),
         );
     }
 }

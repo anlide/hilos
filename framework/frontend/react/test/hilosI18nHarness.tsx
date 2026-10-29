@@ -40,6 +40,7 @@ export const language: HilosI18nLanguageRow = {
   isOwn: false,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 export const languageCard: HilosI18nLanguageCard = {
   languageId: 19,
@@ -73,6 +74,7 @@ export const country: HilosI18nCountryRow = {
   catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 export const countryCard: HilosI18nCountryCard = {
   countryId: 143,

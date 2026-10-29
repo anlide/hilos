@@ -14,6 +14,12 @@ afterEach(() => {
 })
 enableAutoUnmount(afterEach)
 
+// The server's sentences; the client copy words the same codes differently,
+// so a row that showed the copy would fail these expectations.
+const LOCALES = 'This language cannot be deleted because it has locales.'
+const NAMES =
+  'This language cannot be deleted because names written by a person reference it.'
+
 const row: HilosI18nLanguageRow = {
   languageId: 15,
   rowKey: '15',
@@ -25,7 +31,19 @@ const row: HilosI18nLanguageRow = {
   isOwn: false,
   canDelete: false,
   deleteReason: 'locales',
+  deleteDisabledReason: LOCALES,
 }
+
+/** A changed verdict as the server sends it: the code and its sentence. */
+const named = {
+  deleteReason: 'names',
+  deleteDisabledReason: NAMES,
+} as const
+const free = {
+  canDelete: true,
+  deleteReason: null,
+  deleteDisabledReason: null,
+} as const
 
 describe('HilosI18nLanguageRowActions', () => {
   it('gives table and card copies unique accessible descriptions and one direct button group', () => {
@@ -44,7 +62,7 @@ describe('HilosI18nLanguageRowActions', () => {
     const ids = reasons.map((reason) => reason.attributes('id'))
     expect(new Set(ids).size).toBe(2)
     reasons.forEach((reason, index) => {
-      expect(reason.text()).toBe('Cannot delete: the language has locales.')
+      expect(reason.text()).toBe(LOCALES)
       expect(reason.classes()).toEqual(['visually-hidden'])
       expect(reason.attributes('hidden')).toBeUndefined()
       expect(reason.attributes('aria-hidden')).toBeUndefined()
@@ -76,14 +94,14 @@ describe('HilosI18nLanguageRowActions', () => {
       ])
       expect(
         group.get('[data-id="hilos-action-reason"]').attributes('title'),
-      ).toBe('Cannot delete: the language has locales.')
+      ).toBe(LOCALES)
     }
     view.unmount()
   })
 
   it('opens the existing edit or view control and a free language’s delete window', async () => {
     const view = mount(HilosI18nLanguageRowActions, {
-      props: { row: { ...row, canDelete: true, deleteReason: null } },
+      props: { row: { ...row, ...free } },
     })
     await view.get('[data-id="i18n-languages-edit-es"]').trigger('click')
     expect(view.emitted('edit')).toHaveLength(1)
@@ -117,13 +135,11 @@ describe('HilosI18nLanguageRowActions', () => {
     await flushPromises()
     const dialog = document.querySelector('[data-id="modal"]')
     expect(dialog).not.toBeNull()
-    await view.setProps({ row: { ...row, deleteReason: 'names' } })
+    await view.setProps({ row: { ...row, ...named } })
     expect(view.get('[data-id="i18n-languages-delete-reason-es"]').text()).toBe(
-      'Cannot delete: names written by a person reference the language.',
+      NAMES,
     )
-    await view.setProps({
-      row: { ...row, canDelete: true, deleteReason: null },
-    })
+    await view.setProps({ row: { ...row, ...free } })
     expect(view.find('[data-id="hilos-action-reason"]').exists()).toBe(false)
     expect(
       view.find('[data-id="i18n-languages-delete-reason-es"]').exists(),
@@ -137,7 +153,7 @@ describe('HilosI18nLanguageRowActions', () => {
       dialog
         ?.querySelector('[data-id="hilos-action-reason-body"]')
         ?.textContent?.trim(),
-    ).toBe('Cannot delete: the language has locales.')
+    ).toBe(LOCALES)
     document
       .querySelector<HTMLButtonElement>(
         '[data-id="hilos-action-reason-close"]',
@@ -147,14 +163,14 @@ describe('HilosI18nLanguageRowActions', () => {
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
     expect(view.emitted('edit')).toBeUndefined()
     expect(view.emitted('delete')).toBeUndefined()
-    await view.setProps({ row: { ...row, deleteReason: 'names' } })
+    await view.setProps({ row: { ...row, ...named } })
     await view.get('[data-id="hilos-action-reason"]').trigger('click')
     await flushPromises()
     expect(
       document
         .querySelector('[data-id="hilos-action-reason-body"]')
         ?.textContent?.trim(),
-    ).toBe('Cannot delete: names written by a person reference the language.')
+    ).toBe(NAMES)
   })
 
   it('lets a view-mode reader open the explanation without dispatching an edit or delete', async () => {

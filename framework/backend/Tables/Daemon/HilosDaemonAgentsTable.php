@@ -23,6 +23,7 @@ use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonPictureRowChanges;
 use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\DaemonSection\DaemonAgentPicture;
+use Hilos\DaemonSection\DaemonNodeState;
 use Hilos\DaemonSection\DaemonRestartingAgents;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
@@ -42,6 +43,7 @@ final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPict
 
     private const string ROW_SLOT = 'agent';
     private const int WINDOW_SIZE = 25;
+    private const string RESTART_UNAVAILABLE_REASON = 'Node data is unavailable; wait for it to refresh.';
 
     /**
      * @var array<string, array{idle: bool, ownsRt: list<array{collection: string, width: string}>,
@@ -112,6 +114,8 @@ final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPict
             HilosDaemonAgentsTableRow::ownsRt => $ownership,
             HilosDaemonAgentsTableRow::ownsDb => $ownership,
             HilosDaemonAgentsTableRow::logStream => WireField::notPersonal(),
+            HilosDaemonAgentsTableRow::restartDisabledReason => WireField::notPersonal(),
+            HilosDaemonAgentsTableRow::restartUnavailableReason => WireField::notPersonal(),
         ];
     }
 
@@ -174,6 +178,7 @@ final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPict
         }
 
         $nodeId = trim($node);
+        $silent = $picture->stateOf($nodeId) === DaemonNodeState::Silent;
         $restarting = [];
         foreach (DaemonRestartingAgents::forNode($picture, $nodeId) as $agent) {
             $restarting[$agent->id] = true;
@@ -193,6 +198,8 @@ final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPict
                     HilosDaemonAgentsTableRow::ownsRt => $declaration[HilosDaemonAgentsTableRow::ownsRt],
                     HilosDaemonAgentsTableRow::ownsDb => $declaration[HilosDaemonAgentsTableRow::ownsDb],
                     HilosDaemonAgentsTableRow::logStream => AgentLogStream::streamName($agent->id, false),
+                    HilosDaemonAgentsTableRow::restartDisabledReason => self::restartDisabledReason($silent, isset($restarting[$agent->id])),
+                    HilosDaemonAgentsTableRow::restartUnavailableReason => self::RESTART_UNAVAILABLE_REASON,
                 ];
             }
         }
@@ -214,6 +221,8 @@ final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPict
                 HilosDaemonAgentsTableRow::ownsRt => $declaration[HilosDaemonAgentsTableRow::ownsRt],
                 HilosDaemonAgentsTableRow::ownsDb => $declaration[HilosDaemonAgentsTableRow::ownsDb],
                 HilosDaemonAgentsTableRow::logStream => AgentLogStream::streamName($id, false),
+                HilosDaemonAgentsTableRow::restartDisabledReason => self::restartDisabledReason($silent, true),
+                HilosDaemonAgentsTableRow::restartUnavailableReason => self::RESTART_UNAVAILABLE_REASON,
             ];
         }
 
@@ -223,6 +232,26 @@ final class HilosDaemonAgentsTable extends TableDefinition implements DaemonPict
         ));
 
         return $rows;
+    }
+
+    /**
+     * Says why restart is off for one row, in the words the screen shows.
+     *
+     * A silent node comes first: nothing on it can be restarted until it reports again,
+     * whatever its agents were doing. A client-side pending request is not a reason here;
+     * the browser already shows it as loading.
+     *
+     * @param bool $silent Whether the picture holds the row's node as silent
+     * @param bool $restarting Whether an open restart mark names the agent
+     * @return ?string Full sentence why restart is off, or null when the row allows it
+     */
+    private static function restartDisabledReason(bool $silent, bool $restarting): ?string
+    {
+        if ($silent) {
+            return 'This node is not responding, so its agents cannot be restarted right now.';
+        }
+
+        return $restarting ? 'This agent is already restarting.' : null;
     }
 
     /**

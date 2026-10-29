@@ -14,6 +14,11 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
  * Whether a DB row backs the key is not on the wire, and does not need to be: a
  * cataloged key carries its own value in `overrideValue` or it is on its default,
  * and there is no third state — a setting row without a value does not exist.
+ *
+ * {@see resetDisabledReason} is the full sentence the screen shows when it explains why
+ * the row has no reset: a key on its default or reference has no override to reset. It
+ * is null for an override and an orphan, which is the same split the screen draws
+ * between a key with a value of its own and a key without one.
  */
 final class HilosSettingTableRow extends AbstractTableRow
 {
@@ -30,6 +35,7 @@ final class HilosSettingTableRow extends AbstractTableRow
     public const string defaultValue = 'defaultValue';
     public const string defaultReferenceKey = 'defaultReferenceKey';
     public const string valueSource = 'valueSource';
+    public const string resetDisabledReason = 'resetDisabledReason';
 
     public function __construct(
         public ?int $id,
@@ -40,6 +46,7 @@ final class HilosSettingTableRow extends AbstractTableRow
         public ?string $defaultValue,
         public ?string $defaultReferenceKey,
         public string $valueSource,
+        public ?string $resetDisabledReason,
     ) {
     }
 
@@ -77,6 +84,7 @@ final class HilosSettingTableRow extends AbstractTableRow
             self::defaultValue => $this->defaultValue,
             self::defaultReferenceKey => $this->defaultReferenceKey,
             self::valueSource => $this->valueSource,
+            self::resetDisabledReason => $this->resetDisabledReason,
         ];
     }
 
@@ -96,6 +104,7 @@ final class HilosSettingTableRow extends AbstractTableRow
             defaultValue: isset($data[self::defaultValue]) ? (string) $data[self::defaultValue] : null,
             defaultReferenceKey: isset($data[self::defaultReferenceKey]) ? (string) $data[self::defaultReferenceKey] : null,
             valueSource: (string) ($data[self::valueSource] ?? self::VALUE_SOURCE_ORPHAN),
+            resetDisabledReason: isset($data[self::resetDisabledReason]) ? (string) $data[self::resetDisabledReason] : null,
         );
     }
 }

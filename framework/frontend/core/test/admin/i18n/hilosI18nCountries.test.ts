@@ -37,6 +37,7 @@ describe('resolveHilosI18nCountryRow', () => {
           catalogDefaultLocaleCode: 'en-US',
           canDelete: false,
           deleteReason: 'known',
+          deleteDisabledReason: 'A sentence the server wrote.',
         }),
       ),
     ).toEqual({
@@ -54,6 +55,7 @@ describe('resolveHilosI18nCountryRow', () => {
       catalogDefaultLocaleCode: 'en-US',
       canDelete: false,
       deleteReason: 'known',
+      deleteDisabledReason: 'A sentence the server wrote.',
     })
   })
 
@@ -92,6 +94,7 @@ describe('HILOS_I18N_COUNTRIES_FRAME', () => {
       reads: [
         'canDelete',
         'deleteReason',
+        'deleteDisabledReason',
         'name',
         'code',
         'enabled',

@@ -1,7 +1,8 @@
 // Covers the two-step verification admin headless (HIL-494): the eight settings
 // and their words, a settings row read off its inline slot with a switch's
-// position, the row key it falls back to, the rows locked while the factor is
-// off (HIL-1303), and the two writes sent under the keys the page reads.
+// position, the row key it falls back to, the rows locked by the server's
+// reason while the factor is off (HIL-1303), and the two writes sent under the
+// keys the page reads.
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -19,16 +20,26 @@ import { type HilosConnection } from '../../../src/connection/HilosConnection.js
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
+/** What the server says on a row below the first while the factor is off. */
+const LOCKED_REASON = 'A sentence the server wrote about the switch.'
+
 /**
  * A raw settings row as the table window carries it.
  *
  * @param rowKey The setting key.
  * @param value The value in force, as text.
+ * @param editDisabledReason Why the server locks the row, or null.
  */
-function settingRow(rowKey: string, value: string): TableRow {
+function settingRow(
+  rowKey: string,
+  value: string,
+  editDisabledReason: unknown = null,
+): TableRow {
   return {
     rowKey,
-    slots: { setting: { rowKey, value, defaultValue: value } },
+    slots: {
+      setting: { rowKey, value, defaultValue: value, editDisabledReason },
+    },
   }
 }
 
@@ -100,6 +111,7 @@ describe('resolveHilosTwoFactorSettingRow', () => {
             rowKey: HilosSecondFactorSettingKey.trustDays,
             value: '14',
             defaultValue: '30',
+            editDisabledReason: LOCKED_REASON,
           },
         },
       }),
@@ -108,7 +120,24 @@ describe('resolveHilosTwoFactorSettingRow', () => {
       value: '14',
       defaultValue: '30',
       enabled: false,
+      editDisabledReason: LOCKED_REASON,
     })
+  })
+
+  it.each([
+    [null, null],
+    [undefined, null],
+    [{ _hidden: true }, HIDDEN_VALUE],
+  ])('reads the lock reason %j as %j', (editDisabledReason, expected) => {
+    expect(
+      resolveHilosTwoFactorSettingRow(
+        settingRow(
+          HilosSecondFactorSettingKey.trustDays,
+          '30',
+          editDisabledReason,
+        ),
+      ).editDisabledReason,
+    ).toBe(expected)
   })
 
   it('reads the position of a switch, and only of a switch', () => {
@@ -157,20 +186,25 @@ describe('resolveHilosTwoFactorSettingRow', () => {
       value: '',
       defaultValue: '',
       enabled: false,
+      editDisabledReason: null,
     })
   })
 })
 
 describe('createHilosSecurityTwoFactorTable', () => {
-  it('locks every row below the first while the factor is off, and none while it is on', () => {
+  it('locks the shown rows the server gives a reason, and none while it gives none', () => {
     const table = tableSetup()
     expect(table.locked.get()).toStrictEqual([])
-    const window = (enabled: string) =>
+    const window = (enabled: string, reason: string | null) =>
       table.controller.ingestSubscriptionWindow(
         [
           settingRow(HilosSecondFactorSettingKey.enabled, enabled),
-          settingRow(HilosSecondFactorSettingKey.forgetTrustsOnDisable, 'true'),
-          settingRow(HilosSecondFactorSettingKey.trustDays, '30'),
+          settingRow(
+            HilosSecondFactorSettingKey.forgetTrustsOnDisable,
+            'true',
+            reason,
+          ),
+          settingRow(HilosSecondFactorSettingKey.trustDays, '30', reason),
         ],
         3,
         true,
@@ -181,25 +215,56 @@ describe('createHilosSecurityTwoFactorTable', () => {
         [],
       )
 
-    window('true')
+    window('true', null)
     expect(table.locked.get()).toStrictEqual([])
 
-    window('false')
+    window('false', LOCKED_REASON)
     expect(table.locked.get()).toStrictEqual([
       'auth.second_factor.forget_trusts_on_disable',
-      'auth.second_factor.required',
       'auth.second_factor.trust_days',
-      'auth.second_factor.backup_codes',
-      'auth.second_factor.reset_wait_default_days',
-      'auth.second_factor.reset_wait_min_days',
-      'auth.second_factor.reset_wait_max_days',
     ])
 
-    window('true')
+    window('true', null)
     expect(table.locked.get()).toStrictEqual([])
   })
 
-  it('locks nothing on a viewer the switch is hidden from', () => {
+  it('follows the reason of each row live, not the switch row', () => {
+    const table = tableSetup()
+    table.controller.ingestSubscriptionWindow(
+      [settingRow(HilosSecondFactorSettingKey.trustDays, '30')],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    expect(table.locked.get()).toStrictEqual([])
+
+    table.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: HilosSecondFactorSettingKey.trustDays,
+      row: settingRow(
+        HilosSecondFactorSettingKey.trustDays,
+        '30',
+        LOCKED_REASON,
+      ),
+    })
+    expect(table.locked.get()).toStrictEqual(['auth.second_factor.trust_days'])
+    expect(table.controller.rows.get()[0]?.row?.editDisabledReason).toBe(
+      LOCKED_REASON,
+    )
+
+    table.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: HilosSecondFactorSettingKey.trustDays,
+      row: settingRow(HilosSecondFactorSettingKey.trustDays, '30'),
+    })
+    expect(table.locked.get()).toStrictEqual([])
+  })
+
+  it('locks nothing on a viewer the reason is hidden from', () => {
     const table = tableSetup()
     table.controller.ingestSubscriptionWindow(
       [
@@ -210,11 +275,15 @@ describe('createHilosSecurityTwoFactorTable', () => {
               rowKey: HilosSecondFactorSettingKey.enabled,
               value: { _hidden: true },
               defaultValue: { _hidden: true },
+              editDisabledReason: null,
             },
           },
         },
+        settingRow(HilosSecondFactorSettingKey.trustDays, '30', {
+          _hidden: true,
+        }),
       ],
-      1,
+      2,
       true,
       null,
       null,
@@ -224,6 +293,15 @@ describe('createHilosSecurityTwoFactorTable', () => {
     )
 
     expect(table.locked.get()).toStrictEqual([])
+  })
+
+  it('asks for the lock reason with the switch in the value and the row actions', () => {
+    const columns = tableSetup().controller.frame.columns.get()
+    for (const key of ['value', 'actions']) {
+      expect(columns.find((column) => column.key === key)?.reads).toContain(
+        'editDisabledReason',
+      )
+    }
   })
 
   it('hands a setting row into focus to the dialog over it, and lets it go with an empty key', () => {

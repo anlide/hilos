@@ -7,6 +7,7 @@ import {
   hilosI18nCountryDeleteFromRow,
   hilosI18nCountryDeleteLabel,
   hilosI18nCountryDeleteReason,
+  hilosI18nCountryRowDeleteReason,
 } from '../../../src/admin/i18n/hilosI18nCountryDelete.js'
 import { resolveHilosI18nCountryRow } from '../../../src/admin/i18n/hilosI18nCountries.js'
 import { type HilosI18nCountryContext } from '../../../src/admin/i18n/hilosI18nCountry.js'
@@ -27,6 +28,7 @@ const slot = {
   catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 
 describe('country deletion', () => {
@@ -65,6 +67,7 @@ describe('country deletion', () => {
       deleteReason: null,
     }
     expect(hilosI18nCountryDeleteFromRow(row)).toEqual(target)
+    expect(hilosI18nCountryRowDeleteReason(row)).toBeNull()
     expect(
       hilosI18nCountryDeleteFromCard({
         countryId: 141,
@@ -99,9 +102,19 @@ describe('country deletion', () => {
     (reason) => {
       const row = resolveHilosI18nCountryRow({
         rowKey: 'qx',
-        slots: { country: { ...slot, canDelete: false, deleteReason: reason } },
+        slots: {
+          country: {
+            ...slot,
+            canDelete: false,
+            deleteReason: reason,
+            deleteDisabledReason: `A sentence the server wrote for ${reason}.`,
+          },
+        },
       })
       expect(hilosI18nCountryDeleteFromRow(row)?.deleteReason).toBe(reason)
+      expect(hilosI18nCountryRowDeleteReason(row)).toBe(
+        `A sentence the server wrote for ${reason}.`,
+      )
       expect(hilosI18nCountryDeleteReason(row)).toBe(
         {
           known:

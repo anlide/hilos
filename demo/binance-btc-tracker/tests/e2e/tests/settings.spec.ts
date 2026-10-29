@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import {
   clearCustomSetting,
@@ -50,6 +50,22 @@ async function openSettings(page: Page): Promise<void> {
 async function isolate(page: Page, key: string): Promise<void> {
   await typeInto(page.getByTestId('hilos-table-search'), key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+}
+
+/** Reset a custom value through the ↺ dialog, which names both values first. */
+async function resetThroughDialog(
+  page: Page,
+  reset: Locator,
+  now: string,
+  catalogDefault: string,
+): Promise<void> {
+  await reset.click()
+  await expect(page.getByTestId('hilos-settings-reset-now')).toContainText(now)
+  await expect(page.getByTestId('hilos-settings-reset-default')).toContainText(
+    catalogDefault,
+  )
+  await page.getByTestId('hilos-settings-reset-confirm').click()
+  await expect(page.getByTestId('hilos-settings-reset-confirm')).toHaveCount(0)
 }
 
 // FIXME(F-029, 2026-10-24): registration modal disappears after address entry · чужой · попытка 2 · HIL-1667
@@ -692,6 +708,9 @@ test('resets a custom setting to its catalog default through the confirm modal',
   // value is now and what it goes back to, and resets on its Reset only. The key
   // is read by the delivery-log pruner alone, so no other test leans on it; the
   // test ends on the catalog default, which is its own cleanup.
+  // HIL-1757: the dark ↺ is explained by a ? in the same row, in the sentence
+  // the server put on the row, and the ? follows the row live: it comes with
+  // the reset that turns ↺ off and goes with the override that turns it on.
   const key = 'notifications.delivery_log.retention_days'
 
   await grantAdminToSelf(expect, page)
@@ -701,18 +720,38 @@ test('resets a custom setting to its catalog default through the confirm modal',
 
   const row = page.getByTestId(`hilos-table-row-${key}`)
   const reset = shownByTestId(page, `hilos-settings-reset-${key}`)
+  const why = row.getByTestId('hilos-action-reason')
   await expect(row).toContainText('custom')
   await expect(reset).toBeEnabled()
+  await expect(why).toHaveCount(0)
 
-  await reset.click()
-  await expect(page.getByTestId('hilos-settings-reset-now')).toContainText('30')
-  await expect(page.getByTestId('hilos-settings-reset-default')).toContainText(
-    '90',
-  )
-  await page.getByTestId('hilos-settings-reset-confirm').click()
-  await expect(page.getByTestId('hilos-settings-reset-confirm')).toHaveCount(0)
+  await resetThroughDialog(page, reset, '30', '90')
 
   await expect(row).not.toContainText('custom')
+  await expect(row).toContainText('90')
+  await expect(reset).toBeDisabled()
+
+  const reason =
+    'This setting already uses its default value, so there is no override to reset.'
+  await expect(why).toBeVisible()
+  await expect(why).toHaveAccessibleName('Why this action is unavailable')
+  await why.focus()
+  await why.press('Enter')
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toHaveAccessibleName('Action unavailable')
+  await expect(dialog).toBeFocused()
+  await expect(page.getByTestId('hilos-action-reason-body')).toHaveText(reason)
+  await dialog.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(why).toBeFocused()
+  await expect(reset).toBeDisabled()
+
+  await setCustomSetting(page, key, '30')
+  await expect(row).toContainText('custom')
+  await expect(reset).toBeEnabled()
+  await expect(why).toHaveCount(0)
+
+  await resetThroughDialog(page, reset, '30', '90')
   await expect(row).toContainText('90')
   await expect(reset).toBeDisabled()
 })

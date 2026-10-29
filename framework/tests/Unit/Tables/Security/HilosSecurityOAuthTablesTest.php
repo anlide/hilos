@@ -163,6 +163,28 @@ final class HilosSecurityOAuthTablesTest extends TestCase
         self::assertSame(OAuthConfigSource::DEFAULT->value, $scope->source);
     }
 
+    /**
+     * With nothing stored every field is told why it has no reset, by the layer its value comes from;
+     * the words carry neither the env client id nor the secret.
+     */
+    public function testEveryFieldOffTheDatabaseSaysWhyItHasNoReset(): void
+    {
+        $envReason = 'This value comes from the environment, not from the database, so there is no stored value to reset.';
+        $defaultReason = 'No value is stored in the database for this field, so there is nothing to reset.';
+        foreach ([
+            [OAuthProviderPreset::GITHUB, OAuthConfigField::CLIENT_ID, $envReason],
+            [OAuthProviderPreset::GITHUB, OAuthConfigField::CLIENT_SECRET, $envReason],
+            [OAuthProviderPreset::GITHUB, OAuthConfigField::SCOPE, $defaultReason],
+            [OAuthProviderPreset::GOOGLE, OAuthConfigField::CLIENT_ID, $defaultReason],
+            [OAuthProviderPreset::GOOGLE, OAuthConfigField::CLIENT_SECRET, $defaultReason],
+        ] as [$provider, $field, $reason]) {
+            $row = $this->fieldRow($provider->value, $field);
+            self::assertSame($reason, $row->resetDisabledReason);
+            $wire = json_encode($row->toArray(), JSON_THROW_ON_ERROR);
+            self::assertStringNotContainsString(self::SECRET, $wire);
+        }
+    }
+
     public function testEmptyFallbackFieldsReportNotSet(): void
     {
         foreach ([OAuthConfigField::CLIENT_ID, OAuthConfigField::CLIENT_SECRET] as $field) {

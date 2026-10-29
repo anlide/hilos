@@ -76,6 +76,7 @@ interface SettingSlot {
   defaultValue: Hideable<string | null>
   defaultReferenceKey: Hideable<string | null>
   valueSource: string
+  resetDisabledReason?: Hideable<string | null>
 }
 
 function slot(
@@ -1582,6 +1583,98 @@ describe('HilosSettingsPage reset dialog', () => {
     expect(
       document.querySelector('table [data-id="hilos-settings-delete-orphan"]'),
     ).not.toBeNull()
+  })
+
+  // The ? beside a locked ↺: its own native button in the row's controls.
+  function reasonOpener(key: string): HTMLButtonElement | null {
+    return (
+      resetButton(key)?.parentElement?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      ) ?? null
+    )
+  }
+
+  const ON_DEFAULT_REASON = 'The setting already holds its catalog default.'
+
+  it('explains a locked ↺ with the server sentence and offers no ? while ↺ applies', async () => {
+    const { context, sent, focus } = seededContext([
+      CUSTOM,
+      slot({
+        key: 'on_default',
+        valueSource: 'default',
+        resetDisabledReason: ON_DEFAULT_REASON,
+      }),
+    ])
+    await mountPage(context)
+
+    expect(reasonOpener('site_name')).toBeNull()
+    const opener = reasonOpener('on_default') as HTMLButtonElement
+    expect(opener.type).toBe('button')
+    expect(opener.disabled).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(resetButton('on_default')?.disabled).toBe(true)
+
+    opener.click()
+    await settle()
+
+    expect(modalEl('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      ON_DEFAULT_REASON,
+    )
+    expect(modalEl('hilos-settings-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([])
+  })
+
+  it('drops the ? once the row holds its own value and brings it back after a reset', async () => {
+    const onDefault = slot({
+      key: 'on_default',
+      valueSource: 'default',
+      resetDisabledReason: ON_DEFAULT_REASON,
+    })
+    const { context, pushUpdate } = seededContext([onDefault])
+    await mountPage(context)
+    expect(reasonOpener('on_default')).not.toBeNull()
+
+    pushUpdate({
+      ...onDefault,
+      valueSource: 'override',
+      overrideValue: 'Mine',
+      resetDisabledReason: null,
+    })
+    await settle()
+    expect(resetButton('on_default')?.disabled).toBe(false)
+    expect(reasonOpener('on_default')).toBeNull()
+
+    pushUpdate(onDefault)
+    await settle()
+    expect(resetButton('on_default')?.disabled).toBe(true)
+    expect(reasonOpener('on_default')).not.toBeNull()
+  })
+
+  it('opens a hidden reason on the hidden mark, and no ? beside a live ↺ even when hidden', async () => {
+    const hidden = { _hidden: true } as const
+    const { context } = seededContext([
+      { ...CUSTOM, resetDisabledReason: hidden },
+      slot({
+        key: 'on_default',
+        valueSource: 'default',
+        resetDisabledReason: hidden,
+      }),
+    ])
+    await mountPage(context)
+
+    expect(reasonOpener('site_name')).toBeNull()
+    const opener = reasonOpener('on_default') as HTMLButtonElement
+    expect(opener.hasAttribute('title')).toBe(false)
+
+    opener.click()
+    await settle()
+
+    const body = modalEl('hilos-action-reason-body')
+    expect(body?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body?.innerHTML).not.toContain('_hidden')
   })
 
   it('opens on ↺ with the row in focus and sends nothing', async () => {

@@ -91,6 +91,7 @@ function row(): HilosI18nCountryRow {
     defaultLocaleCode: null,
     canDelete: false,
     deleteReason: 'known',
+    deleteDisabledReason: null,
   }
 }
 

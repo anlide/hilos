@@ -29,6 +29,7 @@ final class HilosSettingTableRowTest extends TestCase
                 HilosSettingTableRow::defaultValue => 'llama3',
                 HilosSettingTableRow::defaultReferenceKey => 'default_bot_model',
                 HilosSettingTableRow::valueSource => HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
+                HilosSettingTableRow::resetDisabledReason => null,
             ],
             $this->overrideRow()->toArray(),
         );
@@ -49,6 +50,21 @@ final class HilosSettingTableRowTest extends TestCase
         $this->assertSame('orphan_key', $row->key);
         $this->assertNull($row->overrideValue);
         $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_ORPHAN, $row->valueSource);
+        $this->assertNull($row->resetDisabledReason);
+    }
+
+    public function testFromArrayKeepsTheResetReason(): void
+    {
+        $payload = [
+            HilosSettingTableRow::key => 'chat_bot_model',
+            HilosSettingTableRow::valueSource => HilosSettingTableRow::VALUE_SOURCE_DEFAULT,
+            HilosSettingTableRow::resetDisabledReason => 'This setting already uses its default value, so there is no override to reset.',
+        ];
+
+        $this->assertSame(
+            'This setting already uses its default value, so there is no override to reset.',
+            HilosSettingTableRow::fromArray($payload)->resetDisabledReason,
+        );
     }
 
     /**
@@ -67,6 +83,7 @@ final class HilosSettingTableRowTest extends TestCase
             defaultValue: 'llama3',
             defaultReferenceKey: 'default_bot_model',
             valueSource: HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
+            resetDisabledReason: null,
         );
     }
 }

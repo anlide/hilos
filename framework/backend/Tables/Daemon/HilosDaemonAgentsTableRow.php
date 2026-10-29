@@ -7,7 +7,15 @@ namespace Hilos\Tables\Daemon;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
-/** One live or restarting agent in a node's daemon picture, keyed by its instance id. */
+/**
+ * One live or restarting agent in a node's daemon picture, keyed by its instance id.
+ *
+ * {@see restartDisabledReason} is the full sentence the screen shows when it explains why
+ * restart is off for the row: the node is silent, or the agent is already restarting. It is
+ * null when neither holds. {@see restartUnavailableReason} is the sentence the screen shows
+ * instead while the table itself is frozen or unavailable, because a stale null in the row
+ * must not offer a restart.
+ */
 final class HilosDaemonAgentsTableRow extends AbstractTableRow
 {
     public const string rowKey = 'rowKey';
@@ -20,6 +28,8 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
     public const string ownsRt = 'ownsRt';
     public const string ownsDb = 'ownsDb';
     public const string logStream = 'logStream';
+    public const string restartDisabledReason = 'restartDisabledReason';
+    public const string restartUnavailableReason = 'restartUnavailableReason';
 
     public const string WIDTH_WHOLE = 'whole';
     public const string WIDTH_ROWS = 'rows';
@@ -38,6 +48,8 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
      * @param list<array{collection: string, width: string}> $ownsRt Declared runtime ownership
      * @param list<array{collection: string, width: string}> $ownsDb Declared database ownership
      * @param string $logStream Live agent log filename
+     * @param ?string $restartDisabledReason Full sentence why restart is off now, or null when the row allows it
+     * @param string $restartUnavailableReason Full sentence for a frozen or unavailable table
      */
     public function __construct(
         public string $rowKey,
@@ -50,6 +62,8 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
         public array $ownsRt,
         public array $ownsDb,
         public string $logStream,
+        public ?string $restartDisabledReason,
+        public string $restartUnavailableReason,
     ) {
     }
 
@@ -79,6 +93,8 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
             self::ownsRt => $this->ownsRt,
             self::ownsDb => $this->ownsDb,
             self::logStream => $this->logStream,
+            self::restartDisabledReason => $this->restartDisabledReason,
+            self::restartUnavailableReason => $this->restartUnavailableReason,
         ];
     }
 
@@ -89,7 +105,7 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        foreach ([self::workerIndex, self::workerKind] as $field) {
+        foreach ([self::workerIndex, self::workerKind, self::restartDisabledReason] as $field) {
             if (!array_key_exists($field, $data)) {
                 throw new InvalidFormatException('Agent row is missing required nullable field ' . $field);
             }
@@ -106,6 +122,8 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
             ownsRt: self::ownershipList($data, self::ownsRt),
             ownsDb: self::ownershipList($data, self::ownsDb),
             logStream: self::requireString($data, self::logStream),
+            restartDisabledReason: self::optionalString($data, self::restartDisabledReason),
+            restartUnavailableReason: self::requireString($data, self::restartUnavailableReason),
         );
     }
 

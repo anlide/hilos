@@ -124,6 +124,30 @@ describe('resolveHilosOAuthFieldRow', () => {
     expect(row.setState).toBe(true)
   })
 
+  it.each([
+    [
+      'A sentence the server wrote about the env.',
+      'A sentence the server wrote about the env.',
+    ],
+    [null, null],
+    [{ _hidden: true }, HIDDEN_VALUE],
+  ])(
+    'reads the reset reason %j as %j, on the secret row too',
+    (resetDisabledReason, expected) => {
+      for (const secret of [false, true]) {
+        const row = resolveHilosOAuthFieldRow(
+          slotRow('oauth:github/client_secret', 'field', {
+            secret,
+            source: 'env',
+            resetDisabledReason,
+          }),
+        )
+
+        expect(row.resetDisabledReason).toBe(expected)
+      }
+    },
+  )
+
   it.each(['env-client', '', null, { _hidden: true }])(
     'preserves a non-secret fallback %j',
     (defaultValue) => {
@@ -321,6 +345,7 @@ describe('row focus on the tables a dialog edits over', () => {
       'secret',
       'value',
       'source',
+      'resetDisabledReason',
       'defaultValue',
       'defaultSource',
       'defaultSetState',

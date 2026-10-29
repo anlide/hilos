@@ -72,6 +72,7 @@ describe('country locale payloads', () => {
       catalogDefaultLocaleCode: card.summary.catalogDefaultLocaleCode,
       canDelete: card.summary.canDelete,
       deleteReason: card.summary.deleteReason,
+      deleteDisabledReason: null,
     }
     expect(
       resolveHilosI18nCountryRow({

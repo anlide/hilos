@@ -68,6 +68,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
                     HilosSettingTableRow::defaultValue,
                     HilosSettingTableRow::defaultReferenceKey,
                     HilosSettingTableRow::valueSource,
+                    HilosSettingTableRow::resetDisabledReason,
                 ],
             ],
         ],
@@ -206,6 +207,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
                 defaultValue: null,
                 defaultReferenceKey: null,
                 valueSource: HilosSettingTableRow::VALUE_SOURCE_ORPHAN,
+                resetDisabledReason: null,
             );
         }
 
@@ -214,6 +216,11 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
         $defaultValue = $this->serializeValue($this->settingsAccessor()->defaultValueFor($setting->key), $type);
         $defaultReferenceKey = $this->settingsAccessor()->defaultReferenceKeyFor($setting->key);
         $overrideValue = $setting->value;
+        $valueSource = $overrideValue !== null
+            ? HilosSettingTableRow::VALUE_SOURCE_OVERRIDE
+            : ($defaultReferenceKey !== null
+                ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
+                : HilosSettingTableRow::VALUE_SOURCE_DEFAULT);
 
         return new HilosSettingTableRow(
             id: $setting->id,
@@ -223,11 +230,8 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
             overrideValue: $overrideValue,
             defaultValue: $defaultValue,
             defaultReferenceKey: $defaultReferenceKey,
-            valueSource: $overrideValue !== null
-                ? HilosSettingTableRow::VALUE_SOURCE_OVERRIDE
-                : ($defaultReferenceKey !== null
-                    ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
-                    : HilosSettingTableRow::VALUE_SOURCE_DEFAULT),
+            valueSource: $valueSource,
+            resetDisabledReason: self::resetDisabledReason($valueSource),
         );
     }
 
@@ -263,6 +267,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
      * Key and type come from the settings collection columns (Setting._piiNotPersonal); valueSource is computed;
      * value and overrideValue come from the value column (hidden by MASK verdict); defaultValue and defaultReferenceKey
      * are omitted and hidden, as defaults are also setting values and all setting values are hidden from viewers (HIL-1258).
+     * resetDisabledReason follows the same key's verdict as value: the sentence is about where the value stands.
      *
      * @return array<string, WireField>
      */
@@ -282,6 +287,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
             HilosSettingTableRow::overrideValue => WireField::settingFrom(HilosSettingTableRow::key),
             HilosSettingTableRow::defaultValue => WireField::settingFrom(HilosSettingTableRow::key),
             HilosSettingTableRow::defaultReferenceKey => WireField::settingFrom(HilosSettingTableRow::key),
+            HilosSettingTableRow::resetDisabledReason => WireField::settingFrom(HilosSettingTableRow::key),
         ];
     }
 
@@ -431,6 +437,9 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
         $defaultValue = $this->serializeValue($this->settingsAccessor()->defaultValueFor($key), $type);
         $defaultReferenceKey = $this->settingsAccessor()->defaultReferenceKeyFor($key);
+        $valueSource = $defaultReferenceKey !== null
+            ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
+            : HilosSettingTableRow::VALUE_SOURCE_DEFAULT;
 
         return new HilosSettingTableRow(
             id: null,
@@ -440,10 +449,31 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
             overrideValue: null,
             defaultValue: $defaultValue,
             defaultReferenceKey: $defaultReferenceKey,
-            valueSource: $defaultReferenceKey !== null
-                ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
-                : HilosSettingTableRow::VALUE_SOURCE_DEFAULT,
+            valueSource: $valueSource,
+            resetDisabledReason: self::resetDisabledReason($valueSource),
         );
+    }
+
+    /**
+     * Says why a settings row with this value source has no reset, in the words the screen shows.
+     *
+     * A key on its default or on a reference has no override, so there is nothing to reset. An
+     * override can be reset; an orphan is deleted rather than reset and is not told a reason here.
+     * The sentence names neither the value nor the referenced key, so it says nothing the value
+     * columns would not.
+     *
+     * @param string $valueSource Value source of the row (HilosSettingTableRow::VALUE_SOURCE_*)
+     * @return ?string Full sentence why reset is unavailable, or null when this refusal does not apply
+     */
+    private static function resetDisabledReason(string $valueSource): ?string
+    {
+        return match ($valueSource) {
+            HilosSettingTableRow::VALUE_SOURCE_DEFAULT
+                => 'This setting already uses its default value, so there is no override to reset.',
+            HilosSettingTableRow::VALUE_SOURCE_REFERENCE
+                => 'This setting already takes its default from another setting, so there is no override to reset.',
+            default => null,
+        };
     }
 
     /**

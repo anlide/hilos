@@ -89,6 +89,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                     HilosI18nCountriesTableRow::catalogDefaultLocaleCode,
                     HilosI18nCountriesTableRow::canDelete,
                     HilosI18nCountriesTableRow::deleteReason,
+                    HilosI18nCountriesTableRow::deleteDisabledReason,
                 ],
             ],
             [
@@ -199,7 +200,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * The stored country fields are columns of hilos_country, the name is a column of
      * hilos_country_name, and the default code and choices are columns of hilos_locale.
      * None of them is personal. The "own" mark and suggestion come from the built-in catalog,
-     * and the deletion verdict is computed from the catalog and references.
+     * and the deletion verdict and its sentence are computed from the catalog and references.
      *
      * @return array<string, WireField> Row field to where it comes from
      */
@@ -233,6 +234,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
             HilosI18nCountriesTableRow::catalogDefaultLocaleCode => WireField::notPersonal(),
             HilosI18nCountriesTableRow::canDelete => WireField::notPersonal(),
             HilosI18nCountriesTableRow::deleteReason => WireField::notPersonal(),
+            HilosI18nCountriesTableRow::deleteDisabledReason => WireField::notPersonal(),
         ];
     }
 
@@ -470,7 +472,27 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
             catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
             canDelete: $deleteReason === null,
             deleteReason: $deleteReason,
+            deleteDisabledReason: self::deleteDisabledReason($deleteReason),
         );
+    }
+
+    /**
+     * Says why a country with this deletion verdict cannot be deleted, in the words the screen shows.
+     *
+     * The sentence names no row and no value, so it says nothing the verdict code does not.
+     *
+     * @param ?string $deleteReason Verdict code (Country::DELETE_*), or null when deletion is permitted
+     * @return ?string Full sentence why deletion is off, or null when deletion is permitted
+     */
+    private static function deleteDisabledReason(?string $deleteReason): ?string
+    {
+        return match ($deleteReason) {
+            Country::DELETE_KNOWN => 'This country cannot be deleted because the built-in catalog knows it '
+                . 'and the reflow would bring it back; switch it off instead.',
+            Country::DELETE_LOCALES => 'This country cannot be deleted because locales refer to it.',
+            Country::DELETE_NAMES => 'This country cannot be deleted because names refer to it.',
+            null => null,
+        };
     }
 
     /**

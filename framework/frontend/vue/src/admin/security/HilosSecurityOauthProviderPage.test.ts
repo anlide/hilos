@@ -1118,6 +1118,79 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     }
   })
 
+  // The ? beside a locked ↺: its own native button in the row's controls.
+  function reasonOpener(field: string): HTMLButtonElement | null {
+    return (
+      resetButton(field).parentElement?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      ) ?? null
+    )
+  }
+
+  async function mountFields(
+    context: HilosSecurityOauthContext,
+  ): Promise<void> {
+    const wrapper = mount(HilosSecurityOauthProviderPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    await settle()
+  }
+
+  const ENV_REASON = 'No stored value: the field comes from the environment.'
+
+  it('explains a locked ↺ with the server sentence, on the secret too, sending nothing', async () => {
+    const { context, sent, focus } = seededContext('Iv1.a', {
+      client_id: { source: 'env', resetDisabledReason: ENV_REASON },
+      client_secret: { source: 'env', resetDisabledReason: ENV_REASON },
+    })
+    await mountFields(context)
+
+    expect(reasonOpener('scope')).toBeNull()
+    expect(resetButton('client_secret').disabled).toBe(true)
+    expect(reasonOpener('client_secret')?.title).toBe(ENV_REASON)
+    const opener = reasonOpener('client_id') as HTMLButtonElement
+    expect(opener.type).toBe('button')
+    expect(opener.disabled).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(resetButton('client_id').disabled).toBe(true)
+
+    opener.click()
+    await settle()
+
+    expect(modalEl('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      ENV_REASON,
+    )
+    expect(modalEl('hilos-oauth-field-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([])
+  })
+
+  it('drops the ? once a stored value is in force and brings it back when it goes', async () => {
+    const { context, pushFieldUpdate } = seededContext('Iv1.a', {
+      client_id: { source: 'env', resetDisabledReason: ENV_REASON },
+    })
+    await mountFields(context)
+    expect(reasonOpener('client_id')).not.toBeNull()
+
+    pushFieldUpdate('client_id', { source: 'db', resetDisabledReason: null })
+    await settle()
+    expect(resetButton('client_id').disabled).toBe(false)
+    expect(reasonOpener('client_id')).toBeNull()
+
+    pushFieldUpdate('client_id', {
+      source: 'env',
+      resetDisabledReason: ENV_REASON,
+    })
+    await settle()
+    expect(resetButton('client_id').disabled).toBe(true)
+    expect(reasonOpener('client_id')).not.toBeNull()
+  })
+
   it('shows the value now, where it goes back to, and what it costs sign-in', async () => {
     const { context } = seededContext('Iv1.a')
     await openReset(context, 'client_id')

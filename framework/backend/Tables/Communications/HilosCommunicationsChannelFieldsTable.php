@@ -28,6 +28,7 @@ use Hilos\Hilos;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
 use Hilos\Notification\Delivery\ChannelConfigResolver;
+use Hilos\Notification\Delivery\ChannelConfigSource;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 
 /**
@@ -139,6 +140,7 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
      *
      * Field identity, channel, descriptor label, type, source, secret and editable flags are not personal;
      * value follows its setting key's viewer verdict; secret fields have no catalog key and remain hidden.
+     * resetDisabledReason follows the same key's verdict as value: the sentence is about where the value stands.
      *
      * @return array<string, WireField>
      */
@@ -160,6 +162,9 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
                 HilosCommunicationsChannelFieldsTableRow::rowKey,
             ),
             HilosCommunicationsChannelFieldsTableRow::defaultValueSource => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::resetDisabledReason => WireField::settingFrom(
+                HilosCommunicationsChannelFieldsTableRow::rowKey,
+            ),
         ];
     }
 
@@ -298,7 +303,27 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             editable: !$field->secret,
             defaultValue: $default->value,
             defaultValueSource: $default->source->value,
+            resetDisabledReason: $field->secret ? null : self::resetDisabledReason($resolved->source),
         );
+    }
+
+    /**
+     * Says why an editable field resolved from this layer has no reset, in the words the screen shows.
+     *
+     * Reset removes the admin settings override; a field without one has nothing to remove. The
+     * sentence tells the environment from the field's default and names neither the value nor the
+     * variable it came from.
+     *
+     * @param ChannelConfigSource $source Layer the field's effective value came from
+     * @return ?string Full sentence why reset is unavailable, or null when an override stands and reset applies
+     */
+    private static function resetDisabledReason(ChannelConfigSource $source): ?string
+    {
+        return match ($source) {
+            ChannelConfigSource::SETTINGS => null,
+            ChannelConfigSource::ENV => 'This field takes its value from the environment, so there is no admin override to reset.',
+            ChannelConfigSource::DEFAULT => 'This field uses its default value, so there is no admin override to reset.',
+        };
     }
 
     /**

@@ -10,6 +10,7 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Definition\MultiRowViewportTable;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -35,12 +36,13 @@ use Hilos\Pages\Security\AbstractHilosSecurityTwoFactorPage;
  * administration screen lists them: the value in force and the catalog default, a switch read as
  * 'true' or 'false'. A table and not page data for the reason every admin value is one - a snapshot
  * on subscribe and a redraw after the write, which the tracked action waits for. It reacts to
- * changes of those eight settings rows and of nothing else.
+ * changes of those eight settings rows and of nothing else. A change of the general switch redraws
+ * all eight, because every row below it says whether it is locked by that switch.
  *
  * A project activates it by registering it under a table key and binding that key to the
  * two-factor page ({@see AbstractHilosSecurityTwoFactorPage}) in its page tables.
  */
-class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapshotTable
+class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapshotTable, MultiRowViewportTable
 {
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'hilosSecurityTwoFactor';
@@ -53,6 +55,9 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
 
     /** Text of a switch that is off, as the screen reads it. */
     private const string SWITCH_OFF = 'false';
+
+    /** Why a row below the general switch cannot be changed while the second factor is off, as the screen says it. */
+    private const string LOCKED_WHILE_OFF = 'Turn on two-step verification to change this setting.';
 
     /**
      * Declares how many rows the first window carries: all eight.
@@ -89,6 +94,38 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     }
 
     /**
+     * Builds the row mutations from a change of one of the eight settings.
+     *
+     * A change of any setting but the general switch redraws its own row. A change of the general
+     * switch - written, stored for the first time or taken back to its default - redraws all eight,
+     * because whether each row below it is locked follows that switch.
+     *
+     * @param SourceChange $change Source change
+     * @return list<TableRowMutationDTO> Row mutations, empty when the change is about another setting
+     * @throws DatabaseException When the persisted settings lookup fails
+     * @throws SettingException When the settings catalog metadata or value is invalid
+     * @throws LogicException When the settings collection classes are misconfigured
+     * @throws InvalidArgumentException When the settings lookup is given an invalid query
+     */
+    public function buildMutationsForSourceEvent(SourceChange $change): array
+    {
+        $mutation = $this->buildMutationForSourceEvent($change);
+        if ($mutation === null) {
+            return [];
+        }
+        if ($mutation->rowKey !== SecondFactorSettings::ENABLED_KEY) {
+            return [$mutation];
+        }
+
+        $mutations = [];
+        foreach (SecondFactorSettings::KEYS as $key) {
+            $mutations[] = $this->mutation(TableMutationType::Update, $key, $this->row($key));
+        }
+
+        return $mutations;
+    }
+
+    /**
      * Serializes the row into its internal browser-row envelope.
      *
      * @param AbstractTableRow $row Setting row from this table's snapshot or mutation
@@ -109,6 +146,8 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
      * Declares where each field of a two-factor setting row comes from, for a viewer of the admin view mode (HIL-1250).
      *
      * Row key is not personal; value and defaultValue follow the visibility of that settings catalog key.
+     * editDisabledReason follows the general switch's key: the sentence is there exactly when that switch is off,
+     * so a viewer the switch is hidden from must not read its position out of the reason.
      *
      * @return array<string, WireField>
      */
@@ -118,6 +157,7 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
             HilosSecurityTwoFactorTableRow::rowKey => WireField::notPersonal(),
             HilosSecurityTwoFactorTableRow::value => WireField::settingFrom(HilosSecurityTwoFactorTableRow::rowKey),
             HilosSecurityTwoFactorTableRow::defaultValue => WireField::settingFrom(HilosSecurityTwoFactorTableRow::rowKey),
+            HilosSecurityTwoFactorTableRow::editDisabledReason => WireField::setting(SecondFactorSettings::ENABLED_KEY),
         ];
     }
 
@@ -154,6 +194,8 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     /**
      * Builds the row of one setting.
      *
+     * Every row but the general switch carries why it is locked while that switch is off, and null while it is on.
+     *
      * @param string $key Setting key
      * @return HilosSecurityTwoFactorTableRow The row
      * @throws DatabaseException When the persisted settings lookup fails
@@ -168,12 +210,16 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
         if (!is_scalar($default)) {
             throw new LogicException("Second-factor setting '{$key}' has a default that is not a single value");
         }
+        $editDisabledReason = $key === SecondFactorSettings::ENABLED_KEY || $settings[SecondFactorSettings::ENABLED_KEY]->bool()
+            ? null
+            : self::LOCKED_WHILE_OFF;
 
         if ($settings->typeFor($key) === SettingsCatalogConstants::TYPE_BOOLEAN) {
             return new HilosSecurityTwoFactorTableRow(
                 rowKey: $key,
                 value: $this->switchText($settings[$key]->bool()),
                 defaultValue: $this->switchText((bool) $default),
+                editDisabledReason: $editDisabledReason,
             );
         }
 
@@ -183,6 +229,7 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
                 ? (string) $settings[$key]->int()
                 : $settings[$key]->string(),
             defaultValue: (string) $default,
+            editDisabledReason: $editDisabledReason,
         );
     }
 

@@ -59,8 +59,18 @@ function router(): HilosRouter {
   }
 }
 
-/** A setting row's slot, with the given value. */
-function settingSlot(rowKey: string, value: string): Record<string, unknown> {
+/** What the server says on a row below the first while the factor is off. */
+const LOCKED_WHILE_OFF = 'Turn on two-step verification to change this setting.'
+
+/**
+ * A setting row's slot, with the given value and, below the first row while
+ * the factor is off, the server's reason why it is locked.
+ */
+function settingSlot(
+  rowKey: string,
+  value: string,
+  factorOn = true,
+): Record<string, unknown> {
   return {
     rowKey,
     value,
@@ -70,6 +80,8 @@ function settingSlot(rowKey: string, value: string): Record<string, unknown> {
         : rowKey === ENABLED || rowKey === FORGET
           ? 'true'
           : '30',
+    editDisabledReason:
+      rowKey === ENABLED || factorOn ? null : LOCKED_WHILE_OFF,
   }
 }
 
@@ -86,14 +98,14 @@ function seededContext(
 } {
   let settings = new Map<string, Record<string, unknown>>([
     [ENABLED, settingSlot(ENABLED, enabled)],
-    [FORGET, settingSlot(FORGET, 'true')],
+    [FORGET, settingSlot(FORGET, 'true', enabled === 'true')],
     [
       REQUIRED,
       hiddenRequired
         ? { rowKey: REQUIRED, value: { _hidden: true }, defaultValue: 'none' }
-        : settingSlot(REQUIRED, 'admins'),
+        : settingSlot(REQUIRED, 'admins', enabled === 'true'),
     ],
-    [TRUST_DAYS, settingSlot(TRUST_DAYS, '30')],
+    [TRUST_DAYS, settingSlot(TRUST_DAYS, '30', enabled === 'true')],
   ])
   const focus: string[] = []
   const scopes = new ScopeManager()
@@ -219,13 +231,27 @@ function seededContext(
       actions,
     },
     pushUpdate(rowKey: string, value: string): void {
-      const setting = settingSlot(rowKey, value)
+      const factorOn =
+        (rowKey === ENABLED ? value : settings.get(ENABLED)?.value) !== 'false'
+      const setting = settingSlot(rowKey, value, factorOn)
       settings = new Map(settings).set(rowKey, setting)
       pushDelta({
         kind: 'row_updated',
         rowKey,
         row: { rowKey, slots: { setting } },
       })
+      if (rowKey !== ENABLED) return
+      // As the server does: the switch redraws every row it locks or frees.
+      for (const [key, slot] of settings) {
+        if (key === ENABLED || typeof slot.value !== 'string') continue
+        const redrawn = settingSlot(key, slot.value, factorOn)
+        settings = new Map(settings).set(key, redrawn)
+        pushDelta({
+          kind: 'row_updated',
+          rowKey: key,
+          row: { rowKey: key, slots: { setting: redrawn } },
+        })
+      }
     },
     pushRemove(rowKey: string): void {
       settings = new Map(settings)

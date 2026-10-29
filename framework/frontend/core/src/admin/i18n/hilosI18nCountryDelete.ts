@@ -60,6 +60,19 @@ export function hilosI18nCountryDeleteReason(
     : HILOS_I18N_COUNTRY_DELETE_COPY.unavailable
 }
 
+/**
+ * Read why a table row's deletion is blocked, in the server's own sentence,
+ * never looked up in the copy by code; null when deletion is allowed. The card
+ * and the dialog target keep {@link hilosI18nCountryDeleteReason}.
+ *
+ * @param row The live row.
+ */
+export function hilosI18nCountryRowDeleteReason(
+  row: Pick<HilosI18nCountryRow, 'deleteDisabledReason'>,
+): string | null {
+  return row.deleteDisabledReason
+}
+
 /** Project a parsed row without deriving a second deletion policy. */
 export function hilosI18nCountryDeleteFromRow(
   row: HilosI18nCountryRow | null | undefined,

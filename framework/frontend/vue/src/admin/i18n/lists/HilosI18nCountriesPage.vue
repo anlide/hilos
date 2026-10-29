@@ -202,7 +202,7 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
         />
       </template>
       <template #cell-actions="{ row }">
-        <div class="d-flex align-items-start gap-2">
+        <span class="hilos-button-group d-md-inline-flex gap-1">
           <button
             type="button"
             class="btn btn-sm"
@@ -224,7 +224,7 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
             :row="row"
             @delete="openDelete(row.rowKey)"
           />
-        </div>
+        </span>
       </template>
     </HilosViewportTable>
     <HilosI18nMarksLegend

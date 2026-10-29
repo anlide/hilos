@@ -56,6 +56,7 @@ export const language: HilosI18nLanguageRow = {
   isOwn: false,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 
 /** The main card of {@link language}. */
@@ -224,6 +225,7 @@ export const country: HilosI18nCountryRow = {
   catalogDefaultLocaleCode: 'en-US',
   canDelete: false,
   deleteReason: 'known',
+  deleteDisabledReason: null,
 }
 
 /** The main card of {@link country}. */
