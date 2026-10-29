@@ -42,6 +42,21 @@ no longer in the DOM, and the failure never names its cause (HIL-994). The
 `<!--v-if-->` placeholder the runtime writes for a branch-less `v-if` is not a
 template comment and stays.
 
+### Unit and component assertions — behavior, accessibility and semantics
+
+When creating, changing or reviewing a unit/component test, assert behavior,
+accessibility and the component's semantic contract. A component's own test
+holds its meaningful structure: roles, accessible names, relationships and
+data. It does not freeze its Bootstrap styling (`d-flex`, `gap-3`, `py-3`,
+`fw-semibold`), colors or layout. Removing a cosmetic e2e assertion is not a
+reason to move that assertion into a unit test.
+
+For example, a notification preference's Email data, accessible switch name
+and decorative icon's `aria-hidden` are meaningful checks in its component
+test; the row's spacing classes and the icon's Bootstrap class are not. Keep
+that accessibility proof in the owning component test instead of repeating it
+in every entity scenario.
+
 ### Where a unit test file lives
 
 A test sits next to its module if and only if that module is a Vue SFC; every
@@ -103,6 +118,84 @@ once — `framework/frontend/prerender/test/discovery-unrouted.test.ts:6`.
 End-to-end uses **Playwright**, with **one** test driving **N** browser contexts
 against one live daemon. The multi-context shape is what makes the broadcast and
 cross-user features testable at all.
+
+### Choose the scenario before adding coverage
+
+Before adding an e2e test or spec, name **action → visible result → unique
+failure** that unit tests and existing scenarios do not already catch. Search
+for the entity's existing spec and the human journey's test/step first. Add the
+new action or refusal to that journey when it belongs there, using `test.step`
+to keep each action and its visible outcome readable.
+
+A new entity or an independent behavioral boundary can justify a new scenario;
+a ticket name or an individual CRUD command cannot. Putting one test per
+action under a shared `describe` does not make an entity journey. The language
+and country lifecycle tests in `demo/tasks/tests/e2e/tests/i18n-language.spec.ts`
+and `i18n-country.spec.ts` show one test-scoped fixture and administrator across
+named steps. Their independent live, identity and multi-tab scenarios remain
+separate tests. No test depends on a previous test completing successfully.
+
+Only after a new file is justified, apply "Which demo carries a spec" below
+to choose its home and load. This does not redistribute existing copies among
+the SDKs. A cosmetic change brings no new e2e test; use the assertion rules
+below when reviewing existing coverage too.
+
+### What assertions prove — seven rules
+
+1. **Function, not decoration.** Do not assert styling classes (`h4`, `bg-*`,
+   `text-*`, `bi-*`, `.card`), computed colors or styling properties through
+   `toHaveCSS`. Browser geometry that proves an element fits or does not
+   overflow is functional coverage; use the shared geometry helpers. Unit and
+   component tests follow "Unit and component assertions" above too.
+2. **Keep behavior through a redraw.** Do not freeze either the old or the new
+   layout: the presence or absence of a shared head, breadcrumbs, a tab row,
+   the former child-page card grid or a card wrapper around a table is not an
+   e2e outcome. A screen awaiting a redraw and a redrawn screen owe the same
+   behavior. The state-specific absence of a head on a 404, while its answer
+   is held, or after leaving the page remains a behavioral check.
+3. **Use hooks to find, not to prove.** `data-id` is Playwright's stable lookup
+   hook, not an assertion subject. Do not write
+   `toHaveAttribute('data-id', ...)` to prove which component rendered a node.
+   Find the page heading with `getByRole('heading', { level: 1 })`; the correct
+   title and exactly one h1 still prove data and accessibility. Action selectors
+   keep their stable ids; see "Selectors" below.
+4. **Do not freeze DOM arrangement.** Do not assert element order or adjacency
+   (`nextElementSibling`, Time zone before Theme), the order of sections or
+   links, or field/wrapper counts as a picture of the page (exactly three `dd`
+   or one `hilos-table-cards`). Test titles name behavior, without prescribing
+   order or appearance. The component's own unit tests hold meaningful
+   semantic structure, subject to the unit rule above; cosmetic arrangement
+   does not become a unit contract.
+5. **Read data, not permanent copy.** Do not reread fixed help text and field
+   captions in place of checking values. An accessible name or the reason a
+   particular action was refused is a semantic outcome, not decorative copy.
+6. **A caption-only visit is not a scenario.** Opening a page and rereading its
+   permanent container or heading earns no separate test when navigation,
+   cold entry and data are already proved elsewhere. In a coverage cleanup,
+   remove such a test rather than renaming it as a scenario. Compare the
+   promise in its comment with its actual assertions. For a mixed test,
+   preserve useful data, navigation and live checks and remove only the
+   cosmetic assertions; do not discard the whole test.
+7. **Preserve behavioral and accessibility proofs.** Keep creation and cleanup,
+   data, access and refusal reasons, read-only guarantees, clearing a field,
+   live updates, reconnect, cold entry, F5, links and Back/Forward navigation.
+   Keep accessible roles, one h1, `aria-current`, keyboard and focus behavior,
+   and stand transport proofs. Judge the assertion's purpose, not its matcher
+   name or the mere fact that it reads the DOM:
+
+   - Zero write controls on a read-only surface proves its promise; counting
+     `div`, `dd` or cards to freeze its drawing does not.
+   - `tablist` count zero while ordinary navigation links remain live proves
+     accessibility; an absent tab row merely proving a new layout does not.
+     `aria-current` and following the links prove real navigation.
+   - `fitsInScrollport` proves fit; `overflow-wrap: break-word` prescribes a
+     styling choice. Geometry uses the toolbox and still runs at the configured
+     desktop width: it permits neither 375 px nor a width/dark-theme matrix.
+   - The theme feature's own specs keep proof of the chosen mode, including
+     the built first frame; the "Light theme, desktop width" exception below
+     stays narrow. Other features do not gain palette checks.
+   - A decorative icon's `aria-hidden` belongs in its component's own unit
+     test, without duplicating it in every entity journey.
 
 ### The three categories
 
@@ -315,8 +408,10 @@ are proved in these files on all three kits, through the checks of
 `expectDeletedCountryCardReloaded`. The temporary React head specs of
 ecommerce-shop (HIL-1604) moved into tasks (HIL-1606), so ecommerce-shop and
 online-testing mount the section without specs. The section's tests share the
-database state in file order, and use the shared test-command helpers in
-`framework/frontend/scripts/i18n.mjs`.
+database and daemon within a run. Prepare each scenario's preconditions without
+depending on file order. Use the shared test-command operations in
+`framework/frontend/scripts/i18n.mjs` through the test-scoped
+`framework/frontend/scripts/i18nFixtures.mjs` fixture described below.
 
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
@@ -410,18 +505,27 @@ HIL-1324 and HIL-1325 moved their specs (run 0995, the test box, 2026-10-09),
 `chat-e2e` carried 129 tests and took 572 seconds, and the chain about 11m54s
 (`chat-php` 117 s, `chat-e2e` 572 s, `chat-check` 25 s).
 
-## Backend state — full reset per test
+## Backend state — clean runs and test-owned preconditions
 
-Each test gets a **full reset of the database and daemon** — the established
-approach, fast enough in practice. This is deliberately **not**
-transaction-rollback (a poor fit for a long-running, multi-worker WS daemon) and
-**not** data-namespacing. A test starts from a known, seeded state.
+The full clean cycle resets the database and daemon **between runs**, including
+a pointed re-run; follow [Re-running tests and state between runs](../testing.md#re-running-tests-and-state-between-runs).
+Within a suite, tests share the database and daemon. There is no full reset
+before every test and no per-test transaction rollback around the live daemon.
+Each test owns its created preconditions and their cleanup, and must work
+without a neighboring test having passed. Use the fixture operations below;
+neither an implicit global reset nor direct SQL substitutes for that ownership.
 
-## Selectors — stable ids only
+## Selectors — stable action hooks and semantic headings
 
-e2e interacts through **stable element ids** only: every interactive element
-carries an id, and tests never use text- or position-based selectors. This keeps
-e2e robust against copy and layout changes.
+Select interactive elements by stable `data-id` through `getByTestId`; do not
+replace action hooks with generic text or positional searches. `data-id` is
+the configured `testIdAttribute`, not an outcome to assert with
+`toHaveAttribute('data-id', ...)`.
+
+Find the page heading with `page.getByRole('heading', { level: 1 })`, without
+a component-specific head id. Assert its title and count when proving page
+identity and the single-h1 accessibility contract. This semantic lookup survives
+a head redraw and does not relax the stable-hook rule for actions.
 
 ## The shared toolbox — look there first, leave there what you grow
 
@@ -514,6 +618,69 @@ environment and delegates transport to `createCommandChannel`
 cluster host override remains supported by `createStandCommandChannel`.
 The scripts folder is a vitest project, so the shared transport has its unit
 test beside it.
+
+### Preconditions — test commands with owned cleanup
+
+Prepare surrounding state with an existing test-only command operation through
+the shared transport, not through UI forms when that operation is available.
+An operation owns only its test's resources and pairs setup with cleanup in a
+test-scoped fixture or `finally`, so setup failures, failed assertions and test
+timeouts still run teardown. Await it: remove dependents before roots, attempt
+every registered cleanup, and report cleanup errors without losing the original
+failure. Do not delete foreign, built-in or default data. Restore borrowed state
+to what the test found instead of clearing its row.
+
+`framework/frontend/scripts/i18nFixtures.mjs` is the existing example over
+`i18n.mjs`: `createI18nFixtureScope` registers cleanup after successful command
+creation and consumes it in LIFO order; `i18nFixtures` supplies Playwright's
+test-scoped `finally` and reports failures with `AggregateError`. Declare roots
+before dependents. Use it directly for i18n; another family follows the ownership
+and teardown contract without copying the whole i18n scope.
+
+From `demo/*/tests/e2e/tests/`, the real fixture binding is:
+
+```ts
+import { expect, test as base } from '@playwright/test'
+import { grantAdminToSelf } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  i18nFixtures,
+  type I18nFixtureScope,
+} from '../../../../../framework/frontend/scripts/i18nFixtures.mjs'
+
+const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
+```
+
+Inside that test, `await i18n.country({ code: 'qr', currencySymbol: '¤',
+currencyCode: 'XQR' })` prepares a companion country and registers its cleanup.
+When **creation itself is the action under test**, use
+`await i18n.ownCountry('gg')` to reserve the test-owned UI subject and arm cleanup
+before opening Add; the person then creates it through the UI. Reservation does
+not create the row and does not authorize taking a business row. The lifecycle
+examples in "Choose the scenario" use both shapes.
+
+If the needed command operation does not exist, resolve it through the task's
+normal contract process, including approval for any gated contract change.
+Do not silently add SQL or a general reset, or invent an API in the spec.
+
+### People and administrators as preconditions
+
+For an ordinary administrator, call `await grantAdminToSelf(expect, page)` once
+per scenario, not once per step. It opens the main page, grants the visitor
+rights over the command channel and waits for full access in that browser.
+When the scenario needs a verified account, use
+`createTestUser(expect, page, options)`; for a verified administrator use
+`createTestAdmin(expect, page, options)`. All three are exported from
+`framework/frontend/e2e/index.ts`. The account helpers use the existing
+`testUser.mjs` create/bind operations; preserve their declared account/session
+lifetime and do not infer a global session or `storageState` policy from them.
+
+Keep UI sign-up when registration, consent or identity creation is the subject,
+including an event whose production depends on that real registration. Likewise,
+do not replace a sign-in or session transition the scenario is proving with a
+command bind. Independent people and independent sessions keep their own browser
+contexts; a fixture must not collapse the isolation the scenario tests.
+
+### Other shared network operations
 
 For delivered letters, use `waitForMailCode(address, subject)` or the named
 registration, recovery and sign-in readers in `mail.mjs`; for the mailbox

@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos E2E Testing"
-  short_description: "Write or port e2e specs and browser or Node-only helpers"
-  default_prompt: "Use $hilos-e2e-testing to create, edit, move, split or port an e2e spec or browser or Node-only helper, reusing both shared toolboxes."
+  short_description: "Choose e2e coverage, scenarios and owned test fixtures"
+  default_prompt: "Use $hilos-e2e-testing to choose or review behavioral coverage before adding or extending a scenario, and create, edit, move, split or port its spec or browser/Node-only helpers using shared toolboxes and test-owned preconditions."

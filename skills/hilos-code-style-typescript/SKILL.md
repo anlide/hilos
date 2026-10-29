@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-typescript
-description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, the room a live message or a step takes, painting a surface so it holds in both themes, and where a unit-test file lives. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating or moving the test file of a module, when a surface gains a message that appears and disappears, or when reading or displaying refusal words. Use it too when parsing or displaying a moment, or choosing the reader's time zone. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
+description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, the room a live message or a step takes, painting a surface so it holds in both themes, and unit/component test behavior, accessibility and placement. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating, changing, reviewing or moving a unit/component test, when a surface gains a message that appears and disappears, or when reading or displaying refusal words. Use it too when parsing or displaying a moment, or choosing the reader's time zone. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
 ---
 
 # Hilos Code Style — TypeScript
@@ -28,7 +28,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/cross-layer-field-names.md` | naming a data field that crosses DB → PHP → wire → TypeScript |
 | `docs/agents/code-style/spelling.md` | writing an English identifier, string key, route, UI copy, comment, or TSDoc |
 | `docs/agents/code-style/scaffold-markers.md` | leaving code wired but intentionally uncalled |
-| `docs/agents/frontend/testing-strategy.md` | creating the first test file of a module, or moving one — the section "Where a unit test file lives" |
+| `docs/agents/frontend/testing-strategy.md` | creating, changing or reviewing unit/component tests — "Unit and component assertions — behavior, accessibility and semantics"; creating or moving their files — "Where a unit test file lives" |
 | `docs/agents/frontend/wire-protocol.md` | reading or displaying refusal words, or adding a local fallback — the section "A failure reason is a domain sentence, never an engine message" |
 | `docs/agents/frontend/styling-rules.md` | adding a message that appears and disappears on a surface — a refusal, a strip about work, a bar about new rows — the section "The room a live message takes"; or building a surface that steps through screens in one frame — the section "The room a step takes" |
 | `docs/agents/frontend/styling-rules.md` | putting a color on a surface, in any view framework — the section "Theming": the classes that follow the theme, the classes pinned to one mode and their replacements, who writes `data-bs-theme` |
@@ -54,6 +54,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   (`spelling.md`).
 - Code left wired but intentionally uncalled carries the marker at the code site,
   not only in the commit message (`scaffold-markers.md`).
+- Unit/component tests prove behavior, accessibility and semantic structure,
+  without freezing Bootstrap styling utilities, colors or layout; do not move
+  cosmetic e2e assertions into unit tests (`frontend/testing-strategy.md`).
 - A test file sits beside its module if and only if that module is a Vue SFC;
   every other test lives in its package's `test/` mirror, whose shape differs
   per package (`frontend/testing-strategy.md`).
