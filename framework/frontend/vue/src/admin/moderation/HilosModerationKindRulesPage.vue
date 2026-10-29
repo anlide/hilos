@@ -92,7 +92,12 @@ onUnmounted(() => {
   >
     <template v-if="row" #head-badges>
       <span
-        class="badge bg-body-tertiary text-body-emphasis border"
+        class="badge border"
+        :class="
+          row.owner === 'framework'
+            ? 'bg-primary-subtle text-primary-emphasis border-primary-subtle'
+            : 'bg-info-subtle text-info-emphasis border-info-subtle'
+        "
         data-id="hilos-moderation-kind-owner"
       >
         {{
@@ -176,9 +181,10 @@ onUnmounted(() => {
           <h2 class="fw-semibold small text-body-secondary mb-0">
             Built-in rules
           </h2>
-          <span class="badge bg-secondary-subtle text-secondary-emphasis">{{
-            HILOS_MODERATION_COPY.builtIn
-          }}</span>
+          <span
+            class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+            >{{ HILOS_MODERATION_COPY.builtIn }}</span
+          >
         </div>
         <p class="small text-body-secondary mb-2">
           They come with the kind and apply until you add a rule of your own.

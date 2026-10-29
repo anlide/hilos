@@ -50,7 +50,12 @@ onUnmounted(() => {
   >
     <template v-if="row" #head-badges>
       <span
-        class="badge bg-body-tertiary text-body-emphasis border"
+        class="badge border"
+        :class="
+          row.owner === 'framework'
+            ? 'bg-primary-subtle text-primary-emphasis border-primary-subtle'
+            : 'bg-info-subtle text-info-emphasis border-info-subtle'
+        "
         data-id="hilos-moderation-kind-owner"
       >
         {{
@@ -105,7 +110,7 @@ onUnmounted(() => {
             <span
               v-for="reason in row.reasons"
               :key="reason"
-              class="badge bg-secondary-subtle text-secondary-emphasis text-wrap text-break mw-100"
+              class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle text-wrap text-break mw-100"
               >{{ reason }}</span
             >
           </dd>
@@ -114,7 +119,9 @@ onUnmounted(() => {
           </dt>
           <dd class="col-sm-9 mb-0 py-1" data-id="hilos-moderation-kind-rules">
             <template v-if="row.ownRuleCount === 0">
-              <span class="badge bg-secondary-subtle text-secondary-emphasis">
+              <span
+                class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+              >
                 {{ HILOS_MODERATION_COPY.builtIn }}
               </span>
               <span class="text-body-secondary">

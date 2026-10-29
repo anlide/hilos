@@ -45,7 +45,14 @@ onUnmounted(() => kindsTable.dispose())
         >
       </template>
       <template #cell-owner="{ row }">
-        <span class="badge bg-body-tertiary text-body-emphasis border">
+        <span
+          class="badge border"
+          :class="
+            row.owner === 'framework'
+              ? 'bg-primary-subtle text-primary-emphasis border-primary-subtle'
+              : 'bg-info-subtle text-info-emphasis border-info-subtle'
+          "
+        >
           {{
             row.owner === 'framework'
               ? HILOS_MODERATION_COPY.framework
@@ -64,7 +71,7 @@ onUnmounted(() => kindsTable.dispose())
       <template #cell-ownRuleCount="{ row }">
         <span
           v-if="row.ownRuleCount === 0"
-          class="badge bg-body-tertiary text-body-emphasis border"
+          class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
           >{{ HILOS_MODERATION_COPY.builtIn }}</span
         >
         <span v-else
