@@ -7,13 +7,19 @@ import { HilosPrivacyPage } from '@hilos/react/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import { HilosPages, hilosPublicLegalNavigation } from '@hilos/core/base'
+import { router } from '../../pages/routes.js'
 
 /** One context for the page's lifetime: the page keys its store on it. */
 const context = { connection, scopes, actions }
+const navigation = hilosPublicLegalNavigation(
+  HilosPages.PRIVACY,
+  (page, params) => router.path(page, params),
+)
 
 export default function Privacy() {
   return (
-    <HilosPrivacyPage context={context}>
+    <HilosPrivacyPage context={context} navigation={navigation}>
       <p>
         This demo stores what an account and its sign-in need: your email
         address, your password in hashed form, the display name taken from the

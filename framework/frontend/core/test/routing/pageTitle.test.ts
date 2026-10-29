@@ -4,6 +4,29 @@ import { HilosPages } from '../../src/routing/hilosPages.js'
 import { resolvePageTitle } from '../../src/routing/pageTitle.js'
 
 describe('resolvePageTitle', () => {
+  it.each([
+    [HilosPages.TERMS_HISTORY, 'Terms · Revision history'],
+    [HilosPages.PRIVACY_HISTORY, 'Privacy · Revision history'],
+  ])(
+    'titles public history %s before the page answer and honors overrides',
+    (page, label) => {
+      expect(resolvePageTitle(page, {}, '', undefined, false)).toBe(label)
+      expect(resolvePageTitle(page, {}, 'Demo', undefined, false)).toBe(
+        `${label} · Demo`,
+      )
+      expect(
+        resolvePageTitle(
+          page,
+          { [page]: 'Archive' },
+          'Demo',
+          'Catalog',
+          true,
+          'Owner',
+        ),
+      ).toBe('Archive · Demo')
+    },
+  )
+
   it('titles public Status before any handshake or page answer, preserving project priority', () => {
     expect(
       resolvePageTitle(HilosPages.PUBLIC_STATUS, {}, '', undefined, false),

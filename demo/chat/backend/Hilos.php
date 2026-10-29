@@ -24,6 +24,8 @@ use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 
 use Demo\Chat\Agents\BotAgent;
@@ -172,6 +174,7 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\PrivacyPage;
+use Demo\Chat\Pages\Hilos\PrivacyHistoryPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
@@ -197,6 +200,7 @@ use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
 use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
 use Demo\Chat\Pages\Hilos\TermsPage;
+use Demo\Chat\Pages\Hilos\TermsHistoryPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
@@ -505,6 +509,8 @@ final class Hilos extends HilosFacade
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
+        TermsHistoryPage::PAGE => TermsHistoryPage::class,
+        PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
@@ -742,6 +748,8 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
         ChatTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         ChatTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
+        ChatTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+        ChatTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         ChatTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
         ChatTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
         ChatTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
@@ -902,6 +910,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        TermsHistoryPage::PAGE => [
+            ChatTableContext::hilosTermsHistory => [],
+        ],
+        PrivacyHistoryPage::PAGE => [
+            ChatTableContext::hilosPrivacyHistory => [],
+        ],
         BrowserSessionPage::PAGE => [
             ChatTableContext::hilosAnalyticsActions => [],
         ],

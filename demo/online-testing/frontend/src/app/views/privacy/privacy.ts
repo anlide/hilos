@@ -8,12 +8,14 @@ import { HilosPrivacyPage } from '@hilos/angular/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import { HilosPages, hilosPublicLegalNavigation } from '@hilos/core/base'
+import { router } from '../../pages/routes.js'
 
 @Component({
   selector: 'app-privacy',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosPrivacyPage],
-  template: `<hilos-privacy-page [context]="context">
+  template: `<hilos-privacy-page [context]="context" [navigation]="navigation">
     <p>
       This demo stores what an account and its sign-in need: your email address,
       your password in hashed form, the display name taken from the address, the
@@ -36,4 +38,8 @@ import { scopes } from '../../bootstrap/session.js'
 })
 export class Privacy {
   protected readonly context = { connection, scopes, actions }
+  protected readonly navigation = hilosPublicLegalNavigation(
+    HilosPages.PRIVACY,
+    (page, params) => router.path(page, params),
+  )
 }

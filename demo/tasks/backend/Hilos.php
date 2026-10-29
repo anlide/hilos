@@ -13,6 +13,8 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
@@ -100,6 +102,7 @@ use Demo\Tasks\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
+use Demo\Tasks\Pages\Hilos\PrivacyHistoryPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\I18nPage;
 use Demo\Tasks\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -110,6 +113,7 @@ use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Tasks\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Tasks\Pages\Hilos\TermsPage;
+use Demo\Tasks\Pages\Hilos\TermsHistoryPage;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -345,6 +349,8 @@ final class Hilos extends HilosFacade
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
+        TermsHistoryPage::PAGE => TermsHistoryPage::class,
+        PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
@@ -527,6 +533,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        TasksTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+        TasksTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         TasksTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -620,6 +628,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        TermsHistoryPage::PAGE => [
+            TasksTableContext::hilosTermsHistory => [],
+        ],
+        PrivacyHistoryPage::PAGE => [
+            TasksTableContext::hilosPrivacyHistory => [],
+        ],
         BrowserSessionPage::PAGE => [
             TasksTableContext::hilosAnalyticsActions => [],
         ],

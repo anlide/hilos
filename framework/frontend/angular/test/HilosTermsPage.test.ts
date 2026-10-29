@@ -15,7 +15,6 @@ import {
 import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
-  clause,
   first,
   legalContext,
   substantial,
@@ -236,7 +235,7 @@ it('forwards optional navigation to the shared head and updates it without remou
   ).toBe('/projects/next/fixture_history')
 })
 
-it('shows a guest the text and the history, newest first, with nothing to accept', async () => {
+it('shows a guest the current text with nothing to accept', async () => {
   const { fixture } = mountTerms({ legalTerms: termsSection }, null)
   await settle(fixture)
   expect(one('terms-reader')!.getAttribute('data-state')).toBe('guest')
@@ -244,18 +243,6 @@ it('shows a guest the text and the history, newest first, with nothing to accept
     'in force since 1 October 2026',
   )
   expect(one('terms-text')!.querySelectorAll('li')).toHaveLength(1)
-  const revisions = Array.from(
-    document.querySelectorAll('[data-id="terms-history-revision"]'),
-  )
-  expect(revisions.map((row) => row.getAttribute('data-revision'))).toEqual([
-    substantial.revisionId,
-    '2026-09-27',
-    first.revisionId,
-  ])
-  expect(
-    revisions[0]!.querySelector('[data-id="terms-history-current"]'),
-  ).not.toBeNull()
-  expect(one('terms-history-accepted')).toBeNull()
   expect(one('legal-document-accept')).toBeNull()
 })
 
@@ -274,11 +261,6 @@ it('confirms in green a reader holding the revision in force', async () => {
   expect(reader.textContent).toContain(
     'You accepted the revision of 1 October 2026',
   )
-  expect(
-    document.querySelector(
-      `[data-revision="${substantial.revisionId}"] [data-id="terms-history-accepted"]`,
-    ),
-  ).not.toBeNull()
   expect(one('legal-document-accept')).toBeNull()
 })
 
@@ -354,39 +336,6 @@ it('accepts from the comparison window and closes it on success', async () => {
   resolve({})
   await settle(fixture)
   expect(one('terms-changes-modal')).toBeNull()
-})
-
-it('opens an older revision through the page own read', async () => {
-  let resolve!: (value: ActionResult) => void
-  const { fixture, dispatch } = mountTerms(
-    { legalTerms: termsSection },
-    null,
-    vi.fn(() => ({
-      done: new Promise<ActionResult>((done) => {
-        resolve = done
-      }),
-    })),
-  )
-  await settle(fixture)
-  document
-    .querySelector<HTMLElement>(
-      `[data-revision="${first.revisionId}"] [data-id="terms-history-open"]`,
-    )!
-    .click()
-  expect(dispatch).toHaveBeenCalledWith(
-    'hilos_terms_revision_text',
-    { document: 'terms', revisionId: first.revisionId },
-    expect.anything(),
-  )
-  resolve({
-    reply: {
-      document: 'terms',
-      revisionId: first.revisionId,
-      clauses: [clause],
-    },
-  })
-  await settle(fixture)
-  expect(one('terms-revision-modal')!.textContent).toContain(clause.statement)
 })
 
 it('shows the state under a takeover but offers no acceptance', async () => {

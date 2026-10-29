@@ -30,7 +30,9 @@ import License from './views/License/License.js'
 import Main from './views/Main/Main.js'
 import MainSkeleton from './views/Main/MainSkeleton.js'
 import Privacy from './views/Privacy/Privacy.js'
+import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.js'
 import Terms from './views/Terms/Terms.js'
+import TermsHistory from './views/TermsHistory/TermsHistory.js'
 
 // The page-key → view map HilosView renders from. A page with no mapped view
 // renders nothing; a page the backend does not register is refused by the
@@ -207,7 +209,9 @@ const pages: Record<string, PageView<ComponentType>> = {
   ),
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
+  [HilosPages.TERMS_HISTORY]: TermsHistory,
   [HilosPages.PRIVACY]: Privacy,
+  [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
   [HilosPages.LICENSE]: License,
 }
 

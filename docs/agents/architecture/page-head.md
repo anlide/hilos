@@ -107,8 +107,14 @@ This presentation needs no server catalog adoption or `page_response` identity.
 Catalog adoption and the one-reply rule below continue to describe admin
 owners. A project can use the frame for its own static pages,
 but this does not activate those pages in a project's catalog or routes. The
-frame API, its defaults, and the four public pages' fixed presentation values
+frame API, its defaults, and the four footer pages' fixed presentation values
 are described in [sdk-packaging.md](../frontend/sdk-packaging.md#tier-1-cross-cutting-components).
+
+The built-in Terms and Privacy pages and their history pages use the same
+presentation through `hilosPublicLegalNavigation()`. It gives each document
+pair a Terms or Privacy tab and a Revision history tab, with addresses resolved
+by the app's router. The history views use `HilosStaticPage` too; they do not
+adopt the admin catalog, an admin page identity, or breadcrumbs.
 
 ## Catalog And Breadcrumb
 
@@ -832,9 +838,11 @@ implementation; HIL-1606 owns the epic's e2e work. Other owners' redraws, countr
 Overview tiles and their contents, and catalog translations are separate work.
 React and Angular's User redraws are also separate work.
 The local public-page presentation through `HilosStaticPage` is implemented
-across the three kits; it does not add server catalog adoption or route changes.
+across the three kits; it does not add server catalog adoption. The Terms and
+Privacy history pages are separate ordinary public routes.
 Profile and other project-page redraws, including their server adoption, remain
-Phase 2. Public route and page-key additions and revision history remain
-HIL-1609; LICENSE content remains HIL-1610; dependencies remain HIL-1611.
+Phase 2. The public Terms and Privacy history page keys, route declarations and
+history views are implemented. Those routes do not expand the footer
+prerender set. LICENSE content remains HIL-1610; dependencies remain HIL-1611.
 Mockup examples do not activate those changes. Own deletion and redirect
 behavior are not decided by this document.

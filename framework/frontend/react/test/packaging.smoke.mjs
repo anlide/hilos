@@ -166,6 +166,7 @@ try {
               )
               .join(' && ')}
             export const samePage = root.HilosSettingsPage === HilosSettingsPage
+            export const sameHistory = root.HilosLegalHistoryPage !== undefined && root.HilosLegalHistoryPage === base.HilosLegalHistoryPage
             export const descriptors = Object.values(hilosAdminViews()).every(
               view => view.kind === 'lazy-page' && typeof view.load === 'function',
             )
@@ -192,6 +193,7 @@ try {
   assert.equal(consumer.sameCoreSection, true)
   assert.equal(consumer.sameTokens, true)
   assert.equal(consumer.samePage, true)
+  assert.equal(consumer.sameHistory, true)
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
   assert.equal(await consumer.loadDefaults(), true)

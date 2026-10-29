@@ -129,6 +129,24 @@ new route. The behavior is covered by
 `framework/frontend/core/test/routing/HilosRouter.test.ts` and the live public
 Status accessibility check.
 
+## Framework Legal History Routes
+
+Terms and Privacy revision history use ordinary framework page declarations,
+not the Status exception. `HilosPages.TERMS_HISTORY` resolves to
+`/terms/history`, and `HilosPages.PRIVACY_HISTORY` to `/privacy/history`; both
+are `admin: false` declarations with no route variables; resolved matches carry
+`params: {}`. The framework provides these declarations through
+`HILOS_ROUTE_DECLARATIONS`, and each app binds its history
+view under the matching framework page key. The backend registers ordinary
+page classes for both keys, whose `page_response` carries the corresponding
+legal document projection and whose `windows` carries the first native history
+table viewport. Their framework titles are `Terms · Revision history` and
+`Privacy · Revision history`.
+
+These page keys are not footer links, so their route declarations do not expand
+the four-page public prerender set described in
+[build-and-docker.md](build-and-docker.md#ssg-and-the-public-surface).
+
 ## What the SDK provides
 
 Three `@hilos/core` exports carry the half of the wiring that is identical in

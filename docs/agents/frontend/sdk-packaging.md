@@ -298,13 +298,13 @@ context-bound wrappers and any overrides it needs. Pages its view layer has not
 built are hidden through `HILOS_UNBUILT_PAGES` (see
 [page-module-structure.md](page-module-structure.md)).
 
-The public framework pages are tier 2 as well. A public page is no longer prose
-alone — License carries a dependency inventory with a search, a filter, a
+The public framework pages are tier 2 as well. The four footer pages are not
+prose alone — License carries a dependency inventory with a search, a filter, a
 per-row modal and an export; Privacy reads the policy and reader's standing and
 offers an erase of what this browser holds behind a confirmation; About has a
-support modal; Terms reads the revision and reader's standing and displays its
-revision history. All four have framework-owned behavior, and Terms and Privacy
-also carry catalog text. The framework owns these parts: `HilosAboutPage`,
+support modal; Terms reads the revision and reader's standing. All four have
+framework-owned behavior, and Terms and Privacy also carry catalog text. The
+framework owns these parts: `HilosAboutPage`,
 `HilosTermsPage`, `HilosPrivacyPage` and
 `HilosLicensePage` under `@hilos/vue/src/public/` (and the React / Angular
 twins), one file per page. Each passes the same fixed presentation values to
@@ -320,29 +320,45 @@ twins), one file per page. Each passes the same fixed presentation values to
 Terms and Privacy use the shared
 `HilosLegalDocumentReader` and take `context: HilosLegalContext`, an object with
 `connection`, `scopes` and `actions`. Their reader comes before the project's
-optional introduction; the legal text follows it. Terms keeps its history list
-on the page, while Privacy has no history list and keeps its browser erase block
-below the policy. Privacy keeps its optional
-`values?: readonly HilosBrowserValue[]` input for browser values it erases.
-About and the legal pages
-take project prose through the **default slot** (children in React and projected
-content in Angular). `HilosLicensePage` is the exception: its project license
-text comes from the root `LICENSE` file through `projectLicenseText` in the
-`inventory` snapshot, not through slot/children. The framework owns the frame,
-the behavior and the legal catalog text; the project owns its introduction and
-the words of its other public content. Leaving the behavior as blocks a project
-pastes in would make "Privacy without the erase button" indistinguishable from
-a deliberate choice.
+optional introduction; the legal text follows it. Their revision histories
+have separate pages. Privacy keeps its browser erase block after the policy and
+its optional `values?: readonly HilosBrowserValue[]` input for browser values
+it erases.
+About, Terms and Privacy take project prose through the **default slot**
+(children in React and projected content in Angular). `HilosLicensePage` is the
+exception: its project license text comes from the root `LICENSE` file through
+`projectLicenseText` in the `inventory` snapshot, not through slot/children. The
+framework owns the frame, the behavior and the legal catalog text; the project
+owns its introduction and the words of its other public content. Leaving the
+behavior as blocks a project pastes in would make "Privacy without the erase
+button" indistinguishable from a deliberate choice.
+
+`HilosLegalHistoryPage` is the shared public history view in Vue, React and
+Angular. It takes the existing `HilosLegalContext`, a `document` key (`terms`
+or `privacy`), and optional `HilosStaticPageNavigation`. Each view kit exports
+the component from `/base` and its compatibility root. The core exports
+`createHilosLegalHistory(context, document)` and
+`hilosPublicLegalNavigation(page, resolvePath)` from `/base` and its
+compatibility root. The history factory is inert until `start()`; mounted view
+adapters start it and call its terminal `cleanup()` when they unmount. It owns
+the document and agreement projections, typed row resolver, native viewport
+controller and lazy revision-text reader. The first table window rides in the
+page response; later windows and rendered-field reports use the native table
+transport. The view opens revision text in a read-only modal and offers no
+acceptance or comparison. Its table rows arrive in the `slots.revision` wire
+slot; core computes the in-force and accepted marks from the current document
+and the reader's agreement projection.
 
 Each of `HilosAboutPage`, `HilosTermsPage`, `HilosPrivacyPage` and
 `HilosLicensePage` in Vue, React and Angular also accepts
 `navigation?: HilosStaticPageNavigation` and passes it unchanged to
 `HilosStaticPage`. The existing `context`, `inventory` and `values` inputs and
 project-content slot (children in React, projected content in Angular) remain
-unchanged; built-in pages add no title override. Current production mounts
-intentionally omit `navigation`, so the row is not shown yet. Custom static
-pages can use this capability now; the built-in revision-history and dependency
-routes arrive in HIL-1609 and HIL-1611.
+unchanged; built-in pages add no title override. The Terms and Privacy mounts
+pass the shared legal navigation, and their history views receive the same
+navigation for the complementary tab row. Custom static pages can supply their
+own navigation. The License dependency route remains future work under
+HIL-1611.
 
 No aggregate collects the four — there is no `hilosPublicViews()`. Each needs a
 project-supplied input, which is the same exception `hilosAdminViews.ts` already
@@ -478,8 +494,9 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   page's project content: prose for About, Terms and Privacy, optional browser
   values for Privacy's erase, and the inventory snapshot for License;
 - **`HilosStaticPage`** — the reusable frame for a static page, used by projects
-  and by the four public framework pages (tier 2, above). It takes required
-  `title: string` and optional `icon?: string`, `subtitle?: string`, and
+  and by the four footer pages and two legal history pages (tier 2, above). It
+  takes required `title: string` and optional `icon?: string`,
+  `subtitle?: string`, and
   `navigation?: HilosStaticPageNavigation`. Calls that supply only `title` keep
   working: the frame renders its title and body without navigation. The public
   `HilosStaticPageNavigation` interface is exported as a type from
@@ -503,9 +520,12 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   and subscribe like any page. About and License carry no page payload. Terms
   carries its current legal document and reader state; Privacy carries
   `legalPrivacy` and, for a signed-in reader with a published policy,
-  `legalAgreements`. Both legal pages receive the connection, scopes and tracked
-  actions through `HilosLegalContext`, and the project gives them an introduction
-  only;
+  `legalAgreements`. Each history page carries its matching legal document,
+  the signed-in `legalAgreements` projection when that document is available,
+  and the first native table window. The history routes are separate from the
+  four footer links and their prerender entries. The legal pages receive the
+  connection, scopes and tracked actions through `HilosLegalContext`, and the
+  project gives the Terms and Privacy pages an introduction only;
 - a **`HilosErrorBoundary`** wrapping each page or major block, so one
   component's runtime error degrades locally instead of blanking the long-lived
   SPA;

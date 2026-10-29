@@ -232,6 +232,8 @@ export interface HilosLegalPublicDocumentOptions {
   readonly page: string
   readonly section: string
   readonly copy: HilosLegalPublicDocumentCopy
+  /** Also request a whole answer when the set of personally accepted revisions changes. */
+  readonly refreshOnAcceptedChange?: boolean
 }
 
 /** One coherent page answer; derived signals always read the same snapshot. */
@@ -288,6 +290,18 @@ export function createHilosLegalPublicDocumentStore(
   const refusal = createSignal<string | null>(null)
   let stop: (() => void) | null = null
   let accept: (() => Promise<boolean>) | null = null
+  const same = (
+    left: HilosLegalAgreement | null | undefined,
+    right: HilosLegalAgreement | null | undefined,
+  ): boolean => {
+    if (!sameRevisions(left, right)) return false
+    if (!options.refreshOnAcceptedChange) return true
+    const accepted = new Set(left?.accepted.map((item) => item.revisionId))
+    const next = new Set(right?.accepted.map((item) => item.revisionId))
+    return (
+      accepted.size === next.size && [...accepted].every((id) => next.has(id))
+    )
+  }
 
   return {
     document: computedSignal(() => snapshot.get().document),
@@ -351,8 +365,8 @@ export function createHilosLegalPublicDocumentStore(
         // answer. The complete answer itself may already be newer than a hint.
         if (expected !== undefined && !actionPending) {
           if (
-            !sameRevisions(expected, requested) &&
-            !sameRevisions(expected, snapshot.get().agreement)
+            !same(expected, requested) &&
+            !same(expected, snapshot.get().agreement)
           ) {
             refresh()
           } else {
@@ -397,7 +411,7 @@ export function createHilosLegalPublicDocumentStore(
             (item) => item.document === options.document,
           ) ?? null
         expected = next
-        if (!sameRevisions(next, previous)) {
+        if (!same(next, previous)) {
           // An acceptance already in flight will ask on its completion. The
           // accompanying group frame must not send a second identical request.
           if (!actionPending) refresh()

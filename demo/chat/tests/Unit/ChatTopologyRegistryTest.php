@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Daemon\ChatWorkerManager;
+use Demo\Chat\Pages\Hilos\TermsHistoryPage;
+use Demo\Chat\Pages\Hilos\PrivacyHistoryPage;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Core\Page\PageSignalRouter;
 use ReflectionMethod;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
@@ -507,6 +511,24 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
+    public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
+    {
+        self::assertSame(TermsHistoryPage::class, Hilos::PAGES[TermsHistoryPage::PAGE]);
+        self::assertSame(PrivacyHistoryPage::class, Hilos::PAGES[PrivacyHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[TermsHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[PrivacyHistoryPage::PAGE]);
+        self::assertSame(HilosTermsHistoryTable::class, Hilos::TABLES[ChatTableContext::hilosTermsHistory]);
+        self::assertSame(HilosPrivacyHistoryTable::class, Hilos::TABLES[ChatTableContext::hilosPrivacyHistory]);
+        self::assertSame([ChatTableContext::hilosTermsHistory => []], Hilos::PAGE_TABLES[TermsHistoryPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosPrivacyHistory => []], Hilos::PAGE_TABLES[PrivacyHistoryPage::PAGE]);
+        self::assertSame([], TermsHistoryPage::ACTIONS);
+        self::assertSame([], PrivacyHistoryPage::ACTIONS);
+        self::assertSame('hilos_terms', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame('hilos_privacy', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+    }
+
     public function testSessionNameChangesHaveOneAuthSessionOwner(): void
     {
         self::assertContains(HilosFeature::AUTH, Hilos::features());

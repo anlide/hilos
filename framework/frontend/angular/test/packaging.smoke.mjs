@@ -249,6 +249,8 @@ for (const [name, value] of Object.entries(base)) {
 // The shared page head is a common primitive: it ships in the clean base
 // closure, which the root re-exports, not in an admin section.
 assert.notEqual(base.HilosPageHead, undefined, 'HilosPageHead')
+assert.notEqual(base.HilosLegalHistoryPage, undefined, 'HilosLegalHistoryPage')
+assert.equal(root.HilosLegalHistoryPage, base.HilosLegalHistoryPage)
 assert.ok(modules(closure(baseName)).includes('src/HilosPageHead.ts'))
 assert.equal(root.HilosSettingsPage, HilosSettingsPage)
 assert.equal(root.HilosAnalyticsPage, HilosAnalyticsPage)

@@ -40,6 +40,7 @@ import { License } from './views/license/license'
 import { Main } from './views/main/main'
 import { MainSkeleton } from './views/main/main-skeleton'
 import { Privacy } from './views/privacy/privacy'
+import { PrivacyHistory } from './views/privacy-history/privacy-history.js'
 import { Profile } from './views/profile/profile.js'
 import { ProfileSignIn } from './views/profile/profile-sign-in.js'
 import { ProfileSessions } from './views/profile/profile-sessions.js'
@@ -48,6 +49,7 @@ import { ProfileAgreements } from './views/profile/profile-agreements.js'
 import { ProfileAgreementsHistory } from './views/profile/profile-agreements-history.js'
 import { ProfileData } from './views/profile/profile-data.js'
 import { Terms } from './views/terms/terms'
+import { TermsHistory } from './views/terms-history/terms-history.js'
 
 @Component({
   selector: 'app-root',
@@ -479,7 +481,9 @@ export class App {
     ),
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
+    [HilosPages.TERMS_HISTORY]: TermsHistory,
     [HilosPages.PRIVACY]: Privacy,
+    [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
     [HilosPages.LICENSE]: License,
   }
 

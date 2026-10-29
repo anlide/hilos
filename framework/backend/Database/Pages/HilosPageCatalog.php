@@ -18,10 +18,10 @@ use Hilos\Constants\HilosPageConstants;
  * source. Once i18n lands, a translation is laid over it and this table stays as the fallback,
  * which is why it lives beside the database layer rather than in `Constants/`.
  *
- * Six routed pages carry no entry on purpose: `hilos_about`, `hilos_terms`, `hilos_privacy`
- * and `hilos_license` are public footer pages rather than catalog sections, and `hilos_guardian` with
- * `hilos_guardian_agent` are the mirror gap HIL-345 answers. A page without an entry is not an
- * error - its subscription simply answers without identity.
+ * Eight routed pages carry no entry on purpose: `hilos_about`, `hilos_terms`, `hilos_privacy`,
+ * `hilos_terms_history`, `hilos_privacy_history` and `hilos_license` are public footer pages rather
+ * than catalog sections, and `hilos_guardian` with `hilos_guardian_agent` are the mirror gap HIL-345 answers.
+ * A page without an entry is not an error - its subscription simply answers without identity.
  *
  * @see PageCatalogResolver
  */

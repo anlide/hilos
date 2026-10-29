@@ -178,6 +178,12 @@ final class PageConstants
     /** @var string Hilos public Privacy page */
     public const string HILOS_PRIVACY = HilosPageConstants::HILOS_PRIVACY;
 
+    /** @var string Hilos public Terms history page */
+    public const string HILOS_TERMS_HISTORY = HilosPageConstants::HILOS_TERMS_HISTORY;
+
+    /** @var string Hilos public Privacy history page */
+    public const string HILOS_PRIVACY_HISTORY = HilosPageConstants::HILOS_PRIVACY_HISTORY;
+
     /** @var string Hilos public License page */
     public const string HILOS_LICENSE = HilosPageConstants::HILOS_LICENSE;
 }

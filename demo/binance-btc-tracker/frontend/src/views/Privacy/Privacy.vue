@@ -8,12 +8,22 @@ import { HilosPrivacyPage } from '@hilos/vue/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import { HilosPages, hilosPublicLegalNavigation } from '@hilos/core/base'
+import { router } from '../../pages/routes.js'
+
+const navigation = hilosPublicLegalNavigation(
+  HilosPages.PRIVACY,
+  (page, params) => router.path(page, params),
+)
 
 defineOptions({ name: 'PrivacyPage' })
 </script>
 
 <template>
-  <HilosPrivacyPage :context="{ connection, scopes, actions }">
+  <HilosPrivacyPage
+    :context="{ connection, scopes, actions }"
+    :navigation="navigation"
+  >
     <p>
       This demo stores what an account and its sign-in need: your email address,
       your password in hashed form, the display name taken from the address, the

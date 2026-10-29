@@ -36,6 +36,13 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Pages\AbstractHilosTermsPage;
+use Hilos\Pages\AbstractHilosPrivacyPage;
+use Hilos\Pages\AbstractHilosTermsHistoryPage;
+use Hilos\Pages\AbstractHilosPrivacyHistoryPage;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\PageAccessLevel;
@@ -83,6 +90,33 @@ final class TopologyValidatorTest extends TestCase
         HilosFacade::$ac = null;
 
         parent::tearDown();
+    }
+
+    public function testPublicHistoryBindingsAreAdditiveAndDoNotDuplicateReadOwners(): void
+    {
+        TopologyPublicHistoryHilos::validateTopology();
+        self::assertSame([
+            HilosPageConstants::HILOS_TERMS => TopologyPublicTermsPage::class,
+            HilosPageConstants::HILOS_PRIVACY => TopologyPublicPrivacyPage::class,
+            HilosPageConstants::HILOS_TERMS_HISTORY => TopologyPublicTermsHistoryPage::class,
+            HilosPageConstants::HILOS_PRIVACY_HISTORY => TopologyPublicPrivacyHistoryPage::class,
+        ], TopologyPublicHistoryHilos::PAGES);
+        self::assertSame([
+            HilosTermsHistoryTable::TABLE => HilosTermsHistoryTable::class,
+            HilosPrivacyHistoryTable::TABLE => HilosPrivacyHistoryTable::class,
+        ], TopologyPublicHistoryHilos::TABLES);
+        self::assertSame([
+            HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS,
+            HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT => HilosPageConstants::HILOS_PRIVACY,
+        ], TopologyPublicHistoryHilos::getPageActionRoutes());
+        foreach ([TopologyPublicTermsHistoryPage::class, TopologyPublicPrivacyHistoryPage::class] as $page) {
+            self::assertSame(PageAccessLevel::PUBLIC, $page::ACCESS_LEVEL);
+            self::assertSame([], $page::ACTIONS);
+            self::assertSame([], $page::READING_ACTIONS);
+        }
+        $factory = new HilosPageFactory(new TopologyValidAgent(), HilosFacade::class);
+        self::assertTrue($factory->hasPage(HilosPageConstants::HILOS_TERMS_HISTORY));
+        self::assertTrue($factory->hasPage(HilosPageConstants::HILOS_PRIVACY_HISTORY));
     }
 
     public function testValidTopologyPasses(): void
@@ -8324,5 +8358,48 @@ final class TopologyThrottleDuplicateHilos extends TopologyThrottleTwoHostsHilos
             AgentRegistryKey::DAEMON => TopologyThrottleParkingAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
         ],
+    ];
+}
+
+/** Public readers use the normal registry and keep their read actions on their original hosts. */
+final class TopologyPublicTermsPage extends AbstractHilosTermsPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+final class TopologyPublicPrivacyPage extends AbstractHilosPrivacyPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+final class TopologyPublicTermsHistoryPage extends AbstractHilosTermsHistoryPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+final class TopologyPublicPrivacyHistoryPage extends AbstractHilosPrivacyHistoryPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+abstract class TopologyPublicHistoryHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPublicTermsPage::PAGE => TopologyPublicTermsPage::class,
+        TopologyPublicPrivacyPage::PAGE => TopologyPublicPrivacyPage::class,
+        TopologyPublicTermsHistoryPage::PAGE => TopologyPublicTermsHistoryPage::class,
+        TopologyPublicPrivacyHistoryPage::PAGE => TopologyPublicPrivacyHistoryPage::class,
+    ];
+
+    public const array AGENTS = TopologyValidHilos::AGENTS;
+
+    public const array TABLES = [
+        HilosTermsHistoryTable::TABLE => HilosTermsHistoryTable::class,
+        HilosPrivacyHistoryTable::TABLE => HilosPrivacyHistoryTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        TopologyPublicTermsHistoryPage::PAGE => [HilosTermsHistoryTable::TABLE => []],
+        TopologyPublicPrivacyHistoryPage::PAGE => [HilosPrivacyHistoryTable::TABLE => []],
     ];
 }

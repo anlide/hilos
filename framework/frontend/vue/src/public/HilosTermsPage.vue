@@ -2,16 +2,13 @@
 Terms revision in force, read from the project's legal catalog, with the
 project's own prose as an optional introduction (the default slot) above it.
 
-Top to bottom: the heading, the reader's line, the introduction, the text and
-the revision history. The reader's line says where the person stands - a guest
+Top to bottom: the heading, the reader's line, the introduction and the text.
+Revision history has its own page. The reader's line says where the person stands - a guest
 since when the revision is in force, a signed-in person which revision they
 hold - and, while a decision is due, carries the deadline plate, "Accept the
 new revision" and "What changed". Only the Terms are accepted here: the
 documents are independent, and Privacy accepts its own revision. The line turns green on the server's answer,
 never ahead of it.
-
-The history is everybody's, a guest's included: every revision opens through
-the page's own read. Comparing neighbouring revisions stays on the profile.
 
 Nothing here touches the browser when it renders: the store starts on mount,
 so the prerendered file carries the heading, the introduction and the loading
@@ -20,16 +17,13 @@ only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
-  createHilosLegalRevisionReader,
   createHilosLegalTermsStore,
-  describeHilosLegalRevision,
   describeHilosLegalTermsReader,
   formatHilosLegalDate,
   hilosLegalReconsentPerson,
   LEGAL_RECONSENT_COPY,
   LEGAL_TERMS_COPY,
   sessionAccountStanding,
-  TERMS_REVISION_TEXT_ACTION,
   type HilosLegalContext,
   type HilosStaticPageNavigation,
 } from '@hilos/core/base'
@@ -59,11 +53,6 @@ const accepting = useSignal(store.accepting)
 const refusal = useSignal(store.refusal)
 const person = useSignal(hilosLegalReconsentPerson)
 const standing = useSignal(sessionAccountStanding(props.context.scopes))
-const reader = createHilosLegalRevisionReader(props.context, {
-  textAction: TERMS_REVISION_TEXT_ACTION,
-})
-const dialog = useSignal(reader.dialog)
-
 /** Whether the comparison of the held revision with the one in force is open. */
 const comparing = ref(false)
 
@@ -73,17 +62,6 @@ const line = computed(() =>
     frozen: standing.value?.frozen === true,
     now: Date.now(),
   }),
-)
-const history = computed(() =>
-  terms.value ? terms.value.revisions.slice().reverse() : [],
-)
-const accepted = computed(
-  () =>
-    new Set(
-      person.value === null
-        ? []
-        : (agreement.value?.accepted.map((item) => item.revisionId) ?? []),
-    ),
 )
 const changes = computed(() =>
   comparing.value && line.value.canCompare
@@ -97,15 +75,6 @@ const changesTitle = computed(() =>
         .replace('{from}', publishedOf(changes.value.fromRevisionId))
         .replace('{to}', publishedOf(changes.value.toRevisionId)),
 )
-const revisionTitle = computed(() =>
-  dialog.value === null
-    ? ''
-    : copy.revisionTitle.replace(
-        '{date}',
-        publishedOf(dialog.value.revisionId),
-      ),
-)
-
 // A comparison that has nothing left to show - accepted, or the revision moved - is closed, not parked.
 watch(changes, (value) => {
   if (value === null) comparing.value = false
@@ -117,7 +86,6 @@ onMounted(() => {
 })
 onUnmounted(() => {
   stop?.()
-  reader.close()
 })
 
 /**
@@ -182,100 +150,6 @@ async function onAccept(): Promise<void> {
     <div v-else data-id="terms-text">
       <HilosLegalRevisionText :clauses="terms.clauses" />
     </div>
-
-    <template v-if="terms">
-      <h2
-        class="h6 text-uppercase text-body-secondary mb-2 mt-4"
-        data-id="terms-history"
-      >
-        {{ copy.history }}
-      </h2>
-      <div
-        v-for="revision in history"
-        :key="revision.revisionId"
-        class="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom"
-        data-id="terms-history-revision"
-        :data-revision="revision.revisionId"
-      >
-        <i
-          class="bi bi-file-earmark-text fs-5 text-body-secondary"
-          aria-hidden="true"
-        ></i>
-        <div class="flex-grow-1 text-break">
-          <div class="fw-semibold small">
-            {{ formatHilosLegalDate(revision.publishedOn) }}
-            <span
-              v-if="revision.revisionId === terms.current.revisionId"
-              class="badge text-bg-primary ms-1"
-              data-id="terms-history-current"
-              >{{ copy.inForce }}</span
-            >
-            <span
-              v-if="accepted.has(revision.revisionId)"
-              class="badge text-bg-success ms-1"
-              data-id="terms-history-accepted"
-              >{{ copy.youAccepted }}</span
-            >
-          </div>
-          <div class="small text-body-secondary">
-            {{ describeHilosLegalRevision(revision) }}
-          </div>
-        </div>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          data-id="terms-history-open"
-          @click="reader.open('terms', revision.revisionId)"
-        >
-          {{ copy.open }}
-        </button>
-      </div>
-    </template>
-
-    <HilosModal
-      :model-value="dialog !== null"
-      :title="revisionTitle"
-      initial-focus="dialog"
-      size="wide"
-      @update:model-value="
-        (open) => {
-          if (!open) reader.close()
-        }
-      "
-    >
-      <div v-if="dialog" data-id="terms-revision-modal">
-        <div class="visually-hidden" role="status" aria-live="polite">
-          {{ dialog.busy ? copy.revisionLoading : '' }}
-        </div>
-        <p
-          class="small text-body-secondary"
-          :class="{ invisible: !dialog.busy }"
-          data-id="legal-dialog-loading"
-          :aria-hidden="!dialog.busy"
-        >
-          {{ copy.revisionLoading }}
-        </p>
-        <HilosFormError
-          :message="dialog.refusal"
-          data-id="legal-dialog-refusal"
-          announce
-        />
-        <HilosLegalRevisionText
-          v-if="dialog.text"
-          :clauses="dialog.text.clauses"
-        />
-      </div>
-      <template #actions="{ requestClose }"
-        ><button
-          type="button"
-          class="btn btn-secondary"
-          data-id="terms-revision-close"
-          @click="requestClose"
-        >
-          {{ reconsentCopy.close }}
-        </button></template
-      >
-    </HilosModal>
 
     <HilosModal
       :model-value="changes !== null"

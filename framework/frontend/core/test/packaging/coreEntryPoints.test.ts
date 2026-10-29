@@ -49,6 +49,7 @@ import * as accountDeletion from '../../src/profile/accountDeletion.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
 import * as profileRenameMemory from '../../src/profile/profileRenameMemory.js'
+import * as legalHistory from '../../src/legal/legalHistory.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
 const sourceRoot = join(packageRoot, 'src')
@@ -136,6 +137,20 @@ const publicLegalTypes = [
   'HilosLegalPublicDocumentReaderContext',
   'HilosLegalPublicDocumentOptions',
   'HilosLegalPublicDocumentStore',
+]
+/** Public history APIs shared by the compatibility root and base. */
+const legalHistoryValues = [
+  'LEGAL_TERMS_HISTORY_TABLE',
+  'LEGAL_PRIVACY_HISTORY_TABLE',
+  'LEGAL_HISTORY_PUBLISHED_ON_FIELD',
+  'LEGAL_HISTORY_ORIGIN_FIELD',
+  'createHilosLegalHistory',
+  'hilosPublicLegalNavigation',
+]
+const legalHistoryTypes = [
+  'HilosLegalHistory',
+  'HilosLegalHistoryRow',
+  'HilosLegalHistoryReader',
 ]
 /** The moment formatter's explicit additions to the frozen legacy snapshot. */
 const momentValues = ['formatMoment']
@@ -684,6 +699,7 @@ const expectedValues = [
   ...i18nOverviewValues,
   ...pageHeadValues,
   ...publicLegalValues,
+  ...legalHistoryValues,
   ...momentValues,
   ...accessLossValues,
   ...timeZonePickerValues,
@@ -761,6 +777,14 @@ function runtimeClosure(entry: string): string[] {
 }
 
 describe('core public entries', () => {
+  it('exports public history from one implementation in root and base', () => {
+    for (const name of legalHistoryValues) {
+      const value = legalHistory[name as keyof typeof legalHistory]
+      expect(core[name as keyof typeof core], name).toBe(value)
+      expect(base[name as keyof typeof base], name).toBe(value)
+    }
+  })
+
   it('publishes base, public Status and exactly fifteen admin sections with one tsc output per source', () => {
     const manifest = JSON.parse(
       readFileSync(join(packageRoot, 'package.json'), 'utf8'),
@@ -1074,6 +1098,7 @@ describe('core public entries', () => {
     for (const name of [
       ...pageHeadValues,
       ...publicLegalValues,
+      ...legalHistoryValues,
       ...momentValues,
       ...accessLossValues,
       ...timeZonePickerValues,
@@ -1299,6 +1324,7 @@ describe('core public entries', () => {
         ...i18nOverviewTypes,
         ...pageHeadTypes,
         ...publicLegalTypes,
+        ...legalHistoryTypes,
         ...momentTypes,
         ...accessLossTypes,
         ...timeZonePickerTypes,
@@ -1320,6 +1346,7 @@ describe('core public entries', () => {
     for (const name of [
       ...pageHeadTypes,
       ...publicLegalTypes,
+      ...legalHistoryTypes,
       ...momentTypes,
       ...accessLossTypes,
       ...momentValues,
@@ -1777,6 +1804,8 @@ describe('core public entries', () => {
     'legal/legalTerms.ts',
     'legal/legalPublicDocument.ts',
     'legal/legalPrivacy.ts',
+    'legal/legalHistory.ts',
+    'routing/pageTitle.ts',
     'routing/PageRouter.ts',
     'routing/hilosPages.ts',
     'routing/hilosUnbuiltPages.ts',

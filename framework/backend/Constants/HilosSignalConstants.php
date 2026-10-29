@@ -219,6 +219,12 @@ final class HilosSignalConstants
     /** Browser subscription signal of the public Privacy page (HIL-1608). */
     public const string SUBSCRIPTION_PAGE_HILOS_PRIVACY = 'subscription_page_hilos_privacy';
 
+    /** Browser subscription signal of the public Terms history page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_TERMS_HISTORY = 'subscription_page_hilos_terms_history';
+
+    /** Browser subscription signal of the public Privacy history page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_PRIVACY_HISTORY = 'subscription_page_hilos_privacy_history';
+
     /** Subscription signal for the profile's "Your data" section. */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_DATA = 'subscription_page_hilos_profile_data';
 

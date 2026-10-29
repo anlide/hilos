@@ -13,6 +13,8 @@ use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
@@ -96,6 +98,7 @@ use Demo\Polls\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\Polls\Pages\Hilos\PrivacyPage;
+use Demo\Polls\Pages\Hilos\PrivacyHistoryPage;
 use Demo\Polls\Pages\Hilos\AppearancePage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\I18nPage;
@@ -107,6 +110,7 @@ use Demo\Polls\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\Polls\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Polls\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Polls\Pages\Hilos\TermsPage;
+use Demo\Polls\Pages\Hilos\TermsHistoryPage;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -346,6 +350,8 @@ final class Hilos extends HilosFacade
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
+        TermsHistoryPage::PAGE => TermsHistoryPage::class,
+        PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
@@ -526,6 +532,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        PollsTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+        PollsTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         PollsTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -646,6 +654,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        TermsHistoryPage::PAGE => [
+            PollsTableContext::hilosTermsHistory => [],
+        ],
+        PrivacyHistoryPage::PAGE => [
+            PollsTableContext::hilosPrivacyHistory => [],
+        ],
         BrowserSessionPage::PAGE => [
             PollsTableContext::hilosAnalyticsActions => [],
         ],

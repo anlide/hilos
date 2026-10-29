@@ -30,7 +30,9 @@ import { License } from './views/license/license.js'
 import { Main } from './views/main/main.js'
 import { MainSkeleton } from './views/main/main-skeleton.js'
 import { Privacy } from './views/privacy/privacy.js'
+import { PrivacyHistory } from './views/privacy-history/privacy-history.js'
 import { Terms } from './views/terms/terms.js'
+import { TermsHistory } from './views/terms-history/terms-history.js'
 
 @Component({
   selector: 'app-root',
@@ -282,7 +284,9 @@ export class App {
     ),
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
+    [HilosPages.TERMS_HISTORY]: TermsHistory,
     [HilosPages.PRIVACY]: Privacy,
+    [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
     [HilosPages.LICENSE]: License,
   }
 

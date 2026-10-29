@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Unit;
 
 use Demo\EcommerceShop\Core\Daemon\EcommerceShopWorkerManager;
+use Demo\EcommerceShop\Pages\Hilos\TermsHistoryPage;
+use Demo\EcommerceShop\Pages\Hilos\PrivacyHistoryPage;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Core\Page\PageSignalRouter;
 use ReflectionClass;
 use ReflectionMethod;
@@ -243,6 +247,24 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
+    public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
+    {
+        self::assertSame(TermsHistoryPage::class, Hilos::PAGES[TermsHistoryPage::PAGE]);
+        self::assertSame(PrivacyHistoryPage::class, Hilos::PAGES[PrivacyHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[TermsHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[PrivacyHistoryPage::PAGE]);
+        self::assertSame(HilosTermsHistoryTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosTermsHistory]);
+        self::assertSame(HilosPrivacyHistoryTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosPrivacyHistory]);
+        self::assertSame([EcommerceShopTableContext::hilosTermsHistory => []], Hilos::PAGE_TABLES[TermsHistoryPage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::hilosPrivacyHistory => []], Hilos::PAGE_TABLES[PrivacyHistoryPage::PAGE]);
+        self::assertSame([], TermsHistoryPage::ACTIONS);
+        self::assertSame([], PrivacyHistoryPage::ACTIONS);
+        self::assertSame('hilos_terms', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame('hilos_privacy', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+    }
+
     public function testSessionNameChangesHaveOneAuthSessionOwner(): void
     {
         self::assertContains(HilosFeature::AUTH, Hilos::features());
@@ -542,6 +564,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
+            TermsHistoryPage::PAGE => TermsHistoryPage::class,
+            PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
             LicensePage::PAGE => LicensePage::class,
             StatusPage::PAGE => StatusPage::class,
             StatusComponentsPage::PAGE => StatusComponentsPage::class,
@@ -845,6 +869,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AboutPage::class,
             TermsPage::class,
             PrivacyPage::class,
+            TermsHistoryPage::class,
+            PrivacyHistoryPage::class,
             LicensePage::class,
         ] as $page) {
             $this->assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);

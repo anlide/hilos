@@ -305,6 +305,7 @@ try {
               )
               .join(' && ')}
             export const samePage = root.HilosSettingsPage === HilosSettingsPage
+            export const sameHistory = root.HilosLegalHistoryPage !== undefined && root.HilosLegalHistoryPage === base.HilosLegalHistoryPage
             export const samePublicStatus = root.HilosPublicStatusPage === PublicStatusPage &&
               PublicStatusPage !== root.HilosStatusPage && !('HilosPublicStatusPage' in base) &&
               !(HilosPages.PUBLIC_STATUS in hilosAdminViews())
@@ -358,6 +359,7 @@ try {
   assert.equal(consumer.sameCoreSection, true)
   assert.equal(consumer.sameTokens, true)
   assert.equal(consumer.samePage, true)
+  assert.equal(consumer.sameHistory, true)
   assert.equal(consumer.samePublicStatus, true)
   assert.equal(consumer.samePageHead, true)
   assert.equal(consumer.sameTableText, true)

@@ -28,8 +28,10 @@ import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
+import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import Terms from './views/Terms/Terms.vue'
+import TermsHistory from './views/TermsHistory/TermsHistory.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -244,7 +246,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
+  [HilosPages.TERMS_HISTORY]: TermsHistory,
   [HilosPages.PRIVACY]: Privacy,
+  [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
   [HilosPages.LICENSE]: License,
   [HilosPages.PUBLIC_STATUS]: lazyPage(() =>
     import('./views/Status/Status.vue').then((m) => m.default),

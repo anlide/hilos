@@ -288,13 +288,25 @@ The bodies of `/terms` (`AbstractHilosTermsPage`, the SDK's `HilosTermsPage`)
 and `/privacy` (`AbstractHilosPrivacyPage`, the SDK's `HilosPrivacyPage`) use the
 current revision composed from the project's legal catalog. The project supplies
 an optional introduction; the legal reader comes first, the introduction follows
-it, and the catalog text follows the introduction. Terms also displays its
-revision history. Privacy returns revision data but does not display a revision
-history list; its browser erase block follows the policy text. A project that
-declares no document, or whose catalog is faulty, gets a null document section
-and the page's unpublished line.
+it, and the catalog text follows the introduction. The Terms revision history
+has its own page at `/terms/history`. Privacy's history has its own page at
+`/privacy/history`; the browser erase block remains after the policy
+text on `/privacy`. A project that declares no document, or whose catalog is
+faulty, gets a null document section and the page's unpublished line.
 
-Both routes are public and use their own page subscription. Privacy declares
+The history pages use ordinary page subscriptions and the existing public
+document projection. Their `page_response` carries `legalTerms` or
+`legalPrivacy`, the first native viewport window for `hilosTermsHistory` or
+`hilosPrivacyHistory`, and the signed-in reader's existing `legalAgreements`
+projection when that document is available. Guests, signed-in readers, frozen
+readers and readers in an impersonated session can open either history. Each
+table row carries public revision metadata in the `slots.revision` wire slot,
+with no personal acceptance rows or aggregate counts. Core derives each row's
+in-force and accepted marks from the document and agreement projections for the
+current reader.
+
+The `/terms` and `/privacy` document routes are public and use their own page
+subscriptions. Privacy declares
 `HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PRIVACY`
 (`subscription_page_hilos_privacy`) in `BROWSER[BrowserConfigKey::SIGNAL]` and
 answers in the existing `page_response` with `page: 'hilos_privacy'`,
@@ -302,15 +314,16 @@ answers in the existing `page_response` with `page: 'hilos_privacy'`,
 request. The acting reader comes from the server's
 `resolveActionUserId($acceptKey)`, not a client-supplied id.
 
-The Terms page sends `legalTerms` to everyone: `current`, its composed `clauses`,
-all declared `revisions` in declaration order, and `changes` — the comparison of
-the held revision with the revision in force when they differ, otherwise `null`.
-The whole section is `null` without Terms. Privacy likewise always includes
-`data.legalPrivacy`: it is `null` without a published, readable Privacy policy;
-otherwise it has `current`, `clauses`, `revisions`, and `changes` in the same
-`LegalWire` shapes. `current` carries `revisionId`, `publishedOn`, `effectiveOn`,
-`significance`, `setVersion`, and `deviationCount`; `publishedOn` and
-`effectiveOn` are `YYYY-MM-DD` dates. Clause rows carry
+The Terms page and its history page send `legalTerms` to everyone: `current`,
+its composed `clauses`, all declared `revisions` in declaration order, and
+`changes` — the comparison of the held revision with the revision in force when
+they differ, otherwise `null`. The whole section is `null` without Terms.
+Privacy and its history page likewise always include `data.legalPrivacy`: it is
+`null` without a published, readable Privacy policy; otherwise it has `current`,
+`clauses`, `revisions`, and `changes` in the same `LegalWire` shapes. `current`
+carries `revisionId`, `publishedOn`, `effectiveOn`, `significance`, `setVersion`,
+and `deviationCount`; `publishedOn` and `effectiveOn` are `YYYY-MM-DD` dates.
+Clause rows carry
 `clauseKey`, `standardStatement`, `source`, `statement`, `text`, and `direction`.
 Privacy revisions add `origin` (`first`, `project`, or `standard`) and nullable
 `previousSetVersion` to the revision metadata and stay in declaration order. Its
@@ -323,11 +336,11 @@ With a signed-in reader and a non-null document section, the page answer also
 includes the existing `legalAgreements` projection:
 `{documents: [{document, current, held, acceptedAt, accepted, standing, deadline}]}`.
 Each `accepted` row is `{revisionId, acceptedAt}`. `acceptedAt` values are epoch
-milliseconds; `deadline` is a `YYYY-MM-DD` date.
+milliseconds; `deadline` is a `YYYY-MM-DD` date. The signed-in reader joins
+`LegalAgreementsGroup` after the answer on each of the four page subscriptions.
 Guests and readers without a published document do not receive this section.
-The reader joins `LegalAgreementsGroup` after the page answer.
 
-A Terms history revision opens through the page's own public read,
+A history revision opens through the existing public read for its document,
 `hilos_terms_revision_text` (`{document: 'terms', revisionId}`), replying in the
 shape of `hilos_legal_revision_text`. Privacy has its own public read,
 `hilos_privacy_revision_text`, declared in `READING_ACTIONS` and available to a
@@ -336,28 +349,33 @@ guest. `PrivacyRevisionTextActionDTO` accepts
 `LegalRevisionTextReplyDTO` shape `{document, revisionId, clauses}` in the
 action ACK. An unsupported document or unknown revision raises
 `ValidationException` with `Unknown legal document` or `Unknown legal revision`.
-Each read belongs to its public page; neither reuses the profile action.
+The history pages declare no actions or reading actions; their view uses these
+existing public reads to fill a read-only revision dialog. The history pages do
+not offer acceptance or comparison.
 
-Acceptance uses the existing `hilos_legal_accept` action with only the current
-revision shown on that page: Terms sends
+On `/terms` and `/privacy`, acceptance uses the existing `hilos_legal_accept`
+action with only the current revision shown on that page: Terms sends
 `{acceptedRevisions: {terms: revisionId}}`, and Privacy sends
 `{acceptedRevisions: {privacy: revisionId}}`. Under a takeover each page shows
-the reader's state and offers no acceptance. A person with no acceptance on
-record is shown the revision in force and asked nothing.
+the reader's state and offers no acceptance; the history pages remain read-only.
+A person with no acceptance on record is shown the revision in force and asked
+nothing.
 
-Each page asks for its whole answer again when a group frame moves that
-document's held or current revision, the acting person in the tab changes
-(sign-in, sign-out, or a takeover starting or ending), or its acceptance lands
-or is refused. A frame about the other document alone does not make this page
-request a new page answer. Until its own answer arrives, the page keeps the coherent
-text and comparison it already showed. A change of rights does not answer a
-public page again ([page-access-control.md](page-access-control.md), "Pages a
-rights change cannot move are skipped").
+Each of the four page subscriptions asks for its whole answer again when a group
+frame moves that document's held or current revision, the acting person in the
+tab changes (sign-in, sign-out, or a takeover starting or ending), or its
+acceptance lands or is refused. A frame about the other document alone does not
+make this page request a new page answer. Until its own answer arrives, each
+page keeps the coherent document answer it already showed. A change of rights
+does not answer a public page again
+([page-access-control.md](page-access-control.md), "Pages a rights change cannot
+move are skipped").
 
-The prerendered files carry their legal loading states, not catalog text: the
-catalog lives on the server and the frontend build does not read it
-([build-and-docker.md](../frontend/build-and-docker.md), *SSG and the public
-surface*).
+The prerendered `/terms` and `/privacy` footer files carry their legal loading
+states, not catalog text: the catalog lives on the server and the frontend build
+does not read it ([build-and-docker.md](../frontend/build-and-docker.md), *SSG
+and the public surface*). This note describes those footer files, not the
+separate history routes.
 
 ## Admin section
 

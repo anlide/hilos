@@ -69,8 +69,11 @@ use Demo\OnlineTesting\Pages\Hilos\Status\StatusPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
+use Demo\OnlineTesting\Pages\Hilos\PrivacyHistoryPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
 use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
@@ -83,6 +86,7 @@ use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\OnlineTesting\Pages\Hilos\TermsPage;
+use Demo\OnlineTesting\Pages\Hilos\TermsHistoryPage;
 use Demo\OnlineTesting\Pages\Hilos\Users\UserPage;
 use Demo\OnlineTesting\Pages\Hilos\Users\UsersPage;
 use Demo\OnlineTesting\Pages\MainPage;
@@ -290,6 +294,8 @@ final class Hilos extends HilosFacade
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
+        TermsHistoryPage::PAGE => TermsHistoryPage::class,
+        PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
@@ -424,6 +430,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        OnlineTestingTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+        OnlineTestingTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         OnlineTestingTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -490,6 +498,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        TermsHistoryPage::PAGE => [
+            OnlineTestingTableContext::hilosTermsHistory => [],
+        ],
+        PrivacyHistoryPage::PAGE => [
+            OnlineTestingTableContext::hilosPrivacyHistory => [],
+        ],
         BrowserSessionPage::PAGE => [
             OnlineTestingTableContext::hilosAnalyticsActions => [],
         ],

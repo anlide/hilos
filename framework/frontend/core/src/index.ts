@@ -2667,6 +2667,7 @@ export * from './legal/legalRevisions.js'
 export * from './legal/legalTerms.js'
 export * from './legal/legalPublicDocument.js'
 export * from './legal/legalPrivacy.js'
+export * from './legal/legalHistory.js'
 export {
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,

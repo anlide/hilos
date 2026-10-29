@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Demo\OnlineTesting\Tests\Unit;
 
 use Demo\OnlineTesting\Core\Daemon\OnlineTestingWorkerManager;
+use Demo\OnlineTesting\Pages\Hilos\TermsHistoryPage;
+use Demo\OnlineTesting\Pages\Hilos\PrivacyHistoryPage;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Core\Page\PageSignalRouter;
 use ReflectionClass;
 use ReflectionMethod;
@@ -249,6 +253,24 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class OnlineTestingTopologyRegistryTest extends TestCase
 {
+    public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
+    {
+        self::assertSame(TermsHistoryPage::class, Hilos::PAGES[TermsHistoryPage::PAGE]);
+        self::assertSame(PrivacyHistoryPage::class, Hilos::PAGES[PrivacyHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[TermsHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[PrivacyHistoryPage::PAGE]);
+        self::assertSame(HilosTermsHistoryTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosTermsHistory]);
+        self::assertSame(HilosPrivacyHistoryTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosPrivacyHistory]);
+        self::assertSame([OnlineTestingTableContext::hilosTermsHistory => []], Hilos::PAGE_TABLES[TermsHistoryPage::PAGE]);
+        self::assertSame([OnlineTestingTableContext::hilosPrivacyHistory => []], Hilos::PAGE_TABLES[PrivacyHistoryPage::PAGE]);
+        self::assertSame([], TermsHistoryPage::ACTIONS);
+        self::assertSame([], PrivacyHistoryPage::ACTIONS);
+        self::assertSame('hilos_terms', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame('hilos_privacy', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+    }
+
     public function testSessionNameChangesHaveOneAuthSessionOwner(): void
     {
         self::assertContains(HilosFeature::AUTH, Hilos::features());
@@ -553,6 +575,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
+            TermsHistoryPage::PAGE => TermsHistoryPage::class,
+            PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
             LicensePage::PAGE => LicensePage::class,
             StatusPage::PAGE => StatusPage::class,
             StatusComponentsPage::PAGE => StatusComponentsPage::class,
@@ -857,6 +881,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             AboutPage::class,
             TermsPage::class,
             PrivacyPage::class,
+            TermsHistoryPage::class,
+            PrivacyHistoryPage::class,
             LicensePage::class,
         ];
         foreach ($hilosPages as $page) {
@@ -1206,6 +1232,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testSettingsAndUsersAdminFeaturesAreActivated(): void
     {
         $this->assertSame([
+            OnlineTestingTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+            OnlineTestingTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
             OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
             OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
             OnlineTestingTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -1248,6 +1276,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             Hilos::BROWSER_TABLES,
         );
         $this->assertSame([
+            TermsHistoryPage::PAGE,
+            PrivacyHistoryPage::PAGE,
             BrowserSessionPage::PAGE,
             PersonPage::PAGE,
             ChangeLogFeedPage::PAGE,

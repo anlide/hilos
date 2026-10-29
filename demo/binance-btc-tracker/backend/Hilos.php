@@ -83,8 +83,11 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyHistoryPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
@@ -97,6 +100,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\TermsHistoryPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UsersPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
@@ -327,6 +331,8 @@ class Hilos extends HilosFacade
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
+        TermsHistoryPage::PAGE => TermsHistoryPage::class,
+        PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
@@ -471,6 +477,8 @@ class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        BinanceBtcTrackerTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+        BinanceBtcTrackerTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         BinanceBtcTrackerTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -540,6 +548,12 @@ class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        TermsHistoryPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosTermsHistory => [],
+        ],
+        PrivacyHistoryPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosPrivacyHistory => [],
+        ],
         ChangeLogFeedPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosChangeLogFeed => [],
         ],

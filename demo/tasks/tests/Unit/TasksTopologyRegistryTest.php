@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Demo\Tasks\Tests\Unit;
 
 use Demo\Tasks\Core\Daemon\TasksWorkerManager;
+use Demo\Tasks\Pages\Hilos\TermsHistoryPage;
+use Demo\Tasks\Pages\Hilos\PrivacyHistoryPage;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Core\Page\PageSignalRouter;
 use ReflectionClass;
 use ReflectionMethod;
@@ -293,6 +297,24 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class TasksTopologyRegistryTest extends TestCase
 {
+    public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
+    {
+        self::assertSame(TermsHistoryPage::class, Hilos::PAGES[TermsHistoryPage::PAGE]);
+        self::assertSame(PrivacyHistoryPage::class, Hilos::PAGES[PrivacyHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[TermsHistoryPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[PrivacyHistoryPage::PAGE]);
+        self::assertSame(HilosTermsHistoryTable::class, Hilos::TABLES[TasksTableContext::hilosTermsHistory]);
+        self::assertSame(HilosPrivacyHistoryTable::class, Hilos::TABLES[TasksTableContext::hilosPrivacyHistory]);
+        self::assertSame([TasksTableContext::hilosTermsHistory => []], Hilos::PAGE_TABLES[TermsHistoryPage::PAGE]);
+        self::assertSame([TasksTableContext::hilosPrivacyHistory => []], Hilos::PAGE_TABLES[PrivacyHistoryPage::PAGE]);
+        self::assertSame([], TermsHistoryPage::ACTIONS);
+        self::assertSame([], PrivacyHistoryPage::ACTIONS);
+        self::assertSame('hilos_terms', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame('hilos_privacy', Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT]);
+    }
+
     public function testSessionNameChangesHaveOneAuthSessionOwner(): void
     {
         self::assertContains(HilosFeature::AUTH, Hilos::features());
@@ -1339,6 +1361,8 @@ final class TasksTopologyRegistryTest extends TestCase
         // and hilos-users (the users list page + the user-detail page with its
         // rename action and a filtered detail browser table).
         $this->assertSame([
+            TasksTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+            TasksTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
             TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
             TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
             TasksTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -1400,6 +1424,8 @@ final class TasksTopologyRegistryTest extends TestCase
 
         $this->assertSame(
             [
+                TermsHistoryPage::PAGE,
+                PrivacyHistoryPage::PAGE,
                 BrowserSessionPage::PAGE,
                 PersonPage::PAGE,
                 ChangeLogFeedPage::PAGE,

@@ -1440,6 +1440,7 @@ export {
 } from '../legal/legalTerms.js'
 export * from '../legal/legalPublicDocument.js'
 export * from '../legal/legalPrivacy.js'
+export * from '../legal/legalHistory.js'
 export {
   LEGAL_ACCEPTANCES_SIGNAL,
   legalAcceptanceFiltersSchema,

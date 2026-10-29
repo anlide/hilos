@@ -45,7 +45,9 @@ import License from './views/License/License'
 import Main from './views/Main/Main'
 import MainSkeleton from './views/Main/MainSkeleton'
 import Privacy from './views/Privacy/Privacy'
+import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.js'
 import Terms from './views/Terms/Terms'
+import TermsHistory from './views/TermsHistory/TermsHistory.js'
 
 // The page-key → view map HilosView renders from. Pages without a mapped view
 // (other routes land later) render nothing.
@@ -290,7 +292,9 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
+  [HilosPages.TERMS_HISTORY]: TermsHistory,
   [HilosPages.PRIVACY]: Privacy,
+  [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
   [HilosPages.LICENSE]: License,
 }
 

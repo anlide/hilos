@@ -725,6 +725,23 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
+  it.each([
+    [HilosPages.TERMS_HISTORY, 'hilos_terms_history', '/terms/history'],
+    [HilosPages.PRIVACY_HISTORY, 'hilos_privacy_history', '/privacy/history'],
+  ])(
+    'serves public history %s with no params or footer entry',
+    (page, key, path) => {
+      const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+      expect(page).toBe(key)
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: false })
+      expect(router.path(page, {})).toBe(path)
+      expect(router.match(path)).toEqual({ page, params: {}, admin: false })
+      expect(HILOS_FOOTER_LINKS.map((link) => link.page)).not.toContain(page)
+      for (const layer of ['vue', 'react', 'angular'] as const)
+        expect(hilosUnbuiltPages(layer).has(page)).toBe(false)
+    },
+  )
+
   it('declares a route for every Hilos page key', () => {
     for (const key of Object.values(HilosPages)) {
       expect(HILOS_ROUTE_DECLARATIONS[key].path).toBeTypeOf('string')
@@ -749,6 +766,8 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       HilosPages.PROFILE_AGREEMENTS,
       HilosPages.PROFILE_AGREEMENTS_HISTORY,
       HilosPages.PUBLIC_STATUS,
+      HilosPages.TERMS_HISTORY,
+      HilosPages.PRIVACY_HISTORY,
       ...HILOS_FOOTER_LINKS.map((l) => l.page),
     ])
     for (const [page, declaration] of Object.entries(

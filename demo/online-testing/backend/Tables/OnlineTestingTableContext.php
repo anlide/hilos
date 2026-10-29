@@ -8,6 +8,8 @@ use Demo\OnlineTesting\Hilos;
 use Demo\OnlineTesting\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -45,6 +47,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * OnlineTestingTableContext - table bindings for this demo's admin sections.
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
+ * @property-read HilosTermsHistoryTable $hilosTermsHistory
+ * @property-read HilosPrivacyHistoryTable $hilosPrivacyHistory
  * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
  * @property-read HilosChangeLogTableColumnsTable $hilosChangeLogTableColumns
  * @property-read HilosChangeLogTableTriggersTable $hilosChangeLogTableTriggers
@@ -82,6 +86,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 final class OnlineTestingTableContext extends TableContext
 {
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
+    public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;
+    public const string hilosPrivacyHistory = HilosPrivacyHistoryTable::TABLE;
     public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
     public const string hilosChangeLogTableColumns = HilosChangeLogTableColumnsTable::TABLE;
     public const string hilosChangeLogTableTriggers = HilosChangeLogTableTriggersTable::TABLE;

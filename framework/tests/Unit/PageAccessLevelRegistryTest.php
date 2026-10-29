@@ -8,6 +8,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\AbstractHilosAboutPage;
 use Hilos\Pages\AbstractHilosLicensePage;
+use Hilos\Pages\AbstractHilosPrivacyHistoryPage;
 use Hilos\Pages\AbstractHilosPrivacyPage;
 use Hilos\Pages\AbstractHilosProfilePage;
 use Hilos\Pages\AbstractHilosProfileDevicesPage;
@@ -18,6 +19,7 @@ use Hilos\Pages\AbstractHilosProfileAgreementsPage;
 use Hilos\Pages\AbstractHilosProfileAgreementsHistoryPage;
 use Hilos\Pages\AbstractHilosProfileSessionsPage;
 use Hilos\Pages\AbstractHilosProfileSignInPage;
+use Hilos\Pages\AbstractHilosTermsHistoryPage;
 use Hilos\Pages\AbstractHilosTermsPage;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -37,7 +39,9 @@ final class PageAccessLevelRegistryTest extends TestCase
     private const array PUBLIC_PAGES = [
         AbstractHilosAboutPage::class,
         AbstractHilosLicensePage::class,
+        AbstractHilosPrivacyHistoryPage::class,
         AbstractHilosPrivacyPage::class,
+        AbstractHilosTermsHistoryPage::class,
         AbstractHilosTermsPage::class,
     ];
 

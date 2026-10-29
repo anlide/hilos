@@ -74,8 +74,11 @@ use Demo\EcommerceShop\Pages\Hilos\Status\StatusPage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusSubscribersPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
+use Demo\EcommerceShop\Pages\Hilos\PrivacyHistoryPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
@@ -87,6 +90,7 @@ use Demo\EcommerceShop\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
+use Demo\EcommerceShop\Pages\Hilos\TermsHistoryPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
@@ -282,6 +286,8 @@ final class Hilos extends HilosFacade
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
+        TermsHistoryPage::PAGE => TermsHistoryPage::class,
+        PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
@@ -418,6 +424,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        EcommerceShopTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
+        EcommerceShopTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         EcommerceShopTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         EcommerceShopTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
         EcommerceShopTableContext::hilosChangeLogTableColumns => HilosChangeLogTableColumnsTable::class,
@@ -481,6 +489,12 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        TermsHistoryPage::PAGE => [
+            EcommerceShopTableContext::hilosTermsHistory => [],
+        ],
+        PrivacyHistoryPage::PAGE => [
+            EcommerceShopTableContext::hilosPrivacyHistory => [],
+        ],
         BrowserSessionPage::PAGE => [
             EcommerceShopTableContext::hilosAnalyticsActions => [],
         ],

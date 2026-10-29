@@ -342,6 +342,12 @@ final class HilosPageConstants
     /** @var string Hilos — public Privacy page */
     public const string HILOS_PRIVACY = 'hilos_privacy';
 
+    /** @var string Hilos — public Terms history page */
+    public const string HILOS_TERMS_HISTORY = 'hilos_terms_history';
+
+    /** @var string Hilos — public Privacy history page */
+    public const string HILOS_PRIVACY_HISTORY = 'hilos_privacy_history';
+
     /** @var string Hilos — public License page */
     public const string HILOS_LICENSE = 'hilos_license';
 

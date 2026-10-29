@@ -19,6 +19,12 @@ function frameworkPageLabel(pageKey: string): string | undefined {
   if (pageKey === HilosPages.PUBLIC_STATUS) {
     return 'Status'
   }
+  if (pageKey === HilosPages.TERMS_HISTORY) {
+    return 'Terms · Revision history'
+  }
+  if (pageKey === HilosPages.PRIVACY_HISTORY) {
+    return 'Privacy · Revision history'
+  }
   return HILOS_FOOTER_LINKS.find((link) => link.page === pageKey)?.label
 }
 

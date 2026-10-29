@@ -8,6 +8,8 @@ use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTableColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
@@ -48,6 +50,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * onto this demo, each with its table.
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
+ * @property-read HilosTermsHistoryTable $hilosTermsHistory
+ * @property-read HilosPrivacyHistoryTable $hilosPrivacyHistory
  * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
  * @property-read HilosChangeLogTableColumnsTable $hilosChangeLogTableColumns
  * @property-read HilosChangeLogTableTriggersTable $hilosChangeLogTableTriggers
@@ -82,6 +86,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 final class EcommerceShopTableContext extends TableContext
 {
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
+    public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;
+    public const string hilosPrivacyHistory = HilosPrivacyHistoryTable::TABLE;
     public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
     public const string hilosChangeLogTableColumns = HilosChangeLogTableColumnsTable::TABLE;
     public const string hilosChangeLogTableTriggers = HilosChangeLogTableTriggersTable::TABLE;

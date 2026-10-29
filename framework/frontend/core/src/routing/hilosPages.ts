@@ -142,7 +142,9 @@ export const HilosPages = {
   PUBLIC_STATUS: 'status',
   ABOUT: 'hilos_about',
   TERMS: 'hilos_terms',
+  TERMS_HISTORY: 'hilos_terms_history',
   PRIVACY: 'hilos_privacy',
+  PRIVACY_HISTORY: 'hilos_privacy_history',
   LICENSE: 'hilos_license',
 } as const
 
@@ -481,7 +483,9 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },
   [HilosPages.ABOUT]: { path: '/about', admin: false },
   [HilosPages.TERMS]: { path: '/terms', admin: false },
+  [HilosPages.TERMS_HISTORY]: { path: '/terms/history', admin: false },
   [HilosPages.PRIVACY]: { path: '/privacy', admin: false },
+  [HilosPages.PRIVACY_HISTORY]: { path: '/privacy/history', admin: false },
   [HilosPages.LICENSE]: { path: '/license', admin: false },
 }
 

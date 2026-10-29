@@ -77,6 +77,10 @@ export {
   type HilosPrivacyPageProps,
 } from '../public/HilosPrivacyPage.js'
 export {
+  HilosLegalHistoryPage,
+  type HilosLegalHistoryPageProps,
+} from '../public/HilosLegalHistoryPage.js'
+export {
   HilosTermsPage,
   type HilosTermsPageProps,
 } from '../public/HilosTermsPage.js'

@@ -9,7 +9,6 @@ import {
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
-  clause,
   first,
   legalContext,
   substantial,
@@ -176,23 +175,13 @@ it('forwards optional navigation to the shared head and keeps its projection rea
   ).toBe('/projects/next/fixture_history')
 })
 
-it('shows a guest the text and the history, newest first, with nothing to accept', async () => {
+it('shows a guest the current text with nothing to accept', async () => {
   const { view } = mountTerms({ legalTerms: termsSection }, null)
   await flushPromises()
   const reader = view.get('[data-id="terms-reader"]')
   expect(reader.attributes('data-state')).toBe('guest')
   expect(reader.text()).toContain('in force since 1 October 2026')
   expect(view.findAll('[data-id="terms-text"] li')).toHaveLength(1)
-  const revisions = view.findAll('[data-id="terms-history-revision"]')
-  expect(revisions.map((row) => row.attributes('data-revision'))).toEqual([
-    substantial.revisionId,
-    '2026-09-27',
-    first.revisionId,
-  ])
-  expect(revisions[0]!.find('[data-id="terms-history-current"]').exists()).toBe(
-    true,
-  )
-  expect(view.find('[data-id="terms-history-accepted"]').exists()).toBe(false)
   expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
 })
 
@@ -209,12 +198,6 @@ it('confirms in green a reader holding the revision in force', async () => {
   expect(reader.attributes('data-state')).toBe('covered')
   expect(reader.find('.text-success').exists()).toBe(true)
   expect(reader.text()).toContain('You accepted the revision of 1 October 2026')
-  expect(
-    view
-      .get(`[data-revision="${substantial.revisionId}"]`)
-      .find('[data-id="terms-history-accepted"]')
-      .exists(),
-  ).toBe(true)
   expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
 })
 
@@ -388,39 +371,6 @@ it('holds the comparison window while the acceptance is out, and frees it after 
   held[1]!.settle()
   await flushPromises()
   expect(document.querySelector('[data-id="terms-changes-modal"]')).toBeNull()
-})
-
-it('opens an older revision through the page own read', async () => {
-  let resolve!: (value: ActionResult) => void
-  const { view, dispatch } = mountTerms(
-    { legalTerms: termsSection },
-    null,
-    vi.fn(() => ({
-      done: new Promise<ActionResult>((done) => {
-        resolve = done
-      }),
-    })),
-  )
-  await flushPromises()
-  await view
-    .get(`[data-revision="${first.revisionId}"] [data-id="terms-history-open"]`)
-    .trigger('click')
-  expect(dispatch).toHaveBeenCalledWith(
-    'hilos_terms_revision_text',
-    { document: 'terms', revisionId: first.revisionId },
-    expect.anything(),
-  )
-  resolve({
-    reply: {
-      document: 'terms',
-      revisionId: first.revisionId,
-      clauses: [clause],
-    },
-  })
-  await flushPromises()
-  expect(
-    document.querySelector('[data-id="terms-revision-modal"]')?.textContent,
-  ).toContain(clause.statement)
 })
 
 it('shows the state under a takeover but offers no acceptance', async () => {

@@ -8,12 +8,22 @@ import { HilosPrivacyPage } from '@hilos/vue/base'
 
 import { actions, connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import { HilosPages, hilosPublicLegalNavigation } from '@hilos/core/base'
+import { router } from '../../pages/routes.js'
+
+const navigation = hilosPublicLegalNavigation(
+  HilosPages.PRIVACY,
+  (page, params) => router.path(page, params),
+)
 
 defineOptions({ name: 'PrivacyPage' })
 </script>
 
 <template>
-  <HilosPrivacyPage :context="{ connection, scopes, actions }">
+  <HilosPrivacyPage
+    :context="{ connection, scopes, actions }"
+    :navigation="navigation"
+  >
     <p>
       To show its real-time features, this demo stores your chosen display name,
       the messages you send, and any files you attach.

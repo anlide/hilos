@@ -9,6 +9,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Pages\AbstractHilosPrivacyPage;
+use Hilos\Pages\AbstractHilosPrivacyHistoryPage;
+use Hilos\Pages\AbstractHilosTermsHistoryPage;
 use Hilos\Pages\AbstractHilosProfileAgreementsHistoryPage;
 use Hilos\Pages\AbstractHilosTermsPage;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogFeedPage;
@@ -33,11 +35,13 @@ final class ReadingActionsRegistryTest extends TestCase
             HilosSignalConstants::HILOS_LEGAL_RECONSENT,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT_PREVIEW,
         ],
+        AbstractHilosPrivacyHistoryPage::class => [],
         AbstractHilosPrivacyPage::class => [HilosSignalConstants::HILOS_PRIVACY_REVISION_TEXT],
         AbstractHilosProfileAgreementsHistoryPage::class => [
             HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT,
             HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES,
         ],
+        AbstractHilosTermsHistoryPage::class => [],
         AbstractHilosTermsPage::class => [HilosSignalConstants::HILOS_TERMS_REVISION_TEXT],
         AbstractHilosChangeLogFeedPage::class => [
             HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ,

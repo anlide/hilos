@@ -12,6 +12,8 @@ use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosTermsHistoryTable;
+use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 
 use Demo\Chat\Hilos;
@@ -98,6 +100,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosLegalDocumentsTable $hilosLegalDocuments
  * @property-read HilosLegalChecksTable $hilosLegalChecks
  * @property-read HilosLegalRevisionsTable $hilosLegalRevisions
+ * @property-read HilosTermsHistoryTable $hilosTermsHistory
+ * @property-read HilosPrivacyHistoryTable $hilosPrivacyHistory
  * @property-read HilosLegalAcceptancesTable $hilosLegalAcceptances
  * @property-read HilosLegalSettingsTable $hilosLegalSettings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
@@ -155,6 +159,8 @@ final class ChatTableContext extends TableContext
     public const string hilosLegalDocuments = HilosLegalDocumentsTable::TABLE;
     public const string hilosLegalChecks = HilosLegalChecksTable::TABLE;
     public const string hilosLegalRevisions = HilosLegalRevisionsTable::TABLE;
+    public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;
+    public const string hilosPrivacyHistory = HilosPrivacyHistoryTable::TABLE;
     public const string hilosLegalAcceptances = HilosLegalAcceptancesTable::TABLE;
     public const string hilosLegalSettings = HilosLegalSettingsTable::TABLE;
     public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;

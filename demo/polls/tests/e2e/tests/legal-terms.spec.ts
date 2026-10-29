@@ -4,17 +4,20 @@ import {
   signUp,
   createTestUser,
   clickSubmit,
+  expectPageReady,
   gotoPage,
   PAGE_READY,
+  ROWS,
+  shownByTestId,
+  watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { holdLegalRevision } from '../helpers/legalHold.js'
 
-// The public Terms page (HIL-501): its body is the text of the Terms revision in
-// force, read from polls's legal catalog, with the reader's standing above it and
-// the revision history under it. Polls's second Terms revision is substantial and
-// took effect the day it was published, so a person test:legal:hold puts back on
-// the first is past the deadline at once, and frozen under the default setting.
+// Terms keeps the current text and acceptance; /terms/history serves the public
+// revision window and reads older text through Terms's public action. Polls's
+// second revision is substantial and immediately effective, so holding a person
+// on the first puts them past the deadline and freezes their account.
 
 /** The revision in force: polls's third, the wording revision of the reset clause. */
 const CURRENT_TERMS = '2026-10-07'
@@ -26,51 +29,98 @@ const HELD_TERMS = '2026-09-17'
 test('a guest reads the revision in force and opens an older one from the history', async ({
   page,
 }) => {
-  await gotoPage(expect, page, '/terms', PAGE_READY)
-  const reader = page.getByTestId('terms-reader')
-  await expect(reader).toHaveAttribute('data-state', 'guest')
-  await expect(reader).toContainText('in force since 7 October 2026')
+  const revisions = page.getByTestId('hilos-viewport-table').locator(ROWS)
+  const opened = page.getByTestId('public-legal-history-modal')
 
-  const text = page.getByTestId('terms-text')
-  await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
-  await expect(text.getByTestId('legal-revision-clause-deviation')).toHaveCount(
-    1,
-  )
+  await test.step('direct history entry reads an older Terms revision as a guest', async () => {
+    await gotoPage(expect, page, '/terms/history', PAGE_READY)
+    await expect(page.getByTestId('public-legal-history')).toHaveAttribute(
+      'data-document',
+      'terms',
+    )
+    await expect(revisions).toHaveCount(3)
+    await expect(
+      revisions.first().getByTestId('public-legal-history-current'),
+    ).toHaveAttribute('data-revision', CURRENT_TERMS)
+    await expect(page.getByTestId('public-legal-history-accepted')).toHaveCount(
+      0,
+    )
+    await expect(page.getByTestId('legal-document-accept')).toHaveCount(0)
 
-  const revisions = page.getByTestId('terms-history-revision')
-  await expect(revisions).toHaveCount(3)
-  await expect(revisions.first()).toHaveAttribute(
-    'data-revision',
-    CURRENT_TERMS,
-  )
-  await expect(
-    revisions.first().getByTestId('terms-history-current'),
-  ).toBeVisible()
-  await expect(page.getByTestId('terms-history-accepted')).toHaveCount(0)
-  await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
+    await clickSubmit(
+      expect,
+      shownByTestId(page, 'public-legal-history-open').and(
+        page.locator(`[data-revision="${OLDER_TERMS}"]`),
+      ),
+    )
+    await expect(opened).toBeVisible()
+    await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
+    await expect(opened).toHaveAttribute('data-document', 'terms')
+    await expect(opened).toHaveAttribute('data-revision', OLDER_TERMS)
+    await expect(opened.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await expect(
+      opened.getByTestId('legal-revision-clause-deviation'),
+    ).toHaveCount(1)
+    await expect(opened).toContainText(
+      'Do not keep anything here that you would miss.',
+    )
+    await clickSubmit(expect, page.getByTestId('public-legal-history-close'))
+    await expect(opened).toHaveCount(0)
+  })
 
-  // An older revision opens through the page's own read, open to a guest.
-  await clickSubmit(
-    expect,
-    page
-      .locator(
-        `[data-id="terms-history-revision"][data-revision="${OLDER_TERMS}"]`,
-      )
-      .getByTestId('terms-history-open'),
-  )
-  const opened = page.getByTestId('terms-revision-modal')
-  await expect(opened).toBeVisible()
-  await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
-  await expect(opened.getByTestId('legal-revision-clause')).toHaveCount(6)
-  await expect(
-    opened.getByTestId('legal-revision-clause-deviation'),
-  ).toHaveCount(1)
-  await clickSubmit(expect, page.getByTestId('terms-revision-close'))
-  await expect(opened).toBeHidden()
+  await test.step('Terms still owns the current text and guest reader', async () => {
+    await page.getByTestId('hilos-page-tab-hilos_terms').click()
+    await expect(page).toHaveURL('/terms')
+    await expectPageReady(expect, page)
+    const reader = page.getByTestId('terms-reader')
+    await expect(reader).toHaveAttribute('data-state', 'guest')
+    await expect(reader).toContainText('in force since 7 October 2026')
+    const text = page.getByTestId('terms-text')
+    await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await expect(
+      text.getByTestId('legal-revision-clause-deviation'),
+    ).toHaveCount(1)
+    await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
+  })
+
+  await test.step('history survives its tab link, F5 and Back/Forward', async () => {
+    await page.getByTestId('hilos-page-tab-hilos_terms_history').click()
+    await expect(page).toHaveURL('/terms/history')
+    await expectPageReady(expect, page)
+    await expect(revisions).toHaveCount(3)
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect(revisions).toHaveCount(3)
+    await page.goBack()
+    await expect(page).toHaveURL('/terms')
+    await expectPageReady(expect, page)
+    await expect(page.getByTestId('terms-reader')).toHaveAttribute(
+      'data-state',
+      'guest',
+    )
+    await page.goForward()
+    await expect(page).toHaveURL('/terms/history')
+    await expectPageReady(expect, page)
+    await expect(revisions).toHaveCount(3)
+    await clickSubmit(
+      expect,
+      shownByTestId(page, 'public-legal-history-open').and(
+        page.locator(`[data-revision="${CURRENT_TERMS}"]`),
+      ),
+    )
+    await expect(opened).toBeVisible()
+    await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
+    await expect(opened).toHaveAttribute('data-revision', CURRENT_TERMS)
+    await expect(opened.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await expect(opened).toContainText('Keep nothing here you would miss.')
+    await clickSubmit(expect, page.getByTestId('public-legal-history-close'))
+    await expect(opened).toHaveCount(0)
+  })
 })
 
-test('a person who accepted at sign-up sees the revision in force as theirs', async ({
+test('sign-up acceptance appears in Terms history and sign-out closes its reader', async ({
   page,
+  context,
 }) => {
   await signUp(expect, page)
   await gotoPage(expect, page, '/terms', PAGE_READY)
@@ -79,19 +129,50 @@ test('a person who accepted at sign-up sees the revision in force as theirs', as
   await expect(reader).toContainText(
     'You accepted the revision of 7 October 2026',
   )
-  await expect(
-    page
-      .locator(
-        `[data-id="terms-history-revision"][data-revision="${CURRENT_TERMS}"]`,
-      )
-      .getByTestId('terms-history-accepted'),
-  ).toBeVisible()
   await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
 
-  // Signing out in the tab turns the line back into a guest's, without a reload.
-  await logout(expect, page)
-  await expect(reader).toHaveAttribute('data-state', 'guest')
-  await expect(page.getByTestId('terms-history-accepted')).toHaveCount(0)
+  await page.getByTestId('hilos-page-tab-hilos_terms_history').click()
+  await expect(page).toHaveURL('/terms/history')
+  await expectPageReady(expect, page)
+  const document = await watchClientDocument(page)
+  const otherTab = await context.newPage()
+  try {
+    await test.step('history marks the exact accepted revision and opens it', async () => {
+      const accepted = shownByTestId(page, 'public-legal-history-accepted')
+      await expect(accepted).toHaveCount(1)
+      await expect(accepted).toHaveAttribute('data-revision', CURRENT_TERMS)
+      await clickSubmit(
+        expect,
+        shownByTestId(page, 'public-legal-history-open').and(
+          page.locator(`[data-revision="${CURRENT_TERMS}"]`),
+        ),
+      )
+      await expect(page.getByTestId('public-legal-history-modal')).toBeVisible()
+      await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
+    })
+
+    await test.step('sign-out in another tab clears personal history and closes the modal', async () => {
+      await gotoPage(expect, otherTab, '/', PAGE_READY)
+      await logout(expect, otherTab)
+      await expect(page.getByTestId('nav-profile-name')).toHaveCount(0)
+      await expect(page.getByTestId('public-legal-history-modal')).toHaveCount(
+        0,
+      )
+      await expect(
+        page.getByTestId('public-legal-history-accepted'),
+      ).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-viewport-table').locator(ROWS),
+      ).toHaveCount(3)
+      await document.unchanged()
+      await page.getByTestId('hilos-page-tab-hilos_terms').click()
+      await expectPageReady(expect, page)
+      await expect(reader).toHaveAttribute('data-state', 'guest')
+    })
+  } finally {
+    await otherTab.close()
+    await document.dispose()
+  }
 })
 
 test('the page follows a revision moved under it, and accepting there lifts the freeze', async ({

@@ -174,10 +174,67 @@ test('each page titles the tab and announces the page on navigation', async ({
   await expect(page.getByTestId('page-title')).toHaveText('Polls · Hilos Polls')
 })
 
-test('the home page exposes a single top-level heading', async ({ page }) => {
+test('public pages have one heading and legal history readers support keyboard focus', async ({
+  page,
+}) => {
   await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Polls')
+
+  for (const history of [
+    { document: 'terms', title: 'Terms', clauses: 6 },
+    { document: 'privacy', title: 'Privacy', clauses: 7 },
+  ]) {
+    await test.step(`${history.title} history has one named table and a keyboard reader`, async () => {
+      await gotoPage(expect, page, `/${history.document}/history`)
+      const heading = page.getByRole('heading', { level: 1 })
+      await expect(heading).toHaveCount(1)
+      await expect(heading).toHaveText(history.title)
+      await expect(page).toHaveTitle(
+        `${history.title} · Revision history · Hilos Polls`,
+      )
+      const table = page.getByRole('table', {
+        name: history.title,
+        exact: true,
+      })
+      await expect(table).toHaveCount(1)
+      await expect(table).toBeVisible()
+      const open = shownByTestId(page, 'public-legal-history-open').and(
+        page.locator('[data-revision="2026-09-17"]'),
+      )
+      await expect(open).toHaveAccessibleName('Open')
+      await open.focus()
+      await expect(open).toBeFocused()
+      await open.press('Enter')
+      const dialog = page.getByTestId('modal')
+      const text = page.getByTestId('public-legal-history-modal')
+      await expect(dialog).toHaveRole('dialog')
+      await expect(dialog).toHaveAttribute('aria-modal', 'true')
+      await expect(dialog).toHaveAccessibleName(
+        `${history.title} — revision of 17 September 2026`,
+      )
+      await expect(dialog).toBeFocused()
+      await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
+      await expect(text).toHaveAttribute('data-document', history.document)
+      await expect(text.getByTestId('legal-revision-clause')).toHaveCount(
+        history.clauses,
+      )
+      await dialog.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(open).toBeFocused()
+
+      await open.press('Enter')
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toBeFocused()
+      await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
+      const close = page.getByTestId('public-legal-history-close')
+      await expect(close).toHaveAccessibleName('Close')
+      await close.focus()
+      await close.press('Enter')
+      await expect(dialog).toBeHidden()
+      await expect(open).toBeFocused()
+    })
+  }
 })
 
 test('the sign-in card holds room for a refusal before there is one', async ({
