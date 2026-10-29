@@ -365,20 +365,8 @@ describe('HilosModerationKindPage', () => {
     ).toBe(false)
   })
 
-  it('speaks about refused and frozen windows through the stock accessible states', async () => {
+  it('speaks about a refused window through the stock accessible state', async () => {
     const { view, receive, answer } = await harness()
-    receive('table_viewport_frozen', {
-      page: PAGE,
-      tableKey: TABLE,
-      since: 1000,
-    })
-    await nextTick()
-    expect(view.get('[data-id="hilos-table-live-status"]').text()).toContain(
-      'may be out of date',
-    )
-    expect(view.get('[data-id="hilos-table-frozen"]').text()).toContain(
-      'has not updated',
-    )
     receive('table_window_refused', {
       page: PAGE,
       tableKey: TABLE,
@@ -397,7 +385,6 @@ describe('HilosModerationKindPage', () => {
     expect(view.find('[data-id="hilos-table-unavailable"]').exists()).toBe(
       false,
     )
-    expect(view.find('[data-id="hilos-table-frozen"]').exists()).toBe(false)
   })
 
   it('lets the real outlet replace an unknown kind with the server 404', async () => {

@@ -16,7 +16,6 @@ import { inject, onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosTableEmptyState from '../../HilosTableEmptyState.vue'
-import HilosTableLive from '../../HilosTableLive.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -29,7 +28,6 @@ const kind = computedSignal(() => router.currentRoute.get().params.kind ?? '')
 const detail = createHilosModerationKind(props.context, kind)
 const row = useSignal(detail.row)
 const unavailable = useSignal(detail.unavailable)
-const columns = useSignal(detail.controller.frame.columns)
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.MODERATION_KIND,
@@ -83,7 +81,6 @@ onUnmounted(() => {
     </template>
 
     <template v-if="row">
-      <HilosTableLive :controller="detail.controller" :columns="columns" />
       <div
         class="border rounded-3 px-3 py-2 mb-4"
         data-id="hilos-moderation-kind-overview"

@@ -833,7 +833,7 @@ describe('HilosModerationKindRulesPage', () => {
   })
 
   it.each([TABLE, RULES])(
-    'shows %s refusal and freeze through the stock accessible surfaces',
+    'shows %s refusal, and the rules table its freeze, through the stock accessible surfaces',
     async (tableKey) => {
       const { view, receive, answer } = await harness(
         { ownRuleCount: 0 },
@@ -841,7 +841,9 @@ describe('HilosModerationKindRulesPage', () => {
       )
       receive('table_viewport_frozen', { page: PAGE, tableKey, since: 1000 })
       await nextTick()
-      expect(view.text()).toContain('has not updated')
+      if (tableKey === RULES) {
+        expect(view.text()).toContain('has not updated')
+      }
       receive('table_window_refused', {
         page: PAGE,
         tableKey,

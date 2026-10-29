@@ -19,7 +19,6 @@ import { inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosTableEmptyState from '../../HilosTableEmptyState.vue'
-import HilosTableLive from '../../HilosTableLive.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
@@ -52,7 +51,6 @@ const remove = createHilosModerationRuleDelete(props.context, detail.row, rules)
 const edit = createHilosModerationRuleEdit(props.context, detail.row, rules)
 const row = useSignal(detail.row)
 const unavailable = useSignal(detail.unavailable)
-const columns = useSignal(detail.controller.frame.columns)
 const current = useSignal(rules.current)
 const builtIn = useSignal(
   computedSignal(
@@ -124,11 +122,6 @@ onUnmounted(() => {
       >
     </template>
 
-    <HilosTableLive
-      v-if="row"
-      :controller="detail.controller"
-      :columns="columns"
-    />
     <HilosTableEmptyState
       v-if="unavailable"
       :controller="detail.controller"
