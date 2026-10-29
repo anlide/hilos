@@ -472,7 +472,7 @@ test('Analytics overview exposes one heading, breadcrumb landmark and semantic v
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/analytics')
   await expectPageReady(expect, page)
-  await expectAnalyticsOverview(expect, page, 'tiles')
+  await expectAnalyticsOverview(expect, page)
 
   const head = page.getByTestId('hilos-page-head')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')

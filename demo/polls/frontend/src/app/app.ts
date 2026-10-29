@@ -223,10 +223,14 @@ export class App {
     [HilosPages.USER]: lazyPage(() =>
       import('./views/hilos/users/user.js').then((module) => module.User),
     ),
-    // The framework Analytics pages of one browser session and of one person: the
-    // framework owns the header, the tables and every word; the project binds its
-    // connection and page scope (views/hilos/analytics). The overview comes from
-    // hilosAdminViews.
+    // The framework Analytics overview, browser session and person pages: the
+    // framework owns the header, the tiles, the tables and every word; the project
+    // binds its connection and page scope (views/hilos/analytics).
+    [HilosPages.ANALYTICS]: lazyPage(() =>
+      import('./views/hilos/analytics/analytics.js').then(
+        (module) => module.Analytics,
+      ),
+    ),
     [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
       import('./views/hilos/analytics/browser-session.js').then(
         (module) => module.AnalyticsBrowserSession,

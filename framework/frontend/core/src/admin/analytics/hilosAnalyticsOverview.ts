@@ -11,13 +11,6 @@ import {
 import { usableTimeZone } from '../../timeZone/timeZoneRule.js'
 import { ANALYTICS_NO_VALUE } from './hilosAnalytics.js'
 
-/** Explains where a person's actions open while the overview is empty. */
-export const ANALYTICS_OVERVIEW_EMPTY_TEXT =
-  "Nothing here yet. A person's actions open from their page in the admin."
-
-/** Link text for the admin users list. */
-export const ANALYTICS_OVERVIEW_OPEN_USERS_LABEL = 'Open users'
-
 /** Page-data section carrying one complete opening's aggregate snapshot. */
 export const ANALYTICS_OVERVIEW_SECTION = 'analyticsOverview'
 

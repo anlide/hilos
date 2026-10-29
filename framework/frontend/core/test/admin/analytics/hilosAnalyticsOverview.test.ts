@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ANALYTICS_OVERVIEW_COPY,
-  ANALYTICS_OVERVIEW_EMPTY_TEXT,
-  ANALYTICS_OVERVIEW_OPEN_USERS_LABEL,
   ANALYTICS_OVERVIEW_SECTION,
   analyticsOverviewTiles,
   createHilosAnalyticsOverview,
@@ -365,10 +363,6 @@ describe('analytics overview tiles', () => {
       },
     ])
     expect(ANALYTICS_OVERVIEW_COPY.hour).toBe('Visitors this hour')
-    expect(ANALYTICS_OVERVIEW_EMPTY_TEXT).toBe(
-      "Nothing here yet. A person's actions open from their page in the admin.",
-    )
-    expect(ANALYTICS_OVERVIEW_OPEN_USERS_LABEL).toBe('Open users')
   })
 
   it.each([

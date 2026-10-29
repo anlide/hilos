@@ -69,7 +69,7 @@ test('opens the Analytics overview tiles from the admin dashboard', async ({
     const opening = frames.length
     await page.getByTestId('dashboard-card-hilos_analytics').click()
     await expectPageReady(expect, page)
-    await expectAnalyticsOverview(expect, page, 'tiles', 'vue')
+    await expectAnalyticsOverview(expect, page, 'vue')
 
     await test.info().attach('analytics-overview-frames', {
       body: JSON.stringify(frames.slice(opening), null, 2),

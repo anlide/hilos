@@ -7,6 +7,11 @@ import {
   openSignIn,
   PASSWORD,
   createTestUser,
+  expectAnalyticsOverview,
+  expectAnalyticsOverviewTiles,
+  readAnalyticsOverviewSnapshot,
+  watchSocketFrames,
+  type SocketFrame,
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
@@ -678,6 +683,82 @@ test('Node pages expose one entity heading, link tabs and tables named through t
   } finally {
     reports.stop()
   }
+})
+
+test.describe('Analytics overview accessibility', () => {
+  test.use({ timezoneId: 'Asia/Kathmandu' })
+
+  test('exposes one heading, a breadcrumb landmark and semantic visitor data', async ({
+    page,
+  }) => {
+    const frames: SocketFrame[] = []
+    const observer = watchSocketFrames(page, (frame) => frames.push(frame))
+    try {
+      await grantAdminToSelf(expect, page)
+      const browserTimeZone = await page.evaluate(
+        () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )
+      const opening = frames.length
+      await gotoPage(expect, page, '/hilos/analytics')
+      await expectPageReady(expect, page)
+      await expectAnalyticsOverview(expect, page)
+      const snapshot = readAnalyticsOverviewSnapshot(frames.slice(opening))
+      await expectAnalyticsOverviewTiles(
+        expect,
+        page,
+        snapshot,
+        browserTimeZone,
+      )
+
+      const breadcrumb = page.getByRole('navigation', {
+        name: 'Breadcrumb',
+        exact: true,
+      })
+      await expect(breadcrumb).toBeVisible()
+      await expect(
+        breadcrumb.getByRole('link', { name: 'Hilos', exact: true }),
+      ).toHaveAttribute('href', '/hilos')
+      const currentCrumb = breadcrumb.locator('[aria-current="page"]')
+      await expect(currentCrumb).toContainText('Analytics')
+      await expect(currentCrumb).not.toHaveRole('link')
+      await expect(currentCrumb.getByRole('link')).toHaveCount(0)
+
+      const tiles = page.getByTestId('hilos-analytics-overview-tiles')
+      await expect(tiles.locator('dl')).toHaveCount(3)
+      for (const period of ['week', 'day', 'hour'] as const) {
+        const dl = tiles
+          .getByTestId(`hilos-analytics-visitors-${period}`)
+          .and(tiles.locator('dl'))
+        await expect(dl).toBeVisible()
+        await expect(dl.getByRole('term')).toHaveCount(1)
+        await expect(dl.getByRole('term')).toBeVisible()
+        await expect(dl.getByRole('definition')).toHaveCount(2)
+        for (const field of ['count', 'since']) {
+          const value = dl.getByTestId(
+            `hilos-analytics-visitors-${period}-${field}`,
+          )
+          await expect(value).toHaveRole('definition')
+          await expect(value).toBeVisible()
+        }
+      }
+
+      const icon = page
+        .getByTestId('hilos-page-head')
+        .locator('span[aria-hidden="true"]')
+        .filter({ has: page.locator('i') })
+      await expect(icon).toBeVisible()
+      await expect(icon).toHaveAttribute('aria-hidden', 'true')
+
+      // These aggregates are read-only text, with no keyboard focus target.
+      await expect(
+        tiles.locator(
+          'a, button, input, select, textarea, [tabindex], [contenteditable="true"], [role="link"], [role="button"]',
+        ),
+      ).toHaveCount(0)
+    } finally {
+      observer.stop()
+    }
+  })
 })
 
 test.describe('Daemon section accessibility', () => {

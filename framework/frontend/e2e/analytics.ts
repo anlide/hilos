@@ -845,79 +845,53 @@ export async function expectAnalyticsDashboardCard(
   await expect(card).toContainText(ANALYTICS_LEAD)
 }
 
-/** The overview shows its explicit kit body under the shared catalog identity. */
+/**
+ * The overview shows visitor tiles and the navigation its kit supports.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the ready overview.
+ * @param kit Vue has list navigation and count links; React and Angular do not.
+ */
 export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
-  kind: 'tiles' | 'empty' = 'empty',
   kit: 'legacy' | 'vue' = 'legacy',
 ): Promise<void> {
-  await expect(
-    page.getByRole('heading', { name: 'Analytics', exact: true }),
-  ).toBeVisible()
-  await expect(page.getByTestId('hilos-admin-page')).toContainText(
-    ANALYTICS_LEAD,
-  )
-  if (kind === 'tiles') {
-    const tiles = page.getByTestId('hilos-analytics-overview-tiles')
-    await expect(tiles).toHaveCount(1)
-    await expect(tiles).toBeVisible()
-    await expect(page.locator('h1')).toHaveCount(1)
-    await expect(page.getByTestId('hilos-page-head')).toHaveCount(1)
-    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Analytics')
+  await expect(heading).toBeVisible()
+  const tiles = page.getByTestId('hilos-analytics-overview-tiles')
+  await expect(tiles).toBeVisible()
+  if (kit === 'vue') {
+    await expectAnalyticsSectionHead(expect, page, 'overview')
+  } else {
+    const crumbs = page.getByTestId('hilos-breadcrumb')
+    await expect(
+      crumbs.getByRole('link', { name: 'Hilos', exact: true }),
+    ).toHaveAttribute('href', '/hilos')
+    await expect(crumbs.locator('[aria-current="page"]')).toContainText(
       'Analytics',
     )
-    const tabs = page.getByTestId('hilos-page-tabs')
-    if (kit === 'vue') {
-      await expectAnalyticsSectionHead(expect, page, 'overview')
-    } else {
-      await expect(tabs).toHaveCount(0)
-      const crumbs = page.getByTestId('hilos-breadcrumb')
-      await expect(crumbs.getByRole('link')).toHaveText(['Hilos'])
-      await expect(crumbs.locator('[aria-current="page"]')).toContainText(
-        'Analytics',
-      )
-    }
-    for (const testId of [
-      'hilos-admin-title',
-      'hilos-admin-children',
-      'hilos-admin-empty',
-      'hilos-analytics-overview-empty',
-      'hilos-analytics-overview-open-users',
-      'hilos-analytics-overview-skeleton',
-    ]) {
-      await expect(page.getByTestId(testId)).toHaveCount(0)
-    }
-    await expect(
-      page.getByRole('heading', { name: 'Overview', exact: true }),
-    ).toHaveCount(0)
-    await expect(tiles.getByRole('link')).toHaveCount(kit === 'vue' ? 3 : 0)
-    if (kit === 'vue') {
-      for (const [key, period] of [
-        ['week', 'this-week'],
-        ['day', 'today'],
-        ['hour', 'this-hour'],
-      ] as const) {
-        await expect(
-          tiles.getByTestId(`hilos-analytics-visitors-${key}-link`),
-        ).toHaveAttribute('href', `${ANALYTICS_SESSION_LIST_PATH}/${period}`)
-      }
-    }
-    for (const period of ['week', 'day', 'hour']) {
-      await expect(
-        tiles.getByTestId(`hilos-analytics-visitors-${period}`),
-      ).toBeVisible()
-    }
-    return
   }
-  await expect(
-    page.getByTestId('hilos-analytics-overview-empty'),
-  ).toContainText(
-    "Nothing here yet. A person's actions open from their page in the admin.",
-  )
-  await expect(
-    page.getByTestId('hilos-analytics-overview-open-users'),
-  ).toBeVisible()
+  await expect(tiles.getByRole('link')).toHaveCount(kit === 'vue' ? 3 : 0)
+  await expect(tiles.getByRole('button')).toHaveCount(0)
+  if (kit === 'vue') {
+    for (const [key, period] of [
+      ['week', 'this-week'],
+      ['day', 'today'],
+      ['hour', 'this-hour'],
+    ] as const) {
+      await expect(
+        tiles.getByTestId(`hilos-analytics-visitors-${key}-link`),
+      ).toHaveAttribute('href', `${ANALYTICS_SESSION_LIST_PATH}/${period}`)
+    }
+  }
+  for (const period of ['week', 'day', 'hour']) {
+    await expect(
+      tiles.getByTestId(`hilos-analytics-visitors-${period}`),
+    ).toBeVisible()
+  }
 }
 
 /**

@@ -9,7 +9,6 @@ SHELL-PARITY framework/frontend/vue/src/HilosTableBar.vue 4 # HIL-1762
 SHELL-PARITY framework/frontend/vue/src/HilosTableRecordCard.vue 1 # HIL-1762
 SHELL-PARITY framework/frontend/vue/src/HilosViewportTable.vue 1 # HIL-1762
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsBrowserSessionPage.vue 3 # HIL-1744
-SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPage.vue 6 # HIL-1744
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsPersonPage.vue 2 # HIL-1740
 SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablePage.vue 3 # HIL-1724
 SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTableShell.vue 3 # HIL-1724

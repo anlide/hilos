@@ -347,6 +347,11 @@ const moderationRemovedValues = [
   'SIGNAL_PROFILE_PHOTO_CHECK',
   'profilePhotoCheckSchema',
 ]
+/** Retired empty-copy exports, kept out of the frozen compatibility snapshot. */
+const analyticsOverviewRemovedValues = [
+  'ANALYTICS_OVERVIEW_EMPTY_TEXT',
+  'ANALYTICS_OVERVIEW_OPEN_USERS_LABEL',
+]
 const moderationValues = [
   'PROFILE_PHOTO_KIND',
   'SIGNAL_MODERATION_CHECK',
@@ -761,7 +766,11 @@ const expectedValues = [
   ...daemonNodeValues,
   ...changeLogNoisyValues,
   ...changeLogTableMetadataValues,
-  ...legacy.value.filter((name) => !moderationRemovedValues.includes(name)),
+  ...legacy.value.filter(
+    (name) =>
+      !moderationRemovedValues.includes(name) &&
+      !analyticsOverviewRemovedValues.includes(name),
+  ),
   ...timeZoneValues,
   ...logViewerValues,
   ...i18nOverviewValues,
@@ -886,6 +895,13 @@ describe('core public entries', () => {
       types: './bin/initial-bundle-budget.d.mts',
       import: './bin/initial-bundle-budget.mjs',
     })
+  })
+
+  it('removes retired Analytics overview copy from the root and section entries', () => {
+    for (const name of analyticsOverviewRemovedValues) {
+      expect(core, name).not.toHaveProperty(name)
+      expect(analytics, name).not.toHaveProperty(name)
+    }
   })
 
   it('preserves every legacy value and one instance across root, base and sections', () => {

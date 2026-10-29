@@ -1,8 +1,6 @@
 // @hilos/core/admin/analytics: lazy section APIs.
 
 export {
-  ANALYTICS_OVERVIEW_EMPTY_TEXT,
-  ANALYTICS_OVERVIEW_OPEN_USERS_LABEL,
   ANALYTICS_OVERVIEW_SECTION,
   ANALYTICS_OVERVIEW_COPY,
   hilosAnalyticsOverviewSnapshotSchema,

@@ -1000,13 +1000,16 @@ the account-isolation boundary; cached settings alone do not prove delivery.
 (called before the page signs in), the row reader `readAnalyticsActionRows` (the
 no-value sign reads as a null page name, as the frames carry it) and the cell
 locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` and
-`expectAnalyticsOverview` check the way in, with an explicit `tiles` body for
-Vue/React (chat/tasks) and the default legacy `empty` body for Angular/polls. Chat
-arms `watchSocketFrames` before registration and bookmarks its log before opening
-Analytics from the dashboard. `readAnalyticsOverviewSnapshot` reads one complete
-overview reply from that opening's frames; `expectAnalyticsOverviewTiles` matches
-its exact counts and captured period/zone labels independently of the production
-formatter. Missing or malformed snapshots fail instead of becoming zero counts.
+`expectAnalyticsOverview` check the way in; the shared Overview check always
+requires tiles and has no body `kind` or empty mode. Its `kit` argument selects
+Vue's section tabs and count links; current React and Angular checks use their
+breadcrumb and tiles without count links. The chat (Vue), tasks (React) and polls
+(Angular) Overview specs arm `watchSocketFrames` before setup and bookmark the
+log before opening Analytics from the dashboard. `readAnalyticsOverviewSnapshot`
+reads one complete reply from that opening's frames;
+`expectAnalyticsOverviewTiles` compares all three counts and their captured
+period/zone labels with an independent `Intl` oracle. Missing or malformed
+snapshots fail instead of becoming zero counts.
 The `expectAnalytics…`,
 `expectNoAnalytics…` and `expectOtherAnalyticsSession` checks cover the person
 page and the session page. `expectAnalyticsActionsOnPage` checks that every
