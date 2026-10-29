@@ -13,6 +13,7 @@ const status = {
   components: { operationalCount: 1, totalCount: 1 },
   publishDelaySeconds: 300,
   maintenance: null,
+  scheduledWorks: null,
   incidents: [],
   subscribers: { confirmedCount: 0, pendingCount: 0 },
 }

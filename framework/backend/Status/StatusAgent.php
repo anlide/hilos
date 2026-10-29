@@ -21,6 +21,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -46,13 +47,19 @@ use Hilos\HilosException;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\AbstractStatusOutageMailTemplate;
+use Hilos\Mail\Template\AbstractStatusWorkMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Mail\Template\StatusSubscriptionConfirmMailTemplate;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
+use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
+use Hilos\Status\DTO\StatusScheduleWorkSignalData;
+use Hilos\Status\DTO\StatusChangeWorkSignalData;
+use Hilos\Status\DTO\StatusCancelWorkSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
 use Hilos\Status\DTO\StatusRemoveSubscriberSignalData;
@@ -69,6 +76,7 @@ use Hilos\Status\Exception\StatusException;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\WiringRefusal;
+use JsonException;
 use Random\RandomException;
 use SplQueue;
 use Throwable;
@@ -108,6 +116,9 @@ final class StatusAgent extends AbstractHilosAgent
         HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
         HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
         HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => StatusRemoveSubscriberSignalData::class,
+        HilosSignalConstants::STATUS_SCHEDULE_WORK => StatusScheduleWorkSignalData::class,
+        HilosSignalConstants::STATUS_CHANGE_WORK => StatusChangeWorkSignalData::class,
+        HilosSignalConstants::STATUS_CANCEL_WORK => StatusCancelWorkSignalData::class,
         HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
     ];
 
@@ -115,9 +126,15 @@ final class StatusAgent extends AbstractHilosAgent
         HilosDbContext::statusIncidents => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusIncidentUpdates => [TruthSourceOperation::Add],
         HilosDbContext::statusSubscribers => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::statusWorks => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::statusWorkComponents => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::statusMaintenancePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
-    public const array OWNS_RT = [HilosStatusComponent::RT_COLLECTION => TruthSourceOperation::ALL];
+    public const array OWNS_RT = [
+        HilosStatusComponent::RT_COLLECTION => TruthSourceOperation::ALL,
+        HilosStatusMaintenance::RT_COLLECTION => TruthSourceOperation::ALL,
+    ];
 
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
@@ -140,8 +157,11 @@ final class StatusAgent extends AbstractHilosAgent
     /** @var ?ArrayIterator<int, int> Current task's admin ids, never DB View references */
     private ?ArrayIterator $noticeRecipients = null;
 
-    /** @var SplQueue<StatusSubscriberMailTask> Private best-effort work, discarded on stop, freeze or restart */
+    /** @var SplQueue<StatusSubscriberMailTask|StatusWorkSubscriberMailTask> Private work discarded on stop, freeze or restart */
     private SplQueue $subscriberNotices;
+
+    /** @var array<string, StatusWorkMailContext> Provenance retained only while this owner has tasks for the public work identity */
+    private array $workMailContexts = [];
 
     /** @var ArrayIterator<string, StatusComponentDefinition> Private, restartable reconciliation cursor */
     private ArrayIterator $components;
@@ -179,6 +199,24 @@ final class StatusAgent extends AbstractHilosAgent
     private int $publicPollIntervalSeconds;
     private int $publicStaleAfterSeconds;
 
+    // Private transit/recovery work of this owner; the shared current verdict is in RT.
+    private StatusMaintenanceObservationStore $maintenanceStore;
+    private ?StatusMaintenanceObservation $maintenanceObservation = null;
+    /** @var ?ArrayIterator<int, StatusPublicMaintenancePeriod> Bounded coherent-pair recovery cursor */
+    private ?ArrayIterator $maintenancePublicRecovery = null;
+    /** @var ?ArrayIterator<int, StatusPublicWork> Bounded search for a recovered period's announcement snapshot */
+    private ?ArrayIterator $maintenanceWorkRecovery = null;
+    private ?StatusPublicMaintenancePeriod $maintenanceRecoveryPeriod = null;
+    private bool $maintenanceFilesRecovered = false;
+    private bool $maintenanceRecoveryFailed = false;
+    private bool $maintenanceContinuous = false;
+    private bool $maintenanceSavePending = false;
+    private ?bool $maintenanceOccupied = null;
+    private ?int $maintenanceInactiveAt = null;
+    private ?int $maintenancePersistedAt = null;
+    private int $maintenanceRetryAt = 0;
+    private int $maintenanceSweepAt = 0;
+
     /**
      * @throws StatusComponentDeclarationException When the project's component declaration is invalid
      * @throws HilosException When runtime access or the first watch is refused
@@ -208,8 +246,23 @@ final class StatusAgent extends AbstractHilosAgent
         $this->publicHeartbeatAttemptAt = 0;
         $this->publicHistoryExpiryAt = null;
         $this->publicFailure = null;
-        $this->refreshFreeze();
+        $this->maintenanceStore = new StatusMaintenanceObservationStore();
+        $this->maintenanceObservation = null;
+        $this->maintenancePublicRecovery = new ArrayIterator($this->publicArchive?->maintenancePeriods ?? []);
+        $this->maintenanceWorkRecovery = null;
+        $this->maintenanceRecoveryPeriod = null;
+        $this->maintenanceFilesRecovered = false;
+        $this->maintenanceRecoveryFailed = false;
+        $this->maintenanceContinuous = false;
+        $this->maintenanceSavePending = false;
+        $this->maintenanceOccupied = null;
+        $this->maintenanceInactiveAt = null;
+        $this->maintenancePersistedAt = null;
+        $this->maintenanceRetryAt = 0;
+        $this->maintenanceSweepAt = 0;
         $nowMs = TimeHelper::nowMs();
+        $this->advanceMaintenance($nowMs);
+        $this->refreshFreeze();
         if (!$this->wasFrozen) {
             $this->watchIfDue($nowMs);
         }
@@ -276,6 +329,7 @@ final class StatusAgent extends AbstractHilosAgent
      */
     public function tickAt(int $nowMs): void
     {
+        $this->advanceMaintenance($nowMs);
         $this->refreshFreeze();
         try {
             if (!$this->wasFrozen && Hilos::$db !== null) {
@@ -289,6 +343,23 @@ final class StatusAgent extends AbstractHilosAgent
             throw $failure;
         } finally {
             $this->advancePublic($nowMs);
+        }
+    }
+
+    /**
+     * Keeps admin writes behind the same bounded recovery/import that precedes expiry.
+     * An occupied or missing freeze source retains the caller's ordinary maintenance refusal.
+     *
+     * @param int $nowMs Current mutation clock in UTC epoch milliseconds
+     * @throws HilosException When runtime wiring fails or recovery still owes a valid observation
+     */
+    public function reconcileMaintenanceBeforeWrite(int $nowMs): void
+    {
+        $this->advanceMaintenance($nowMs);
+        $this->refreshFreeze();
+        if (!$this->wasFrozen && (!$this->maintenanceFilesRecovered || $this->maintenancePublicRecovery !== null
+            || $this->maintenanceObservation !== null || $this->maintenanceSavePending || $nowMs < $this->maintenanceRetryAt)) {
+            throw new ValidationException('Status changes are unavailable while maintenance observations are being reconciled. Try again shortly.');
         }
     }
 
@@ -336,6 +407,27 @@ final class StatusAgent extends AbstractHilosAgent
                     throw new InvalidAgentSignalPayloadException($name, StatusRemoveSubscriberSignalData::class, $data->data);
                 }
                 $this->answerSubscriberRemoval($data->data);
+                return;
+
+            case HilosSignalConstants::STATUS_SCHEDULE_WORK:
+                if (!$data->data instanceof StatusScheduleWorkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusScheduleWorkSignalData::class, $data->data);
+                }
+                $this->answerWorkWrite($data->data);
+                return;
+
+            case HilosSignalConstants::STATUS_CHANGE_WORK:
+                if (!$data->data instanceof StatusChangeWorkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusChangeWorkSignalData::class, $data->data);
+                }
+                $this->answerWorkWrite($data->data);
+                return;
+
+            case HilosSignalConstants::STATUS_CANCEL_WORK:
+                if (!$data->data instanceof StatusCancelWorkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusCancelWorkSignalData::class, $data->data);
+                }
+                $this->answerWorkWrite($data->data);
                 return;
 
             case HilosSignalConstants::STATUS_CANCEL_PUBLICATION:
@@ -622,6 +714,199 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
+     * @param StatusScheduleWorkSignalData|StatusChangeWorkSignalData|StatusCancelWorkSignalData $ask Gatekeeper request
+     * @throws InvalidArgumentException When the handover answer cannot be queued
+     */
+    private function answerWorkWrite(StatusScheduleWorkSignalData|StatusChangeWorkSignalData|StatusCancelWorkSignalData $ask): void
+    {
+        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $this->workWrite($ask)));
+    }
+
+    /**
+     * Freeze availability precedes even the identity gate's database reads.
+     * One owner serializes window decisions; transaction announcements precede the answer.
+     *
+     * @param StatusScheduleWorkSignalData|StatusChangeWorkSignalData|StatusCancelWorkSignalData $ask Gatekeeper request
+     * @return ?ActionRefusal Safe refusal, or null after commit (including a no-op)
+     */
+    private function workWrite(StatusScheduleWorkSignalData|StatusChangeWorkSignalData|StatusCancelWorkSignalData $ask): ?ActionRefusal
+    {
+        try {
+            $this->refreshFreeze();
+            if ($this->wasFrozen || Hilos::$db === null) {
+                return ActionRefusal::said('Status changes are unavailable during maintenance or while runtime state is unavailable.');
+            }
+            $action = match (true) {
+                $ask instanceof StatusScheduleWorkSignalData => HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE,
+                $ask instanceof StatusChangeWorkSignalData => HilosSignalConstants::HILOS_STATUS_WORK_CHANGE,
+                $ask instanceof StatusCancelWorkSignalData => HilosSignalConstants::HILOS_STATUS_WORK_CANCEL,
+            };
+            PageAccessGate::assertAction(AbstractHilosStatusWorksPage::class, $ask->acceptKey, $action);
+            if ($ask->action !== $action) {
+                throw new ValidationException('The maintenance action no longer matches this request. Open it again.');
+            }
+            $this->reconcileMaintenanceBeforeWrite(TimeHelper::nowMs());
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($ask): void {
+                $nowMs = TimeHelper::nowMs();
+                if ($ask instanceof StatusScheduleWorkSignalData) {
+                    $keys = $this->validateWorkInput($ask, $nowMs);
+                    $this->assertWorkWindowAvailable($ask->startsAt, $ask->endsAt);
+                    $work = Hilos::$db->statusWorks->actions->create(
+                        trim($ask->title), $this->workDescription($ask->description), $ask->startsAt, $ask->endsAt, $nowMs, $keys,
+                    );
+                    $this->queueWorkNoticeAfterCommit(new StatusWorkSubscriberNotice(
+                        StatusWorkSubscriberNotice::SCHEDULED, $work->id, StatusPublicWork::fromWork($work),
+                        $nowMs, $this->workComponentNames($keys),
+                    ));
+                    return;
+                }
+                if (!isset(Hilos::$db->statusWorks[$ask->workId])
+                    || Hilos::$db->statusWorks[$ask->workId]->publicId !== $ask->publicId) {
+                    throw new ValidationException('This maintenance announcement no longer exists. Refresh the list.');
+                }
+                if ($ask instanceof StatusCancelWorkSignalData && Hilos::$db->statusWorks[$ask->workId]->canceledAt !== null) {
+                    return;
+                }
+                if (Hilos::$db->statusWorks[$ask->workId]->canceledAt !== null
+                    || Hilos::$db->statusWorks[$ask->workId]->consumedAt !== null
+                    || Hilos::$db->statusWorks[$ask->workId]->expiredAt !== null
+                    || Hilos::$db->statusWorks[$ask->workId]->endsAt <= $nowMs) {
+                    throw new ValidationException('This maintenance announcement was canceled, started or expired. Refresh the list.');
+                }
+                if (Hilos::$db->statusWorks[$ask->workId]->version !== $ask->expectedVersion) {
+                    throw new ValidationException(
+                        'This maintenance announcement changed in another window. Review its current values before saving.',
+                    );
+                }
+                $before = StatusPublicWork::fromWork(Hilos::$db->statusWorks[$ask->workId]);
+                if ($ask instanceof StatusCancelWorkSignalData) {
+                    Hilos::$db->statusWorks[$ask->workId]->actions->cancel($nowMs);
+                    $this->queueWorkNoticeAfterCommit(new StatusWorkSubscriberNotice(
+                        StatusWorkSubscriberNotice::CANCELED, $ask->workId, $before, $nowMs,
+                        $this->workComponentNames($before->componentKeys),
+                    ));
+                    return;
+                }
+                $keys = $this->validateWorkInput($ask, $nowMs, $before->startsAt);
+                $this->assertWorkWindowAvailable($ask->startsAt, $ask->endsAt, $ask->workId);
+                Hilos::$db->statusWorks[$ask->workId]->actions->change(
+                    trim($ask->title), $this->workDescription($ask->description), $ask->startsAt, $ask->endsAt, $nowMs, $keys,
+                );
+                if (Hilos::$db->statusWorks[$ask->workId]->version === $ask->expectedVersion) {
+                    return;
+                }
+                $after = StatusPublicWork::fromWork(Hilos::$db->statusWorks[$ask->workId]);
+                $changes = [];
+                foreach (['title' => 'Title', 'description' => 'Description', 'componentKeys' => 'Components',
+                    'startsAt' => 'Scheduled start', 'endsAt' => 'Scheduled end'] as $field => $label) {
+                    if ($before->$field !== $after->$field) {
+                        $changes[] = $label;
+                    }
+                }
+                $this->queueWorkNoticeAfterCommit(new StatusWorkSubscriberNotice(
+                    StatusWorkSubscriberNotice::CHANGED, $ask->workId, $after, $nowMs,
+                    $this->workComponentNames($keys), implode(', ', $changes) . '.',
+                ));
+            });
+        } catch (WiringRefusal $failure) {
+            return $this->statusWriteRefusal($failure);
+        } catch (Throwable $failure) {
+            return $this->statusWriteRefusal($failure);
+        }
+        return null;
+    }
+
+    /**
+     * Storage actions validate the normalized text and interval; the owner knows the clock and project catalog.
+     *
+     * @param StatusScheduleWorkSignalData|StatusChangeWorkSignalData $ask Typed public values
+     * @param int $nowMs Server clock in UTC epoch milliseconds
+     * @param ?int $existingStart Unchanged start may remain in the past until actual maintenance starts
+     * @return list<string> Unique known component keys in canonical order
+     * @throws ValidationException When clocks, selection or catalog membership are invalid
+     * @throws StatusComponentDeclarationException When the project catalog is invalid
+     */
+    private function validateWorkInput(StatusScheduleWorkSignalData|StatusChangeWorkSignalData $ask, int $nowMs, ?int $existingStart = null): array
+    {
+        if (($ask->startsAt !== $existingStart && $ask->startsAt <= $nowMs)
+            || $ask->startsAt % TimeConstants::MS_PER_SECOND !== 0 || $ask->endsAt % TimeConstants::MS_PER_SECOND !== 0) {
+            throw new ValidationException('Choose a future start and whole-second maintenance times.');
+        }
+        if ($ask->componentKeys === [] || count(array_unique($ask->componentKeys)) !== count($ask->componentKeys)) {
+            throw new ValidationException('Choose at least one status component, without duplicates.');
+        }
+        $known = [];
+        foreach (Hilos::statusComponents() as $component) {
+            $known[] = $component->componentKey;
+        }
+        if (array_diff($ask->componentKeys, $known) !== []) {
+            throw new ValidationException('Choose only status components currently declared by this project.');
+        }
+        $keys = $ask->componentKeys;
+        sort($keys, SORT_STRING);
+        return $keys;
+    }
+
+    /**
+     * @param ?string $description Optional plain text from the form
+     * @return ?string Trimmed text, with blank normalized to null
+     */
+    private function workDescription(?string $description): ?string
+    {
+        return $description === null || trim($description) === '' ? null : trim($description);
+    }
+
+    /**
+     * @param int $startsAt Inclusive proposed start
+     * @param int $endsAt Exclusive proposed end
+     * @param ?int $excludeId Changed work, or null for creation
+     * @throws HilosException When a noncanceled window overlaps or storage refuses the lookup
+     */
+    private function assertWorkWindowAvailable(int $startsAt, int $endsAt, ?int $excludeId = null): void
+    {
+        if (Hilos::$db->statusWorks->conflictingWindow($startsAt, $endsAt, $excludeId) !== null) {
+            throw new ValidationException('This maintenance window overlaps another announcement. Choose a different time.');
+        }
+    }
+
+    /**
+     * @param list<string> $keys Snapshot component keys
+     * @return string Public names, retaining a historical key when a catalog entry has since disappeared
+     * @throws StatusComponentDeclarationException When the project catalog is invalid
+     */
+    private function workComponentNames(array $keys): string
+    {
+        $names = [];
+        foreach (Hilos::statusComponents() as $component) {
+            $names[$component->componentKey] = $component->name;
+        }
+        return implode(', ', array_map(static fn (string $key): string => $names[$key] ?? $key, $keys));
+    }
+
+    /**
+     * @param StatusWorkSubscriberNotice $notice Detached event captured inside the write transaction
+     * @throws HilosException When the current work version cannot be read
+     */
+    private function queueWorkNoticeAfterCommit(StatusWorkSubscriberNotice $notice): void
+    {
+        $workVersion = $notice->workId !== null
+            && isset(Hilos::$db->statusWorks[$notice->workId])
+            && Hilos::$db->statusWorks[$notice->workId]->publicId === $notice->work->id
+            ? Hilos::$db->statusWorks[$notice->workId]->version : null;
+        $origin = $notice->kind === StatusWorkSubscriberNotice::COMPLETED ? null : ExecutionContext::currentAcceptKey();
+        $requestId = $notice->kind === StatusWorkSubscriberNotice::COMPLETED ? null : ExecutionContext::currentRequestId();
+        Database::afterCommit(function () use ($notice, $workVersion, $origin, $requestId): void {
+            $this->publicReadPending = true;
+            $context = $this->workMailContexts[$notice->work->id] ?? new StatusWorkMailContext();
+            $context->workVersion = $workVersion;
+            $context->origin = $origin;
+            $context->originRequestId = $requestId;
+            $this->enqueueSubscriberNotice($notice, $context);
+        });
+        $this->invalidatePublicAfterCommit();
+    }
+
+    /**
      * @param StatusCancelPublicationSignalData|StatusPublishNowSignalData|StatusAddUpdateSignalData $ask Gatekeeper's ask
      * @throws InvalidArgumentException When the handover answer cannot be queued
      */
@@ -646,6 +931,7 @@ final class StatusAgent extends AbstractHilosAgent
             if ($this->wasFrozen) {
                 return ActionRefusal::said('Status changes are unavailable during maintenance or while runtime state is unavailable.');
             }
+            $this->reconcileMaintenanceBeforeWrite(TimeHelper::nowMs());
             Database::transaction(DatabaseNames::PRIMARY, function () use ($ask): void {
                 if (!isset(Hilos::$db->statusIncidents[$ask->incidentId])) {
                     throw new StatusIncidentWriteException('This status incident no longer exists.');
@@ -681,9 +967,9 @@ final class StatusAgent extends AbstractHilosAgent
                 });
             });
         } catch (WiringRefusal $failure) {
-            return $this->incidentWriteRefusal($failure);
+            return $this->statusWriteRefusal($failure);
         } catch (Throwable $failure) {
-            return $this->incidentWriteRefusal($failure);
+            return $this->statusWriteRefusal($failure);
         }
         return null;
     }
@@ -692,11 +978,11 @@ final class StatusAgent extends AbstractHilosAgent
      * @param Throwable $failure Domain refusal or diagnostic failure of the transaction
      * @return ActionRefusal Safe reason with internal diagnostics retained for the gatekeeper
      */
-    private function incidentWriteRefusal(Throwable $failure): ActionRefusal
+    private function statusWriteRefusal(Throwable $failure): ActionRefusal
     {
         $refusal = ActionRefusal::fromThrowable($failure);
         if ($refusal->isInternal()) {
-            $this->logAgentError('Status incident operation failed: ' . $failure->getMessage());
+            $this->logAgentError('Status operation failed: ' . $failure->getMessage());
         }
         return $refusal;
     }
@@ -819,9 +1105,12 @@ final class StatusAgent extends AbstractHilosAgent
      * Hilos::$rt is deliberately not used: nobody else reads this owner's accepted best-effort work.
      * The DB owns subscribers; counts() captures the bound once without caching the audience.
      *
-     * @param StatusSubscriberNotice $notice Detached event whose transaction committed
+     * @param StatusSubscriberNotice|StatusWorkSubscriberNotice $notice Detached event whose transaction committed
+     * @param ?StatusWorkMailContext $workContext Latest committed work provenance, absent for outage notices
      */
-    private function enqueueSubscriberNotice(StatusSubscriberNotice $notice): void
+    private function enqueueSubscriberNotice(
+        StatusSubscriberNotice|StatusWorkSubscriberNotice $notice, ?StatusWorkMailContext $workContext = null,
+    ): void
     {
         try {
             $this->requireSubscriptionsAvailable();
@@ -831,9 +1120,18 @@ final class StatusAgent extends AbstractHilosAgent
             $maxId = Hilos::$db->statusSubscribers->counts()->maxSubscriberId;
             $links = StatusSubscriptionLink::fromEnvironment();
             $projectName = trim(Hilos::$env[EnvConstants::MAIL_FROM_NAME]->string());
-            $this->subscriberNotices->enqueue(new StatusSubscriberMailTask(
-                $notice, $maxId, $links, $projectName === '' ? 'Service' : $projectName,
-            ));
+            if ($notice instanceof StatusWorkSubscriberNotice) {
+                $workContext ??= new StatusWorkMailContext();
+                $this->subscriberNotices->enqueue(new StatusWorkSubscriberMailTask(
+                    $notice, $maxId, $links, $projectName === '' ? 'Service' : $projectName, $workContext,
+                ));
+                $workContext->pendingTasks++;
+                $this->workMailContexts[$notice->work->id] = $workContext;
+            } else {
+                $this->subscriberNotices->enqueue(new StatusSubscriberMailTask(
+                    $notice, $maxId, $links, $projectName === '' ? 'Service' : $projectName,
+                ));
+            }
         } catch (WiringRefusal $failure) {
             $this->logAgentError('Status subscriber notice source refused: ' . $failure->getMessage());
         } catch (Throwable $failure) {
@@ -880,6 +1178,9 @@ final class StatusAgent extends AbstractHilosAgent
             try {
                 $this->sendSubscriberNotice($task, $recipient->id);
             } catch (Throwable $failure) {
+                if ($task instanceof StatusWorkSubscriberMailTask) {
+                    $task->handoffFailed = true;
+                }
                 $this->logAgentError('Status subscriber mail handoff failed: ' . $failure->getMessage());
             }
             if ($this->subscriberNotices->isEmpty()) {
@@ -888,29 +1189,46 @@ final class StatusAgent extends AbstractHilosAgent
         }
         if (count($recipients) < self::SUBSCRIBER_ATTEMPTS_PER_TICK || $task->afterId === $task->maxSubscriberId) {
             $this->subscriberNotices->dequeue();
+            if ($task instanceof StatusWorkSubscriberMailTask) {
+                if (!$task->handoffFailed && $task->handedOff > 0) {
+                    $this->markWorkMailQueued($task);
+                }
+                $task->context->pendingTasks--;
+                if ($task->context->pendingTasks === 0) {
+                    unset($this->workMailContexts[$task->notice->work->id]);
+                }
+            }
         }
     }
 
     /**
      * Rechecks the primary id and confirmation immediately before reading its DB-only mail capability.
      *
-     * @param StatusSubscriberMailTask $task Immutable event and captured audience boundary
+     * @param StatusSubscriberMailTask|StatusWorkSubscriberMailTask $task Immutable event and captured audience boundary
      * @param int $subscriberId Current recipient's primary id, never an email lookup
      * @throws HilosException When sources, recipient formatting or raw mail handoff are refused
      */
-    private function sendSubscriberNotice(StatusSubscriberMailTask $task, int $subscriberId): void
+    private function sendSubscriberNotice(StatusSubscriberMailTask|StatusWorkSubscriberMailTask $task, int $subscriberId): void
     {
         $this->requireSubscriptionsAvailable();
-        if (Hilos::$mail === null || Hilos::$sr === null
-            || !isset(Hilos::$db->statusSubscribers[$subscriberId])
+        if (Hilos::$mail === null || Hilos::$sr === null) {
+            $this->resetSubscriberNotices();
+            return;
+        }
+        if (!isset(Hilos::$db->statusSubscribers[$subscriberId])
             || !Hilos::$db->statusSubscribers[$subscriberId]->confirmed
             || Hilos::$db->statusSubscribers[$subscriberId]->confirmedAt === null
             || Hilos::$db->statusSubscribers[$subscriberId]->confirmedAt > $task->notice->eventAt) {
             return;
         }
+        $previousHandoffs = $task instanceof StatusWorkSubscriberMailTask ? $task->handedOff : null;
         Hilos::$db->statusSubscribers[$subscriberId]->deliverMail(function (
             string $email, string $unsubscribeToken, ?string $savedZone,
         ) use ($task): void {
+            if ($task instanceof StatusWorkSubscriberMailTask) {
+                $this->sendWorkSubscriberNotice($task, $email, $unsubscribeToken, $savedZone);
+                return;
+            }
             $zone = TimeHelper::serverTextTimeZone(browserTimeZone: $savedZone);
             $label = static fn (int $at): string => new DateTimeImmutable('@' . intdiv($at, TimeConstants::MS_PER_SECOND))
                 ->setTimezone($zone)->format(self::MAIL_DATE_FORMAT);
@@ -937,12 +1255,88 @@ final class StatusAgent extends AbstractHilosAgent
                 locale: null,
             ));
         });
+        if ($task instanceof StatusWorkSubscriberMailTask && $task->handedOff === $previousHandoffs) {
+            // A confirmed row with no usable mail capability proves no accepted handoff.
+            $task->handoffFailed = true;
+        }
+    }
+
+    /**
+     * @param StatusWorkSubscriberMailTask $task Detached announcement event and audience cursor
+     * @param string $email Current recipient's address, used only in this handoff
+     * @param string $unsubscribeToken Current DB-only unsubscribe capability
+     * @param ?string $savedZone Recipient's subscription-zone snapshot
+     * @throws HilosException When recipient formatting or raw pool handoff fails
+     */
+    private function sendWorkSubscriberNotice(
+        StatusWorkSubscriberMailTask $task, string $email, string $unsubscribeToken, ?string $savedZone,
+    ): void {
+        $zone = TimeHelper::serverTextTimeZone(browserTimeZone: $savedZone);
+        $label = static fn (int $at): string => new DateTimeImmutable('@' . intdiv($at, TimeConstants::MS_PER_SECOND))
+            ->setTimezone($zone)->format(self::MAIL_DATE_FORMAT);
+        Hilos::$mail->send(new MailSendSignalData(
+            to: $email,
+            shardKey: HilosMailer::shardKeyForAddress($email),
+            templateKey: match ($task->notice->kind) {
+                StatusWorkSubscriberNotice::SCHEDULED => MailTemplateCatalogConstants::STATUS_WORK_SCHEDULED,
+                StatusWorkSubscriberNotice::CHANGED => MailTemplateCatalogConstants::STATUS_WORK_CHANGED,
+                StatusWorkSubscriberNotice::CANCELED => MailTemplateCatalogConstants::STATUS_WORK_CANCELED,
+                StatusWorkSubscriberNotice::COMPLETED => MailTemplateCatalogConstants::STATUS_WORK_COMPLETED,
+            },
+            params: [
+                AbstractStatusWorkMailTemplate::PARAM_PROJECT_NAME => $task->projectName,
+                AbstractStatusWorkMailTemplate::PARAM_STATUS_URL => $task->links->statusUrl,
+                AbstractStatusWorkMailTemplate::PARAM_UNSUBSCRIBE_URL => $task->links->unsubscribeUrl($unsubscribeToken),
+                AbstractStatusWorkMailTemplate::PARAM_TITLE => $task->notice->work->title,
+                AbstractStatusWorkMailTemplate::PARAM_DESCRIPTION => $task->notice->work->description,
+                AbstractStatusWorkMailTemplate::PARAM_COMPONENT_NAMES => $task->notice->componentNames,
+                AbstractStatusWorkMailTemplate::PARAM_STARTS_AT_LABEL => $label($task->notice->work->startsAt),
+                AbstractStatusWorkMailTemplate::PARAM_ENDS_AT_LABEL => $label($task->notice->work->endsAt),
+                AbstractStatusWorkMailTemplate::PARAM_CHANGES_TEXT => $task->notice->changesText,
+                AbstractStatusWorkMailTemplate::PARAM_ENDED_AT_LABEL
+                    => $task->notice->endedAt === null ? null : $label($task->notice->endedAt),
+                AbstractStatusWorkMailTemplate::PARAM_COMPLETION_OBSERVED_AT_LABEL
+                    => $task->notice->completionObservedAt === null ? null : $label($task->notice->completionObservedAt),
+            ],
+            locale: null,
+        ));
+        $task->handedOff++;
+    }
+
+    /**
+     * A task proves only accepted pool handoffs, never SMTP delivery. A restored integer id alone proves nothing.
+     *
+     * @param StatusWorkSubscriberMailTask $task Finished audience with at least one successful handoff and no ambiguous attempt
+     */
+    private function markWorkMailQueued(StatusWorkSubscriberMailTask $task): void
+    {
+        try {
+            $this->requireSubscriptionsAvailable();
+            Database::transaction(DatabaseNames::PRIMARY, static function () use ($task): void {
+                if (isset(Hilos::$db->statusWorks[$task->notice->workId])
+                    && Hilos::$db->statusWorks[$task->notice->workId]->publicId === $task->notice->work->id) {
+                    // A handoff may share the browser flush with its domain write. Keep that
+                    // version's latest committed author, independently of the mailed snapshot.
+                    $sameVersion = Hilos::$db->statusWorks[$task->notice->workId]->version === $task->context->workVersion;
+                    ExecutionContext::withOrigin(
+                        $sameVersion ? $task->context->origin : null,
+                        $sameVersion ? $task->context->originRequestId : null,
+                        static fn () => Hilos::$db->statusWorks[$task->notice->workId]->actions->markMailQueued(TimeHelper::nowMs()),
+                    );
+                }
+            });
+        } catch (WiringRefusal $failure) {
+            $this->logAgentError('Status work handoff mark source refused: ' . $failure->getMessage());
+        } catch (Throwable $failure) {
+            $this->logAgentError('Status work handoff mark failed: ' . $failure->getMessage());
+        }
     }
 
     /** Discards this instance's private queue and keysets; durable history never recreates them. */
     private function resetSubscriberNotices(): void
     {
         $this->subscriberNotices = new SplQueue();
+        $this->workMailContexts = [];
     }
 
     /**
@@ -1109,7 +1503,7 @@ final class StatusAgent extends AbstractHilosAgent
             }
             $this->publicBuilder->advance();
             if ($this->publicBuilder->isReady()) {
-                $this->publicArchive = $this->publicBuilder->getSnapshot();
+                $this->publicArchive = $this->maintenanceOverlay($this->publicBuilder->getSnapshot());
                 $this->publicHistoryExpiryAt = $this->publicBuilder->getNextHistoryExpiryAt();
                 $this->publicFiles->begin($this->publicArchive);
                 $this->publicBuilder->reset();
@@ -1160,11 +1554,12 @@ final class StatusAgent extends AbstractHilosAgent
         } catch (RandomException $failure) {
             throw new StatusException('Cannot mint a public Status revision.', previous: $failure);
         }
-        return new StatusPublicSnapshot(
+        return $this->maintenanceOverlay(new StatusPublicSnapshot(
             $revision, $nowMs,
             $this->publicPollIntervalSeconds, $this->publicStaleAfterSeconds,
             $components, [], $this->publicArchive?->outages ?? [],
-        );
+            $this->publicArchive?->scheduledWorks ?? [], $this->publicArchive?->maintenancePeriods ?? [],
+        ));
     }
 
     /** @param HilosException $failure Private diagnostic; never copied to a public file */
@@ -1177,6 +1572,411 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
+     * Reads only the unconditional runtime while occupied or unknown. Transit failures never
+     * control the freeze, suppress its lift, or prevent the independent public heartbeat.
+     *
+     * @param int $nowMs Local observation clock in UTC epoch milliseconds
+     * @throws HilosException When source wiring or represented runtime writes are refused
+     */
+    private function advanceMaintenance(int $nowMs): void
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        $occupied = $freeze === null || $freeze->staleSince() !== null ? null
+            : $freeze->phase !== ProtectedModeRuntime::PHASE_INACTIVE;
+        if ($occupied === null) {
+            $this->maintenanceContinuous = false;
+        }
+        if ($occupied === false && $this->maintenanceOccupied !== false) {
+            $this->maintenanceFilesRecovered = false;
+            $this->maintenanceSweepAt = 0;
+        }
+        $previousOccupied = $this->maintenanceOccupied;
+        $this->maintenanceOccupied = $occupied;
+        if ($occupied === true && $previousOccupied === false) {
+            $this->maintenanceContinuous = true;
+        }
+        try {
+            if ($nowMs < $this->maintenanceRetryAt) {
+                return;
+            }
+            if ($occupied === false && $this->maintenanceObservation?->period->completionObservedAt === null
+                && $this->maintenanceObservation !== null) {
+                $this->maintenanceObservation = $this->maintenanceObservation->complete($nowMs, $this->maintenanceContinuous);
+                $this->maintenanceSavePending = true;
+                $this->publicInvalidated = true;
+            }
+            if ($this->maintenanceSavePending) {
+                $this->persistMaintenance($nowMs);
+            }
+            if ($occupied === true && $this->maintenanceObservation?->period->completionObservedAt !== null) {
+                // A proven inactive interval separates the new freeze from a completed transit awaiting DB import.
+                $this->publicArchive = $this->maintenanceOverlay($this->publicArchive ?? $this->publicUnavailable($nowMs));
+                $this->maintenanceObservation = null;
+                $this->maintenancePersistedAt = null;
+            }
+            if (!$this->maintenanceFilesRecovered) {
+                $this->recoverMaintenanceFiles($nowMs, $occupied);
+                return;
+            }
+            if ($this->maintenancePublicRecovery !== null) {
+                $this->recoverPublicMaintenance($nowMs);
+                return;
+            }
+            if ($occupied === true) {
+                if ($this->maintenanceObservation === null) {
+                    // Protected-mode startedAt is seconds; this is its sole conversion boundary.
+                    $startKnown = $freeze->startedAt !== null && $freeze->startedAt > 0
+                        && $freeze->startedAt <= intdiv($nowMs, TimeConstants::MS_PER_SECOND);
+                    $startedAt = $startKnown ? $freeze->startedAt * TimeConstants::MS_PER_SECOND : $nowMs;
+                    $snapshot = $this->publicFiles->getSnapshot();
+                    $known = $this->maintenanceContinuous && $startKnown && $snapshot !== null && $this->publicSourceAvailable
+                        && !$this->publicInvalidated && !$this->publicNeedsBuild && !$this->publicFiles->isPublishing()
+                        && !$this->publicBuilder->isBuilding()
+                        && $snapshot->sourceSchemaVersion === StatusPublicSnapshot::SCHEMA_VERSION
+                        // Inactive proves publication preceded freeze even within its truncated start second.
+                        && $this->maintenanceInactiveAt !== null && $snapshot->generatedAt <= $this->maintenanceInactiveAt
+                        && $startedAt > $this->maintenanceInactiveAt - TimeConstants::MS_PER_SECOND;
+                    $work = null;
+                    if ($known) {
+                        // A coherent pair orders nonoverlapping windows by start. Search without walking the set.
+                        $lower = 0;
+                        $upper = count($snapshot->scheduledWorks) - 1;
+                        while ($lower <= $upper) {
+                            $middle = intdiv($lower + $upper, 2);
+                            $announcement = $snapshot->scheduledWorks[$middle];
+                            if ($startedAt < $announcement->startsAt) {
+                                $upper = $middle - 1;
+                            } elseif ($startedAt >= $announcement->endsAt) {
+                                $lower = $middle + 1;
+                            } else {
+                                $work = $announcement;
+                                break;
+                            }
+                        }
+                    }
+                    $this->maintenanceObservation = StatusMaintenanceObservation::start($startedAt, $nowMs, $known, $work);
+                    $this->maintenanceSavePending = true;
+                    $this->publicInvalidated = true;
+                } else {
+                    $this->maintenanceObservation = $this->maintenanceObservation->observe($nowMs);
+                }
+                if ($this->maintenancePersistedAt === null
+                    || $nowMs - $this->maintenancePersistedAt >= $this->publicFiles->getHeartbeatIntervalMs()) {
+                    $this->maintenanceSavePending = true;
+                }
+                if ($this->maintenanceSavePending) {
+                    $this->persistMaintenance($nowMs);
+                    $this->publicInvalidated = true;
+                }
+            } elseif ($occupied === false) {
+                if ($this->maintenanceObservation !== null) {
+                    $this->importMaintenanceObservation($this->maintenanceObservation);
+                    $this->maintenanceObservation = null;
+                }
+                $this->maintenanceInactiveAt = $nowMs;
+                if (Hilos::$db !== null && $nowMs >= $this->maintenanceSweepAt) {
+                    $this->maintenanceSweepAt = $nowMs + (int)ceil($this->publicFiles->getHeartbeatIntervalMs());
+                    $this->expireWorks($nowMs);
+                }
+            }
+        } catch (WiringRefusal $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            $this->maintenanceRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+            $this->logAgentError('Status maintenance observation will retry: ' . $failure->getMessage());
+        } finally {
+            $this->syncMaintenanceCurrent($occupied);
+        }
+    }
+
+    /**
+     * @param int $nowMs Persistence clock in UTC epoch milliseconds
+     * @throws StatusException When private transit cannot be saved
+     */
+    private function persistMaintenance(int $nowMs): void
+    {
+        $this->maintenanceStore->save($this->maintenanceObservation);
+        $this->maintenanceSavePending = false;
+        $this->maintenancePersistedAt = $nowMs;
+    }
+
+    /**
+     * @param int $nowMs First inactive detection after a recovery gap
+     * @param ?bool $occupied Known source verdict, null when unavailable
+     * @throws HilosException When source wiring, storage or transit operations fail
+     */
+    private function recoverMaintenanceFiles(int $nowMs, ?bool $occupied): void
+    {
+        $names = $this->maintenanceStore->discover();
+        foreach ($names as $name) {
+            try {
+                $observation = $this->maintenanceStore->load($name);
+            } catch (StatusException $failure) {
+                $this->logAgentError('Ignoring invalid Status maintenance transit: ' . $failure->getMessage());
+                continue;
+            }
+            if ($occupied === false) {
+                try {
+                    $observation = $observation->complete($nowMs, false);
+                    $this->maintenanceStore->save($observation);
+                    $this->importMaintenanceObservation($observation);
+                    if ($this->maintenanceObservation?->period->id === $observation->period->id) {
+                        $this->maintenanceObservation = null;
+                    }
+                } catch (WiringRefusal $failure) {
+                    throw $failure;
+                } catch (HilosException | JsonException $failure) {
+                    $this->maintenanceRecoveryFailed = true;
+                    $this->logAgentError('Status maintenance import will retry: ' . $failure->getMessage());
+                }
+            } elseif ($observation->period->completionObservedAt === null && $this->maintenanceObservation === null) {
+                $this->maintenanceObservation = $observation;
+                $this->maintenanceContinuous = false;
+                $this->maintenancePersistedAt = $nowMs;
+                $this->publicInvalidated = true;
+            }
+        }
+        if (!$this->maintenanceStore->isDiscovering()) {
+            $this->maintenanceFilesRecovered = !$this->maintenanceRecoveryFailed;
+            if ($this->maintenanceRecoveryFailed) {
+                $this->maintenanceRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+                $this->maintenanceRecoveryFailed = false;
+            }
+        }
+    }
+
+    /**
+     * Completed public history is never imported. Only an active fact can repair lost transit.
+     * Period and announcement scans each take their own bounded pass.
+     *
+     * @param int $nowMs Recovery clock in UTC epoch milliseconds
+     * @throws StatusException When a recovered active fact or its private persistence is invalid
+     */
+    private function recoverPublicMaintenance(int $nowMs): void
+    {
+        if ($this->maintenanceRecoveryPeriod !== null) {
+            $work = null;
+            for ($step = 0; $step < StatusMaintenanceObservationStore::MAX_FILES_PER_PASS
+                && $this->maintenanceWorkRecovery->valid(); ++$step) {
+                $announcement = $this->maintenanceWorkRecovery->current();
+                $this->maintenanceWorkRecovery->next();
+                if ($announcement->id === $this->maintenanceRecoveryPeriod->workId
+                    && $announcement->title === $this->maintenanceRecoveryPeriod->title
+                    && $announcement->componentKeys === $this->maintenanceRecoveryPeriod->componentKeys) {
+                    $work = $announcement;
+                    break;
+                }
+            }
+            if ($work === null && $this->maintenanceWorkRecovery->valid()) {
+                return;
+            }
+            $this->maintenanceObservation = new StatusMaintenanceObservation($this->maintenanceRecoveryPeriod, $work);
+            $this->maintenanceRecoveryPeriod = null;
+            $this->maintenanceWorkRecovery = null;
+            $this->maintenanceContinuous = false;
+            $this->maintenanceSavePending = true;
+            $this->persistMaintenance($nowMs);
+            $this->publicInvalidated = true;
+            return;
+        }
+        for ($step = 0; $step < StatusMaintenanceObservationStore::MAX_FILES_PER_PASS
+            && $this->maintenancePublicRecovery->valid(); ++$step) {
+            $period = $this->maintenancePublicRecovery->current();
+            $this->maintenancePublicRecovery->next();
+            if ($period->completionObservedAt !== null || $this->maintenanceObservation !== null) {
+                continue;
+            }
+            $this->maintenanceRecoveryPeriod = $period;
+            $this->maintenanceWorkRecovery = new ArrayIterator($this->publicArchive->scheduledWorks);
+            return;
+        }
+        if (!$this->maintenancePublicRecovery->valid()) {
+            $this->maintenancePublicRecovery = null;
+        }
+    }
+
+    /**
+     * All writes join one owner transaction. A public id is resolved anew after a restore;
+     * no saved integer can consume a replacement work. Unlink follows the committed result.
+     *
+     * @param StatusMaintenanceObservation $observation Sanitized transit, never a live DB reference
+     * @throws HilosException When import, ownership, commit or transit cleanup fails
+     * @throws JsonException When sanitized component serialization fails
+     */
+    private function importMaintenanceObservation(StatusMaintenanceObservation $observation): void
+    {
+        if (Hilos::$db === null) {
+            throw new StatusException('Maintenance import requires an available database source.');
+        }
+        Database::transaction(DatabaseNames::PRIMARY, function () use ($observation): void {
+            $period = $observation->period;
+            $existing = Hilos::$db->statusMaintenancePeriods->findByPublicId($period->id);
+            if ($existing !== null && ($existing->workPublicId !== $period->workId
+                || $existing->announcementKnown !== $period->announcementKnown || $existing->title !== $period->title
+                || $existing->componentKeys !== $period->componentKeys || $existing->startedAt !== $period->startedAt)) {
+                throw new StatusException('Maintenance transit disagrees with its persisted public identity.');
+            }
+            $firstCompletion = $period->completionObservedAt !== null && $existing?->completionObservedAt === null;
+            $work = $period->workId === null ? null : Hilos::$db->statusWorks->findByPublicId($period->workId);
+            if ($work !== null && $work->consumedAt === null && $work->canceledAt === null && $work->expiredAt === null) {
+                if ($observation->work !== null) {
+                    $work->actions->consumeObservation($observation);
+                } elseif ($work->startsAt <= $period->startedAt && $period->startedAt < $work->endsAt) {
+                    $work->actions->consume($period->startedAt);
+                }
+            }
+            if ($existing?->completionObservedAt !== null) {
+                // A stale active public pair must not reopen or re-complete an already committed fact.
+                $period = StatusPublicMaintenancePeriod::fromPeriod($existing);
+            } else {
+                if ($existing === null) {
+                    Hilos::$db->statusMaintenancePeriods->actions->import(
+                        $period->id, $work?->id, $period->workId, $period->announcementKnown,
+                        $period->title, $period->componentKeys, $period->startedAt, $period->lastObservedAt,
+                        $period->endedAt, $period->completionObservedAt,
+                    );
+                } else {
+                    $existing->actions->reconcile($period->lastObservedAt, $period->endedAt, $period->completionObservedAt);
+                }
+            }
+            if ($firstCompletion) {
+                Database::afterCommit(function () use ($period): void {
+                    $this->retainMaintenancePeriod($period);
+                });
+                if ($period->announcementKnown && $observation->work !== null) {
+                    $this->queueWorkNoticeAfterCommit(new StatusWorkSubscriberNotice(
+                        StatusWorkSubscriberNotice::COMPLETED, $work?->id, $observation->work, $period->completionObservedAt,
+                        $this->workComponentNames($observation->work->componentKeys),
+                        endedAt: $period->endedAt, completionObservedAt: $period->completionObservedAt,
+                    ));
+                }
+            }
+            $this->invalidatePublicAfterCommit();
+        });
+        $this->maintenanceStore->remove($observation);
+    }
+
+    /**
+     * @param int $nowMs Expiry detection clock in UTC epoch milliseconds
+     * @throws HilosException When bounded overdue reads or item expiry fail
+     */
+    private function expireWorks(int $nowMs): void
+    {
+        $portion = Hilos::$db->statusWorks->expiredPortion($nowMs);
+        foreach ($portion as $work) {
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($work, $nowMs): void {
+                Hilos::$db->statusWorks[$work->id]->actions->expire($nowMs);
+                $this->invalidatePublicAfterCommit();
+            });
+        }
+        if (count($portion) === StatusMaintenanceObservationStore::MAX_FILES_PER_PASS) {
+            $this->maintenanceSweepAt = 0;
+        }
+    }
+
+    /**
+     * @param ?bool $occupied Unconditional source verdict; null never means open
+     * @throws HilosException When represented owner-only runtime actions fail
+     */
+    private function syncMaintenanceCurrent(?bool $occupied): void
+    {
+        if (Hilos::$rt === null) {
+            return;
+        }
+        Hilos::$rt->hilosStatusMaintenance->actions->ensure();
+        $period = $this->maintenanceObservation?->period;
+        $work = $this->maintenanceObservation?->work;
+        if ($period !== null) {
+            Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(
+                $occupied !== null && !($occupied && $period->completionObservedAt !== null),
+                $occupied ?? ($period->completionObservedAt === null),
+                $period->announcementKnown, $period->id, $period->workId, $period->title, $period->componentKeys,
+                $work?->startsAt, $work?->endsAt, $period->startedAt, $period->lastObservedAt,
+            );
+        } elseif ($occupied === false) {
+            Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(available: true);
+        } else {
+            Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(
+                false, $occupied ?? Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->active,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->announcementKnown,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->periodId,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->workPublicId,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->title,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->componentKeys,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->startsAt,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->endsAt,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->startedAt,
+                Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->lastObservedAt,
+            );
+        }
+    }
+
+    /**
+     * @param StatusPublicMaintenancePeriod $period First committed completion, detached from ORM
+     * @throws HilosException When sanitized public metadata cannot be reconstructed
+     */
+    private function retainMaintenancePeriod(StatusPublicMaintenancePeriod $period): void
+    {
+        $base = $this->publicArchive ?? $this->publicUnavailable($period->completionObservedAt ?? $period->lastObservedAt);
+        $this->publicArchive = $this->withMaintenancePeriod($base, $period, null);
+        $this->publicInvalidated = true;
+    }
+
+    /**
+     * @param StatusPublicSnapshot $snapshot Complete sanitized base
+     * @return StatusPublicSnapshot Base plus the current actual observation, preserving unrelated history
+     * @throws StatusException When public metadata cannot be reconstructed
+     */
+    private function maintenanceOverlay(StatusPublicSnapshot $snapshot): StatusPublicSnapshot
+    {
+        return $this->maintenanceObservation === null ? $snapshot : $this->withMaintenancePeriod(
+            $snapshot, $this->maintenanceObservation->period, $this->maintenanceObservation->work,
+        );
+    }
+
+    /**
+     * @param StatusPublicSnapshot $snapshot Complete sanitized base
+     * @param StatusPublicMaintenancePeriod $period Current or first committed completion
+     * @param ?StatusPublicWork $work Proven announcement snapshot, never resolved during freeze
+     * @return StatusPublicSnapshot Updated detached sets, with outages and other announcements intact
+     * @throws StatusException When public metadata cannot be reconstructed
+     */
+    private function withMaintenancePeriod(
+        StatusPublicSnapshot $snapshot,
+        StatusPublicMaintenancePeriod $period,
+        ?StatusPublicWork $work,
+    ): StatusPublicSnapshot {
+        $periods = [];
+        foreach ($snapshot->maintenancePeriods as $previous) {
+            if ($previous->id !== $period->id) {
+                $periods[] = $previous;
+            }
+        }
+        $periods[] = $period;
+        $works = [];
+        $workAdded = false;
+        foreach ($snapshot->scheduledWorks as $previous) {
+            if ($previous->id !== $period->workId) {
+                $works[] = $previous;
+            } elseif ($period->completionObservedAt === null) {
+                $works[] = $work ?? $previous;
+                $workAdded = true;
+            }
+        }
+        if ($period->completionObservedAt === null && $work !== null && !$workAdded) {
+            $position = 0;
+            foreach ($works as $previous) {
+                if ($previous->startsAt > $work->startsAt) {
+                    break;
+                }
+                ++$position;
+            }
+            array_splice($works, $position, 0, [$work]);
+        }
+        return $snapshot->withMaintenance($works, $periods);
+    }
+
+    /**
      * Null means this process holds no runtime state and must wait, just as during an active freeze.
      *
      * @throws HilosException When the freeze runtime cannot be read
@@ -1184,7 +1984,7 @@ final class StatusAgent extends AbstractHilosAgent
     private function refreshFreeze(): void
     {
         $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
-        $state = $freeze === null ? StatusComponentState::UNKNOWN
+        $state = $freeze === null || $freeze->staleSince() !== null ? StatusComponentState::UNKNOWN
             : ($freeze->phase === ProtectedModeRuntime::PHASE_INACTIVE ? null : StatusComponentState::MAINTENANCE);
         if ($state !== $this->freezeState) {
             $this->freezeState = $state;

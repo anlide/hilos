@@ -3193,8 +3193,18 @@ final class HilosSignalConstants
 
     /** Browser metadata for the Status overview and component window. */
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS = 'subscription_page_hilos_status';
+    public const string SUBSCRIPTION_PAGE_HILOS_STATUS_WORKS = 'subscription_page_hilos_status_works';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS = 'subscription_page_hilos_status_components';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_SUBSCRIBERS = 'subscription_page_hilos_status_subscribers';
+
+    /** ADMIN Works gatekeeper actions and the Status owner's internal asks and answer. */
+    public const string HILOS_STATUS_WORK_SCHEDULE = 'hilos_status_work_schedule';
+    public const string HILOS_STATUS_WORK_CHANGE = 'hilos_status_work_change';
+    public const string HILOS_STATUS_WORK_CANCEL = 'hilos_status_work_cancel';
+    public const string STATUS_SCHEDULE_WORK = 'status_schedule_work';
+    public const string STATUS_CHANGE_WORK = 'status_change_work';
+    public const string STATUS_CANCEL_WORK = 'status_cancel_work';
+    public const string HILOS_STATUS_WORK_WRITE_DONE = 'hilos_status_work_write_done';
 
     /** ADMIN page actions; the Status owner receives separate internal asks. */
     public const string HILOS_STATUS_CANCEL_PUBLICATION = 'hilos_status_cancel_publication';

@@ -1,0 +1,21 @@
+CREATE TABLE `hilos_status_work` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `public_id` CHAR(32) NOT NULL,
+    `title` VARCHAR(200) NOT NULL,
+    `description` TEXT NULL DEFAULT NULL,
+    `starts_at` BIGINT UNSIGNED NOT NULL,
+    `ends_at` BIGINT UNSIGNED NOT NULL,
+    `created_at` BIGINT UNSIGNED NOT NULL,
+    `updated_at` BIGINT UNSIGNED NOT NULL,
+    `canceled_at` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `consumed_at` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `expired_at` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `version` INT UNSIGNED NOT NULL,
+    `last_mail_queued_at` BIGINT UNSIGNED NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_status_work_public` (`public_id`),
+    KEY `idx_status_work_pending_starts_at` (`canceled_at`, `consumed_at`, `expired_at`, `starts_at`, `id`),
+    KEY `idx_status_work_pending_ends_at` (`canceled_at`, `consumed_at`, `expired_at`, `ends_at`, `id`),
+    KEY `idx_status_work_pending_title` (`canceled_at`, `consumed_at`, `expired_at`, `title`, `id`),
+    KEY `idx_status_work_window` (`canceled_at`, `starts_at`, `ends_at`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

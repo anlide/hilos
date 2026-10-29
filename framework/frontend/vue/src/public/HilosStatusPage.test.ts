@@ -10,8 +10,10 @@ import type {
   PublicStatusFetch,
   PublicStatusFile,
   PublicStatusHeartbeat,
+  PublicStatusMaintenancePeriod,
   PublicStatusOutage,
   PublicStatusState,
+  PublicStatusWork,
 } from '@hilos/core/status'
 import { DOMWrapper, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -27,7 +29,7 @@ function statusFile(
   overrides: Partial<PublicStatusFile> = {},
 ): PublicStatusFile {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 'public-revision',
     generatedAt: NOW - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -58,6 +60,35 @@ function outage(
     publishedAt: NOW - 60000,
     resolvedAt: null,
     updates: [],
+    ...overrides,
+  }
+}
+
+function work(overrides: Partial<PublicStatusWork> = {}): PublicStatusWork {
+  return {
+    id: 'public-work',
+    title: 'Database upgrade',
+    description: null,
+    componentKeys: ['site'],
+    startsAt: NOW + 60000,
+    endsAt: NOW + 3600000,
+    ...overrides,
+  }
+}
+
+function maintenance(
+  overrides: Partial<PublicStatusMaintenancePeriod> = {},
+): PublicStatusMaintenancePeriod {
+  return {
+    id: 'public-maintenance',
+    workId: 'public-work',
+    announcementKnown: true,
+    title: 'Database upgrade',
+    componentKeys: ['site'],
+    startedAt: NOW - 120000,
+    lastObservedAt: NOW,
+    endedAt: null,
+    completionObservedAt: null,
     ...overrides,
   }
 }
@@ -97,7 +128,7 @@ function harness(
   )
   let status: unknown = initial
   let beat: PublicStatusHeartbeat = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 'public-revision',
     aliveAt: NOW,
   }
@@ -190,6 +221,14 @@ describe('public HilosStatusPage', () => {
     expect(
       h.wrapper.get('[data-id="public-status-component-state"]').text(),
     ).toBe(word)
+    if (state === 'checking' || state === 'unknown') {
+      expect(
+        h.wrapper.get('[data-id="public-status-component-state"]').classes(),
+      ).toContain('text-bg-secondary')
+      expect(
+        h.wrapper.get('[data-id="public-status-banner"]').classes(),
+      ).toContain('bg-secondary-subtle')
+    }
     expect(
       h.wrapper.get('[data-id="public-status-components"]').text(),
     ).toContain('Pages and live updates.')
@@ -226,6 +265,307 @@ describe('public HilosStatusPage', () => {
       h.wrapper.find('[data-id="public-status-maintenance"]').exists(),
     ).toBe(false)
   })
+
+  it('renders upcoming plain words, affected names and reader-zone bounds from the core, then follows file and zone changes', async () => {
+    const planned = work({
+      title: '<b>Database & upgrade</b>',
+      description: '<img src=x onerror=alert(1)> A plain description.',
+    })
+    const file = statusFile({ scheduledWorks: [planned] })
+    const h = harness(file)
+    await settle()
+    const section = h.wrapper.get('[data-id="public-status-works"]')
+    expect(section.get('h2').text()).toBe('Scheduled maintenance')
+    expect(section.get('h3').text()).toBe(planned.title)
+    expect(section.find('b').exists()).toBe(false)
+    expect(section.find('img').exists()).toBe(false)
+    expect(section.get('.card-body p').text()).toBe(planned.description)
+    expect(section.text()).toContain('Affects: Site')
+    expect(section.text()).not.toContain('Affects: site')
+    expect(section.text()).toContain(formatMoment(planned.startsAt))
+    expect(section.text()).toContain(formatMoment(planned.endsAt))
+    const previous = section.text()
+    const zone = readerTimeZone()
+    cleanup.push(zone.release)
+    zone.choose('Asia/Tokyo')
+    await nextTick()
+    expect(section.text()).not.toBe(previous)
+    expect(section.text()).toContain(formatMoment(planned.startsAt))
+    expect(section.text()).toContain(formatMoment(planned.endsAt))
+    h.publish(statusFile({ scheduledWorks: [work({ title: 'Updated work' })] }))
+    await settle()
+    expect(section.get('h3').text()).toBe('Updated work')
+    expect(section.text()).not.toContain(planned.title)
+    expect(section.findAll('.card-body p')).toHaveLength(1)
+    expect(h.fetchFile).toHaveBeenCalledTimes(4)
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.wrapper.findAll('h1')).toHaveLength(1)
+  })
+
+  it('keeps a begun unused announcement until its window ends and never returns consumed work to upcoming', async () => {
+    const begun = work({ startsAt: NOW - 60000, endsAt: NOW + 1000 })
+    const consumed = work({ id: 'consumed', title: 'Already used' })
+    const expired = work({
+      id: 'expired',
+      title: 'Expired',
+      startsAt: NOW - 120000,
+      endsAt: NOW,
+    })
+    const file = statusFile({
+      scheduledWorks: [consumed, expired, begun],
+      maintenancePeriods: [maintenance({ workId: consumed.id })],
+    })
+    const h = harness(file)
+    await settle()
+    const upcoming = h.wrapper.get('[data-id="public-status-works"]')
+    expect(upcoming.findAll('h3').map((heading) => heading.text())).toEqual([
+      'Database upgrade',
+    ])
+    await vi.advanceTimersByTimeAsync(1000)
+    await nextTick()
+    expect(h.wrapper.find('[data-id="public-status-works"]').exists()).toBe(
+      false,
+    )
+    expect(
+      h.wrapper.get('[data-id="public-status-maintenance"]').text(),
+    ).toContain('Maintenance in progress')
+    h.publish(
+      statusFile({
+        scheduledWorks: [consumed],
+        maintenancePeriods: [
+          maintenance({
+            workId: consumed.id,
+            lastObservedAt: Date.now(),
+            endedAt: Date.now(),
+            completionObservedAt: Date.now(),
+          }),
+        ],
+      }),
+      Date.now(),
+    )
+    await settle()
+    expect(h.wrapper.find('[data-id="public-status-works"]').exists()).toBe(
+      false,
+    )
+    expect(
+      h.wrapper.find('[data-id="public-status-maintenance"]').exists(),
+    ).toBe(false)
+    expect(h.send).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['announced', 'public-work', true, 'Announced in advance'],
+    ['unannounced', null, true, 'Not announced in advance'],
+    ['unknown', null, false, 'Advance announcement unknown'],
+  ] as const)(
+    'renders %s actual maintenance after the planned end and keeps full-freeze component health independent of affected words',
+    async (_kind, workId, announcementKnown, label) => {
+      const planned = work({ startsAt: NOW - 3600000, endsAt: NOW - 60000 })
+      const file = statusFile({
+        scheduledWorks: [planned],
+        maintenancePeriods: [maintenance({ workId, announcementKnown })],
+      })
+      file.components[0]!.state = 'maintenance'
+      file.components.push({
+        componentKey: 'mail',
+        name: 'Notifications',
+        description: null,
+        state: 'maintenance',
+      })
+      const h = harness(file)
+      await settle()
+      const card = h.wrapper.get('[data-id="public-status-maintenance"]')
+      expect(card.get('h2').text()).toBe('Maintenance')
+      expect(card.get('h3').text()).toBe('Database upgrade')
+      expect(card.text()).toContain(label)
+      expect(card.text()).toContain('Maintenance in progress')
+      expect(card.text()).toContain(formatMoment(NOW - 120000))
+      expect(card.text()).toContain('Site')
+      expect(card.text()).not.toContain('Notifications')
+      expect(card.text().includes('Planned window')).toBe(workId !== null)
+      if (workId !== null) {
+        expect(card.text()).toContain(formatMoment(planned.endsAt))
+        expect(card.text()).toContain(
+          'The scheduled window does not determine the actual end.',
+        )
+        expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
+          'Maintenance in progress: Database upgrade',
+        )
+      } else {
+        expect(card.text()).not.toContain(formatMoment(planned.startsAt))
+        expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
+          'Maintenance in progress',
+        )
+      }
+      expect(
+        h.wrapper
+          .findAll('[data-id="public-status-component-state"]')
+          .map((badge) => badge.text()),
+      ).toEqual(['Maintenance', 'Maintenance'])
+      h.freeze()
+      h.disconnect()
+      await settle()
+      expect(card.text()).toContain(label)
+      expect(
+        h.wrapper.find('[data-id="public-status-subscribe"]').exists(),
+      ).toBe(false)
+      expect(h.send).not.toHaveBeenCalled()
+      expect(
+        h.fetchFile.mock.calls.every(
+          ([url]) =>
+            url.endsWith('/status.json') || url.endsWith('/heartbeat.json'),
+        ),
+      ).toBe(true)
+    },
+  )
+
+  it('preserves the saved announced title without borrowing a same-title work window', async () => {
+    const h = harness(
+      statusFile({
+        scheduledWorks: [work({ id: 'another-public-id' })],
+        maintenancePeriods: [maintenance()],
+      }),
+    )
+    await settle()
+    const card = h.wrapper.get('[data-id="public-status-maintenance"]')
+    expect(card.get('h3').text()).toBe('Database upgrade')
+    expect(card.text()).toContain('Announced in advance')
+    expect(card.text()).not.toContain('Planned window')
+    expect(card.text()).not.toContain(formatMoment(NOW + 3600000))
+    expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
+      'Maintenance in progress: Database upgrade',
+    )
+    expect(
+      h.wrapper.get('[data-id="public-status-works"]').findAll('article'),
+    ).toHaveLength(1)
+  })
+
+  it('marks a stale actual as a retained observation in reserved room, then confirms it again from files', async () => {
+    const file = statusFile({ maintenancePeriods: [maintenance()] })
+    const h = harness(file)
+    await settle()
+    const card = h.wrapper.get('[data-id="public-status-maintenance"]')
+    const slot = card.get('.hilos-stack')
+    const reservation = slot.get(
+      '.invisible[aria-hidden="true"][inert]',
+    ).element
+    expect(
+      card.find('[data-id="public-status-maintenance-retained"]').exists(),
+    ).toBe(false)
+    h.fail()
+    vi.advanceTimersByTime(120001)
+    await nextTick()
+    expect(card.text()).toContain('Last observed maintenance')
+    expect(
+      card.get('[data-id="public-status-maintenance-retained"]').text(),
+    ).toBe(
+      'This is a retained observation. Current maintenance status is unknown.',
+    )
+    expect(card.text()).not.toContain('Maintenance in progress')
+    expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toContain(
+      'The system is not responding since',
+    )
+    expect(slot.get('.invisible').element).toBe(reservation)
+    expect(card.find('[role="alert"], [aria-live]').exists()).toBe(false)
+    h.recover()
+    h.publish(file, Date.now())
+    await settle()
+    expect(card.text()).toContain('Maintenance in progress')
+    expect(
+      card.find('[data-id="public-status-maintenance-retained"]').exists(),
+    ).toBe(false)
+    expect(slot.get('.invisible').element).toBe(reservation)
+    expect(h.send).not.toHaveBeenCalled()
+  })
+
+  it('shows completed exact intervals and observed-only completion without a false end or duration', async () => {
+    const h = harness(
+      statusFile({
+        maintenancePeriods: [
+          maintenance({
+            id: 'exact',
+            title: 'Exact work',
+            startedAt: NOW - 1200000,
+            lastObservedAt: NOW - 600000,
+            endedAt: NOW - 600000,
+            completionObservedAt: NOW - 600000,
+          }),
+          maintenance({
+            id: 'observed',
+            title: 'Observed work',
+            workId: null,
+            announcementKnown: false,
+            startedAt: NOW - 3600000,
+            lastObservedAt: NOW - 3000000,
+            completionObservedAt: NOW - 1200000,
+          }),
+        ],
+        outages: [outage({ resolvedAt: NOW - 60000 })],
+      }),
+    )
+    await settle()
+    const history = h.wrapper.get('[data-id="public-status-history"]')
+    const rows = history.findAll('li')
+    expect(rows).toHaveLength(3)
+    const exact = rows.find((row) => row.text().includes('Exact work'))!
+    expect(exact.text()).toContain('Completed')
+    expect(exact.text()).toContain('Announced in advance')
+    expect(exact.text()).toContain('Affects: Site')
+    expect(exact.text()).toContain(`Completed at ${formatMoment(NOW - 600000)}`)
+    expect(exact.text()).toContain('10m 00s')
+    expect(exact.text()).not.toContain('Completion observed')
+    const observed = rows.find((row) => row.text().includes('Observed work'))!
+    expect(observed.text()).toContain('Completed')
+    expect(observed.text()).toContain('Advance announcement unknown')
+    expect(observed.text()).toContain(
+      `Completion observed at ${formatMoment(NOW - 1200000)}. Exact end unknown.`,
+    )
+    expect(observed.text()).not.toContain('Completed at')
+    expect(observed.text()).not.toMatch(/\d+[hms]\b/)
+    expect(
+      h.wrapper.find('[data-id="public-status-maintenance"]').exists(),
+    ).toBe(false)
+    expect(h.send).not.toHaveBeenCalled()
+  })
+
+  it.each(['offline', 'frozen'] as const)(
+    'reads maintenance cards on a cold %s mount and follows later files by the existing poll',
+    async (mode) => {
+      const file = statusFile({
+        scheduledWorks: [work()],
+        maintenancePeriods: [
+          maintenance({ workId: null, title: 'Emergency maintenance' }),
+        ],
+      })
+      const h = harness(file, mode !== 'offline', true, mode === 'frozen')
+      await settle()
+      expect(h.wrapper.get('[data-id="public-status-works"] h3').text()).toBe(
+        'Database upgrade',
+      )
+      expect(
+        h.wrapper.get('[data-id="public-status-maintenance"] h3').text(),
+      ).toBe('Emergency maintenance')
+      expect(
+        h.wrapper.find('[data-id="public-status-subscribe"]').exists(),
+      ).toBe(false)
+      h.publish(
+        statusFile({
+          scheduledWorks: [work({ title: 'Revised announcement' })],
+          maintenancePeriods: file.maintenancePeriods,
+        }),
+      )
+      vi.advanceTimersByTime(30000)
+      await settle()
+      expect(h.wrapper.get('[data-id="public-status-works"] h3').text()).toBe(
+        'Revised announcement',
+      )
+      expect(
+        h.wrapper.get('[data-id="public-status-maintenance"] h3').text(),
+      ).toBe('Emergency maintenance')
+      expect(h.fetchFile).toHaveBeenCalledTimes(4)
+      expect(h.send).not.toHaveBeenCalled()
+    },
+  )
 
   it.each(['outage', 'maintenance'] as const)(
     'retains %s with the exact fresh lost-connection line, including freeze',
@@ -324,7 +664,7 @@ describe('public HilosStatusPage', () => {
           url.endsWith('/status.json')
             ? statusFile()
             : {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 revision: 'public-revision',
                 aliveAt: Date.now(),
               },
@@ -526,10 +866,13 @@ describe('public HilosStatusPage', () => {
           {
             id: 'period',
             workId: null,
+            announcementKnown: true,
             title: 'Unannounced maintenance',
             componentKeys: ['site'],
             startedAt: NOW - 60000,
+            lastObservedAt: NOW - 60000,
             endedAt: null,
+            completionObservedAt: null,
           },
         ],
       }),
@@ -544,6 +887,39 @@ describe('public HilosStatusPage', () => {
     expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
       'Maintenance in progress',
     )
+  })
+
+  it('shows observed completion with an unknown end and no invented duration or active maintenance', async () => {
+    const h = harness(
+      statusFile({
+        maintenancePeriods: [
+          {
+            id: 'missed-end',
+            workId: null,
+            announcementKnown: false,
+            title: 'Historical maintenance',
+            componentKeys: ['site'],
+            startedAt: NOW - 172800000,
+            lastObservedAt: NOW - 172799000,
+            endedAt: null,
+            completionObservedAt: NOW - 1000,
+          },
+        ],
+      }),
+    )
+    await settle()
+    expect(
+      h.wrapper.find('[data-id="public-status-maintenance"]').exists(),
+    ).toBe(false)
+    expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
+      'All systems operational',
+    )
+    const history = h.wrapper.get('[data-id="public-status-history"]').text()
+    expect(history).toContain('Historical maintenance')
+    expect(history).toContain('Completion observed at')
+    expect(history).toContain('Exact end unknown.')
+    expect(history).not.toContain('Completed at')
+    expect(history).not.toContain('0s')
   })
 
   it('disposes the single reader on unmount, aborts requests and ignores late responses', async () => {

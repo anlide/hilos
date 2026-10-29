@@ -95,6 +95,12 @@ final class StatusPublicFiles
         return $this->published;
     }
 
+    /** @return float Existing heartbeat cadence in milliseconds, also used by private observation persistence */
+    public function getHeartbeatIntervalMs(): float
+    {
+        return $this->heartbeatIntervalMs;
+    }
+
     /**
      * Visits at most 64 fragments (one component, candidate, outage header or update per
      * fragment) and appends at most 64 KiB. Completion adds one status rename and one tiny
@@ -212,7 +218,7 @@ final class StatusPublicFiles
         try {
             $snapshot = StatusPublicSnapshot::fromJson(Hilos::$fs->status[self::STATUS_FILENAME]->read());
             $heartbeat = StatusPublicHeartbeat::fromJson(Hilos::$fs->status[self::HEARTBEAT_FILENAME]->read());
-            if ($snapshot->revision !== $heartbeat->revision) {
+            if ($snapshot->revision !== $heartbeat->revision || $snapshot->sourceSchemaVersion !== $heartbeat->sourceSchemaVersion) {
                 return $this->published;
             }
         } catch (FsException | StatusException) {
@@ -220,7 +226,8 @@ final class StatusPublicFiles
         }
         $this->published = $snapshot;
         $this->lastHeartbeat = $heartbeat;
-        $this->pairCoherent = true;
+        // A legacy pair is readable, but must be republished together before any v2 heartbeat.
+        $this->pairCoherent = $snapshot->sourceSchemaVersion === StatusPublicSnapshot::SCHEMA_VERSION;
         return $snapshot;
     }
 
@@ -310,7 +317,7 @@ final class StatusPublicFiles
 
     /**
      * @param StatusPublicSnapshot $snapshot Detached generation
-     * @return Generator<int, string> Literal v1 JSON fragments in source order
+     * @return Generator<int, string> Literal v2 JSON fragments in source order
      */
     private static function jsonFragments(StatusPublicSnapshot $snapshot): Generator
     {
@@ -338,6 +345,14 @@ final class StatusPublicFiles
             }
             yield ']}';
         }
-        yield '],"scheduledWorks":[],"maintenancePeriods":[]}';
+        yield '],"scheduledWorks":[';
+        foreach ($snapshot->scheduledWorks as $index => $work) {
+            yield ($index === 0 ? '' : ',') . json_encode($work->toArray(), JSON_THROW_ON_ERROR);
+        }
+        yield '],"maintenancePeriods":[';
+        foreach ($snapshot->maintenancePeriods as $index => $period) {
+            yield ($index === 0 ? '' : ',') . json_encode($period->toArray(), JSON_THROW_ON_ERROR);
+        }
+        yield ']}';
     }
 }

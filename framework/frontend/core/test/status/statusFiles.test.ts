@@ -35,15 +35,18 @@ const complete = statusFile({
     {
       id: 'opaque period',
       workId: null,
+      announcementKnown: true,
       title: 'Maintenance',
       componentKeys: ['site'],
       startedAt: NOW,
+      lastObservedAt: NOW,
       endedAt: null,
+      completionObservedAt: null,
     },
   ],
 })
 
-describe('literal public v1', () => {
+describe('literal public v2', () => {
   it('accepts all declared fields, explicit nulls/empty lists, opaque ids and plain text', () => {
     expect(publicStatusFileSchema.parse(complete)).toEqual(complete)
     expect(publicStatusFileSchema.parse(statusFile())).toEqual(statusFile())
@@ -52,6 +55,57 @@ describe('literal public v1', () => {
     ).toEqual(heartbeat({ aliveAt: 0 }))
   })
 
+  it('reads the real v1 archive with two empty lists and rejects reserved nonempty v1 facts', () => {
+    const legacy = {
+      ...statusFile({ outages: complete.outages }),
+      schemaVersion: 1,
+    }
+    expect(publicStatusFileSchema.parse(legacy)).toEqual(legacy)
+    expect(
+      publicStatusFileSchema.safeParse({ ...complete, schemaVersion: 1 })
+        .success,
+    ).toBe(false)
+  })
+
+  it.each([
+    { announcementKnown: undefined },
+    { lastObservedAt: undefined },
+    { completionObservedAt: undefined },
+    { announcementKnown: 'true' },
+    { announcementKnown: false, workId: 'work' },
+    { workId: 12 },
+    { lastObservedAt: NOW - 1 },
+    { lastObservedAt: 1.5 },
+    { completionObservedAt: NOW - 1 },
+    { endedAt: NOW + 1000, completionObservedAt: null },
+    { endedAt: NOW + 1000, completionObservedAt: NOW + 2000 },
+    { phase: 'private' },
+  ])('rejects unproven maintenance fields %j', (change) => {
+    expect(
+      publicStatusFileSchema.safeParse({
+        ...complete,
+        maintenancePeriods: [{ ...complete.maintenancePeriods[0], ...change }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it.each([false, true])(
+    'preserves unknown/unannounced classification (%s) and observed-only completion',
+    (announcementKnown) => {
+      const status = {
+        ...complete,
+        maintenancePeriods: [
+          {
+            ...complete.maintenancePeriods[0],
+            announcementKnown,
+            completionObservedAt: NOW + 2000,
+          },
+        ],
+      }
+      expect(publicStatusFileSchema.parse(status)).toEqual(status)
+    },
+  )
+
   it.each(Object.keys(complete))('requires status.%s', (key) => {
     const incomplete = { ...complete } as Record<string, unknown>
     delete incomplete[key]
@@ -59,7 +113,7 @@ describe('literal public v1', () => {
   })
 
   it.each([
-    { schemaVersion: 2 },
+    { schemaVersion: 3 },
     { revision: 42 },
     { generatedAt: 1.5 },
     { config: { pollIntervalSeconds: 0, staleAfterSeconds: 120 } },
@@ -100,7 +154,7 @@ describe('literal public v1', () => {
   })
 
   it.each([
-    { schemaVersion: 2 },
+    { schemaVersion: 3 },
     { aliveAt: 0.5 },
     { aliveAt: 'today' },
     { aliveAt: Number.MAX_SAFE_INTEGER + 1 },
@@ -165,7 +219,7 @@ describe('public GET boundary', () => {
           }
         return response(
           failure === 'version'
-            ? { ...complete, schemaVersion: 2 }
+            ? { ...complete, schemaVersion: 3 }
             : failure === 'private'
               ? { ...complete, token: 'secret' }
               : complete,
@@ -175,6 +229,40 @@ describe('public GET boundary', () => {
       expect(
         await readPublicStatusFiles(new AbortController().signal, fetchFile),
       ).toEqual({ kind: 'unavailable' })
+    },
+  )
+
+  it.each([1, 2])(
+    'accepts a coherent supported version %s without losing outage history',
+    async (schemaVersion) => {
+      const status = {
+        ...statusFile({ outages: complete.outages }),
+        schemaVersion,
+      }
+      const beat = { ...heartbeat(), schemaVersion }
+      expect(
+        await readPublicStatusFiles(new AbortController().signal, async (url) =>
+          response(url.endsWith('/status.json') ? status : beat),
+        ),
+      ).toEqual({ kind: 'valid', pair: { status, heartbeat: beat } })
+    },
+  )
+
+  it.each([
+    [1, 2],
+    [2, 1],
+  ])(
+    'refuses a mixed supported schema pair %s/%s',
+    async (statusVersion, heartbeatVersion) => {
+      expect(
+        await readPublicStatusFiles(new AbortController().signal, async (url) =>
+          response(
+            url.endsWith('/status.json')
+              ? { ...statusFile(), schemaVersion: statusVersion }
+              : { ...heartbeat(), schemaVersion: heartbeatVersion },
+          ),
+        ),
+      ).toEqual({ kind: 'revision-mismatch' })
     },
   )
 

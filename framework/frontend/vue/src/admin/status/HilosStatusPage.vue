@@ -1,12 +1,13 @@
 <!-- Status health and incident facts arrive together in the page answer. -->
 <script setup lang="ts">
-import { HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusState,
   createHilosStatusIncidentController,
   HILOS_STATUS_COPY,
   HILOS_STATUS_ACTION_COPY,
   HILOS_STATUS_SUBSCRIBERS_COPY,
+  HILOS_STATUS_WORKS_COPY,
   type HilosStatusContext,
 } from '@hilos/core/admin/status'
 import { inject, onMounted, onUnmounted } from 'vue'
@@ -30,6 +31,13 @@ const overview = useSignal(state.overview)
 const cards = useSignal(state.cards)
 const summary = useSignal(state.summary)
 const maintenance = useSignal(state.maintenance)
+const timeZone = useSignal(hilosTimeZone)
+
+function moment(at: number): string {
+  void timeZone.value
+  return formatMoment(at) ?? '—'
+}
+
 onMounted(() => {
   state.start()
   controller.start()
@@ -87,6 +95,36 @@ onUnmounted(() => {
         </div>
         <div class="card-body text-break">
           <dl class="row mb-2">
+            <dt class="col-sm-4">Advance announcement</dt>
+            <dd
+              class="col-sm-8"
+              data-id="hilos-status-maintenance-announcement"
+            >
+              <div class="hilos-stack">
+                <p class="invisible mb-0" aria-hidden="true" inert>
+                  Announcement details are unavailable.
+                </p>
+                <p v-if="maintenance.announcement === null" class="mb-0">
+                  Announcement details are unavailable.
+                </p>
+                <p v-else-if="!maintenance.announcement.known" class="mb-0">
+                  Advance announcement unknown
+                </p>
+                <p
+                  v-else-if="maintenance.announcement.work === null"
+                  class="mb-0"
+                >
+                  Not announced in advance
+                </p>
+                <div v-else>
+                  <p class="mb-1">{{ maintenance.announcement.work.title }}</p>
+                  <p class="small mb-0">
+                    {{ moment(maintenance.announcement.work.startsAt) }} –
+                    {{ moment(maintenance.announcement.work.endsAt) }}
+                  </p>
+                </div>
+              </div>
+            </dd>
             <dt class="col-sm-4">Phase</dt>
             <dd class="col-sm-8">{{ maintenance.phase }}</dd>
             <dt class="col-sm-4">Operation</dt>
@@ -241,8 +279,53 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
-      <div class="row g-3">
-        <div class="col-md-4">
+      <div class="row row-cols-2 row-cols-lg-3 g-3 mb-3">
+        <div class="col">
+          <section class="card h-100" data-id="hilos-status-works-tile">
+            <div class="card-body text-break">
+              <h2 class="h6">Scheduled maintenance</h2>
+              <p class="fs-4 mb-2" data-id="hilos-status-works-count">
+                {{ overview.scheduledWorks?.count ?? '—' }}
+              </p>
+              <p
+                v-if="overview.scheduledWorks?.nextWork"
+                data-id="hilos-status-works-next"
+              >
+                Next: {{ overview.scheduledWorks.nextWork.title }}<br />
+                <span class="small">
+                  {{ moment(overview.scheduledWorks.nextWork.startsAt) }} –
+                  {{ moment(overview.scheduledWorks.nextWork.endsAt) }}
+                </span>
+              </p>
+              <div class="hilos-stack mb-2 small">
+                <p class="invisible mb-0" aria-hidden="true" inert>
+                  Scheduled maintenance data is unavailable.
+                </p>
+                <p
+                  v-if="overview.scheduledWorks === null"
+                  class="text-body-secondary mb-0"
+                  data-id="hilos-status-works-unavailable"
+                >
+                  Scheduled maintenance data is unavailable.
+                </p>
+                <p
+                  v-else-if="overview.scheduledWorks.count === 0"
+                  class="mb-0"
+                  data-id="hilos-status-works-empty"
+                >
+                  {{ HILOS_STATUS_WORKS_COPY.empty }}
+                </p>
+              </div>
+              <HilosLink
+                v-if="router?.resolvePath(HilosPages.STATUS_WORKS)"
+                :to="router.resolvePath(HilosPages.STATUS_WORKS)!"
+                data-id="hilos-status-works-link"
+                >Scheduled maintenance</HilosLink
+              >
+            </div>
+          </section>
+        </div>
+        <div class="col">
           <section class="card h-100">
             <div class="card-body">
               <h2 class="h6">{{ HILOS_STATUS_COPY.components }}</h2>
@@ -257,7 +340,7 @@ onUnmounted(() => {
             </div>
           </section>
         </div>
-        <div class="col-md-4">
+        <div class="col">
           <section class="card h-100" data-id="hilos-status-subscribers-tile">
             <div class="card-body">
               <h2 class="h6">
@@ -306,33 +389,31 @@ onUnmounted(() => {
             </div>
           </section>
         </div>
-        <div class="col-md-4">
-          <section class="card h-100">
-            <div class="card-body">
-              <h2 class="h6">{{ HILOS_STATUS_COPY.publishDelay }}</h2>
-              <p
-                v-if="overview.publishDelaySeconds === null"
-                data-id="hilos-status-delay"
-              >
-                {{ HILOS_STATUS_COPY.delayUnavailable }}
-              </p>
-              <p v-else data-id="hilos-status-delay">
-                <HilosHideable :value="overview.publishDelaySeconds"
-                  ><template #default="{ value }"
-                    >{{ value }} seconds</template
-                  ></HilosHideable
-                >
-              </p>
-              <HilosLink
-                v-if="router?.resolvePath(HilosPages.SETTINGS)"
-                :to="router.resolvePath(HilosPages.SETTINGS)!"
-                data-id="hilos-status-settings-link"
-                >{{ HILOS_STATUS_COPY.settings }}</HilosLink
-              >
-            </div>
-          </section>
-        </div>
       </div>
+      <section class="card">
+        <div class="card-body">
+          <h2 class="h6">{{ HILOS_STATUS_COPY.publishDelay }}</h2>
+          <p
+            v-if="overview.publishDelaySeconds === null"
+            data-id="hilos-status-delay"
+          >
+            {{ HILOS_STATUS_COPY.delayUnavailable }}
+          </p>
+          <p v-else data-id="hilos-status-delay">
+            <HilosHideable :value="overview.publishDelaySeconds"
+              ><template #default="{ value }"
+                >{{ value }} seconds</template
+              ></HilosHideable
+            >
+          </p>
+          <HilosLink
+            v-if="router?.resolvePath(HilosPages.SETTINGS)"
+            :to="router.resolvePath(HilosPages.SETTINGS)!"
+            data-id="hilos-status-settings-link"
+            >{{ HILOS_STATUS_COPY.settings }}</HilosLink
+          >
+        </div>
+      </section>
     </div>
     <HilosStatusIncidentModal :controller="controller" />
   </HilosAdminPage>

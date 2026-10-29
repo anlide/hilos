@@ -74,12 +74,12 @@ assert.deepEqual(
 const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
 const typeSource = `
   import { HilosTableText } from '@hilos/vue/base'
-  import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal, HilosStatusSubscribersPage, HilosStatusRemoveSubscriberModal } from '@hilos/vue/admin/status'
+  import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal, HilosStatusSubscribersPage, HilosStatusRemoveSubscriberModal, HilosStatusWorksPage, HilosStatusWorkModal, HilosStatusCancelWorkModal } from '@hilos/vue/admin/status'
   import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
   import { HilosPublicStatusPage } from '@hilos/vue'
   import type { ActionLifecycle, HilosConnection } from '@hilos/core/base'
   import { HilosModerationPage, HilosModerationKindRulesPage } from '@hilos/vue/admin/moderation'
-  import type { HilosStatusContext, HilosStatusIncidentController, HilosStatusSubscribersContext, HilosStatusSubscriberController } from '@hilos/core/admin/status'
+  import type { HilosStatusContext, HilosStatusIncidentController, HilosStatusSubscribersContext, HilosStatusSubscriberController, HilosStatusWorksContext, HilosStatusWorksState, HilosStatusWorkCreate, HilosStatusWorkEdit, HilosStatusWorkCancel } from '@hilos/core/admin/status'
   import type { HilosModerationContext, HilosModerationRulesContext } from '@hilos/core/admin/moderation'
   import type { Hideable } from '@hilos/core/base'
   type StatusProps = InstanceType<typeof HilosStatusPage>['$props']
@@ -87,6 +87,9 @@ const typeSource = `
   type ModalProps = InstanceType<typeof HilosStatusIncidentModal>['$props']
   type SubscribersProps = InstanceType<typeof HilosStatusSubscribersPage>['$props']
   type RemoveProps = InstanceType<typeof HilosStatusRemoveSubscriberModal>['$props']
+  type WorksProps = InstanceType<typeof HilosStatusWorksPage>['$props']
+  type WorkProps = InstanceType<typeof HilosStatusWorkModal>['$props']
+  type CancelWorkProps = InstanceType<typeof HilosStatusCancelWorkModal>['$props']
   type ModerationProps = InstanceType<typeof HilosModerationPage>['$props']
   type RulesProps = InstanceType<typeof HilosModerationKindRulesPage>['$props']
   type Props = InstanceType<typeof HilosTableText>['$props']
@@ -104,6 +107,20 @@ const typeSource = `
   const subscriberController: Same<RemoveProps['controller'], HilosStatusSubscriberController> = true
   void subscribersContext
   void subscriberController
+  const worksContext: Same<WorksProps['context'], HilosStatusWorksContext> = true
+  const workController: Same<WorkProps['controller'], HilosStatusWorkCreate | HilosStatusWorkEdit> = true
+  const worksState: Same<WorkProps['state'], HilosStatusWorksState> = true
+  const cancelWorkController: Same<CancelWorkProps['controller'], HilosStatusWorkCancel> = true
+  void worksContext
+  void workController
+  void worksState
+  void cancelWorkController
+  // @ts-expect-error Works requires the existing singleton context.
+  const missingWorks: WorksProps = {}
+  // @ts-expect-error The form requires its real core controller and catalog state.
+  const missingWork: WorkProps = {}
+  // @ts-expect-error Cancellation requires the real focused-row controller.
+  const missingCancelWork: CancelWorkProps = {}
   // @ts-expect-error Subscribers requires the existing project context.
   const missingSubscribers: SubscribersProps = {}
   // @ts-expect-error Removal requires the page-owned controller.
@@ -330,9 +347,9 @@ try {
             }
             export async function loadStatus() {
               const section = await import('@hilos/vue/admin/status')
-              return ['HilosStatusPage', 'HilosStatusComponentsPage', 'HilosStatusIncidentModal', 'HilosStatusSubscribersPage', 'HilosStatusRemoveSubscriberModal'].every(
+              return ['HilosStatusPage', 'HilosStatusComponentsPage', 'HilosStatusIncidentModal', 'HilosStatusSubscribersPage', 'HilosStatusRemoveSubscriberModal', 'HilosStatusWorksPage', 'HilosStatusWorkModal', 'HilosStatusCancelWorkModal'].every(
                 key => section[key] !== undefined && section[key] === root[key],
-              ) && !(HilosPages.STATUS in hilosAdminViews()) && !(HilosPages.STATUS_COMPONENTS in hilosAdminViews())
+              ) && !(HilosPages.STATUS in hilosAdminViews()) && !(HilosPages.STATUS_COMPONENTS in hilosAdminViews()) && !(HilosPages.STATUS_WORKS in hilosAdminViews())
             }
             export async function loadModeration() {
               const section = await import('@hilos/vue/admin/moderation')

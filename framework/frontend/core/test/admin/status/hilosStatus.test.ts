@@ -101,10 +101,16 @@ describe('Status wire schema', () => {
       ).toBe(false)
     }
     for (const maintenance of [
-      { phase: 'verifying', operation: null },
-      { phase: 'verifying', startedAt: null },
-      { operation: null, startedAt: null },
-      { phase: 'verifying', operation: null, startedAt: null, pass: 'secret' },
+      { phase: 'verifying', operation: null, announcement: null },
+      { phase: 'verifying', startedAt: null, announcement: null },
+      { operation: null, startedAt: null, announcement: null },
+      {
+        phase: 'verifying',
+        operation: null,
+        startedAt: null,
+        pass: 'secret',
+        announcement: null,
+      },
     ]) {
       expect(
         statusOverviewSchema.safeParse({ ...overview(), maintenance }).success,
@@ -216,7 +222,12 @@ describe('Status state and presentation', () => {
     h.setOverview(
       overview({
         healthKnown: false,
-        maintenance: { phase: 'verifying', operation: null, startedAt: null },
+        maintenance: {
+          phase: 'verifying',
+          operation: null,
+          startedAt: null,
+          announcement: null,
+        },
       }),
     )
     expect(state.summary.get()).toBe('maintenance')
@@ -285,7 +296,12 @@ describe('Status state and presentation', () => {
             ],
           }),
         ],
-        maintenance: { phase: 'verifying', operation: 'backup', startedAt: at },
+        maintenance: {
+          phase: 'verifying',
+          operation: 'backup',
+          startedAt: at,
+          announcement: null,
+        },
       }),
     )
     const state = createHilosStatusState(h.context)

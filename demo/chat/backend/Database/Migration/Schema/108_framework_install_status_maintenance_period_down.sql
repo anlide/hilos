@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["status_maintenance_period"],"parts":[{"changeId":"20261029024734382401_HIL-1692_status_works","unit":"status_maintenance_period","upSha256":"8dc4bab2a471b20ecb718cbf4984856100afc7cddd6a6c953d646ae00c523ba6","downSha256":"d6b6e574d4506b07af6700b20c0e2cd45435b4a36e26f25625770df5adbc4510"}],"upSha256":"8dc4bab2a471b20ecb718cbf4984856100afc7cddd6a6c953d646ae00c523ba6","downSha256":"d6b6e574d4506b07af6700b20c0e2cd45435b4a36e26f25625770df5adbc4510"}
+DROP TABLE IF EXISTS `hilos_status_maintenance_period`;

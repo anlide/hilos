@@ -259,3 +259,50 @@ export async function enterCalendarDate(
   await field.press('Tab')
   await expect(field).toHaveValue(date)
 }
+
+/** Native datetime segments need keyboard navigation rather than ordinary text entry. */
+export async function enterCalendarDateTime(
+  expect: Expect,
+  page: Page,
+  field: Locator,
+  at: number,
+): Promise<void> {
+  const value = await page.evaluate((at) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(at))
+    const part = (type: string) =>
+      parts.find((part) => part.type === type)!.value
+    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`
+  }, at)
+  const [date, time] = value.split('T')
+  const [year, month, day] = date.split('-')
+  const [hour, minute, second] = time.split(':')
+  await field.fill('')
+  await field.focus()
+  // Chromium's en document exposes month/day/year/hour/minute/second/day-period.
+  // Reach the final segment before each edit to avoid native auto-advance.
+  for (const [text, left] of [
+    [year, 4],
+    [month, 6],
+    [day, 5],
+    [String(Number(hour) % 12 || 12), 3],
+    [minute, 2],
+    [second, 1],
+    [Number(hour) >= 12 ? 'p' : 'a', 0],
+  ] as const) {
+    for (let step = 0; step < 7; step++) await field.press('ArrowRight')
+    for (let step = 0; step < left; step++) await field.press('ArrowLeft')
+    await field.pressSequentially(text, { delay: 10 })
+  }
+  await field.press('Tab')
+  // Chromium omits zero seconds in the serialized native value.
+  await expect(field).toHaveValue(value.replace(/:00$/, ''))
+}

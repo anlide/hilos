@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["status_work"],"parts":[{"changeId":"20261029024734382401_HIL-1692_status_works","unit":"status_work","upSha256":"da69f3f5731f30bbd5b527b4d6dfe87b430a08d3f327386a0d3595d1ca011ad3","downSha256":"5c737331e60001c450c9a28d4a9fffe7b289f82c75a73d241edf42611344935d"}],"upSha256":"da69f3f5731f30bbd5b527b4d6dfe87b430a08d3f327386a0d3595d1ca011ad3","downSha256":"5c737331e60001c450c9a28d4a9fffe7b289f82c75a73d241edf42611344935d"}
+DROP TABLE IF EXISTS `hilos_status_work`;

@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 110;
+    private const int CATALOG_ENTRIES = 111;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -357,6 +357,16 @@ final class HilosPageCatalogTest extends TestCase
         ] as $page => $parent) {
             self::assertSame($parent, HilosPageCatalog::CATALOG[$page][PageCatalogConstants::CATALOG_ENTRY_PARENT]);
         }
+    }
+
+    public function testWorksIsAStatusChildWithNoSeparateHead(): void
+    {
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Scheduled maintenance',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Announced maintenance windows and subscriber mail handoffs.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Scheduled maintenance',
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_STATUS_WORKS]);
     }
 
     public function testSubscribersIsAStatusChildWithNoSeparateHead(): void

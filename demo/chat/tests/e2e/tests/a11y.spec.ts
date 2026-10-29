@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 
 import { logout } from '../helpers/session.js'
 import {
@@ -49,6 +49,21 @@ import {
   watchProfileRenameFrames,
   watchProfileRenameStatus,
   STATUS_PATH,
+  STATUS_WORKS_PATH,
+  STATUS_WORK_SCHEDULE,
+  STATUS_WORK_CHANGE,
+  draftStatusWork,
+  expectStatusWorksAccessibility,
+  expectStatusWorkScheduleDialog,
+  holdSocketAction,
+  latestStatusWork,
+  openStatusWorkSchedule,
+  statusWorkRows,
+  statusWorkFixtures,
+  type StatusWorkFixtureScope,
+  submitStatusWork,
+  trackedActionReplies,
+  dismissToasts,
   expectStatusHead,
   expectPublicStatusAccessibility,
   expectPublicStatusPair,
@@ -94,6 +109,10 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 // header that reports aria-sort and is operable from the keyboard. The chat (Vue)
 // layer checks this on the settings table; the file grows as the a11y arc lands
 // its later steps (modals, app-shell, focus).
+
+const test = base.extend<{ statusWorks: StatusWorkFixtureScope }>({
+  statusWorks: statusWorkFixtures(expect),
+})
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
@@ -1520,5 +1539,179 @@ test('public Status subscription and mailed unsubscribe expose named keyboard di
       body: JSON.stringify(log),
       contentType: 'application/json',
     })
+  }
+})
+
+test('Status Works keyboard forms retain focus, announce live conflicts, lock busy requests and explain view mode', async ({
+  page,
+  browser,
+  baseURL,
+  statusWorks,
+}) => {
+  // Two real admin connections, native calendar entry and two correlated writes.
+  test.slow()
+  const gate = await holdSocketAction(page)
+  const otherContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    colorScheme: 'light',
+  })
+  const viewerContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    colorScheme: 'light',
+  })
+  const other = await otherContext.newPage()
+  const viewer = await viewerContext.newPage()
+  const log = watchDeliveryFrames(page)
+  const echo = watchDeliveryFrames(other)
+  try {
+    await grantAdminToSelf(expect, page)
+    await grantAdminToSelf(expect, other)
+    await gotoPage(expect, page, STATUS_PATH)
+    const tab = page.getByTestId('hilos-page-tab-hilos_status_works')
+    await tab.focus()
+    await tab.press('Enter')
+    await expectPageReady(expect, page)
+    await expectStatusHead(expect, page, 'works')
+    await expect(page.getByTestId('page-title')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    )
+    await expectStatusWorksAccessibility(expect, page, log)
+    await expectStatusWorkScheduleDialog(expect, page)
+    await openStatusWorkSchedule(expect, page)
+    const startsAt = Math.floor(Date.now() / 1000) * 1000 + 600_000
+    const draft = {
+      title: 'Accessible planned work',
+      description: 'The live modal stays readable.',
+      startsAt,
+      endsAt: startsAt + 3_600_000,
+      componentKeys: ['service'],
+    }
+    statusWorks.reserve(draft)
+    await draftStatusWork(expect, page, draft)
+    const since = log.sent.length
+    gate.hold(STATUS_WORK_SCHEDULE)
+    await clickSubmit(expect, page.getByTestId('hilos-status-work-save'))
+    await expect.poll(() => gate.captured.length).toBe(1)
+    await expect(page.getByTestId('hilos-status-work-save')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    await expect(page.getByTestId('hilos-status-work-title')).toBeDisabled()
+    await expect(page.getByTestId('hilos-status-work-close')).toBeDisabled()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('hilos-status-work-form')).toBeVisible()
+    await expect(page.getByTestId('modal-confirm')).toHaveCount(0)
+    gate.release()
+    await expect(page.getByTestId('hilos-status-work-form')).toBeHidden()
+    await expect
+      .poll(() => trackedActionReplies(log, STATUS_WORK_SCHEDULE, since).length)
+      .toBe(1)
+    expect(
+      trackedActionReplies(log, STATUS_WORK_SCHEDULE, since)[0].frame.type,
+    ).toBe('action_success')
+    await expect
+      .poll(() =>
+        statusWorkRows(log).find(
+          (work) => work.title === 'Accessible planned work',
+        ),
+      )
+      .toBeDefined()
+    const work = statusWorkRows(log).find(
+      (work) => work.title === 'Accessible planned work',
+    )!
+    await gotoPage(expect, other, STATUS_WORKS_PATH)
+    await dismissToasts(page)
+    const opener = shownByTestId(page, `hilos-status-work-edit-${work.id}`)
+    await opener.focus()
+    await opener.press('Enter')
+    await expect(page.getByTestId('modal')).toHaveAccessibleName(
+      'Change scheduled maintenance',
+    )
+    await expect(page.getByTestId('hilos-status-work-title')).toBeFocused()
+    await typeInto(page.getByTestId('hilos-status-work-title'), 'Keep my draft')
+    await shownByTestId(other, `hilos-status-work-edit-${work.id}`).click()
+    await typeInto(
+      other.getByTestId('hilos-status-work-title'),
+      'The incoming announcement',
+    )
+    await submitStatusWork(expect, other, echo, STATUS_WORK_CHANGE)
+    await expect
+      .poll(() => latestStatusWork(log, work.publicId)?.version)
+      .toBe(2)
+    const notice = page.getByTestId('hilos-status-work-notice-slot')
+    await expect(notice).toHaveAttribute('role', 'status')
+    await expect(notice).toHaveAttribute('aria-live', 'polite')
+    await expect(page.getByTestId('hilos-status-work-notice')).toContainText(
+      'Changed elsewhere',
+    )
+    await expect(page.getByTestId('hilos-status-work-title')).toHaveValue(
+      'Keep my draft',
+    )
+    await expect(page.getByTestId('hilos-status-work-save')).toBeDisabled()
+    const mine = page.getByTestId('conflict-accept-mine')
+    const theirs = page.getByTestId('conflict-accept-theirs')
+    await expect(mine).toHaveAccessibleName('Keep mine')
+    await expect(theirs).toHaveAccessibleName('Take theirs')
+    await mine.focus()
+    await mine.press('Tab')
+    await expect(theirs).toBeFocused()
+    await theirs.press('Enter')
+    await expect(page.getByTestId('hilos-status-work-title')).toHaveValue(
+      'The incoming announcement',
+    )
+    await expect(page.getByTestId('hilos-status-work-title')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('hilos-status-work-form')).toBeHidden()
+    await expect(opener).toBeFocused()
+    const cancel = shownByTestId(page, `hilos-status-work-cancel-${work.id}`)
+    await cancel.focus()
+    await cancel.press('Enter')
+    const modal = page.getByTestId('modal')
+    await expect(modal).toHaveRole('dialog')
+    await expect(modal).toHaveAttribute('aria-modal', 'true')
+    await expect(modal).toHaveAccessibleName('Cancel scheduled maintenance')
+    await expect(modal).toBeFocused()
+    const confirm = page.getByTestId('hilos-status-work-cancel-confirm')
+    await confirm.focus()
+    await confirm.press('Tab')
+    await expect(page.getByTestId('modal-close')).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(confirm).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(modal).toBeHidden()
+    await expect(cancel).toBeFocused()
+    await setAdminViewMode(true)
+    await gotoPage(expect, viewer, STATUS_WORKS_PATH)
+    await expectStatusHead(expect, viewer, 'works')
+    await openStatusWorkSchedule(expect, viewer)
+    await expect(viewer.getByTestId('hilos-status-work-save')).toBeDisabled()
+    await expect(
+      viewer.getByTestId('hilos-status-work-save'),
+    ).toHaveAccessibleDescription(
+      'View mode · You can look around, but not change anything.',
+    )
+    await expect(viewer.getByTestId('hilos-status-work-notice')).toContainText(
+      'You can look around, but not change anything.',
+    )
+    await viewer.keyboard.press('Escape')
+    await expect(viewer.getByTestId('hilos-status-work-form')).toBeHidden()
+  } finally {
+    gate.release()
+    await test.info().attach('status-works-accessibility-real-wire', {
+      body: JSON.stringify({
+        writer: log,
+        focused: echo,
+        held: gate.captured,
+      }),
+      contentType: 'application/json',
+    })
+    log.stop()
+    echo.stop()
+    await otherContext.close()
+    await viewerContext.close()
+    await setAdminViewMode(false)
   }
 })

@@ -11,6 +11,10 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
+use Hilos\Status\StatusPublicWork;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusSettingsCatalog;
 use Hilos\Status\StatusSnapshot;
@@ -30,6 +34,10 @@ final readonly class StatusOverviewData
     public const string startedAt = 'startedAt';
     public const string incidents = 'incidents';
     public const string subscribers = 'subscribers';
+    public const string scheduledWorks = 'scheduledWorks';
+    public const string announcement = 'announcement';
+    public const string known = 'known';
+    public const string work = 'work';
 
     /**
      * @param bool $healthKnown All component verdicts and DB facts are available
@@ -41,6 +49,9 @@ final readonly class StatusOverviewData
      * @param ?int $maintenanceStartedAt Start epoch milliseconds UTC, or null
      * @param ?list<StatusIncidentData> $incidents Open facts in catalog order, or null when unavailable
      * @param ?StatusSubscriberCountsData $subscribers Current subscriber counts, or null when unavailable
+     * @param ?StatusWorksData $scheduledWorks Current scheduled-work summary, null while unavailable
+     * @param ?bool $announcementKnown Proven classification, null when the current RT source is unavailable
+     * @param ?StatusPublicWork $maintenanceWork Approved RT snapshot of the associated announcement
      */
     public function __construct(
         public bool $healthKnown,
@@ -52,6 +63,9 @@ final readonly class StatusOverviewData
         public ?int $maintenanceStartedAt,
         public ?array $incidents,
         public ?StatusSubscriberCountsData $subscribers,
+        public ?StatusWorksData $scheduledWorks,
+        public ?bool $announcementKnown,
+        public ?StatusPublicWork $maintenanceWork,
     ) {
     }
 
@@ -93,6 +107,32 @@ final readonly class StatusOverviewData
         }
         $maintenance = Hilos::$rt?->hilosProtectedModeRuntime !== null
             && Hilos::$rt->hilosProtectedModeRuntime->phase !== ProtectedModeRuntime::PHASE_INACTIVE;
+        $announcementKnown = null;
+        $work = null;
+        if ($maintenance && Hilos::$rt !== null
+            && (!SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, HilosStatusMaintenance::RT_COLLECTION)
+                || SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosStatusMaintenance::RT_COLLECTION))
+            && isset(Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT])
+            && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->staleSince() === null
+            && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->available
+            && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->active) {
+            $announcementKnown = Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->announcementKnown;
+            if ($announcementKnown && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->workPublicId !== null
+                && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->title !== null
+                && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->startsAt !== null
+                && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->endsAt !== null) {
+                $work = new StatusPublicWork(
+                    Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->workPublicId,
+                    Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->title,
+                    null,
+                    Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->componentKeys,
+                    Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->startsAt,
+                    Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->endsAt,
+                );
+            } elseif ($announcementKnown && Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->workPublicId !== null) {
+                $announcementKnown = null;
+            }
+        }
 
         return new self(
             $known, $operational, count($snapshot->components), $delay,
@@ -102,6 +142,9 @@ final readonly class StatusOverviewData
                 ? Hilos::$rt->hilosProtectedModeRuntime->startedAt * TimeConstants::MS_PER_SECOND : null,
             $incidents,
             StatusSubscriberCountsData::read(),
+            StatusWorksData::read(),
+            $announcementKnown,
+            $work,
         );
     }
 
@@ -116,9 +159,15 @@ final readonly class StatusOverviewData
             self::publishDelaySeconds => WireField::setting(StatusSettingsCatalog::PUBLISH_DELAY_SECONDS),
             self::maintenance => WireField::each([
                 self::phase => WireField::notPersonal(), self::operation => WireField::notPersonal(), self::startedAt => WireField::notPersonal(),
+                self::announcement => WireField::each([
+                    self::known => WireField::notPersonal(), self::work => WireField::each(StatusWorksData::workWireFields()),
+                ]),
             ]),
             self::incidents => WireField::each(StatusIncidentData::wireFields()),
             self::subscribers => WireField::each(StatusSubscriberCountsData::wireFields()),
+            self::scheduledWorks => WireField::each([
+                StatusWorksData::count => WireField::notPersonal(), StatusWorksData::nextWork => WireField::each(StatusWorksData::workWireFields()),
+            ]),
         ];
     }
 
@@ -132,10 +181,17 @@ final readonly class StatusOverviewData
             self::maintenance => $this->maintenancePhase === null ? null : [
                 self::phase => $this->maintenancePhase, self::operation => $this->maintenanceOperation,
                 self::startedAt => $this->maintenanceStartedAt,
+                self::announcement => $this->announcementKnown === null ? null : [
+                    self::known => $this->announcementKnown, self::work => $this->maintenanceWork?->toArray(),
+                ],
             ],
             self::incidents => $this->incidents === null ? null
                 : array_map(static fn (StatusIncidentData $incident): array => $incident->toArray(), $this->incidents),
             self::subscribers => $this->subscribers?->toArray(),
+            self::scheduledWorks => $this->scheduledWorks === null ? null : [
+                StatusWorksData::count => $this->scheduledWorks->upcomingCount,
+                StatusWorksData::nextWork => $this->scheduledWorks->nextWork?->toArray(),
+            ],
         ];
     }
 }

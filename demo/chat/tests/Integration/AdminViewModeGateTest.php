@@ -146,6 +146,9 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_status_cancel_publication',
         'hilos_status_publish_now',
         'hilos_status_subscriber_remove',
+        'hilos_status_work_cancel',
+        'hilos_status_work_change',
+        'hilos_status_work_schedule',
         'hilos_user_admin_set',
         'hilos_user_block_set',
         'hilos_user_deletion_set',
@@ -287,6 +290,36 @@ final class AdminViewModeGateTest extends IntegrationTestCase
             self::assertSame(SignalConstants::ACTION_ERROR, $frames[0]->signalName->getName());
             self::assertSame('view_mode', $frames[0]->data->data->errorCode);
             self::assertSame('subscriber-remove', $frames[0]->data->data->requestId);
+        }
+    }
+
+    public function testForgedWorkWritesNeverReachTheOwnerFromAViewerOrVisitor(): void
+    {
+        $fields = ['title' => 'Forged work', 'description' => null, 'componentKeys' => ['service'],
+            'startsAt' => self::T0 * 1000, 'endsAt' => (self::T0 + 60) * 1000];
+        $target = ['workId' => 1, 'publicId' => str_repeat('a', 32), 'expectedVersion' => 1];
+        $payloads = [
+            HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE => $fields,
+            HilosSignalConstants::HILOS_STATUS_WORK_CHANGE => $target + $fields,
+            HilosSignalConstants::HILOS_STATUS_WORK_CANCEL => $target,
+        ];
+        foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+            foreach ($payloads as $action => $payload) {
+                foreach ([null, 'forged-work'] as $requestId) {
+                    $this->drainSignals();
+                    $this->dispatch(HilosPageConstants::HILOS_STATUS_WORKS, $acceptKey, $action, $payload, $requestId);
+                    $frames = [];
+                    while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                        $frames[] = $frame;
+                    }
+                    self::assertCount(1, $frames, 'Only a refusal; no internal owner ask');
+                    self::assertSame(SignalConstants::ACTION_ERROR, $frames[0]->signalName->getName());
+                    self::assertSame($action, $frames[0]->data->data->action);
+                    self::assertSame($requestId, $frames[0]->data->data->requestId);
+                    self::assertSame($acceptKey, $frames[0]->data->targetAcceptKey);
+                    self::assertSame('view_mode', $frames[0]->data->data->errorCode);
+                }
+            }
         }
     }
 

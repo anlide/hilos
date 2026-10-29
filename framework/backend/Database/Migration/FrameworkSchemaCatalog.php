@@ -199,6 +199,9 @@ class FrameworkSchemaCatalog
             $this->tableUnit('status_incident', 'hilos_status_incident'),
             $this->tableUnit('status_incident_update', 'hilos_status_incident_update', ['status_incident']),
             $this->tableUnit('status_subscriber', 'hilos_status_subscriber'),
+            $this->tableUnit('status_work', 'hilos_status_work'),
+            $this->tableUnit('status_work_component', 'hilos_status_work_component', ['status_work']),
+            $this->tableUnit('status_maintenance_period', 'hilos_status_maintenance_period', ['status_work']),
             new FrameworkSchemaUnit(
                 'analytics',
                 FrameworkTablesWithoutEntity::analyticsTables(),

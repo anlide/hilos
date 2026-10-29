@@ -205,7 +205,7 @@ def suite(state, args):
         last_run.parent.mkdir(parents=True, exist_ok=True)
         write_json(last_run, {"status": "failed", "failedTests": []})
         return rc  # An empty original selection remains a native failure.
-    status_files = {"status.spec.ts", "a11y.spec.ts"}
+    status_files = {"status.spec.ts", "status-works.spec.ts", "a11y.spec.ts"}
     phases = [("main", [row for row in plan["tests"] if Path(row["file"]).name not in status_files]),
               ("status-main", [row for row in plan["tests"] if Path(row["file"]).name in status_files])]
     # Native IDs and native result files are run-private tooling state, not RT.

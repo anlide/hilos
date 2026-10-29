@@ -6,10 +6,11 @@ namespace Hilos\Status;
 
 use Hilos\Status\Exception\StatusException;
 
-/** Public v1 values only; safe to retain when the database is unavailable or replaced. */
+/** Public v2 values only; safe to retain when the database is unavailable or replaced. */
 final readonly class StatusPublicSnapshot
 {
-    public const int SCHEMA_VERSION = 1;
+    public const int SCHEMA_VERSION = 2;
+    public const int LEGACY_SCHEMA_VERSION = 1;
 
     /**
      * @param string $revision Opaque content revision assigned by the publisher
@@ -19,6 +20,9 @@ final readonly class StatusPublicSnapshot
      * @param list<StatusPublicComponent> $components Catalog declaration order
      * @param list<StatusPublicCandidate> $candidates Current Checking facts in catalog order
      * @param list<StatusPublicOutage> $outages Complete published history in descending detection/id source order
+     * @param list<StatusPublicWork> $scheduledWorks Upcoming and active-known announcements in start/id order
+     * @param list<StatusPublicMaintenancePeriod> $maintenancePeriods Active and retained completed observations
+     * @param int $sourceSchemaVersion Input version retained solely for coherent-pair recovery; serialization always writes v2
      * @throws StatusException When publication metadata is invalid
      */
     public function __construct(
@@ -29,6 +33,9 @@ final readonly class StatusPublicSnapshot
         public array $components,
         public array $candidates,
         public array $outages,
+        public array $scheduledWorks = [],
+        public array $maintenancePeriods = [],
+        public int $sourceSchemaVersion = self::SCHEMA_VERSION,
     ) {
         if ($revision === '' || $generatedAt < 0 || $pollIntervalSeconds <= 0 || $staleAfterSeconds <= 0) {
             throw new StatusException('Public status requires a revision, a valid moment and positive reader intervals.');
@@ -37,7 +44,7 @@ final readonly class StatusPublicSnapshot
 
     /**
      * @param string $json Complete status.json contents
-     * @return self Detached public v1 projection; no DB or settings access
+     * @return self Detached supported public projection; no DB or settings access
      * @throws StatusException When any public field has an invalid shape or value
      */
     public static function fromJson(string $json): self
@@ -46,10 +53,26 @@ final readonly class StatusPublicSnapshot
             'schemaVersion', 'revision', 'generatedAt', 'config', 'components', 'candidates', 'outages',
             'scheduledWorks', 'maintenancePeriods',
         ]);
-        if ($data['schemaVersion'] !== self::SCHEMA_VERSION
-            || StatusPublicJson::items($data['scheduledWorks']) !== []
-            || StatusPublicJson::items($data['maintenancePeriods']) !== []) {
-            throw new StatusException('Unsupported public Status schema or scheduled facts.');
+        if (!in_array($data['schemaVersion'], [self::LEGACY_SCHEMA_VERSION, self::SCHEMA_VERSION], true)) {
+            throw new StatusException('Unsupported public Status schema.');
+        }
+        $works = [];
+        $periods = [];
+        $workItems = StatusPublicJson::items($data['scheduledWorks']);
+        $periodItems = StatusPublicJson::items($data['maintenancePeriods']);
+        if ($data['schemaVersion'] === self::LEGACY_SCHEMA_VERSION && ($workItems !== [] || $periodItems !== [])) {
+            throw new StatusException('Legacy public Status contains unsupported scheduled facts.');
+        }
+        foreach ($workItems as $value) {
+            $works[] = StatusPublicWork::fromArray(StatusPublicJson::fields($value, [
+                'id', 'title', 'description', 'componentKeys', 'startsAt', 'endsAt',
+            ]));
+        }
+        foreach ($periodItems as $value) {
+            $periods[] = StatusPublicMaintenancePeriod::fromArray(StatusPublicJson::fields($value, [
+                'id', 'workId', 'announcementKnown', 'title', 'componentKeys', 'startedAt', 'lastObservedAt',
+                'endedAt', 'completionObservedAt',
+            ]));
         }
         $config = StatusPublicJson::fields($data['config'], ['pollIntervalSeconds', 'staleAfterSeconds']);
         $components = [];
@@ -80,7 +103,7 @@ final readonly class StatusPublicSnapshot
         return new self(
             StatusPublicJson::text($data['revision']), StatusPublicJson::integer($data['generatedAt']),
             StatusPublicJson::integer($config['pollIntervalSeconds']), StatusPublicJson::integer($config['staleAfterSeconds']),
-            $components, $candidates, $outages,
+            $components, $candidates, $outages, $works, $periods, $data['schemaVersion'],
         );
     }
 
@@ -112,6 +135,7 @@ final readonly class StatusPublicSnapshot
         }
         return new self(
             $revision, $generatedAt, $this->pollIntervalSeconds, $this->staleAfterSeconds, $components, $candidates, $this->outages,
+            $this->scheduledWorks, $this->maintenancePeriods,
         );
     }
 
@@ -124,11 +148,25 @@ final readonly class StatusPublicSnapshot
     {
         return new self(
             $this->revision, $this->generatedAt, $this->pollIntervalSeconds, $this->staleAfterSeconds,
-            $this->components, $this->candidates, $outages,
+            $this->components, $this->candidates, $outages, $this->scheduledWorks, $this->maintenancePeriods,
         );
     }
 
-    /** @return array<string, mixed> Complete literal status.json v1; scheduled facts belong to HIL-1692 */
+    /**
+     * @param list<StatusPublicWork> $works Sanitized announcements in start/id order
+     * @param list<StatusPublicMaintenancePeriod> $periods Sanitized active and completed observations
+     * @return self Same generation with complete scheduled and actual maintenance facts
+     * @throws StatusException When publication metadata is invalid
+     */
+    public function withMaintenance(array $works, array $periods): self
+    {
+        return new self(
+            $this->revision, $this->generatedAt, $this->pollIntervalSeconds, $this->staleAfterSeconds,
+            $this->components, $this->candidates, $this->outages, $works, $periods,
+        );
+    }
+
+    /** @return array<string, mixed> Complete literal status.json v2 */
     public function toArray(): array
     {
         return [
@@ -139,8 +177,10 @@ final readonly class StatusPublicSnapshot
             'components' => array_map(static fn(StatusPublicComponent $component): array => $component->toArray(), $this->components),
             'candidates' => array_map(static fn(StatusPublicCandidate $candidate): array => $candidate->toArray(), $this->candidates),
             'outages' => array_map(static fn(StatusPublicOutage $outage): array => $outage->toArray(), $this->outages),
-            'scheduledWorks' => [],
-            'maintenancePeriods' => [],
+            'scheduledWorks' => array_map(static fn(StatusPublicWork $work): array => $work->toArray(), $this->scheduledWorks),
+            'maintenancePeriods' => array_map(
+                static fn(StatusPublicMaintenancePeriod $period): array => $period->toArray(), $this->maintenancePeriods,
+            ),
         ];
     }
 }

@@ -28,6 +28,21 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Actions\Collection\StatusMaintenancePeriodsActions;
+use Hilos\Database\Actions\Collection\StatusWorkComponentsActions;
+use Hilos\Database\Actions\Collection\StatusWorksActions;
+use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
+use Hilos\Database\Actions\Item\StatusWorkActions;
+use Hilos\Database\Actions\Item\StatusWorkComponentActions;
+use Hilos\Database\Entity\Item\StatusMaintenancePeriod as EntityStatusMaintenancePeriod;
+use Hilos\Database\Entity\Item\StatusWork as EntityStatusWork;
+use Hilos\Database\Entity\Item\StatusWorkComponent as EntityStatusWorkComponent;
+use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
+use Hilos\Database\Object\Collection\StatusWorkComponents as ObjectStatusWorkComponents;
+use Hilos\Database\Object\Collection\StatusWorks as ObjectStatusWorks;
+use Hilos\Database\View\Collection\StatusMaintenancePeriods;
+use Hilos\Database\View\Collection\StatusWorkComponents;
+use Hilos\Database\View\Collection\StatusWorks;
 use Hilos\Database\Actions\Collection\StatusIncidentsActions;
 use Hilos\Database\Actions\Collection\StatusIncidentUpdatesActions;
 use Hilos\Database\Actions\Item\StatusIncidentActions;
@@ -825,7 +840,8 @@ abstract class StatusStorageIntegrationTestCase extends FrameworkRollbackIntegra
         Hilos::$notify = null;
         parent::prepareIntegrationEnvironment();
         $this->publicVolume = new StatusPublicVolume();
-        foreach ([EntityStatusIncident::_table, EntityStatusIncidentUpdate::_table] as $table) {
+        foreach ([EntityStatusIncident::_table, EntityStatusIncidentUpdate::_table,
+            EntityStatusWork::_table, EntityStatusWorkComponent::_table, EntityStatusMaintenancePeriod::_table] as $table) {
             Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
             $this->statusTables[] = $table;
         }
@@ -1016,6 +1032,14 @@ final class StatusStorageDbContext extends HilosDbContext
         $this->setRepresent(self::statusIncidents, StatusMachineIncidents::class, StatusIncidentsActions::class, StatusIncidentActions::class);
         $this->_objectCollections[self::statusIncidentUpdates] = ObjectStatusIncidentUpdates::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::statusIncidentUpdates, StatusIncidentUpdates::class, StatusIncidentUpdatesActions::class);
+        $this->_objectCollections[self::statusWorks] = ObjectStatusWorks::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::statusWorks, StatusWorks::class, StatusWorksActions::class, StatusWorkActions::class);
+        $this->_objectCollections[self::statusWorkComponents] = ObjectStatusWorkComponents::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::statusWorkComponents, StatusWorkComponents::class,
+            StatusWorkComponentsActions::class, StatusWorkComponentActions::class);
+        $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::statusMaintenancePeriods, StatusMaintenancePeriods::class,
+            StatusMaintenancePeriodsActions::class, StatusMaintenancePeriodActions::class);
     }
 }
 
@@ -1035,6 +1059,9 @@ final class StatusStorageFixtureOwner implements TruthSourceOwner
 {
     public const array OWNS_DB = [
         HilosDbContext::settings => TruthSourceOperation::ALL,
+        HilosDbContext::statusWorks => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::statusWorkComponents => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::statusMaintenancePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusIncidents => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusIncidentUpdates => [TruthSourceOperation::Add],
     ];

@@ -52,6 +52,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
         ], $reply->payload->data['pageBreadcrumb']);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_STATUS_WORKS, 'label' => 'Scheduled maintenance'],
             ['page' => HilosPageConstants::HILOS_STATUS_COMPONENTS, 'label' => 'Components'],
             ['page' => HilosPageConstants::HILOS_STATUS_SUBSCRIBERS, 'label' => 'Subscribers'],
         ], $reply->payload->data['pageTabs']);

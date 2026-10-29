@@ -96,6 +96,7 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
       },
       pageTabs: [
         { page: 'hilos_status', label: 'Overview' },
+        { page: 'hilos_status_works', label: 'Scheduled maintenance' },
         { page: 'hilos_status_components', label: 'Components' },
         { page: 'hilos_status_subscribers', label: 'Subscribers' },
       ],
@@ -207,7 +208,14 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
       pendingCount,
     )
     const total = confirmedCount + pendingCount
-    await expectTableTotal(expect, subscribers, total)
+    if (total === 0) {
+      await expect(
+        shownByTestId(subscribers, 'hilos-table-empty'),
+      ).toBeVisible()
+      await expect(subscribers.getByTestId('hilos-table-count')).toHaveCount(0)
+    } else {
+      await expectTableTotal(expect, subscribers, total)
+    }
     const subscribersReply = subscriberWire.packets
       .flatMap((packet) => packet.frames)
       .map(({ wire }) => deliveryObject(wire))
@@ -780,11 +788,7 @@ test('published public facts survive lost sockets, real file polling, recovery a
         ({ status }) =>
           status.outages.some(
             (outage) =>
-              outage.detectedAt === detectedAt &&
-              outage.resolvedAt === null &&
-              outage.updates.some(
-                (update) => update.source === 'team' && update.text === text,
-              ),
+              outage.detectedAt === detectedAt && outage.resolvedAt === null,
           ),
       )
       const outage = published.status.outages.find(
@@ -796,16 +800,19 @@ test('published public facts survive lost sockets, real file polling, recovery a
         publishedAt: incident.publishedAt ?? expect.any(Number),
         resolvedAt: null,
       })
-      await expect(guest.getByTestId('public-status-outages')).toContainText(
-        text,
-      )
-      await expect(
-        guest.getByTestId('public-status-update').locator('b'),
-      ).toHaveCount(0)
       await expect(
         guest.getByTestId('public-status-component-state'),
       ).toHaveText('Major outage')
     })
+    // The active coherent pair above must arrive before CONT. The committed
+    // team's text may reach the next file publication during recovery; do not
+    // spend the bounded loss window waiting for that independent publication.
+    const publishedText = guest
+      .getByTestId('public-status-outages')
+      .or(guest.getByTestId('public-status-history'))
+      .filter({ hasText: text })
+    await expect(publishedText).toContainText(text)
+    await expect(publishedText.locator('b')).toHaveCount(0)
     const resolved = await expectPublicStatusPair(
       expect,
       guest,
@@ -813,7 +820,11 @@ test('published public facts survive lost sockets, real file polling, recovery a
       ({ status }) =>
         status.outages.some(
           (outage) =>
-            outage.detectedAt === detectedAt && outage.resolvedAt !== null,
+            outage.detectedAt === detectedAt &&
+            outage.resolvedAt !== null &&
+            outage.updates.some(
+              (update) => update.source === 'team' && update.text === text,
+            ),
         ) &&
         status.components.every(
           (component) => component.state === 'operational',
@@ -1120,7 +1131,7 @@ test('nginx serves only the two no-store JSON names through GET and HEAD', async
           )
           expect(response.headers()['cache-control']).toBe('no-store')
           if (method === 'GET')
-            expect(await response.json()).toHaveProperty('schemaVersion', 1)
+            expect(await response.json()).toHaveProperty('schemaVersion', 2)
           else expect(await response.body()).toHaveLength(0)
           await response.dispose()
         }

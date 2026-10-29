@@ -5,11 +5,11 @@ machine, publishing its public files, building its admin section, or reading
 `/status` without a connection or under a freeze.
 
 This document records the Status backend built by HIL-1688, the admin surface
-built by HIL-1689, the public file publisher and reader built by HIL-1690, and
-the subscriber lifecycle and outage mail built by HIL-1691. Scheduled works
-and actual maintenance periods, admin history, separate cluster/failover proof,
-and the React and Angular views remain with HIL-1692 through HIL-1696 where
-their markers say so.
+built by HIL-1689, the public file publisher and reader built by HIL-1690, the
+subscriber lifecycle and outage mail built by HIL-1691, and scheduled works,
+actual maintenance periods, and their public reader and mail built by HIL-1692.
+Admin history remains with HIL-1693, separate cluster and failover proof with
+HIL-1694, React views with HIL-1695, and Angular views with HIL-1696.
 
 ## Core Rule
 
@@ -29,10 +29,11 @@ pages, the read-only component viewport, the Overview's incident actions and
 the Vue views mounted by Chat and Binance BTC Tracker. HIL-1690 adds the public
 file pair, its browser reader and the publisher's narrow freeze exception.
 HIL-1691 adds account-independent email subscriptions, the Subscribers admin
-page, and best-effort outage mail to confirmed recipients. Scheduled works and
-actual maintenance periods remain with HIL-1692; the admin history UI with
-HIL-1693; separate cluster/failover proof with HIL-1694; and React and Angular
-views with HIL-1695 and HIL-1696.
+page, and best-effort outage mail to confirmed recipients. HIL-1692 adds
+scheduled works, observed maintenance periods, the Works admin page, public v2
+maintenance projection and reader support, and best-effort Completed mail.
+Admin history remains with HIL-1693; separate cluster and failover proof with
+HIL-1694; and React and Angular views with HIL-1695 and HIL-1696.
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
 [filesystem](filesystem.md), [protected mode](protected-mode.md) and
@@ -45,10 +46,11 @@ Status does not introduce another collector, storage transport or time helper.
 the project activates it and declares its component content; it does not copy
 the outage machine. `StatusFeature` requires `DAEMON`, `NOTIFICATION_DELIVERY`
 and `AUTH_THROTTLE`, the `HILOS_STATUS` agent, the shared mail-delivery agent,
-the `StatusSettingsCatalog` fragment, the `hilos_status_incident`,
-`hilos_status_incident_update` and `hilos_status_subscriber` tables, all three
-Status pages, both Status tables, and the Components and Subscribers
-page-to-table bindings. It mounts the feature-owned runtime collection.
+the `StatusSettingsCatalog` fragment, the incident, incident-update, subscriber,
+work, work-component and maintenance-period tables, all four Status admin
+pages, all three Status tables, and the Components, Subscribers and Works
+page-to-table bindings. It mounts the feature-owned component and maintenance
+runtime collections.
 
 ### Activation Recipe
 
@@ -69,18 +71,23 @@ timeout, and does not require a monopolistic process. Scope determines how many
 instances a component expects; placement determines which node hosts the owner.
 Merge `StatusSettingsCatalog::getCatalog()` into the project's settings catalog.
 Then run `db:framework:pull` for that project. It copies the missing primary
-schema migration pairs from the framework's `status_incident`,
-`status_incident_update` and `status_subscriber` units; the update unit depends
-on the incident unit. The pull also includes the generated `auth_block` scope
-upgrade pair that adds the `email` value to its existing enum. It does not apply
-SQL. Commit the generated pairs with the project and apply them through the
-ordinary `db:migration:up` command. Do not hand-write or copy these migrations.
-All six demos in this repository activate the feature, register the Status
-owner pair and merge the settings fragment; their schema pairs came from the
-same framework pull. Each also registers thin project subclasses for all three
-Status pages and both Status tables, then binds Components and Subscribers to
-their pages in `PAGE_TABLES`. Feature activation validates these requirements
-at startup.
+schema migration pairs from the framework's Status units. The update unit
+depends on the incident unit. The maintenance units are `status_work`,
+`status_work_component` (which depends on `status_work`), and
+`status_maintenance_period` (which also depends on `status_work`). They enter
+through immutable framework migration changes; generated per-demo schema pairs
+are the output of the pull, not edits to the genesis catalog or old changes.
+The pull also includes the generated `auth_block` scope upgrade pair that adds
+the `email` value to its existing enum. It does not apply SQL. Commit generated
+pairs with the project and apply them through the ordinary `db:migration:up`
+command. Do not hand-write or copy these migrations. All six demos in this
+repository activate the feature, register the Status owner pair and merge the
+settings fragment. Each demo registers thin project subclasses for all four
+Status pages. It registers the three final framework Status tables directly in
+`Hilos::TABLES` under their framework table keys, then binds Components,
+Subscribers and Works to those tables in `Hilos::PAGE_TABLES`. Do not create
+project subclasses of the Status tables. Feature activation validates these
+requirements at startup.
 
 The project Hilos class declares `protected const array STATUS_COMPONENTS = []`
 (`Hilos::STATUS_COMPONENTS`). Its catalog boundary has this shape:
@@ -140,18 +147,20 @@ bypass is added.
 
 ### Admin Pages
 
-The built backend section has three routed pages: `hilos_status` at
-`/hilos/status`, `hilos_status_components` at `/hilos/status/components`, and
-`hilos_status_subscribers` at `/hilos/status/subscribers`. All have empty route
-params, use `PageReach::ROUTE`, and inherit the `ADMIN` access level from
+The built backend section has four routed pages: `hilos_status` at
+`/hilos/status`, `hilos_status_components` at `/hilos/status/components`,
+`hilos_status_subscribers` at `/hilos/status/subscribers`, and
+`hilos_status_works` at `/hilos/status/works`. All have empty route params, use
+`PageReach::ROUTE`, and inherit the `ADMIN` access level from
 `AbstractHilosPage`. `Status` is a child of Dashboard and is opted into the
 shared page head with label and breadcrumb `Status`, icon `bi-activity`, and
 lead `A public status page: service health, incidents, and planned work.`
-`Components` and `Subscribers` are its children and current tabs. Scheduled
-works and History are not admin pages in this build.
+Components, Subscribers and Scheduled maintenance are child tabs; together with
+the Overview they make up the four Status tabs. Admin History remains with
+HIL-1693.
 
-Both first renders use the existing `page_response`. Overview data is
-`page_response.data.status`, assembled temporarily by
+Every admin page first render uses the existing `page_response`. Overview data
+is `page_response.data.status`, assembled temporarily by
 `StatusOverviewData::read()` from the catalog, current component and subscriber
 counts, open incidents and their updates, the publication-delay setting, and
 protected mode:
@@ -162,10 +171,16 @@ status = {
   components: {operationalCount: int, totalCount: int},
   publishDelaySeconds: int | null | HiddenValue,
   maintenance: null | {
-    phase: string, operation: string | null, startedAt: int | null
+    phase: string, operation: string | null, startedAt: int | null,
+    announcement: null | {known: bool, work: Work | null}
   },
   incidents: null | Incident[],
-  subscribers: null | {confirmedCount: int, pendingCount: int}
+  subscribers: null | {confirmedCount: int, pendingCount: int},
+  scheduledWorks: null | {count: int, nextWork: Work | null}
+}
+Work = {
+  id: string, title: string, description: string | null,
+  componentKeys: string[], startsAt: int, endsAt: int
 }
 Incident = {
   incidentId: int, componentKey: string, componentName: string,
@@ -189,10 +204,20 @@ component declaration order; each update timeline is newest first by `(at, id)`.
 `operationalCount` counts only components whose state is strictly
 `operational`. Unknown counts or facts never become healthy or zero, and
 maintenance takes display priority while available incident cards remain
-visible. Only open incidents and their own updates are read; there is no ended
-history, subscriber address, delivery count or public-file data in this payload.
-The separate subscriber count object is null when its DB source is unavailable
-and contains zeroes only when the aggregate proves an empty set.
+visible. A stale or unavailable maintenance RT source produces
+`maintenance.announcement: null`; it does not imply an unannounced period. The
+`scheduledWorks` summary is null while its DB sources are unavailable and
+contains a zero count only for a known empty set. Its count covers unexpired,
+unfinished announcements and `nextWork` is the nearest by start. Only open
+incidents and their own updates are read; there is no ended incident history,
+subscriber address, delivery count or public-file data in this payload. The
+separate subscriber count object is null when its DB source is unavailable and
+contains zeroes only when the aggregate proves an empty set.
+
+The Overview's Scheduled maintenance tile uses `status.scheduledWorks` for its
+count and nearest announcement. Its existing maintenance card shows the
+announcement only when the current RT observation proves it; a missing or
+stale source leaves that detail unknown.
 
 `StatusIncidentData` and `StatusIncidentUpdateData` build only the open incident
 and its own timeline projection. The DTO uses `WireField::column()` for
@@ -203,10 +228,11 @@ mode, personal incident-update text becomes `HiddenValue`; the row and timeline
 remain. Viewer permissions and hidden-field behavior follow
 [admin view mode](admin-view-mode.md).
 
-The three `BROWSER.SIGNAL` declarations use
+The four `BROWSER.SIGNAL` declarations use
 `subscription_page_hilos_status`,
-`subscription_page_hilos_status_components`, and
-`subscription_page_hilos_status_subscribers`. These are metadata names, not
+`subscription_page_hilos_status_components`,
+`subscription_page_hilos_status_subscribers`, and
+`subscription_page_hilos_status_works`. These are metadata names, not
 additional frames: page state still arrives in the existing `page_response`.
 The Overview's `status.subscribers` and the Subscribers page's top-level
 `statusSubscribers` carry `{confirmedCount, pendingCount}` in that answer. Both
@@ -273,12 +299,78 @@ gate and freeze before deleting the row in its transaction. The internal ask is
 not an `AGENT_ACTION`; the guest subscription actions remain on the Status
 owner and do not share the admin removal path.
 
+### Works page and actions
+
+The Works page's first answer carries `data.statusWorks` and the initial
+`page_response.windows.hilosStatusWorks` window together. Its data is either
+`null` while a required source is unavailable or
+`{components: list<{componentKey: string, name: string}>, upcomingCount: int,
+nextWork: Work | null}`. This is the catalog for the editor and the nearest-work
+summary; the browser makes no second request for either. All these fields are
+explicitly nonpersonal.
+The page's `dataFields()` and table's `wireFields()` identify every catalog and
+row field as nonpersonal. The Vue page uses the shared admin view-mode controls;
+schedule, change and cancel remain `ADMIN` mutations.
+The Works page declares DB interest in both work collections and RT interest
+in protected mode. The Overview declares the same work DB sources plus the
+maintenance RT row and rebuilds its ordinary `page_response` data on relevant
+DB and RT source changes. Its maintenance announcement is null when the RT
+source is missing, stale or unavailable; no source failure becomes `false`,
+zero or an unannounced period.
+
+`HilosStatusWorksTable` uses the ordinary viewport with a maximum window of 32
+rows, with the `work` row slot keyed by the stored work id. Rows carry
+`{id: int, publicId: string, title: string, description: string | null,
+componentKeys: list<string>, startsAt: int, endsAt: int, version: int,
+canceledAt: int | null, consumedAt: int | null, expiredAt: int | null,
+lastMailQueuedAt: int | null}`. The table searches
+`title` and `description`, filters by the strict catalog key `componentKey`,
+and offers ascending and descending orders for `startsAt`, `endsAt` and
+`title`; the id settles ties in the selected direction, and the default is
+`startsAt ASC`. Component keys are read through the
+work-component bridge in the same row. A bridge change resolves its parent work
+and refreshes that row, never a separate component row. Ordinary viewport
+anchors, focus, source recovery and Show/Apply behavior apply. A cancellation,
+consumption or expiry removes the row through the usual Apply path rather than
+an optimistic client splice.
+
+The page owns three non-reading `ADMIN` actions:
+`hilos_status_work_schedule` with
+`{title: string, description: ?string, componentKeys: list<string>, startsAt: int,
+endsAt: int}`, `hilos_status_work_change` with those fields plus
+`{workId: int, publicId: string, expectedVersion: int}`, and
+`hilos_status_work_cancel` with
+`{workId: int, publicId: string, expectedVersion: int}`. The correlated
+`requestId` stays in the action envelope. The page sends typed asks to the
+existing Status owner and defers its reply until
+`hilos_status_work_write_done` carries the existing `HandoverAnswerSignalData`;
+the browser action names do not become agent actions. The page's internal asks
+are `status_schedule_work`, `status_change_work` and `status_cancel_work`; the
+owner answers them over the declared page-owned reply route. The owner rechecks
+the Works page's ADMIN gate and freeze, reconciles maintenance before a write,
+then checks public identity and version in its transaction.
+
+The core module owns the `hilosStatusWorks` state and row resolver and exposes
+the named create, edit and cancel actions. Editing uses the shared row edit
+session, table-row edit source and focus-return path; the baseline contains the
+text, component list and both times, and the live row version is sent as
+`expectedVersion`. Date-time inputs use the reader's explicit IANA zone through
+`localDateTimeValue()` and `parseLocalDateTimeValue()`. Parsing strictly checks
+the Gregorian calendar and round-trips to whole seconds; DST gaps and folds
+that do not identify one moment are rejected instead of guessed. Action frames
+continue to carry epoch milliseconds UTC. Cancellation remains bound to the
+focused row's immutable public id; an unrelated late acknowledgement cannot
+retarget another dialog. Vue uses the standard Status admin
+page, viewport table, create/edit/cancel modals and action notices. Chat and
+Binance mount thin Vue wrappers; React and Angular Status views remain with
+HIL-1695 and HIL-1696.
+
 Overview source changes use the existing guarded `PageResender` /
 `resendPageWhole()` path. The narrow `hilos_status` branches in
 `BrowserContext::addBrowserChange()` and `addBrowserStaleness()` reuse the
 subscription guards and `publishedWholeThisFlush`; they add no timer, cache or
-generic fan-out. Components and Subscribers remain separate page subscriptions,
-so an Overview re-answer does not reset either table viewport.
+generic fan-out. Components, Subscribers and Works remain separate page
+subscriptions, so an Overview re-answer does not reset another table viewport.
 
 The framework's core module binds `page_response.data.status` and the
 Subscribers page's `page_response.data.statusSubscribers` through strict schemas
@@ -301,7 +393,7 @@ button slot. `HilosStatusSubscribersPage` from `@hilos/vue/admin/status` takes
 `HilosStatusSubscribersContext`, the existing `{scopes, connection, actions}`
 Status context. Status is not imported by either package's eager `base` entry
 or Vue's default `hilosAdminViews()` map. Chat and Binance BTC Tracker mount
-thin Vue wrappers for the public reader and all three admin pages. The public
+thin Vue wrappers for the public reader and all four admin pages. The public
 `/status` route is the framework-owned client file reader; it has no backend
 page, catalog entry or `page_response` subscription. React and Angular Status
 views remain unbuilt until HIL-1695 and HIL-1696, so their Status tabs stay out
@@ -363,11 +455,98 @@ The same `StatusAgent` owns Add, Update and Remove on the lazy
 journaled and have no user or session foreign key; the schema and link lifecycle
 are described in [Subscribers And Mail](#subscribers-and-mail).
 
-The same owner holds scheduled works and the history of actual maintenance
-periods. Their exact DB/RT entities, fields and action payloads belong to the
-HIL-1692 implementation interview; this canon does not invent their storage
-schema.
-(not in the code yet — HIL-1692)
+The same `StatusAgent` owns Add and Update on `statusWorks` and
+`statusMaintenancePeriods`, and Add and Remove on `statusWorkComponents`. No
+agent is created per announcement. The bounded ORM and migration contracts are
+below.
+
+### Scheduled works and maintenance storage
+
+With `STATUS` enabled, the framework lazily mounts full Entity/Object/View
+chains at `Hilos::$db->statusWorks`, `statusWorkComponents` and
+`statusMaintenancePeriods`. Their primary tables are not journaled. All stored
+moments are unsigned `BIGINT` epoch milliseconds UTC. All persisted fields are
+classified nonpersonal (`_pii = []`); these records carry no actor, session,
+address, IP or account relation.
+
+- `hilos_status_work` stores auto-increment `id BIGINT UNSIGNED` primary key,
+  immutable unique `public_id CHAR(32)`, `title VARCHAR(200)`, nullable
+  `description TEXT`,
+  `starts_at`, `ends_at`, `created_at`, `updated_at`, nullable
+  `canceled_at`, `consumed_at`, `expired_at`, `version INT`, and nullable
+  `last_mail_queued_at`. Titles are limited to 200 characters and descriptions
+  to 2000. The public id is generated from 16 secure random bytes. Creation
+  starts at version 1; changing, canceling, consuming or expiring increments
+  the domain version. The queue handoff timestamp does not.
+- `hilos_status_work_component` stores auto-increment primary key
+  `id BIGINT UNSIGNED`,
+  required `work_id BIGINT UNSIGNED` and `component_key VARCHAR(128)`.
+  `(work_id, component_key)` is unique; `component_key` has a key-first
+  `(component_key, work_id, id)` index. Its FK cascades with the work; the
+  chosen project catalog key has no catalog-table FK. The entity set is owned
+  through `work_id`, so the set is one work's selected keys.
+- `hilos_status_maintenance_period` stores auto-increment primary key
+  `id BIGINT UNSIGNED`,
+  unique opaque `public_id CHAR(32)`, nullable `work_id BIGINT UNSIGNED` with
+  `ON DELETE SET NULL`, nullable historical `work_public_id CHAR(32)`,
+  required `announcement_known BOOLEAN`, `title VARCHAR(200)`,
+  `component_keys_json TEXT`,
+  `started_at`, `last_observed_at`, nullable `ended_at`, and nullable
+  `completion_observed_at`. Its detached key list is decoded by the View; the
+  Entity and Object retain scalar persisted fields. Public and transit values
+  and the DB View expose that set in canonical string order; valid unsorted v2
+  or transit lists decode as the same set. `work_public_id` preserves
+  the original announcement identity after the work row is removed.
+
+The work indexes are the unique public id, three pending prefixes that combine
+`(canceled_at, consumed_at, expired_at)` with one of `starts_at`, `ends_at` or
+`title` followed by `id`, and the window index
+`(canceled_at, starts_at, ends_at, id)`. Maintenance periods have
+the unique public id, `(started_at DESC, id DESC)`,
+`(completion_observed_at, id)`, and `(work_id, id)` indexes. Each work window
+uses `[startsAt, endsAt)`; a conflict is an overlapping noncanceled window, so
+adjacent windows are allowed and component selections do not divide the
+system-wide schedule.
+
+`StatusWork` is a standalone root set. `StatusWorkComponent` is a child set
+through `work_id`; `StatusMaintenancePeriod` is standalone but is not a root
+set. The component key is a catalog value, not a foreign key to a DB catalog.
+
+Typed View/Object reads keep interval and history queries at the ORM layer:
+`conflictingWindow()` finds one overlap; `matchingAnnouncement()` finds an
+unused, unexpired announcement covering an observed start; `upcomingPortion()`,
+`expiredPortion()` and `StatusWorks::summary()` read bounded work sets or their
+count and nearest start. `StatusMaintenancePeriods::intersecting()` reads
+active and retained history in bounded portions, and both collections expose
+`findByPublicId()` for opaque identity reconciliation. Read portions cap at 32;
+callers do not load full history or issue SQL from the agent, page or table.
+The work Object's `searchCondition()` is shared by window queries, membership
+checks and facet counts; it searches title/description and matches a component
+key through a parameterized `EXISTS` on the bridge. The table and caller do not
+add joins. Work collection actions create/import rows; a known work row uses
+`change`, `cancel`, `consume(at)`,
+`consumeObservation(StatusMaintenanceObservation)`, `expire` and
+`markMailQueued` item actions. The ordinary `consume(at)` checks the current
+`[startsAt, endsAt)` window; the recovery-only observation path uses a validated
+snapshot to prove the same public work identity and its original window. It is
+an owner reconciliation action, not an admin action or wire API. Component keys
+are replaced through bridge actions in that same work-change transaction.
+Maintenance-period item actions only monotonically reconcile an owner
+observation; the UI does not CRUD history. `StatusWork::$components` is the
+selected key bridge; the maintenance-period View exposes a nullable work bridge
+only when its saved public id still matches. It never reconstructs a link from
+a title.
+
+One transaction in `StatusAgent` owns each write. It replaces the component
+bridge in the same transaction as a work change. Public invalidation and
+immutable mail notices are registered with `Database::afterCommit()`; a
+rollback emits neither. The three units are declared by
+`framework/backend/Database/Migration/FrameworkSchemaCatalog.php`, with up/down
+create pairs under `framework/backend/Database/Migration/Stub/`. An immutable
+change under `framework/backend/Database/Migration/Change/` introduces the
+three units. The per-demo `backend/Database/Migration/Schema/` pairs are
+generated pull output in all six demos. Genesis and earlier migration changes
+are not rewritten.
 
 ## Candidate And Outage
 
@@ -391,8 +570,8 @@ a positive integer primary id, `component_key`, its detection-time
 `suppressed_at`, `resolved_at` and `outcome`. A unique nullable
 `active_component_key` permits only one open record per component. Resolving
 the fact clears that key in the same item write, allowing a later absence to
-create a new id. These internal integer ids do not change the future public
-JSON contract's opaque string ids.
+create a new id. Public incident, work and maintenance ids remain opaque
+strings; their public shapes expose no primary integer id.
 
 Each update row stores `incident_id`, `kind`, `severity`, immutable `text`,
 millisecond `at` and nullable `request_id`. The incident-to-updates relation is
@@ -654,26 +833,133 @@ After a published, team or resolved timeline transaction commits,
 `StatusSubscriberMailTask` captures the event, the maximum subscriber id, the
 validated links and project name. Its recipient query is bounded to confirmed
 rows with `confirmed_at <= eventAt` and `id <= maxSubscriberId`; before each
-send the owner rechecks the primary id and confirmation. One task is drained
-per tick, with at most 32 recipient attempts and a cooperative 20 ms portion
-budget after at least one attempt. The cursor advances before mail handoff, so
-an ambiguous send is not replayed. These tasks are private best-effort memory;
-stop, freeze or restart discards them and there is no history replay. A lost
-task or an SMTP result that is ambiguous after queueing is accepted. SMTP is not
-exactly once. Confirmation mail is also issued only after its transaction
-commits. Subscriber addresses, capabilities and saved zones never enter the
-public files or public JSON v1; the public schema and heartbeat are unchanged.
+send the owner rechecks the primary id and confirmation. One shared notice
+queue drains one task per tick, with at most 32 recipient attempts across
+outage and work mail and a cooperative 20 ms portion budget after at least one
+attempt. The cursor advances before mail handoff, so an ambiguous send is not
+replayed. These tasks are private best-effort memory; stop, freeze or restart
+discards them and there is no history replay. A lost task or an SMTP result
+that is ambiguous after queueing is accepted. SMTP is not exactly once.
+Confirmation mail is also issued only after its transaction commits.
+Subscriber addresses, capabilities and saved zones never enter the public
+files or public Status projection.
 
 ### Scheduled Works And Maintenance Periods
 
-Scheduling, changing or canceling works publishes the announcement change and
-sends mail. Schedule clocks never enter or leave protected mode. Actual work
-starts with the freeze: it is announced in advance when the freeze begins
-inside the work's window, and unannounced otherwise. It continues if the freeze
-outlasts the scheduled end. When the freeze ends, complete the period and send
-Completed through delivery when permitted. Full freeze does not permit durable
-delivery merely because Status still publishes files.
-(not in the code yet — HIL-1692)
+`StatusAgent` handles work schedule, change and cancel asks forwarded by the
+ADMIN Works page. Starts must be in the future at creation or when changed;
+times must have whole-second precision, titles and descriptions are validated,
+and at least one currently declared component key is required. Changing an
+unchanged start may keep it in the past until actual maintenance begins.
+Noncanceled windows cannot overlap under half-open interval rules; adjacent
+windows are allowed. A write addresses the row by both its integer id and
+immutable public id and checks `expectedVersion`. Repeating cancellation of
+the same canceled row is an idempotent no-op. A work is not editable after
+cancellation, consumption, expiry or its scheduled end. Schedule, change and
+cancel send a detached event snapshot after the transaction commits. The
+schedule clock never starts or ends protected mode.
+
+Actual maintenance begins and ends only with the existing protected-mode
+runtime. The Status owner reads that unconditional runtime; a missing or stale
+row is unknown and cannot complete an observation. It converts the runtime's
+`startedAt` seconds to epoch milliseconds once. One occupied interval remains
+one period across operation, phase, node or projected start changes. A clean,
+coherent public announcement snapshot can classify the actual start only when
+the most recent inactive observation proves that it predates the freeze.
+Because protected-mode `startedAt` is recorded in seconds, the proof can include
+a snapshot from that same second. Cold, dirty, building, torn, missing or
+otherwise unknown source data fails closed. After the first observation, the
+sanitized title and identity are retained. An expired window alone never ends
+actual maintenance. When an announcement is consumed, its `publicId` links the
+period; restore never matches a work by its old integer id.
+
+The feature-owned `Hilos::$rt->hilosStatusMaintenance['current']` row has the
+strict shape `{id: string, available: bool, active: bool,
+announcementKnown: bool, periodId: string | null, workPublicId: string | null,
+title: string | null, componentKeys: list<string>, startsAt: int | null,
+endsAt: int | null, startedAt: int | null, lastObservedAt: int | null}`.
+Nullable moments are epoch milliseconds UTC, and `id` is the fixed key
+`current`. `available=false` does not mean inactive. `StatusAgent`
+is the only writer, through row actions; the Overview reads it through declared
+RT interest in another worker. Missing, stale or unavailable RT produces an
+unknown announcement verdict, not false or an empty work. The Status feature
+mounts this collection; protected-mode runtime shape and its owner are
+unchanged. Transit cursors and partial DB/file work remain private to the
+Status owner and are not shared state.
+
+The private observation store under the logical `$fs->status` directory keeps
+one `<period-public-id>.json` file per observed period. Its exact envelope is
+`{formatVersion: 1, period: {id, workId, announcementKnown, title,
+componentKeys, startedAt, lastObservedAt, endedAt, completionObservedAt},
+work: null | {id, title, description, componentKeys, startsAt, endsAt}}`.
+These are sanitized public values only; no account, recipient, operation,
+phase, node or process fields are present. Start and completion writes use a
+same-volume temporary file and atomic publish. File discovery and import are
+bounded to 32 entries per pass. The Status worker alone reads or writes transit;
+nginx exposes only the two public Status files, never this directory.
+
+The first occupied observation is saved immediately; later `lastObservedAt`
+updates follow the public heartbeat cadence. At a continuously observed
+inactive transition, `endedAt` and `completionObservedAt` are both that
+transition moment. If restart or unavailable source broke continuity,
+`completionObservedAt` records when completion was detected while `endedAt`
+stays null; `lastObservedAt` remains the last proven occupied moment. The gap
+after it is unknown, not maintenance duration. A missing/null freeze source
+never ends the period.
+
+On owner recovery, valid transit files and the last coherent public archive
+can restore the currently active observation. The archive is sanitized and
+does not restore general work schedules or completed history into the DB. Before
+an expiry pass or new admin write, recovery resolves the work by opaque
+`publicId` and imports or monotonically reconciles periods in one owner
+transaction. If a saved snapshot proves that its original window covered the
+actual start, recovery can consume the work with that same `publicId` even when
+a restore has returned an older schedule window. `consumeObservation()` marks
+that identity consumed without restoring the snapshot's old title, interval or
+version into the DB; ordinary `consume(at)` still checks the current window. A
+reused integer id with another `publicId`, and canceled, expired or missing
+work, is left untouched. Transit is removed only after commit. Replays do not
+duplicate the period or its first Completed event. A damaged or unwriteable
+transit file is ignored or retried and logged; it does not hold the system
+closed or stop the independent public heartbeat. If a completion record could
+not be saved before owner loss, its exact end is not promised. This transit is
+neither an admin History feature nor a mail outbox, and this implementation
+does not claim separate cluster or failover proof.
+
+Scheduled, changed, canceled and announced-completed work events use the
+existing mailer and four templates: `status_work_scheduled`,
+`status_work_changed`, `status_work_canceled` and `status_work_completed`.
+`StatusWorkSubscriberNotice` captures the public work snapshot, event moment,
+event kind and component-name snapshot when the transaction commits; the task
+does not reread a subsequently edited work to build the message. Template
+parameters are exactly
+`{projectName, statusUrl, unsubscribeUrl, title, description, componentNames,
+startsAtLabel, endsAtLabel, changesText, endedAtLabel,
+completionObservedAtLabel}`. Nullable parameters remain present. The four
+templates produce plain text and escaped HTML inside the existing mail frame;
+moment labels use the recipient's saved time zone, offset and zone name. An
+inexact completion uses `endedAtLabel: null` and the nonnull
+`completionObservedAtLabel`, so the letter reports when completion was
+observed without calling it the end.
+
+Work tasks capture the event-time confirmed-recipient boundary and recheck each
+subscriber immediately before handing mail to the existing pool. At the end of
+a nonempty task, `last_mail_queued_at` is advanced only if every attempted
+handoff was accepted and none was ambiguous; no eligible recipients or a
+partial/failed handoff does not create a positive mark. This records an accepted
+queue handoff, not SMTP delivery. The row's `publicId` is rechecked before the
+mark; the timestamp does not change the work version. The immutable event
+snapshot stays separate from the latest committed version and request
+provenance, which live in a private `StatusWorkMailContext` shared by pending
+tasks for that `publicId`. Its after-commit update is independent of whether a
+new best-effort enqueue succeeds. An older task can finish a valid handoff
+without losing the newer action's provenance during coalescing: the current
+version check decides whether that provenance accompanies the mark, while the
+public-id check keeps it on the same work. The keyed context cannot attach one
+work's origin to another, uses O(1) lookup, and is released after the last task
+or when the queue resets on stop, freeze or restart. This is private owner work,
+not shared RT state or a durable DB receipt. No durable outbox, SMTP receipt, retry
+after owner loss, or mail replay from public or DB history is provided.
 
 ## Static Publication
 
@@ -687,33 +973,33 @@ Status owner publishes the sanitized projection independently of visitors.
 The general registration, cluster marker and shared-volume rules are in
 [filesystem.md](filesystem.md).
 
-`StatusPublicSnapshotBuilder` reads the typed `StatusSnapshot` and published
-incident history in bounded portions; it completes an incident's timeline in
-bounded portions too. It retains only detached public values, never DB or RT
-objects. `StatusPublicFiles` serializes a bounded fragment/byte portion per
-owner pass and uses `FsPath::publish()` to atomically install each complete file
-from a temporary file on the same volume. It restores one coherent pair at
-owner start; an absent, malformed or revision-mismatched pair does not replace
-the last known archive. Publish whole `status.json`, then whole
+`StatusPublicSnapshotBuilder` reads the typed `StatusSnapshot`, published
+incident history and its timelines, upcoming work and retained maintenance
+periods in bounded portions. It retains only detached public values, never DB
+or RT objects. `StatusPublicFiles` serializes a bounded fragment/byte portion
+per owner pass and uses `FsPath::publish()` to atomically install each complete
+file from a temporary file on the same volume. It restores one coherent pair
+at owner start; an absent, malformed or revision-mismatched pair does not
+replace the last known archive. Publish whole `status.json`, then whole
 `heartbeat.json` with the same revision, then the change hint. A heartbeat-only
 pass updates `aliveAt` with the last successful content revision and then sends
 the hint. A failed build or write is retried without advancing the heartbeat or
 sending a success hint; if the files temporarily disagree, the reader accepts
 neither revision-mixed pair.
 
-### Public JSON v1
+### Public JSON v2
 
 These are JSON shape declarations, not PHP/TS implementation types. All keys
 are present: nullable fields serialize as `null`, lists as `[]` when empty.
-Every moment below — including `at`, `startsAt` and `endsAt` — is an integer
-of epoch milliseconds UTC, following [A Moment On The Wire](time-zones.md#a-moment-on-the-wire).
-Every `id` is opaque. `revision` is a unique opaque content revision without a
-node id or term; the heartbeat repeats the last successfully published
-`status.json` revision.
+Every moment — including `at`, `startsAt` and `endsAt` — is an integer of epoch
+milliseconds UTC, following [A Moment On The Wire](time-zones.md#a-moment-on-the-wire).
+Every public `id`, including a `workId`, is opaque and never a DB integer id.
+The content `revision` is opaque and has no node id or term; the heartbeat
+repeats the last successfully published `status.json` revision.
 
 ```text
 status.json = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   revision: string,
   generatedAt: int,
   config: {pollIntervalSeconds: int, staleAfterSeconds: int},
@@ -723,7 +1009,7 @@ status.json = {
   scheduledWorks: Work[],
   maintenancePeriods: MaintenancePeriod[]
 }
-heartbeat.json = {schemaVersion: 1, revision: string, aliveAt: int}
+heartbeat.json = {schemaVersion: 2, revision: string, aliveAt: int}
 
 Component = {
   componentKey: string, name: string, description: ?string,
@@ -738,19 +1024,23 @@ Outage = {
 }
 Update = {at: int, source: 'automatic' | 'team', text: string}
 Work = {
-  id: string, title: string, description: ?string, componentKeys: string[],
-  startsAt: int, endsAt: int
+  id: string, title: string, description: ?string,
+  componentKeys: list<string>, startsAt: int, endsAt: int
 }
 MaintenancePeriod = {
-  id: string, workId: ?string, title: string, componentKeys: string[],
-  startedAt: int, endedAt: ?int
+  id: string, workId: ?string, announcementKnown: bool,
+  title: string, componentKeys: list<string>, startedAt: int,
+  lastObservedAt: int, endedAt: ?int, completionObservedAt: ?int
 }
 ```
 
-The current writer emits `scheduledWorks: []` and `maintenancePeriods: []`.
-These v1 shapes are reserved for the scheduled works and actual maintenance
-periods owned by HIL-1692.
-(not in the code yet — HIL-1692)
+The writer emits schema version 2 in both files. The strict reader and restore
+also accept the actual earlier v1 shape, whose `scheduledWorks` and
+`maintenancePeriods` were both empty, and preserve its outage archive. A v1
+file with nonempty maintenance lists is not supported. Restore normalizes a
+coherent v1 pair into the v2 writer; it does not discard accepted outage
+history. Both versions keep the same two addresses, matching-revision pair,
+heartbeat, freshness threshold and change hint.
 
 Apply these publication limits:
 
@@ -762,19 +1052,32 @@ Apply these publication limits:
   selected by fact code; team text is the administrator's published wording.
   Each outage uses an opaque public id, never the internal integer id.
   Unpublished, suppressed and canceled candidates never become outage history.
-- The public JSON reserves `Work` and `MaintenancePeriod` shapes, but the current
-  writer keeps both lists empty. Their publication rules and implementation
-  remain with HIL-1692.
-- Works contain upcoming announcements and those belonging to current works;
-  canceled announcements are not public.
-- Maintenance periods contain active periods and completed periods intersecting
-  the last 90 days. `workId: null` means unannounced works; `title` is a public
-  label. Their boundaries follow the actual freeze, not schedule clocks.
-(not in the code yet — HIL-1692)
+- `scheduledWorks` contains unused, unexpired announcements. The active
+  period's known announcement is also retained in the public snapshot as a
+  reference, even after its window ends; the reader does not show a consumed
+  announcement as upcoming. Canceled announcements are not published.
+- `maintenancePeriods` contains active periods and completed periods within
+  the 90-day retention window. A completed period with an exact `endedAt` uses
+  that boundary; when its end is unknown, retention uses
+  `completionObservedAt` without treating it as the end. The current active
+  interval proves occupancy only through `lastObservedAt`.
+- `completionObservedAt: null` means active. A nonnull value means completion
+  was observed, even when `endedAt` is null. Continuous observation records
+  `endedAt` and `completionObservedAt` at the same transition moment. A gap
+  leaves `endedAt: null`; do not infer duration or color the unknown interval
+  after `lastObservedAt`.
+- `workId: null` is classified by `announcementKnown`: `true` means the owner
+  knows this was an unannounced freeze, while `false` means it cannot prove
+  whether an announcement matched. Never display unknown as unannounced.
+  `title` and `componentKeys` are sanitized historical snapshots.
+- A full freeze paints every declared component as Maintenance. The announced
+  `componentKeys` describe planned scope and do not limit which components the
+  actual full freeze affects.
 - Never publish subscribers, email addresses, tokens, session time zones,
   operation or phase, PIDs, node ids/IPs, agent types, raw Daemon pictures,
-  private error or exception text, or hidden candidates in history. Version,
-  config and revision exist only to read the public projection correctly.
+  private error or exception text, or hidden candidates in history. Work
+  versions, DB ids, config and revision exist only to read or mutate the
+  private records and public projection correctly.
 
 ### Intervals, Hint And HTTP Addresses
 
@@ -839,17 +1142,28 @@ reader's current clock, even with a live socket. Once `aliveAt` is older than
 of current health. Empty, malformed or missing files do not replace the last
 accepted pair; retain its history while its heartbeat is fresh, then show the
 stale verdict. Staleness maps current components to Unknown and hides the
-current Checking list, while retaining the accepted published incidents and
-history. Without any accepted pair, the banner and component knowledge are
-Unknown; never invent Operational.
+current Checking list, while retaining accepted outages, scheduled facts and
+completed history. An accepted active maintenance period remains visible as a
+retained observation with `confirmedCurrent: false`; it is not evidence that
+the freeze is still active. Without any accepted pair, the banner and component
+knowledge are Unknown; never invent Operational.
 
-The current public surface shows an overall banner, component states, Checking
-candidates, published open outages and their timelines, plus completed
-published-outage history. The 90-day calendar strip uses published outage
-intervals; the narrow strip is its last 30 days. Each day shows its worst
-published fact; candidates do not color days or enter history. The current
-writer emits no scheduled works or maintenance periods, so those sections and
-facts remain with HIL-1692. Show no SLA percentage. Use the shared time
+The public surface shows an overall banner, component states, Checking
+candidates, published open outages and their timelines, unused announcements
+whose scheduled windows have not ended, active maintenance observations, and
+completed outage and maintenance history. A window remains an announcement
+after its scheduled start while it remains unexpired; the actual period begins
+only when protected mode starts and consumes it. Under a fresh
+pair, the banner gives known maintenance
+priority, then Major outage, Partial outage and Checking; Operational requires
+every component to be operational. Staleness overrides the current verdict
+with “not responding”. The 90-day calendar uses published outage intervals and
+observed maintenance only through `lastObservedAt`; the narrow strip is its
+last 30 days. Each day shows its worst published fact; candidates do not color
+days or enter history. Completed maintenance with an unknown end reports its
+completion observation moment and does not invent an exact duration or paint an
+unknown gap. Public “Completed” history is the reader's projection, not the
+separate admin History page. Show no SLA percentage. Use the shared time
 mechanism for calendar boundaries and the core formatter in the reader's zone,
 including the browser's zone for a guest; do not reproduce the mockup's UTC
 screen labels (D-248). The [time-zone canon](time-zones.md) owns zone selection
@@ -868,11 +1182,11 @@ Other pages keep their existing rules. React and Angular remain unbuilt until
 HIL-1695 and HIL-1696.
 
 Do not show the subscription button without a usable live connection. Every
-subscription action and subscriber mail pass checks that the Status database
-source is ready and the freeze permits the work; an occupied or unavailable
-freeze runtime refuses the operation before subscriber access or mail. Public
-file reading grants no offline mutation path or permission to bypass a freeze
-for subscription actions.
+subscription action and subscriber or work mail pass checks that the Status
+database source is ready and the freeze permits the work; an occupied or
+unavailable freeze runtime refuses the operation before subscriber access or
+mail. Public file reading grants no offline mutation path or permission to
+bypass a freeze for subscription actions.
 
 The publisher's file half survives full freeze, or normal Maintenance would
 become “not responding” after the stale threshold. `HILOS_STATUS` is preserved
@@ -881,19 +1195,20 @@ with `HILOS_MAIL` by both `WorkerServer::protectedModeRefusesStart()` and
 worker. This permits only the public projection and heartbeat work, with no new
 master I/O, child process or background process.
 
-In every occupied freeze phase, the Status owner publishes from a detached
-sanitized snapshot and the freeze fact. It does not read DB-backed Status data
-or settings, observe components, perform ORM actions or deliver subscriber or
-other durable mail.
-Its public files contain no operation or phase, node/process/network details,
+In every occupied freeze phase, the Status owner publishes from its detached
+sanitized archive, current maintenance observation and the freeze fact. It does
+not read DB-backed Status data or settings, observe components, perform DB ORM
+actions or deliver subscriber or work mail. Its public files contain no
+operation or phase, node/process/network details,
 agent type, internal error, subscriber address, token or session time zone.
-Entry abandons the owner's observation baseline and partial public build; after
+Entry abandons the owner's component baseline and partial public build; after
 lift it obtains a fresh Daemon picture and resumes only from permitted data.
-On a cold owner start it restores only a revision-matched file pair; with no
-valid pair, the reader begins Unknown. A known occupied freeze publishes
-Maintenance while retaining only restored sanitized history; a missing freeze
+On a cold owner start it restores a revision-matched file pair and validated
+private maintenance transit. Without a valid public pair the reader begins
+Unknown. A known occupied freeze publishes Maintenance while retaining the
+restored sanitized archive and active observation; a missing or stale freeze
 runtime row publishes Unknown. Agents stopped by the freeze do not become
-outage facts. This is no exception for ordinary ORM writes.
+outage facts. This is no exception for ordinary DB ORM writes.
 
 Serving these files is independent of the daemon, not of nginx or its machine.
 If nginx or the whole host is unavailable, the page cannot open. External
@@ -914,7 +1229,7 @@ current validation surfaces.
 | Guest subscriptions, primary storage, links and mail | `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusSubscriptionLink.php`, `framework/backend/Status/StatusSubscriberMailTask.php`, `framework/backend/Database/Entity/Item/StatusSubscriber.php`, `framework/backend/Database/Actions/Collection/StatusSubscribersActions.php`, `framework/backend/Database/Actions/Item/StatusSubscriberActions.php`, `framework/backend/Mail/Template/Status*MailTemplate.php`; `framework/tests/Unit/StatusGuestActionDTOTest.php`, `StatusSubscriptionLinkTest.php`, `StatusMailTemplatesTest.php`; `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`, `StatusSubscriberStorageIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php`, `StatusSubscriberMailIntegrationTest.php` | Landed by HIL-1691; storage, guest actions and best-effort mail are documented above |
 | Subscribers admin viewport and public subscription controller | `framework/backend/Pages/Status/AbstractHilosStatusSubscribersPage.php`, `framework/backend/Tables/Status/HilosStatusSubscribersTable.php`; `framework/frontend/core/src/admin/status/hilosStatusSubscribers.ts`, `framework/frontend/core/src/status/statusSubscription.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.vue`, `framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue`; `framework/tests/Unit/StatusSubscriberTableTest.php`, `StatusSubscriberAdminIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusSubscribers.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.test.ts`; `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts` | Landed by HIL-1691; Chat and Binance carry the built Vue pages, other four SDK views remain unbuilt |
 | Email throttle scope and per-parking-agent verdict route | `framework/backend/Auth/Throttle/ThrottleEmailIdentityInterface.php`, `ThrottleIdentity.php`, `ThrottleVerdictRoute.php`, `framework/backend/Status/StatusAgent.php`, `framework/backend/Core/Topology/TopologyValidator.php`, `framework/backend/Core/Page/PageSignalRouter.php`; `framework/tests/Unit/ThrottleVerdictRouteTest.php`, `StatusThrottleVerdictRoutingTest.php`, `TopologyValidatorTest.php`, `PageSignalRouterThrottlePoolTest.php`; `framework/tests/Integration/AuthThrottleIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php` | Landed by HIL-1691; the ordinary auth verdict remains on its existing host |
-| Scheduled works, actual maintenance periods and Completed delivery | — | (not in the code yet — HIL-1692) |
+| Scheduled works, maintenance observation and Completed delivery | `framework/backend/Database/Entity/Item/StatusWork.php`, `framework/backend/Database/Entity/Item/StatusWorkComponent.php`, `framework/backend/Database/Entity/Item/StatusMaintenancePeriod.php`; `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusMaintenanceObservation.php`, `framework/backend/Status/StatusMaintenanceObservationStore.php`, `framework/backend/Status/StatusPublicWork.php`, `framework/backend/Status/StatusPublicMaintenancePeriod.php`, `framework/backend/Status/StatusPublicSnapshot.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/backend/Status/StatusPublicSnapshotBuilder.php`; `framework/backend/Pages/Status/AbstractHilosStatusWorksPage.php`, `framework/backend/Tables/Status/HilosStatusWorksTable.php`; `framework/frontend/core/src/admin/status/hilosStatusWorks.ts`, `framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts`, `framework/frontend/core/src/timeZone/localDateTime.ts`, `framework/frontend/core/src/status/statusFiles.ts`, `framework/frontend/core/src/status/derivedStatus.ts`; `framework/frontend/vue/src/admin/status/HilosStatusWorksPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusWorkModal.vue`, `framework/frontend/vue/src/admin/status/HilosStatusCancelWorkModal.vue`, `framework/frontend/vue/src/public/HilosStatusPage.vue`; `demo/chat/frontend/src/views/Hilos/Status/Works/Works.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/Works/Works.vue`; `framework/tests/Integration/StatusWorksSchemaIntegrationTest.php`, `framework/tests/Integration/StatusMaintenancePeriodsIntegrationTest.php`, `framework/tests/Integration/StatusWorkMailIntegrationTest.php`; `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts` | Implemented by HIL-1692; source and validation paths are listed here |
 | Admin history | — | (not in the code yet — HIL-1693) |
 | Separate cluster and failover proof | — | (not in the code yet — HIL-1694) |
 | React UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1695) |
@@ -923,9 +1238,9 @@ current validation surfaces.
 PR-133 through PR-135 and PR-204 through PR-209 remain the code leaves' design
 promises. HIL-1685 neither implements nor closes them. HIL-1691's subscriber
 schema, guest and admin action DTOs, and mail tasks are implemented in the
-source paths above. HIL-1692 storage schemas and action DTOs remain with that
-leaf and the ordinary contract approval gate. Remove a future marker only in
-the commit that lands its behavior, following
+source paths above. HIL-1692's work storage, owner actions and maintenance
+observation are implemented in the source paths above. Remove a future marker
+only in the commit that lands its behavior, following
 [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 
 ## Validation
@@ -935,6 +1250,16 @@ Status checks are split across these existing layers:
 - The feature contract and page/table binding are guarded by
   `framework/tests/Unit/StatusFeatureActivationTest.php` and the six demo
   `*TopologyRegistryTest` files.
+- Scheduled-work schema, storage, actions, table membership, maintenance import,
+  and mail paths are covered by
+  `framework/tests/Integration/StatusWorksSchemaIntegrationTest.php`,
+  `StatusWorksStorageIntegrationTest.php`, `StatusWorksActionsIntegrationTest.php`,
+  `StatusWorksTableIntegrationTest.php`,
+  `StatusMaintenancePeriodsIntegrationTest.php` and
+  `StatusWorkMailIntegrationTest.php`. Unit coverage includes
+  `StatusWorkActionDTOTest.php`, `StatusWorksTableTest.php`,
+  `StatusMaintenanceObservationTest.php`, `StatusMaintenanceRuntimeTest.php`
+  and `StatusWorkMailTemplatesTest.php`.
 - Subscriber schema, storage, atomic confirmation, guest action replies,
   removal handover, and committed mail are covered by
   `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`,
@@ -950,20 +1275,21 @@ Status checks are split across these existing layers:
   `PageSignalRouterThrottlePoolTest.php` and
   `AuthThrottleIntegrationTest.php`.
 - Core file parsing, pair coherence, freshness, hint/poll lifecycle, calendar
-  and time zone are covered by
+  time zone, v2 maintenance derivation and the Works table controller are covered by
   `framework/frontend/core/test/status/statusFiles.test.ts`,
   `publicStatus.test.ts` and `derivedStatus.test.ts`. The subscription and
-  subscriber table controllers are covered by
-  `statusSubscription.test.ts` and
-  `admin/status/hilosStatusSubscribers.test.ts`.
+  subscriber and Works table controllers are covered by `statusSubscription.test.ts`,
+  `admin/status/hilosStatusSubscribers.test.ts` and
+  `framework/frontend/core/test/admin/status/hilosStatusWorks.test.ts`.
 - Vue rendering is covered by the public page and modal tests and the admin
-  Subscribers page test under `framework/frontend/vue/src/`. The router's
-  fragment-only history behavior is covered by
+  Subscribers and Works page, work modal and Overview tests under
+  `framework/frontend/vue/src/`. The router's fragment-only history behavior is covered by
   `framework/frontend/core/test/routing/HilosRouter.test.ts`.
 - Real browser and Mailpit coverage is carried by
   `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`,
-  `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`, and
-  both demos' `tests/e2e/tests/a11y.spec.ts`. These specs use light color
+  `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`,
+  `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts`, and both
+  demos' `tests/e2e/tests/a11y.spec.ts`. These specs use light color
   scheme and desktop Chrome; they do not claim dark-theme or narrow-viewport
   E2E coverage.
 

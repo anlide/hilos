@@ -29,14 +29,25 @@ final class StatusPublicVolume
     {
         try {
             if (is_dir($this->path)) {
-                foreach (FsPath::entries($this->path) as $name) {
-                    FsPath::delete($this->path . '/' . $name);
-                }
-                FsPath::removeDirectory($this->path);
+                $this->removeDirectory($this->path);
             }
         } finally {
             Hilos::$fs = $this->previous;
         }
+    }
+
+    /** @param string $path Isolated fixture directory, including private transit */
+    private function removeDirectory(string $path): void
+    {
+        foreach (FsPath::entries($path) as $name) {
+            $entry = $path . '/' . $name;
+            if (is_dir($entry) && !is_link($entry)) {
+                $this->removeDirectory($entry);
+            } else {
+                FsPath::delete($entry);
+            }
+        }
+        FsPath::removeDirectory($path);
     }
 }
 

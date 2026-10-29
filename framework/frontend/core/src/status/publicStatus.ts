@@ -14,14 +14,18 @@ import { calendarDays } from '../timeZone/calendarPeriods.js'
 import { hilosTimeZone } from '../timeZone/timeZoneState.js'
 import {
   publicStatusBanner,
+  publicStatusCurrentMaintenance,
   publicStatusDayStrips,
   publicStatusHistory,
   publicStatusOutageViews,
   publicStatusOverall,
+  publicStatusUpcomingWorks,
   type PublicStatusBanner,
+  type PublicStatusCurrentMaintenanceView,
   type PublicStatusDayStrip,
   type PublicStatusHistoryEntry,
   type PublicStatusOutageView,
+  type PublicStatusWorkView,
 } from './derivedStatus.js'
 import {
   readPublicStatusFiles,
@@ -62,6 +66,12 @@ export interface PublicStatus {
   readonly components: ReadonlySignal<readonly PublicStatusComponent[]>
   readonly overall: ReadonlySignal<PublicStatusState>
   readonly banner: ReadonlySignal<PublicStatusBanner>
+  /** Unused public announcements, including a begun window until its end. */
+  readonly upcomingWorks: ReadonlySignal<readonly PublicStatusWorkView[]>
+  /** Accepted active periods; confirmedCurrent distinguishes retained stale facts. */
+  readonly currentMaintenance: ReadonlySignal<
+    readonly PublicStatusCurrentMaintenanceView[]
+  >
   readonly currentOutages: ReadonlySignal<readonly PublicStatusOutageView[]>
   readonly history: ReadonlySignal<readonly PublicStatusHistoryEntry[]>
   readonly dayStrips: ReadonlySignal<readonly PublicStatusDayStrip[]>
@@ -113,8 +123,21 @@ export function createPublicStatus(
       ? publicStatusOverall(components.get(), projection.get())
       : 'unknown',
   )
+  const upcomingWorks = computedSignal(() =>
+    publicStatusUpcomingWorks(projection.get(), now.get()),
+  )
+  const currentMaintenance = computedSignal(() =>
+    publicStatusCurrentMaintenance(
+      projection.get(),
+      freshness.get().kind === 'fresh',
+    ),
+  )
   const banner = computedSignal(() =>
-    publicStatusBanner(overall.get(), freshness.get().since),
+    publicStatusBanner(
+      overall.get(),
+      freshness.get().since,
+      currentMaintenance.get(),
+    ),
   )
   const connectionMessage = computedSignal(() =>
     freshness.get().kind === 'fresh' && !liveConnection.get()
@@ -248,6 +271,8 @@ export function createPublicStatus(
     components,
     overall,
     banner,
+    upcomingWorks,
+    currentMaintenance,
     currentOutages,
     history,
     dayStrips,

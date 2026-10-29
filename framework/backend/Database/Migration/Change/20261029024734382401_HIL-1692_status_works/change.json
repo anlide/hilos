@@ -1,0 +1,43 @@
+{
+    "format": 1,
+    "id": "20261029024734382401_HIL-1692_status_works",
+    "parts": [
+        {
+            "unit": "status_work",
+            "up": "status_work.sql",
+            "down": "status_work_down.sql",
+            "requires": [],
+            "introducesUnit": true,
+            "afterStubUpSha256": "da69f3f5731f30bbd5b527b4d6dfe87b430a08d3f327386a0d3595d1ca011ad3",
+            "afterStubDownSha256": "5c737331e60001c450c9a28d4a9fffe7b289f82c75a73d241edf42611344935d"
+        },
+        {
+            "unit": "status_work_component",
+            "up": "status_work_component.sql",
+            "down": "status_work_component_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261029024734382401_HIL-1692_status_works",
+                    "unit": "status_work"
+                }
+            ],
+            "introducesUnit": true,
+            "afterStubUpSha256": "59455df91665b9d6ae0b9b4673e57513569bf9ec8c049b7efba433a0dfd6b63a",
+            "afterStubDownSha256": "52067ca9080c10ccfd86acd5346baf0d897a6352897f3ff095454f50bb9660f5"
+        },
+        {
+            "unit": "status_maintenance_period",
+            "up": "status_maintenance_period.sql",
+            "down": "status_maintenance_period_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261029024734382401_HIL-1692_status_works",
+                    "unit": "status_work"
+                }
+            ],
+            "introducesUnit": true,
+            "afterStubUpSha256": "8dc4bab2a471b20ecb718cbf4984856100afc7cddd6a6c953d646ae00c523ba6",
+            "afterStubDownSha256": "d6b6e574d4506b07af6700b20c0e2cd45435b4a36e26f25625770df5adbc4510"
+        }
+    ]
+}

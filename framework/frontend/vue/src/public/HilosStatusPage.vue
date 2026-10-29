@@ -53,6 +53,8 @@ const connectionMessage = useSignal(reader.connectionMessage)
 const components = useSignal(reader.components)
 const currentOutages = useSignal(reader.currentOutages)
 const history = useSignal(reader.history)
+const upcomingWorks = useSignal(reader.upcomingWorks)
+const currentMaintenance = useSignal(reader.currentMaintenance)
 const dayStrips = useSignal(reader.dayStrips)
 const timeZone = useSignal(hilosTimeZone)
 const detailId = useId()
@@ -65,7 +67,7 @@ const states: Record<
   { label: string; tone: string; icon: string }
 > = {
   operational: { label: 'Operational', tone: 'success', icon: 'check-circle' },
-  checking: { label: 'Checking', tone: 'warning', icon: 'search' },
+  checking: { label: 'Checking', tone: 'secondary', icon: 'search' },
   partial_outage: {
     label: 'Partial outage',
     tone: 'warning',
@@ -83,13 +85,11 @@ const states: Record<
 const candidates = computed(() =>
   freshness.value.kind === 'fresh' ? (projection.value?.candidates ?? []) : [],
 )
-const scheduledWorks = computed(() => projection.value?.scheduledWorks ?? [])
-const activeMaintenance = computed(
-  () =>
-    projection.value?.maintenancePeriods.filter(
-      (period) => period.endedAt === null,
-    ) ?? [],
-)
+const announcementLabels = {
+  announced: 'Announced in advance',
+  unannounced: 'Not announced in advance',
+  unknown: 'Advance announcement unknown',
+}
 const lastUpdate = computed(() =>
   freshness.value.aliveAt === null ? null : moment(freshness.value.aliveAt),
 )
@@ -303,45 +303,87 @@ onUnmounted(() => {
     </section>
 
     <section
-      v-if="scheduledWorks.length"
-      class="card mb-3"
+      v-if="upcomingWorks.length"
+      class="mb-3"
       data-id="public-status-works"
     >
-      <div class="card-header">
-        <h2 class="h6 mb-0">Scheduled maintenance</h2>
-      </div>
-      <div
-        v-for="work in scheduledWorks"
+      <h2 class="h6">Scheduled maintenance</h2>
+      <article
+        v-for="work in upcomingWorks"
         :key="work.id"
-        class="card-body border-top text-break"
+        class="card border-info mb-3 text-break"
       >
-        <h3 class="h6">{{ work.title }}</h3>
-        <p class="small">
-          {{ moment(work.startsAt) }} – {{ moment(work.endsAt) }}
-        </p>
-        <p v-if="work.description" class="small">{{ work.description }}</p>
-        <p class="small mb-0">
-          Affects: {{ work.componentKeys.map(componentName).join(', ') }}
-        </p>
-      </div>
+        <div class="card-header bg-info-subtle d-flex flex-wrap gap-2">
+          <h3 class="h6 mb-0">{{ work.title }}</h3>
+          <span class="small ms-auto">
+            {{ work.startsAtLabel ?? '—' }} – {{ work.endsAtLabel ?? '—' }}
+          </span>
+        </div>
+        <div class="card-body small">
+          <p v-if="work.description" class="mb-1">{{ work.description }}</p>
+          <p class="mb-0">Affects: {{ work.componentNames.join(', ') }}</p>
+        </div>
+      </article>
     </section>
 
     <section
-      v-if="activeMaintenance.length"
-      class="card mb-3"
+      v-if="currentMaintenance.length"
+      class="mb-3"
       data-id="public-status-maintenance"
     >
-      <div class="card-header">
-        <h2 class="h6 mb-0">Current maintenance</h2>
-      </div>
-      <div
-        v-for="period in activeMaintenance"
+      <h2 class="h6">Maintenance</h2>
+      <article
+        v-for="period in currentMaintenance"
         :key="period.id"
-        class="card-body text-break"
+        class="card border-info mb-3 text-break"
       >
-        <h3 class="h6">{{ period.title }}</h3>
-        <p class="small mb-0">Started at {{ moment(period.startedAt) }}</p>
-      </div>
+        <div class="card-header bg-info-subtle d-flex flex-wrap gap-2">
+          <h3 class="h6 mb-0">{{ period.title }}</h3>
+          <span class="badge text-bg-info text-wrap">
+            {{
+              period.confirmedCurrent
+                ? 'Maintenance in progress'
+                : 'Last observed maintenance'
+            }}
+          </span>
+        </div>
+        <div class="card-body small">
+          <div class="hilos-stack mb-2">
+            <p class="invisible mb-0" aria-hidden="true" inert>
+              This is a retained observation. Current maintenance status is
+              unknown.
+            </p>
+            <p
+              v-if="!period.confirmedCurrent"
+              class="mb-0"
+              data-id="public-status-maintenance-retained"
+            >
+              This is a retained observation. Current maintenance status is
+              unknown.
+            </p>
+          </div>
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Advance announcement</dt>
+            <dd class="col-sm-8">
+              {{ announcementLabels[period.announcement] }}
+            </dd>
+            <template v-if="period.plannedWork">
+              <dt class="col-sm-4">Planned window</dt>
+              <dd class="col-sm-8">
+                {{ period.plannedWork.startsAtLabel ?? '—' }} –
+                {{ period.plannedWork.endsAtLabel ?? '—' }}
+              </dd>
+            </template>
+            <dt class="col-sm-4">Started</dt>
+            <dd class="col-sm-8">{{ period.startedAtLabel ?? '—' }}</dd>
+            <dt class="col-sm-4">Affects</dt>
+            <dd class="col-sm-8">{{ period.componentNames.join(', ') }}</dd>
+          </dl>
+          <p v-if="period.plannedWork" class="mb-0">
+            The scheduled window does not determine the actual end.
+          </p>
+        </div>
+      </article>
     </section>
 
     <section
@@ -468,11 +510,23 @@ onUnmounted(() => {
             <h3 class="h6">
               {{ entry.title }}
               <span class="badge text-bg-info">Maintenance</span>
+              <span class="badge bg-body-secondary text-body">Completed</span>
             </h3>
+            <p class="mb-1">{{ announcementLabels[entry.announcement] }}</p>
+            <p class="mb-1">Affects: {{ entry.componentNames.join(', ') }}</p>
             <p class="mb-1">
-              {{ entry.startedAtLabel }} · {{ entry.durationLabel }}
+              {{ entry.startedAtLabel }}
+              <span v-if="entry.durationLabel !== null">
+                · {{ entry.durationLabel }}</span
+              >
             </p>
-            <p class="mb-0">Completed at {{ entry.endedAtLabel }}</p>
+            <p v-if="entry.endedAt !== null" class="mb-0">
+              Completed at {{ entry.endedAtLabel }}
+            </p>
+            <p v-else class="mb-0">
+              Completion observed at {{ entry.completionObservedAtLabel }}.
+              Exact end unknown.
+            </p>
           </template>
         </li>
       </ul>

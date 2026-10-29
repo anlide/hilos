@@ -108,6 +108,7 @@ export function overview(
     components: { operationalCount: 0, totalCount: 2 },
     publishDelaySeconds: 60,
     maintenance: null,
+    scheduledWorks: null,
     incidents: [incident()],
     subscribers: { confirmedCount: 0, pendingCount: 0 },
     ...overrides,

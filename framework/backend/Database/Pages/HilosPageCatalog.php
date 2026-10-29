@@ -608,6 +608,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Status',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
+        HilosPageConstants::HILOS_STATUS_WORKS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Scheduled maintenance',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Announced maintenance windows and subscriber mail handoffs.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Scheduled maintenance',
+        ],
         HilosPageConstants::HILOS_STATUS_COMPONENTS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Components',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Current health of the declared service components.',

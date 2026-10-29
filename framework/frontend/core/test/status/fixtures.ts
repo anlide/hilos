@@ -3,7 +3,9 @@ import { type WebSocketLike } from '../../src/connection/HilosConnection.js'
 import {
   type PublicStatusFile,
   type PublicStatusHeartbeat,
+  type PublicStatusMaintenancePeriod,
   type PublicStatusOutage,
+  type PublicStatusWork,
 } from '../../src/status/index.js'
 
 export const NOW = Date.parse('2026-10-25T12:00:00Z')
@@ -12,7 +14,7 @@ export function statusFile(
   overrides: Partial<PublicStatusFile> = {},
 ): PublicStatusFile {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 'opaque/revision',
     generatedAt: NOW - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -36,7 +38,7 @@ export function heartbeat(
   overrides: Partial<PublicStatusHeartbeat> = {},
 ): PublicStatusHeartbeat {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 'opaque/revision',
     aliveAt: NOW,
     ...overrides,
@@ -54,6 +56,39 @@ export function outage(
     publishedAt: NOW - 60000,
     resolvedAt: null,
     updates: [],
+    ...overrides,
+  }
+}
+
+/** An announcement whose window has not begun at the fixture reference moment. */
+export function work(
+  overrides: Partial<PublicStatusWork> = {},
+): PublicStatusWork {
+  return {
+    id: 'opaque work',
+    title: 'Database upgrade',
+    description: 'The database moves to a newer version.',
+    componentKeys: ['site'],
+    startsAt: NOW + 1000,
+    endsAt: NOW + 10000,
+    ...overrides,
+  }
+}
+
+/** A known unannounced actual period, still active in the accepted projection. */
+export function maintenance(
+  overrides: Partial<PublicStatusMaintenancePeriod> = {},
+): PublicStatusMaintenancePeriod {
+  return {
+    id: 'opaque period',
+    workId: null,
+    announcementKnown: true,
+    title: 'Maintenance',
+    componentKeys: [],
+    startedAt: NOW - 1000,
+    lastObservedAt: NOW,
+    endedAt: null,
+    completionObservedAt: null,
     ...overrides,
   }
 }

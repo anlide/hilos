@@ -19,6 +19,7 @@ use Hilos\Hilos;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
@@ -34,8 +35,9 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
     public static function facts(): iterable
     {
         foreach ([SourceChange::KIND_DB => [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings,
-            HilosDbContext::statusSubscribers],
-            SourceChange::KIND_RT => [HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM]] as $kind => $keys) {
+            HilosDbContext::statusSubscribers, HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents],
+            SourceChange::KIND_RT => [HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM,
+                HilosStatusMaintenance::RT_COLLECTION]] as $kind => $keys) {
             foreach ($keys as $source) {
                 foreach (TableMutationType::cases() as $mutation) {
                     yield $kind . '-' . $source . '-' . $mutation->value => [$kind, $source, $mutation];
@@ -134,7 +136,8 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
         $this->browser->recordSourceStaleness(ProtectedModeRuntime::RT_ITEM, [ProtectedModeRuntime::ID]);
         $this->flush();
         $body = $this->whole('secret');
-        self::assertSame(['phase' => 'verifying', 'operation' => 'manual_maintenance', 'startedAt' => 1700000000000], $body['maintenance']);
+        self::assertSame(['phase' => 'verifying', 'operation' => 'manual_maintenance',
+            'startedAt' => 1700000000000, 'announcement' => null], $body['maintenance']);
         self::assertSame(0, $body['components']['operationalCount']);
         self::assertNull(Hilos::$rt->hilosProtectedModeRuntime->staleSince(), 'Node-local singleton has no replicated stale copy');
         $this->runtime->phase(ProtectedModeRuntime::PHASE_INACTIVE);
@@ -313,7 +316,7 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
         self::assertSame(AbstractHilosStatusPage::PAGE, $reply->pageKey);
         self::assertSame('Status', $reply->payload->data['pageLabel']);
         self::assertSame('Status', $reply->payload->data['pageHeadOwner']['label']);
-        self::assertCount(3, $reply->payload->data['pageTabs']);
+        self::assertCount(4, $reply->payload->data['pageTabs']);
         self::assertSame([], $reply->payload->windows);
         self::assertSame($reply->toArray(), PageResponseSignalData::fromArray($reply->toArray())->toArray());
         return $reply->payload->data['status'];

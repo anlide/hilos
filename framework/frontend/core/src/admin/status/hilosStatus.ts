@@ -16,6 +16,10 @@ import {
   type ReadonlySignal,
 } from '../../state/signal.js'
 import { statusSubscriberCountsSchema } from './hilosStatusSubscribers.js'
+import {
+  statusPublicWorkSchema,
+  statusScheduledWorksSchema,
+} from './hilosStatusWorks.js'
 
 /** Page-data key in the existing page_response payload. */
 export const HILOS_STATUS_DATA = 'status'
@@ -81,11 +85,19 @@ export const statusOverviewSchema = z
         phase: z.string(),
         operation: z.string().nullable(),
         startedAt: momentSchema.nullable(),
+        announcement: z
+          .strictObject({
+            known: z.boolean(),
+            work: statusPublicWorkSchema.nullable(),
+          })
+          .readonly()
+          .nullable(),
       })
       .readonly()
       .nullable(),
     incidents: z.array(statusIncidentSchema).readonly().nullable(),
     subscribers: statusSubscriberCountsSchema.nullable(),
+    scheduledWorks: statusScheduledWorksSchema.nullable(),
   })
   .readonly()
 

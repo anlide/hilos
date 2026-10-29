@@ -128,14 +128,20 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Status\StatusPage;
 use Demo\Chat\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\Chat\Pages\Hilos\Status\StatusSubscribersPage;
+use Demo\Chat\Pages\Hilos\Status\StatusWorksPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
+use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
 use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusRemoveSubscriberActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusCancelWorkActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusChangeWorkActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusScheduleWorkActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
+use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
@@ -346,6 +352,9 @@ use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusRemoveSubscriberSignalData;
+use Hilos\Status\DTO\StatusScheduleWorkSignalData;
+use Hilos\Status\DTO\StatusChangeWorkSignalData;
+use Hilos\Status\DTO\StatusCancelWorkSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
@@ -624,6 +633,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
             HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
             HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => StatusRemoveSubscriberSignalData::class,
+            HilosSignalConstants::STATUS_SCHEDULE_WORK => StatusScheduleWorkSignalData::class,
+            HilosSignalConstants::STATUS_CHANGE_WORK => StatusChangeWorkSignalData::class,
+            HilosSignalConstants::STATUS_CANCEL_WORK => StatusCancelWorkSignalData::class,
             HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         ], StatusAgent::AGENT_SIGNALS);
         self::assertSame(DaemonPictureWatchSignalData::class,
@@ -698,14 +710,18 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([HilosAgentType::HILOS_STATUS], $requirements->requiredAgents);
         self::assertSame([HilosAgentType::HILOS_MAIL], $requirements->requiredSharedAgents);
         self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
-        self::assertSame(
-            ['hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber'], $requirements->requiredDbTables,
-        );
-        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class, AbstractHilosStatusSubscribersPage::class],
+        self::assertSame([
+            'hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber',
+            'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
+        ], $requirements->requiredDbTables);
+        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class,
+                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class],
             $requirements->requiredPages);
-        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class], $requirements->requiredTables);
+        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class, HilosStatusWorksTable::class],
+            $requirements->requiredTables);
         self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
-            AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class], $requirements->requiredPageTables);
+            AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
+            AbstractHilosStatusWorksPage::class => HilosStatusWorksTable::class], $requirements->requiredPageTables);
         self::assertTrue($definition->mountsRuntime());
 
         $statusUnits = [];
@@ -718,6 +734,9 @@ final class ChatTopologyRegistryTest extends TestCase
             'status_incident' => [['hilos_status_incident'], [], 0],
             'status_incident_update' => [['hilos_status_incident_update'], ['status_incident'], 0],
             'status_subscriber' => [['hilos_status_subscriber'], [], 0],
+            'status_work' => [['hilos_status_work'], [], 0],
+            'status_work_component' => [['hilos_status_work_component'], ['status_work'], 0],
+            'status_maintenance_period' => [['hilos_status_maintenance_period'], ['status_work'], 0],
         ], $statusUnits);
     }
 
@@ -1165,6 +1184,29 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([HilosStatusComponentsTable::TABLE => []], Hilos::PAGE_TABLES[StatusComponentsPage::PAGE]);
         self::assertArrayNotHasKey(StatusPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame([], StatusComponentsPage::ACTIONS);
+        self::assertSame(StatusWorksPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_WORKS]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusWorksPage::PAGE]);
+        self::assertSame(HilosStatusWorksTable::class, Hilos::TABLES[HilosStatusWorksTable::TABLE]);
+        self::assertSame([HilosStatusWorksTable::TABLE => []], Hilos::PAGE_TABLES[StatusWorksPage::PAGE]);
+        self::assertSame([
+            HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE => HilosStatusScheduleWorkActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_WORK_CHANGE => HilosStatusChangeWorkActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_WORK_CANCEL => HilosStatusCancelWorkActionDTO::class,
+        ], StatusWorksPage::ACTIONS);
+        foreach (StatusWorksPage::ACTIONS as $action => $dto) {
+            self::assertSame(StatusWorksPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+            self::assertNotContains($action, StatusWorksPage::READING_ACTIONS);
+        }
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS_WORKS,
+            StatusWorksPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(StatusWorksPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE]);
         self::assertSame(StatusSubscribersPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_SUBSCRIBERS]);
         self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusSubscribersPage::PAGE]);
         self::assertSame(HilosStatusSubscribersTable::class, Hilos::TABLES[HilosStatusSubscribersTable::TABLE]);
@@ -1711,6 +1753,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_STATUS_PUBLISH_NOW => HilosPageConstants::HILOS_STATUS,
             HilosSignalConstants::HILOS_STATUS_ADD_UPDATE => HilosPageConstants::HILOS_STATUS,
             HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE => HilosPageConstants::HILOS_STATUS_SUBSCRIBERS,
+            HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE => HilosPageConstants::HILOS_STATUS_WORKS,
+            HilosSignalConstants::HILOS_STATUS_WORK_CHANGE => HilosPageConstants::HILOS_STATUS_WORKS,
+            HilosSignalConstants::HILOS_STATUS_WORK_CANCEL => HilosPageConstants::HILOS_STATUS_WORKS,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -1814,6 +1859,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_STATUS_PUBLISH_NOW => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_STATUS_ADD_UPDATE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_STATUS_WORK_CHANGE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_STATUS_WORK_CANCEL => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 
@@ -1852,6 +1900,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
                 HilosSignalConstants::HILOS_STATUS_WRITE_DONE => HilosPageConstants::HILOS_STATUS,
                 HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_WRITE_DONE => HilosPageConstants::HILOS_STATUS_SUBSCRIBERS,
+                HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE => HilosPageConstants::HILOS_STATUS_WORKS,
             ],
         ], Hilos::getPageSignalRoutes());
     }
@@ -1888,6 +1937,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_STATUS_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_WRITE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE => AgentType::HILOS_INDEX,
             ],
         ], Hilos::getPageSignalAgentRoutes());
     }
@@ -2064,6 +2114,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::STATUS_PUBLISH_NOW => HilosAgentType::HILOS_STATUS,
             HilosSignalConstants::STATUS_ADD_UPDATE => HilosAgentType::HILOS_STATUS,
             HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => HilosAgentType::HILOS_STATUS,
+            HilosSignalConstants::STATUS_SCHEDULE_WORK => HilosAgentType::HILOS_STATUS,
+            HilosSignalConstants::STATUS_CHANGE_WORK => HilosAgentType::HILOS_STATUS,
+            HilosSignalConstants::STATUS_CANCEL_WORK => HilosAgentType::HILOS_STATUS,
             HilosSignalConstants::STATUS_THROTTLE_VERDICT => HilosAgentType::HILOS_STATUS,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
@@ -2401,6 +2454,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
             HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
             HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => StatusRemoveSubscriberSignalData::class,
+            HilosSignalConstants::STATUS_SCHEDULE_WORK => StatusScheduleWorkSignalData::class,
+            HilosSignalConstants::STATUS_CHANGE_WORK => StatusChangeWorkSignalData::class,
+            HilosSignalConstants::STATUS_CANCEL_WORK => StatusCancelWorkSignalData::class,
             HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => AnalyticsJournalPortionSignalData::class,
             HilosSignalConstants::ANALYTICS_JOURNAL_READY => AnalyticsJournalReadySignalData::class,

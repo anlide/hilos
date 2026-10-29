@@ -3,3 +3,6 @@ export { default as HilosStatusComponentsPage } from './HilosStatusComponentsPag
 export { default as HilosStatusIncidentModal } from './HilosStatusIncidentModal.vue'
 export { default as HilosStatusSubscribersPage } from './HilosStatusSubscribersPage.vue'
 export { default as HilosStatusRemoveSubscriberModal } from './HilosStatusRemoveSubscriberModal.vue'
+export { default as HilosStatusWorksPage } from './HilosStatusWorksPage.vue'
+export { default as HilosStatusWorkModal } from './HilosStatusWorkModal.vue'
+export { default as HilosStatusCancelWorkModal } from './HilosStatusCancelWorkModal.vue'

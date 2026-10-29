@@ -195,6 +195,18 @@ class SuiteTest(unittest.TestCase):
         self.assertFalse(any("up" in call for call in self.calls))
         self.assertFalse((self.state / "status-main.txt").exists())
 
+    def test_works_pointed_run_uses_the_existing_fast_publication_phase(self):
+        self.rows = [{"file": "status-works.spec.ts", "selector": "works-test", "id": "works", "flake": None}]
+        rc, cycle = self.run_suite(["tests/status-works.spec.ts"])
+        self.assertEqual(0, rc)
+        cycle.assert_not_called()
+        self.assertFalse((self.state / "main.txt").exists())
+        self.assertEqual("works-test\n", (self.state / "status-main.txt").read_text())
+        boots = [call for call in self.calls if "up" in call]
+        self.assertEqual(2, len(boots))
+        self.assertIn("docker/docker-compose.e2e-status-fast.yml", boots[0])
+        self.assertNotIn("docker/docker-compose.e2e-status-fast.yml", boots[1])
+
     def test_original_selection_failure_remains_red_without_any_boot(self):
         self.selection_rc = 1
         rc, cycle = self.run_suite(["missing.spec.ts"])

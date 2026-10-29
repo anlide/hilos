@@ -67,7 +67,10 @@ use RuntimeException;
 /** Real commits and lifecycle: rollback-root fixtures cannot prove afterCommit mail work. */
 final class StatusSubscriberMailIntegrationTest extends FrameworkIntegrationTestCase
 {
-    private const array TABLES = ['hilos_setting', 'hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber'];
+    private const array TABLES = [
+        'hilos_setting', 'hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber',
+        'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
+    ];
 
     private StatusAgent $owner;
     private StatusSubscriberMailRuntime $runtime;

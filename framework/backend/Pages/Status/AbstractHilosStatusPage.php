@@ -32,6 +32,7 @@ use Hilos\HilosException;
 use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusCancelPublicationSignalData;
@@ -66,10 +67,12 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
 
     public const array READS_DB = [
         ...parent::READS_DB, HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings,
-        HilosDbContext::statusSubscribers,
+        HilosDbContext::statusSubscribers, HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents,
     ];
 
-    public const array READS_RT = [...parent::READS_RT, HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM];
+    public const array READS_RT = [
+        ...parent::READS_RT, HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM, HilosStatusMaintenance::RT_COLLECTION,
+    ];
 
     /**
      * @param SourceChange $change Committed source fact
@@ -78,7 +81,9 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
     public static function observesOverviewChange(SourceChange $change): bool
     {
         if ($change->kind === SourceChange::KIND_RT) {
-            return in_array($change->sourceKey, [HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM], true);
+            return in_array($change->sourceKey, [
+                HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM, HilosStatusMaintenance::RT_COLLECTION,
+            ], true);
         }
         if ($change->kind !== SourceChange::KIND_DB) {
             return false;
@@ -89,6 +94,7 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
 
         return in_array($change->sourceKey, [
             HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::statusSubscribers,
+            HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents,
         ], true);
     }
 

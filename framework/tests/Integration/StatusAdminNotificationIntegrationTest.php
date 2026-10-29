@@ -9,6 +9,8 @@ use Closure;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -61,6 +63,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\StatusAgent;
 use Hilos\Tests\Fixtures\StatusPublicVolume;
@@ -80,6 +83,7 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
     private const array TABLES = [
         'hilos_user', 'hilos_user_merge', 'hilos_identity', 'hilos_setting', 'hilos_notification',
         'hilos_notification_delivery', 'hilos_notification_preference', 'hilos_status_incident', 'hilos_status_incident_update',
+        'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
     ];
     private const int AT = 1791722096789;
 
@@ -401,6 +405,13 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
         $this->frames();
         $this->tick(self::AT + 1);
         $frames = $this->frames();
+        self::assertCount(2, $frames);
+        $current = array_shift($frames);
+        self::assertSame(SignalConstants::RT_SYNC_UPDATED, $current->signalName->getName());
+        self::assertInstanceOf(RtSyncUpdatedSignalData::class, $current->data);
+        self::assertSame(HilosStatusMaintenance::RT_COLLECTION, $current->data->collectionKey);
+        self::assertSame(HilosStatusMaintenance::CURRENT, $current->data->stateId);
+        self::assertTrue($current->data->row[HilosStatusMaintenance::active]);
         self::assertCount(1, $frames);
         self::assertSame(HilosSignalConstants::STATUS_FILES_CHANGED, $frames[0]->signalName->getName());
         self::assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());

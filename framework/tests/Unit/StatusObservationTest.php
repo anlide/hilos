@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -37,6 +38,8 @@ use Hilos\Database\Object\Collection\StatusIncidents as ObjectStatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
@@ -435,6 +438,12 @@ final class StatusObservationTest extends TestCase
     {
         $frames = [];
         while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($frame->data instanceof RtSyncUpdatedSignalData
+                && $frame->data->collectionKey === HilosStatusMaintenance::RT_COLLECTION) {
+                self::assertSame(SignalConstants::RT_SYNC_UPDATED, $frame->signalName->getName());
+                self::assertSame(HilosStatusMaintenance::CURRENT, $frame->data->stateId);
+                continue;
+            }
             if ($frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED) {
                 self::assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frame->signalType->getType());
                 self::assertSame([], $frame->data->data->toArray());

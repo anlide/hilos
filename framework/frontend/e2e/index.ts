@@ -468,6 +468,26 @@ export {
   trackedActionReplies,
   expectTrackedActionReply,
 } from './actionReplies.js'
+export { holdSocketAction } from './actionGate.js'
+
+export {
+  STATUS_WORKS_PATH,
+  STATUS_WORK_SCHEDULE,
+  STATUS_WORK_CHANGE,
+  STATUS_WORK_CANCEL,
+  statusWorkRows,
+  latestStatusWork,
+  openStatusWorkSchedule,
+  draftStatusWork,
+  submitStatusWork,
+  expectStatusWorksAccessibility,
+  expectStatusWorkScheduleDialog,
+  type StatusWorkDraft,
+} from './statusWorks.js'
+export {
+  statusWorkFixtures,
+  type StatusWorkFixtureScope,
+} from './statusWorkFixtures.js'
 
 export {
   STATUS_SUBSCRIBERS_PATH,
@@ -568,6 +588,7 @@ export {
 export {
   backupMomentRow,
   enterCalendarDate,
+  enterCalendarDateTime,
   expectBackupMoments,
   expectLegalAcceptanceMoments,
   expectMaintenanceMoment,

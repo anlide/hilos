@@ -58,6 +58,15 @@ use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StatusIncidents as DbCollectionStatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates as DbCollectionStatusIncidentUpdates;
 use Hilos\Database\View\Collection\StatusSubscribers as DbCollectionStatusSubscribers;
+use Hilos\Database\View\Collection\StatusWorks as DbCollectionStatusWorks;
+use Hilos\Database\Actions\Collection\StatusWorksActions;
+use Hilos\Database\Actions\Item\StatusWorkActions;
+use Hilos\Database\View\Collection\StatusWorkComponents as DbCollectionStatusWorkComponents;
+use Hilos\Database\Actions\Collection\StatusWorkComponentsActions;
+use Hilos\Database\Actions\Item\StatusWorkComponentActions;
+use Hilos\Database\View\Collection\StatusMaintenancePeriods as DbCollectionStatusMaintenancePeriods;
+use Hilos\Database\Actions\Collection\StatusMaintenancePeriodsActions;
+use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
 use Hilos\Database\View\Collection\UserPhotos as DbCollectionUserPhotos;
@@ -188,6 +197,9 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionStatusIncidents $statusIncidents Status candidates and durable history, mounted only for STATUS
  * @property-read DbCollectionStatusIncidentUpdates $statusIncidentUpdates Immutable Status timeline, mounted only for STATUS
  * @property-read DbCollectionStatusSubscribers $statusSubscribers Independent Status email subscriptions, mounted only for STATUS
+ * @property-read DbCollectionStatusWorks $statusWorks Durable Status storage, mounted only for STATUS
+ * @property-read DbCollectionStatusWorkComponents $statusWorkComponents Durable Status storage, mounted only for STATUS
+ * @property-read DbCollectionStatusMaintenancePeriods $statusMaintenancePeriods Durable Status storage, mounted only for STATUS
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -204,6 +216,9 @@ abstract class HilosDbContext extends DbContext
     public const string statusIncidents = 'statusIncidents';
     public const string statusIncidentUpdates = 'statusIncidentUpdates';
     public const string statusSubscribers = 'statusSubscribers';
+    public const string statusWorks = 'statusWorks';
+    public const string statusWorkComponents = 'statusWorkComponents';
+    public const string statusMaintenancePeriods = 'statusMaintenancePeriods';
     public const string identity = 'identity';
     public const string verifications = 'verifications';
     public const string verification = 'verification';
@@ -638,6 +653,27 @@ abstract class HilosDbContext extends DbContext
                 DbCollectionStatusSubscribers::class,
                 StatusSubscribersActions::class,
                 StatusSubscriberActions::class,
+            );
+            $this->mountFramework(
+                self::statusWorks,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusWorks::class,
+                StatusWorksActions::class,
+                StatusWorkActions::class,
+            );
+            $this->mountFramework(
+                self::statusWorkComponents,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusWorkComponents::class,
+                StatusWorkComponentsActions::class,
+                StatusWorkComponentActions::class,
+            );
+            $this->mountFramework(
+                self::statusMaintenancePeriods,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusMaintenancePeriods::class,
+                StatusMaintenancePeriodsActions::class,
+                StatusMaintenancePeriodActions::class,
             );
         }
 

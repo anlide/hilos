@@ -65,8 +65,11 @@ use Hilos\Pages\AbstractHilosI18nPage;
 use Hilos\Pages\Security\AbstractHilosSecurityPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
+use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
 use Hilos\Status\DTO\StatusSubscriberCountsData;
+use Hilos\Status\DTO\StatusWorksData;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
@@ -2094,6 +2097,21 @@ abstract class BrowserContext
             }
         }
 
+        $worksChanged = array_any($this->changes->all(), AbstractHilosStatusWorksPage::observesOverviewChange(...))
+            || isset($this->staleness[ProtectedModeRuntime::RT_ITEM]) || $databaseBack;
+        if ($worksChanged) {
+            foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+                $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+                if ($page !== HilosPageConstants::HILOS_STATUS_WORKS || isset($failedSubscriptions[$acceptKey])
+                    || isset($this->publishedWholeThisFlush[$acceptKey])) {
+                    continue;
+                }
+                $this->publishPageData($page, (string) $acceptKey,
+                    static fn (): PagePayload => new PagePayload(data: [StatusWorksData::DATA => StatusWorksData::read()?->toArray()]),
+                    [StatusWorksData::DATA => WireField::each(StatusWorksData::wireFields())]);
+            }
+        }
+
         $this->recountMarkedWindows($failedSubscriptions);
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
@@ -2685,7 +2703,9 @@ abstract class BrowserContext
         }
 
         if ($page === HilosPageConstants::HILOS_STATUS
-            && in_array($collectionKey, [HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM], true)) {
+            && in_array($collectionKey, [
+                HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM, HilosStatusMaintenance::RT_COLLECTION,
+            ], true)) {
             if ($current === null || $current->page !== $page || Hilos::$sr?->pageSubscription($acceptKey) !== $current) {
                 $guardAllows[$acceptKey] = false;
                 unset($signalTables[$acceptKey]);

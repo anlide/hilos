@@ -99,8 +99,10 @@ use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Tasks\Pages\Hilos\Status\StatusPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusSubscribersPage;
+use Demo\Tasks\Pages\Hilos\Status\StatusWorksPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
+use Hilos\Tables\Status\HilosStatusWorksTable;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\PrivacyHistoryPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
@@ -371,6 +373,7 @@ final class Hilos extends HilosFacade
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
+        StatusWorksPage::PAGE => StatusWorksPage::class,
     ];
 
     public const array GROUPS = [
@@ -584,6 +587,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
+        HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -785,6 +789,7 @@ final class Hilos extends HilosFacade
         ],
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
         StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
+        StatusWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []],
     ];
 
     /**

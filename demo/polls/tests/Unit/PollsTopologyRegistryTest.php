@@ -84,14 +84,20 @@ use Demo\Polls\Hilos;
 use Demo\Polls\Pages\Hilos\Status\StatusPage;
 use Demo\Polls\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\Polls\Pages\Hilos\Status\StatusSubscribersPage;
+use Demo\Polls\Pages\Hilos\Status\StatusWorksPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
+use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
 use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusRemoveSubscriberActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusCancelWorkActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusChangeWorkActionDTO;
+use Hilos\Pages\Status\DTO\HilosStatusScheduleWorkActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
+use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\DashboardPage;
@@ -285,6 +291,9 @@ use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusRemoveSubscriberSignalData;
+use Hilos\Status\DTO\StatusScheduleWorkSignalData;
+use Hilos\Status\DTO\StatusChangeWorkSignalData;
+use Hilos\Status\DTO\StatusCancelWorkSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\Status\DTO\StatusConfirmSubscriptionActionDTO;
 use Hilos\Status\DTO\StatusSubscribeActionDTO;
@@ -393,6 +402,9 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosSignalConstants::STATUS_PUBLISH_NOW => StatusPublishNowSignalData::class,
             HilosSignalConstants::STATUS_ADD_UPDATE => StatusAddUpdateSignalData::class,
             HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => StatusRemoveSubscriberSignalData::class,
+            HilosSignalConstants::STATUS_SCHEDULE_WORK => StatusScheduleWorkSignalData::class,
+            HilosSignalConstants::STATUS_CHANGE_WORK => StatusChangeWorkSignalData::class,
+            HilosSignalConstants::STATUS_CANCEL_WORK => StatusCancelWorkSignalData::class,
             HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         ], StatusAgent::AGENT_SIGNALS);
         self::assertSame(DaemonPictureWatchSignalData::class,
@@ -467,14 +479,18 @@ final class PollsTopologyRegistryTest extends TestCase
         self::assertSame([HilosAgentType::HILOS_STATUS], $requirements->requiredAgents);
         self::assertSame([HilosAgentType::HILOS_MAIL], $requirements->requiredSharedAgents);
         self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
-        self::assertSame(
-            ['hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber'], $requirements->requiredDbTables,
-        );
-        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class, AbstractHilosStatusSubscribersPage::class],
+        self::assertSame([
+            'hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber',
+            'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
+        ], $requirements->requiredDbTables);
+        self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class,
+                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class],
             $requirements->requiredPages);
-        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class], $requirements->requiredTables);
+        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class, HilosStatusWorksTable::class],
+            $requirements->requiredTables);
         self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
-            AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class], $requirements->requiredPageTables);
+            AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
+            AbstractHilosStatusWorksPage::class => HilosStatusWorksTable::class], $requirements->requiredPageTables);
         self::assertTrue($definition->mountsRuntime());
 
         $statusUnits = [];
@@ -487,6 +503,9 @@ final class PollsTopologyRegistryTest extends TestCase
             'status_incident' => [['hilos_status_incident'], [], 0],
             'status_incident_update' => [['hilos_status_incident_update'], ['status_incident'], 0],
             'status_subscriber' => [['hilos_status_subscriber'], [], 0],
+            'status_work' => [['hilos_status_work'], [], 0],
+            'status_work_component' => [['hilos_status_work_component'], ['status_work'], 0],
+            'status_maintenance_period' => [['hilos_status_maintenance_period'], ['status_work'], 0],
         ], $statusUnits);
     }
 
@@ -708,6 +727,29 @@ final class PollsTopologyRegistryTest extends TestCase
         self::assertSame([HilosStatusComponentsTable::TABLE => []], Hilos::PAGE_TABLES[StatusComponentsPage::PAGE]);
         self::assertArrayNotHasKey(StatusPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame([], StatusComponentsPage::ACTIONS);
+        self::assertSame(StatusWorksPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_WORKS]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusWorksPage::PAGE]);
+        self::assertSame(HilosStatusWorksTable::class, Hilos::TABLES[HilosStatusWorksTable::TABLE]);
+        self::assertSame([HilosStatusWorksTable::TABLE => []], Hilos::PAGE_TABLES[StatusWorksPage::PAGE]);
+        self::assertSame([
+            HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE => HilosStatusScheduleWorkActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_WORK_CHANGE => HilosStatusChangeWorkActionDTO::class,
+            HilosSignalConstants::HILOS_STATUS_WORK_CANCEL => HilosStatusCancelWorkActionDTO::class,
+        ], StatusWorksPage::ACTIONS);
+        foreach (StatusWorksPage::ACTIONS as $action => $dto) {
+            self::assertSame(StatusWorksPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+            self::assertNotContains($action, StatusWorksPage::READING_ACTIONS);
+        }
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS_WORKS,
+            StatusWorksPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        self::assertSame(StatusWorksPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE]);
         self::assertSame(StatusSubscribersPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_SUBSCRIBERS]);
         self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusSubscribersPage::PAGE]);
         self::assertSame(HilosStatusSubscribersTable::class, Hilos::TABLES[HilosStatusSubscribersTable::TABLE]);
@@ -1108,6 +1150,9 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::STATUS_PUBLISH_NOW => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::STATUS_ADD_UPDATE => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_SCHEDULE_WORK => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_CHANGE_WORK => HilosAgentType::HILOS_STATUS,
+                HilosSignalConstants::STATUS_CANCEL_WORK => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::STATUS_THROTTLE_VERDICT => HilosAgentType::HILOS_STATUS,
                 HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
                 HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
@@ -1352,6 +1397,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
             HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
             HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
+            HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -1415,6 +1461,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 CountryNamesPage::PAGE,
                 StatusComponentsPage::PAGE,
                 StatusSubscribersPage::PAGE,
+                StatusWorksPage::PAGE,
             ],
             array_keys(Hilos::PAGE_TABLES),
         );

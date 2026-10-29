@@ -25,6 +25,23 @@ describe('hilosUnbuiltPages', () => {
       hilosUnbuiltPages('angular').has(HilosPages.STATUS_SUBSCRIBERS),
     ).toBe(true)
   })
+  it('serves Works only in Vue', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_WORKS]).toEqual([
+      'react',
+      'angular',
+    ])
+    for (const kit of ['vue', 'react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(kit).has(HilosPages.STATUS_WORKS)).toBe(
+        kit !== 'vue',
+      )
+      expect(
+        hilosUnbuiltPages(kit, [HilosPages.STATUS_WORKS]).has(
+          HilosPages.STATUS_WORKS,
+        ),
+      ).toBe(false)
+    }
+  })
+
   it('serves the session list in Vue while keeping session detail served', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.ANALYTICS_BROWSER_SESSIONS]).toEqual([
       'react',

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHilosConnection } from '../../src/connection/createHilosConnection.js'
+import { formatMoment } from '../../src/format/moment.js'
 import { STATUS_FILES_CHANGED_SIGNAL } from '../../src/protocol/statusSignals.js'
 import { applyServerTime } from '../../src/session/serverClock.js'
 import { subscribeSignal } from '../../src/state/signal.js'
@@ -15,11 +16,13 @@ import {
 import {
   deferred,
   heartbeat,
+  maintenance,
   NOW,
   outage,
   response,
   Socket,
   statusFile,
+  work,
 } from './fixtures.js'
 
 const cleanup: Array<() => void> = []
@@ -95,6 +98,8 @@ describe('public reader lifecycle and scheduling', () => {
     })
     expect(h.reader.banner.get().kind).toBe('unknown')
     expect(h.reader.dayStrips.get()).toEqual([])
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
     await h.start()
     h.reader.start()
     expect(h.factory).not.toHaveBeenCalled()
@@ -258,6 +263,8 @@ describe('public reader lifecycle and scheduling', () => {
     blocked.resolve(response(statusFile()))
     await settle()
     expect(h.reader.projection.get()).toBeNull()
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
     expect(replacement.projection.get()?.revision).toBe('replacement')
     h.hint()
     h.socket.push('protected_mode', { active: true })
@@ -290,6 +297,8 @@ describe('freshness and truthful current state', () => {
     })
     expect(h.reader.connectionMessage.get()).toBeNull()
     expect(h.reader.history.get()).toEqual([])
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
   })
 
   it.each([-3600000, 3600000])(
@@ -387,6 +396,199 @@ describe('freshness and truthful current state', () => {
     h.hint()
     await settle()
     expect(h.reader.overall.get()).toBe('unknown')
+  })
+})
+
+describe('maintenance signals on the existing public reader lifecycle', () => {
+  it('ages an unused announcement through its begun window without any extra reads or timers', async () => {
+    const h = mount(true)
+    const announcement = work({ endsAt: NOW + 2000 })
+    h.publish(statusFile({ scheduledWorks: [announcement] }))
+    await h.start()
+    const timers = vi.getTimerCount()
+    expect(h.reader.upcomingWorks.get()).toMatchObject([announcement])
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.reader.upcomingWorks.get()).toMatchObject([announcement])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
+    expect(h.reader.banner.get().kind).toBe('operational')
+    expect(h.reader.history.get()).toEqual([])
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
+    expect(h.reader.history.get()).toEqual([])
+    expect(h.fetchFile).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(timers)
+    h.reader.dispose()
+    h.connection.close()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('retains actual announced maintenance past the plan and source loss, then completes only from a new pair', async () => {
+    const h = mount(true)
+    const announcement = work({ startsAt: NOW - 2000, endsAt: NOW + 1000 })
+    const active = maintenance({
+      workId: announcement.id,
+      title: announcement.title,
+    })
+    const accepted = statusFile({
+      candidates: [{ componentKey: 'site', detectedAt: NOW }],
+      scheduledWorks: [announcement],
+      maintenancePeriods: [active],
+    })
+    h.publish(accepted)
+    await h.start()
+    expect(h.reader.banner.get().title).toBe(
+      'Maintenance in progress: Database upgrade',
+    )
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.currentMaintenance.get()).toMatchObject([
+      {
+        announcement: 'announced',
+        confirmedCurrent: true,
+        plannedWork: announcement,
+      },
+    ])
+    const strip = h.reader.dayStrips.get()[0]?.days
+    h.fail()
+    h.hint()
+    await settle()
+    await vi.advanceTimersByTimeAsync(120001)
+    expect(h.reader.overall.get()).toBe('unknown')
+    expect(h.reader.banner.get().kind).toBe('not_responding')
+    expect(h.reader.currentMaintenance.get()).toMatchObject([
+      {
+        announcement: 'announced',
+        confirmedCurrent: false,
+        endedAt: null,
+        completionObservedAt: null,
+      },
+    ])
+    expect(h.reader.history.get()).toEqual([])
+    expect(h.reader.dayStrips.get()[0]?.days).toEqual(strip)
+    const completed = { ...active, completionObservedAt: Date.now() }
+    h.fetchFile.mockImplementation(async (url) =>
+      response(
+        url.endsWith('/status.json')
+          ? {
+              ...accepted,
+              revision: 'completed',
+              maintenancePeriods: [completed],
+            }
+          : heartbeat({ revision: 'completed', aliveAt: Date.now() }),
+      ),
+    )
+    h.hint()
+    await settle()
+    expect(h.reader.currentMaintenance.get()).toEqual([])
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.history.get()).toMatchObject([
+      {
+        id: active.id,
+        kind: 'maintenance',
+        announcement: 'announced',
+        durationSeconds: null,
+        endedAtLabel: null,
+        completionObservedAtLabel: formatMoment(completed.completionObservedAt),
+      },
+    ])
+    expect(h.reader.overall.get()).toBe('operational')
+    expect(h.fetchFile).toHaveBeenCalledTimes(6)
+  })
+
+  it('does not expose mixed maintenance words during a revision race, coalescing hints as before', async () => {
+    const h = mount(true)
+    await h.start()
+    const blocked = deferred<Pick<Response, 'ok' | 'json'>>()
+    let attempts = 0
+    h.fetchFile.mockImplementation(async (url) => {
+      if (url.endsWith('/heartbeat.json'))
+        return response(heartbeat({ revision: 'new' }))
+      attempts++
+      return attempts === 1
+        ? response(
+            statusFile({
+              revision: 'mixed',
+              maintenancePeriods: [maintenance({ title: 'Never accepted' })],
+            }),
+          )
+        : blocked.promise
+    })
+    h.hint()
+    await settle()
+    expect(h.reader.currentMaintenance.get()).toEqual([])
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    for (let i = 0; i < 10; i++) h.hint()
+    blocked.resolve(
+      response(statusFile({ revision: 'new', scheduledWorks: [work()] })),
+    )
+    await settle()
+    expect(h.reader.upcomingWorks.get()).toMatchObject([work()])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
+    expect(h.fetchFile).toHaveBeenCalledTimes(8)
+    h.reader.dispose()
+    h.hint()
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(h.fetchFile).toHaveBeenCalledTimes(8)
+  })
+
+  it('restores coherent v1 outage history without fabricating works or announcement knowledge', async () => {
+    const h = mount()
+    h.publish(
+      statusFile({ schemaVersion: 1, outages: [outage({ resolvedAt: NOW })] }),
+      heartbeat({ schemaVersion: 1 }),
+    )
+    await h.start()
+    expect(h.reader.history.get()).toMatchObject([
+      { kind: 'outage', id: 'arbitrary id' },
+    ])
+    expect(h.reader.upcomingWorks.get()).toEqual([])
+    expect(h.reader.currentMaintenance.get()).toEqual([])
+    h.fail()
+    await vi.advanceTimersByTimeAsync(120001)
+    expect(h.reader.banner.get().kind).toBe('not_responding')
+    expect(h.reader.history.get()).toHaveLength(1)
+    expect(h.reader.dayStrips.get()[0]?.days.at(-1)?.state).toBe('major_outage')
+  })
+
+  it('refreshes all work and period labels in the reader zone without another file request', async () => {
+    const h = mount(true)
+    cleanup.push(bindTimeZoneState(h.connection))
+    h.socket.push('handshake_response', {
+      entities: { currentUser: { id: 1, timeZone: 'UTC' } },
+    })
+    h.publish(
+      statusFile({
+        scheduledWorks: [work(), work({ id: 'active', startsAt: NOW - 1000 })],
+        maintenancePeriods: [
+          maintenance({ workId: 'active', componentKeys: ['site'] }),
+          maintenance({
+            id: 'completed',
+            startedAt: NOW - 10000,
+            lastObservedAt: NOW - 5000,
+            endedAt: NOW - 5000,
+            completionObservedAt: NOW - 5000,
+          }),
+        ],
+      }),
+    )
+    await h.start()
+    const utcLabel = h.reader.upcomingWorks.get()[0]?.startsAtLabel
+    h.socket.push('handshake_response', {
+      entities: { currentUser: { id: 1, timeZone: 'Europe/Warsaw' } },
+    })
+    expect(h.reader.upcomingWorks.get()[0]?.startsAtLabel).toBe(
+      formatMoment(NOW + 1000),
+    )
+    expect(h.reader.upcomingWorks.get()[0]?.startsAtLabel).not.toBe(utcLabel)
+    expect(h.reader.currentMaintenance.get()[0]).toMatchObject({
+      startedAtLabel: formatMoment(NOW - 1000),
+      plannedWork: { startsAtLabel: formatMoment(NOW - 1000) },
+    })
+    expect(h.reader.history.get()[0]).toMatchObject({
+      startedAtLabel: formatMoment(NOW - 10000),
+      endedAtLabel: formatMoment(NOW - 5000),
+    })
+    expect(h.fetchFile).toHaveBeenCalledTimes(2)
   })
 })
 

@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Item\StatusIncidentUpdate as EntityStatusIncidentUpdat
 use Hilos\Hilos;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
+use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Status\DTO\StatusOverviewData;
 use Hilos\Status\StatusSettingsCatalog;
@@ -35,6 +36,7 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
             'maintenance' => null,
             'incidents' => [],
             'subscribers' => ['confirmedCount' => 0, 'pendingCount' => 0],
+            'scheduledWorks' => null,
         ], StatusOverviewData::read()->toArray());
         self::assertSame([EntityStatusIncident::active_component_key, ['zeta', 'alpha']], $this->database->statusIncidents->selection);
     }
@@ -140,7 +142,8 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
         $this->incident(3, 'zeta', 1700000000050);
         $this->runtime->phase($phase, 1700000000, ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE);
         $overview = StatusOverviewData::read()->toArray();
-        self::assertSame(['phase' => $phase, 'operation' => 'manual_maintenance', 'startedAt' => 1700000000000], $overview['maintenance']);
+        self::assertSame(['phase' => $phase, 'operation' => 'manual_maintenance',
+            'startedAt' => 1700000000000, 'announcement' => null], $overview['maintenance']);
         self::assertSame(0, $overview['components']['operationalCount']);
         self::assertSame(!$silenced, $overview['healthKnown']);
         self::assertSame($silenced ? 0 : 1, $this->database->statusIncidents->reads);
@@ -153,7 +156,34 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
         (new ReflectionProperty(Hilos::class, 'appClass'))->setValue(null, StatusFallbackHilos::class);
         self::assertSame(['operationalCount' => 0, 'totalCount' => 1], StatusOverviewData::read()->toArray()['components']);
         $this->runtime->phase(ProtectedModeRuntime::PHASE_VERIFYING);
-        self::assertSame(['phase' => 'verifying', 'operation' => null, 'startedAt' => null], StatusOverviewData::read()->toArray()['maintenance']);
+        self::assertSame(['phase' => 'verifying', 'operation' => null, 'startedAt' => null, 'announcement' => null],
+            StatusOverviewData::read()->toArray()['maintenance']);
+    }
+
+    public function testAnnouncementDistinguishesUnavailableUnknownUnannouncedLinkedAndStaleWithoutReadingDb(): void
+    {
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
+        $this->database->statusIncidents->unavailable = true;
+        self::assertNull(StatusOverviewData::read()->toArray()['maintenance']['announcement']);
+        Hilos::$rt->hilosStatusMaintenance->actions->ensure();
+        Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(available: true, active: true);
+        self::assertSame(['known' => false, 'work' => null], StatusOverviewData::read()->toArray()['maintenance']['announcement']);
+        Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(
+            available: true, active: true, announcementKnown: true);
+        self::assertSame(['known' => true, 'work' => null], StatusOverviewData::read()->toArray()['maintenance']['announcement']);
+        Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(available: true, active: true, announcementKnown: true,
+            workPublicId: str_repeat('a', 32), title: 'Upgrade', componentKeys: ['zeta'], startsAt: 10000, endsAt: 20000);
+        self::assertSame(['known' => true, 'work' => ['id' => str_repeat('a', 32), 'title' => 'Upgrade',
+            'description' => null, 'componentKeys' => ['zeta'], 'startsAt' => 10000, 'endsAt' => 20000]],
+            StatusOverviewData::read()->toArray()['maintenance']['announcement']);
+        RtStaleness::mark(HilosStatusMaintenance::RT_COLLECTION, [HilosStatusMaintenance::CURRENT], 1700000000);
+        try {
+            self::assertNull(StatusOverviewData::read()->toArray()['maintenance']['announcement']);
+            self::assertNull(StatusOverviewData::read()->toArray()['scheduledWorks']);
+            self::assertSame(0, $this->database->statusIncidents->reads);
+        } finally {
+            RtStaleness::clear(HilosStatusMaintenance::RT_COLLECTION, [HilosStatusMaintenance::CURRENT]);
+        }
     }
 
     public function testViewerUsesColumnAndSettingVerdictsWithHiddenValuesDistinctFromNull(): void

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import ConflictActions from './ConflictActions.vue'
 import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
@@ -140,6 +140,57 @@ describe('ConflictActions', () => {
     await wrapper.setProps({ conflict: false })
     expect(wrapper.find('[data-id="conflict-choices"]').exists()).toBe(false)
     expect(read('conflict-choices-idle')).toEqual(twin)
+  })
+
+  it.each(['accept-mine', 'accept-theirs', 'merge'])(
+    'keeps keyboard focus in the modal when resolving %s removes its button',
+    async (choice) => {
+      const dialog = document.createElement('div')
+      dialog.setAttribute('role', 'dialog')
+      const field = document.createElement('input')
+      field.setAttribute('data-autofocus', '')
+      dialog.append(field)
+      document.body.append(dialog)
+      const wrapper = mount(ConflictActions, {
+        attachTo: dialog,
+        props: { conflict: true, mergeable: true },
+      })
+      try {
+        const button = wrapper.get(`[data-id="conflict-${choice}"]`)
+          .element as HTMLButtonElement
+        button.focus()
+        expect(document.activeElement).toBe(button)
+        await wrapper.setProps({ conflict: false })
+        await nextTick()
+        expect(document.activeElement).toBe(field)
+      } finally {
+        wrapper.unmount()
+        dialog.remove()
+      }
+    },
+  )
+
+  it('preserves an explicit focus choice when the conflict disappears', async () => {
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const field = document.createElement('input')
+    field.setAttribute('data-autofocus', '')
+    const other = document.createElement('button')
+    dialog.append(field, other)
+    document.body.append(dialog)
+    const wrapper = mount(ConflictActions, {
+      attachTo: dialog,
+      props: { conflict: true },
+    })
+    try {
+      other.focus()
+      await wrapper.setProps({ conflict: false })
+      await nextTick()
+      expect(document.activeElement).toBe(other)
+    } finally {
+      wrapper.unmount()
+      dialog.remove()
+    }
   })
 })
 

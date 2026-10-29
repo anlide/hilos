@@ -17,9 +17,12 @@ administrator in the page's area of a takeover that only looks (HIL-1170);
 Cancel and the conflict choices, which edit only the draft in this window, stay
 as always. Bootstrap classes only. -->
 <script setup lang="ts">
+import { focusInitial } from '@hilos/core/base'
+import { nextTick, ref, watch } from 'vue'
+
 import { useLookOnly } from './hilosAdminViewMode.js'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** Whether an unresolved conflict blocks saving. */
     conflict?: boolean
@@ -52,6 +55,28 @@ const emit = defineEmits<{
 const CHOICE_CLASS = 'btn btn-outline-secondary'
 
 const { locked, describedBy } = useLookOnly()
+const root = ref<HTMLElement>()
+const choices = ref<HTMLElement>()
+
+// Resolving a conflict removes its focused button. Keep keyboard focus in the
+// same dialog, while preserving a deliberate move to another control or modal.
+watch(
+  () => props.conflict,
+  (conflict, wasConflict) => {
+    if (conflict || !wasConflict) return
+    const previous = choices.value
+    if (!previous?.contains(previous.ownerDocument.activeElement)) return
+    const dialog = previous.closest<HTMLElement>('[role="dialog"]')
+    if (!dialog) return
+    void nextTick(() => {
+      if (!root.value?.isConnected || !dialog.isConnected || props.conflict)
+        return
+      const active = dialog.ownerDocument.activeElement
+      if (active === null || active === dialog.ownerDocument.body)
+        focusInitial(dialog)
+    })
+  },
+)
 
 function onSave(): void {
   emit('save')
@@ -59,9 +84,13 @@ function onSave(): void {
 </script>
 
 <template>
-  <div class="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap">
+  <div
+    ref="root"
+    class="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap"
+  >
     <div
       v-if="conflict"
+      ref="choices"
       class="hilos-conflict-choices d-flex gap-2"
       data-id="conflict-choices"
     >

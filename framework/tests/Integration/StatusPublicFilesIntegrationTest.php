@@ -231,6 +231,98 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
         self::assertSame($now + 32000, $heartbeat->aliveAt);
     }
 
+    public function testV2BuildKeepsActiveAnnouncementsAndRetainsPeriodsByCompletionKnowledge(): void
+    {
+        $this->startMachine();
+        $now = 1800000000000;
+        $since = $now - 90 * 86400000;
+        $active = Hilos::$db->statusWorks->actions->create('Active past schedule', null, 1000, 2000, 500, ['service']);
+        $active->actions->consume(1000);
+        $next = Hilos::$db->statusWorks->actions->create('Next', 'Public description', $now + 2000, $now + 3000, 500, ['service']);
+        $during = Hilos::$db->statusWorks->actions->create('Window has started', null, $now - 1000, $now + 1000, 500, ['service']);
+        $canceled = Hilos::$db->statusWorks->actions->create('Canceled', null, $now + 4000, $now + 5000, 500);
+        $canceled->actions->cancel(600);
+        $consumed = Hilos::$db->statusWorks->actions->create('Consumed without active period', null, $now + 6000, $now + 7000, 500);
+        $consumed->actions->consume($now + 6000);
+        $expired = Hilos::$db->statusWorks->actions->create('Expired', null, $now + 8000, $now + 9000, 500);
+        $expired->actions->expire($now + 9000);
+        $open = Hilos::$db->statusMaintenancePeriods->actions->create($active->id, $active->publicId, true, 'Observed active', ['service'], 1000);
+        $open->actions->reconcile(2000, null, null);
+        $observed = Hilos::$db->statusMaintenancePeriods->actions->create(null, null, false, 'Completion after a gap', ['service'], 1000);
+        $observed->actions->reconcile(2000, null, $since);
+        $exact = Hilos::$db->statusMaintenancePeriods->actions->create(null, null, true, 'Exact completion', ['service'], 1000);
+        $exact->actions->reconcile(2000, $since, $since);
+        $old = Hilos::$db->statusMaintenancePeriods->actions->create(null, null, true, 'Old', ['service'], 1000);
+        $old->actions->reconcile(2000, null, $since - 1);
+        $retained = Hilos::$db->statusMaintenancePeriods->intersecting($since, null, 32);
+        self::assertSame([$open->id, $observed->id, $exact->id], array_keys(iterator_to_array($retained)));
+
+        $builder = new StatusPublicSnapshotBuilder();
+        $builder->begin(StatusSnapshot::read(), 'maintenance-v2', $now, 30, 120);
+        $snapshot = $this->finish($builder);
+        self::assertSame([$active->publicId, $during->publicId, $next->publicId], array_column($snapshot->toArray()['scheduledWorks'], 'id'));
+        self::assertSame([$open->publicId, $observed->publicId, $exact->publicId], array_column($snapshot->toArray()['maintenancePeriods'], 'id'));
+        self::assertSame($active->publicId, $snapshot->maintenancePeriods[0]->workId);
+        self::assertSame(['service'], $snapshot->scheduledWorks[0]->componentKeys);
+        self::assertSame(['service'], $snapshot->maintenancePeriods[0]->componentKeys);
+        self::assertNull($snapshot->maintenancePeriods[1]->endedAt);
+        self::assertSame($since, $snapshot->maintenancePeriods[1]->completionObservedAt);
+        self::assertSame($now + 1, $builder->getNextHistoryExpiryAt());
+        $this->assertPublishedSnapshot($snapshot);
+        foreach ($snapshot->toArray()['scheduledWorks'] as $work) {
+            self::assertSame(['id', 'title', 'description', 'componentKeys', 'startsAt', 'endsAt'], array_keys($work));
+        }
+        foreach ($snapshot->toArray()['maintenancePeriods'] as $period) {
+            self::assertSame(['id', 'workId', 'announcementKnown', 'title', 'componentKeys', 'startedAt',
+                'lastObservedAt', 'endedAt', 'completionObservedAt'], array_keys($period));
+        }
+    }
+
+    public function testLargeV2BuildAdvancesBoundedSelectionsWithoutHydratingTheSourceSet(): void
+    {
+        $this->startMachine();
+        $now = 1800000000000;
+        $workIds = [];
+        $periodIds = [];
+        for ($index = 0; $index < 35; ++$index) {
+            $workIds[] = Hilos::$db->statusWorks->actions->create('Work ' . $index, null,
+                $now + 1000 + $index * 2000, $now + 2000 + $index * 2000, 1000, ['service'])->publicId;
+            $periodIds[] = Hilos::$db->statusMaintenancePeriods->actions->create(null, null, false,
+                'Period ' . $index, ['retired-component'], 1000 + $index)->publicId;
+        }
+        $builder = new StatusPublicSnapshotBuilder();
+        $builder->begin(StatusSnapshot::read(), 'large-v2', $now, 30, 120);
+        $previousWorks = [];
+        $previousPeriods = [];
+        for ($steps = 0; !$builder->isReady() && $steps < 200; ++$steps) {
+            $before = $this->lastProfileId();
+            $builder->advance();
+            $queries = [];
+            foreach (Database::sql('SHOW PROFILES')->rows() as $profile) {
+                if ((int)$profile['Query_ID'] > $before
+                    && preg_match('/^SELECT .*FROM (?:`[^`]+`\.)?`hilos_status_(?:work|maintenance_period)`/s', $profile['Query'])) {
+                    $queries[] = $profile['Query'];
+                }
+            }
+            self::assertLessThanOrEqual(1, count($queries));
+            foreach ($queries as $query) {
+                self::assertStringContainsString('`id` >', $query);
+                self::assertMatchesRegularExpression('/ LIMIT 1(?: OFFSET 0)?$/', $query);
+                if (str_contains($query, '`hilos_status_maintenance_period`')) {
+                    $previousPeriods[] = $query;
+                } else {
+                    $previousWorks[] = $query;
+                }
+            }
+        }
+        self::assertTrue($builder->isReady());
+        self::assertCount(36, $previousWorks);
+        self::assertCount(36, $previousPeriods);
+        self::assertSame($workIds, array_column($builder->getSnapshot()->toArray()['scheduledWorks'], 'id'));
+        self::assertSame($periodIds, array_column($builder->getSnapshot()->toArray()['maintenancePeriods'], 'id'));
+        $this->assertPublishedSnapshot($builder->getSnapshot());
+    }
+
     /** @param StatusPublicSnapshot $snapshot Projection built from actual database portions */
     private function assertPublishedSnapshot(StatusPublicSnapshot $snapshot): void
     {
@@ -266,7 +358,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
                 Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR,
             ));
             self::assertSame([
-                'schemaVersion' => 1, 'revision' => $snapshot->revision, 'aliveAt' => $snapshot->generatedAt,
+                'schemaVersion' => 2, 'revision' => $snapshot->revision, 'aliveAt' => $snapshot->generatedAt,
             ], json_decode(Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR));
             self::assertSame($snapshot->toArray(), (new StatusPublicFiles())->restore()->toArray());
             self::assertSame([], $this->sourceQueriesSince($lastQuery), 'Writing and restoring detached values must not query sources');

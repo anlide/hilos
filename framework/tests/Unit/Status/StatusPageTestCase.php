@@ -32,6 +32,7 @@ use ReflectionProperty;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
+use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -111,7 +112,7 @@ abstract class StatusPageTestCase extends StatusReadTestCase
 abstract class StatusPageHilos extends StatusProjectionHilos
 {
     public const array PAGES = [StatusPage::PAGE => StatusPage::class, StatusComponentsPage::PAGE => StatusComponentsPage::class,
-        StatusSubscribersPage::PAGE => StatusSubscribersPage::class];
+        StatusSubscribersPage::PAGE => StatusSubscribersPage::class, StatusWorksPage::PAGE => StatusWorksPage::class];
     public const array PAGE_TABLES = [StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []]];
 }
 
@@ -126,6 +127,11 @@ final class StatusComponentsPage extends AbstractHilosStatusComponentsPage
 }
 
 final class StatusSubscribersPage extends AbstractHilosStatusSubscribersPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
+final class StatusWorksPage extends AbstractHilosStatusWorksPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 }

@@ -39,12 +39,16 @@ import * as securityOverview from '../../src/admin/security/hilosSecurityOvervie
 import * as oauthProviderHead from '../../src/admin/security/hilosSecurityOauthHead.js'
 import * as settings from '../../src/admin/settings/index.js'
 import * as status from '../../src/admin/status/index.js'
+import * as statusWorks from '../../src/admin/status/hilosStatusWorks.js'
+import * as statusWorkActions from '../../src/admin/status/hilosStatusWorkActions.js'
+import * as localDateTime from '../../src/timeZone/localDateTime.js'
 import * as users from '../../src/admin/users/index.js'
 import * as base from '../../src/base/index.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
+import * as publicStatusDerived from '../../src/status/derivedStatus.js'
 import * as accountDeletion from '../../src/profile/accountDeletion.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
@@ -428,6 +432,60 @@ const statusTypes = [
   'HilosStatusSubscribersTable',
   'HilosStatusSummary',
 ]
+/** Works belongs only to the lazy Status section, past its compatibility API. */
+const statusWorksValues = [
+  'HILOS_STATUS_WORKS_DATA',
+  'HILOS_STATUS_WORKS_TABLE',
+  'HILOS_STATUS_WORK_SLOT',
+  'STATUS_WORK_FILTER_COMPONENT_KEY',
+  'STATUS_WORK_ID_FIELD',
+  'STATUS_WORK_PUBLIC_ID_FIELD',
+  'STATUS_WORK_TITLE_FIELD',
+  'STATUS_WORK_DESCRIPTION_FIELD',
+  'STATUS_WORK_COMPONENT_KEYS_FIELD',
+  'STATUS_WORK_STARTS_AT_FIELD',
+  'STATUS_WORK_ENDS_AT_FIELD',
+  'STATUS_WORK_VERSION_FIELD',
+  'STATUS_WORK_CANCELED_AT_FIELD',
+  'STATUS_WORK_CONSUMED_AT_FIELD',
+  'STATUS_WORK_EXPIRED_AT_FIELD',
+  'STATUS_WORK_LAST_MAIL_QUEUED_AT_FIELD',
+  'statusPublicWorkSchema',
+  'statusScheduledWorksSchema',
+  'statusWorksDataSchema',
+  'statusWorkSchema',
+  'resolveHilosStatusWorkRow',
+  'HILOS_STATUS_WORKS_COPY',
+  'createHilosStatusWorksState',
+  'createHilosStatusWorksTable',
+]
+const statusWorksTypes = [
+  'HilosStatusPublicWork',
+  'HilosStatusWorksData',
+  'HilosStatusWorkRow',
+  'HilosStatusWorksContext',
+  'HilosStatusWorksState',
+  'HilosStatusWorksTable',
+]
+const statusWorkActionValues = [
+  'HILOS_STATUS_WORK_SCHEDULE_ACTION',
+  'HILOS_STATUS_WORK_CHANGE_ACTION',
+  'HILOS_STATUS_WORK_CANCEL_ACTION',
+  'HILOS_STATUS_WORK_ACTION_COPY',
+  'createHilosStatusWorkCreate',
+  'createHilosStatusWorkEdit',
+  'createHilosStatusWorkCancel',
+]
+const statusWorkActionTypes = [
+  'HilosStatusWorkForm',
+  'HilosStatusWorkEditFields',
+  'HilosStatusWorkRequest',
+  'HilosStatusWorkTarget',
+  'HilosStatusWorkCreate',
+  'HilosStatusWorkEdit',
+  'HilosStatusWorkCancel',
+]
+const statusWorkEditorValues = ['localDateTimeValue', 'parseLocalDateTimeValue']
 /** The public file reader is its own lazy entry, separate from admin Status. */
 const publicStatusValues = [
   'STATUS_SUBSCRIBE_ACTION',
@@ -482,6 +540,16 @@ const publicStatusTypes = [
   'StatusSubscriptionOperation',
   'StatusSubscriptionOptions',
   'StatusSubscriptionStep',
+]
+/** Maintenance derivations are additions to /status only, beyond its legacy API. */
+const publicStatusDerivedValues = [
+  'publicStatusCurrentMaintenance',
+  'publicStatusUpcomingWorks',
+]
+const publicStatusDerivedTypes = [
+  'PublicStatusAnnouncement',
+  'PublicStatusCurrentMaintenanceView',
+  'PublicStatusWorkView',
 ]
 /** Restore-card selectors added on the maintenance frame. The frozen snapshot stays as it was. */
 const maintenanceFrameValues = [
@@ -827,7 +895,31 @@ describe('core public entries', () => {
     for (const [entry, api] of Object.entries(publicEntries)) {
       for (const [name, value] of Object.entries(api)) {
         names.add(name)
-        if (
+        if (entry === './status' && publicStatusDerivedValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            publicStatusDerived[name as keyof typeof publicStatusDerived],
+          )
+        } else if (
+          entry === './admin/status' &&
+          [
+            ...statusWorksValues,
+            ...statusWorkActionValues,
+            ...statusWorkEditorValues,
+          ].includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          const owner: Record<string, unknown> = statusWorksValues.includes(
+            name,
+          )
+            ? statusWorks
+            : statusWorkActionValues.includes(name)
+              ? statusWorkActions
+              : localDateTime
+          expect(value, name).toBe(owner[name])
+        } else if (
           entry === './admin/analytics' &&
           analyticsOverviewValues.includes(name)
         ) {
@@ -1066,6 +1158,7 @@ describe('core public entries', () => {
     expect([...names].sort()).toEqual(
       [
         ...expectedValues,
+        ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
         ...analyticsPeriodValues,
         ...analyticsPeopleValues,
@@ -1084,6 +1177,9 @@ describe('core public entries', () => {
         ...adminModerationRuleEditValues,
         ...securityOverviewValues,
         ...oauthProviderHeadValues,
+        ...statusWorksValues,
+        ...statusWorkActionValues,
+        ...statusWorkEditorValues,
         ...changeLogPresentationValues,
       ].sort(),
     )
@@ -1155,6 +1251,31 @@ describe('core public entries', () => {
     expect(logs.LOGS_SETTINGS_SIGNAL_SCHEMAS).toBe(
       base.LOGS_SETTINGS_SIGNAL_SCHEMAS,
     )
+  })
+
+  it('exports the complete Works API only from the lazy Status section', () => {
+    expect(Object.keys(status).sort()).toEqual(
+      [
+        ...statusValues,
+        ...statusWorksValues,
+        ...statusWorkActionValues,
+        ...statusWorkEditorValues,
+      ].sort(),
+    )
+    for (const [names, owner] of [
+      [statusWorksValues, statusWorks],
+      [statusWorkActionValues, statusWorkActions],
+      [statusWorkEditorValues, localDateTime],
+    ] as const)
+      for (const name of names) {
+        expect((status as Record<string, unknown>)[name], name).toBe(
+          (owner as Record<string, unknown>)[name],
+        )
+        expect(core, name).not.toHaveProperty(name)
+        expect(base, name).not.toHaveProperty(name)
+      }
+    expectTypeOf<status.HilosStatusWorkEdit>().toEqualTypeOf<statusWorkActions.HilosStatusWorkEdit>()
+    expectTypeOf<status.HilosStatusWorksData>().toEqualTypeOf<statusWorks.HilosStatusWorksData>()
   })
 
   it('shares all three geometry projections with logical focus return through root and base', () => {
@@ -1246,8 +1367,18 @@ describe('core public entries', () => {
 
   it('exports the public reader once, outside base and admin Status', () => {
     expect(Object.keys(publicStatus).sort()).toEqual(
-      [...publicStatusValues].sort(),
+      [...publicStatusValues, ...publicStatusDerivedValues].sort(),
     )
+    expectTypeOf<publicStatus.PublicStatusWorkView>().toEqualTypeOf<publicStatusDerived.PublicStatusWorkView>()
+    expectTypeOf<publicStatus.PublicStatusCurrentMaintenanceView>().toEqualTypeOf<publicStatusDerived.PublicStatusCurrentMaintenanceView>()
+    for (const name of publicStatusDerivedValues) {
+      expect(core, name).not.toHaveProperty(name)
+      expect(base, name).not.toHaveProperty(name)
+      expect(status, name).not.toHaveProperty(name)
+      expect(publicStatus[name as keyof typeof publicStatus]).toBe(
+        publicStatusDerived[name as keyof typeof publicStatusDerived],
+      )
+    }
     for (const name of publicStatusValues) {
       expect(base, name).not.toHaveProperty(name)
       expect(status, name).not.toHaveProperty(name)
@@ -1500,6 +1631,21 @@ describe('core public entries', () => {
       ...oauthProviderHeadValues,
       ...oauthProviderHeadTypes,
     ]
+    const worksExports = exportsOf('admin/status/hilosStatusWorks.ts')
+    const workActionExports = exportsOf(
+      'admin/status/hilosStatusWorkActions.ts',
+    )
+    const editorExports = exportsOf('timeZone/localDateTime.ts')
+    const publicDerivedExports = exportsOf('status/derivedStatus.ts')
+    const publicDerivedNames = [
+      ...publicStatusDerivedValues,
+      ...publicStatusDerivedTypes,
+    ]
+    const workNames = [...statusWorksValues, ...statusWorksTypes]
+    const workActionNames = [
+      ...statusWorkActionValues,
+      ...statusWorkActionTypes,
+    ]
     const changeLogPresentationExports = new Map([
       ...exportsOf('admin/changeLog/hilosChangeLog.ts'),
       ...exportsOf('admin/changeLog/hilosChangeLogTable.ts'),
@@ -1510,7 +1656,29 @@ describe('core public entries', () => {
     ]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
-        if (
+        if (entry === 'status/index.ts' && publicDerivedNames.includes(name)) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            publicDerivedExports.get(name),
+          )
+        } else if (
+          entry === 'admin/status/index.ts' &&
+          [
+            ...workNames,
+            ...workActionNames,
+            ...statusWorkEditorValues,
+          ].includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          const owner = workNames.includes(name)
+            ? worksExports
+            : workActionNames.includes(name)
+              ? workActionExports
+              : editorExports
+          expect(symbol, `${entry}:${name}`).toBe(owner.get(name))
+        } else if (
           entry === 'admin/analytics/index.ts' &&
           overviewNames.includes(name)
         ) {
@@ -1660,6 +1828,7 @@ describe('core public entries', () => {
     expect([...names].sort()).toEqual(
       [
         ...root.keys(),
+        ...publicDerivedNames,
         ...overviewNames,
         ...periodNames,
         ...peopleNames,
@@ -1678,6 +1847,9 @@ describe('core public entries', () => {
         ...ruleEditNames,
         ...securityOverviewNames,
         ...oauthProviderHeadNames,
+        ...workNames,
+        ...workActionNames,
+        ...statusWorkEditorValues,
         ...changeLogPresentationNames,
       ].sort(),
     )

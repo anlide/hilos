@@ -35,6 +35,7 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
@@ -54,6 +55,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosChangeLogTableTriggersTable $hilosChangeLogTableTriggers
  * @property-read HilosChangeLogNoisyColumnsTable $hilosChangeLogNoisyColumns
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
+ * @property-read HilosStatusWorksTable $hilosStatusWorks Scheduled maintenance viewport
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
@@ -85,6 +87,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  */
 final class OnlineTestingTableContext extends TableContext
 {
+    public const string hilosStatusWorks = HilosStatusWorksTable::TABLE;
+
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
     public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;
     public const string hilosPrivacyHistory = HilosPrivacyHistoryTable::TABLE;

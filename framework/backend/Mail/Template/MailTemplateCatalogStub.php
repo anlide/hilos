@@ -66,6 +66,18 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             MailTemplateCatalogConstants::STATUS_OUTAGE_RESOLVED => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusOutageResolvedMailTemplate::class,
             ],
+            MailTemplateCatalogConstants::STATUS_WORK_SCHEDULED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusWorkScheduledMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::STATUS_WORK_CHANGED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusWorkChangedMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::STATUS_WORK_CANCELED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusWorkCanceledMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::STATUS_WORK_COMPLETED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StatusWorkCompletedMailTemplate::class,
+            ],
             MailTemplateCatalogConstants::PROTECTED_MODE_STUCK => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeStuckMailTemplate::class,
             ],

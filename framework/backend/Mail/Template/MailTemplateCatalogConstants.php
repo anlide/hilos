@@ -63,6 +63,18 @@ final class MailTemplateCatalogConstants
     /** Template key: a published outage has recovered. */
     public const string STATUS_OUTAGE_RESOLVED = 'status.outage.resolved';
 
+    /** Template key: scheduled maintenance announcement. */
+    public const string STATUS_WORK_SCHEDULED = 'status_work_scheduled';
+
+    /** Template key: changed maintenance announcement. */
+    public const string STATUS_WORK_CHANGED = 'status_work_changed';
+
+    /** Template key: canceled maintenance announcement. */
+    public const string STATUS_WORK_CANCELED = 'status_work_canceled';
+
+    /** Template key: completed maintenance announcement. */
+    public const string STATUS_WORK_COMPLETED = 'status_work_completed';
+
     /**
      * Template key: a node frozen for maintenance with nothing happening behind it (HIL-482).
      *

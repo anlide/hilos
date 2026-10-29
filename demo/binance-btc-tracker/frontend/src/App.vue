@@ -112,6 +112,9 @@ const pages: Record<string, PageView<Component>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.STATUS_WORKS]: lazyPage(() =>
+    import('./views/Hilos/Status/Works/Works.vue').then((m) => m.default),
+  ),
   [HilosPages.SETTINGS]: lazyPage(() =>
     import('./views/Hilos/Settings/Settings.vue').then((m) => m.default),
   ),

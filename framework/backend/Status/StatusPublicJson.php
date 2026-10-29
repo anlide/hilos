@@ -57,6 +57,24 @@ final class StatusPublicJson
     }
 
     /**
+     * @param mixed $value Decoded component key list
+     * @return list<string> Unique nonempty public catalog keys in canonical string order
+     * @throws StatusException When the list contains invalid or duplicate keys
+     */
+    public static function componentKeys(mixed $value): array
+    {
+        $keys = self::items($value);
+        foreach ($keys as $key) {
+            self::text($key);
+        }
+        if (count(array_unique($keys)) !== count($keys)) {
+            throw new StatusException('Public Status component keys must be unique.');
+        }
+        sort($keys, SORT_STRING);
+        return $keys;
+    }
+
+    /**
      * @param mixed $value Required string
      * @param bool $allowEmpty Whether empty public text is permitted
      * @return string Uncoerced public string

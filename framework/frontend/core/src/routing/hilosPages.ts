@@ -55,6 +55,7 @@ export const HilosPages = {
   STATUS: 'hilos_status',
   STATUS_COMPONENTS: 'hilos_status_components',
   STATUS_SUBSCRIBERS: 'hilos_status_subscribers',
+  STATUS_WORKS: 'hilos_status_works',
   GUARDIAN: 'hilos_guardian',
   GUARDIAN_AGENT: 'hilos_guardian_agent',
   I18N: 'hilos_i18n',
@@ -236,6 +237,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/status/subscribers',
     admin: true,
   },
+  [HilosPages.STATUS_WORKS]: { path: '/hilos/status/works', admin: true },
   [HilosPages.GUARDIAN]: { path: '/hilos/guardian', admin: true },
   [HilosPages.GUARDIAN_AGENT]: {
     path: '/hilos/guardian/{agentId}',

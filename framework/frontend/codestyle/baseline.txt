@@ -24,7 +24,7 @@ SHELL-PARITY framework/frontend/vue/src/admin/maintenance/HilosMaintenanceWatchd
 SHELL-PARITY framework/frontend/vue/src/admin/security/HilosSecurityOauthProviderPage.vue 3 # HIL-1669
 SHELL-PARITY framework/frontend/vue/src/admin/security/HilosSecurityPage.vue 6 # HIL-1669
 SHELL-PARITY framework/frontend/vue/src/index.ts 1 # HIL-1696
-SHELL-PARITY framework/frontend/vue/src/public/HilosStatusPage.vue 20 # HIL-1696
+SHELL-PARITY framework/frontend/vue/src/public/HilosStatusPage.vue 21 # HIL-1696
 SHELL-PARITY framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue 8 # HIL-1696
 STYLE-INLINE demo/chat/frontend/src/views/AdminBots/AdminBots.vue 1 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 3 # HIL-449

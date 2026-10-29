@@ -18,8 +18,9 @@ interface OffsetInterval {
 /**
  * Encode Gregorian fields as a numeric calendar coordinate, not a wire moment.
  * setUTCFullYear also preserves years 0 through 99 instead of adding 1900.
+ * Shared within timeZone/ only; not exported from the package barrels.
  */
-function calendarCoordinate(
+export function calendarCoordinate(
   year: number,
   month: number,
   day: number,
@@ -34,8 +35,11 @@ function calendarCoordinate(
   return date.getTime()
 }
 
-/** Read numeric Gregorian fields, independent of the browser's locale/calendar. */
-function localCoordinate(
+/**
+ * Read numeric Gregorian fields, independent of the browser's locale/calendar.
+ * Shared within timeZone/ only; not exported from the package barrels.
+ */
+export function localCoordinate(
   formatter: Intl.DateTimeFormat,
   moment: number,
 ): number {
@@ -54,8 +58,13 @@ function localCoordinate(
   )
 }
 
-/** The shared Gregorian field reader; UTC needs no Intl implementation. */
-function calendarFormatter(timeZone: string): Intl.DateTimeFormat | null {
+/**
+ * The shared Gregorian field reader; UTC needs no Intl implementation.
+ * Shared within timeZone/ only; not exported from the package barrels.
+ */
+export function calendarFormatter(
+  timeZone: string,
+): Intl.DateTimeFormat | null {
   return timeZone === 'UTC'
     ? null
     : new Intl.DateTimeFormat('en-US', {
@@ -77,8 +86,9 @@ function calendarFormatter(timeZone: string): Intl.DateTimeFormat | null {
  * Walk IANA offset intervals with hourly probes; IANA transitions are farther
  * apart than a probe. Locate each change at its first millisecond, including
  * historical offsets with seconds and transitions away from whole hours.
+ * Shared within timeZone/ only; not exported from the package barrels.
  */
-function offsetIntervals(
+export function offsetIntervals(
   formatter: Intl.DateTimeFormat,
   start: number,
   end: number,

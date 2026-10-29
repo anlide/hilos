@@ -144,6 +144,9 @@ final class HilosPageConstants
     /** @var string Status overview */
     public const string HILOS_STATUS = 'hilos_status';
 
+    /** @var string Scheduled Status maintenance administration */
+    public const string HILOS_STATUS_WORKS = 'hilos_status_works';
+
     /** @var string Read-only Status component window */
     public const string HILOS_STATUS_COMPONENTS = 'hilos_status_components';
 

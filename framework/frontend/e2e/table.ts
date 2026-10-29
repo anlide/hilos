@@ -238,9 +238,14 @@ export async function tableRowKeyByText(
  *
  * @param expect The spec's expect.
  * @param page The Playwright page showing the table.
+ * @param tableId The table root when its consumer overrides the standard hook.
  * @returns The 1-based page number.
  */
-async function captionPage(expect: Expect, page: Page): Promise<number> {
+async function captionPage(
+  expect: Expect,
+  page: Page,
+  tableId: string,
+): Promise<number> {
   const activePage = page.locator(
     '[data-id^="hilos-table-page-"][aria-current="page"]',
   )
@@ -257,7 +262,7 @@ async function captionPage(expect: Expect, page: Page): Promise<number> {
         return true
       }
 
-      return (await tableRowKeys(page)).length > 0
+      return (await tableRowKeys(page, tableId)).length > 0
     })
     .toBe(true)
 
@@ -311,21 +316,23 @@ export async function pageBackOnce(expect: Expect, page: Page): Promise<void> {
  *
  * @param expect The spec's expect.
  * @param page The Playwright page showing the table.
+ * @param tableId The table root when its consumer overrides the standard hook.
  * @returns The 1-based number of the page reached.
  */
 export async function goToLastPage(
   expect: Expect,
   page: Page,
+  tableId = TABLE,
 ): Promise<number> {
   const next = page.getByTestId(NEXT)
-  let reached = await captionPage(expect, page)
+  let reached = await captionPage(expect, page, tableId)
 
   if ((await next.count()) === 0) {
     return reached
   }
 
   while (await next.isEnabled()) {
-    const firstKeyBefore = (await tableRowKeys(page))[0]
+    const firstKeyBefore = (await tableRowKeys(page, tableId))[0]
     await next.click()
     reached += 1
     const active = page.locator(
@@ -336,7 +343,7 @@ export async function goToLastPage(
     }
     await expect
       .poll(async () => {
-        const keys = await tableRowKeys(page)
+        const keys = await tableRowKeys(page, tableId)
 
         return keys.length > 0 && keys[0] !== firstKeyBefore
       })
@@ -353,13 +360,15 @@ export async function goToLastPage(
  * @param expect The spec's expect.
  * @param page The page showing the table.
  * @param rowKey The key previously resolved from the real UI or wire.
+ * @param tableId The table root when its consumer overrides the standard hook.
  */
 export async function advanceTableToRow(
   expect: Expect,
   page: Page,
   rowKey: string,
+  tableId = TABLE,
 ): Promise<void> {
-  const table = page.getByTestId(TABLE)
+  const table = page.getByTestId(tableId)
   const row = table.getByTestId(`${ROW_PREFIX}${rowKey}`)
   const loading = table.getByTestId('hilos-table-loading')
   const keys = () =>

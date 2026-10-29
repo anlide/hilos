@@ -39,6 +39,7 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Status\HilosStatusWorksTable;
 
 /**
  * EcommerceShopTableContext - App-specific table context ($table layer) for this demo.
@@ -61,6 +62,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosMaintenanceNodesTable $hilosMaintenanceNodes
  * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
+ * @property-read HilosStatusWorksTable $hilosStatusWorks Scheduled maintenance viewport
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
@@ -85,6 +87,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  */
 final class EcommerceShopTableContext extends TableContext
 {
+    public const string hilosStatusWorks = HilosStatusWorksTable::TABLE;
+
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
     public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;
     public const string hilosPrivacyHistory = HilosPrivacyHistoryTable::TABLE;

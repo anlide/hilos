@@ -1,7 +1,11 @@
 // Public file boundary; deliberately separate from the eager connection hint.
 import { z } from 'zod'
 
-const momentSchema = z.int()
+const momentSchema = z.int().nonnegative()
+const publicIdSchema = z.string().min(1)
+const componentKeysSchema = z
+  .array(z.string().min(1))
+  .refine((keys) => new Set(keys).size === keys.length)
 
 /** Current public component state, including honest absence of knowledge. */
 export const publicStatusComponentSchema = z.strictObject({
@@ -43,29 +47,45 @@ export const publicStatusOutageSchema = z.strictObject({
 })
 
 /** Announced work; its schedule alone does not color historical days. */
-export const publicStatusWorkSchema = z.strictObject({
-  id: z.string(),
-  title: z.string(),
-  description: z.string().nullable(),
-  componentKeys: z.array(z.string()),
-  startsAt: momentSchema,
-  endsAt: momentSchema,
-})
+export const publicStatusWorkSchema = z
+  .strictObject({
+    id: publicIdSchema,
+    title: z.string().min(1),
+    description: z.string().nullable(),
+    componentKeys: componentKeysSchema,
+    startsAt: momentSchema,
+    endsAt: momentSchema,
+  })
+  .refine((work) => work.endsAt > work.startsAt)
 
 /** Actual maintenance, including an unannounced period with no work id. */
-export const publicStatusMaintenancePeriodSchema = z.strictObject({
-  id: z.string(),
-  workId: z.string().nullable(),
-  title: z.string(),
-  componentKeys: z.array(z.string()),
-  startedAt: momentSchema,
-  endedAt: momentSchema.nullable(),
-})
+export const publicStatusMaintenancePeriodSchema = z
+  .strictObject({
+    id: publicIdSchema,
+    workId: publicIdSchema.nullable(),
+    announcementKnown: z.boolean(),
+    title: z.string().min(1),
+    componentKeys: componentKeysSchema,
+    startedAt: momentSchema,
+    lastObservedAt: momentSchema,
+    endedAt: momentSchema.nullable(),
+    completionObservedAt: momentSchema.nullable(),
+  })
+  .refine(
+    (period) =>
+      (period.announcementKnown || period.workId === null) &&
+      period.lastObservedAt >= period.startedAt &&
+      (period.completionObservedAt === null ||
+        period.completionObservedAt >= period.lastObservedAt) &&
+      (period.endedAt === null ||
+        (period.completionObservedAt !== null &&
+          period.endedAt === period.completionObservedAt)),
+  )
 
-/** Literal v1: required keys, explicit nulls and no private/extra fields. */
-export const publicStatusFileSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  revision: z.string(),
+/** Literal v2: required keys, explicit nulls and no private/extra fields. */
+const publicStatusV2FileSchema = z.strictObject({
+  schemaVersion: z.literal(2),
+  revision: publicIdSchema,
   generatedAt: momentSchema,
   config: z.strictObject({
     pollIntervalSeconds: z.int().positive(),
@@ -78,10 +98,20 @@ export const publicStatusFileSchema = z.strictObject({
   maintenancePeriods: z.array(publicStatusMaintenancePeriodSchema),
 })
 
+/** The actual v1 writer had two empty lists; keep its published outage archive. */
+export const publicStatusFileSchema = z.discriminatedUnion('schemaVersion', [
+  publicStatusV2FileSchema.extend({
+    schemaVersion: z.literal(1),
+    scheduledWorks: z.array(publicStatusWorkSchema).max(0),
+    maintenancePeriods: z.array(publicStatusMaintenancePeriodSchema).max(0),
+  }),
+  publicStatusV2FileSchema,
+])
+
 /** Only aliveAt of a coherent pair proves publisher freshness. */
 export const publicStatusHeartbeatSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  revision: z.string(),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  revision: publicIdSchema,
   aliveAt: momentSchema,
 })
 
@@ -153,7 +183,10 @@ export async function readPublicStatusFiles(
   const status = publicStatusFileSchema.safeParse(statusResult.value)
   const heartbeat = publicStatusHeartbeatSchema.safeParse(heartbeatResult.value)
   if (!status.success || !heartbeat.success) return { kind: 'unavailable' }
-  if (status.data.revision !== heartbeat.data.revision) {
+  if (
+    status.data.revision !== heartbeat.data.revision ||
+    status.data.schemaVersion !== heartbeat.data.schemaVersion
+  ) {
     return { kind: 'revision-mismatch' }
   }
 
