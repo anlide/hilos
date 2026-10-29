@@ -685,7 +685,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
               :title="adminAccess === 'view' ? adminLabel : undefined"
             >
               <i
-                class="bi bi-gear-fill"
+                class="bi bi-gear"
                 :class="{ 'text-info-emphasis': adminAccess === 'view' }"
                 aria-hidden="true"
               ></i>

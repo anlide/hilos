@@ -114,7 +114,7 @@ describe('HilosDashboardPage', () => {
       false,
     )
     expect(wrapper.find('h1').exists()).toBe(false)
-    expect(wrapper.find('.bi-gear-fill').exists()).toBe(false)
+    expect(wrapper.find('.bi-gear').exists()).toBe(false)
     expect(wrapper.find('[data-id="hilos-page-head-title"]').exists()).toBe(
       false,
     )
@@ -146,7 +146,7 @@ describe('HilosDashboardPage', () => {
       'Administrative sections for the project.',
     )
 
-    const icon = wrapper.find('i.bi-gear-fill')
+    const icon = wrapper.find('i.bi-gear')
     expect(icon.exists()).toBe(true)
     const iconContainer = icon.element.closest('span')
     expect(iconContainer?.getAttribute('aria-hidden')).toBe('true')

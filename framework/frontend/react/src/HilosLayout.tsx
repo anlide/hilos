@@ -637,7 +637,7 @@ export function HilosLayout({
                         title={adminAccess === 'view' ? adminLabel : undefined}
                       >
                         <i
-                          className={`bi bi-gear-fill${adminAccess === 'view' ? ' text-info-emphasis' : ''}`}
+                          className={`bi bi-gear${adminAccess === 'view' ? ' text-info-emphasis' : ''}`}
                           aria-hidden="true"
                         />
                         {adminAccess === 'view' && (

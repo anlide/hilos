@@ -62,7 +62,7 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
             page: HilosPages.DASHBOARD,
             label: identity.label,
             lead: identity.lead,
-            icon: 'bi-gear-fill',
+            icon: 'bi-gear',
           },
           pageTabs: [],
         }

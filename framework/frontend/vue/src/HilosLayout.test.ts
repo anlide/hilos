@@ -1075,10 +1075,8 @@ describe('HilosLayout admin gear', () => {
     expect(link.attributes('aria-label')).toBe('Hilos dashboard')
     expect(link.attributes('title')).toBeUndefined()
     expect(link.find('.visually-hidden').text()).toBe('Hilos dashboard')
-    expect(link.find('.bi-gear-fill').classes()).not.toContain(
-      'text-info-emphasis',
-    )
-    expect(link.find('.bi-gear-fill').attributes('aria-hidden')).toBe('true')
+    expect(link.find('.bi-gear').classes()).not.toContain('text-info-emphasis')
+    expect(link.find('.bi-gear').attributes('aria-hidden')).toBe('true')
     expect(link.findAll('.bi-eye')).toHaveLength(0)
   })
 
@@ -1099,8 +1097,8 @@ describe('HilosLayout admin gear', () => {
     expect(link.find('.visually-hidden').text()).toBe(
       'Hilos dashboard — View mode',
     )
-    expect(link.find('.bi-gear-fill').classes()).toContain('text-info-emphasis')
-    expect(link.find('.bi-gear-fill').attributes('aria-hidden')).toBe('true')
+    expect(link.find('.bi-gear').classes()).toContain('text-info-emphasis')
+    expect(link.find('.bi-gear').attributes('aria-hidden')).toBe('true')
     expect(link.findAll('.bi-eye')).toHaveLength(1)
     expect(link.find('.bi-eye').attributes('aria-hidden')).toBe('true')
   })
@@ -1119,7 +1117,7 @@ describe('HilosLayout admin gear', () => {
     expect(fullLink.attributes('aria-label')).toBe('Hilos dashboard')
     expect(fullLink.attributes('title')).toBeUndefined()
     expect(fullLink.find('.visually-hidden').text()).toBe('Hilos dashboard')
-    expect(fullLink.find('.bi-gear-fill').classes()).not.toContain(
+    expect(fullLink.find('.bi-gear').classes()).not.toContain(
       'text-info-emphasis',
     )
     expect(fullLink.findAll('.bi-eye')).toHaveLength(0)
@@ -1136,9 +1134,7 @@ describe('HilosLayout admin gear', () => {
     expect(viewLink.find('.visually-hidden').text()).toBe(
       'Hilos dashboard — View mode',
     )
-    expect(viewLink.find('.bi-gear-fill').classes()).toContain(
-      'text-info-emphasis',
-    )
+    expect(viewLink.find('.bi-gear').classes()).toContain('text-info-emphasis')
     expect(viewLink.findAll('.bi-eye')).toHaveLength(1)
     expect(viewLink.find('.bi-eye').attributes('aria-hidden')).toBe('true')
   })

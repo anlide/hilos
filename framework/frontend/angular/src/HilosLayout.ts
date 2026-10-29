@@ -261,7 +261,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                     "
                   >
                     <i
-                      class="bi bi-gear-fill"
+                      class="bi bi-gear"
                       [class.text-info-emphasis]="adminAccess() === 'view'"
                       aria-hidden="true"
                     ></i>

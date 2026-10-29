@@ -298,7 +298,7 @@ have no page head, breadcrumb or row. The shared Vue head preserves these
 boundaries: catalog-adopted admin owners draw it through `HilosAdminPage`, for
 an answer that names `pageHeadOwner`; `HilosDashboardPage` directly uses
 `HilosPageHead` with a local presentation from its answered label, lead and
-fixed `bi-gear-fill` icon, without breadcrumb or tab row, keeping its section
+fixed `bi-gear` icon, without breadcrumb or tab row, keeping its section
 cards; and the routed outlet's error page or auth surface replaces the whole
 page view — or, for a page that opts in to [Deleted While Open](#deleted-while-open),
 the shell's own error page replaces its head and body. React's and Angular's

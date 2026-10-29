@@ -219,7 +219,7 @@ describe('HilosDashboardPage', () => {
       container.querySelector('[data-id="dashboard-title-skeleton"]'),
     ).toBeNull()
     expect(container.querySelector('h1')).toBeNull()
-    expect(container.querySelector('.bi-gear-fill')).toBeNull()
+    expect(container.querySelector('.bi-gear')).toBeNull()
     expect(
       container.querySelector('[data-id="hilos-page-head-title"]'),
     ).toBeNull()
@@ -255,7 +255,7 @@ describe('HilosDashboardPage', () => {
       container.querySelector('[data-id="hilos-page-head-block"]')?.textContent,
     ).toContain('Administrative sections for the project.')
 
-    const icon = container.querySelector('i.bi-gear-fill')
+    const icon = container.querySelector('i.bi-gear')
     expect(icon).not.toBeNull()
     const iconContainer = icon?.closest('span')
     expect(iconContainer?.getAttribute('aria-hidden')).toBe('true')

@@ -861,13 +861,11 @@ describe('HilosLayout admin gear', () => {
       'Hilos dashboard',
     )
     expect(
-      link
-        ?.querySelector('.bi-gear-fill')
-        ?.classList.contains('text-info-emphasis'),
+      link?.querySelector('.bi-gear')?.classList.contains('text-info-emphasis'),
     ).toBe(false)
-    expect(
-      link?.querySelector('.bi-gear-fill')?.getAttribute('aria-hidden'),
-    ).toBe('true')
+    expect(link?.querySelector('.bi-gear')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
     expect(link?.querySelectorAll('.bi-eye')).toHaveLength(0)
   })
 
@@ -894,12 +892,12 @@ describe('HilosLayout admin gear', () => {
       )
       expect(
         link
-          ?.querySelector('.bi-gear-fill')
+          ?.querySelector('.bi-gear')
           ?.classList.contains('text-info-emphasis'),
       ).toBe(true)
-      expect(
-        link?.querySelector('.bi-gear-fill')?.getAttribute('aria-hidden'),
-      ).toBe('true')
+      expect(link?.querySelector('.bi-gear')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
       expect(link?.querySelectorAll('.bi-eye')).toHaveLength(1)
       expect(link?.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
         'true',
@@ -927,7 +925,7 @@ describe('HilosLayout admin gear', () => {
     )
     expect(
       fullLink
-        .querySelector('.bi-gear-fill')
+        .querySelector('.bi-gear')
         ?.classList.contains('text-info-emphasis'),
     ).toBe(false)
     expect(fullLink.querySelectorAll('.bi-eye')).toHaveLength(0)
@@ -948,7 +946,7 @@ describe('HilosLayout admin gear', () => {
     )
     expect(
       viewLink
-        .querySelector('.bi-gear-fill')
+        .querySelector('.bi-gear')
         ?.classList.contains('text-info-emphasis'),
     ).toBe(true)
     expect(viewLink.querySelectorAll('.bi-eye')).toHaveLength(1)

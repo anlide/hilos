@@ -147,7 +147,7 @@ export class HilosDashboardPage {
           page: HilosPages.DASHBOARD,
           label: current.label,
           lead: current.lead,
-          icon: 'bi-gear-fill',
+          icon: 'bi-gear',
         },
         pageTabs: [],
       }
