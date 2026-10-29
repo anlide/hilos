@@ -21,10 +21,53 @@ try {
     import { hilosAdminViews } from '@hilos/angular/admin-views'
     import { HilosAnalyticsPage } from '@hilos/angular/admin/analytics'
     import { HilosSettingsPage } from '@hilos/angular/admin/settings'
-    import { Injector, runInInjectionContext } from '@angular/core'
+    import { Component, Injector, runInInjectionContext } from '@angular/core'
+    import {
+      HilosTableCell,
+      HilosTableText,
+      HilosViewportTable,
+    } from '@hilos/angular/base'
+    import {
+      TableViewportController,
+      type Hideable,
+      type HilosTableColumn,
+      type HilosTableFrame,
+    } from '@hilos/core/base'
     import * as coreRoot from '@hilos/core'
     import * as coreBase from '@hilos/core/base'
     import * as coreSettings from '@hilos/core/admin/settings'
+    type TableTextRow = { name: Hideable<string> }
+    const tableTextFrame: HilosTableFrame = {
+      title: 'Table text consumer',
+      rowHeight: { mode: 'lines', count: 3 },
+      columns: [
+        {
+          key: 'name',
+          label: 'Name',
+          card: 'title',
+          heightContent: 'parts',
+        } satisfies HilosTableColumn,
+      ],
+    }
+    @Component({
+      selector: 'hilos-table-text-consumer',
+      standalone: true,
+      imports: [HilosViewportTable, HilosTableCell, HilosTableText],
+      template: \`
+        <hilos-viewport-table [controller]="controller">
+          <ng-template hilosTableCell="name" let-row>
+            <hilos-table-text [value]="row.name"></hilos-table-text>
+          </ng-template>
+        </hilos-viewport-table>
+      \`,
+    })
+    class HilosTableTextConsumer {
+      readonly controller = new TableViewportController<TableTextRow>({
+        resolve: (row) => ({ name: row.slots['name'] as Hideable<string> }),
+        sendViewport: () => undefined,
+        frame: tableTextFrame,
+      })
+    }
     const sameCore = ${[
       'HilosConnection',
       'ScopeManager',
@@ -71,7 +114,8 @@ try {
       'HilosPageHead',
     ]
       .map((name) => `root.${name} === base.${name}`)
-      .join(' && ')}
+      .join(' && ')} && root.HilosTableText !== undefined &&
+      root.HilosTableText === base.HilosTableText
     const samePages = root.HilosSettingsPage === HilosSettingsPage &&
       root.HilosAnalyticsPage === HilosAnalyticsPage
     const environment = Injector.create({ providers: [
@@ -84,8 +128,16 @@ try {
     const loaded = Promise.all(defaults.map(view => {
       if (typeof view === 'function') throw new Error('Eager default')
       return view.load()
-    })).then((pages: unknown[]) => pages.length === 32 && pages.every(page => typeof page === 'function'))
-    Object.assign(globalThis, { hilosAngularIdentity: { sameCore, sameCoreSection, sameTokens, samePages, injected, loaded } })
+    })).then((pages: unknown[]) => pages.length === 31 && pages.every(page => typeof page === 'function'))
+    Object.assign(globalThis, { hilosAngularIdentity: {
+      sameCore,
+      sameCoreSection,
+      sameTokens,
+      samePages,
+      injected,
+      loaded,
+      tableTextHost: HilosTableTextConsumer,
+    } })
   `,
   )
   const config = join(temporary, 'tsconfig.json')
@@ -98,6 +150,7 @@ try {
         paths: {
           '@angular/core': [join(consumer, 'node_modules/@angular/core')],
           '@angular/common': [join(consumer, 'node_modules/@angular/common')],
+          tslib: [join(consumer, 'node_modules/tslib')],
           '@hilos/core': [join(consumer, 'node_modules/@hilos/core')],
           '@hilos/core/base': [
             join(consumer, 'node_modules/@hilos/core/dist/base'),
@@ -149,6 +202,19 @@ try {
     !emitted.includes('ɵɵngDeclareComponent'),
     'APF must be linked by the consumer AOT build',
   )
+  const stylesheets = (await readdir(browser)).filter((name) =>
+    name.endsWith('.css'),
+  )
+  assert.ok(stylesheets.length > 0, 'Missing consumer stylesheet output')
+  const styles = (
+    await Promise.all(
+      stylesheets.map((name) => readFile(join(browser, name), 'utf8')),
+    )
+  ).join('\n')
+  assert.ok(
+    styles.includes('.hilos-table-text-lines-3'),
+    'Consumer build must load the shipped Angular Sass asset',
+  )
   await import(pathToFileURL(join(browser, main)).href)
   const result = globalThis.hilosAngularIdentity
   assert.equal(result.sameCore, true)
@@ -156,12 +222,18 @@ try {
   assert.equal(result.sameTokens, true)
   assert.equal(result.samePages, true)
   assert.equal(result.injected, true)
+  assert.ok(
+    result.tableTextHost.ɵcmp,
+    'AOT table text host must remain emitted',
+  )
+  assert.equal(result.tableTextHost.ɵcmp.standalone, true)
+  assert.equal(typeof result.tableTextHost.ɵcmp.template, 'function')
   assert.equal(await result.loaded, true)
   delete globalThis.hilosAngularIdentity
   if (process.argv[3])
     await cp(output, resolve(process.argv[3]), { recursive: true })
   console.log(
-    'Angular CLI dist consumer: AOT-linked singleton classes/tokens, section injection and lazy defaults verified',
+    'Angular CLI dist consumer: AOT table text host, shipped Sass, singleton identities and lazy defaults verified',
   )
 } finally {
   await rm(temporary, { recursive: true, force: true })

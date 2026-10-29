@@ -35,6 +35,23 @@ const base = await loadEntry('@hilos/angular/base')
 const { hilosAdminViews } = await loadEntry('@hilos/angular/admin-views')
 const { HilosAnalyticsPage } = await loadEntry('@hilos/angular/admin/analytics')
 const { HilosSettingsPage } = await loadEntry('@hilos/angular/admin/settings')
+assert.notEqual(base.HilosTableText, undefined, 'HilosTableText')
+assert.equal(typeof base.HilosTableText, 'function', 'HilosTableText component')
+assert.equal(
+  root.HilosTableText,
+  base.HilosTableText,
+  'Root/base identity: HilosTableText',
+)
+for (const name of [
+  'HilosTableValue',
+  'HILOS_TABLE_TEXT',
+  'createTableTextReading',
+  'createTableTextOverflow',
+  'createTableViewportGeometry',
+]) {
+  assert.equal(name in base, false, `Base must not export ${name}`)
+  assert.equal(name in root, false, `Root must not export ${name}`)
+}
 const coreRoot = await import('@hilos/core')
 const coreBase = await import('@hilos/core/base')
 const coreSettings = await import('@hilos/core/admin/settings')
@@ -171,15 +188,13 @@ for (const name of graph.keys()) acyclic(name)
 const baseName = entries.get('@hilos/angular/base')
 const metadataName = entries.get('@hilos/angular/admin-views')
 const rootName = entries.get('@hilos/angular')
-assert.ok(modules(closure(baseName)).length > 0)
-assert.ok(
-  !modules(closure(baseName)).some((name) => name.startsWith('src/admin/')),
-)
+const baseChunks = closure(baseName)
+assert.ok(modules(baseChunks).length > 0)
+assert.ok(!modules(baseChunks).some((name) => name.startsWith('src/admin/')))
 assert.ok(!closure(baseName).has(rootName))
 assert.deepEqual(modules(closure(metadataName)), [
   'src/admin/hilosAdminViews.ts',
 ])
-assert.equal(graph.get(metadataName).dynamicImports.length, 32)
 for (const [name, entry] of entries) {
   if (!name.startsWith('@hilos/angular/admin/')) continue
   const chunks = closure(entry)
@@ -209,6 +224,25 @@ for (const [name, entry] of graph) {
     owners.set(source, name)
   }
 }
+const tableTextSources = [
+  'src/HilosTableText.ts',
+  'src/HilosTableValue.ts',
+  'src/hilosTableTextContext.ts',
+  'src/tableTextOverflow.ts',
+]
+for (const source of tableTextSources) {
+  assert.ok(owners.has(source), `Missing APF compilation owner: ${source}`)
+  assert.ok(
+    baseChunks.has(owners.get(source)),
+    `${source} must be compiled in the clean base closure`,
+  )
+}
+assert.equal(
+  new Set(tableTextSources.map((source) => owners.get(source))).size,
+  1,
+  'Table text and its internal mount modules must share one APF compilation owner',
+)
+assert.equal(graph.get(metadataName).dynamicImports.length, 31)
 for (const [name, value] of Object.entries(base)) {
   assert.equal(root[name], value, `Root/base identity: ${name}`)
 }
@@ -233,7 +267,7 @@ try {
   injector.destroy()
 }
 const views = Object.values(hilosAdminViews())
-assert.equal(views.length, 32)
+assert.equal(views.length, 31)
 assert.ok(views.every((view) => view.kind === 'lazy-page'))
 for (const view of views) {
   const component = await view.load()
@@ -249,5 +283,5 @@ assert.ok(
   ),
 )
 console.log(
-  'Angular dist: 21 APF entries, compiler ownership, acyclic graph, lazy defaults and singleton injection verified',
+  'Angular dist: 21 APF entries, table text ownership, acyclic graph, lazy defaults and singleton injection verified',
 )

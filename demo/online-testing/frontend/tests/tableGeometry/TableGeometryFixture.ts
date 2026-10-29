@@ -8,21 +8,29 @@ import {
   signal,
 } from '@angular/core'
 import {
+  HilosHiddenMark,
   HilosModal,
   HilosTableCell,
   HilosTableDetail,
+  HilosTableText,
   HilosViewportTable,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 import {
+  HIDDEN_VALUE,
   Scope,
   TableViewportController,
   hilosTableRemovalReason,
   ingest,
+  isHiddenValue,
   subscribeSignal,
   type EntityRef,
   type HilosTableFrame,
+  type HilosTableLineCount,
   type HilosTableProgress,
+  type HilosTableRowHeight,
+  type HilosTableTextRem,
+  type Hideable,
   type TableRow,
   type TableViewportDescriptor,
 } from '@hilos/core/base'
@@ -30,6 +38,7 @@ import {
 interface RecordValue {
   readonly name: string
   readonly paragraph: string
+  readonly hiddenParagraph: boolean
   readonly badge: string
   readonly detail: string
   readonly expandable: boolean
@@ -41,6 +50,32 @@ const SOURCE = 'record'
 const PARAGRAPH =
   'A paragraph near its wrapping boundary keeps the same lines when the widest name leaves the list. The surviving content must keep exactly these lines throughout every departure.'
 const EXPANDED = `${PARAGRAPH} ${PARAGRAPH} ${PARAGRAPH}`
+type HeightMode = 'default' | 'content' | 'lines' | 'height'
+type HeightContent = 'text' | 'parts'
+const HEIGHT_MODES = ['default', 'content', 'lines', 'height'] as const
+const HEIGHT_CONTENTS = ['text', 'parts'] as const
+const LINE_COUNTS: readonly HilosTableLineCount[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+]
+const TEXT_REMS: readonly HilosTableTextRem[] = [2, 3, 4.5, 6, 9, 12]
+const TEXT_SAMPLES = {
+  short: 'Short value',
+  empty: '',
+  long: `${Array.from({ length: 24 }, () => PARAGRAPH).join(' ')} LAST READABLE LINE`,
+  newlines: `${Array.from({ length: 16 }, (_, index) => `Explicit line ${index + 1}`).join('\n')}\nLAST READABLE LINE`,
+  token: `${'UnbrokenToken'.repeat(200)}ENDTOKEN`,
+  hidden: '',
+} as const
+type TextSample = keyof typeof TEXT_SAMPLES
+const TEXT_SAMPLE_NAMES = Object.keys(TEXT_SAMPLES) as TextSample[]
+const READING_SAMPLES = {
+  a: 'long',
+  b: 'short',
+  c: 'empty',
+  d: 'newlines',
+  e: 'token',
+  g: 'short',
+} as const satisfies Partial<Record<(typeof KEYS)[number], TextSample>>
 const ARCHIVE_COLUMNS = [
   { key: 'environment', label: 'Environment', value: 'Production' },
   { key: 'scope', label: 'Scope', value: 'Full' },
@@ -63,7 +98,14 @@ function raw(key: string): TableRow {
 @Component({
   selector: 'table-geometry-fixture',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosViewportTable, HilosTableCell, HilosTableDetail, HilosModal],
+  imports: [
+    HilosViewportTable,
+    HilosTableCell,
+    HilosTableDetail,
+    HilosTableText,
+    HilosHiddenMark,
+    HilosModal,
+  ],
   template: `
     <main
       class="container-fluid py-3"
@@ -71,10 +113,11 @@ function raw(key: string): TableRow {
       (keydown)="onKeydown($event)"
     >
       <h1 class="h4">Angular table geometry fixture</h1>
-      <p class="small text-body-secondary">
+      <p id="geometry-reading-note" class="small text-body-secondary">
         Synthetic controller ingress; no server delivery is claimed. F8 delivers
-        an own removal without moving focus to a fixture button. Both SDK
-        projections stay mounted; Bootstrap chooses which one is visible.
+        an own removal and F9 publishes the selected text sample without moving
+        focus. Both SDK projections stay mounted; Bootstrap chooses which one is
+        visible.
       </p>
       <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
         <label>
@@ -191,17 +234,110 @@ function raw(key: string): TableRow {
           />
           Stale
         </label>
-        <label class="form-check">
-          <input
-            #textInput
-            class="form-check-input"
-            type="checkbox"
-            data-id="geometry-text"
-            [checked]="expandedText"
-            (change)="expandedText = textInput.checked"
-          />
-          Expanded text
+        @if (!readingMode) {
+          <label class="form-check">
+            <input
+              #textInput
+              class="form-check-input"
+              type="checkbox"
+              data-id="geometry-text"
+              [checked]="expandedText"
+              (change)="expandedText = textInput.checked"
+            />
+            Expanded text
+          </label>
+        }
+        <label>
+          Row height
+          <select
+            #heightModeInput
+            class="form-select"
+            data-id="geometry-height-mode"
+            (change)="setHeightMode(heightModeInput.value)"
+          >
+            @for (value of heightModes; track value) {
+              <option [value]="value" [selected]="value === heightMode">
+                {{ value }}
+              </option>
+            }
+          </select>
         </label>
+        <label>
+          Lines
+          <select
+            #lineCountInput
+            class="form-select"
+            data-id="geometry-lines"
+            (change)="setLineCount(lineCountInput.value)"
+          >
+            @for (value of lineCounts; track value) {
+              <option [value]="value" [selected]="value === lineCount">
+                {{ value }}
+              </option>
+            }
+          </select>
+        </label>
+        <label>
+          Rem
+          <select
+            #textRemInput
+            class="form-select"
+            data-id="geometry-rem"
+            (change)="setTextRem(textRemInput.value)"
+          >
+            @for (value of textRems; track value) {
+              <option [value]="value" [selected]="value === textRem">
+                {{ value }}
+              </option>
+            }
+          </select>
+        </label>
+        <label>
+          Height content
+          <select
+            #heightContentInput
+            class="form-select"
+            data-id="geometry-height-content"
+            (change)="setHeightContent(heightContentInput.value)"
+          >
+            @for (value of heightContents; track value) {
+              <option [value]="value" [selected]="value === heightContent">
+                {{ value }}
+              </option>
+            }
+          </select>
+        </label>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="geometry-reading"
+          (click)="startReading()"
+        >
+          Create reading controller
+        </button>
+        <label>
+          Live sample for target
+          <select
+            #sampleInput
+            class="form-select"
+            data-id="geometry-payload"
+            (change)="sample = choice(sampleInput.value, textSampleNames)"
+          >
+            @for (value of textSampleNames; track value) {
+              <option [value]="value" [selected]="value === sample">
+                {{ value }}
+              </option>
+            }
+          </select>
+        </label>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="geometry-value"
+          (click)="publishText()"
+        >
+          Publish text sample
+        </button>
         <label class="form-check">
           <input
             #iconsInput
@@ -260,9 +396,44 @@ function raw(key: string): TableRow {
               }}</span>
             </ng-template>
             <ng-template hilosTableCell="paragraph" let-row let-rowKey="rowKey">
-              <p class="mb-0" [attr.data-id]="'geometry-text-' + rowKey">
-                {{ archive() ? 'Completed archive' : row.paragraph }}
-              </p>
+              @if (readingMode && heightContent === 'parts') {
+                <div
+                  class="d-flex flex-wrap align-items-start gap-2"
+                  [attr.data-id]="'geometry-text-' + rowKey"
+                >
+                  <hilos-table-text class="w-100" [value]="readingValue(row)" />
+                  <span
+                    class="badge text-bg-info"
+                    [attr.data-id]="'geometry-text-badge-' + rowKey"
+                    >Plain text metadata</span
+                  >
+                  <a
+                    href="index.html#geometry-reading-note"
+                    [attr.data-id]="'geometry-text-link-' + rowKey"
+                    >Reading note</a
+                  >
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    [attr.data-id]="'geometry-text-action-' + rowKey"
+                    (click)="recordAction(rowKey, 'text')"
+                  >
+                    Inspect text
+                  </button>
+                </div>
+              } @else if (readingMode && isHiddenValue(readingValue(row))) {
+                <span [attr.data-id]="'geometry-text-' + rowKey">
+                  <hilos-hidden-mark />
+                </span>
+              } @else if (readingMode) {
+                <span [attr.data-id]="'geometry-text-' + rowKey">{{
+                  row.paragraph
+                }}</span>
+              } @else {
+                <p class="mb-0" [attr.data-id]="'geometry-text-' + rowKey">
+                  {{ archive() ? 'Completed archive' : row.paragraph }}
+                </p>
+              }
             </ng-template>
             <ng-template hilosTableCell="badge" let-row let-rowKey="rowKey">
               <span
@@ -379,6 +550,11 @@ export class TableGeometryFixture {
     'empty',
     'capacity',
   ] as const
+  protected readonly heightModes = HEIGHT_MODES
+  protected readonly lineCounts = LINE_COUNTS
+  protected readonly textRems = TEXT_REMS
+  protected readonly heightContents = HEIGHT_CONTENTS
+  protected readonly textSampleNames = TEXT_SAMPLE_NAMES
   protected readonly archiveColumns = ARCHIVE_COLUMNS
   protected readonly iconButtons = [
     { key: 'details', label: 'Details', icon: 'exclamation-circle' },
@@ -394,6 +570,12 @@ export class TableGeometryFixture {
   protected position = 0
   protected stale = false
   protected expandedText = false
+  protected heightMode: HeightMode = 'default'
+  protected lineCount: HilosTableLineCount = 3
+  protected textRem: HilosTableTextRem = 4.5
+  protected heightContent: HeightContent = 'text'
+  protected readingMode = false
+  protected sample: TextSample = 'short'
   protected iconActions = false
   protected readonly archive = signal(false)
   protected readonly mounted = signal(true)
@@ -405,6 +587,7 @@ export class TableGeometryFixture {
   // Browser-local fixture input and handles have no backend RT readers. Numeric
   // retention remains solely in the shipped controller.geometry owner.
   private readonly scope = new Scope('page', 'angular-table-geometry')
+  private searchEnabled = true
   private previous: TableViewportController<RecordValue> | null = null
   protected readonly controller = signal(this.makeController())
   // Test-only identity derived from the actual object, never row contents.
@@ -545,10 +728,68 @@ export class TableGeometryFixture {
     })
   }
 
-  protected choice<T extends string>(value: string, options: readonly T[]): T {
-    const chosen = options.find((option) => option === value)
+  protected choice<T extends string | number>(
+    value: string,
+    options: readonly T[],
+  ): T {
+    const chosen = options.find((option) => String(option) === value)
     if (chosen === undefined) throw new Error('Unknown fixture option')
     return chosen
+  }
+
+  protected setHeightMode(value: string): void {
+    this.heightMode = this.choice(value, this.heightModes)
+    this.replaceReading()
+  }
+
+  protected setLineCount(value: string): void {
+    this.lineCount = this.choice(value, this.lineCounts)
+    if (this.readingMode && this.heightMode === 'lines')
+      this.replace(this.searchEnabled)
+  }
+
+  protected setTextRem(value: string): void {
+    this.textRem = this.choice(value, this.textRems)
+    if (this.readingMode && this.heightMode === 'height')
+      this.replace(this.searchEnabled)
+  }
+
+  protected setHeightContent(value: string): void {
+    this.heightContent = this.choice(value, this.heightContents)
+    this.replaceReading()
+  }
+
+  protected startReading(): void {
+    this.readingMode = true
+    this.replace()
+  }
+
+  private replaceReading(): void {
+    if (this.readingMode) this.replace(this.searchEnabled)
+  }
+
+  protected readingValue(row: RecordValue): Hideable<string> {
+    return row.hiddenParagraph ? HIDDEN_VALUE : row.paragraph
+  }
+
+  protected readonly isHiddenValue = isHiddenValue
+
+  protected publishText(): void {
+    const owner = this.controller()
+    owner.withPresentationUpdate(
+      { kind: 'rows', rowKeys: [this.target] },
+      () => {
+        this.write(this.target, {
+          paragraph: TEXT_SAMPLES[this.sample],
+          hiddenParagraph: this.sample === 'hidden',
+        })
+        owner.ingestDelta({
+          kind: 'row_updated',
+          rowKey: this.target,
+          row: raw(this.target),
+        })
+      },
+    )
   }
 
   protected setPosition(value: number): void {
@@ -572,6 +813,9 @@ export class TableGeometryFixture {
     if (event.key === 'F8') {
       event.preventDefault()
       this.depart(true)
+    } else if (event.key === 'F9') {
+      event.preventDefault()
+      this.publishText()
     }
   }
 
@@ -582,7 +826,16 @@ export class TableGeometryFixture {
   private makeController(
     search = true,
     archive = false,
+    reading = this.readingMode,
   ): TableViewportController<RecordValue> {
+    const rowHeight: HilosTableRowHeight | undefined =
+      !reading || this.heightMode === 'default'
+        ? undefined
+        : this.heightMode === 'content'
+          ? { mode: 'content' }
+          : this.heightMode === 'lines'
+            ? { mode: 'lines', count: this.lineCount }
+            : { mode: 'height', rem: this.textRem }
     const frame: HilosTableFrame = {
       title: 'Geometry records',
       subtitle: 'Synthetic controller ingress; no server delivery is claimed.',
@@ -602,6 +855,7 @@ export class TableGeometryFixture {
           key: 'paragraph',
           label: 'Description',
           source: SOURCE,
+          ...(reading ? { heightContent: this.heightContent } : {}),
           progress: true,
         },
         { key: 'badge', label: 'Status', source: SOURCE, card: 'badge' },
@@ -625,6 +879,7 @@ export class TableGeometryFixture {
           detailWide: true,
         },
       ],
+      ...(rowHeight ? { rowHeight } : {}),
       bulkActions: [
         {
           key: 'inspect',
@@ -645,6 +900,7 @@ export class TableGeometryFixture {
         return {
           name: String(fields?.['name'] ?? ''),
           paragraph: String(fields?.['paragraph'] ?? ''),
+          hiddenParagraph: fields?.['hiddenParagraph'] === true,
           badge: String(fields?.['badge'] ?? ''),
           detail: String(fields?.['detail'] ?? ''),
           expandable: fields?.['expandable'] !== false,
@@ -656,19 +912,36 @@ export class TableGeometryFixture {
     })
   }
 
-  private seed(owner: TableViewportController<RecordValue>): void {
+  private seed(
+    owner: TableViewportController<RecordValue>,
+    reading = this.readingMode,
+  ): void {
     owner.withPresentationUpdate({ kind: 'window' }, () => {
-      for (const key of TARGETS)
+      for (const key of TARGETS) {
+        const sample: TextSample | undefined = reading
+          ? key === 'f' && this.heightContent === 'parts'
+            ? 'hidden'
+            : (READING_SAMPLES[key as keyof typeof READING_SAMPLES] ?? 'short')
+          : undefined
         this.write(key, {
           name:
-            key === 'b'
-              ? 'The widest unbroken name WWWWWWWWWWWWWWWW'
-              : `Record ${key}`,
-          paragraph: key === 'c' ? EXPANDED : PARAGRAPH,
+            reading && sample !== undefined
+              ? `Record ${key}`
+              : key === 'b'
+                ? 'The widest unbroken name WWWWWWWWWWWWWWWW'
+                : `Record ${key}`,
+          paragraph:
+            sample !== undefined
+              ? TEXT_SAMPLES[sample]
+              : key === 'c'
+                ? EXPANDED
+                : PARAGRAPH,
+          hiddenParagraph: sample === 'hidden',
           badge: 'Available',
           detail: `Private detail for ${key}. ${EXPANDED}`,
           expandable: true,
         })
+      }
       owner.ingestSubscriptionWindow(
         KEYS.map(raw),
         KEYS.length,
@@ -709,7 +982,12 @@ export class TableGeometryFixture {
       () => {
         this.write(this.target, {
           expandable: this.detail !== 'absent',
-          paragraph: this.expandedText ? EXPANDED : PARAGRAPH,
+          ...(!this.readingMode
+            ? {
+                paragraph: this.expandedText ? EXPANDED : PARAGRAPH,
+                hiddenParagraph: false,
+              }
+            : {}),
         })
         owner.ingestDelta({
           kind: 'row_stale',
@@ -774,6 +1052,7 @@ export class TableGeometryFixture {
       this.write(this.target, {
         name: `Replacement ${this.target}`,
         paragraph: 'New short value',
+        hiddenParagraph: false,
         detail: 'New detail',
         expandable: true,
       })
@@ -798,6 +1077,7 @@ export class TableGeometryFixture {
           this.write(this.target, {
             name: 'Normalized replacement',
             paragraph: 'short',
+            hiddenParagraph: false,
             detail: '',
           }),
       )
@@ -881,6 +1161,7 @@ export class TableGeometryFixture {
           this.write(key, {
             name: `Fresh ${key}`,
             paragraph: 'Fresh short value',
+            hiddenParagraph: false,
             detail: 'Fresh detail',
             expandable: true,
           })
@@ -928,9 +1209,14 @@ export class TableGeometryFixture {
   private replace(search = true): void {
     this.previous?.dispose()
     this.previous = this.controller()
+    this.searchEnabled = search
     this.archive.set(this.iconActions)
-    const owner = this.makeController(search, this.iconActions)
-    this.seed(owner)
+    const owner = this.makeController(
+      search,
+      this.iconActions,
+      this.readingMode,
+    )
+    this.seed(owner, this.readingMode)
     this.controller.set(owner)
     this.previous.dispose()
   }
@@ -942,7 +1228,8 @@ export class TableGeometryFixture {
       () => {
         this.write(this.target, {
           name: `Updated ${this.target}`,
-          paragraph: EXPANDED,
+          paragraph: this.readingMode ? TEXT_SAMPLES[this.sample] : EXPANDED,
+          hiddenParagraph: this.readingMode && this.sample === 'hidden',
           detail: `Updated detail. ${EXPANDED} ${EXPANDED}`,
         })
         owner.ingestDelta({

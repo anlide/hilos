@@ -52,12 +52,14 @@ import {
   HilosUsersPage,
   HilosView,
   HilosViewportTable,
+  HilosTableText,
   LoadingButton,
   connectionStateSignal,
   createHilosTrackedAction,
   hilosAdminViews,
   injectLookOnly,
 } from '../src/index.js'
+import * as root from '../src/index.js'
 import * as base from '../src/base/index.js'
 
 it('exports the @hilos/angular public surface', () => {
@@ -96,6 +98,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosUploadFiles).toBeTypeOf('function')
   expect(HilosUploadPicker).toBeTypeOf('function')
   expect(HilosViewportTable).toBeTypeOf('function')
+  expect(HilosTableText).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')
   expect(HilosAppearancePage).toBeTypeOf('function')
@@ -141,4 +144,18 @@ it('exports the two Analytics context pages and leaves them out of the default m
 
 it('exports the shared page head once, from the base entry the root re-exports', () => {
   expect(base.HilosPageHead).toBe(HilosPageHead)
+})
+
+it('exports table text once without exposing its mount internals', () => {
+  expect(base.HilosTableText).toBe(HilosTableText)
+  for (const name of [
+    'HilosTableValue',
+    'HILOS_TABLE_TEXT',
+    'createTableTextReading',
+    'createTableTextOverflow',
+    'createTableViewportGeometry',
+  ]) {
+    expect(base).not.toHaveProperty(name)
+    expect(root).not.toHaveProperty(name)
+  }
 })

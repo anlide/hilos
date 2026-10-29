@@ -2,14 +2,24 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test'
 
 import {
   expectDataFreeDeparture,
+  expectDocumentUnchanged,
   expectInertTableHolders,
+  expectTableIntrinsicRows,
   expectTableNativeLifecycle,
   expectTableProgressCoverage,
   expectTableRowOrder,
+  expectTableTextControl,
+  expectTableTextGeometry,
+  expectTableTextParts,
   expectTableWrappingStress,
+  loadLateTableFont,
+  markDocument,
   openTableFixture,
+  setTableEnvironment,
   settleTableLayout,
   shownByTestId,
+  tableTextRegion,
+  tableTextToggle,
   watchHeight,
   watchTableAllocation,
   watchTableFirstLive,
@@ -17,7 +27,10 @@ import {
   watchTableHandoff,
   watchTableModalFocus,
   watchTableNativeLifecycle,
+  watchTableTextInline,
+  watchTableTextRoom,
   type TableGeometryWatch,
+  type TableTextPolicy,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -50,6 +63,9 @@ async function retired(page: Page, key: string, reason = 'Removed') {
   await expectDataFreeDeparture(expect, page, key, reason, [
     `geometry-name-${key}`,
     `geometry-text-${key}`,
+    `geometry-text-badge-${key}`,
+    `geometry-text-link-${key}`,
+    `geometry-text-action-${key}`,
     `geometry-badge-${key}`,
     `geometry-action-${key}`,
     `geometry-details-${key}`,
@@ -59,6 +75,13 @@ async function retired(page: Page, key: string, reason = 'Removed') {
     `geometry-detail-action-${key}`,
     `geometry-work-${key}`,
   ])
+  for (const prefix of ['hilos-table-row-', 'hilos-table-card-']) {
+    await expect(
+      page
+        .getByTestId(`${prefix}${key}`)
+        .locator('hilos-table-text, .hilos-table-text'),
+    ).toHaveCount(0)
+  }
   await expect(page.getByTestId('geometry-state')).toContainText(
     `${key}:departed`,
   )
@@ -933,3 +956,548 @@ for (const outcome of [
     }
   })
 }
+
+test.describe('public SDK declared text reading with synthetic ingress', () => {
+  async function reading(
+    page: Page,
+    policy: TableTextPolicy | { readonly mode: 'default' },
+    content: 'text' | 'parts' = 'text',
+  ): Promise<void> {
+    await page.getByTestId('geometry-height-mode').selectOption(policy.mode)
+    if (policy.mode === 'lines')
+      await page
+        .getByTestId('geometry-lines')
+        .selectOption(String(policy.count))
+    if (policy.mode === 'height')
+      await page.getByTestId('geometry-rem').selectOption(String(policy.rem))
+    await page.getByTestId('geometry-height-content').selectOption(content)
+    const previous = await page
+      .getByTestId('geometry-body')
+      .getAttribute('data-controller')
+    await press(page, 'geometry-reading')
+    await expect(page.getByTestId('geometry-body')).not.toHaveAttribute(
+      'data-controller',
+      previous!,
+    )
+    await expect(page.getByTestId('geometry-state')).toContainText('g:live')
+    await settleTableLayout(page)
+  }
+
+  async function textEvidence(
+    page: Page,
+    info: TestInfo,
+    key: string,
+    policy: TableTextPolicy,
+    expanded = false,
+    overflow = false,
+  ): Promise<void> {
+    await info.attach(`${key}-${policy.mode}-${expanded ? 'open' : 'closed'}`, {
+      body: await expectTableTextGeometry(
+        expect,
+        page,
+        key,
+        policy,
+        expanded,
+        overflow,
+      ),
+      contentType: 'application/json',
+    })
+  }
+
+  for (const content of ['text', 'parts'] as const) {
+    for (const mode of ['default', 'content'] as const) {
+      test(`H01 ${mode}/${content}: intrinsic values wrap fully without a reading holder or control`, async ({
+        page,
+      }, info) => {
+        await reading(page, { mode }, content)
+        for (const key of ['a', 'b', 'c', 'd', 'e'])
+          await textEvidence(page, info, key, { mode: 'content' })
+        await expectTableIntrinsicRows(expect, page, 'a', 'b')
+        await expect(tableTextRegion(page, 'a')).toContainText(
+          'LAST READABLE LINE',
+        )
+        await expect(page.getByTestId('hilos-table-text-toggle')).toHaveCount(0)
+      })
+    }
+  }
+
+  const PRESETS: readonly TableTextPolicy[] = [
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((count) => ({
+      mode: 'lines' as const,
+      count,
+    })),
+    ...[2, 3, 4.5, 6, 9, 12].map((rem) => ({ mode: 'height' as const, rem })),
+  ]
+  for (const content of ['text', 'parts'] as const) {
+    for (const policy of PRESETS) {
+      test(`H02 ${content}/${JSON.stringify(policy)}: shipped reserve holds equally for long, short and empty values`, async ({
+        page,
+      }, info) => {
+        await reading(page, policy, content)
+        await textEvidence(page, info, 'a', policy, false, true)
+        for (const key of ['b', 'c']) {
+          await textEvidence(page, info, key, policy)
+          await expect(tableTextToggle(page, key)).toHaveCount(0)
+        }
+        await expectTableTextControl(expect, page, 'a', false)
+      })
+    }
+  }
+
+  test('H02 live declaration changes replace the controller and settle the new reading policy', async ({
+    page,
+  }, info) => {
+    await reading(page, { mode: 'lines', count: 3 })
+    await tableTextToggle(page, 'a').click()
+    await expectTableTextControl(expect, page, 'a', true)
+    const declarations = [
+      ['geometry-lines', '12', { mode: 'lines', count: 12 }],
+      ['geometry-height-mode', 'height', { mode: 'height', rem: 4.5 }],
+      ['geometry-rem', '6', { mode: 'height', rem: 6 }],
+      ['geometry-height-content', 'parts', { mode: 'height', rem: 6 }],
+      ['geometry-height-mode', 'content', { mode: 'content' }],
+      ['geometry-height-mode', 'default', { mode: 'content' }],
+    ] as const
+    for (const [id, value, policy] of declarations) {
+      await test.step(`${id} becomes ${value}`, async () => {
+        const body = page.getByTestId('geometry-body')
+        const previous = await body.getAttribute('data-controller')
+        await page.getByTestId(id).selectOption(value)
+        await expect(body).not.toHaveAttribute('data-controller', previous!)
+        await expect(page.getByTestId('geometry-state')).toContainText('g:live')
+        await settleTableLayout(page)
+        await textEvidence(
+          page,
+          info,
+          'a',
+          policy,
+          false,
+          policy.mode !== 'content',
+        )
+        await textEvidence(page, info, 'b', policy)
+        await textEvidence(page, info, 'c', policy)
+        if (policy.mode === 'content')
+          await expect(page.getByTestId('hilos-table-text-toggle')).toHaveCount(
+            0,
+          )
+        else await expectTableTextControl(expect, page, 'a', false)
+      })
+    }
+  })
+
+  const BOUNDARIES: readonly TableTextPolicy[] = [
+    { mode: 'lines', count: 1 },
+    { mode: 'lines', count: 3 },
+    { mode: 'lines', count: 12 },
+    { mode: 'height', rem: 4.5 },
+  ]
+  for (const content of ['text', 'parts'] as const) {
+    for (const policy of BOUNDARIES) {
+      test(`H03 ${content}/${JSON.stringify(policy)}: newline/token reading preserves tracks, chrome and independent detail`, async ({
+        page,
+      }, info) => {
+        await reading(page, policy, content)
+        const room = await watchTableTextRoom(page, 'b')
+        const inline = await watchTableTextInline(expect, page, 'b')
+        await page.getByTestId('geometry-target').selectOption('b')
+        await page.getByTestId('geometry-payload').selectOption('long')
+        await observed(
+          page,
+          info,
+          'overflow-arrival',
+          await watch(page),
+          async () => {
+            await press(page, 'geometry-value')
+            await expectTableTextControl(expect, page, 'b', false)
+            await settleTableLayout(page)
+            await room.unchanged()
+            await inline.unchanged()
+          },
+        )
+        for (const key of ['a', 'd', 'e']) {
+          await textEvidence(page, info, key, policy, false, true)
+          const region = tableTextRegion(page, key)
+          const plain = (await region.textContent())!
+          const track = await watchTableTextInline(expect, page, key)
+          const toggle = tableTextToggle(page, key)
+          await toggle.click()
+          await expectTableTextControl(expect, page, key, true)
+          await settleTableLayout(page)
+          await textEvidence(page, info, key, policy, true)
+          await track.unchanged()
+          expect(
+            (await page
+              .getByTestId(`hilos-table-row-${key}`)
+              .textContent())!.split(plain).length - 1,
+            'one live plain value in the visible record',
+          ).toBe(1)
+          expect(await region.ariaSnapshot()).toContain(
+            key === 'e' ? 'ENDTOKEN' : 'LAST READABLE LINE',
+          )
+          if (key === 'd')
+            expect(plain).toBe(
+              `${Array.from({ length: 16 }, (_, index) => `Explicit line ${index + 1}`).join('\n')}\nLAST READABLE LINE`,
+            )
+          if (content === 'parts')
+            await expectTableTextParts(expect, page, key, [
+              `geometry-text-badge-${key}`,
+              `geometry-text-link-${key}`,
+              `geometry-text-action-${key}`,
+            ])
+          await toggle.click()
+          await expectTableTextControl(expect, page, key, false)
+          await settleTableLayout(page)
+          await textEvidence(page, info, key, policy, false, true)
+          await track.unchanged()
+          if (content === 'parts')
+            await expectTableTextParts(expect, page, key, [
+              `geometry-text-badge-${key}`,
+              `geometry-text-link-${key}`,
+              `geometry-text-action-${key}`,
+            ])
+          await info.attach(`${key}-reading-tracks`, {
+            body: await track.evidence(),
+            contentType: 'application/json',
+          })
+        }
+        await expect(page.getByTestId('geometry-actions')).toHaveText(
+          'No actions',
+        )
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-selected',
+          'null',
+        )
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-requests',
+          '0',
+        )
+        await expect(page.getByTestId('modal')).toHaveCount(0)
+        await expect(page.getByTestId('geometry-detail-a')).toHaveCount(0)
+        await page.getByTestId('geometry-target').selectOption('a')
+        await page.getByTestId('geometry-detail').selectOption('expanded')
+        await press(page, 'geometry-configure')
+        await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+        await expectTableTextControl(expect, page, 'a', false)
+        await tableTextToggle(page, 'a').click()
+        await expectTableTextControl(expect, page, 'a', true)
+        await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+        await page.getByTestId('geometry-detail').selectOption('collapsed')
+        await press(page, 'geometry-configure')
+        await expect(page.getByTestId('geometry-detail-a')).toHaveCount(0)
+        await expectTableTextControl(expect, page, 'a', true)
+        if (content === 'parts') {
+          const hidden = page.getByTestId('hilos-table-row-f')
+          await expect(hidden.getByTestId('hilos-hidden')).toBeVisible()
+          await expect(hidden).not.toContainText('[object Object]')
+          await expect(
+            hidden.getByTestId('hilos-table-text-toggle'),
+          ).toHaveCount(0)
+          await expectTableTextParts(expect, page, 'f', [
+            'hilos-hidden',
+            'geometry-text-badge-f',
+            'geometry-text-link-f',
+            'geometry-text-action-f',
+          ])
+          await markDocument(page)
+          await shownByTestId(page, 'geometry-text-link-a').click()
+          await expect(page).toHaveURL(/\/index.html#geometry-reading-note$/)
+          await expectDocumentUnchanged(expect, page)
+          await shownByTestId(page, 'geometry-text-action-a').click()
+          await expect(page.getByTestId('geometry-actions')).toHaveText(
+            'a:text',
+          )
+          await expectTableTextControl(expect, page, 'a', true)
+        }
+        await info.attach('overflow-arrival-tracks', {
+          body: await inline.evidence(),
+          contentType: 'application/json',
+        })
+      })
+    }
+  }
+
+  for (const content of ['text', 'parts'] as const) {
+    test(`H04 ${content}: native Enter/Space and live shortening keep the same focused reading button until blur`, async ({
+      page,
+    }, info) => {
+      const policy = { mode: 'lines', count: 3 } as const
+      await reading(page, policy, content)
+      // Prepare the live update before focus enters the actual SDK button.
+      await page.getByTestId('geometry-target').selectOption('a')
+      await page.getByTestId('geometry-payload').selectOption('short')
+      const toggle = tableTextToggle(page, 'a')
+      const room = await watchTableTextRoom(page, 'a')
+      await toggle.focus()
+      const button = await toggle.elementHandle()
+      try {
+        await toggle.press('Enter')
+        await expectTableTextControl(expect, page, 'a', true)
+        await expect(toggle).toBeFocused()
+        await settleTableLayout(page)
+        await textEvidence(page, info, 'a', policy, true)
+        await toggle.press('Space')
+        await expectTableTextControl(expect, page, 'a', false)
+        await expect(toggle).toBeFocused()
+        await toggle.press('Space')
+        await expectTableTextControl(expect, page, 'a', true)
+        await toggle.press('F9')
+        await expect(tableTextRegion(page, 'a')).toHaveText('Short value')
+        await expectTableTextControl(expect, page, 'a', true)
+        await expect(toggle).toBeFocused()
+        await settleTableLayout(page)
+        await textEvidence(page, info, 'a', policy, true)
+        await toggle.press('Enter')
+        await expectTableTextControl(expect, page, 'a', false)
+        await settleTableLayout(page)
+        await expect(toggle).toBeFocused()
+        expect(
+          await toggle.evaluate((node, before) => node === before, button),
+        ).toBe(true)
+        await room.unchanged()
+        await textEvidence(page, info, 'a', policy)
+        await page.getByTestId('geometry-payload').focus()
+        await expect(toggle).toHaveCount(0)
+        await expect(page.getByTestId('geometry-payload')).toBeFocused()
+        await room.unchanged()
+        await expect(page.getByTestId('geometry-actions')).toHaveText(
+          'No actions',
+        )
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-selected',
+          'null',
+        )
+        await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+          'data-requests',
+          '0',
+        )
+        await expect(page.getByTestId('modal')).toHaveCount(0)
+      } finally {
+        await button!.dispose()
+      }
+    })
+
+    test(`H06 height/${content}: stylesheet-only natural font changes invalidate overflow while the rem cap stays fixed`, async ({
+      page,
+    }, info) => {
+      const policy = { mode: 'height', rem: 4.5 } as const
+      await reading(page, policy, content)
+      const region = tableTextRegion(page, 'b')
+      const toggle = tableTextToggle(page, 'b')
+      const cap = await watchHeight(region)
+      const tracks = await watchTableTextInline(expect, page, 'b')
+      await expect(toggle).toHaveCount(0)
+      await textEvidence(page, info, 'b', policy)
+      // A head stylesheet alone changes natural glyph metrics: no DOM nudge,
+      // synthetic resize, or explicit measurement request on the clipped cap.
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 48,
+        lineHeight: 2,
+      })
+      await expectTableTextControl(expect, page, 'b', false)
+      await settleTableLayout(page)
+      await cap.unchanged()
+      await tracks.unchanged()
+      await textEvidence(page, info, 'b', policy, false, true)
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 16,
+        lineHeight: 1.5,
+      })
+      await expect(toggle).toHaveCount(0)
+      await settleTableLayout(page)
+      await cap.unchanged()
+      await textEvidence(page, info, 'b', policy)
+      await setTableEnvironment(page, {
+        kind: 'text-font',
+        size: 96,
+        lineHeight: 2,
+      })
+      await expectTableTextControl(expect, page, 'b', false)
+      await toggle.focus()
+      const button = await toggle.elementHandle()
+      try {
+        await toggle.press('Enter')
+        await expectTableTextControl(expect, page, 'b', true)
+        await settleTableLayout(page)
+        await textEvidence(page, info, 'b', policy, true)
+        await setTableEnvironment(page, {
+          kind: 'text-font',
+          size: 16,
+          lineHeight: 1.5,
+        })
+        await settleTableLayout(page)
+        await expectTableTextControl(expect, page, 'b', true)
+        await expect(toggle).toBeFocused()
+        await textEvidence(page, info, 'b', policy, true)
+        await toggle.press('Space')
+        await expectTableTextControl(expect, page, 'b', false)
+        await settleTableLayout(page)
+        await expect(toggle).toBeFocused()
+        expect(
+          await toggle.evaluate((node, before) => node === before, button),
+        ).toBe(true)
+        await cap.unchanged()
+        await tracks.unchanged()
+        await page.getByTestId('geometry-height-content').focus()
+        await expect(toggle).toHaveCount(0)
+        await textEvidence(page, info, 'b', policy)
+      } finally {
+        await button!.dispose()
+      }
+      await info.attach('stylesheet-invalidation-tracks', {
+        body: await tracks.evidence(),
+        contentType: 'application/json',
+      })
+    })
+
+    test(`H06 ${content}: root font, desktop container, spacing and late font update the live reading window`, async ({
+      page,
+    }, info) => {
+      const policy = { mode: 'height', rem: 4.5 } as const
+      await reading(page, policy, content)
+      await textEvidence(page, info, 'b', policy)
+      await setTableEnvironment(page, { kind: 'font', size: 20 })
+      await settleTableLayout(page)
+      await textEvidence(page, info, 'b', policy)
+      await setTableEnvironment(page, { kind: 'container', narrow: true })
+      await setTableEnvironment(page, { kind: 'spacing', enabled: true })
+      await info.attach('late-font-condition', {
+        body: await loadLateTableFont(
+          expect,
+          page,
+          'geometry-body',
+          'geometry-name-b',
+        ),
+        contentType: 'application/json',
+      })
+      await settleTableLayout(page)
+      await textEvidence(page, info, 'a', policy, false, true)
+      await tableTextToggle(page, 'a').click()
+      await expectTableTextControl(expect, page, 'a', true)
+      await settleTableLayout(page)
+      await textEvidence(page, info, 'a', policy, true)
+    })
+  }
+
+  for (const content of ['text', 'parts'] as const) {
+    for (const ingress of ['own', 'foreign Apply'] as const) {
+      test(`H06/G03 ${content}/${ingress}: departure captures expanded reading, detail and work before retiring their DOM`, async ({
+        page,
+      }, info) => {
+        const policy = { mode: 'lines', count: 3 } as const
+        await reading(page, policy, content)
+        await page.getByTestId('geometry-target').selectOption('a')
+        await page.getByTestId('geometry-detail').selectOption('expanded')
+        await press(page, 'geometry-configure')
+        await press(page, 'geometry-work')
+        await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+        await expect(shownByTestId(page, 'geometry-work-a')).toBeVisible()
+        await expectTableProgressCoverage(expect, page, 'a', 'geometry-text-a')
+        await settleTableLayout(page)
+        await textEvidence(page, info, 'a', policy, false, true)
+        const plain = (await tableTextRegion(page, 'a').textContent())!
+
+        for (const [step, expanded] of [true, false, true].entries()) {
+          await test.step(`${step + 1}: ${expanded ? 'expand grows' : 'collapse shrinks'} the complete live allocation`, async () => {
+            const allocation = await watchTableAllocation(
+              expect,
+              page,
+              'a',
+              'wide',
+            )
+            try {
+              await tableTextToggle(page, 'a').click()
+              await expectTableTextControl(expect, page, 'a', expanded)
+              await settleTableLayout(page)
+              await allocation.changed('extent', expanded ? 'grew' : 'shrank')
+              await textEvidence(page, info, 'a', policy, expanded, !expanded)
+              await expect(tableTextRegion(page, 'a')).toHaveText(plain)
+              await expect(
+                shownByTestId(page, 'geometry-detail-a'),
+              ).toBeVisible()
+              await expect(shownByTestId(page, 'geometry-work-a')).toBeVisible()
+            } finally {
+              await allocation.stop()
+              await info.attach(`reading-allocation-${step + 1}`, {
+                body: await allocation.evidence(),
+                contentType: 'application/json',
+              })
+            }
+          })
+        }
+        expect(await tableTextRegion(page, 'a').ariaSnapshot()).toContain(
+          'LAST READABLE LINE',
+        )
+        if (content === 'parts')
+          await expectTableTextParts(expect, page, 'a', [
+            'geometry-text-badge-a',
+            'geometry-text-link-a',
+            'geometry-text-action-a',
+          ])
+
+        const allocation = await watchTableAllocation(expect, page, 'a', 'wide')
+        const stable = await watch(page)
+        try {
+          await test.step('the first placeholder preserves every boundary and only numerical space', async () => {
+            if (ingress === 'foreign Apply') {
+              await press(page, 'geometry-remove')
+              await expect(page.getByTestId('geometry-state')).toContainText(
+                'a:remove',
+              )
+              await expect(tableTextRegion(page, 'a')).toHaveText(plain)
+              await expectTableTextControl(expect, page, 'a', true)
+              await textEvidence(page, info, 'a', policy, true)
+              await expect(
+                shownByTestId(page, 'geometry-detail-a'),
+              ).toBeVisible()
+              // Pending removal retires the work payload, keeping its numeric room.
+              await expect(page.getByTestId('geometry-work-a')).toHaveCount(0)
+              if (content === 'parts')
+                await expectTableTextParts(expect, page, 'a', [
+                  'geometry-text-badge-a',
+                  'geometry-text-link-a',
+                  'geometry-text-action-a',
+                ])
+              await stable.check()
+              await allocation.check()
+              await press(page, 'geometry-apply')
+            } else await press(page, 'geometry-own')
+            await retired(page, 'a')
+            await settleTableLayout(page)
+            await stable.check()
+            await allocation.check()
+            await stable.stop()
+          })
+
+          await test.step('font, spacing, container and late work completion cannot shrink the retained footprint', async () => {
+            for (const change of [
+              { kind: 'font', size: 24 },
+              { kind: 'spacing', enabled: true },
+              { kind: 'container', narrow: true },
+            ] as const) {
+              await setTableEnvironment(page, change, 'geometry-body')
+              await settleTableLayout(page)
+              await allocation.check()
+            }
+            await press(page, 'geometry-complete')
+            await settleTableLayout(page)
+            await allocation.check()
+            await retired(page, 'a')
+          })
+        } finally {
+          await stable.stop()
+          await allocation.stop()
+          await info.attach('expanded-departure-boundaries', {
+            body: await stable.evidence(),
+            contentType: 'application/json',
+          })
+          await info.attach('expanded-departure-retention', {
+            body: await allocation.evidence(),
+            contentType: 'application/json',
+          })
+        }
+      })
+    }
+  }
+})

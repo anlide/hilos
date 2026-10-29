@@ -39,6 +39,7 @@ import { HilosModal } from '../src/HilosModal.js'
 import { HilosTableCell } from '../src/HilosTableCell.js'
 import { HilosTableDetail } from '../src/HilosTableDetail.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
+import { HilosTableText } from '../src/base/index.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import {
   HILOS_TABLE_SELECTION_EDGE,
@@ -91,6 +92,22 @@ class ViewportTableHost {
   `,
 })
 class PlainTableHost {
+  controller!: TableViewportController<Row>
+}
+
+/** A project's main text region beside a link that must stay outside its cap. */
+@Component({
+  imports: [HilosTableCell, HilosViewportTable, HilosTableText],
+  template: `
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name" let-row>
+        <hilos-table-text [value]="row.name" />
+        <a href="#person">Open person</a>
+      </ng-template>
+    </hilos-viewport-table>
+  `,
+})
+class PartsTableHost {
   controller!: TableViewportController<Row>
 }
 
@@ -408,6 +425,50 @@ describe('HilosViewportTable', () => {
   afterEach(() => {
     vi.useRealTimers()
   })
+
+  it.each(['text', 'parts'] as const)(
+    'stamps a project %s cell through the wrapper in both projections',
+    async (heightContent) => {
+      const controller = makeController({
+        title: 'Declared text',
+        rowHeight: { mode: 'lines', count: 2 },
+        columns: [{ key: 'name', label: 'Name', heightContent }],
+      })
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'Alice' } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      const fixture = TestBed.createComponent(
+        heightContent === 'parts' ? PartsTableHost : PlainTableHost,
+      )
+      fixture.componentInstance.controller = controller
+      fixture.detectChanges()
+      await fixture.whenStable()
+      fixture.detectChanges()
+      const root = fixture.nativeElement as HTMLElement
+      const regions = [
+        ...root.querySelectorAll('hilos-table-value .hilos-table-text-lines-2'),
+      ]
+      expect(regions).toHaveLength(2)
+      expect(regions.map((region) => region.textContent?.trim())).toEqual([
+        'Alice',
+        'Alice',
+      ])
+      if (heightContent === 'parts') {
+        expect(root.querySelectorAll('a[href="#person"]')).toHaveLength(2)
+        expect(regions.every((node) => node.querySelector('a') === null)).toBe(
+          true,
+        )
+      }
+      expect(new Set(regions.map((region) => region.id)).size).toBe(2)
+      fixture.destroy()
+      controller.dispose()
+    },
+  )
 
   function makePlainController(
     columns = COLUMNS,

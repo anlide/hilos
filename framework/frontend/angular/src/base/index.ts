@@ -100,6 +100,7 @@ export {
   HilosTableCell,
   type HilosTableCellContext,
 } from '../HilosTableCell.js'
+export { HilosTableText } from '../HilosTableText.js'
 export { HilosTableDetail } from '../HilosTableDetail.js'
 export {
   HilosDropdown,

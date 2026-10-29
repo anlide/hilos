@@ -28,7 +28,7 @@ document.
 | connection / authentication / authorization state, the authoritative-backend rule, per-datum loading and placeholder state, disconnect and stale-data UX, the protected-mode exception to no-refresh | [core-and-connection.md](core-and-connection.md) |
 | the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, backend-authored refusal words and safe exception messages, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
-| tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter, departed-record geometry, shared text-height declarations, and Vue text/parts reading; React and Angular text rendering remains future work | [table-subscription.md](table-subscription.md) |
+| tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter, departed-record geometry, shared text-height declarations, and Vue/React/Angular text/parts reading | [table-subscription.md](table-subscription.md) |
 | historical HIL-1321 research on departed-record geometry, column-width retention and proposed height declarations; use [table-subscription.md](table-subscription.md) for the current core/Vue/React/Angular implementation boundary | [table-row-geometry-research.md](table-row-geometry-research.md) |
 | which sort orders a table may declare, what it refuses when asked for another, and what it answers — the index under every order, the primary key at its end, computed fields, mixed directions, stale sources, in-memory sets | [table-sort-orders.md](table-sort-orders.md) |
 | editing or creating in a known live place in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
@@ -68,8 +68,8 @@ before editing.
   boundary, entity references, and the keying invariants.
 - [table-subscription.md](table-subscription.md) — viewport-scoped table subscriptions, the
   live-change taxonomy and Apply, retained data-free departure slots, shared-core text
-  height declarations, Vue text/parts reading, and the landed core/Vue/React/Angular
-  geometry boundary. React and Angular text renderers remain future work.
+  height declarations, Vue/React/Angular text/parts reading, and the landed
+  core/Vue/React/Angular geometry boundary.
 - [table-row-geometry-research.md](table-row-geometry-research.md) — historical HIL-1321
   decisions and proposals for departed geometry, retained widths and declared heights;
   current implementation status is in `table-subscription.md`.

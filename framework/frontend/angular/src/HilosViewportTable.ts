@@ -84,6 +84,8 @@ import { HilosTableEmptyState } from './HilosTableEmptyState.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
+import { HilosTableValue } from './HilosTableValue.js'
+import type { HilosTableValueProps } from './hilosTableTextContext.js'
 import { HilosTableGeometryTarget } from './HilosTableGeometryTarget.js'
 import {
   createTableViewportGeometry,
@@ -132,6 +134,7 @@ export interface BulkUntouchedContext {
     HilosTableLive,
     HilosTableProgress,
     HilosTableGeometryTarget,
+    HilosTableValue,
     NgTemplateOutlet,
   ],
   template: `
@@ -459,12 +462,13 @@ export interface BulkUntouchedContext {
                               }
                             </span>
                           } @else if (cellTemplate(cell.key); as template) {
-                            <ng-container
-                              [ngTemplateOutlet]="template"
-                              [ngTemplateOutletContext]="{
+                            <hilos-table-value
+                              [template]="template"
+                              [cellContext]="{
                                 $implicit: view.row,
                                 rowKey: view.rowKey,
                               }"
+                              [value]="textValue(cell.key, view, 'wide')"
                             />
                           }
                         </td>
@@ -825,15 +829,16 @@ export interface BulkUntouchedContext {
                         />
                       }
                       @if (cellFor(layout.title); as title) {
-                        <span class="fw-medium">
-                          <ng-container
-                            [ngTemplateOutlet]="title"
-                            [ngTemplateOutletContext]="{
+                        <div class="fw-medium">
+                          <hilos-table-value
+                            [template]="title"
+                            [cellContext]="{
                               $implicit: view.row,
                               rowKey: view.rowKey,
                             }"
+                            [value]="textValue(layout.title!.key, view, 'card')"
                           />
-                        </span>
+                        </div>
                       }
                       <!-- The page badge and framework marks have separate
                       permanent places, so a mark never displaces the badge. -->
@@ -981,12 +986,13 @@ export interface BulkUntouchedContext {
                               {{ field.column.label }}
                             </dt>
                             <dd class="col-7 mb-0">
-                              <ng-container
-                                [ngTemplateOutlet]="field.template"
-                                [ngTemplateOutletContext]="{
+                              <hilos-table-value
+                                [template]="field.template"
+                                [cellContext]="{
                                   $implicit: view.row,
                                   rowKey: view.rowKey,
                                 }"
+                                [value]="textValue(cell.key, view, 'card')"
                               />
                             </dd>
                           }
@@ -1297,6 +1303,28 @@ export class HilosViewportTable<R> {
     return hilosTableRowMessageCells(this.rowColumns(), message)
   }
 
+  /** Read the existing mount's exact identity; no cell owns a registration. */
+  protected textValue(
+    columnKey: string,
+    view: TableViewportRow<R>,
+    projection: 'wide' | 'card',
+  ): HilosTableValueProps {
+    const column = this.columnByKey(columnKey)
+    return {
+      controller: this.controller(),
+      readRecord:
+        this.geometry()?.recordReader(
+          view.rowKey,
+          view.occurrence,
+          projection,
+        ) ?? (() => null),
+      columnKey,
+      label: column?.label ?? '',
+      heightContent: column?.heightContent,
+      projection,
+    }
+  }
+
   // The words of the control and of an empty field — the core's, for the template.
   protected readonly detailCopy = TABLE_DETAIL_COPY
   protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
@@ -1502,7 +1530,9 @@ export class HilosViewportTable<R> {
     effect((onCleanup) => {
       const controller = this.controller()
       const adapter = untracked(() =>
-        createTableViewportGeometry(controller.geometry),
+        createTableViewportGeometry(controller.geometry, (record) =>
+          controller.isTextRecordCurrent(record),
+        ),
       )
       this.geometry.set(adapter)
       onCleanup(() => adapter.dispose())

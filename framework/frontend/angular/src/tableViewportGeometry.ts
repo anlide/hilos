@@ -7,6 +7,7 @@ import {
   type TableFocusReturnRow,
   type TableGeometryCaptureRequest,
   type TableGeometryMeasurement,
+  type TableGeometryRecord,
   type TableGeometryRegistration,
   type TableGeometrySample,
   type TableProjection,
@@ -26,6 +27,19 @@ interface Shell {
   readonly chrome: number
   readonly gap: number
   readonly fallback: number
+}
+
+interface RecordReaderTicket {
+  identity: TableGeometryRecord | null
+  read: (() => TableGeometryRecord | null) | null
+  readonly reader: () => TableGeometryRecord | null
+}
+
+/** A saved reader retains only a ticket that disposal empties. */
+function readerHandle(
+  ticket: Pick<RecordReaderTicket, 'read'>,
+): () => TableGeometryRecord | null {
+  return () => ticket.read?.() ?? null
 }
 
 /** CSS-pixel reads never turn an unavailable layout into a zero measurement. */
@@ -94,6 +108,7 @@ function verticalChrome(element: HTMLElement): number {
  */
 export function createTableViewportGeometry(
   controller: TableViewportGeometryView,
+  isCurrentRecord: (record: TableGeometryRecord) => boolean = () => true,
 ) {
   const revision = signal(0)
   const tracks = signal<TableColumnTracks | null>(null)
@@ -119,6 +134,9 @@ export function createTableViewportGeometry(
   let focused: HTMLElement | null = null
   let releaseFocusFallback: (() => void) | undefined
   let focusRoot: HTMLElement | null = null
+  let readCurrentRecord: ((record: TableGeometryRecord) => boolean) | null =
+    isCurrentRecord
+  const readers = new Map<string, RecordReaderTicket>()
 
   function key(occurrence: number, projection: TableProjection): string {
     return `${projection}:${occurrence}`
@@ -387,6 +405,12 @@ export function createTableViewportGeometry(
 
   function publish(): void {
     if (!registration) return
+    for (const [id, ticket] of readers) {
+      if (ticket.reader() !== null) continue
+      ticket.read = null
+      ticket.identity = null
+      readers.delete(id)
+    }
     const next = registration.tracks()
     if (next !== tracks()) {
       tracks.set(next)
@@ -582,6 +606,53 @@ export function createTableViewportGeometry(
     }
   }
 
+  /** Capture one exact committed identity; saved readers never follow a reused key. */
+  function recordReader(
+    rowKey: string,
+    occurrence: number,
+    projection: TableProjection,
+  ): () => TableGeometryRecord | null {
+    void revision()
+    const owner = registration
+    const identity = owner?.measurement(rowKey, projection)?.record
+    if (
+      !mounted ||
+      stopped ||
+      !root?.isConnected ||
+      !owner ||
+      identity?.occurrence !== occurrence
+    )
+      return () => null
+    const id = key(occurrence, projection)
+    const previous = readers.get(id)
+    if (previous?.identity === identity) return previous.reader
+    if (previous) {
+      previous.read = null
+      previous.identity = null
+    }
+    const state = {
+      identity: identity as TableGeometryRecord | null,
+      read: null as (() => TableGeometryRecord | null) | null,
+    }
+    const ticket = Object.assign(state, { reader: readerHandle(state) })
+    ticket.read = () => {
+      if (
+        stopped ||
+        !mounted ||
+        !root?.isConnected ||
+        registration !== owner ||
+        !readCurrentRecord?.(identity)
+      )
+        return null
+      const state = owner.record(rowKey, projection)
+      return state?.reason === null && state.record === identity
+        ? identity
+        : null
+    }
+    readers.set(id, ticket)
+    return ticket.reader
+  }
+
   function recordPixels(
     rowKey: string,
     occurrence: number,
@@ -661,7 +732,10 @@ export function createTableViewportGeometry(
     if (stopped) return
     root = node
     table = wide
-    if (!mounted) mount()
+    if (!mounted) {
+      mount()
+      revision.update((value) => value + 1)
+    }
     if (columnKeys.length && columnKeys.join('\0') !== keys.join('\0')) {
       columnKeys = [...keys]
       invalidate()
@@ -700,6 +774,12 @@ export function createTableViewportGeometry(
     unsubscribe()
     registration?.dispose()
     registration = null
+    for (const ticket of readers.values()) {
+      ticket.read = null
+      ticket.identity = null
+    }
+    readCurrentRecord = null
+    readers.clear()
     elements.clear()
     bindings.clear()
     shells.clear()
@@ -713,6 +793,7 @@ export function createTableViewportGeometry(
     trackWidths: trackWidths.asReadonly(),
     reasonFloors: reasonFloors.asReadonly(),
     bind,
+    recordReader,
     recordPixels,
     workPixels,
     commit,

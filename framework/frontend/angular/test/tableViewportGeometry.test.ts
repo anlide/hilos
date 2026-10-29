@@ -831,3 +831,93 @@ describe('Angular table geometry (numeric DOM seam)', () => {
     expect(f.queued()).toBeUndefined()
   })
 })
+
+/** Reader identities are issued by the existing owner, independently of DOM sizes. */
+function readerFixture() {
+  const owner = new TableViewportGeometry()
+  owner.replaceWindow(['a'])
+  let current = true
+  const adapter = createTableViewportGeometry(owner.view, () => current)
+  cleanups.push(adapter.dispose)
+  const root = document.createElement('div')
+  const table = document.createElement('table')
+  root.append(table)
+  document.body.append(root)
+  const commit = () => adapter.commit(root, table, [])
+  return {
+    owner,
+    adapter,
+    root,
+    table,
+    commit,
+    reject: () => {
+      current = false
+    },
+  }
+}
+
+describe('Angular exact text record reader', () => {
+  it('never binds an early reader retroactively, and reuses a current reader', () => {
+    const f = readerFixture()
+    const identity = f.owner.record('a')!
+    const early = f.adapter.recordReader('a', identity.occurrence, 'wide')
+    expect(early()).toBeNull()
+    f.commit()
+    const read = f.adapter.recordReader('a', identity.occurrence, 'wide')
+    expect(read()).toBe(identity)
+    expect(early()).toBeNull()
+    expect(f.adapter.recordReader('a', identity.occurrence, 'wide')).toBe(read)
+    expect(
+      f.adapter.recordReader('a', identity.occurrence + 1, 'wide')(),
+    ).toBeNull()
+    const absent = f.adapter.recordReader('b', identity.occurrence, 'card')
+    f.owner.addRecord('b')
+    expect(absent()).toBeNull()
+  })
+
+  it.each(['outgoing', 'departure', 'window', 'detached', 'dispose'] as const)(
+    'rejects %s before Angular can flush',
+    (change) => {
+      const f = readerFixture()
+      f.commit()
+      const identity = f.owner.record('a')!
+      const wide = f.adapter.recordReader('a', identity.occurrence, 'wide')
+      const card = f.adapter.recordReader('a', identity.occurrence, 'card')
+      expect(wide()).toBe(identity)
+      expect(card()).toBe(identity)
+      if (change === 'outgoing') f.reject()
+      if (change === 'departure') f.owner.depart('a', 'deleted')
+      if (change === 'window') f.owner.replaceWindow(['a'])
+      if (change === 'detached') f.root.remove()
+      if (change === 'dispose') f.adapter.dispose()
+      expect(wide()).toBeNull()
+      expect(card()).toBeNull()
+    },
+  )
+
+  it('keeps separate mounts and does not let old disposal retire the successor', () => {
+    const f = readerFixture()
+    f.commit()
+    const occurrence = f.owner.record('a')!.occurrence
+    const old = f.adapter.recordReader('a', occurrence, 'wide')
+    const newer = createTableViewportGeometry(f.owner.view)
+    cleanups.push(newer.dispose)
+    newer.commit(f.root, f.table, [])
+    const read = newer.recordReader('a', occurrence, 'wide')
+    f.adapter.dispose()
+    expect(old()).toBeNull()
+    expect(read()).toBe(f.owner.record('a'))
+  })
+
+  it('captures the currently expanded main extent with work/detail before departure', () => {
+    const f = fixture()
+    const identity = f.owner.record('a')!
+    const read = f.adapter.recordReader('a', identity.occurrence, 'wide')
+    f.boxes.set('wide-main', rect(20, 140.25))
+    f.boxes.set('wide-work', rect(160.25, 18.5))
+    f.boxes.set('wide-detail', rect(178.75, 60.75))
+    f.depart()
+    expect(read()).toBeNull()
+    expect(f.registration.record('a', 'wide')?.retained).toBe(219.5)
+  })
+})
