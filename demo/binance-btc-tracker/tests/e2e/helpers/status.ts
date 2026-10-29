@@ -96,14 +96,15 @@ export async function withStatusAgentLoss(
 }
 
 /**
- * Private names on the real shared Status disk. A genuine cluster marker is
- * preserved; standalone has no marker, so its otherwise absent name gets an
- * isolated sentinel too. Published JSON files are never modified.
+ * Private names on the test stand's real Status disk, data/status-test. A
+ * genuine cluster marker is preserved; standalone has no marker, so its
+ * otherwise absent name gets an isolated sentinel too. Published JSON files
+ * are never modified.
  */
 export async function withPrivateStatusFiles(
   run: (names: string[], sentinel: string) => Promise<void>,
 ): Promise<void> {
-  const directory = new URL('../../../data/status/', import.meta.url)
+  const directory = new URL('../../../data/status-test/', import.meta.url)
   const marker = '.hilos-cluster-directory.json'
   const sentinel = `private-status-e2e-${randomUUID()}`
   const names = [marker, `.${sentinel}.tmp`, `${sentinel}.json`]

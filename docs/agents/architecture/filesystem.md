@@ -84,7 +84,10 @@ A Status installation also registers reserved logical name `status`
 node's nginx share its files. The public allowlist and publication contract are
 in [status-page.md](status-page.md#static-publication).
 All six demo contexts register this directory at `data/status`, and their nginx
-containers mount the same directory read-only. The registrations are in
+containers mount the same directory read-only. A test stand binds `data/status-test`
+over both, the daemon's `/app/data/status` and nginx's `/status`, so the local and
+the test installation of one demo never publish into the same files. The
+registrations are in
 `demo/chat/backend/Fs/ChatFsContext.php`,
 `demo/tasks/backend/Fs/TasksFsContext.php`,
 `demo/polls/backend/Fs/PollsFsContext.php`,

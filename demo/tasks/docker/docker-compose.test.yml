@@ -130,6 +130,9 @@ services:
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
+      # Its own Status files: the local daemon publishes into data/status of the
+      # same project bind, and the two would alternate their revisions.
+      - ../data/status-test:/app/data/status
     working_dir: /app
     environment:
       - APP_ENV=test
@@ -259,7 +262,7 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
-      - ../data/status:/status:ro
+      - ../data/status-test:/status:ro
       - ../data/legal_export:/legal_export:ro
       - ../data/files/published:/published:ro
       - nginx-ssl-test:/etc/nginx/ssl

@@ -189,7 +189,7 @@ test('delivered capabilities work in the mounted Status document and keep its so
   }
 })
 
-// FIXME(F-049, 2026-10-29): Standalone and cluster publishers can expose mismatched Status revisions.
+// FIXME(F-049, 2026-10-29): Standalone and cluster publishers can expose mismatched Status revisions · чужой · попытка 1 · HIL-1764
 test(
   'guest letters confirm, publish, update, resolve and explicitly unsubscribe over real SMTP',
   { tag: '@quarantine:F-049' },
