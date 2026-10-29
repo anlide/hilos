@@ -116,15 +116,26 @@ final class HilosPageCatalogTest extends TestCase
         }
     }
 
-    /**
-     * The operations that ask for confirmation live under two-factor, not beside it (HIL-1204).
-     */
-    public function testTheStepUpOperationsAreAChildOfTwoFactor(): void
+    /** The operations that ask for confirmation are a page of the security hub (HIL-1669). */
+    public function testTheStepUpOperationsAreAChildOfTheSecurityHub(): void
     {
         self::assertSame(
-            HilosPageConstants::HILOS_SECURITY_2FA,
+            HilosPageConstants::HILOS_SECURITY,
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_STEP_UP][PageCatalogConstants::CATALOG_ENTRY_PARENT],
         );
+    }
+
+    public function testOAuthProviderIsAnEntityWithoutGlobalHeadAdoption(): void
+    {
+        $provider = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER];
+
+        self::assertTrue($provider[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
+        self::assertSame('OAuth provider', $provider[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+        self::assertArrayNotHasKey(
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY],
+        );
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $provider);
     }
 
     /**
@@ -461,6 +472,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosPageConstants::HILOS_I18N_COUNTRY,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
             HilosPageConstants::HILOS_DAEMON_NODE,
             HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
             HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,

@@ -117,12 +117,11 @@ export function hilosAdminViews(): Record<string, PageView<Component>> {
     // framework pages that need a project-supplied context (like settings / backup):
     // the deliveries journal reads a live connection for its table, so a project
     // mounts them directly rather than through this context-free default map.
-    [HilosPages.SECURITY]: lazyPage(() =>
-      import('@hilos/vue/admin/security').then((m) => m.HilosSecurityPage),
-    ),
+    // SECURITY reads the project's page scopes for its complete overview;
+    // a project mounts HilosSecurityPage directly with that context.
     // SECURITY_2FA is a real framework page since HIL-494: its table reads a
     // live connection, so a project mounts HilosSecurity2faPage directly with its
-    // context. So is its child SECURITY_STEP_UP since HIL-1204: a project mounts
+    // context. So is the sibling SECURITY_STEP_UP since HIL-1204: a project mounts
     // HilosSecurityStepUpPage with the same two-factor context.
     // SECURITY_IMPERSONATION is a real framework page since HIL-1170: its table
     // reads a live connection, so a project mounts

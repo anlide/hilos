@@ -21,6 +21,8 @@ SHELL-PARITY framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguagePage
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.vue 3 # HIL-1719
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsViewPage.vue 1 # HIL-1594
 SHELL-PARITY framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.vue 23 # HIL-1681
+SHELL-PARITY framework/frontend/vue/src/admin/security/HilosSecurityOauthProviderPage.vue 3 # HIL-1669
+SHELL-PARITY framework/frontend/vue/src/admin/security/HilosSecurityPage.vue 6 # HIL-1669
 SHELL-PARITY framework/frontend/vue/src/index.ts 1 # HIL-1696
 SHELL-PARITY framework/frontend/vue/src/public/HilosStatusPage.vue 20 # HIL-1696
 SHELL-PARITY framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue 8 # HIL-1696

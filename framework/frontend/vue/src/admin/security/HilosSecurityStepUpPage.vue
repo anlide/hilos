@@ -1,5 +1,5 @@
 <!-- HilosSecurityStepUpPage — the framework page of operations that ask for
-confirmation (HilosPages.SECURITY_STEP_UP, HIL-1204), a child of two-factor:
+confirmation (HilosPages.SECURITY_STEP_UP, HIL-1204), a Security section tab:
 one row per operation the step-up directory declares, with whether the
 framework or the project declared it and a switch. The table, the row
 view-model and the switch round-trip are the core headless's
@@ -7,9 +7,7 @@ view-model and the switch round-trip are the core headless's
 owns only the markup, so a project mounts it by passing its
 HilosTwoFactorContext. The switch is a tracked action: a spinner on its own
 row while it flies, the other switches dimmed, and the switch redraws from the
-table's live row. The page heading names the table. The screen is built from
-text: the mockup still draws the list on the two-factor page (D-143). Bootstrap
-classes only (styling-rules.md). -->
+table's live row. The page heading names the table. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSecurityStepUpActions,
@@ -21,11 +19,12 @@ import {
 import { HilosPages } from '@hilos/core/base'
 import { onMounted, onUnmounted, ref } from 'vue'
 
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useTrackedAction } from '../../useTrackedAction.js'
+
+import HilosSecurityPageShell from './HilosSecurityPageShell.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -55,7 +54,7 @@ async function toggleOperation(
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SECURITY_STEP_UP">
+  <HilosSecurityPageShell :page="HilosPages.SECURITY_STEP_UP">
     <HilosViewportTable
       :controller="operations.controller"
       data-id="hilos-step-up-table"
@@ -92,5 +91,5 @@ async function toggleOperation(
         </HilosHideable>
       </template>
     </HilosViewportTable>
-  </HilosAdminPage>
+  </HilosSecurityPageShell>
 </template>

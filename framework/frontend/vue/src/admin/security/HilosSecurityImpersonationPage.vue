@@ -41,7 +41,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
@@ -51,6 +50,8 @@ import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+
+import HilosSecurityPageShell from './HilosSecurityPageShell.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -157,7 +158,7 @@ function submitEdit(): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SECURITY_IMPERSONATION">
+  <HilosSecurityPageShell :page="HilosPages.SECURITY_IMPERSONATION">
     <HilosViewportTable
       :controller="settings.controller"
       data-id="hilos-impersonation-table"
@@ -294,5 +295,5 @@ function submitEdit(): void {
         </ConflictActions>
       </template>
     </HilosModal>
-  </HilosAdminPage>
+  </HilosSecurityPageShell>
 </template>

@@ -14,6 +14,8 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
+  pageIdentity,
   hilosToasts,
 } from '@hilos/core/base'
 import type {
@@ -29,7 +31,34 @@ import type {
 import HilosSecuritySignInMethodsPage from './HilosSecuritySignInMethodsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const scope = scopes.page()
+  if (!scope) throw new Error('The Security page scope must be open.')
+  scope.data.set('pageLabel', 'Sign-in methods')
+  scope.data.set('pageLead', 'Methods available for sign-in.')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.SECURITY,
+    label: 'Security Center',
+    lead: 'Security policies and sign-in.',
+    icon: 'bi-shield-lock',
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SECURITY, label: 'Security Center' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.SECURITY, label: 'Overview' },
+    { page: HilosPages.SECURITY_2FA, label: 'Two-factor' },
+    {
+      page: HilosPages.SECURITY_STEP_UP,
+      label: 'Operations that ask for confirmation',
+    },
+    { page: HilosPages.SECURITY_OAUTH, label: 'OAuth providers' },
+    { page: HilosPages.SECURITY_SIGN_IN_METHODS, label: 'Sign-in methods' },
+    { page: HilosPages.SECURITY_IMPERSONATION, label: 'Impersonation' },
+  ])
+  scope.data.set('pageChildren', [])
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_SIGN_IN_METHODS,
@@ -40,9 +69,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -184,7 +213,7 @@ function mountPage(
 ) {
   const wrapper = mount(HilosSecuritySignInMethodsPage, {
     props: { context: { connection, scopes, actions } },
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(scopes) } },
   })
   mounted.push(wrapper)
 
@@ -219,6 +248,28 @@ describe('HilosSecuritySignInMethodsPage', () => {
 
     pushWindow(METHOD_ROWS)
     await nextTick()
+
+    expect(wrapper.element.querySelectorAll('h1')).toHaveLength(1)
+    expect(wrapper.element.querySelector('h1')?.textContent?.trim()).toBe(
+      'Security Center',
+    )
+    const tabs = wrapper.element.querySelector(
+      'nav[aria-label="Security Center pages"]',
+    )
+    expect(tabs?.querySelectorAll('a')).toHaveLength(6)
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('Sign-in methods')
+    expect(wrapper.element.textContent).toContain(
+      'Methods available for sign-in.',
+    )
+    expect(
+      wrapper.element.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    const table = wrapper.element.querySelector('table')
+    expect(table?.getAttribute('aria-labelledby')).toBe(
+      wrapper.element.querySelector('h1')?.id,
+    )
 
     const smsSwitches = switchesOf(wrapper, 'sms')
     expect(smsSwitches).toHaveLength(2)

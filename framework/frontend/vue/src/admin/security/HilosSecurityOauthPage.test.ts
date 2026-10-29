@@ -15,6 +15,8 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
+  pageIdentity,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
@@ -31,7 +33,34 @@ const REDIRECT_TABLE = 'hilosSecurityOauthRedirect'
 const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
 const ROW_KEY = 'oauth_redirect_uri'
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const scope = scopes.page()
+  if (!scope) throw new Error('The Security page scope must be open.')
+  scope.data.set('pageLabel', 'OAuth providers')
+  scope.data.set('pageLead', 'Providers used for sign-in.')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.SECURITY,
+    label: 'Security Center',
+    lead: 'Security policies and sign-in.',
+    icon: 'bi-shield-lock',
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SECURITY, label: 'Security Center' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.SECURITY, label: 'Overview' },
+    { page: HilosPages.SECURITY_2FA, label: 'Two-factor' },
+    {
+      page: HilosPages.SECURITY_STEP_UP,
+      label: 'Operations that ask for confirmation',
+    },
+    { page: HilosPages.SECURITY_OAUTH, label: 'OAuth providers' },
+    { page: HilosPages.SECURITY_SIGN_IN_METHODS, label: 'Sign-in methods' },
+    { page: HilosPages.SECURITY_IMPERSONATION, label: 'Impersonation' },
+  ])
+  scope.data.set('pageChildren', [])
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_OAUTH,
@@ -42,9 +71,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -335,7 +364,7 @@ async function openModal(context: HilosSecurityOauthContext): Promise<void> {
   const wrapper = mount(HilosSecurityOauthPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(context.scopes) } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -353,6 +382,26 @@ describe('HilosSecurityOauthPage return-address modal', () => {
   it('opens on the live value with save locked and the message line empty', async () => {
     const { context } = seededContext('https://a.example/cb')
     await openModal(context)
+
+    expect(document.body.querySelectorAll('h1')).toHaveLength(1)
+    expect(document.body.querySelector('h1')?.textContent?.trim()).toBe(
+      'Security Center',
+    )
+    const tabs = document.body.querySelector(
+      'nav[aria-label="Security Center pages"]',
+    )
+    expect(tabs?.querySelectorAll('a')).toHaveLength(6)
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('OAuth providers')
+    expect(document.body.textContent).toContain('Providers used for sign-in.')
+    expect(
+      document.body.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    const table = document.body.querySelector('table')
+    expect(table?.getAttribute('aria-labelledby')).toBe(
+      document.body.querySelector('h1')?.id,
+    )
 
     expect(valueInput().value).toBe('https://a.example/cb')
     expect(saveButton().disabled).toBe(true)
@@ -530,7 +579,9 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
     const wrapper = mount(HilosSecurityOauthPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -812,7 +863,9 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
     const wrapper = mount(HilosSecurityOauthPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -857,7 +910,9 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
     const wrapper = mount(HilosSecurityOauthPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()

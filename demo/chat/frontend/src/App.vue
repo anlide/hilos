@@ -183,6 +183,9 @@ const pages: Record<string, PageView<Component>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.SECURITY]: lazyPage(() =>
+    import('./views/Hilos/Security/Security.vue').then((m) => m.default),
+  ),
   [HilosPages.SECURITY_OAUTH]: lazyPage(() =>
     import('./views/Hilos/Security/SecurityOauth.vue').then((m) => m.default),
   ),

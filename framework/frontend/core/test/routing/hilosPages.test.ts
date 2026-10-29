@@ -11,6 +11,19 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it('addresses Step-up as a first-level Security page', () => {
+    const page = HilosPages.SECURITY_STEP_UP
+    const path = '/hilos/security/step-up'
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+
+    expect(page).toBe('hilos_security_step_up')
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(HILOS_PAGE_ROUTES[page]).toBe(path)
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+    expect(router.match('/hilos/security/2fa/step-up').page).toBeNull()
+  })
+
   it.each([
     [
       HilosPages.CHANGE_LOG_FEED,

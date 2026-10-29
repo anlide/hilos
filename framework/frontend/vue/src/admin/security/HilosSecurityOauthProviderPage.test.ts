@@ -6,16 +6,22 @@
 // and only ever says the row is gone. The ↺ resets a field only through a
 // confirm dialog (HIL-1147).
 import { flushPromises, mount } from '@vue/test-utils'
-import { markRaw, nextTick } from 'vue'
+import { h, markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
+  PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
+  computedSignal,
+  createAppPageRouter,
   createSignal,
+  pageIdentity,
+  resolvePageTitle,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
@@ -23,9 +29,14 @@ import type {
   PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core/base'
-import type { HilosSecurityOauthContext } from '@hilos/core/admin/security'
+import {
+  OAUTH_PROVIDER_HEAD_DATA,
+  type HilosOAuthProviderHead,
+  type HilosSecurityOauthContext,
+} from '@hilos/core/admin/security'
 
 import HilosSecurityOauthProviderPage from './HilosSecurityOauthProviderPage.vue'
+import HilosLayout from '../../HilosLayout.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const PROVIDER = 'oauth:github'
@@ -109,8 +120,14 @@ function seededContext(
   clientId: string | null,
   initialFields: Record<string, Record<string, unknown>> = {},
   initialProvider: Record<string, unknown> | null = PROVIDER_SLOT,
+  automaticWindows = true,
 ): {
   context: HilosSecurityOauthContext
+  releaseWindows: () => void
+  pushProviderRow: (
+    row: Record<string, unknown> | null,
+    update?: boolean,
+  ) => void
   pushUpdate: (value: string | null, source?: string) => void
   pushFieldUpdate: (field: string, changes: Record<string, unknown>) => void
   pushProviderUpdate: (configured: boolean | null) => void
@@ -139,7 +156,18 @@ function seededContext(
   let provider = initialProvider
   const focus: string[] = []
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.SECURITY_OAUTH_PROVIDER)
+  const scope = scopes.openPage(HilosPages.SECURITY_OAUTH_PROVIDER)
+  scope.data.set(
+    OAUTH_PROVIDER_HEAD_DATA,
+    initialProvider === null
+      ? null
+      : {
+          providerKey: initialProvider.providerKey,
+          label: initialProvider.label,
+          configured: initialProvider.configured,
+          missingFields: initialProvider.missingFields,
+        },
+  )
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
   const serveWindow = (tableKey: string): void => {
@@ -148,7 +176,7 @@ function seededContext(
         ? [...fields].map(([rowKey, field]) => ({ rowKey, slots: { field } }))
         : provider === null
           ? []
-          : [{ rowKey: PROVIDER, slots: { provider } }]
+          : [{ rowKey: provider.providerKey, slots: { provider } }]
     const data = {
       page: HilosPages.SECURITY_OAUTH_PROVIDER,
       tableKey,
@@ -177,13 +205,17 @@ function seededContext(
   }
 
   const connection = {
+    state: 'connected',
+    protectedMode: PROTECTED_MODE_INACTIVE,
+    rtStaleness: RT_STALENESS_FRESH,
+    reconnectDragging: false,
     registerTableWindow(tableKey: string): void {
-      serveWindow(tableKey)
+      if (automaticWindows) serveWindow(tableKey)
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(_page: string, tableKey: string): boolean {
-      serveWindow(tableKey)
+      if (automaticWindows) serveWindow(tableKey)
 
       return true
     },
@@ -254,6 +286,24 @@ function seededContext(
         connection as unknown as HilosSecurityOauthContext['connection'],
       scopes,
       actions,
+    },
+    releaseWindows(): void {
+      automaticWindows = true
+      serveWindow(PROVIDERS_TABLE)
+      serveWindow(FIELDS_TABLE)
+    },
+    pushProviderRow(row: Record<string, unknown> | null, update = false): void {
+      provider = row
+      if (update && row !== null) {
+        pushDelta({
+          tableKey: PROVIDERS_TABLE,
+          kind: 'row_updated',
+          rowKey: row.providerKey,
+          row: { rowKey: row.providerKey, slots: { provider: row } },
+        })
+      } else {
+        serveWindow(PROVIDERS_TABLE)
+      }
     },
     pushUpdate(value: string | null, source = 'db'): void {
       const field = fieldSlot('client_id', value, source)
@@ -404,6 +454,410 @@ async function settle(): Promise<void> {
   await nextTick()
   await nextTick()
 }
+
+const PROVIDER_HEAD: HilosOAuthProviderHead = {
+  providerKey: PROVIDER,
+  label: 'GitHub',
+  configured: true,
+  missingFields: 0,
+}
+const headReleases: Array<() => void> = []
+afterEach(() => {
+  for (const release of headReleases.splice(0)) release()
+  document.title = ''
+})
+
+/** The real head, identity binding and document-title consumer, with windows held back. */
+function headHarness(
+  options: {
+    head?: unknown
+    providerKey?: string
+    provider?: Record<string, unknown> | null
+    viewer?: boolean
+  } = {},
+) {
+  const t = seededContext('Iv1.a', {}, options.provider, false)
+  const { scopes } = t.context
+  scopes.session.data.set('adminViewMode', options.viewer === true)
+  if (!options.viewer) {
+    const user = { type: 'users', id: '1' }
+    scopes.session.entities.upsert(user, { admin: true })
+    scopes.session.data.set('currentUser', user)
+  }
+  headReleases.push(bindAdminAccess(scopes))
+  const scope = scopes.page()!
+  const answer = (head: unknown): void => {
+    scope.data.set('pageLabel', 'OAuth provider')
+    scope.data.set('pageLead', 'A single OAuth provider configuration.')
+    scope.data.set('pageHeadOwner', {
+      page: HilosPages.SECURITY_OAUTH_PROVIDER,
+      label: 'OAuth provider',
+      lead: 'A single OAuth provider configuration.',
+    })
+    scope.data.set('pageBreadcrumb', [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.SECURITY, label: 'Security Center' },
+      { page: HilosPages.SECURITY_OAUTH, label: 'OAuth providers' },
+      { page: HilosPages.SECURITY_OAUTH_PROVIDER, label: 'OAuth provider' },
+    ])
+    scope.data.set('pageTabs', [
+      { page: HilosPages.SECURITY_OAUTH_PROVIDER, label: 'Overview' },
+    ])
+    scope.data.set('pageChildren', [])
+    scope.data.set(OAUTH_PROVIDER_HEAD_DATA, head)
+  }
+  answer(Object.hasOwn(options, 'head') ? options.head : PROVIDER_HEAD)
+  const identity = pageIdentity(scopes)
+  const routes = createAppPageRouter({})
+  const route = createSignal<PageRouteMatch>({
+    page: HilosPages.SECURITY_OAUTH_PROVIDER,
+    params: { providerId: options.providerKey ?? PROVIDER },
+    admin: true,
+  })
+  const loading = createSignal(false)
+  const navigation: HilosRouter = {
+    ...router(),
+    currentRoute: route,
+    pageLoading: loading,
+    pageIdentity: identity,
+    currentTitle: computedSignal(() => {
+      const current = identity.get()
+      return resolvePageTitle(
+        route.get().page,
+        {},
+        'Chat',
+        current?.label,
+        !loading.get(),
+        current?.pageHeadOwner?.label,
+      )
+    }),
+    resolvePath: (page, params) => routes.path(page, params),
+  }
+  const view = mount(HilosLayout, {
+    props: { connection: markRaw(t.context.connection) },
+    slots: {
+      default: () =>
+        h(HilosSecurityOauthProviderPage, { context: markRaw(t.context) }),
+    },
+    attachTo: document.body,
+    global: { provide: { [hilosRouterKey as symbol]: navigation } },
+  })
+  mounted.push(view)
+  return { ...t, scope, answer, route, loading, navigation, view }
+}
+
+describe('HilosSecurityOauthProviderPage entity head', () => {
+  it.each([false, true])(
+    'uses the complete first payload before the filtered windows (viewer=%s)',
+    async (viewer) => {
+      const t = headHarness({ viewer })
+      await settle()
+
+      expect(t.view.findAll('h1').map((title) => title.text())).toEqual([
+        'GitHub',
+      ])
+      const crumbs = t.view.get('nav[aria-label="Breadcrumb"]')
+      expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
+        'Hilos',
+        'Security Center',
+        'OAuth providers',
+        'GitHub',
+      ])
+      expect(
+        crumbs.findAll('a').map((link) => link.attributes('href')),
+      ).toEqual(['/hilos', '/hilos/security', '/hilos/security/oauth'])
+      expect(crumbs.get('[aria-current="page"]').find('a').exists()).toBe(false)
+      expect(document.title).toBe('GitHub · Chat')
+      expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
+        'Configured',
+      )
+      expect(
+        t.view.get('[data-id="oauth-provider-head-icon"]').classes(),
+      ).toEqual(['bi', 'bi-github'])
+      expect(
+        t.view
+          .get('[data-id="oauth-provider-head-icon"]')
+          .attributes('aria-hidden'),
+      ).toBe('true')
+      expect(t.view.get('[data-id="oauth-provider-head-key"]').text()).toBe(
+        PROVIDER,
+      )
+      expect(
+        t.view.findAll('[data-id="oauth-provider-head-key"]'),
+      ).toHaveLength(1)
+      const block = t.view.get('[data-id="hilos-page-head-block"]')
+      expect(block.findAll('code').map((code) => code.text())).toEqual([
+        PROVIDER,
+      ])
+      expect(block.get('p').text()).toBe(`Provider ${PROVIDER}`)
+      expect(t.view.find('p.text-body-secondary.mb-3').exists()).toBe(false)
+      expect(t.view.find('nav[aria-label="Page sections"]').exists()).toBe(
+        false,
+      )
+      expect(t.view.find('[data-id="hilos-admin-children"]').exists()).toBe(
+        false,
+      )
+      expect(t.view.find('[data-id="hilos-oauth-recipe"]').exists()).toBe(false)
+      expect(t.sent).toEqual([])
+
+      t.releaseWindows()
+      await settle()
+      expect(t.view.get('[data-id="hilos-oauth-recipe"]').text()).toContain(
+        'Recipe',
+      )
+      expect(t.view.get('h1').text()).toBe('GitHub')
+    },
+  )
+
+  it.each([
+    { key: 'oauth:google', label: 'Google', missing: 1, icon: 'bi-google' },
+    {
+      key: 'oauth:custom',
+      label: 'Company login',
+      missing: 2,
+      icon: 'bi-box-arrow-in-right',
+    },
+  ])(
+    'shows $missing missing and the shared icon for $key',
+    async ({ key, label, missing, icon }) => {
+      const t = headHarness({
+        providerKey: key,
+        head: {
+          providerKey: key,
+          label,
+          configured: false,
+          missingFields: missing,
+        },
+      })
+      await settle()
+
+      expect(t.view.get('h1').text()).toBe(label)
+      expect(document.title).toBe(`${label} · Chat`)
+      expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
+        `${missing} missing`,
+      )
+      expect(
+        t.view
+          .get('[data-id="oauth-provider-head-state"] i')
+          .attributes('aria-hidden'),
+      ).toBe('true')
+      expect(
+        t.view.get('[data-id="oauth-provider-head-icon"]').classes(),
+      ).toContain(icon)
+      expect(t.view.get('[data-id="oauth-provider-head-key"]').text()).toBe(key)
+      expect(
+        t.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      ).toBe(label)
+    },
+  )
+
+  it('follows the matching summary row live without replacing the complete body model', async () => {
+    const t = headHarness()
+    t.releaseWindows()
+    await settle()
+    t.pushProviderRow(
+      {
+        ...PROVIDER_SLOT,
+        label: 'GitHub enterprise',
+        configured: false,
+        missingFields: 2,
+        authorizeUrl: 'https://login.example/authorize',
+      },
+      true,
+    )
+    await settle()
+
+    expect(t.view.get('h1').text()).toBe('GitHub enterprise')
+    expect(document.title).toBe('GitHub enterprise · Chat')
+    expect(
+      t.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('GitHub enterprise')
+    expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
+      '2 missing',
+    )
+    expect(t.view.get('[data-id="hilos-oauth-recipe"]').text()).toContain(
+      'https://login.example/authorize',
+    )
+    t.pushProviderRow({ ...PROVIDER_SLOT, label: 'Ready again' }, true)
+    await settle()
+    expect(t.view.get('h1').text()).toBe('Ready again')
+    expect(document.title).toBe('Ready again · Chat')
+    expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
+      'Configured',
+    )
+    expect(t.sent).toEqual([])
+    t.view.unmount()
+    expect(t.navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+      'OAuth provider',
+    )
+  })
+
+  it('rejects an old snapshot and a foreign summary when navigating between provider ids', async () => {
+    const t = headHarness()
+    t.releaseWindows()
+    await settle()
+    t.loading.set(true)
+    t.route.set({ ...t.route.get(), params: { providerId: 'oauth:google' } })
+    await settle()
+    expect(t.view.find('[data-id="oauth-provider-head-state"]').exists()).toBe(
+      false,
+    )
+    expect(t.view.find('[data-id="oauth-provider-head-key"]').exists()).toBe(
+      false,
+    )
+    expect(t.view.get('h1').text()).toBe('OAuth provider')
+
+    t.loading.set(false)
+    await settle()
+    expect(t.view.find('[data-id="oauth-provider-head-icon"]').exists()).toBe(
+      false,
+    )
+    expect(
+      t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
+    ).toBe(false)
+    expect(t.view.get('h1').text()).toBe('OAuth provider')
+    t.answer({
+      providerKey: 'oauth:google',
+      label: 'Google',
+      configured: false,
+      missingFields: 1,
+    })
+    await settle()
+    expect(t.view.get('h1').text()).toBe('Google')
+    expect(document.title).toBe('Google · Chat')
+    expect(t.view.get('[data-id="oauth-provider-head-key"]').text()).toBe(
+      'oauth:google',
+    )
+    expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
+      '1 missing',
+    )
+    t.pushProviderRow({ ...PROVIDER_SLOT, label: 'Foreign old label' }, true)
+    await settle()
+    expect(t.view.get('h1').text()).toBe('Google')
+    t.pushProviderRow({
+      ...PROVIDER_SLOT,
+      providerKey: 'oauth:google',
+      label: 'Google live',
+    })
+    await settle()
+    expect(t.view.get('h1').text()).toBe('Google live')
+    expect(document.title).toBe('Google live · Chat')
+  })
+
+  it('ignores an old unknown null during navigation and accepts a new known head before its window', async () => {
+    const t = headHarness({
+      head: null,
+      providerKey: 'oauth:unknown',
+      provider: null,
+    })
+    t.releaseWindows()
+    await settle()
+    expect(
+      t.view.get('[data-id="hilos-oauth-provider-not-found"]').text(),
+    ).toContain('oauth:unknown')
+    expect(t.view.find('[data-id="oauth-provider-head-key"]').exists()).toBe(
+      false,
+    )
+    expect(document.title).toBe('OAuth provider · Chat')
+
+    t.loading.set(true)
+    t.route.set({ ...t.route.get(), params: { providerId: PROVIDER } })
+    await settle()
+    expect(
+      t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
+    ).toBe(false)
+    t.answer(PROVIDER_HEAD)
+    await settle()
+    expect(t.view.find('[data-id="oauth-provider-head-state"]').exists()).toBe(
+      false,
+    )
+    t.loading.set(false)
+    await settle()
+    expect(t.view.get('h1').text()).toBe('GitHub')
+    expect(document.title).toBe('GitHub · Chat')
+    expect(
+      t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
+    ).toBe(false)
+  })
+
+  it('uses a new explicit unknown head even while the old summary is loaded', async () => {
+    const t = headHarness()
+    t.releaseWindows()
+    await settle()
+    t.loading.set(true)
+    t.route.set({ ...t.route.get(), params: { providerId: 'oauth:unknown' } })
+    await settle()
+    expect(t.view.find('[data-id="oauth-provider-head-key"]').exists()).toBe(
+      false,
+    )
+    expect(
+      t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
+    ).toBe(false)
+    t.answer(null)
+    t.loading.set(false)
+    await settle()
+    expect(
+      t.view.get('[data-id="hilos-oauth-provider-not-found"]').text(),
+    ).toContain('oauth:unknown')
+    expect(t.view.get('h1').text()).toBe('OAuth provider')
+    expect(document.title).toBe('OAuth provider · Chat')
+    expect(t.view.find('[data-id="oauth-provider-head-state"]').exists()).toBe(
+      false,
+    )
+    expect(t.view.find('[data-id="hilos-oauth-recipe"]').exists()).toBe(false)
+    expect(t.view.find('table').exists()).toBe(false)
+  })
+
+  it.each([
+    undefined,
+    { ...PROVIDER_HEAD, configured: false },
+    { ...PROVIDER_HEAD, missingFields: 3 },
+    { ...PROVIDER_HEAD, providerKey: 'oauth:other' },
+  ])(
+    'keeps missing, malformed or mismatched head pending: %j',
+    async (head) => {
+      const t = headHarness({ head, provider: null })
+      t.releaseWindows()
+      await settle()
+      expect(t.view.get('h1').text()).toBe('OAuth provider')
+      expect(
+        t.view.find('[data-id="oauth-provider-head-state"]').exists(),
+      ).toBe(false)
+      expect(t.view.find('[data-id="oauth-provider-head-key"]').exists()).toBe(
+        false,
+      )
+      expect(
+        t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
+      ).toBe(false)
+      expect(t.view.findComponent({ name: 'HilosSkeleton' }).exists()).toBe(
+        true,
+      )
+    },
+  )
+
+  it('clears the binding when either active page or route leaves the provider', async () => {
+    const t = headHarness()
+    await settle()
+    t.route.set({ ...t.route.get(), page: HilosPages.SECURITY_OAUTH })
+    await settle()
+    expect(t.view.get('h1').text()).toBe('OAuth provider')
+    expect(t.view.find('[data-id="oauth-provider-head-key"]').exists()).toBe(
+      false,
+    )
+    t.route.set({ ...t.route.get(), page: HilosPages.SECURITY_OAUTH_PROVIDER })
+    await settle()
+    expect(t.view.get('h1').text()).toBe('GitHub')
+    t.context.scopes.openPage(HilosPages.SECURITY)
+    await settle()
+    expect(t.navigation.pageIdentity.get()).toBeUndefined()
+    expect(t.view.find('[data-id="oauth-provider-head-state"]').exists()).toBe(
+      false,
+    )
+    expect(
+      t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
+    ).toBe(false)
+  })
+})
 
 describe('HilosSecurityOauthProviderPage field modal', () => {
   it('opens on the live value with save locked and the message line empty', async () => {

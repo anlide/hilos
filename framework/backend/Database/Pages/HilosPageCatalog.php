@@ -363,7 +363,7 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Operations that ask for confirmation',
             PageCatalogConstants::CATALOG_ENTRY_LEAD =>
                 'Switch confirmation on or off per operation: it is asked right before the operation runs, even on a trusted device.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY_2FA,
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY,
         ],
         HilosPageConstants::HILOS_SECURITY_OAUTH => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'OAuth providers',
@@ -374,6 +374,8 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'OAuth provider',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single OAuth provider configuration.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY_OAUTH,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'OAuth provider',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ],
         HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Sign-in methods',

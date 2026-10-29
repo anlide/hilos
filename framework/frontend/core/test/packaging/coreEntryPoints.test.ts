@@ -29,6 +29,8 @@ import * as moderationRuleDelete from '../../src/admin/moderation/hilosModeratio
 import * as moderationRuleEdit from '../../src/admin/moderation/hilosModerationRuleEdit.js'
 import * as moderationRules from '../../src/admin/moderation/hilosModerationRules.js'
 import * as security from '../../src/admin/security/index.js'
+import * as securityOverview from '../../src/admin/security/hilosSecurityOverview.js'
+import * as oauthProviderHead from '../../src/admin/security/hilosSecurityOauthHead.js'
 import * as settings from '../../src/admin/settings/index.js'
 import * as status from '../../src/admin/status/index.js'
 import * as users from '../../src/admin/users/index.js'
@@ -169,6 +171,23 @@ const profileRenameMemoryValues = [
 const profileRenameMemoryTypes = ['HilosProfileRenameMemory']
 /** Detached edit data is shared by root and base, owned by the row session. */
 const rowEditTypes = ['HilosRowEditCheckpoint']
+/** Security page readers belong only to their lazy section. */
+const securityOverviewValues = [
+  'SECURITY_OVERVIEW_DATA',
+  'createHilosSecurityOverview',
+]
+const securityOverviewTypes = [
+  'HilosSecurityOverview',
+  'HilosSecurityOverviewContext',
+]
+const oauthProviderHeadValues = [
+  'OAUTH_PROVIDER_HEAD_DATA',
+  'createHilosOAuthProviderHead',
+]
+const oauthProviderHeadTypes = [
+  'HilosOAuthProviderHead',
+  'HilosOAuthProviderHeadContext',
+]
 /** The overview's new API belongs only to the lazy Analytics section. */
 const analyticsOverviewValues = [
   'ANALYTICS_OVERVIEW_SECTION',
@@ -885,6 +904,32 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (
+          entry === './admin/security' &&
+          securityOverviewValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              securityOverview[name as keyof typeof securityOverview],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
+          entry === './admin/security' &&
+          oauthProviderHeadValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              oauthProviderHead[name as keyof typeof oauthProviderHead],
+            ),
+            name,
+          ).toBe(true)
         } else {
           expect(Object.is(value, root[name]), name).toBe(true)
         }
@@ -906,6 +951,8 @@ describe('core public entries', () => {
         ...adminModerationRuleAddValues,
         ...adminModerationRuleDeleteValues,
         ...adminModerationRuleEditValues,
+        ...securityOverviewValues,
+        ...oauthProviderHeadValues,
       ].sort(),
     )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
@@ -1272,6 +1319,20 @@ describe('core public entries', () => {
     ]
     const wordsExports = exportsOf('admin/maintenance/hilosMaintenanceWords.ts')
     const wordsNames = [...maintenanceWordsValues, ...maintenanceWordsTypes]
+    const securityOverviewExports = exportsOf(
+      'admin/security/hilosSecurityOverview.ts',
+    )
+    const securityOverviewNames = [
+      ...securityOverviewValues,
+      ...securityOverviewTypes,
+    ]
+    const oauthProviderHeadExports = exportsOf(
+      'admin/security/hilosSecurityOauthHead.ts',
+    )
+    const oauthProviderHeadNames = [
+      ...oauthProviderHeadValues,
+      ...oauthProviderHeadTypes,
+    ]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (
@@ -1365,6 +1426,24 @@ describe('core public entries', () => {
           expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(wordsExports.get(name))
+        } else if (
+          entry === 'admin/security/index.ts' &&
+          securityOverviewNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            securityOverviewExports.get(name),
+          )
+        } else if (
+          entry === 'admin/security/index.ts' &&
+          oauthProviderHeadNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            oauthProviderHeadExports.get(name),
+          )
         } else {
           expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
             true,
@@ -1389,6 +1468,8 @@ describe('core public entries', () => {
         ...ruleAddNames,
         ...ruleDeleteNames,
         ...ruleEditNames,
+        ...securityOverviewNames,
+        ...oauthProviderHeadNames,
       ].sort(),
     )
   }, 30_000)

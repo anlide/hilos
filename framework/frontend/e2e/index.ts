@@ -482,6 +482,24 @@ export {
 } from './statusSubscriptions.js'
 
 export {
+  SECURITY_PATH,
+  SECURITY_PROVIDER_PAGE,
+  SECURITY_LEAD,
+  SECURITY_SECTIONS,
+  securityPageReplies,
+  expectSecurityFirstReply,
+  expectSecurityOverviewData,
+  expectSecurityIdentity,
+  expectSecuritySectionHead,
+  expectSecurityOverview,
+  expectSecurityProviderFirstHead,
+  expectSecurityProviderHead,
+  toggleSecurityOperation,
+  type SecurityOverviewHiddenField,
+  type SecurityPageReply,
+} from './security.js'
+
+export {
   expectModerationKindHead,
   expectModerationKindTabs,
   expectModerationOwnRules,

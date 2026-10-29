@@ -15,6 +15,8 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
+  pageIdentity,
 } from '@hilos/core/base'
 import { HilosSecondFactorSettingKey } from '@hilos/core/admin/security'
 import type {
@@ -34,7 +36,34 @@ const FORGET = HilosSecondFactorSettingKey.forgetTrustsOnDisable
 const REQUIRED = HilosSecondFactorSettingKey.required
 const TRUST_DAYS = HilosSecondFactorSettingKey.trustDays
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const scope = scopes.page()
+  if (!scope) throw new Error('The Security page scope must be open.')
+  scope.data.set('pageLabel', 'Two-factor')
+  scope.data.set('pageLead', 'Two-step verification settings.')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.SECURITY,
+    label: 'Security Center',
+    lead: 'Security policies and sign-in.',
+    icon: 'bi-shield-lock',
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SECURITY, label: 'Security Center' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.SECURITY, label: 'Overview' },
+    { page: HilosPages.SECURITY_2FA, label: 'Two-factor' },
+    {
+      page: HilosPages.SECURITY_STEP_UP,
+      label: 'Operations that ask for confirmation',
+    },
+    { page: HilosPages.SECURITY_OAUTH, label: 'OAuth providers' },
+    { page: HilosPages.SECURITY_SIGN_IN_METHODS, label: 'Sign-in methods' },
+    { page: HilosPages.SECURITY_IMPERSONATION, label: 'Impersonation' },
+  ])
+  scope.data.set('pageChildren', [])
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_2FA,
@@ -45,9 +74,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -346,7 +375,7 @@ async function openModal(
   const wrapper = mount(HilosSecurity2faPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(context.scopes) } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -557,7 +586,9 @@ describe('HilosSecurity2faPage', () => {
     const wrapper = mount(HilosSecurity2faPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     })
     mounted.push(wrapper)
     await nextTick()
@@ -571,7 +602,7 @@ async function mountPage(context: HilosTwoFactorContext): Promise<void> {
   const wrapper = mount(HilosSecurity2faPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(context.scopes) } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -606,6 +637,28 @@ async function openDisable(
 describe('HilosSecurity2faPage switches', () => {
   it('draws the two first rows as switches without a pencil, the rest with one', async () => {
     await mountPage(seededContext().context)
+
+    expect(document.body.querySelectorAll('h1')).toHaveLength(1)
+    expect(document.body.querySelector('h1')?.textContent?.trim()).toBe(
+      'Security Center',
+    )
+    const tabs = document.body.querySelector(
+      'nav[aria-label="Security Center pages"]',
+    )
+    expect(tabs?.querySelectorAll('a')).toHaveLength(6)
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('Two-factor')
+    expect(document.body.textContent).toContain(
+      'Two-step verification settings.',
+    )
+    expect(
+      document.body.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    const table = document.body.querySelector('table')
+    expect(table?.getAttribute('aria-labelledby')).toBe(
+      document.body.querySelector('h1')?.id,
+    )
 
     const first = inTable<HTMLInputElement>(`hilos-2fa-switch-${ENABLED}`)
     expect(first.checked).toBe(true)

@@ -1014,7 +1014,7 @@ final class ChatTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Catalog overrides retain every framework field for User, Person, Logs, Appearance and both Communications owners. */
+    /** Catalog overrides retain every framework field of the adopted owners, including Security. */
     public function testCatalogAdoptsUserPersonAndBothCommunicationsOwnersWithCompleteEntries(): void
     {
         Hilos::initBrowser();
@@ -1044,6 +1044,20 @@ final class ChatTopologyRegistryTest extends TestCase
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
             $pages[HilosPageConstants::HILOS_CHANGE_LOG_TABLE],
+        );
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_SECURITY],
+        );
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            $pages[HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER],
         );
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
@@ -1085,6 +1099,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
             HilosPageConstants::HILOS_COMMUNICATIONS,
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosPageConstants::HILOS_SECURITY,
+            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
             HilosPageConstants::HILOS_APPEARANCE,
             HilosPageConstants::HILOS_BACKUP,
             PageConstants::ADMIN_BOTS,

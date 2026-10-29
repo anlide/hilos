@@ -15,6 +15,8 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
+  pageIdentity,
   hilosToasts,
 } from '@hilos/core/base'
 import { HilosImpersonationSettingKey } from '@hilos/core/admin/security'
@@ -34,7 +36,34 @@ const ALLOWED = HilosImpersonationSettingKey.allowed
 const SCOPE = HilosImpersonationSettingKey.scope
 const EQUAL = HilosImpersonationSettingKey.equal
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const scope = scopes.page()
+  if (!scope) throw new Error('The Security page scope must be open.')
+  scope.data.set('pageLabel', 'Impersonation')
+  scope.data.set('pageLead', 'Impersonation settings.')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.SECURITY,
+    label: 'Security Center',
+    lead: 'Security policies and sign-in.',
+    icon: 'bi-shield-lock',
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SECURITY, label: 'Security Center' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.SECURITY, label: 'Overview' },
+    { page: HilosPages.SECURITY_2FA, label: 'Two-factor' },
+    {
+      page: HilosPages.SECURITY_STEP_UP,
+      label: 'Operations that ask for confirmation',
+    },
+    { page: HilosPages.SECURITY_OAUTH, label: 'OAuth providers' },
+    { page: HilosPages.SECURITY_SIGN_IN_METHODS, label: 'Sign-in methods' },
+    { page: HilosPages.SECURITY_IMPERSONATION, label: 'Impersonation' },
+  ])
+  scope.data.set('pageChildren', [])
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_IMPERSONATION,
@@ -45,9 +74,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -316,7 +345,9 @@ async function mountPage(context: HilosImpersonationContext): Promise<void> {
     mount(HilosSecurityImpersonationPage, {
       props: { context: markRaw(context) },
       attachTo: document.body,
-      global: { provide: { [hilosRouterKey as symbol]: router() } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
     }),
   )
   await nextTick()
@@ -340,6 +371,26 @@ describe('HilosSecurityImpersonationPage', () => {
   it('draws six switches and the scope in words, in the order of the rows', async () => {
     const { context } = seededContext()
     await mountPage(context)
+
+    expect(document.body.querySelectorAll('h1')).toHaveLength(1)
+    expect(document.body.querySelector('h1')?.textContent?.trim()).toBe(
+      'Security Center',
+    )
+    const tabs = document.body.querySelector(
+      'nav[aria-label="Security Center pages"]',
+    )
+    expect(tabs?.querySelectorAll('a')).toHaveLength(6)
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('Impersonation')
+    expect(document.body.textContent).toContain('Impersonation settings.')
+    expect(
+      document.body.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    const pageTable = document.body.querySelector('table')
+    expect(pageTable?.getAttribute('aria-labelledby')).toBe(
+      document.body.querySelector('h1')?.id,
+    )
 
     const table = document.querySelector(
       'table[data-id="hilos-impersonation-table"], [data-id="hilos-impersonation-table"] table',

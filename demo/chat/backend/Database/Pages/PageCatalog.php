@@ -65,6 +65,14 @@ final class PageCatalog implements PageCatalogProviderInterface
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
+            HilosPageConstants::HILOS_SECURITY => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
             HilosPageConstants::HILOS_APPEARANCE => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_APPEARANCE],
                 [

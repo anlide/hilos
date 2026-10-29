@@ -12,6 +12,8 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
+  pageIdentity,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
@@ -26,7 +28,34 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const STEP_UP_TABLE = 'hilosSecurityStepUp'
 
-function router(): HilosRouter {
+function router(scopes: ScopeManager): HilosRouter {
+  const scope = scopes.page()
+  if (!scope) throw new Error('The Security page scope must be open.')
+  scope.data.set('pageLabel', 'Operations that ask for confirmation')
+  scope.data.set('pageLead', 'Asked right before an operation.')
+  scope.data.set('pageHeadOwner', {
+    page: HilosPages.SECURITY,
+    label: 'Security Center',
+    lead: 'Security policies and sign-in.',
+    icon: 'bi-shield-lock',
+  })
+  scope.data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.SECURITY, label: 'Security Center' },
+  ])
+  scope.data.set('pageTabs', [
+    { page: HilosPages.SECURITY, label: 'Overview' },
+    { page: HilosPages.SECURITY_2FA, label: 'Two-factor' },
+    {
+      page: HilosPages.SECURITY_STEP_UP,
+      label: 'Operations that ask for confirmation',
+    },
+    { page: HilosPages.SECURITY_OAUTH, label: 'OAuth providers' },
+    { page: HilosPages.SECURITY_SIGN_IN_METHODS, label: 'Sign-in methods' },
+    { page: HilosPages.SECURITY_IMPERSONATION, label: 'Impersonation' },
+  ])
+  scope.data.set('pageChildren', [])
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_STEP_UP,
@@ -37,9 +66,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -155,7 +184,7 @@ async function mountPage(
   const wrapper = mount(HilosSecurityStepUpPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: router(context.scopes) } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -167,6 +196,28 @@ describe('HilosSecurityStepUpPage', () => {
   it('draws the operations of the window it opened on its own page', async () => {
     const { context } = seededContext()
     const wrapper = await mountPage(context)
+
+    expect(wrapper.element.querySelectorAll('h1')).toHaveLength(1)
+    expect(wrapper.element.querySelector('h1')?.textContent?.trim()).toBe(
+      'Security Center',
+    )
+    const tabs = wrapper.element.querySelector(
+      'nav[aria-label="Security Center pages"]',
+    )
+    expect(tabs?.querySelectorAll('a')).toHaveLength(6)
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('Operations that ask for confirmation')
+    expect(wrapper.element.textContent).toContain(
+      'Asked right before an operation.',
+    )
+    expect(
+      wrapper.element.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
+    const table = wrapper.element.querySelector('table')
+    expect(table?.getAttribute('aria-labelledby')).toBe(
+      wrapper.element.querySelector('h1')?.id,
+    )
 
     expect(
       wrapper.find('table [data-id="hilos-step-up-row-change_name"]').text(),

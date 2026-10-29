@@ -33,7 +33,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
@@ -43,6 +42,8 @@ import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+
+import HilosSecurityPageShell from './HilosSecurityPageShell.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -195,7 +196,7 @@ async function submitReset(): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SECURITY_OAUTH">
+  <HilosSecurityPageShell :page="HilosPages.SECURITY_OAUTH">
     <section class="card mb-4" aria-labelledby="hilos-oauth-redirect-heading">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start gap-3">
@@ -431,5 +432,5 @@ async function submitReset(): Promise<void> {
         </LoadingButton>
       </template>
     </HilosModal>
-  </HilosAdminPage>
+  </HilosSecurityPageShell>
 </template>

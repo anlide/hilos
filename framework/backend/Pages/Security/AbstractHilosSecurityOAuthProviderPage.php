@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\OAuth\OAuthConfigField;
@@ -16,17 +17,23 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Item\OAuthProvider;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Security\DTO\HilosOAuthProviderFieldReplyDTO;
+use Hilos\Pages\Security\DTO\HilosOAuthProviderHeadData;
 use Hilos\Pages\Security\DTO\HilosOAuthProviderResetActionDTO;
 use Hilos\Pages\Security\DTO\HilosOAuthProviderSetActionDTO;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -50,9 +57,9 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
  * one to every connection itself ({@see AuthMethodsSignalData}), as the settings library does
  * after a setting write (HIL-1080).
  *
- * The route's provider is not read here. The tables are narrowed to it on the screen's
- * side, and a provider the project does not declare shows as an empty screen, not as a
- * server error; an action naming one is refused like any other bad input.
+ * The route's provider supplies the complete head in the first page response, before the
+ * screen narrows its tables. An absent or undeclared provider yields a null head and the
+ * existing client-side not-found state; an action naming one is refused like any other bad input.
  *
  * The page is an admin surface: the ADMIN access level inherited from AbstractHilosPage
  * closes its subscription and every action. Projects add a concrete subclass with a
@@ -72,6 +79,8 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_SECURITY_OAUTH_PROVIDER,
     ];
+
+    public const array READS_DB = [HilosDbContext::oauthProviders];
 
     /** Longest value a field holds: the width of its column in hilos_oauth_provider. */
     private const int VALUE_MAX_LENGTH = 255;
@@ -108,6 +117,33 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+    }
+
+    /**
+     * @param string $acceptKey Subscribing connection accept key
+     * @param PageRouteParams $params Route params naming the provider
+     * @return PagePayload Complete provider head, or a null head when the route names no declared provider
+     * @throws DatabaseException When the provider's row cannot be read
+     * @throws EnvException When the provider's environment configuration is invalid
+     * @throws LogicException When collection classes are misconfigured or the descriptor has no recipe
+     * @throws InvalidArgumentException When the provider row lookup is invalid
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        $providerId = $params->getString('providerId');
+        $descriptor = $providerId === null ? null : $this->providerDirectoryClass()::get($providerId);
+
+        return new PagePayload(data: [
+            HilosOAuthProviderHeadData::DATA => $descriptor === null ? null : HilosOAuthProviderHeadData::fromDescriptor($descriptor)->toArray(),
+        ]);
+    }
+
+    /**
+     * @return array<string, WireField> Provider metadata shown to an admin-view-mode viewer, as in the provider table
+     */
+    protected function dataFields(): array
+    {
+        return [HilosOAuthProviderHeadData::DATA => WireField::notPersonal()];
     }
 
     /**

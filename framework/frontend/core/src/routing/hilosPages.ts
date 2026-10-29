@@ -430,7 +430,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.SECURITY]: { path: '/hilos/security', admin: true },
   [HilosPages.SECURITY_2FA]: { path: '/hilos/security/2fa', admin: true },
   [HilosPages.SECURITY_STEP_UP]: {
-    path: '/hilos/security/2fa/step-up',
+    path: '/hilos/security/step-up',
     admin: true,
   },
   [HilosPages.SECURITY_OAUTH]: { path: '/hilos/security/oauth', admin: true },

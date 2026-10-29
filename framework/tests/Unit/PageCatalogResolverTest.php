@@ -91,6 +91,132 @@ final class PageCatalogResolverTest extends TestCase
             PageCatalogResolver::head(HilosPageConstants::HILOS_CHANGE_LOG, new PageRouteParams([]))->pageTabs);
     }
 
+    public function testSecurityHeadKeepsItsOrderedTabsAndOAuthProviderBreadcrumb(): void
+    {
+        SecurityPageHeadTestHilos::initBrowser();
+        $securityPages = [
+            ['page' => HilosPageConstants::HILOS_SECURITY, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_2FA, 'label' => 'Two-factor'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_STEP_UP, 'label' => 'Operations that ask for confirmation'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_OAUTH, 'label' => 'OAuth providers'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS, 'label' => 'Sign-in methods'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_IMPERSONATION, 'label' => 'Impersonation'],
+        ];
+        $securityBreadcrumb = [
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_SECURITY, 'label' => 'Security Center'],
+        ];
+
+        foreach (array_column($securityPages, 'page') as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame($securityPages, $head->pageTabs);
+            self::assertSame($securityBreadcrumb, $head->pageBreadcrumb);
+        }
+
+        $provider = HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER;
+        self::assertSame($provider, PageCatalogResolver::rowOwner($provider));
+        self::assertSame(
+            HilosPageConstants::HILOS_SECURITY_OAUTH,
+            HilosPageCatalog::CATALOG[$provider][PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        );
+        $providerHead = PageCatalogResolver::head($provider, new PageRouteParams(['providerId' => 'oauth:github']));
+        self::assertNotNull($providerHead);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_SECURITY, 'label' => 'Security Center'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_OAUTH, 'label' => 'OAuth providers'],
+            ['page' => $provider, 'label' => 'OAuth provider'],
+        ], $providerHead->pageBreadcrumb);
+        self::assertSame([['page' => $provider, 'label' => 'Overview']], $providerHead->pageTabs);
+    }
+
+    public function testSecurityHeadFiltersAnUnservedSectionTab(): void
+    {
+        SecurityPageHeadTestHilos::initBrowser();
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(
+            static fn (string $page): bool => $page !== HilosPageConstants::HILOS_SECURITY_STEP_UP,
+        );
+
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_SECURITY, new PageRouteParams([]));
+
+        self::assertNotNull($head);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_SECURITY, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_2FA, 'label' => 'Two-factor'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_OAUTH, 'label' => 'OAuth providers'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS, 'label' => 'Sign-in methods'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_IMPERSONATION, 'label' => 'Impersonation'],
+        ], $head->pageTabs);
+    }
+
+    /** Chat adopts the complete Security section with its six pages. */
+    public function testChatAdoptsTheSecuritySectionWithItsSixPages(): void
+    {
+        $owner = HilosPageConstants::HILOS_SECURITY;
+        self::assertSame(
+            array_replace(HilosPageCatalog::CATALOG[$owner], [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true]),
+            ChatPageCatalog::pages()[$owner],
+        );
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, HilosPageCatalog::CATALOG[$owner]);
+        foreach ([BinancePageCatalog::class, TasksPageCatalog::class, EcommercePageCatalog::class,
+            PollsPageCatalog::class, OnlineTestingPageCatalog::class] as $provider) {
+            self::assertSame(HilosPageCatalog::CATALOG[$owner], PageCatalogResolver::catalogOf($provider)[$owner]);
+        }
+
+        ChatSecurityPageHeadTestHilos::initBrowser();
+        $tabs = [
+            ['page' => $owner, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_2FA, 'label' => 'Two-factor'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_STEP_UP, 'label' => 'Operations that ask for confirmation'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_OAUTH, 'label' => 'OAuth providers'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS, 'label' => 'Sign-in methods'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_IMPERSONATION, 'label' => 'Impersonation'],
+        ];
+        foreach (array_column($tabs, 'page') as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame($tabs, $head->pageTabs);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => $owner, 'label' => 'Security Center'],
+            ], $head->pageBreadcrumb);
+            self::assertSame($owner, $head->pageHeadOwner['page']);
+        }
+    }
+
+    /** The actual Chat provider entry adopts its own head without adopting other projects. */
+    public function testOnlyChatAdoptsTheOAuthProviderWithItsListAncestorAndSingletonOverview(): void
+    {
+        $owner = HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER;
+        self::assertSame(
+            array_replace(HilosPageCatalog::CATALOG[$owner], [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true]),
+            ChatPageCatalog::pages()[$owner],
+        );
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, HilosPageCatalog::CATALOG[$owner]);
+        foreach ([BinancePageCatalog::class, TasksPageCatalog::class, EcommercePageCatalog::class,
+            PollsPageCatalog::class, OnlineTestingPageCatalog::class] as $provider) {
+            self::assertSame(HilosPageCatalog::CATALOG[$owner], PageCatalogResolver::catalogOf($provider)[$owner]);
+        }
+
+        ChatSecurityPageHeadTestHilos::initBrowser();
+        $head = PageCatalogResolver::head($owner, new PageRouteParams(['providerId' => 'oauth:github']));
+        self::assertNotNull($head);
+        self::assertSame([
+            'page' => $owner,
+            'label' => 'OAuth provider',
+            'lead' => 'A single OAuth provider configuration.',
+        ], $head->pageHeadOwner);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+            ['page' => HilosPageConstants::HILOS_SECURITY, 'label' => 'Security Center'],
+            ['page' => HilosPageConstants::HILOS_SECURITY_OAUTH, 'label' => 'OAuth providers'],
+            ['page' => $owner, 'label' => 'OAuth provider'],
+        ], $head->pageBreadcrumb);
+        self::assertSame([['page' => $owner, 'label' => 'Overview']], $head->pageTabs);
+    }
+
     /** The real Vue providers adopt the whole section, stopping at the nested table entity. */
     public function testVueProvidersAdoptTheChangeLogHeadOnAllFourOwnerPages(): void
     {
@@ -1625,6 +1751,53 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 abstract class PageCatalogResolverTestHilos extends Hilos
 {
     protected const string PAGE_CATALOG = PageCatalogResolverTestCatalog::class;
+}
+
+/** Chat-like fixture: Security and its OAuth provider opt into the shared head locally. */
+abstract class SecurityPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_SECURITY => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_SECURITY_2FA => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_SECURITY_STEP_UP => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_SECURITY_OAUTH => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_SECURITY_IMPERSONATION => PageHeadTestPage::class,
+    ];
+
+    protected const string PAGE_CATALOG = SecurityPageHeadTestCatalog::class;
+}
+
+/** Chat's complete section entry is used without the fixture's provider opt-in. */
+abstract class ChatSecurityPageHeadTestHilos extends SecurityPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+/** Security head adoption stays in this fixture rather than the framework catalog. */
+final class SecurityPageHeadTestCatalog implements PageCatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Complete Security and provider entries for the fixture */
+    public static function pages(): array
+    {
+        return [
+            HilosPageConstants::HILOS_SECURITY => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+        ];
+    }
+
+    /** @return list<array{title: string, description: string, items: list<string>}> No additional dashboard groups */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
 }
 
 /** All Communications routes registered against the unadopted framework catalog. */

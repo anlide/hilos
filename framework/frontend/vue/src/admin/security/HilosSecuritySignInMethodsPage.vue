@@ -26,13 +26,14 @@ import {
 import { HilosPages, resolveHilosPath } from '@hilos/core/base'
 import { onMounted, onUnmounted, ref, useId } from 'vue'
 
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+
+import HilosSecurityPageShell from './HilosSecurityPageShell.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -88,7 +89,7 @@ async function togglePasskeyUnproven(next: boolean): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SECURITY_SIGN_IN_METHODS">
+  <HilosSecurityPageShell :page="HilosPages.SECURITY_SIGN_IN_METHODS">
     <HilosViewportTable :controller="methodsTable">
       <template #cell-methodKey="{ row }">
         <div class="fw-semibold">{{ row.label }}</div>
@@ -158,5 +159,5 @@ async function togglePasskeyUnproven(next: boolean): Promise<void> {
         </template>
       </HilosHideable>
     </div>
-  </HilosAdminPage>
+  </HilosSecurityPageShell>
 </template>

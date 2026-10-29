@@ -32,7 +32,7 @@ const ACCOUNT_SCREENS = [
   '/hilos/security',
   '/hilos/security/sign-in-methods',
   '/hilos/security/2fa',
-  '/hilos/security/2fa/step-up',
+  '/hilos/security/step-up',
   '/hilos/security/oauth',
   '/hilos/security/impersonation',
   '/hilos/legal',

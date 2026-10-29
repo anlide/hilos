@@ -1,6 +1,18 @@
 // @hilos/core/admin/security: lazy section APIs.
 
 export {
+  SECURITY_OVERVIEW_DATA,
+  createHilosSecurityOverview,
+  type HilosSecurityOverview,
+  type HilosSecurityOverviewContext,
+} from './hilosSecurityOverview.js'
+export {
+  OAUTH_PROVIDER_HEAD_DATA,
+  createHilosOAuthProviderHead,
+  type HilosOAuthProviderHead,
+  type HilosOAuthProviderHeadContext,
+} from './hilosSecurityOauthHead.js'
+export {
   resolveHilosOAuthProviderRow,
   resolveHilosOAuthFieldRow,
   resolveHilosOAuthRedirectRow,

@@ -20,13 +20,19 @@ in advance (HilosEditNotice). The secret never reads back, so its live value is
 always empty: there is nothing to merge, and the dialog only says when the row is
 gone. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+} from '@hilos/core/base'
 import {
   createHilosOauthProviderFieldEdit,
   createHilosOAuthProviderFields,
+  createHilosOAuthProviderHead,
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
   type HilosOAuthFieldRow,
+  type HilosOAuthProviderHead,
   type HilosSecurityOauthContext,
 } from '@hilos/core/admin/security'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
@@ -38,8 +44,10 @@ import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
+import HilosSkeleton from '../../HilosSkeleton.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
+import { hilosAuthMethodIcon } from '../../auth/authMethodIcons.js'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -81,13 +89,40 @@ onUnmounted(() => {
 })
 
 const summaryRows = useSignal(summary.controller.rows)
-const summaryLoaded = useSignal(summary.controller.loaded)
 /** The route provider's own row, or null until it arrives (or when it is not declared). */
 const provider = computed(() => summaryRows.value[0]?.row ?? null)
-/** A provider the project does not declare: the window came back empty. */
-const notFound = computed(
-  () => summaryLoaded.value && summaryRows.value.length === 0,
+const firstHead = createHilosOAuthProviderHead(props.context)
+const headSignal = computedSignal<HilosOAuthProviderHead | null | undefined>(
+  () => {
+    if (
+      props.context.scopes.page()?.key !== HilosPages.SECURITY_OAUTH_PROVIDER ||
+      router.currentRoute.get().page !== HilosPages.SECURITY_OAUTH_PROVIDER ||
+      router.pageLoading.get()
+    ) {
+      return undefined
+    }
+    const snapshot = firstHead.get()
+    if (snapshot === null || snapshot === undefined) return snapshot
+    const key = providerSignal.get()
+    if (snapshot.providerKey !== key) return undefined
+
+    // A table window may still belong to the previous provider. Only this
+    // route's row can take over from its complete first-answer head.
+    return (
+      summary.controller.rows.get().find(({ row }) => row?.providerKey === key)
+        ?.row ?? snapshot
+    )
+  },
 )
+const head = useSignal(headSignal)
+const unbindName = bindPageInstanceName(
+  props.context.scopes,
+  HilosPages.SECURITY_OAUTH_PROVIDER,
+  computedSignal(() => headSignal.get()?.label),
+)
+onUnmounted(unbindName)
+/** Only an explicit first-answer null declares an unknown provider. */
+const notFound = computed(() => head.value === null)
 
 /** The source badge label: where a value comes from. */
 const SOURCE_LABEL: Record<string, string> = {
@@ -231,7 +266,48 @@ async function submitReset(): Promise<void> {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SECURITY_OAUTH_PROVIDER">
+  <HilosAdminPage :page="HilosPages.SECURITY_OAUTH_PROVIDER" head-kind="entity">
+    <template #head-visual>
+      <span
+        v-if="head"
+        class="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
+        aria-hidden="true"
+      >
+        <i
+          :class="hilosAuthMethodIcon(head.providerKey)"
+          aria-hidden="true"
+          data-id="oauth-provider-head-icon"
+        ></i>
+      </span>
+    </template>
+    <template #head-badges>
+      <span
+        v-if="head"
+        class="badge"
+        :class="
+          head.configured
+            ? 'text-bg-success-subtle text-success-emphasis'
+            : 'text-bg-warning-subtle text-warning-emphasis'
+        "
+        data-id="oauth-provider-head-state"
+      >
+        <i
+          :class="
+            head.configured
+              ? 'bi bi-check-circle me-1'
+              : 'bi bi-exclamation-triangle me-1'
+          "
+          aria-hidden="true"
+        ></i>
+        {{ head.configured ? 'Configured' : `${head.missingFields} missing` }}
+      </span>
+    </template>
+    <template #head-description>
+      <p v-if="head" class="text-body-secondary mb-0">
+        Provider
+        <code data-id="oauth-provider-head-key">{{ head.providerKey }}</code>
+      </p>
+    </template>
     <div
       v-if="notFound"
       class="alert alert-warning"
@@ -242,12 +318,8 @@ async function submitReset(): Promise<void> {
       <code>{{ providerKey }}</code
       >.
     </div>
+    <HilosSkeleton v-else-if="head === undefined" />
     <template v-else>
-      <p class="text-body-secondary mb-3">
-        <span class="fw-semibold text-body">{{ provider?.label }}</span>
-        <code class="ms-2 small">{{ providerKey }}</code>
-      </p>
-
       <HilosViewportTable :controller="fields.controller">
         <template #cell-field="{ row }">
           <div class="fw-semibold">{{ row.label }}</div>

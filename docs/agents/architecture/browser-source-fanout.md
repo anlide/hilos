@@ -161,6 +161,8 @@ answer; work that may only run once the subscription is answered goes in
 `PageSignalRouter` reaches the whole verdict — level, freeze, declared params,
 declared guards — before `onSubscribe()` runs at all.
 
+The Security overview is another page-owned projection. `AbstractHilosSecurityPage::buildPagePayload()` reads `settings` and `oauthProviders` through `HilosSecurityOverviewData::fromSources()` into `data.securityOverview` in its first answer; it opens no table windows. `AbstractHilosSecurityPage::observesOverviewChange()` recognizes committed changes to either source. `BrowserContext::addBrowserChange()` checks the current `acceptKey` still names the Security subscription after the normal page guard, then uses the existing `PageResender` path. The existing `publishedWholeThisFlush` ledger deduplicates whole answers by accept key within the flush. Its `dataFields()` and the viewer bridge continue to shape the page data.
+
 A page whose delivery failed is re-sent the same way. The client that was told
 its page could not be delivered wiped it, so the first delivery that succeeds
 afterwards — a fan-out to the subscription or a window it asks for — calls

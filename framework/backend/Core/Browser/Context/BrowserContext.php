@@ -62,6 +62,7 @@ use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Pages\AbstractHilosI18nPage;
+use Hilos\Pages\Security\AbstractHilosSecurityPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Status\DTO\StatusSubscriberCountsData;
@@ -2498,6 +2499,19 @@ abstract class BrowserContext
         }
 
         if ($page === HilosPageConstants::HILOS_I18N && AbstractHilosI18nPage::observesOverviewChange($change)) {
+            if ($current === null || $current->page !== $page || Hilos::$sr?->pageSubscription($acceptKey) !== $current) {
+                $guardAllows[$acceptKey] = false;
+                unset($signalTables[$acceptKey]);
+
+                return;
+            }
+            $this->resendPageWhole($page, $acceptKey);
+            unset($signalTables[$acceptKey]);
+
+            return;
+        }
+
+        if ($page === HilosPageConstants::HILOS_SECURITY && AbstractHilosSecurityPage::observesOverviewChange($change)) {
             if ($current === null || $current->page !== $page || Hilos::$sr?->pageSubscription($acceptKey) !== $current) {
                 $guardAllows[$acceptKey] = false;
                 unset($signalTables[$acceptKey]);

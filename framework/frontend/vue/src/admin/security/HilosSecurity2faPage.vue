@@ -47,7 +47,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
-import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
@@ -59,6 +58,8 @@ import LoadingButton from '../../LoadingButton.vue'
 import HilosStepUpStep from '../../auth/HilosStepUpStep.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+
+import HilosSecurityPageShell from './HilosSecurityPageShell.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -216,7 +217,7 @@ function submitEdit(): void {
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.SECURITY_2FA">
+  <HilosSecurityPageShell :page="HilosPages.SECURITY_2FA">
     <HilosViewportTable :controller="settings.controller">
       <template #cell-rowKey="{ row }">
         <div :class="{ 'opacity-50': isLocked(row) }">
@@ -436,5 +437,5 @@ function submitEdit(): void {
         >
       </template>
     </HilosModal>
-  </HilosAdminPage>
+  </HilosSecurityPageShell>
 </template>

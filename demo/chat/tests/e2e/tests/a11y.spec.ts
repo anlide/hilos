@@ -68,6 +68,12 @@ import {
   uniqueEmail,
   watchHeight,
   deliveryObject,
+  SECURITY_PATH,
+  SECURITY_PROVIDER_PAGE,
+  expectSecurityFirstReply,
+  expectSecurityProviderFirstHead,
+  expectSecurityProviderHead,
+  expectSecuritySectionHead,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import {
@@ -233,6 +239,149 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   await expect(current.getByRole('link')).toHaveCount(0)
   await expect(head.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByRole('tablist')).toHaveCount(0)
+})
+
+test('Security has one section heading, six named links and keyboard navigation naming the table', async ({
+  page,
+}) => {
+  await createTestAdmin(expect, page)
+  await gotoPage(expect, page, SECURITY_PATH)
+  await expectSecuritySectionHead(expect, page)
+  const breadcrumb = page.getByTestId('hilos-breadcrumb')
+  await expect(breadcrumb).toHaveRole('navigation')
+  await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
+  await expect(
+    breadcrumb.getByTestId('hilos-breadcrumb-hilos'),
+  ).toHaveAccessibleName('Hilos')
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+    'Security Center',
+  )
+  await expect(breadcrumb.locator('[aria-current="page"] a')).toHaveCount(0)
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'Two-factor',
+    'Operations that ask for confirmation',
+    'OAuth providers',
+    'Sign-in methods',
+    'Impersonation',
+  ])
+  const overview = page.getByTestId('hilos-page-tab-hilos_security')
+  await overview.focus()
+  await expect(overview).toBeFocused()
+  await page.keyboard.press('Tab')
+  const twoFactor = page.getByTestId('hilos-page-tab-hilos_security_2fa')
+  await expect(twoFactor).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(`${SECURITY_PATH}/2fa`)
+  await expectSecuritySectionHead(expect, page, 'hilos_security_2fa')
+  const heading = page.getByTestId('hilos-page-head-title')
+  const headingId = (await heading.getAttribute('id'))!
+  expect(headingId).toBeTruthy()
+  await expect(page.getByRole('table')).toHaveAttribute(
+    'aria-labelledby',
+    headingId,
+  )
+  await expect(page.getByRole('table')).toHaveAccessibleName('Security Center')
+  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
+  expect(
+    await page
+      .getByTestId('hilos-page-head')
+      .locator('.bi')
+      .evaluateAll(
+        (icons) =>
+          icons.filter((icon) => icon.closest('[aria-hidden="true"]') === null)
+            .length,
+      ),
+  ).toBe(0)
+})
+
+test('OAuth provider has one named entity head and table, decorative icons and keyboard breadcrumbs without singleton tabs', async ({
+  page,
+}) => {
+  const log = watchDeliveryFrames(page)
+  try {
+    await createTestAdmin(expect, page)
+    await gotoPage(expect, page, `${SECURITY_PATH}/oauth`)
+    const opening = log.sent.length
+    await shownByTestId(page, 'hilos-oauth-provider-open-oauth:github').click()
+    await expectPageReady(expect, page)
+    const first = await expectSecurityFirstReply(
+      expect,
+      log,
+      opening,
+      SECURITY_PROVIDER_PAGE,
+      { providerId: 'oauth:github' },
+    )
+    const provider = await expectSecurityProviderFirstHead(
+      expect,
+      log,
+      first,
+      'oauth:github',
+    )
+    await expectSecurityProviderHead(expect, page, provider)
+    const heading = page.getByTestId('hilos-page-head-title')
+    const headingId = (await heading.getAttribute('id'))!
+    expect(headingId).toBeTruthy()
+    await expect(page.getByRole('table')).toHaveAttribute(
+      'aria-labelledby',
+      headingId,
+    )
+    await expect(page.getByRole('table')).toHaveAccessibleName(provider.label)
+    await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
+    await expect(page.getByTestId('oauth-provider-head-icon')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    )
+    await expect(page.getByRole('tablist')).toHaveCount(0)
+    const breadcrumb = page.getByTestId('hilos-breadcrumb')
+    await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
+    await expect(breadcrumb.getByRole('link')).toHaveCount(3)
+    for (const [key, label, path] of [
+      ['hilos', 'Hilos', '/hilos'],
+      ['hilos_security', 'Security Center', SECURITY_PATH],
+      ['hilos_security_oauth', 'OAuth providers', `${SECURITY_PATH}/oauth`],
+    ]) {
+      const link = breadcrumb.getByTestId(`hilos-breadcrumb-${key}`)
+      await expect(link).toHaveAccessibleName(label!)
+      await expect(link).toHaveAttribute('href', path!)
+    }
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveCount(1)
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+      provider.label,
+    )
+    await expect(breadcrumb.locator('[aria-current="page"] a')).toHaveCount(0)
+    expect(
+      await page
+        .getByTestId('hilos-page-head')
+        .locator('.bi')
+        .evaluateAll(
+          (icons) =>
+            icons.filter(
+              (icon) => icon.closest('[aria-hidden="true"]') === null,
+            ).length,
+        ),
+    ).toBe(0)
+    await breadcrumb.getByTestId('hilos-breadcrumb-hilos').focus()
+    await page.keyboard.press('Tab')
+    await expect(
+      breadcrumb.getByTestId('hilos-breadcrumb-hilos_security'),
+    ).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(
+      breadcrumb.getByTestId('hilos-breadcrumb-hilos_security_oauth'),
+    ).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(`${SECURITY_PATH}/oauth`)
+    await expectSecuritySectionHead(expect, page, 'hilos_security_oauth')
+  } finally {
+    await test.info().attach('security-provider-accessibility-wire', {
+      body: JSON.stringify({ sent: log.sent, packets: log.packets }),
+      contentType: 'application/json',
+    })
+    log.stop()
+  }
 })
 
 test('the shell exposes a skip link and marks the active nav item', async ({
