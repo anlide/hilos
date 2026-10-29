@@ -2123,7 +2123,13 @@ describe('HilosMaintenancePage restore open and close', () => {
       expect(dialog.getAttribute('aria-modal')).toBe('true')
       expect(document.activeElement).toBe(dialog)
       expect(dialog.textContent).toContain(copy.lead)
-      expect(dialog.textContent?.toLowerCase()).not.toContain('new operation')
+      if (id === 'open') {
+        expect(dialog.textContent).toContain(
+          HILOS_MAINTENANCE_RESTORE_OPEN_COPY.noWayBack,
+        )
+      } else {
+        expect(dialog.textContent?.toLowerCase()).not.toContain('new operation')
+      }
       expect(
         dialog.querySelector('[data-id="hilos-action-error-idle"]'),
       ).not.toBeNull()

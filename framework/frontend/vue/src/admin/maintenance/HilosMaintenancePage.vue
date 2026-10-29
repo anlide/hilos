@@ -812,7 +812,10 @@ onUnmounted(() => {
           :action="restoreOpenAction"
           :details-title="HILOS_MAINTENANCE_RESTORE_OPEN_COPY.refusalTitle"
         />
-        <p class="mb-0">{{ HILOS_MAINTENANCE_RESTORE_OPEN_COPY.lead }}</p>
+        <p class="mb-2">{{ HILOS_MAINTENANCE_RESTORE_OPEN_COPY.lead }}</p>
+        <p class="mb-0 text-body-secondary">
+          {{ HILOS_MAINTENANCE_RESTORE_OPEN_COPY.noWayBack }}
+        </p>
       </div>
       <template #actions="{ requestClose }">
         <button

@@ -650,8 +650,9 @@ export const HILOS_MAINTENANCE_RESTORE_PASS_COPY = {
 /**
  * Words of reopening a restore, shared by every view.
  *
- * Close the window again stays on this card, so the dialog does not say the
- * only way back is a new operation.
+ * Opening ends the restore: the card with Close the window again goes away,
+ * and closing the system again takes a new freeze. So the dialog says there
+ * is no way back.
  */
 export const HILOS_MAINTENANCE_RESTORE_OPEN_COPY = {
   issue: 'Open the system',
@@ -659,6 +660,8 @@ export const HILOS_MAINTENANCE_RESTORE_OPEN_COPY = {
   confirm: 'Open the system',
   cancel: 'Cancel',
   lead: 'The freeze lifts for everyone. Every open page will reload itself, including this one.',
+  noWayBack:
+    'This cannot be undone: to close the system again, it has to be frozen anew, as a new operation.',
   refusalTitle: "Couldn't reopen the system",
   unconfirmedNote:
     'The result of opening the system is unconfirmed. Check the state in Maintenance before trying again.',
