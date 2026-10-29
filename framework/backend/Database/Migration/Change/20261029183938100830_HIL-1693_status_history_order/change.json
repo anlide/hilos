@@ -1,0 +1,20 @@
+{
+    "format": 1,
+    "id": "20261029183938100830_HIL-1693_status_history_order",
+    "parts": [
+        {
+            "unit": "status_incident",
+            "introducesUnit": false,
+            "up": "up.sql",
+            "down": "down.sql",
+            "requires": [
+                {
+                    "changeId": "20261023115508508976_HIL-1688_status_machine",
+                    "unit": "status_incident"
+                }
+            ],
+            "afterStubUpSha256": "dc785e9f9e96f7a18ee0e899a685111a02cc6772d30afb3fe67cdbf9528873bb",
+            "afterStubDownSha256": "5a90a8f3305d729279f7e117a8e7cd451fb761515549f258347d5346e88e485b"
+        }
+    ]
+}

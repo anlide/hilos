@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Status;
 
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\StatusIncident as EntityStatusIncident;
 use Hilos\Database\View\Item\StatusIncident;
@@ -39,7 +42,9 @@ final readonly class StatusSnapshot
             && Hilos::$rt->hilosProtectedModeRuntime->phase !== ProtectedModeRuntime::PHASE_INACTIVE;
         $incidents = null;
         if ($enabled && Hilos::$db !== null && Hilos::$rt?->hilosProtectedModeRuntime !== null
-            && !Hilos::$rt->hilosProtectedModeRuntime->silencesUnstoppedWriters()) {
+            && !Hilos::$rt->hilosProtectedModeRuntime->silencesUnstoppedWriters()
+            && (!SourceInterestRegistry::isDeclared(SourceChange::KIND_DB, HilosDbContext::statusIncidents)
+                || SourceInterestRegistry::isReady(SourceChange::KIND_DB, HilosDbContext::statusIncidents))) {
             try {
                 $incidents = [];
                 foreach (Hilos::$db->statusIncidents->whereColumnIn(

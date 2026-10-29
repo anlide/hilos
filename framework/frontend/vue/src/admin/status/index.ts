@@ -6,3 +6,4 @@ export { default as HilosStatusRemoveSubscriberModal } from './HilosStatusRemove
 export { default as HilosStatusWorksPage } from './HilosStatusWorksPage.vue'
 export { default as HilosStatusWorkModal } from './HilosStatusWorkModal.vue'
 export { default as HilosStatusCancelWorkModal } from './HilosStatusCancelWorkModal.vue'
+export { default as HilosStatusHistoryPage } from './HilosStatusHistoryPage.vue'

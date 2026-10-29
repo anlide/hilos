@@ -39,6 +39,7 @@ export function overview(
 ): HilosStatusOverviewData {
   return {
     healthKnown: true,
+    historyCount: 0,
     components: { operationalCount: 0, totalCount: 1 },
     publishDelaySeconds: 60,
     maintenance: null,

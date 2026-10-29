@@ -36,9 +36,28 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
             'maintenance' => null,
             'incidents' => [],
             'subscribers' => ['confirmedCount' => 0, 'pendingCount' => 0],
+            'historyCount' => 0,
             'scheduledWorks' => null,
         ], StatusOverviewData::read()->toArray());
         self::assertSame([EntityStatusIncident::active_component_key, ['zeta', 'alpha']], $this->database->statusIncidents->selection);
+    }
+
+    public function testHistoryCountHasNoViewportCeilingAndBothSourcesMustBeAvailable(): void
+    {
+        self::assertSame(0, StatusOverviewData::read()->historyCount);
+        $this->database->statusIncidents->completed = 501;
+        $this->database->statusMaintenancePeriods->completed = 207;
+        self::assertSame(708, StatusOverviewData::read()->historyCount);
+        $this->database->statusIncidents->unavailable = true;
+        self::assertNull(StatusOverviewData::read()->historyCount);
+        $this->database->statusIncidents->unavailable = false;
+        $this->database->statusMaintenancePeriods->unavailable = true;
+        self::assertNull(StatusOverviewData::read()->historyCount);
+        $this->database->statusMaintenancePeriods->unavailable = false;
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
+        $reads = [$this->database->statusIncidents->historyReads, $this->database->statusMaintenancePeriods->historyReads];
+        self::assertNull(StatusOverviewData::read()->historyCount);
+        self::assertSame($reads, [$this->database->statusIncidents->historyReads, $this->database->statusMaintenancePeriods->historyReads]);
     }
 
     public function testMissingAndStaleCountsAreUnknownWithoutLosingAvailableIncidents(): void

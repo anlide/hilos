@@ -32,9 +32,11 @@ use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
+use Hilos\Pages\Status\AbstractHilosStatusHistoryPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 
 /** Framework Status machine and its project-bound admin pages. */
 final class StatusFeature extends FeatureDefinition
@@ -50,12 +52,14 @@ final class StatusFeature extends FeatureDefinition
     {
         return new FeatureRequirements(
             requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class,
-                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class],
-            requiredTables: [HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class, HilosStatusWorksTable::class],
+                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class, AbstractHilosStatusHistoryPage::class],
+            requiredTables: [HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class,
+                HilosStatusWorksTable::class, HilosStatusHistoryTable::class],
             requiredPageTables: [
                 AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
                 AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
                 AbstractHilosStatusWorksPage::class => HilosStatusWorksTable::class,
+                AbstractHilosStatusHistoryPage::class => HilosStatusHistoryTable::class,
             ],
             requiredAgents: [HilosAgentType::HILOS_STATUS],
             requiredSharedAgents: [MailDeliveryChannelAgent::AGENT_TYPE],

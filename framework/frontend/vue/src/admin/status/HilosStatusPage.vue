@@ -8,6 +8,7 @@ import {
   HILOS_STATUS_ACTION_COPY,
   HILOS_STATUS_SUBSCRIBERS_COPY,
   HILOS_STATUS_WORKS_COPY,
+  HILOS_STATUS_HISTORY_COPY,
   type HilosStatusContext,
 } from '@hilos/core/admin/status'
 import { inject, onMounted, onUnmounted } from 'vue'
@@ -279,7 +280,7 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
-      <div class="row row-cols-2 row-cols-lg-3 g-3 mb-3">
+      <div class="row row-cols-2 row-cols-lg-4 g-3 mb-3">
         <div class="col">
           <section class="card h-100" data-id="hilos-status-works-tile">
             <div class="card-body text-break">
@@ -385,6 +386,35 @@ onUnmounted(() => {
                 :to="router.resolvePath(HilosPages.STATUS_SUBSCRIBERS)!"
                 data-id="hilos-status-subscribers-link"
                 >{{ HILOS_STATUS_SUBSCRIBERS_COPY.subscribers }}</HilosLink
+              >
+            </div>
+          </section>
+        </div>
+        <div class="col">
+          <section class="card h-100" data-id="hilos-status-history-tile">
+            <div class="card-body">
+              <h2 class="h6">{{ HILOS_STATUS_HISTORY_COPY.history }}</h2>
+              <p class="fs-4 mb-2" data-id="hilos-status-history-count">
+                {{ overview.historyCount ?? '—' }}
+              </p>
+              <p class="small mb-2">{{ HILOS_STATUS_HISTORY_COPY.count }}</p>
+              <div class="hilos-stack mb-2">
+                <p class="invisible mb-0" aria-hidden="true" inert>
+                  {{ HILOS_STATUS_HISTORY_COPY.unavailable }}
+                </p>
+                <p
+                  v-if="overview.historyCount === null"
+                  class="text-body-secondary mb-0"
+                  data-id="hilos-status-history-unavailable"
+                >
+                  {{ HILOS_STATUS_HISTORY_COPY.unavailable }}
+                </p>
+              </div>
+              <HilosLink
+                v-if="router?.resolvePath(HilosPages.STATUS_HISTORY)"
+                :to="router.resolvePath(HilosPages.STATUS_HISTORY)!"
+                data-id="hilos-status-history-link"
+                >{{ HILOS_STATUS_HISTORY_COPY.link }}</HilosLink
               >
             </div>
           </section>

@@ -3194,6 +3194,7 @@ final class HilosSignalConstants
     /** Browser metadata for the Status overview and component window. */
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS = 'subscription_page_hilos_status';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_WORKS = 'subscription_page_hilos_status_works';
+    public const string SUBSCRIPTION_PAGE_HILOS_STATUS_HISTORY = 'subscription_page_hilos_status_history';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_COMPONENTS = 'subscription_page_hilos_status_components';
     public const string SUBSCRIPTION_PAGE_HILOS_STATUS_SUBSCRIBERS = 'subscription_page_hilos_status_subscribers';
 

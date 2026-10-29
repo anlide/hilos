@@ -35,7 +35,8 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
     public static function facts(): iterable
     {
         foreach ([SourceChange::KIND_DB => [HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings,
-            HilosDbContext::statusSubscribers, HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents],
+            HilosDbContext::statusSubscribers, HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents,
+            HilosDbContext::statusMaintenancePeriods],
             SourceChange::KIND_RT => [HilosStatusComponent::RT_COLLECTION, ProtectedModeRuntime::RT_ITEM,
                 HilosStatusMaintenance::RT_COLLECTION]] as $kind => $keys) {
             foreach ($keys as $source) {
@@ -66,6 +67,27 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
         self::assertSame(['operationalCount' => 1, 'totalCount' => 2], $body['components']);
         $this->flush();
         self::assertSame([], $this->drain());
+    }
+
+    public function testBothCompletedSourcesRefreshTheIndependentHistoryCount(): void
+    {
+        $this->subscribe();
+        $this->database->statusIncidents->completed = 501;
+        $this->browser->record(SourceChange::dbUpdated(HilosDbContext::statusIncidents, '7', []));
+        $this->flush();
+        self::assertSame(501, $this->whole()['historyCount']);
+        $this->database->statusMaintenancePeriods->completed = 207;
+        $this->browser->record(SourceChange::dbUpdated(HilosDbContext::statusMaintenancePeriods, '8', []));
+        $this->flush();
+        self::assertSame(708, $this->whole()['historyCount']);
+        $this->database->statusMaintenancePeriods->unavailable = true;
+        $this->browser->record(SourceChange::dbCleared(HilosDbContext::statusMaintenancePeriods));
+        $this->flush();
+        self::assertNull($this->whole()['historyCount']);
+        $this->database->statusMaintenancePeriods->unavailable = false;
+        $this->browser->recordDatabaseBack();
+        $this->flush();
+        self::assertSame(708, $this->whole()['historyCount']);
     }
 
     public function testManyDbRtFactsAndStalenessBecomeOneWholeAnswerInAFlush(): void
@@ -316,7 +338,7 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
         self::assertSame(AbstractHilosStatusPage::PAGE, $reply->pageKey);
         self::assertSame('Status', $reply->payload->data['pageLabel']);
         self::assertSame('Status', $reply->payload->data['pageHeadOwner']['label']);
-        self::assertCount(4, $reply->payload->data['pageTabs']);
+        self::assertCount(5, $reply->payload->data['pageTabs']);
         self::assertSame([], $reply->payload->windows);
         self::assertSame($reply->toArray(), PageResponseSignalData::fromArray($reply->toArray())->toArray());
         return $reply->payload->data['status'];

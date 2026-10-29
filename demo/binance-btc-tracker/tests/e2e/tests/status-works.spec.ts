@@ -5,6 +5,9 @@ import {
   STATUS_WORK_SCHEDULE,
   STATUS_WORK_CHANGE,
   STATUS_WORK_CANCEL,
+  STATUS_HISTORY_PATH,
+  statusHistoryDeliveries,
+  expectStatusHistoryFact,
   armViewerSubmit,
   clickSubmit,
   controlSocketReconnect,
@@ -642,6 +645,37 @@ test('Status Works uses the published announcement during an actual freeze and c
     await expect(shownByTestId(page, 'hilos-table-empty')).toBeVisible()
     await gotoPage(expect, page, STATUS_PATH)
     await expect(page.getByTestId('hilos-status-works-count')).toHaveText('0')
+    await test.step('History retains exactly this completed period and announcement', async () => {
+      const since = adminLog.packets.length
+      await page.getByTestId('hilos-page-tab-hilos_status_history').click()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(new RegExp(`${STATUS_HISTORY_PATH}$`))
+      const answer = statusHistoryDeliveries(adminLog, since)[0]
+      const facts = answer.rows.filter(
+        (row) => row.workPublicId === work.publicId,
+      )
+      expect(facts).toHaveLength(1)
+      const fact = facts[0]
+      // Public period ids are opaque; History names the numeric source row.
+      // The public work and exact saved interval identify this same observation.
+      expect(fact).toMatchObject({
+        kind: 'maintenance',
+        startedAt: period.startedAt,
+        endedAt: completed[0].endedAt,
+        completionObservedAt: completed[0].completionObservedAt,
+        publishedAt: null,
+        outcome: 'maintenance_completed',
+        title: draft.title,
+        componentKeys: draft.componentKeys,
+        severity: null,
+        announcementKnown: true,
+        workPublicId: work.publicId,
+      })
+      await expectStatusHistoryFact(expect, page, fact)
+      await expect(
+        shownByTestId(page, `hilos-table-row-${fact.id}`),
+      ).toHaveCount(1)
+    })
     expect((await mailsTo(email)).map((mail) => mail.subject).sort()).toEqual(
       [
         STATUS_CONFIRM_SUBJECT,

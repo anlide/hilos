@@ -15,6 +15,7 @@ CREATE TABLE `hilos_status_incident` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_status_incident_active_component` (`active_component_key`),
     KEY `idx_status_incident_component_detected` (`component_key`, `detected_at` DESC, `id` DESC),
+    KEY `idx_status_incident_detected` (`detected_at` DESC, `id` DESC),
     KEY `idx_status_incident_published` (`published_at`, `id`),
     KEY `idx_status_incident_resolved` (`resolved_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

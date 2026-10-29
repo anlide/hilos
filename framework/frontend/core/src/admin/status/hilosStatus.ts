@@ -70,6 +70,7 @@ export const statusIncidentSchema = z
 export const statusOverviewSchema = z
   .strictObject({
     healthKnown: z.boolean(),
+    historyCount: countSchema.nullable(),
     components: z
       .strictObject({
         operationalCount: countSchema,

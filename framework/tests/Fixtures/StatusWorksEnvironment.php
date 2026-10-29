@@ -24,6 +24,7 @@ use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Feature\Definition\StatusFeature;
@@ -50,6 +51,7 @@ use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
+use Hilos\Pages\Status\AbstractHilosStatusHistoryPage;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -358,9 +360,11 @@ abstract class StatusWorksHilos extends Hilos
         StatusWorksGatekeeper::AGENT_TYPE => [AgentRegistryKey::WORKER => StatusWorksGatekeeper::class],
     ];
     public const array PAGES = [AbstractHilosStatusWorksPage::PAGE => StatusWorksPage::class,
-        AbstractHilosStatusPage::PAGE => StatusWorksOverviewPage::class];
-    public const array TABLES = [HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class];
-    public const array PAGE_TABLES = [StatusWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []]];
+        AbstractHilosStatusPage::PAGE => StatusWorksOverviewPage::class, StatusHistoryPage::PAGE => StatusHistoryPage::class];
+    public const array TABLES = [HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
+        HilosStatusHistoryTable::TABLE => HilosStatusHistoryTable::class];
+    public const array PAGE_TABLES = [StatusWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []],
+        StatusHistoryPage::PAGE => [HilosStatusHistoryTable::TABLE => []]];
     protected const array FEATURES = [HilosFeature::STATUS];
     protected const array STATUS_COMPONENTS = [
         'service' => ['name' => 'Service', 'description' => null, 'agentType' => 'probe'],
@@ -374,6 +378,11 @@ final class StatusWorksPage extends AbstractHilosStatusWorksPage
 }
 
 final class StatusWorksOverviewPage extends AbstractHilosStatusPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = StatusWorksGatekeeper::AGENT_TYPE;
+}
+
+final class StatusHistoryPage extends AbstractHilosStatusHistoryPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = StatusWorksGatekeeper::AGENT_TYPE;
 }
@@ -523,6 +532,7 @@ final class StatusWorksTables extends TableContext
     public function configure(): void
     {
         $this->register(HilosStatusWorksTable::TABLE, new HilosStatusWorksTable());
+        $this->register(HilosStatusHistoryTable::TABLE, new HilosStatusHistoryTable());
     }
 }
 

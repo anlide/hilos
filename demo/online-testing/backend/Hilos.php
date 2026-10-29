@@ -69,11 +69,13 @@ use Demo\OnlineTesting\Pages\Hilos\Status\StatusPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusSubscribersPage;
 use Demo\OnlineTesting\Pages\Hilos\Status\StatusWorksPage;
+use Demo\OnlineTesting\Pages\Hilos\Status\StatusHistoryPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyHistoryPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
@@ -303,6 +305,7 @@ final class Hilos extends HilosFacade
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
         StatusWorksPage::PAGE => StatusWorksPage::class,
+        StatusHistoryPage::PAGE => StatusHistoryPage::class,
     ];
 
     public const array GROUPS = [
@@ -472,6 +475,7 @@ final class Hilos extends HilosFacade
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
         HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
+        HilosStatusHistoryTable::TABLE => HilosStatusHistoryTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -619,6 +623,7 @@ final class Hilos extends HilosFacade
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
         StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
         StatusWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []],
+        StatusHistoryPage::PAGE => [HilosStatusHistoryTable::TABLE => []],
     ];
 
     /**

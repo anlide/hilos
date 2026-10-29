@@ -10,6 +10,7 @@ import { watchDeliveryFrames } from '../deliveryFrames.js'
 
 const status = {
   healthKnown: true,
+  historyCount: 0,
   components: { operationalCount: 1, totalCount: 1 },
   publishDelaySeconds: 300,
   maintenance: null,
@@ -88,6 +89,33 @@ describe('Status real wire observations', () => {
       expect(() => receive(raw)).toThrow()
       expect(log.frames[0].raw).toBe(raw)
       expect(log.overviews).toEqual([])
+    } finally {
+      log.stop()
+    }
+  })
+
+  it('requires the History count as an exact nonnegative integer or unavailable null', () => {
+    const { log, receive } = peer()
+    const answer = (value: unknown) => ({
+      ...overview,
+      data: { ...overview.data, payload: { data: { status: value } } },
+    })
+    try {
+      for (const historyCount of [null, 7])
+        receive(JSON.stringify(answer({ ...status, historyCount })))
+      expect(log.overviews.map((value) => value.historyCount)).toEqual([
+        null,
+        7,
+      ])
+      const incomplete = { ...status } as Record<string, unknown>
+      delete incomplete.historyCount
+      for (const value of [
+        incomplete,
+        ...[-1, 1.5, '7'].map((historyCount) => ({ ...status, historyCount })),
+      ]) {
+        expect(() => receive(JSON.stringify(answer(value)))).toThrow()
+      }
+      expect(log.overviews).toHaveLength(2)
     } finally {
       log.stop()
     }

@@ -7,6 +7,10 @@ import {
   STATUS_LEAD,
   STATUS_SUBSCRIBERS_PATH,
   PUBLIC_STATUS_FILES,
+  STATUS_HISTORY_PATH,
+  statusHistoryDeliveries,
+  statusHistoryWindow,
+  expectStatusHistoryFact,
   controlSocketReconnect,
   deliveryObject,
   dismissToasts,
@@ -99,6 +103,7 @@ test('Status direct load, F5, Dashboard, shared head and Components use complete
         { page: 'hilos_status_works', label: 'Scheduled maintenance' },
         { page: 'hilos_status_components', label: 'Components' },
         { page: 'hilos_status_subscribers', label: 'Subscribers' },
+        { page: 'hilos_status_history', label: 'History' },
       ],
     })
     await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
@@ -368,6 +373,8 @@ test('real agent loss creates a candidate and cancellation echoes to a second ad
   const workers = await page.context().newPage()
   const log = watchStatusFrames(page)
   const echo = watchStatusFrames(other)
+  const historyWire = watchDeliveryFrames(page)
+  let savedIncident = { incidentId: 0, componentName: '', detectedAt: 0 }
   try {
     await grantAdminToSelf(expect, other)
     await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
@@ -378,6 +385,7 @@ test('real agent loss creates a candidate and cancellation echoes to a second ad
       const expect = pausedExpect
       await expect.poll(() => log.latest()?.incidents?.length).toBe(1)
       const incident = log.latest()!.incidents![0]
+      savedIncident = incident
       expect(incident).toMatchObject({
         componentKey: STATUS_FAULT_COMPONENT,
         agentType: 'hilos_settings_library',
@@ -438,17 +446,96 @@ test('real agent loss creates a candidate and cancellation echoes to a second ad
     await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
     await expect(other.getByTestId('hilos-status-operational')).toBeVisible()
     expect(log.latest()?.incidents).toEqual([])
+    await test.step('the recovered canceled incident survives History filters and F5', async () => {
+      expect(savedIncident.incidentId).toBeGreaterThan(0)
+      const since = historyWire.packets.length
+      await page.getByTestId('hilos-page-tab-hilos_status_history').click()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(new RegExp(`${STATUS_HISTORY_PATH}$`))
+      const answer = statusHistoryDeliveries(historyWire, since)[0]
+      expect(answer.catalog?.components).toContainEqual({
+        componentKey: STATUS_FAULT_COMPONENT,
+        name: savedIncident.componentName,
+      })
+      const facts = answer.rows.filter(
+        (row) => row.id === `incident:${savedIncident.incidentId}`,
+      )
+      expect(facts).toHaveLength(1)
+      const fact = facts[0]
+      expect(fact).toMatchObject({
+        kind: 'incident',
+        sourceId: savedIncident.incidentId,
+        startedAt: savedIncident.detectedAt,
+        endedAt: expect.any(Number),
+        outcome: 'canceled_publication',
+        title: savedIncident.componentName,
+        componentKeys: [STATUS_FAULT_COMPONENT],
+        severity: 'major_outage',
+        publishedAt: null,
+        completionObservedAt: null,
+        announcementKnown: null,
+        workPublicId: null,
+      })
+      expect(fact.endedAt).toBeGreaterThanOrEqual(fact.startedAt)
+      await expectStatusHistoryFact(expect, page, fact)
+      const search = page.getByTestId('hilos-table-search')
+      let sent = historyWire.sent.length
+      await typeInto(search, 'no-matching-history-component')
+      await expect
+        .poll(() => statusHistoryWindow(historyWire, sent)?.rows)
+        .toEqual([])
+      await expect(
+        shownByTestId(page, `hilos-table-row-${fact.id}`),
+      ).toHaveCount(0)
+      sent = historyWire.sent.length
+      await typeInto(search, fact.title)
+      await expect
+        .poll(() => statusHistoryWindow(historyWire, sent)?.rows)
+        .toContainEqual(fact)
+      await expectStatusHistoryFact(expect, page, fact)
+      for (const [key, option] of [
+        ['componentKey', 0],
+        ['outcome', 2],
+      ] as const) {
+        sent = historyWire.sent.length
+        const filter = page.getByTestId(`hilos-table-filter-${key}`)
+        await filter.getByTestId('hilos-dropdown-toggle').click()
+        await filter.getByTestId(`hilos-dropdown-option-${option}`).click()
+        await expect
+          .poll(() => statusHistoryWindow(historyWire, sent)?.rows)
+          .toContainEqual(fact)
+        const request = deliveryObject(
+          statusHistoryWindow(historyWire, sent)?.request.wire,
+        )
+        // The answer is request-correlated; assert the actual selected value too.
+        expect(deliveryObject(request.filter)).toMatchObject(
+          key === 'componentKey'
+            ? { componentKey: STATUS_FAULT_COMPONENT }
+            : { outcome: 'canceled_publication' },
+        )
+        await expectStatusHistoryFact(expect, page, fact)
+      }
+      const reload = historyWire.packets.length
+      await page.reload()
+      await expectPageReady(expect, page)
+      expect(
+        statusHistoryDeliveries(historyWire, reload)[0].rows,
+      ).toContainEqual(fact)
+      await expectStatusHistoryFact(expect, page, fact)
+    })
   } finally {
     await test.info().attach('status-cancel-real-wire', {
       body: JSON.stringify({
         admin: log.frames,
         adminSent: log.sent,
         secondAdmin: echo.frames,
+        history: historyWire,
       }),
       contentType: 'application/json',
     })
     log.stop()
     echo.stop()
+    historyWire.stop()
     await workers.close()
     await otherContext.close()
   }

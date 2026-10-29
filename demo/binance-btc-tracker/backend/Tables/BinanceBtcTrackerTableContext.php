@@ -46,6 +46,7 @@ use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 
 /**
  * BinanceBtcTrackerTableContext - App-specific table context ($table layer) for binance-btc-tracker.
@@ -73,6 +74,7 @@ use Hilos\Tables\Status\HilosStatusWorksTable;
  * @property-read HilosMaintenanceNodesTable $hilosMaintenanceNodes
  * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
  * @property-read HilosStatusWorksTable $hilosStatusWorks Scheduled maintenance viewport
+ * @property-read HilosStatusHistoryTable $hilosStatusHistory Completed incident and maintenance viewport
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosUsersTable $hilosUsers
@@ -104,6 +106,7 @@ use Hilos\Tables\Status\HilosStatusWorksTable;
 final class BinanceBtcTrackerTableContext extends TableContext
 {
     public const string hilosStatusWorks = HilosStatusWorksTable::TABLE;
+    public const string hilosStatusHistory = HilosStatusHistoryTable::TABLE;
 
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
     public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;

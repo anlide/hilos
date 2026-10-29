@@ -63,6 +63,38 @@ async function page(data?: unknown) {
 }
 
 describe('HilosStatusPage', () => {
+  it('links to History and follows its authoritative zero, count and unavailable without another timer', async () => {
+    const { wrapper, setOverview, sent, viewports } = await page(
+      overview({ historyCount: null }),
+    )
+    const tile = wrapper.get('[data-id="hilos-status-history-tile"]')
+    const frame = tile.element
+    const timers = vi.getTimerCount()
+    expect(
+      tile.get('[data-id="hilos-status-history-link"]').attributes('href'),
+    ).toBe('/hilos/status/history')
+    expect(tile.get('[data-id="hilos-status-history-count"]').text()).toBe('—')
+    expect(
+      tile.get('[data-id="hilos-status-history-unavailable"]').text(),
+    ).toBe('History data is unavailable.')
+    for (const count of [0, 713, 1, null]) {
+      setOverview(overview({ historyCount: count }))
+      await nextTick()
+      expect(tile.get('[data-id="hilos-status-history-count"]').text()).toBe(
+        count === null ? '—' : String(count),
+      )
+      expect(
+        tile.find('[data-id="hilos-status-history-unavailable"]').exists(),
+      ).toBe(count === null)
+      expect(wrapper.get('[data-id="hilos-status-history-tile"]').element).toBe(
+        frame,
+      )
+    }
+    expect(vi.getTimerCount()).toBe(timers)
+    expect(sent).toEqual([])
+    expect(viewports).toEqual([])
+  })
+
   it('uses the real shared head with one h1, three route links and only the active tab current', async () => {
     const { wrapper, sent } = await page(overview())
     expect(wrapper.findAll('h1').map((h) => h.text())).toEqual(['Status'])

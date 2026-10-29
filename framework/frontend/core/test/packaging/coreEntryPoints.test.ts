@@ -41,6 +41,7 @@ import * as settings from '../../src/admin/settings/index.js'
 import * as status from '../../src/admin/status/index.js'
 import * as statusWorks from '../../src/admin/status/hilosStatusWorks.js'
 import * as statusWorkActions from '../../src/admin/status/hilosStatusWorkActions.js'
+import * as statusHistory from '../../src/admin/status/hilosStatusHistory.js'
 import * as localDateTime from '../../src/timeZone/localDateTime.js'
 import * as users from '../../src/admin/users/index.js'
 import * as base from '../../src/base/index.js'
@@ -491,6 +492,38 @@ const statusWorkActionTypes = [
   'HilosStatusWorkCancel',
 ]
 const statusWorkEditorValues = ['localDateTimeValue', 'parseLocalDateTimeValue']
+const statusHistoryValues = [
+  'HILOS_STATUS_HISTORY_DATA',
+  'HILOS_STATUS_HISTORY_TABLE',
+  'HILOS_STATUS_HISTORY_SLOT',
+  'STATUS_HISTORY_FILTER_COMPONENT_KEY',
+  'STATUS_HISTORY_FILTER_OUTCOME',
+  'STATUS_HISTORY_FILTER_FROM',
+  'STATUS_HISTORY_FILTER_TO',
+  'STATUS_HISTORY_FILTER_TIME_ZONE',
+  'STATUS_HISTORY_STARTED_AT_FIELD',
+  'STATUS_HISTORY_ENDED_AT_FIELD',
+  'STATUS_HISTORY_COMPLETION_OBSERVED_AT_FIELD',
+  'STATUS_HISTORY_PUBLISHED_AT_FIELD',
+  'STATUS_HISTORY_OUTCOME_FIELD',
+  'STATUS_HISTORY_TITLE_FIELD',
+  'STATUS_HISTORY_SEVERITY_FIELD',
+  'STATUS_HISTORY_ANNOUNCEMENT_KNOWN_FIELD',
+  'STATUS_HISTORY_WORK_PUBLIC_ID_FIELD',
+  'statusHistoryDataSchema',
+  'statusHistoryRowSchema',
+  'resolveHilosStatusHistoryRow',
+  'HILOS_STATUS_HISTORY_COPY',
+  'hilosStatusHistoryDuration',
+  'createHilosStatusHistoryState',
+  'createHilosStatusHistoryTable',
+]
+const statusHistoryTypes = [
+  'HilosStatusHistoryData',
+  'HilosStatusHistoryRow',
+  'HilosStatusHistoryState',
+  'HilosStatusHistoryTable',
+]
 /** The public file reader is its own lazy entry, separate from admin Status. */
 const publicStatusValues = [
   'STATUS_SUBSCRIBE_ACTION',
@@ -923,6 +956,7 @@ describe('core public entries', () => {
             ...statusWorksValues,
             ...statusWorkActionValues,
             ...statusWorkEditorValues,
+            ...statusHistoryValues,
           ].includes(name)
         ) {
           expect(root, name).not.toHaveProperty(name)
@@ -933,7 +967,9 @@ describe('core public entries', () => {
             ? statusWorks
             : statusWorkActionValues.includes(name)
               ? statusWorkActions
-              : localDateTime
+              : statusHistoryValues.includes(name)
+                ? statusHistory
+                : localDateTime
           expect(value, name).toBe(owner[name])
         } else if (
           entry === './admin/analytics' &&
@@ -1196,6 +1232,7 @@ describe('core public entries', () => {
         ...statusWorksValues,
         ...statusWorkActionValues,
         ...statusWorkEditorValues,
+        ...statusHistoryValues,
         ...changeLogPresentationValues,
       ].sort(),
     )
@@ -1269,19 +1306,21 @@ describe('core public entries', () => {
     )
   })
 
-  it('exports the complete Works API only from the lazy Status section', () => {
+  it('exports the complete Works and History APIs only from the lazy Status section', () => {
     expect(Object.keys(status).sort()).toEqual(
       [
         ...statusValues,
         ...statusWorksValues,
         ...statusWorkActionValues,
         ...statusWorkEditorValues,
+        ...statusHistoryValues,
       ].sort(),
     )
     for (const [names, owner] of [
       [statusWorksValues, statusWorks],
       [statusWorkActionValues, statusWorkActions],
       [statusWorkEditorValues, localDateTime],
+      [statusHistoryValues, statusHistory],
     ] as const)
       for (const name of names) {
         expect((status as Record<string, unknown>)[name], name).toBe(
@@ -1292,6 +1331,8 @@ describe('core public entries', () => {
       }
     expectTypeOf<status.HilosStatusWorkEdit>().toEqualTypeOf<statusWorkActions.HilosStatusWorkEdit>()
     expectTypeOf<status.HilosStatusWorksData>().toEqualTypeOf<statusWorks.HilosStatusWorksData>()
+    expectTypeOf<status.HilosStatusHistoryData>().toEqualTypeOf<statusHistory.HilosStatusHistoryData>()
+    expectTypeOf<status.HilosStatusHistoryRow>().toEqualTypeOf<statusHistory.HilosStatusHistoryRow>()
   })
 
   it('shares all three geometry projections with logical focus return through root and base', () => {
@@ -1648,6 +1689,7 @@ describe('core public entries', () => {
       ...oauthProviderHeadTypes,
     ]
     const worksExports = exportsOf('admin/status/hilosStatusWorks.ts')
+    const historyExports = exportsOf('admin/status/hilosStatusHistory.ts')
     const workActionExports = exportsOf(
       'admin/status/hilosStatusWorkActions.ts',
     )
@@ -1658,6 +1700,7 @@ describe('core public entries', () => {
       ...publicStatusDerivedTypes,
     ]
     const workNames = [...statusWorksValues, ...statusWorksTypes]
+    const historyNames = [...statusHistoryValues, ...statusHistoryTypes]
     const workActionNames = [
       ...statusWorkActionValues,
       ...statusWorkActionTypes,
@@ -1684,6 +1727,7 @@ describe('core public entries', () => {
             ...workNames,
             ...workActionNames,
             ...statusWorkEditorValues,
+            ...historyNames,
           ].includes(name)
         ) {
           expect(root.has(name), name).toBe(false)
@@ -1692,7 +1736,9 @@ describe('core public entries', () => {
             ? worksExports
             : workActionNames.includes(name)
               ? workActionExports
-              : editorExports
+              : historyNames.includes(name)
+                ? historyExports
+                : editorExports
           expect(symbol, `${entry}:${name}`).toBe(owner.get(name))
         } else if (
           entry === 'admin/analytics/index.ts' &&
@@ -1866,6 +1912,7 @@ describe('core public entries', () => {
         ...workNames,
         ...workActionNames,
         ...statusWorkEditorValues,
+        ...historyNames,
         ...changeLogPresentationNames,
       ].sort(),
     )

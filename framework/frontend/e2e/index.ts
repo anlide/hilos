@@ -643,6 +643,17 @@ export {
 } from './status.js'
 
 export {
+  STATUS_HISTORY_PATH,
+  STATUS_HISTORY_PAGE,
+  STATUS_HISTORY_TABLE,
+  STATUS_HISTORY_SLOT,
+  statusHistoryDeliveries,
+  statusHistoryWindow,
+  expectStatusHistoryFact,
+  type StatusHistoryFact,
+} from './statusHistory.js'
+
+export {
   PUBLIC_STATUS_PATH,
   PUBLIC_STATUS_FILES,
   watchPublicStatus,

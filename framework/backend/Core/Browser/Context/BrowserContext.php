@@ -66,8 +66,10 @@ use Hilos\Pages\Security\AbstractHilosSecurityPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
+use Hilos\Pages\Status\AbstractHilosStatusHistoryPage;
 use Hilos\Status\DTO\StatusSubscriberCountsData;
 use Hilos\Status\DTO\StatusWorksData;
+use Hilos\Status\DTO\StatusHistoryData;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
 use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -2109,6 +2111,21 @@ abstract class BrowserContext
                 $this->publishPageData($page, (string) $acceptKey,
                     static fn (): PagePayload => new PagePayload(data: [StatusWorksData::DATA => StatusWorksData::read()?->toArray()]),
                     [StatusWorksData::DATA => WireField::each(StatusWorksData::wireFields())]);
+            }
+        }
+
+        $historyChanged = array_any($this->changes->all(), AbstractHilosStatusHistoryPage::observesOverviewChange(...))
+            || isset($this->staleness[ProtectedModeRuntime::RT_ITEM]) || $databaseBack;
+        if ($historyChanged) {
+            foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+                $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+                if ($page !== HilosPageConstants::HILOS_STATUS_HISTORY || isset($failedSubscriptions[$acceptKey])
+                    || isset($this->publishedWholeThisFlush[$acceptKey])) {
+                    continue;
+                }
+                $this->publishPageData($page, (string) $acceptKey,
+                    static fn (): PagePayload => new PagePayload(data: [StatusHistoryData::DATA => StatusHistoryData::read()?->toArray()]),
+                    [StatusHistoryData::DATA => WireField::each(StatusHistoryData::wireFields())]);
             }
         }
 

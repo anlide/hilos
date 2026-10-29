@@ -129,10 +129,12 @@ use Demo\Chat\Pages\Hilos\Status\StatusPage;
 use Demo\Chat\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\Chat\Pages\Hilos\Status\StatusSubscribersPage;
 use Demo\Chat\Pages\Hilos\Status\StatusWorksPage;
+use Demo\Chat\Pages\Hilos\Status\StatusHistoryPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
+use Hilos\Pages\Status\AbstractHilosStatusHistoryPage;
 use Hilos\Pages\Status\DTO\HilosStatusIncidentActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusRemoveSubscriberActionDTO;
@@ -142,6 +144,7 @@ use Hilos\Pages\Status\DTO\HilosStatusScheduleWorkActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
@@ -715,13 +718,15 @@ final class ChatTopologyRegistryTest extends TestCase
             'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
         ], $requirements->requiredDbTables);
         self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class,
-                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class],
+                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class, AbstractHilosStatusHistoryPage::class],
             $requirements->requiredPages);
-        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class, HilosStatusWorksTable::class],
+        self::assertSame([HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class,
+                HilosStatusWorksTable::class, HilosStatusHistoryTable::class],
             $requirements->requiredTables);
         self::assertSame([AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
             AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
-            AbstractHilosStatusWorksPage::class => HilosStatusWorksTable::class], $requirements->requiredPageTables);
+            AbstractHilosStatusWorksPage::class => HilosStatusWorksTable::class,
+            AbstractHilosStatusHistoryPage::class => HilosStatusHistoryTable::class], $requirements->requiredPageTables);
         self::assertTrue($definition->mountsRuntime());
 
         $statusUnits = [];
@@ -1184,6 +1189,14 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([HilosStatusComponentsTable::TABLE => []], Hilos::PAGE_TABLES[StatusComponentsPage::PAGE]);
         self::assertArrayNotHasKey(StatusPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame([], StatusComponentsPage::ACTIONS);
+        self::assertSame(StatusHistoryPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_HISTORY]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusHistoryPage::PAGE]);
+        self::assertSame(HilosStatusHistoryTable::class, Hilos::TABLES[HilosStatusHistoryTable::TABLE]);
+        self::assertSame([HilosStatusHistoryTable::TABLE => []], Hilos::PAGE_TABLES[StatusHistoryPage::PAGE]);
+        self::assertSame([], StatusHistoryPage::ACTIONS);
+        self::assertSame([], StatusHistoryPage::SIGNALS);
+        self::assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_STATUS_HISTORY,
+            StatusHistoryPage::BROWSER[BrowserConfigKey::SIGNAL]);
         self::assertSame(StatusWorksPage::class, Hilos::PAGES[HilosPageConstants::HILOS_STATUS_WORKS]);
         self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[StatusWorksPage::PAGE]);
         self::assertSame(HilosStatusWorksTable::class, Hilos::TABLES[HilosStatusWorksTable::TABLE]);

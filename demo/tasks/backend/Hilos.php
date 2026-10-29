@@ -100,9 +100,11 @@ use Demo\Tasks\Pages\Hilos\Status\StatusPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusSubscribersPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusWorksPage;
+use Demo\Tasks\Pages\Hilos\Status\StatusHistoryPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\PrivacyHistoryPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
@@ -374,6 +376,7 @@ final class Hilos extends HilosFacade
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
         StatusWorksPage::PAGE => StatusWorksPage::class,
+        StatusHistoryPage::PAGE => StatusHistoryPage::class,
     ];
 
     public const array GROUPS = [
@@ -588,6 +591,7 @@ final class Hilos extends HilosFacade
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
         HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
+        HilosStatusHistoryTable::TABLE => HilosStatusHistoryTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -790,6 +794,7 @@ final class Hilos extends HilosFacade
         StatusComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
         StatusSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
         StatusWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []],
+        StatusHistoryPage::PAGE => [HilosStatusHistoryTable::TABLE => []],
     ];
 
     /**

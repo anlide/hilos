@@ -105,6 +105,7 @@ export function overview(
 ): HilosStatusOverviewData {
   return {
     healthKnown: true,
+    historyCount: 0,
     components: { operationalCount: 0, totalCount: 2 },
     publishDelaySeconds: 60,
     maintenance: null,
@@ -187,6 +188,7 @@ export function statusHarness(page: string = HilosPages.STATUS) {
     [HilosPages.STATUS]: '/hilos/status',
     [HilosPages.STATUS_COMPONENTS]: '/hilos/status/components',
     [HilosPages.STATUS_SUBSCRIBERS]: '/hilos/status/subscribers',
+    [HilosPages.STATUS_HISTORY]: '/hilos/status/history',
     [HilosPages.SETTINGS]: '/hilos/settings',
     [HilosPages.MAINTENANCE]: '/hilos/maintenance',
   }

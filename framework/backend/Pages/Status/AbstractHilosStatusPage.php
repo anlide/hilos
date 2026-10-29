@@ -68,6 +68,7 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
     public const array READS_DB = [
         ...parent::READS_DB, HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::settings,
         HilosDbContext::statusSubscribers, HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents,
+        HilosDbContext::statusMaintenancePeriods,
     ];
 
     public const array READS_RT = [
@@ -94,7 +95,7 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
 
         return in_array($change->sourceKey, [
             HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::statusSubscribers,
-            HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents,
+            HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents, HilosDbContext::statusMaintenancePeriods,
         ], true);
     }
 

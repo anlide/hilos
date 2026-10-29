@@ -6,9 +6,9 @@ machine, publishing its public files, building its admin section, or reading
 
 This document records the Status backend built by HIL-1688, the admin surface
 built by HIL-1689, the public file publisher and reader built by HIL-1690, the
-subscriber lifecycle and outage mail built by HIL-1691, and scheduled works,
-actual maintenance periods, and their public reader and mail built by HIL-1692.
-Admin history remains with HIL-1693, separate cluster and failover proof with
+subscriber lifecycle and outage mail built by HIL-1691, scheduled works and
+actual maintenance periods built by HIL-1692, and the completed admin History
+page built by HIL-1693. Separate cluster and failover proof remains with
 HIL-1694, React views with HIL-1695, and Angular views with HIL-1696.
 
 ## Core Rule
@@ -32,8 +32,9 @@ HIL-1691 adds account-independent email subscriptions, the Subscribers admin
 page, and best-effort outage mail to confirmed recipients. HIL-1692 adds
 scheduled works, observed maintenance periods, the Works admin page, public v2
 maintenance projection and reader support, and best-effort Completed mail.
-Admin history remains with HIL-1693; separate cluster and failover proof with
-HIL-1694; and React and Angular views with HIL-1695 and HIL-1696.
+HIL-1693 adds the completed-history admin page. Separate cluster and failover
+proof remains with HIL-1694; React and Angular views remain with HIL-1695 and
+HIL-1696.
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
 [filesystem](filesystem.md), [protected mode](protected-mode.md) and
@@ -47,10 +48,10 @@ the project activates it and declares its component content; it does not copy
 the outage machine. `StatusFeature` requires `DAEMON`, `NOTIFICATION_DELIVERY`
 and `AUTH_THROTTLE`, the `HILOS_STATUS` agent, the shared mail-delivery agent,
 the `StatusSettingsCatalog` fragment, the incident, incident-update, subscriber,
-work, work-component and maintenance-period tables, all four Status admin
-pages, all three Status tables, and the Components, Subscribers and Works
-page-to-table bindings. It mounts the feature-owned component and maintenance
-runtime collections.
+work, work-component and maintenance-period tables, all five Status admin
+pages, all four Status tables, and the Components, Subscribers, Works and
+History page-to-table bindings. It mounts the feature-owned component and
+maintenance runtime collections.
 
 ### Activation Recipe
 
@@ -82,12 +83,12 @@ the `email` value to its existing enum. It does not apply SQL. Commit generated
 pairs with the project and apply them through the ordinary `db:migration:up`
 command. Do not hand-write or copy these migrations. All six demos in this
 repository activate the feature, register the Status owner pair and merge the
-settings fragment. Each demo registers thin project subclasses for all four
-Status pages. It registers the three final framework Status tables directly in
+settings fragment. Each demo registers thin project subclasses for all five
+Status pages. It registers the four final framework Status tables directly in
 `Hilos::TABLES` under their framework table keys, then binds Components,
-Subscribers and Works to those tables in `Hilos::PAGE_TABLES`. Do not create
-project subclasses of the Status tables. Feature activation validates these
-requirements at startup.
+Subscribers, Works and History to those tables in `Hilos::PAGE_TABLES`. Do not
+create project subclasses of the Status tables. Feature activation validates
+these requirements at startup.
 
 The project Hilos class declares `protected const array STATUS_COMPONENTS = []`
 (`Hilos::STATUS_COMPONENTS`). Its catalog boundary has this shape:
@@ -147,17 +148,17 @@ bypass is added.
 
 ### Admin Pages
 
-The built backend section has four routed pages: `hilos_status` at
+The built backend section has five routed pages: `hilos_status` at
 `/hilos/status`, `hilos_status_components` at `/hilos/status/components`,
-`hilos_status_subscribers` at `/hilos/status/subscribers`, and
-`hilos_status_works` at `/hilos/status/works`. All have empty route params, use
-`PageReach::ROUTE`, and inherit the `ADMIN` access level from
+`hilos_status_subscribers` at `/hilos/status/subscribers`,
+`hilos_status_works` at `/hilos/status/works`, and
+`hilos_status_history` at `/hilos/status/history`. All have empty route params,
+use `PageReach::ROUTE`, and inherit the `ADMIN` access level from
 `AbstractHilosPage`. `Status` is a child of Dashboard and is opted into the
 shared page head with label and breadcrumb `Status`, icon `bi-activity`, and
 lead `A public status page: service health, incidents, and planned work.`
-Components, Subscribers and Scheduled maintenance are child tabs; together with
-the Overview they make up the four Status tabs. Admin History remains with
-HIL-1693.
+Components, Subscribers, Scheduled maintenance and History are child tabs;
+together with the Overview they make up the five Status tabs, with History last.
 
 Every admin page first render uses the existing `page_response`. Overview data
 is `page_response.data.status`, assembled temporarily by
@@ -176,7 +177,8 @@ status = {
   },
   incidents: null | Incident[],
   subscribers: null | {confirmedCount: int, pendingCount: int},
-  scheduledWorks: null | {count: int, nextWork: Work | null}
+  scheduledWorks: null | {count: int, nextWork: Work | null},
+  historyCount: int | null
 }
 Work = {
   id: string, title: string, description: string | null,
@@ -209,15 +211,22 @@ visible. A stale or unavailable maintenance RT source produces
 `scheduledWorks` summary is null while its DB sources are unavailable and
 contains a zero count only for a known empty set. Its count covers unexpired,
 unfinished announcements and `nextWork` is the nearest by start. Only open
-incidents and their own updates are read; there is no ended incident history,
-subscriber address, delivery count or public-file data in this payload. The
-separate subscriber count object is null when its DB source is unavailable and
-contains zeroes only when the aggregate proves an empty set.
+incidents and their own updates are read into the Overview's `incidents` field;
+that field contains no ended rows. The separate History page reads completed
+incident and maintenance facts. This Overview payload contains no subscriber
+address, delivery count or public-file data. The separate subscriber count
+object is null when its DB source is unavailable and contains zeroes only when
+the aggregate proves an empty set.
 
 The Overview's Scheduled maintenance tile uses `status.scheduledWorks` for its
 count and nearest announcement. Its existing maintenance card shows the
 announcement only when the current RT observation proves it; a missing or
 stale source leaves that detail unknown.
+
+The Overview's `historyCount` is the exact scalar total of completed incidents
+and maintenance periods. It is independent of History filters and the table's
+500-row count ceiling. It is null when either source cannot be read or the
+freeze silences DB reads; an unavailable count is not shown as zero.
 
 `StatusIncidentData` and `StatusIncidentUpdateData` build only the open incident
 and its own timeline projection. The DTO uses `WireField::column()` for
@@ -228,12 +237,14 @@ mode, personal incident-update text becomes `HiddenValue`; the row and timeline
 remain. Viewer permissions and hidden-field behavior follow
 [admin view mode](admin-view-mode.md).
 
-The four `BROWSER.SIGNAL` declarations use
+The five `BROWSER.SIGNAL` declarations use
 `subscription_page_hilos_status`,
 `subscription_page_hilos_status_components`,
-`subscription_page_hilos_status_subscribers`, and
-`subscription_page_hilos_status_works`. These are metadata names, not
-additional frames: page state still arrives in the existing `page_response`.
+`subscription_page_hilos_status_subscribers`,
+`subscription_page_hilos_status_works`, and
+`subscription_page_hilos_status_history`. These are metadata names, not
+additional signal frames: page state still arrives in the existing
+`page_response`.
 The Overview's `status.subscribers` and the Subscribers page's top-level
 `statusSubscribers` carry `{confirmedCount, pendingCount}` in that answer. Both
 pages declare reads of `statusSubscribers` and rebuild their current counts on
@@ -243,6 +254,14 @@ collapse or replace a held viewport window.
 The internal `Hilos\Status\StatusSubscriberCountsData` aggregate also carries
 `total` and `maxSubscriberId` for the owner's audience cutoff; only
 `{confirmedCount, pendingCount}` crosses the page-response boundary.
+
+The History route uses `subscription_page_hilos_status_history` only as browser
+metadata on the existing `BrowserPageSignalData`; it has `ACTIONS=[]` and empty
+route params. Its first ordinary `page_response` carries nullable
+`data.statusHistory` and the initial `windows.hilosStatusHistory` viewport
+together. `statusHistory.components` is the complete component filter catalog;
+the table window is the ordinary viewport, separate from that catalog. There is
+no history-specific handshake, action or frame.
 
 The Components page's first viewport is
 `page_response.windows.hilosStatusComponents`. Its row key is `componentKey`;
@@ -365,22 +384,24 @@ page, viewport table, create/edit/cancel modals and action notices. Chat and
 Binance mount thin Vue wrappers; React and Angular Status views remain with
 HIL-1695 and HIL-1696.
 
-Overview source changes use the existing guarded `PageResender` /
-`resendPageWhole()` path. The narrow `hilos_status` branches in
-`BrowserContext::addBrowserChange()` and `addBrowserStaleness()` reuse the
-subscription guards and `publishedWholeThisFlush`; they add no timer, cache or
-generic fan-out. Components, Subscribers and Works remain separate page
-subscriptions, so an Overview re-answer does not reset another table viewport.
+Overview source changes, including completed-history changes to `historyCount`,
+use the existing guarded `PageResender` / `resendPageWhole()` path. The narrow
+`hilos_status` branches in `BrowserContext::addBrowserChange()` and
+`addBrowserStaleness()` reuse the subscription guards and
+`publishedWholeThisFlush`; they add no timer, cache or generic fan-out.
+Components, Subscribers, Works and History remain separate page subscriptions,
+so an Overview re-answer does not reset another table viewport.
 
-The framework's core module binds `page_response.data.status` and the
-Subscribers page's `page_response.data.statusSubscribers` through strict schemas
-and the existing `pageDataSignal`; it performs no mount fetch. Its state and
-incident controllers retain the captured `incidentId`, draft, busy, refusal and
-timeout lifecycle. A live update cannot retarget the dialog to a new incident
-for the same component. A suppressed candidate remains `Checking` with
-“Publication canceled manually”; reaching countdown zero does not publish it
-or create a server fact. Moments use `formatMoment()` in the reader's zone; the
-countdown uses the server clock through `toLocal()` and `formatCountdown()`.
+The framework's core module binds `page_response.data.status`, the Subscribers
+page's `page_response.data.statusSubscribers` and History's
+`page_response.data.statusHistory` through strict schemas and the existing
+`pageDataSignal`; it performs no mount fetch. Its state and incident controllers
+retain the captured `incidentId`, draft, busy, refusal and timeout lifecycle. A
+live update cannot retarget the dialog to a new incident for the same component.
+A suppressed candidate remains `Checking` with “Publication canceled
+manually”; reaching countdown zero does not publish it or create a server fact.
+Moments use `formatMoment()` in the reader's zone; the countdown uses the server
+clock through `toLocal()` and `formatCountdown()`.
 
 The SDK exports the admin implementation lazily from
 `@hilos/core/admin/status` and `@hilos/vue/admin/status`, while keeping
@@ -393,7 +414,7 @@ button slot. `HilosStatusSubscribersPage` from `@hilos/vue/admin/status` takes
 `HilosStatusSubscribersContext`, the existing `{scopes, connection, actions}`
 Status context. Status is not imported by either package's eager `base` entry
 or Vue's default `hilosAdminViews()` map. Chat and Binance BTC Tracker mount
-thin Vue wrappers for the public reader and all four admin pages. The public
+thin Vue wrappers for the public reader and all five admin pages. The public
 `/status` route is the framework-owned client file reader; it has no backend
 page, catalog entry or `page_response` subscription. React and Angular Status
 views remain unbuilt until HIL-1695 and HIL-1696, so their Status tabs stay out
@@ -405,6 +426,69 @@ Neither a separate writer per node nor a project copy of the reader is an
 activation mechanism. Each of the six demo filesystem contexts registers
 `FsContext::STATUS` at `data/status` with `DirectoryScope::CLUSTER`; its nginx
 mounts that directory read-only.
+
+### History page and rows
+
+`AbstractHilosStatusHistoryPage` serves `/hilos/status/history` under the
+existing `HILOS_INDEX` project binding. It is read-only and adds no table agent.
+The current component catalog supplies filter names; saved component keys that
+are no longer in that catalog remain selectable with the key as their fallback
+label. `data.statusHistory` is null when either historical source is not ready
+or cannot be read, including when freeze silence prevents DB reads. The merged
+table does not turn a missing source into an empty or partial history.
+
+Rows come only from `Hilos::$db->statusIncidents` with `resolvedAt != null` and
+`Hilos::$db->statusMaintenancePeriods` with
+`completionObservedAt != null`. Open and suppressed-open incidents are not
+rows. A canceled or expired announcement without an actual maintenance period
+does not create one. This admin history is separate from the public retained
+projection: unpublished candidates remain absent from public retained history.
+
+Each normalized row preserves its source identity as
+`incident:<positive-id>` or `maintenance:<positive-id>` and keeps the saved
+incident component name or maintenance title, component keys,
+`announcementKnown`, nullable `workPublicId` and completion outcome. These
+historical values are not replaced by the current component catalog. Incident
+outcomes are `resolved`, `recovered_before_publication` and
+`canceled_publication`; maintenance uses `maintenance_completed`.
+
+The table searches the saved component name or maintenance title. Its Component
+filter uses the stable component key, Outcome offers the four retained outcomes,
+and Period filters Start between inclusive from/to calendar dates in the
+browser's IANA time zone, with the end boundary at the next local calendar day
+so daylight-saving changes follow the calendar boundary.
+Sorting is only by Start: descending by default and ascending as its mirror.
+The merged order is `(startedAt, kindRank, sourceId)`, with incident rank 0,
+maintenance rank 1 and numeric source id as the final tie-breaker.
+
+Typed bounded View/Object reads through `Hilos::$db` return up to 32 rows plus
+an edge probe. Numbered edge prefixes use `TableWindowPlan` within the shared
+500-row count ceiling. These reads do not load all history, issue SQL from the
+page or table, or keep a long-lived ORM history cache. The table total is capped
+at that ceiling and marks whether it is exact. The Overview's `historyCount`
+remains the exact uncapped scalar total, independent of the table's filters. An
+immutable migration change adds the incident source's
+`(detected_at DESC, id DESC)` history index. The generated Status incident
+schema pairs are already present in all six demos.
+
+Incident duration is `detectedAt` to `resolvedAt`; `publishedAt` is not the
+start. Published incidents display `peakSeverity ?? severity`, while
+unpublished incidents retain their saved severity. A maintenance period has a
+proven duration only when `endedAt` is known. If completion was observed but its
+exact end is unknown, the row shows “Completion observed at” and Duration
+“Unknown”; the observation time is not used as the end. The saved
+`announcementKnown` classification is checked before a missing announcement id
+can be described as unannounced. Moments travel as UTC epoch milliseconds and
+`formatMoment()` displays them in the reader's zone.
+
+Committed incident and maintenance changes use ordinary browser source fan-out
+and the viewport's Show/Apply behavior. Already visible values update without a
+window jump; row arrivals, moves and departures follow the ordinary pending
+rules. History's filter catalog is republished through coalesced `page_data`
+independently, so it does not rebuild a held viewport or apply its pending
+changes. The initial response contains both the catalog and window. The
+Overview's completed-history count is resent with the whole Overview through
+the regular `PageResender`, regardless of History filters.
 
 ## Facts And Ownership
 
@@ -723,10 +807,10 @@ best-effort subscriber mail work described in
 [Subscribers And Mail](#subscribers-and-mail); they are separate from the
 candidate notice queue above.
 
-Admin history retains ended candidates with their reasons, published outages
-and completed works. A short or suppressed candidate never remains in public
-history.
-(not in the code yet — HIL-1693)
+Admin History retains completed incidents with their outcomes, including
+incidents that recovered before publication or had publication canceled, and
+completed maintenance periods. Public retained history still excludes
+unpublished candidate incidents.
 
 ### Subscribers And Mail
 
@@ -1230,7 +1314,7 @@ current validation surfaces.
 | Subscribers admin viewport and public subscription controller | `framework/backend/Pages/Status/AbstractHilosStatusSubscribersPage.php`, `framework/backend/Tables/Status/HilosStatusSubscribersTable.php`; `framework/frontend/core/src/admin/status/hilosStatusSubscribers.ts`, `framework/frontend/core/src/status/statusSubscription.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.vue`, `framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue`; `framework/tests/Unit/StatusSubscriberTableTest.php`, `StatusSubscriberAdminIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusSubscribers.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.test.ts`; `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts` | Landed by HIL-1691; Chat and Binance carry the built Vue pages, other four SDK views remain unbuilt |
 | Email throttle scope and per-parking-agent verdict route | `framework/backend/Auth/Throttle/ThrottleEmailIdentityInterface.php`, `ThrottleIdentity.php`, `ThrottleVerdictRoute.php`, `framework/backend/Status/StatusAgent.php`, `framework/backend/Core/Topology/TopologyValidator.php`, `framework/backend/Core/Page/PageSignalRouter.php`; `framework/tests/Unit/ThrottleVerdictRouteTest.php`, `StatusThrottleVerdictRoutingTest.php`, `TopologyValidatorTest.php`, `PageSignalRouterThrottlePoolTest.php`; `framework/tests/Integration/AuthThrottleIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php` | Landed by HIL-1691; the ordinary auth verdict remains on its existing host |
 | Scheduled works, maintenance observation and Completed delivery | `framework/backend/Database/Entity/Item/StatusWork.php`, `framework/backend/Database/Entity/Item/StatusWorkComponent.php`, `framework/backend/Database/Entity/Item/StatusMaintenancePeriod.php`; `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusMaintenanceObservation.php`, `framework/backend/Status/StatusMaintenanceObservationStore.php`, `framework/backend/Status/StatusPublicWork.php`, `framework/backend/Status/StatusPublicMaintenancePeriod.php`, `framework/backend/Status/StatusPublicSnapshot.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/backend/Status/StatusPublicSnapshotBuilder.php`; `framework/backend/Pages/Status/AbstractHilosStatusWorksPage.php`, `framework/backend/Tables/Status/HilosStatusWorksTable.php`; `framework/frontend/core/src/admin/status/hilosStatusWorks.ts`, `framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts`, `framework/frontend/core/src/timeZone/localDateTime.ts`, `framework/frontend/core/src/status/statusFiles.ts`, `framework/frontend/core/src/status/derivedStatus.ts`; `framework/frontend/vue/src/admin/status/HilosStatusWorksPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusWorkModal.vue`, `framework/frontend/vue/src/admin/status/HilosStatusCancelWorkModal.vue`, `framework/frontend/vue/src/public/HilosStatusPage.vue`; `demo/chat/frontend/src/views/Hilos/Status/Works/Works.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/Works/Works.vue`; `framework/tests/Integration/StatusWorksSchemaIntegrationTest.php`, `framework/tests/Integration/StatusMaintenancePeriodsIntegrationTest.php`, `framework/tests/Integration/StatusWorkMailIntegrationTest.php`; `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts` | Implemented by HIL-1692; source and validation paths are listed here |
-| Admin history | — | (not in the code yet — HIL-1693) |
+| Admin History page, merged completed facts and Overview count | `framework/backend/Pages/Status/AbstractHilosStatusHistoryPage.php`, `framework/backend/Status/DTO/StatusHistory*.php`, `framework/backend/Status/DTO/StatusOverviewData.php`, `framework/backend/Tables/Status/HilosStatusHistoryTable.php`, `framework/backend/Tables/Status/HilosStatusHistoryTableRow.php`, `framework/backend/Core/Browser/Context/BrowserContext.php`, `framework/backend/Core/Feature/Definition/StatusFeature.php`, `framework/backend/Database/Migration/Change/20261029183938100830_HIL-1693_status_history_order/up.sql`; `framework/frontend/core/src/admin/status/hilosStatusHistory.ts`, `framework/frontend/vue/src/admin/status/HilosStatusHistoryPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusPage.vue`; `demo/chat/frontend/src/views/Hilos/Status/History/History.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/History/History.vue`; `framework/tests/Unit/StatusHistoryProjectionTest.php`, `StatusHistoryTableTest.php`, `StatusOverviewProjectionTest.php`, `StatusOverviewPageTest.php`, `StatusFeatureActivationTest.php`; `framework/tests/Integration/StatusHistorySchemaIntegrationTest.php`, `StatusHistoryTableIntegrationTest.php`, `StatusHistoryFanoutIntegrationTest.php`, `StatusHistoryPageIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusHistory.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusHistoryPage.test.ts`, `HilosStatusPage.test.ts` | Landed by HIL-1693; Chat and Binance mount the built Vue page; React and Angular remain with HIL-1695 and HIL-1696 |
 | Separate cluster and failover proof | — | (not in the code yet — HIL-1694) |
 | React UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1695) |
 | Angular UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1696) |
@@ -1280,10 +1364,14 @@ Status checks are split across these existing layers:
   `publicStatus.test.ts` and `derivedStatus.test.ts`. The subscription and
   subscriber and Works table controllers are covered by `statusSubscription.test.ts`,
   `admin/status/hilosStatusSubscribers.test.ts` and
-  `framework/frontend/core/test/admin/status/hilosStatusWorks.test.ts`.
+  `framework/frontend/core/test/admin/status/hilosStatusWorks.test.ts`; History
+  controller behavior is covered by
+  `framework/frontend/core/test/admin/status/hilosStatusHistory.test.ts`.
 - Vue rendering is covered by the public page and modal tests and the admin
-  Subscribers and Works page, work modal and Overview tests under
-  `framework/frontend/vue/src/`. The router's fragment-only history behavior is covered by
+  Subscribers, Works and History pages, work modal and Overview tests under
+  `framework/frontend/vue/src/`. History row rendering and the Overview count
+  are covered by `HilosStatusHistoryPage.test.ts` and `HilosStatusPage.test.ts`.
+  The router's fragment-only history behavior is covered by
   `framework/frontend/core/test/routing/HilosRouter.test.ts`.
 - Real browser and Mailpit coverage is carried by
   `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`,

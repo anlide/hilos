@@ -85,6 +85,17 @@ describe('Status wire schema', () => {
     }
   })
 
+  it('requires an exact nonnegative history count and preserves unavailable', () => {
+    for (const historyCount of [null, 0, 701])
+      expect(
+        statusOverviewSchema.parse(overview({ historyCount })).historyCount,
+      ).toBe(historyCount)
+    for (const historyCount of [-1, 0.5, '0', undefined])
+      expect(
+        statusOverviewSchema.safeParse({ ...overview(), historyCount }).success,
+      ).toBe(false)
+  })
+
   it('requires every nullable key at every depth, and rejects extra keys', () => {
     for (const key of Object.keys(overview())) {
       const wire = { ...overview() } as Record<string, unknown>

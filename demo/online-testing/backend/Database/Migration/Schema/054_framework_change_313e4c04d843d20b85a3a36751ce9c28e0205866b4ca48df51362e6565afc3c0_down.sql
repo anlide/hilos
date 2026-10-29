@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["status_incident"],"parts":[{"changeId":"20261029183938100830_HIL-1693_status_history_order","unit":"status_incident","upSha256":"c0a9bfcc98e26b298f332818e8c74de6cea14c326b51554375341d9f1c56913c","downSha256":"424a81000db5f82d592a1b7b246ae94391ee78b04194f47aa977253fb44865ca"}],"upSha256":"c0a9bfcc98e26b298f332818e8c74de6cea14c326b51554375341d9f1c56913c","downSha256":"424a81000db5f82d592a1b7b246ae94391ee78b04194f47aa977253fb44865ca"}
+ALTER TABLE `hilos_status_incident` DROP INDEX `idx_status_incident_detected`;

@@ -60,6 +60,7 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Tables\Moderation\HilosModerationKindsTable;
 use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
@@ -74,6 +75,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosMergeCandidatesTable $hilosMergeCandidates
  * @property-read BotsTable $bots
  * @property-read HilosStatusWorksTable $hilosStatusWorks Scheduled maintenance viewport
+ * @property-read HilosStatusHistoryTable $hilosStatusHistory Completed incident and maintenance viewport
  * @property-read HilosSettingsTable $settings
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
@@ -130,6 +132,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
 final class ChatTableContext extends TableContext
 {
     public const string hilosStatusWorks = HilosStatusWorksTable::TABLE;
+    public const string hilosStatusHistory = HilosStatusHistoryTable::TABLE;
 
     public const string hilosUsers = 'hilosUsers';
     public const string hilosMergeCandidates = HilosMergeCandidatesTable::TABLE;

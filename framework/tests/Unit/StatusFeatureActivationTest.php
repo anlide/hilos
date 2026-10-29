@@ -56,9 +56,11 @@ use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
 use Hilos\Pages\Status\AbstractHilosStatusWorksPage;
+use Hilos\Pages\Status\AbstractHilosStatusHistoryPage;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
+use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
 use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
@@ -109,12 +111,14 @@ final class StatusFeatureActivationTest extends TestCase
         self::assertTrue($definition->mountsRuntime());
         self::assertEquals(new FeatureRequirements(
             requiredPages: [AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class,
-                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class],
-            requiredTables: [HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class, HilosStatusWorksTable::class],
+                AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class, AbstractHilosStatusHistoryPage::class],
+            requiredTables: [HilosStatusComponentsTable::class, HilosStatusSubscribersTable::class,
+                HilosStatusWorksTable::class, HilosStatusHistoryTable::class],
             requiredPageTables: [
                 AbstractHilosStatusComponentsPage::class => HilosStatusComponentsTable::class,
                 AbstractHilosStatusSubscribersPage::class => HilosStatusSubscribersTable::class,
                 AbstractHilosStatusWorksPage::class => HilosStatusWorksTable::class,
+                AbstractHilosStatusHistoryPage::class => HilosStatusHistoryTable::class,
             ],
             requiredAgents: [HilosAgentType::HILOS_STATUS],
             requiredSharedAgents: [MailDeliveryChannelAgent::AGENT_TYPE],
@@ -378,18 +382,26 @@ final class StatusActivationWorksPage extends AbstractHilosStatusWorksPage
     public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 }
 
+final class StatusActivationHistoryPage extends AbstractHilosStatusHistoryPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
 abstract class StatusEnabledHilos extends Hilos
 {
     public const array PAGES = [StatusActivationPage::PAGE => StatusActivationPage::class,
         StatusActivationComponentsPage::PAGE => StatusActivationComponentsPage::class,
         StatusActivationSubscribersPage::PAGE => StatusActivationSubscribersPage::class,
-        StatusActivationWorksPage::PAGE => StatusActivationWorksPage::class];
+        StatusActivationWorksPage::PAGE => StatusActivationWorksPage::class,
+        StatusActivationHistoryPage::PAGE => StatusActivationHistoryPage::class];
     public const array TABLES = [HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
-        HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class];
+        HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
+        HilosStatusHistoryTable::TABLE => HilosStatusHistoryTable::class];
     public const array PAGE_TABLES = [StatusActivationComponentsPage::PAGE => [HilosStatusComponentsTable::TABLE => []],
         StatusActivationSubscribersPage::PAGE => [HilosStatusSubscribersTable::TABLE => []],
-        StatusActivationWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []]];
+        StatusActivationWorksPage::PAGE => [HilosStatusWorksTable::TABLE => []],
+        StatusActivationHistoryPage::PAGE => [HilosStatusHistoryTable::TABLE => []]];
     public const array AGENTS = StatusFeatureActivationTest::STATUS_PAIR + [
         HilosAgentType::HILOS_INDEX => [],
         MailDeliveryChannelAgent::AGENT_TYPE => [

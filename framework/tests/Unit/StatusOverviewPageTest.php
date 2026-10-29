@@ -55,6 +55,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
             ['page' => HilosPageConstants::HILOS_STATUS_WORKS, 'label' => 'Scheduled maintenance'],
             ['page' => HilosPageConstants::HILOS_STATUS_COMPONENTS, 'label' => 'Components'],
             ['page' => HilosPageConstants::HILOS_STATUS_SUBSCRIBERS, 'label' => 'Subscribers'],
+            ['page' => HilosPageConstants::HILOS_STATUS_HISTORY, 'label' => 'History'],
         ], $reply->payload->data['pageTabs']);
         self::assertSame([], $reply->payload->windows);
         self::assertSame($reply->toArray(), PageResponseSignalData::fromArray($reply->toArray())->toArray());

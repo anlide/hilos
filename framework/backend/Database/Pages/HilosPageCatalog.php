@@ -626,6 +626,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Subscribers',
         ],
+        HilosPageConstants::HILOS_STATUS_HISTORY => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'History',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Completed incidents and maintenance periods.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_STATUS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'History',
+        ],
 
         // — Automation & intelligence —
         HilosPageConstants::HILOS_ANALYTICS => [

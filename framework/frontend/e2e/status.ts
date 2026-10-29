@@ -51,11 +51,11 @@ export function watchStatusFrames(page: Page) {
   }
 }
 
-/** The shared head, four real addresses and the section's sole heading. */
+/** The shared head, five real addresses and the section's sole heading. */
 export async function expectStatusHead(
   expect: Expect,
   page: Page,
-  components: boolean | 'works' | 'subscribers' = false,
+  components: boolean | 'works' | 'subscribers' | 'history' = false,
 ): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText('Status')
@@ -65,7 +65,7 @@ export async function expectStatusHead(
   ).toHaveText(['Hilos', 'Status'])
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Status pages')
-  await expect(tabs.getByRole('link')).toHaveCount(4)
+  await expect(tabs.getByRole('link')).toHaveCount(5)
   for (const [key, label, href, active] of [
     ['hilos_status', 'Overview', STATUS_PATH, components === false],
     [
@@ -85,6 +85,12 @@ export async function expectStatusHead(
       'Subscribers',
       '/hilos/status/subscribers',
       components === 'subscribers',
+    ],
+    [
+      'hilos_status_history',
+      'History',
+      '/hilos/status/history',
+      components === 'history',
     ],
   ] as const) {
     const tab = tabs.getByTestId(`hilos-page-tab-${key}`)

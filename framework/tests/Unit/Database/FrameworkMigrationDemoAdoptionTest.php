@@ -112,9 +112,11 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
                 $origins[] = $install;
             }
-            $statusParts = $catalog->partsForUnits(['status_incident', 'status_incident_update']);
+            $statusParts = [
+                $catalog->part('20261023115508508976_HIL-1688_status_machine', 'status_incident'),
+                $catalog->part('20261023115508508976_HIL-1688_status_machine', 'status_incident_update'),
+            ];
             foreach (['status_incident', 'status_incident_update'] as $offset => $key) {
-                $unit = $schema->unit($key);
                 $base = $project->root . '/' . sprintf('%03d', $statusIndices[$index] + $offset) . '_framework_install_' . $key;
                 $up = FsPath::read($base . '.sql');
                 $down = FsPath::read($base . '_down.sql');
@@ -125,8 +127,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     [$statusParts[$offset]->toArray()],
                     array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $install->parts),
                 );
-                self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
-                self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                self::assertSame($statusParts[$offset]->upSql, substr($up, strpos($up, "\n") + 1));
+                self::assertSame($statusParts[$offset]->downSql, substr($down, strpos($down, "\n") + 1));
                 $origins[] = $install;
             }
             $subscriberIndices = [104, 63, 63, 49, 49, 49];
@@ -163,6 +165,22 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
                 $origins[] = $install;
             }
+            $historyIndices = [109, 68, 68, 54, 54, 54];
+            $base = $project->root . '/' . sprintf('%03d', $historyIndices[$index])
+                . '_framework_change_313e4c04d843d20b85a3a36751ce9c28e0205866b4ca48df51362e6565afc3c0';
+            $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['status_incident'], $change->units);
+            self::assertCount(1, $change->parts);
+            self::assertSame('20261029183938100830_HIL-1693_status_history_order/status_incident', $change->parts[0]->key());
+            $source = $catalog->part($change->parts[0]->changeId, 'status_incident');
+            self::assertFalse($source->introducesUnit);
+            self::assertSame(['20261023115508508976_HIL-1688_status_machine/status_incident'], $source->requires);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('status_incident')->upPath)),
+                $source->afterStubUpSha256);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('status_incident')->downPath)),
+                $source->afterStubDownSha256);
+            $origins[] = $change;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

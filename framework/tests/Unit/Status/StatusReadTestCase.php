@@ -236,7 +236,7 @@ final class StatusProjectionDbContext extends HilosDbContext
         $this->_objectCollections[self::statusWorkComponents] = ObjectStatusWorkComponents::initEmpty();
         $this->setRepresent(self::statusWorkComponents, StatusWorkComponents::class);
         $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initEmpty();
-        $this->setRepresent(self::statusMaintenancePeriods, StatusMaintenancePeriods::class);
+        $this->setRepresent(self::statusMaintenancePeriods, StatusProjectionMaintenancePeriods::class);
         $this->_objectCollections[self::settings] = ObjectSettings::initEmpty();
         $this->setRepresent(self::settings, Settings::class);
         $this->_dbItemCollections[self::statusSubscribers] = StatusProjectionSubscribers::initEmpty();
@@ -277,6 +277,9 @@ final class StatusProjectionDbContext extends HilosDbContext
 final class StatusProjectionIncidents extends StatusIncidents
 {
     public bool $unavailable = false;
+    public int $completed = 0;
+    public array $historicalKeys = [];
+    public int $historyReads = 0;
     public array $selection = [];
     public int $reads = 0;
 
@@ -293,6 +296,49 @@ final class StatusProjectionIncidents extends StatusIncidents
             throw new DatabaseException('Incident storage unavailable');
         }
         return parent::whereColumnIn($column, ...$values);
+    }
+
+    /** @return int Supplied scalar boundary result, independent of the manual open-incident set */
+    public function completedCount(): int
+    {
+        ++$this->historyReads;
+        if ($this->unavailable) {
+            throw new DatabaseException('Incident storage unavailable');
+        }
+        return $this->completed;
+    }
+
+    /** @return list<string> Supplied scalar historical key result */
+    public function historyComponentKeys(): array
+    {
+        $this->completedCount();
+        return $this->historicalKeys;
+    }
+}
+
+/** Independent scalar boundary for the second history source. */
+final class StatusProjectionMaintenancePeriods extends StatusMaintenancePeriods
+{
+    public bool $unavailable = false;
+    public int $completed = 0;
+    public array $historicalKeys = [];
+    public int $historyReads = 0;
+
+    /** @return int Supplied scalar boundary result */
+    public function completedCount(): int
+    {
+        ++$this->historyReads;
+        if ($this->unavailable) {
+            throw new DatabaseException('Maintenance storage unavailable');
+        }
+        return $this->completed;
+    }
+
+    /** @return list<string> Supplied scalar historical key result */
+    public function historyComponentKeys(): array
+    {
+        $this->completedCount();
+        return $this->historicalKeys;
     }
 }
 

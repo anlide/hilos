@@ -7,6 +7,8 @@ namespace Hilos\Status\DTO;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\TimeConstants;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\CollectionNotFullyLoadedException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -35,6 +37,7 @@ final readonly class StatusOverviewData
     public const string incidents = 'incidents';
     public const string subscribers = 'subscribers';
     public const string scheduledWorks = 'scheduledWorks';
+    public const string historyCount = 'historyCount';
     public const string announcement = 'announcement';
     public const string known = 'known';
     public const string work = 'work';
@@ -50,6 +53,7 @@ final readonly class StatusOverviewData
      * @param ?list<StatusIncidentData> $incidents Open facts in catalog order, or null when unavailable
      * @param ?StatusSubscriberCountsData $subscribers Current subscriber counts, or null when unavailable
      * @param ?StatusWorksData $scheduledWorks Current scheduled-work summary, null while unavailable
+     * @param ?int $historyCount Exact completed history count, null when either source is unavailable
      * @param ?bool $announcementKnown Proven classification, null when the current RT source is unavailable
      * @param ?StatusPublicWork $maintenanceWork Approved RT snapshot of the associated announcement
      */
@@ -64,6 +68,7 @@ final readonly class StatusOverviewData
         public ?array $incidents,
         public ?StatusSubscriberCountsData $subscribers,
         public ?StatusWorksData $scheduledWorks,
+        public ?int $historyCount,
         public ?bool $announcementKnown,
         public ?StatusPublicWork $maintenanceWork,
     ) {
@@ -134,6 +139,19 @@ final readonly class StatusOverviewData
             }
         }
 
+        $historyCount = null;
+        if (Hilos::$db !== null && Hilos::$rt?->hilosProtectedModeRuntime !== null
+            && !Hilos::$rt->hilosProtectedModeRuntime->silencesUnstoppedWriters()
+            && array_all([HilosDbContext::statusIncidents, HilosDbContext::statusMaintenancePeriods],
+                static fn (string $source): bool => !SourceInterestRegistry::isDeclared(SourceChange::KIND_DB, $source)
+                    || SourceInterestRegistry::isReady(SourceChange::KIND_DB, $source))) {
+            try {
+                $historyCount = Hilos::$db->statusIncidents->completedCount() + Hilos::$db->statusMaintenancePeriods->completedCount();
+            } catch (DatabaseException | CollectionNotFullyLoadedException) {
+                $historyCount = null;
+            }
+        }
+
         return new self(
             $known, $operational, count($snapshot->components), $delay,
             $maintenance ? Hilos::$rt->hilosProtectedModeRuntime->phase : null,
@@ -143,6 +161,7 @@ final readonly class StatusOverviewData
             $incidents,
             StatusSubscriberCountsData::read(),
             StatusWorksData::read(),
+            $historyCount,
             $announcementKnown,
             $work,
         );
@@ -165,6 +184,7 @@ final readonly class StatusOverviewData
             ]),
             self::incidents => WireField::each(StatusIncidentData::wireFields()),
             self::subscribers => WireField::each(StatusSubscriberCountsData::wireFields()),
+            self::historyCount => WireField::notPersonal(),
             self::scheduledWorks => WireField::each([
                 StatusWorksData::count => WireField::notPersonal(), StatusWorksData::nextWork => WireField::each(StatusWorksData::workWireFields()),
             ]),
@@ -188,6 +208,7 @@ final readonly class StatusOverviewData
             self::incidents => $this->incidents === null ? null
                 : array_map(static fn (StatusIncidentData $incident): array => $incident->toArray(), $this->incidents),
             self::subscribers => $this->subscribers?->toArray(),
+            self::historyCount => $this->historyCount,
             self::scheduledWorks => $this->scheduledWorks === null ? null : [
                 StatusWorksData::count => $this->scheduledWorks->upcomingCount,
                 StatusWorksData::nextWork => $this->scheduledWorks->nextWork?->toArray(),

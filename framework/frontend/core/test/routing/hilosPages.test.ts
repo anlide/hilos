@@ -237,6 +237,23 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
+  it('registers History with its approved address and pending parity views unbuilt', () => {
+    const page = HilosPages.STATUS_HISTORY
+    const path = '/hilos/status/history'
+    expect(page).toBe('hilos_status_history')
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(createPageRouter(HILOS_ROUTE_DECLARATIONS).match(path)).toEqual({
+      page,
+      params: {},
+      admin: true,
+    })
+    for (const kit of ['vue', 'react', 'angular'] as const) {
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit !== 'vue')
+      expect(hilosUnbuiltPages(kit, [page]).has(page)).toBe(false)
+    }
+  })
+
   it('addresses the public file reader independently of admin Status and footer links', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     expect(HilosPages.PUBLIC_STATUS).toBe('status')

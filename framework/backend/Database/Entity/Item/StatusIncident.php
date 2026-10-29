@@ -77,6 +77,12 @@ class StatusIncident extends Entity
         ],
         'idx_status_incident_published' => [Entity::INDEX_COLUMNS => [self::published_at, self::id]],
         'idx_status_incident_resolved' => [Entity::INDEX_COLUMNS => [self::resolved_at, self::id]],
+        'idx_status_incident_detected' => [
+            Entity::INDEX_COLUMNS => [
+                [Entity::INDEX_COLUMN => self::detected_at, Entity::INDEX_DIRECTION => SqlSortDirection::DESC],
+                [Entity::INDEX_COLUMN => self::id, Entity::INDEX_DIRECTION => SqlSortDirection::DESC],
+            ],
+        ],
     ];
     public const string _setVia = self::id;
     public const bool _setRoot = true;
