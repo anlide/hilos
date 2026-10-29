@@ -92,6 +92,7 @@ use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
@@ -164,6 +165,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTableTriggersTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
@@ -506,6 +508,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ChangeLogTableHistoryPage::PAGE => ChangeLogTableHistoryPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+            MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
             MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
             DaemonPage::PAGE => DaemonPage::class,
             DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
@@ -551,9 +554,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
         $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
+        $this->assertSame(MaintenanceNodesPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_NODES]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceNodesPage::PAGE]);
         $this->assertSame([], MaintenanceWordsPage::ACTIONS);
+        $this->assertSame([], MaintenanceNodesPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -573,6 +579,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(
             [EcommerceShopTableContext::hilosMaintenanceWords => []],
             Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosMaintenanceNodes => []],
+            Hilos::PAGE_TABLES[MaintenanceNodesPage::PAGE],
         );
         $this->assertSame(
             [EcommerceShopTableContext::hilosVerifierCircle => []],
@@ -1245,6 +1255,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(
             HilosMaintenanceWordsTable::class,
             Hilos::TABLES[EcommerceShopTableContext::hilosMaintenanceWords],
+        );
+        $this->assertSame(
+            HilosMaintenanceNodesTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosMaintenanceNodes],
         );
         $this->assertSame(
             [EcommerceShopTableContext::hilosVerifierCircle => []],

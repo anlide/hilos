@@ -4,6 +4,7 @@ import {
   createTestUser,
   CIRCLE_ONLINE,
   MAINTENANCE_CIRCLE_PATH,
+  MAINTENANCE_NODES_PATH,
   MAINTENANCE_PATH,
   MANUAL_MAINTENANCE_OPERATION,
   addToMaintenanceCircle,
@@ -16,6 +17,8 @@ import {
   expectDocumentUnchanged,
   expectHeldByManualMaintenance,
   expectMaintenanceCodeIssued,
+  expectMaintenanceNode,
+  expectMaintenanceNodesInitial,
   expectMaintenanceOpen,
   expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
@@ -49,6 +52,7 @@ import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
   CLUSTER_MASTERS,
+  CLUSTER_SLAVES,
   clusterInspect,
   expectLeaderUnmoved,
   newMasterPage,
@@ -297,6 +301,9 @@ test('cluster manual maintenance: every master closes, another admitted admin op
   const frameErrors: unknown[] = []
   const frames: Array<{ page: number; nodeId: string; frame: SocketFrame }> = []
   const deliveries: DeliveryFrameLog[] = []
+  let nodesObserver: Page | undefined
+  let nodesLog: DeliveryFrameLog | undefined
+  const nodesEvidence: Record<string, unknown> = {}
   const watchdogEvidence: Record<string, unknown> = {}
   const restartPolicyKey = 'protected_mode.manual_maintenance.restart_is_normal'
   let originalRestartPolicy: { custom: boolean; value: boolean } | undefined
@@ -485,8 +492,37 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     for (const watcher of upgrades) await watcher.assert()
 
     await gotoPage(expect, operator, MAINTENANCE_PATH)
+    // One more tab of the operator's existing session keeps Nodes on the follower
+    // while Overview drives the window. It adds no person or circle member.
+    const observer = await operator.context().newPage()
+    nodesObserver = observer
+    const observerLog = watchDeliveryFrames(observer)
+    nodesLog = observerLog
+    deliveries.push(observerLog)
+    upgrades.push(
+      await watchClusterMasterUpgrades(
+        expect,
+        observer,
+        stand,
+        CLUSTER_FOLLOWER,
+      ),
+    )
+    const nodeIds = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]
+    await test.step('Nodes initially reports every real master and slave on the follower', async () => {
+      await gotoPage(expect, observer, MAINTENANCE_NODES_PATH)
+      await expectMaintenanceNodesInitial(
+        expect,
+        observer,
+        observerLog,
+        nodeIds,
+        CLUSTER_LEADER,
+      )
+    })
+    const nodesSockets = observerLog.sockets()
+    expect(nodesSockets).toBeGreaterThan(0)
+    const nodesLiveAfter = observerLog.packets.length
     const navigations = new Map<Page, number>()
-    for (const page of [operator, member]) {
+    for (const page of [operator, member, observer]) {
       await markDocument(page)
       navigations.set(page, 0)
       page.on('framenavigated', (frame) => {
@@ -535,6 +571,41 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       }
     }
     await expectWindow(0)
+    await test.step('Nodes receives foreign master reports live without a document or socket replacement', async () => {
+      const initiatorNodeId = deliveryObject(
+        deliveryObject(maintenanceFrames().at(-1)?.wire).data,
+      ).initiatorNodeId
+      expect(nodeIds).toContain(initiatorNodeId)
+      for (const node of nodeIds) {
+        // The direct window round awaits follower masters, excluding leader self.
+        // Slaves keep reporting their actual inactive phase without an ack.
+        const master = CLUSTER_MASTERS.includes(node)
+        const role =
+          [
+            ...(node === CLUSTER_LEADER ? ['Leader'] : []),
+            ...(node === initiatorNodeId ? ['Initiator here'] : []),
+          ].join(' · ') || '—'
+        await expectMaintenanceNode(
+          expect,
+          observer,
+          node,
+          master ? 'verifying' : 'inactive',
+          master && node !== CLUSTER_LEADER ? 'Yes' : '—',
+          role,
+        )
+      }
+      await expectDocumentUnchanged(expect, observer)
+      expect(observerLog.sockets()).toBe(nodesSockets)
+      expect(
+        observerLog.connections.every(({ closed }) => closed === undefined),
+      ).toBe(true)
+      Object.assign(nodesEvidence, {
+        nodeIds,
+        initiatorNodeId,
+        nodesSockets,
+        nodesLiveAfter,
+      })
+    })
     for (const watcher of upgrades) await watcher.assert()
     await dismissToasts(operator)
     const firstCode = await issueMaintenanceCode(operator)
@@ -567,17 +638,18 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       await expectHeldByManualMaintenance(expect, visitor)
     }
     for (const watcher of upgrades) await watcher.assert()
-    for (const page of [operator, member]) {
+    for (const page of [operator, member, observer]) {
       expect(
         navigations.get(page),
         'The admitted document never navigated',
       ).toBe(0)
     }
-    for (const page of pages) await markDocument(page)
+    const nodesReloadAfter = observerLog.packets.length
+    for (const page of [...pages, observer]) await markDocument(page)
     sessionUsers.clear()
     await dismissToasts(otherAdmin)
     await turnOffMaintenance(otherAdmin)
-    for (const page of pages) {
+    for (const page of [...pages, observer]) {
       await expectSelfReload(page, test.info().project.use.navigationTimeout)
       await expectPageReady(expect, page)
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -618,6 +690,31 @@ test('cluster manual maintenance: every master closes, another admitted admin op
         })
     }
     expectNoProtectedModeAgentStops(expect, marks)
+    await test.step('Nodes receives fresh initial rows after the normal lift reload and F5', async () => {
+      await expect(observer).toHaveURL(
+        new URL(MAINTENANCE_NODES_PATH, stand.baseURL).href,
+      )
+      await expectMaintenanceNodesInitial(
+        expect,
+        observer,
+        observerLog,
+        nodeIds,
+        CLUSTER_LEADER,
+        nodesReloadAfter,
+      )
+      const nodesF5After = observerLog.packets.length
+      await observer.reload()
+      await expectPageReady(expect, observer)
+      await expectMaintenanceNodesInitial(
+        expect,
+        observer,
+        observerLog,
+        nodeIds,
+        CLUSTER_LEADER,
+        nodesF5After,
+      )
+      Object.assign(nodesEvidence, { nodesReloadAfter, nodesF5After })
+    })
     for (const watcher of upgrades) await watcher.assert()
     await expectLeaderUnmoved(before)
   } finally {
@@ -647,11 +744,21 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     const stopped = await Promise.allSettled(
       upgrades.map((watcher) => watcher.stop()),
     )
+    const observerClosed = await Promise.allSettled([nodesObserver?.close()])
     const closed = await Promise.allSettled(
       pages.map((page) => page.context().close()),
     )
     await test.info().attach('manual-maintenance-frames', {
       body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
+    await test.info().attach('manual-maintenance-nodes', {
+      body: JSON.stringify({
+        ...nodesEvidence,
+        packets: nodesLog?.packets,
+        sent: nodesLog?.sent,
+        connections: nodesLog?.connections,
+      }),
       contentType: 'application/json',
     })
     await test.info().attach('manual-maintenance-watchdog', {
@@ -664,7 +771,12 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       }),
       contentType: 'application/json',
     })
-    for (const result of [...cleanup, ...stopped, ...closed]) {
+    for (const result of [
+      ...cleanup,
+      ...stopped,
+      ...observerClosed,
+      ...closed,
+    ]) {
       expect
         .soft(
           result.status === 'fulfilled' ? null : String(result.reason),

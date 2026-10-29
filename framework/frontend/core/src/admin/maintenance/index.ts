@@ -64,3 +64,22 @@ export {
   type HilosMaintenanceWordsRow,
   type HilosMaintenanceWordsTable,
 } from './hilosMaintenanceWords.js'
+export {
+  createHilosMaintenanceNodesTable,
+  resolveHilosMaintenanceNodeRow,
+  hilosMaintenanceNodePresentation,
+  hilosMaintenanceNodeRowMessage,
+  HILOS_MAINTENANCE_NODES_TABLE,
+  HILOS_MAINTENANCE_NODES_SLOT,
+  HILOS_MAINTENANCE_NODES_COLUMNS,
+  HILOS_MAINTENANCE_NODES_COPY,
+  MAINTENANCE_NODE_ID_FIELD,
+  MAINTENANCE_NODE_PHASE_FIELD,
+  MAINTENANCE_NODE_QUIESCED_FIELD,
+  MAINTENANCE_NODE_IS_LEADER_FIELD,
+  MAINTENANCE_NODE_IS_INITIATOR_FIELD,
+  MAINTENANCE_NODE_REPORT_STATE_FIELD,
+  type HilosMaintenanceNodeRow,
+  type HilosMaintenanceNodePresentation,
+  type HilosMaintenanceNodesTable,
+} from './hilosMaintenanceNodes.js'

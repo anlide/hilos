@@ -76,6 +76,7 @@ final class ProtectedModeRuntime extends RtState
     public const string stoppedAgentCount = 'stoppedAgentCount';
     public const string preservedAgentTypes = 'preservedAgentTypes';
     public const string agentStartGateClosed = 'agentStartGateClosed';
+    public const string maintenanceNodes = 'maintenanceNodes';
     public const string watchdogVerdict = 'watchdogVerdict';
     public const string watchdogPendingNodeIds = 'watchdogPendingNodeIds';
     public const string watchdogQuiesceTimeoutSeconds = 'watchdogQuiesceTimeoutSeconds';
@@ -220,6 +221,21 @@ final class ProtectedModeRuntime extends RtState
      */
     public ?bool $agentStartGateClosed = null;
 
+    /**
+     * Node reports published by the local master, or null while unavailable or unpublished.
+     * This diagnostic projection is never restored from the freeze file.
+     *
+     * @var ?list<array{
+     *     nodeId: string,
+     *     phase: 'inactive'|'activating'|'active'|'verifying'|'deactivating'|null,
+     *     quiesced: ?bool,
+     *     isLeader: bool,
+     *     isInitiator: bool,
+     *     reportState: 'current'|'missing'|'silent'
+     * }>
+     */
+    public ?array $maintenanceNodes = null;
+
     /** Current watchdog cause, or null while clear or unpublished. */
     public ?string $watchdogVerdict = null;
 
@@ -286,6 +302,7 @@ final class ProtectedModeRuntime extends RtState
         $instance->stoppedAgentCount = self::optionalInt($row, self::stoppedAgentCount);
         $instance->preservedAgentTypes = self::optionalStringList($row, self::preservedAgentTypes);
         $instance->agentStartGateClosed = self::optionalBool($row, self::agentStartGateClosed);
+        $instance->maintenanceNodes = self::readMaintenanceNodes($row);
         $instance->watchdogVerdict = self::validateWatchdogVerdict(self::optionalString($row, self::watchdogVerdict));
         $instance->watchdogPendingNodeIds = array_key_exists(self::watchdogPendingNodeIds, $row)
             ? self::requireStringList($row, self::watchdogPendingNodeIds)
@@ -312,6 +329,9 @@ final class ProtectedModeRuntime extends RtState
     public function applyDiff(array $diff): void
     {
         // Validate the whole presentation before changing any of its fields.
+        $maintenanceNodes = array_key_exists(self::maintenanceNodes, $diff)
+            ? self::readMaintenanceNodes($diff)
+            : $this->maintenanceNodes;
         $watchdogVerdict = self::validateWatchdogVerdict(self::patchOptionalString($diff, self::watchdogVerdict, $this->watchdogVerdict));
         $watchdogPendingNodeIds = self::patchStringList($diff, self::watchdogPendingNodeIds, $this->watchdogPendingNodeIds);
         $watchdogQuiesceTimeoutSeconds = self::patchOptionalInt(
@@ -348,6 +368,7 @@ final class ProtectedModeRuntime extends RtState
         $this->stoppedAgentCount = self::patchOptionalInt($diff, self::stoppedAgentCount, $this->stoppedAgentCount);
         $this->preservedAgentTypes = self::patchOptionalStringList($diff, self::preservedAgentTypes, $this->preservedAgentTypes);
         $this->agentStartGateClosed = self::patchOptionalBool($diff, self::agentStartGateClosed, $this->agentStartGateClosed);
+        $this->maintenanceNodes = $maintenanceNodes;
         $this->watchdogVerdict = $watchdogVerdict;
         $this->watchdogPendingNodeIds = $watchdogPendingNodeIds;
         $this->watchdogQuiesceTimeoutSeconds = $watchdogQuiesceTimeoutSeconds;
@@ -580,6 +601,7 @@ final class ProtectedModeRuntime extends RtState
             self::stoppedAgentCount => $this->stoppedAgentCount,
             self::preservedAgentTypes => $this->preservedAgentTypes,
             self::agentStartGateClosed => $this->agentStartGateClosed,
+            self::maintenanceNodes => $this->maintenanceNodes,
             self::watchdogVerdict => $this->watchdogVerdict,
             self::watchdogPendingNodeIds => $this->watchdogPendingNodeIds,
             self::watchdogQuiesceTimeoutSeconds => $this->watchdogQuiesceTimeoutSeconds,
@@ -588,6 +610,56 @@ final class ProtectedModeRuntime extends RtState
             self::watchdogAlertEmails => $this->watchdogAlertEmails,
             self::watchdogManualRestartIsNormal => $this->watchdogManualRestartIsNormal,
         ];
+    }
+
+    /**
+     * Reads the six-field diagnostic serialization boundary without inventing unknown facts.
+     *
+     * @param array<string, mixed> $row Runtime row or diff carrying the projection
+     * @return ?list<array<string, string|bool|null>> Validated node reports, or null while unpublished
+     * @throws InvalidFormatException When the projection is not a list of valid node reports
+     */
+    private static function readMaintenanceNodes(array $row): ?array
+    {
+        if (!isset($row[self::maintenanceNodes])) {
+            return null;
+        }
+
+        $nodes = self::requireArray($row, self::maintenanceNodes);
+        if (!array_is_list($nodes)) {
+            throw new InvalidFormatException('Maintenance nodes must be a list');
+        }
+
+        $reports = [];
+        foreach ($nodes as $node) {
+            if (!is_array($node) || !array_key_exists('phase', $node) || !array_key_exists('quiesced', $node)) {
+                throw new InvalidFormatException('Maintenance node report must carry its nullable phase and quiesced fields');
+            }
+            $phase = self::optionalString($node, 'phase');
+            if ($phase !== null && !in_array($phase, [
+                self::PHASE_INACTIVE,
+                self::PHASE_ACTIVATING,
+                self::PHASE_ACTIVE,
+                self::PHASE_VERIFYING,
+                self::PHASE_DEACTIVATING,
+            ], true)) {
+                throw new InvalidFormatException('Maintenance node report carries an unknown phase');
+            }
+            $reportState = self::requireString($node, 'reportState');
+            if (!in_array($reportState, ['current', 'missing', 'silent'], true)) {
+                throw new InvalidFormatException('Maintenance node report carries an unknown report state');
+            }
+            $reports[] = [
+                'nodeId' => self::requireString($node, 'nodeId'),
+                'phase' => $phase,
+                'quiesced' => self::optionalBool($node, 'quiesced'),
+                'isLeader' => self::requireBool($node, 'isLeader'),
+                'isInitiator' => self::requireBool($node, 'isInitiator'),
+                'reportState' => $reportState,
+            ];
+        }
+
+        return $reports;
     }
 
     /**

@@ -7,19 +7,25 @@ namespace Hilos\ProtectedMode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
- * ProtectedModeQuiesceRoster - who the leader is still waiting on for the freeze it is driving.
+ * ProtectedModeQuiesceRoster - participants and outstanding reports of the leader's current round.
  *
- * The one thing about a freeze that the row does not carry and cannot: the outstanding node list
- * is the leader's own bookkeeping ({@see ClusterProtectedMode}), while
+ * The selected participants and outstanding reports are the leader's own bookkeeping
+ * ({@see ClusterProtectedMode}), while
  * {@see ProtectedModeRuntime} says what each node is doing rather than what the round is missing.
  * A watchdog reporting a round that never closed needs exactly this list, because "one of your
  * nodes never answered" without naming it leaves the operator to find that node by hand.
  *
- * Implemented by the clustered orchestration only. A single node is answered by an empty list -
- * it has no peers to wait for, so a round that never closes there is not a thing that can happen.
+ * Implemented by the clustered orchestration only. The standalone switch has no peer round.
  */
 interface ProtectedModeQuiesceRoster
 {
+    /**
+     * The full participant snapshot survives reports that remove nodes from the pending list.
+     *
+     * @return ?list<string> Participants selected for this leader's round, or null when it leads none
+     */
+    public function quiesceNodeIds(): ?array;
+
     /**
      * Names the nodes whose quiesced report the leader is still waiting for.
      *

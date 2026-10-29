@@ -1315,6 +1315,120 @@ and `progressAt` as ISO-8601 UTC, and `isInitiator` filled in on each delivery
 from `belongsToInitiator()`. The frame carries no session hash and no code.
 The reader that asks the row for this hold is named in the table below.
 
+## The Nodes Read Side
+
+The framework-owned [Nodes page](../../../framework/backend/Pages/Maintenance/AbstractHilosMaintenanceNodesPage.php),
+`hilos_maintenance_nodes` at `/hilos/maintenance/nodes`, shares Maintenance's
+head and tabs. Its applicability follows the installed cluster mode: without
+`Hilos::$cluster->isEnabled()`, a direct page subscription is refused as not
+found. A table query on a standalone installation follows the ordinary
+`table_window_refused` path; it is not a page 404 response. All six demo
+backends register the page and table. The Vue mounts are in chat and
+binance-btc-tracker; the React and Angular mounts remain with HIL-1681 and
+HIL-1682. The [core table reader](../../../framework/frontend/core/src/admin/maintenance/hilosMaintenanceNodes.ts)
+owns the presentation and copy, and the [Vue page](../../../framework/frontend/vue/src/admin/maintenance/HilosMaintenanceNodesPage.vue)
+draws it with the standard viewport and cards. Nodes adds no payload to the
+Maintenance Overview.
+
+One read-only [HilosMaintenanceNodesTable](../../../framework/backend/Tables/ProtectedMode/HilosMaintenanceNodesTable.php)
+uses table key `hilosMaintenanceNodes`, slot `node`, and row key `nodeId`. Its
+window is 25 rows, initially ordered by `nodeId` ascending; `nodeId` is its only
+sortable field. The table has no actions, search, filters, or separate list.
+Each row carries six `notPersonal` fields: `nodeId`, `phase` (nullable),
+`quiesced` (nullable), `isLeader`, `isInitiator`, and `reportState` (`current`,
+`missing`, or `silent`).
+
+### Peer Reports And Projection
+
+The read source runs in [PeerServer](../../../framework/backend/Cluster/Peer/PeerServer.php),
+after that server's link and consensus pass, independently of protected-mode
+agents and page subscribers. Each node, including a slave, reports its own
+actual RT phase; absent local RT state is `null`. The full diagnostic snapshot
+is broadcast with the existing `broadcastToMasters()` path when it changes,
+when the working link set changes, and every five seconds. The
+`peer_protected_mode_node_report` frame's
+[PeerProtectedModeNodeReportDTO](../../../framework/backend/Cluster/Peer/DTO/PeerProtectedModeNodeReportDTO.php)
+has required nullable `phase`, `term`, `quiesceNodeIds`, `pendingNodeIds`, and
+`initiatorNodeId` keys. The node id comes from the authenticated peer link, not
+from the frame.
+
+Only an authenticated active [PeerLink](../../../framework/backend/Cluster/Peer/PeerLink.php)
+supplies a report; candidate and draining links do not. The inbox is private to
+its `PeerServer` instance. A new working link starts without a cached report,
+and closing the replaced draining link does not remove the report associated
+with its successor. These snapshots use no database or file access, blocking
+I/O, new agent, or second membership register. The
+[PeerProtocol](../../../framework/backend/Cluster/Peer/PeerProtocol.php)
+channel is version 23 and requires a matching version at handshake; the report
+does not provide compatibility with older peers. The existing cluster
+registry supplies membership, including offline and slave nodes; a rejected
+foreign handshake does not add a row.
+
+The [ProtectedModeNodesCollector](../../../framework/backend/ProtectedMode/ProtectedModeNodesCollector.php)
+projects the registry membership together with participants from the recognized
+leader's complete report for the inspected current term, then sorts by node id.
+A lost link leaves the node `silent`; a linked node with no report or no phase
+is `missing`; a reported phase is `current`. `isLeader` follows the recognized
+leader and term. `isInitiator` comes from the authoritative leader report, not
+from the browser's node. `quiesced` is `true` for a participant absent from the
+leader's pending set, `false` for a pending participant, and `null` when the
+current report cannot establish either fact. A leader or term change clears the
+cached round authority; replacing a node's working link clears that node's
+cached report.
+
+The [cluster protected-mode coordinator](../../../framework/backend/ProtectedMode/ClusterProtectedMode.php)
+keeps `quiesceNodeIds()` as the full selected roster separately from pending
+nodes, through its
+[ProtectedModeQuiesceRoster](../../../framework/backend/ProtectedMode/ProtectedModeQuiesceRoster.php)
+interface; reset returns it to `null`. A full freeze selects self and follower
+masters. A direct verification window selects follower masters without the
+leader itself. Adopting an
+established freeze does not begin another collection, so its roster is empty.
+The projection therefore does not turn an empty pending set without a full
+roster into a positive acknowledgement for all nodes. It reads the actual
+roster already held by the master; slave-freeze behavior remains HIL-1818.
+
+### Local Runtime And Browser Delivery
+
+The local [ProtectedModeRuntime state](../../../framework/backend/Runtime/State/Item/ProtectedModeRuntime.php)
+has `maintenanceNodes: ?list<Row>`, initially `null`. Only the local master
+writes it through
+[`updateMaintenanceNodes()`](../../../framework/backend/Runtime/View/Actions/Item/ProtectedModeRuntimeActions.php),
+and only a changed projection syncs to that master's workers. `null` means
+unpublished or unavailable; `[]` means a known empty set. Neither value invents
+an inactive phase. The [freeze store](../../../framework/backend/ProtectedMode/ProtectedModeFreezeStore.php)
+neither saves nor restores this projection; `restoreFromDisk()` resets it to
+`null`. The neighboring four agent-diagnostic fields and seven watchdog fields
+keep their existing meanings. The projection stays local to this node: it is
+not copied across nodes with the freeze row or routed through the Daemon
+node-agent chain, which a full freeze stops.
+
+The `MultiRowViewportTable` declares the runtime item in `BROWSER.SOURCES` and
+its row fields in `BROWSER.ROWS`. Its
+[source-change builder](../../../framework/backend/Tables/ProtectedMode/HilosMaintenanceNodesTable.php)
+compares `SourceChange.previous[maintenanceNodes]` with the current projection
+and emits create, update, or delete mutations by node id. Changes to unrelated
+singleton fields do not produce row deltas. There is no Nodes page publisher or
+second publication cache: the initial `page_response`, standard table windows,
+and table mutations carry the data.
+
+A query before the first projection is published follows the existing refused
+window and owed-window path. Once the source is available, the table can return
+the complete window without a reload. For a successful empty mutation list from
+this declared source, the existing owed-window catch-up runs before the empty
+result returns; unrelated no-ops stay silent, a refused query keeps its debt,
+and the existing flush set-aside limits that window to one full-answer attempt
+per flush. The general source-change and owed-window behavior remains in
+[Browser Source Fan-out](browser-source-fanout.md#coming-back-without-a-reload).
+
+Each subscription and delivery still goes through the existing
+[`BrowserContext`](../../../framework/backend/Core/Browser/Context/BrowserContext.php)
+checks for ADMIN, view mode, and `locksOut`. The full
+`activating`/`active` freeze still closes the application with its shared
+placeholder and stops the page agent. The existing verification-window
+admission, circle, and code rules remain in force. Nodes grants no access,
+control, or change to ready, stop, start, or membership behavior.
+
 ## Reading The Runtime Row, And What Null Means
 
 These places read the row without asking whether the mode is "active for this
@@ -1331,6 +1445,7 @@ project" — activation is not declarative, so there is nothing to ask:
 | `AnalyticsCollector::isHeld()` | must the collector record nothing and throw its batch away? |
 | `AnalyticsJournalAgent::onStop()` | is this stop the freeze's, so the node's journal goes with its lost events counted? |
 | `AbstractHilosMaintenancePage` / `AbstractHilosIndexAgent` | what state should the Maintenance section show and push after RT sync? |
+| `HilosMaintenanceNodesTable` | what node reports and current round facts belong in this table window? |
 | `WorkerServer::getProtectedModeAgentDiagnostics()` | what is this node holding stopped, which types stay running, and is the start gate closed? |
 
 The two entries read the same row as their guard (`StandaloneProtectedMode` and

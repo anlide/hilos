@@ -376,7 +376,59 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertFalse($view->agentStartGateClosed);
     }
 
-    public function testFreezeSaveExcludesExactlyTheSevenWatchdogPresentationKeys(): void
+    public function testNodeReportsAreExcludedFromSaveAndIgnoredOnLoadAndRestore(): void
+    {
+        $this->mountNode();
+        $nodes = [
+            ['nodeId' => 'node-diagnostic-only', 'phase' => 'active', 'quiesced' => true,
+                'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
+        ];
+        Hilos::$rt->hilosProtectedModeRuntime->actions->updateMaintenanceNodes($nodes);
+        $row = $this->restoredRow()->toArray();
+        $row[StateProtectedModeRuntime::maintenanceNodes] = $nodes;
+
+        new ProtectedModeFreezeStore()->save($row);
+        $json = file_get_contents($this->freezeFile());
+        $this->assertIsString($json);
+        $this->assertStringNotContainsString(StateProtectedModeRuntime::maintenanceNodes, $json);
+        $this->assertStringNotContainsString('node-diagnostic-only', $json);
+        $loaded = new ProtectedModeFreezeStore()->load();
+        $this->assertNotNull($loaded);
+        $this->assertNull($loaded->maintenanceNodes);
+
+        // A stale or foreign diagnostic field cannot become restored truth, even if malformed.
+        $row[StateProtectedModeRuntime::maintenanceNodes] = 'obsolete diagnostic value';
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2, 'row' => $row]));
+        $loaded = new ProtectedModeFreezeStore()->load();
+        $this->assertNotNull($loaded);
+        $this->assertNull($loaded->maintenanceNodes);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $loaded->phase);
+
+        // restoreFromDisk also refuses to reuse a diagnostic tuple handed directly to it.
+        $loaded->maintenanceNodes = $nodes;
+        Hilos::$rt->hilosProtectedModeRuntime->actions->restoreFromDisk($loaded);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->maintenanceNodes);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+        $this->assertSame(self::INITIATOR_SESSION_HASH, Hilos::$rt->hilosProtectedModeRuntime->initiatorSessionTokenHash);
+    }
+
+    public function testPublishingNodeReportsDoesNotRewriteTheFreezeFile(): void
+    {
+        $executor = $this->executorOnAMountedNode();
+        $executor->enterActivating($this->freeze(), 'accept-7');
+        $before = file_get_contents($this->freezeFile());
+
+        Hilos::$rt->hilosProtectedModeRuntime->actions->updateMaintenanceNodes([]);
+
+        $this->assertSame($before, file_get_contents($this->freezeFile()));
+        $executor->enterActive();
+        $this->assertSame([], Hilos::$rt->hilosProtectedModeRuntime->maintenanceNodes);
+        $json = file_get_contents($this->freezeFile());
+        $this->assertIsString($json);
+        $this->assertStringNotContainsString(StateProtectedModeRuntime::maintenanceNodes, $json);
+    }
+
+    public function testFreezeSaveExcludesWatchdogPresentationAndNodeReports(): void
     {
         $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
         $row[StateProtectedModeRuntime::diagnosticsNodeId] = 'node-a';
@@ -387,7 +439,9 @@ final class ProtectedModeFreezeStoreTest extends TestCase
 
         $json = file_get_contents($this->freezeFile());
         $this->assertIsString($json);
-        $this->assertSame(['version' => 2, 'row' => array_diff_key($row, $snapshot->toArray())], json_decode($json, true));
+        $this->assertSame(['version' => 2, 'row' => array_diff_key($row, [
+            ...$snapshot->toArray(), StateProtectedModeRuntime::maintenanceNodes => null,
+        ])], json_decode($json, true));
         foreach (array_keys($snapshot->toArray()) as $key) {
             $this->assertStringNotContainsString($key, $json);
         }

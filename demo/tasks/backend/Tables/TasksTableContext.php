@@ -38,6 +38,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
@@ -87,6 +88,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
+ * @property-read HilosMaintenanceNodesTable $hilosMaintenanceNodes
  * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
  * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
@@ -136,6 +138,7 @@ final class TasksTableContext extends TableContext
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
+    public const string hilosMaintenanceNodes = HilosMaintenanceNodesTable::TABLE;
     public const string hilosMaintenanceWords = HilosMaintenanceWordsTable::TABLE;
     public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;

@@ -42,6 +42,7 @@ use Hilos\HilosException;
  * @property-read ?int $stoppedAgentCount Agents this node is holding stopped; null until published
  * @property-read ?list<string> $preservedAgentTypes Agent types the full-stop policy leaves running; null until published
  * @property-read ?bool $agentStartGateClosed Whether agent start is actually closed; null until published
+ * @property-read ?list<array<string, string|bool|null>> $maintenanceNodes Node reports; null while unavailable or unpublished
  * @property-read ?string $watchdogVerdict Current watchdog cause; null while clear or unpublished
  * @property-read list<string> $watchdogPendingNodeIds Pending nodes for the current overdue quiesce round; empty otherwise
  * @property-read ?int $watchdogQuiesceTimeoutSeconds Effective quiesce threshold in seconds; null until published
@@ -63,7 +64,7 @@ final class ProtectedModeRuntime extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|int|bool|array<int, string>|ProtectedModeRuntimeActions|null Property value
+     * @return string|int|bool|array<array-key, mixed>|ProtectedModeRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws HilosException When an inherited getter or an implementation's relation read fails
@@ -91,6 +92,7 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::stoppedAgentCount => $this->_state->stoppedAgentCount,
             StateProtectedModeRuntime::preservedAgentTypes => $this->_state->preservedAgentTypes,
             StateProtectedModeRuntime::agentStartGateClosed => $this->_state->agentStartGateClosed,
+            StateProtectedModeRuntime::maintenanceNodes => $this->_state->maintenanceNodes,
             StateProtectedModeRuntime::watchdogVerdict => $this->_state->watchdogVerdict,
             StateProtectedModeRuntime::watchdogPendingNodeIds => $this->_state->watchdogPendingNodeIds,
             StateProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => $this->_state->watchdogQuiesceTimeoutSeconds,

@@ -37,6 +37,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeCircleDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
@@ -652,6 +653,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeWindowDTO => $this->onProtectedModeWindow($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
             $frame instanceof PeerProtectedModeSettledDTO => $this->onProtectedModeSettled($frame),
+            $frame instanceof PeerProtectedModeNodeReportDTO => $this->onProtectedModeNodeReport($frame),
             $frame instanceof PeerDbReHydrateDTO => $this->onDbReHydrate($frame),
             $frame instanceof PeerDbReHydratedDTO => $this->onDbReHydrated($frame),
             $frame instanceof PeerProtectedModeLiftDTO => $this->onProtectedModeLift($frame),
@@ -1318,6 +1320,17 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode quiesced');
         $this->server->onProtectedModeQuiescedReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerProtectedModeNodeReportDTO $frame Diagnostic snapshot with identity supplied by this link
+     * @throws PeerTransportException When the frame precedes the authenticated handshake
+     * @throws EnvException When the local consensus configuration is invalid
+     */
+    private function onProtectedModeNodeReport(PeerProtectedModeNodeReportDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode node report');
+        $this->server->onProtectedModeNodeReportReceived($this, $frame);
     }
 
     /**

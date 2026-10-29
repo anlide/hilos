@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 109;
+    private const int CATALOG_ENTRIES = 110;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -381,6 +381,11 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The words used to announce maintenance.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Nodes',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Maintenance reports from the cluster nodes.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MAINTENANCE_NODES]);
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Maintenance',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation and manual maintenance: '

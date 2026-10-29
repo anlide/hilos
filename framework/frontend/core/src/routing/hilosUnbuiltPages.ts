@@ -23,6 +23,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.USER_SESSIONS]: ['vue', 'react', 'angular'],
   [HilosPages.MAINTENANCE_CIRCLE]: ['react', 'angular'],
   [HilosPages.MAINTENANCE_WORDS]: ['react', 'angular'],
+  [HilosPages.MAINTENANCE_NODES]: ['react', 'angular'],
   [HilosPages.STATUS]: ['react', 'angular'],
   [HilosPages.STATUS_COMPONENTS]: ['react', 'angular'],
   [HilosPages.STATUS_SUBSCRIBERS]: ['react', 'angular'],

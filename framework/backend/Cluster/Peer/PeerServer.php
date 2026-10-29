@@ -13,6 +13,7 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
 use Hilos\Cluster\Consensus\ClusterConsensusConfig;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
+use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Consensus\ConsensusMesh;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LocalNodeAnnouncer;
@@ -46,6 +47,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeCircleDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
@@ -111,6 +113,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\ProtectedMode\ProtectedModeMesh;
+use Hilos\ProtectedMode\ProtectedModeNodesCollector;
+use Hilos\ProtectedMode\ProtectedModeQuiesceRoster;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -172,6 +176,9 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var float Seconds a non-blocking connect may stay pending before it is abandoned */
     private const float CONNECT_TIMEOUT_SEC = 5.0;
 
+    /** @var float Repair interval for full diagnostic reports, independent of browser subscriptions */
+    private const float PROTECTED_MODE_NODE_REPORT_INTERVAL_SEC = 5.0;
+
     /** @var NodeIdentity Local node identity announced to peers */
     private NodeIdentity $localIdentity;
 
@@ -213,6 +220,24 @@ final class PeerServer extends AbstractTlsServer implements
 
     /** @var ?ProtectedModeCoordinator Protected-mode freeze handler, registered by the leader-orchestration slice; null until then */
     private ?ProtectedModeCoordinator $protectedMode = null;
+
+    /** @var array<string, PeerProtectedModeNodeReportDTO> Master-private inbox, discarded with each working link incarnation */
+    private array $protectedModeNodeReports = [];
+
+    /** @var array<string, PeerLink> Working link generations at the last diagnostic send, owned only by this server */
+    private array $protectedModeReportLinks = [];
+
+    /** @var ?PeerProtectedModeNodeReportDTO Last local transport snapshot; dies with this peer server */
+    private ?PeerProtectedModeNodeReportDTO $lastProtectedModeNodeReport = null;
+
+    /** @var ?float Last diagnostic send time in seconds, null before the first pass */
+    private ?float $lastProtectedModeNodeReportAt = null;
+
+    /** @var ?string Last recognized leader, used only to invalidate cached round authority */
+    private ?string $protectedModeReportLeaderId = null;
+
+    /** @var ?int Last inspected consensus term, used only to invalidate cached round authority */
+    private ?int $protectedModeReportTerm = null;
 
     /** @var ?ReHydrateBarrierSink Where node answers to a database re-hydrate announcement are credited */
     private ?ReHydrateBarrierSink $reHydrateBarrier = null;
@@ -415,6 +440,7 @@ final class PeerServer extends AbstractTlsServer implements
         $this->coordinator?->tick($now);
         // Placement failover and slave self-fence run off their grace timers on the same loop.
         $this->placement?->tick($now);
+        $this->tickProtectedModeNodeReports($now);
     }
 
     /**
@@ -976,6 +1002,7 @@ final class PeerServer extends AbstractTlsServer implements
         unset($this->candidateLinks[$remote->nodeId]);
         $link->activate($remote);
         $this->activeLinks[$remote->nodeId] = $link;
+        unset($this->protectedModeNodeReports[$remote->nodeId]);
         if ($old === null) {
             $this->onHandshakeComplete($link, $remote);
             return;
@@ -1313,6 +1340,26 @@ final class PeerServer extends AbstractTlsServer implements
     public function registerProtectedMode(ProtectedModeCoordinator $coordinator): void
     {
         $this->protectedMode = $coordinator;
+    }
+
+    /**
+     * Candidate and draining streams cannot contribute diagnostics or membership.
+     * Publication follows the link/consensus pass, so it uses that pass's recognized leader.
+     *
+     * @param PeerLink $link Authenticated sender link
+     * @param PeerProtectedModeNodeReportDTO $frame Full diagnostic snapshot
+     * @throws EnvException When the consensus configuration is invalid
+     * @throws PeerTransportException When invalidating a malformed cached snapshot
+     */
+    public function onProtectedModeNodeReportReceived(PeerLink $link, PeerProtectedModeNodeReportDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($this->localIdentity->role !== NodeRole::Master || $from === null || $this->activeLinkToNode($from) !== $link) {
+            return;
+        }
+
+        $this->refreshProtectedModeReportAuthority();
+        $this->protectedModeNodeReports[$from] = $frame;
     }
 
     /**
@@ -1963,6 +2010,7 @@ final class PeerServer extends AbstractTlsServer implements
             return;
         }
         unset($this->activeLinks[$remote->nodeId]);
+        unset($this->protectedModeNodeReports[$remote->nodeId]);
 
         $registry = $this->registry();
         if ($registry === null) {
@@ -3412,6 +3460,96 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         return null;
+    }
+
+    /**
+     * Queues diagnostics independently of agents and subscribers; null RT means no runtime state.
+     *
+     * @param float $now Current tick observation in seconds
+     * @throws EnvException When the consensus configuration is invalid
+     * @throws PeerTransportException When the local snapshot is malformed
+     * @throws InvalidFormatException When the projected rows violate the RT contract
+     * @throws RtActionsCollectionNameNullException When the runtime action lacks its collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this process does not own the local row
+     */
+    private function tickProtectedModeNodeReports(float $now): void
+    {
+        $this->refreshProtectedModeReportAuthority();
+        $leadership = Hilos::$cluster?->leadership();
+        $participants = null;
+        $pending = null;
+        if ($leadership?->amLeader() && $this->protectedMode instanceof ProtectedModeQuiesceRoster) {
+            $participants = $this->protectedMode->quiesceNodeIds();
+            $pending = $participants !== null ? $this->protectedMode->pendingNodeIds() : null;
+        }
+        $report = new PeerProtectedModeNodeReportDTO(
+            Hilos::$rt?->hilosProtectedModeRuntime?->phase,
+            $this->protectedModeReportTerm,
+            $participants,
+            $pending,
+            $participants !== null ? Hilos::$rt?->hilosProtectedModeRuntime?->initiatorNodeId : null,
+        );
+        $links = [];
+        foreach ($this->activeLinks as $nodeId => $link) {
+            if ($this->activeLinkToNode($nodeId) === $link) {
+                $links[$nodeId] = $link;
+            }
+        }
+        ksort($links, SORT_STRING);
+        $this->protectedModeNodeReports = array_intersect_key($this->protectedModeNodeReports, $links);
+        if ($this->lastProtectedModeNodeReport != $report || $this->protectedModeReportLinks !== $links
+            || $this->lastProtectedModeNodeReportAt === null
+            || $now - $this->lastProtectedModeNodeReportAt >= self::PROTECTED_MODE_NODE_REPORT_INTERVAL_SEC
+        ) {
+            $this->broadcastToMasters($report);
+            $this->lastProtectedModeNodeReport = $report;
+            $this->lastProtectedModeNodeReportAt = $now;
+            $this->protectedModeReportLinks = $links;
+        }
+
+        if ($this->localIdentity->role !== NodeRole::Master || Hilos::$rt?->hilosProtectedModeRuntime === null) {
+            return;
+        }
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+        $nodeIds = [];
+        foreach ($registry->snapshot() as $node) {
+            $nodeIds[] = $node->nodeId;
+        }
+        $nodes = ProtectedModeNodesCollector::project(
+            $nodeIds,
+            [...array_keys($links), $this->localIdentity->nodeId],
+            [...$this->protectedModeNodeReports, $this->localIdentity->nodeId => $report],
+            $this->protectedModeReportLeaderId,
+            $this->protectedModeReportTerm,
+        );
+        if (Hilos::$rt->hilosProtectedModeRuntime->maintenanceNodes !== $nodes) {
+            Hilos::$rt->hilosProtectedModeRuntime->actions->updateMaintenanceNodes($nodes);
+        }
+    }
+
+    /**
+     * A changed leader/term cannot revive an earlier roster, even if the same leader returns.
+     * The independent phase fact survives until its link changes or its sender reports again.
+     *
+     * @throws EnvException When the consensus configuration is invalid
+     * @throws PeerTransportException When invalidating a malformed cached snapshot
+     */
+    private function refreshProtectedModeReportAuthority(): void
+    {
+        $leadership = Hilos::$cluster?->leadership();
+        $leaderId = $leadership?->leaderId();
+        $term = $leadership instanceof ConsensusInspection ? $leadership->term() : null;
+        if ($leaderId === $this->protectedModeReportLeaderId && $term === $this->protectedModeReportTerm) {
+            return;
+        }
+        foreach ($this->protectedModeNodeReports as $nodeId => $report) {
+            $this->protectedModeNodeReports[$nodeId] = new PeerProtectedModeNodeReportDTO($report->phase, $report->term, null, null, null);
+        }
+        $this->protectedModeReportLeaderId = $leaderId;
+        $this->protectedModeReportTerm = $term;
     }
 
     /**

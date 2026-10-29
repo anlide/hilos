@@ -116,6 +116,22 @@ describe('hilosUnbuiltPages', () => {
     )
   })
 
+  it('serves Maintenance Nodes only in Vue', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_NODES]).toEqual([
+      'react',
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_NODES)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE_NODES)).toBe(
+      true,
+    )
+    expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_NODES)).toBe(
+      true,
+    )
+  })
+
   it('keeps React and Angular Moderation views unbuilt while Vue is built by this sheet', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION]).toEqual([
       'react',

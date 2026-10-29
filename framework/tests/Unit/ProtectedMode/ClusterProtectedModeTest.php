@@ -71,6 +71,63 @@ final class ClusterProtectedModeTest extends TestCase
         parent::tearDown();
     }
 
+    public function testFullRosterSurvivesReportsAndMembershipChangesUntilTheLeaderResets(): void
+    {
+        $this->assertNull($this->coordinator->quiesceNodeIds());
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->coordinator->onBecameLeader();
+        $this->assertNull($this->coordinator->quiesceNodeIds());
+
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->assertSame(['node-b', 'node-c', self::SELF], $this->coordinator->quiesceNodeIds());
+        $this->assertSame(['node-b', 'node-c', self::SELF], $this->coordinator->pendingNodeIds());
+        $this->mesh->followers = ['node-new'];
+        $this->coordinator->onQuiesced('node-b');
+        $this->coordinator->onQuiesced('node-new');
+        $this->assertSame(['node-c', self::SELF], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c', self::SELF], $this->coordinator->quiesceNodeIds());
+        $this->stopTheRoster();
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->coordinator->onQuiesced('node-c');
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c', self::SELF], $this->coordinator->quiesceNodeIds());
+        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
+
+        $this->coordinator->onLostLeadership();
+        $this->assertNull($this->coordinator->quiesceNodeIds());
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+    }
+
+    public function testRepeatRoundReplacesTheFullRosterWithItsOwnSelectedParticipants(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->assertSame(['node-b', self::SELF], $this->coordinator->quiesceNodeIds());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->mesh->followers = ['node-c'];
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->assertSame(['node-c', self::SELF], $this->coordinator->quiesceNodeIds());
+        $this->assertSame(['node-c', self::SELF], $this->coordinator->pendingNodeIds());
+        $this->coordinator->onQuiesced('node-b');
+        $this->stopTheRoster();
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->coordinator->onQuiesced('node-c');
+        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame(['node-c', self::SELF], $this->coordinator->quiesceNodeIds());
+
+        $this->coordinator->onDisable('node-b', 'backup', 0);
+        $this->assertNull($this->coordinator->quiesceNodeIds());
+    }
+
     public function testLeaderWithFollowersActivatesOnlyAfterEveryQuiescedReport(): void
     {
         $this->mesh->followers = ['node-b', 'node-c'];
@@ -1058,6 +1115,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame('node-b', $this->executor->freeze?->initiatorNodeId);
         $this->assertSame([['broadcastWindow', 'manual_maintenance']], $this->mesh->calls);
         $this->assertSame(['node-b', 'node-c'], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->quiesceNodeIds());
 
         $this->coordinator->onRosterStopped();
         $this->coordinator->onQuiesced('node-other');
@@ -1065,6 +1123,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onQuiesced('node-b');
 
         $this->assertSame(['node-c'], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->quiesceNodeIds());
         $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
         $this->assertSame([['broadcastWindow', 'manual_maintenance']], $this->mesh->calls);
 
@@ -1074,6 +1133,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(['enterVerificationWindow'], $this->executor->calls);
         $this->assertSame([['broadcastWindow', 'manual_maintenance'], ['sendReady', 'node-b']], $this->mesh->calls);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->quiesceNodeIds());
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
         $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
     }
@@ -1090,6 +1150,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(['enterVerificationWindow', 'notifyInitiatorReady'], $this->executor->calls);
         $this->assertSame([['broadcastWindow', 'manual_maintenance']], $this->mesh->calls);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame([], $this->coordinator->quiesceNodeIds());
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
     }
 
@@ -1337,6 +1398,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
         $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->entryMode);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertNull($this->coordinator->quiesceNodeIds());
 
         $this->executor->calls = [];
         $this->mesh->calls = [];
@@ -1386,6 +1448,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onCircle('node-b', 'index', null, $this->circleSnapshot());
 
         $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame([], $this->coordinator->quiesceNodeIds());
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
@@ -1433,6 +1496,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertNull($this->coordinator->quiesceNodeIds());
 
         $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-y', 'index', null, $this->circleSnapshot()));
         $this->coordinator->onLift('node-y');
@@ -1959,6 +2023,10 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onBecameLeader();
 
         $this->assertSame(['node-b', 'node-c'], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->quiesceNodeIds());
+        $this->coordinator->onQuiesced('node-b');
+        $this->assertSame(['node-c'], $this->coordinator->pendingNodeIds());
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->quiesceNodeIds());
     }
 
     public function testAPromotedLeaderOwesTheReadyOfAnUnfinishedRound(): void
@@ -1994,6 +2062,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame([], $this->coordinator->quiesceNodeIds());
     }
 
     public function testAPromotedLeaderStopsBeingItsOwnFreezesFollower(): void

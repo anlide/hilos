@@ -87,6 +87,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\Status\StatusPage;
@@ -196,6 +197,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
@@ -337,6 +339,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
         MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
@@ -533,6 +536,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         PollsTableContext::hilosUsers => HilosUsersTable::class,
         PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        PollsTableContext::hilosMaintenanceNodes => HilosMaintenanceNodesTable::class,
         PollsTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
         PollsTableContext::hilosLogNodes => HilosLogNodesTable::class,
@@ -680,6 +684,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceWordsPage::PAGE => [
             PollsTableContext::hilosMaintenanceWords => [],
+        ],
+        MaintenanceNodesPage::PAGE => [
+            PollsTableContext::hilosMaintenanceNodes => [],
         ],
         LogsOverviewPage::PAGE => [
             PollsTableContext::hilosLogNodes => [],

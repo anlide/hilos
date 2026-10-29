@@ -10,6 +10,19 @@ afterEach(() => {
 })
 
 describe('prepareHilosPageSubscribeParams', () => {
+  it('keeps Nodes subscribe params empty without reading zone or clock', () => {
+    const zone = vi.spyOn(hilosTimeZone, 'get')
+    const now = vi.spyOn(Date, 'now')
+    const params = {}
+
+    expect(
+      prepareHilosPageSubscribeParams(HilosPages.MAINTENANCE_NODES, params),
+    ).toBe(params)
+    expect(params).toEqual({})
+    expect(zone).not.toHaveBeenCalled()
+    expect(now).not.toHaveBeenCalled()
+  })
+
   it('prepares string UTC milliseconds with the answered session clock and reader zone', () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-23T00:15:00Z'))
     applyServerTime(Date.parse('2026-10-24T01:15:00Z'))

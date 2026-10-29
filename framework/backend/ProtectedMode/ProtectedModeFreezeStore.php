@@ -81,6 +81,7 @@ final class ProtectedModeFreezeStore
     public function save(array $row): void
     {
         unset(
+            $row[ProtectedModeRuntime::maintenanceNodes],
             $row[ProtectedModeRuntime::watchdogVerdict],
             $row[ProtectedModeRuntime::watchdogPendingNodeIds],
             $row[ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds],
@@ -154,6 +155,8 @@ final class ProtectedModeFreezeStore
                 "Protected mode: the freeze left at {$path} carries no row",
             );
         }
+
+        unset($row[ProtectedModeRuntime::maintenanceNodes]);
 
         try {
             return ProtectedModeRuntime::fromRow($row);

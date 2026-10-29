@@ -98,6 +98,9 @@ final class ClusterProtectedMode implements
      */
     private array $pendingNodes = [];
 
+    /** @var ?list<string> Original participants of this leader's round; null outside a round */
+    private ?array $quiesceNodes = null;
+
     /** @var bool True once every follower has quiesced and the leader has signalled ready */
     private bool $active = false;
 
@@ -175,6 +178,14 @@ final class ClusterProtectedMode implements
         }
 
         return array_keys($this->pendingNodes);
+    }
+
+    /**
+     * @return ?list<string> Full participant snapshot, or null when this node leads no round
+     */
+    public function quiesceNodeIds(): ?array
+    {
+        return $this->isLeader ? $this->quiesceNodes : null;
     }
 
     /**
@@ -1072,6 +1083,7 @@ final class ClusterProtectedMode implements
     private function enterWindowRound(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
     {
         $this->pendingNodes = array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->active = false;
         $this->directCircleReceived = false;
 
@@ -1100,6 +1112,7 @@ final class ClusterProtectedMode implements
         ?string $initiatorAcceptKey,
     ): void {
         $this->pendingNodes = array_fill_keys([...$this->mesh->followerMasterNodeIds(), $this->selfNodeId], true);
+        $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->active = false;
 
         $this->executor->enterActivating($freeze, $initiatorAcceptKey);
@@ -1431,6 +1444,8 @@ final class ClusterProtectedMode implements
         $this->pendingNodes = $this->active
             ? []
             : array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        // Adoption preserves its existing selection: an established freeze starts no new round.
+        $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->directCircleReceived = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
         $this->freezingLeaderId = null;
 
@@ -1447,6 +1462,7 @@ final class ClusterProtectedMode implements
     {
         $this->activeFreeze = null;
         $this->pendingNodes = [];
+        $this->quiesceNodes = null;
         $this->active = false;
         $this->readyOwed = false;
         $this->directCircleReceived = false;

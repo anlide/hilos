@@ -11,6 +11,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
@@ -131,6 +132,7 @@ use Hilos\Pages\Status\DTO\HilosStatusAddUpdateActionDTO;
 use Hilos\Pages\Status\DTO\HilosStatusRemoveSubscriberActionDTO;
 use Hilos\Tables\Status\HilosStatusComponentsTable;
 use Hilos\Tables\Status\HilosStatusSubscribersTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
 use Demo\Chat\Moderation\ChatModerationKindKey;
@@ -950,10 +952,14 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
         $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
+        $this->assertSame(MaintenanceNodesPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_NODES]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceNodesPage::PAGE]);
         $this->assertSame(HilosMaintenanceWordsTable::class, Hilos::TABLES[ChatTableContext::hilosMaintenanceWords]);
+        $this->assertSame(HilosMaintenanceNodesTable::class, Hilos::TABLES[ChatTableContext::hilosMaintenanceNodes]);
         $this->assertSame([], MaintenanceWordsPage::ACTIONS);
+        $this->assertSame([], MaintenanceNodesPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -973,6 +979,10 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(
             [ChatTableContext::hilosMaintenanceWords => []],
             Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
+        );
+        $this->assertSame(
+            [ChatTableContext::hilosMaintenanceNodes => []],
+            Hilos::PAGE_TABLES[MaintenanceNodesPage::PAGE],
         );
         $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
     }

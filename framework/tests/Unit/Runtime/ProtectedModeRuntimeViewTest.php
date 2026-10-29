@@ -35,6 +35,15 @@ final class ProtectedModeRuntimeViewTest extends TestCase
 
     private const string INITIATOR_SESSION_HASH = 'session-hash-9';
 
+    private const array MAINTENANCE_NODES = [
+        ['nodeId' => 'node-a', 'phase' => 'verifying', 'quiesced' => true,
+            'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
+        ['nodeId' => 'node-b', 'phase' => null, 'quiesced' => false,
+            'isLeader' => false, 'isInitiator' => true, 'reportState' => 'missing'],
+        ['nodeId' => 'node-c', 'phase' => null, 'quiesced' => null,
+            'isLeader' => false, 'isInitiator' => false, 'reportState' => 'silent'],
+    ];
+
     private ?SignalRouter $previousSignalRouter = null;
 
     protected function setUp(): void
@@ -386,6 +395,134 @@ final class ProtectedModeRuntimeViewTest extends TestCase
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
         $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+    }
+
+    public function testMaintenanceNodesRoundTripDistinguishesUnpublishedEmptyAndReported(): void
+    {
+        $state = StateProtectedModeRuntime::create();
+        $this->assertNull($state->maintenanceNodes);
+        $this->assertNull(new ProtectedModeRuntime($state)->maintenanceNodes);
+        $legacy = $state->toArray();
+        unset($legacy[StateProtectedModeRuntime::maintenanceNodes]);
+        $this->assertNull(StateProtectedModeRuntime::fromRow($legacy)->maintenanceNodes);
+
+        foreach ([self::MAINTENANCE_NODES, [], null] as $nodes) {
+            $state->applyDiff([StateProtectedModeRuntime::maintenanceNodes => $nodes]);
+            $this->assertSame($nodes, $state->toArray()[StateProtectedModeRuntime::maintenanceNodes]);
+            $restored = StateProtectedModeRuntime::fromRow($state->toArray());
+            $this->assertSame($nodes, new ProtectedModeRuntime($restored)->maintenanceNodes);
+            $restored->applyDiff([StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING]);
+            $this->assertSame($nodes, $restored->maintenanceNodes);
+        }
+    }
+
+    public function testMaintenanceNodePublicationSyncsOnlyChangesAndPreservesTheFreeze(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $before = $view->toArray();
+        $recorder = new WatchdogViewChangeRecorder();
+        Hilos::$sr = $recorder;
+
+        $view->actions->updateMaintenanceNodes(self::MAINTENANCE_NODES);
+        $this->assertSame([...$before, StateProtectedModeRuntime::maintenanceNodes => self::MAINTENANCE_NODES], $view->toArray());
+        $this->assertCount(1, $recorder->changes);
+        $this->assertSame([StateProtectedModeRuntime::maintenanceNodes => self::MAINTENANCE_NODES], $recorder->changes[0]->row);
+        $view->actions->updateMaintenanceNodes(self::MAINTENANCE_NODES);
+        $this->assertCount(1, $recorder->changes);
+
+        $view->actions->updateMaintenanceNodes([]);
+        $this->assertSame([], $view->maintenanceNodes);
+        $view->actions->updateMaintenanceNodes(null);
+        $this->assertNull($view->maintenanceNodes);
+        $this->assertCount(3, $recorder->changes);
+        $this->assertSame([StateProtectedModeRuntime::maintenanceNodes => null], $recorder->changes[2]->row);
+    }
+
+    public function testMaintenanceNodePublicationRefusesANonOwnerEvenForAnUnchangedNull(): void
+    {
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $before = $view->toArray();
+        $recorder = new WatchdogViewChangeRecorder();
+        Hilos::$sr = $recorder;
+
+        foreach ([self::MAINTENANCE_NODES, null] as $nodes) {
+            try {
+                $view->actions->updateMaintenanceNodes($nodes);
+                $this->fail('A non-owner must not publish maintenance nodes');
+            } catch (RtTruthSourceWriteNotAllowedException) {
+                $this->assertSame($before, $view->toArray());
+                $this->assertSame([], $recorder->changes);
+            }
+        }
+    }
+
+    public function testPhaseTransitionsDoNotInvalidateThePublishedNodeProjection(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $view->actions->updateMaintenanceNodes(self::MAINTENANCE_NODES);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $this->assertSame(self::MAINTENANCE_NODES, $view->maintenanceNodes);
+        foreach (['enterActive', 'enterVerifying', 'enterDeactivating', 'enterInactive'] as $transition) {
+            $view->actions->$transition();
+            $this->assertSame(self::MAINTENANCE_NODES, $view->maintenanceNodes);
+        }
+        $view->actions->enterVerificationWindow($this->freeze(), self::INITIATOR_KEY);
+        $this->assertSame(self::MAINTENANCE_NODES, $view->maintenanceNodes);
+    }
+
+    /** @param array<mixed> $nodes Invalid projection at the serialization boundary */
+    #[DataProvider('badMaintenanceNodes')]
+    public function testMalformedMaintenanceNodesAreRefusedBeforeActionOrDiffWrites(array $nodes): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->updateMaintenanceNodes(self::MAINTENANCE_NODES);
+        $before = $view->toArray();
+        $recorder = new WatchdogViewChangeRecorder();
+        Hilos::$sr = $recorder;
+
+        try {
+            $view->actions->updateMaintenanceNodes($nodes);
+            $this->fail('A malformed projection must not be published');
+        } catch (InvalidFormatException) {
+            $this->assertSame($before, $view->toArray());
+            $this->assertSame([], $recorder->changes);
+        }
+        try {
+            $state->applyDiff([
+                StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVE,
+                StateProtectedModeRuntime::maintenanceNodes => $nodes,
+            ]);
+            $this->fail('A malformed projection must not partially apply a diff');
+        } catch (InvalidFormatException) {
+            $this->assertSame($before, $view->toArray());
+        }
+    }
+
+    /** @return iterable<string, array{array<mixed>}> Invalid node-report shapes */
+    public static function badMaintenanceNodes(): iterable
+    {
+        yield 'map' => [['node-a' => self::MAINTENANCE_NODES[0]]];
+        yield 'non-row' => [['node-a']];
+        foreach ([
+            'nodeId' => 1,
+            'phase' => 'unknown',
+            'quiesced' => 1,
+            'isLeader' => null,
+            'isInitiator' => 'true',
+            'reportState' => 'unknown',
+        ] as $field => $value) {
+            yield $field => [[[...self::MAINTENANCE_NODES[0], $field => $value]]];
+        }
+        foreach (array_keys(self::MAINTENANCE_NODES[0]) as $field) {
+            $node = self::MAINTENANCE_NODES[0];
+            unset($node[$field]);
+            yield 'missing ' . $field => [[$node]];
+        }
     }
 
     public function testWatchdogPublicationExposesAllSevenFieldsInOneChange(): void

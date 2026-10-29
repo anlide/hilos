@@ -27,6 +27,7 @@ import { logsOverviewThresholdPassed } from '../../src/admin/logs/hilosLogsOverv
 import * as maintenance from '../../src/admin/maintenance/index.js'
 import * as maintenanceModel from '../../src/admin/maintenance/hilosMaintenance.js'
 import * as maintenanceWords from '../../src/admin/maintenance/hilosMaintenanceWords.js'
+import * as maintenanceNodes from '../../src/admin/maintenance/hilosMaintenanceNodes.js'
 import * as moderation from '../../src/admin/moderation/index.js'
 import * as moderationKind from '../../src/admin/moderation/hilosModerationKind.js'
 import * as moderationRuleAdd from '../../src/admin/moderation/hilosModerationRuleAdd.js'
@@ -527,6 +528,28 @@ const maintenanceWordsTypes = [
   'HilosMaintenanceWordsRow',
   'HilosMaintenanceWordsTable',
 ]
+/** Maintenance Nodes APIs stay exclusive to their lazy section. */
+const maintenanceNodesValues = [
+  'HILOS_MAINTENANCE_NODES_COLUMNS',
+  'HILOS_MAINTENANCE_NODES_COPY',
+  'HILOS_MAINTENANCE_NODES_SLOT',
+  'HILOS_MAINTENANCE_NODES_TABLE',
+  'MAINTENANCE_NODE_ID_FIELD',
+  'MAINTENANCE_NODE_IS_INITIATOR_FIELD',
+  'MAINTENANCE_NODE_IS_LEADER_FIELD',
+  'MAINTENANCE_NODE_PHASE_FIELD',
+  'MAINTENANCE_NODE_QUIESCED_FIELD',
+  'MAINTENANCE_NODE_REPORT_STATE_FIELD',
+  'createHilosMaintenanceNodesTable',
+  'hilosMaintenanceNodePresentation',
+  'hilosMaintenanceNodeRowMessage',
+  'resolveHilosMaintenanceNodeRow',
+]
+const maintenanceNodesTypes = [
+  'HilosMaintenanceNodePresentation',
+  'HilosMaintenanceNodeRow',
+  'HilosMaintenanceNodesTable',
+]
 /** Watchdog presentation APIs stay exclusive to the lazy Maintenance section. */
 const maintenanceWatchdogValues = [
   'HILOS_MAINTENANCE_WATCHDOG_COPY',
@@ -946,6 +969,19 @@ describe('core public entries', () => {
             ),
             name,
           ).toBe(true)
+        } else if (
+          entry === './admin/maintenance' &&
+          maintenanceNodesValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              maintenanceNodes[name as keyof typeof maintenanceNodes],
+            ),
+            name,
+          ).toBe(true)
         } else if (entry === './admin/logs' && logNodesValues.includes(name)) {
           expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
@@ -1016,6 +1052,7 @@ describe('core public entries', () => {
         ...adminModerationKindValues,
         ...adminModerationRulesValues,
         ...maintenanceWordsValues,
+        ...maintenanceNodesValues,
         ...maintenanceWatchdogValues,
         ...logNodesValues,
         ...adminModerationRuleAddValues,
@@ -1410,6 +1447,8 @@ describe('core public entries', () => {
     ]
     const wordsExports = exportsOf('admin/maintenance/hilosMaintenanceWords.ts')
     const wordsNames = [...maintenanceWordsValues, ...maintenanceWordsTypes]
+    const nodesExports = exportsOf('admin/maintenance/hilosMaintenanceNodes.ts')
+    const nodesNames = [...maintenanceNodesValues, ...maintenanceNodesTypes]
     const watchdogExports = exportsOf('admin/maintenance/hilosMaintenance.ts')
     const watchdogNames = [
       ...maintenanceWatchdogValues,
@@ -1537,6 +1576,13 @@ describe('core public entries', () => {
           expect(symbol, `${entry}:${name}`).toBe(wordsExports.get(name))
         } else if (
           entry === 'admin/maintenance/index.ts' &&
+          nodesNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(nodesExports.get(name))
+        } else if (
+          entry === 'admin/maintenance/index.ts' &&
           watchdogNames.includes(name)
         ) {
           expect(root.has(name), name).toBe(false)
@@ -1597,6 +1643,7 @@ describe('core public entries', () => {
         ...kindNames,
         ...rulesNames,
         ...wordsNames,
+        ...nodesNames,
         ...watchdogNames,
         ...logNodesNames,
         ...ruleAddNames,

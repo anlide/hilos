@@ -30,6 +30,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
@@ -56,6 +57,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
+ * @property-read HilosMaintenanceNodesTable $hilosMaintenanceNodes
  * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogNodesTable $hilosLogNodes
@@ -92,6 +94,7 @@ final class OnlineTestingTableContext extends TableContext
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
+    public const string hilosMaintenanceNodes = HilosMaintenanceNodesTable::TABLE;
     public const string hilosMaintenanceWords = HilosMaintenanceWordsTable::TABLE;
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogNodes = HilosLogNodesTable::TABLE;

@@ -91,6 +91,7 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Tasks\Pages\Hilos\Status\StatusPage;
@@ -194,6 +195,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
@@ -314,6 +316,7 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
         MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
@@ -535,6 +538,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosUsers => HilosUsersTable::class,
         TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
         TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        TasksTableContext::hilosMaintenanceNodes => HilosMaintenanceNodesTable::class,
         TasksTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
         TasksTableContext::hilosLogNodes => HilosLogNodesTable::class,
@@ -657,6 +661,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceWordsPage::PAGE => [
             TasksTableContext::hilosMaintenanceWords => [],
+        ],
+        MaintenanceNodesPage::PAGE => [
+            TasksTableContext::hilosMaintenanceNodes => [],
         ],
         LogsOverviewPage::PAGE => [
             TasksTableContext::hilosLogNodes => [],

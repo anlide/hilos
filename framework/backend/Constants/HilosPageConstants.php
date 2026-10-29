@@ -159,6 +159,9 @@ final class HilosPageConstants
     /** @var string Words used to announce maintenance screens (HIL-1677) */
     public const string HILOS_MAINTENANCE_WORDS = 'hilos_maintenance_words';
 
+    /** @var string Cluster nodes and their maintenance reports */
+    public const string HILOS_MAINTENANCE_NODES = 'hilos_maintenance_nodes';
+
     /** @var string Hilos daemon dashboard */
     public const string HILOS_DAEMON = 'hilos_daemon';
 

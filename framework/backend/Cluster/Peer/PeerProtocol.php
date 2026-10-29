@@ -24,11 +24,12 @@ namespace Hilos\Cluster\Peer;
  * 20 — peer_agent_status and peer_placement_verdict carry the placement-gate refusals (HIL-447).
  * 21 — peer_protected_mode_window opens the direct verification window on every master (HIL-1367).
  * 22 — peer_placement_view/report carry the complete term/revision-fenced placement snapshot (HIL-446).
+ * 23 — peer_protected_mode_node_report carries node diagnostics independently of stopped agents (HIL-1678).
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 22;
+    public const int VERSION = 23;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

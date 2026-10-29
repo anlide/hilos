@@ -530,6 +530,101 @@ final class BrowserContextTableFreezeTest extends TestCase
         $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
+    public function testAnEmptySourceBuildLeavesACurrentWindowSilent(): void
+    {
+        $table = $this->boot();
+        $table->noMutationOn = ['a'];
+        Hilos::$sr->setTableFacets('ak-1', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha']]);
+        $queries = $table->queries;
+
+        $this->flushChange('a');
+
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertSame($queries, $table->queries);
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testAnEmptySourceBuildPaysARefusedWindowOnceAndSkipsLaterMutationsOfTheFlush(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+        $table->failQuery = false;
+        $table->noMutationOn = ['a'];
+        Hilos::$sr->setTableFacets('ak-1', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha']]);
+        Hilos::$rt->addRow(FreezeUnitState::create('z', 'Zeta'));
+        $table->rows[] = new FreezeUnitRow('z', 'Zeta');
+        $queries = $table->queries;
+
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']));
+        $context->record(SourceChange::rtCreated(FreezeUnitRtContext::ROWS, 'z', ['id' => 'z', 'name' => 'Zeta']));
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW, SignalTypeConstants::TABLE_FACET_COUNTS], $this->tableFrameNames());
+        $windows = $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW);
+        $this->assertCount(1, $windows);
+        $this->assertSame(3, $windows[0]->totalCount);
+        $this->assertSame(3, Hilos::$sr->getTableViewport('ak-1', $table::TABLE)->totalCount());
+        $this->assertSame(1, $table->queries - $queries);
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testAnEmptySourceBuildPaysAFrozenWindow(): void
+    {
+        $table = $this->boot(failOn: ['a']);
+        $this->flushChange('a');
+        $this->drain();
+        $table->failOn = [];
+        $table->noMutationOn = ['a'];
+        $queries = $table->queries;
+
+        $this->flushChange('a');
+
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $this->assertSame(1, $table->queries - $queries);
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testEmptySourceBuildsTryAStillRefusedQueryOnceSilentlyPerFlush(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+        $table->noMutationOn = ['a', 'b'];
+        $queries = $table->queries;
+        $logged = $this->writtenLog();
+
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'a', ['name' => 'Alpha renamed']));
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'b', ['name' => 'Beta renamed']));
+        $context->recordDatabaseBack();
+        $context->flushToSignalRouter();
+
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertSame(1, $table->queries - $queries);
+        $this->assertSame($logged, $this->writtenLog());
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', $table::TABLE));
+
+        $table->failQuery = false;
+        $this->flushChange('a');
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $this->tableFrameNames());
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testAnUnrelatedEmptyBuildDoesNotTryAnOwedWindow(): void
+    {
+        $table = $this->boot();
+        $this->refuseTheWindow($table);
+        $table->failQuery = false;
+        $queries = $table->queries;
+
+        $this->flushChanges(SourceChange::rtUpdated('unrelatedSource', 'a', ['name' => 'Unrelated']));
+
+        $this->assertSame([], $this->tableFrameNames());
+        $this->assertSame($queries, $table->queries);
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
     public function testAChangeTheTableCannotBuildForARefusedWindowSaysNothing(): void
     {
         $table = $this->boot();
@@ -1372,6 +1467,16 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
     public const string NEIGHBOR = 'tableFreezeNeighbor';
     public const string SLOT = 'tableFreezeRows';
     public const string FILTER_LABEL = 'label';
+    public const array BROWSER = [
+        BrowserTableConfigKey::ROWS => [[
+            BrowserTableFieldKey::SOURCE => [
+                BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                BrowserSourceKey::KEY => FreezeUnitRtContext::ROWS,
+            ],
+            BrowserTableFieldKey::ROW_KEY => 'id',
+            BrowserTableFieldKey::FIELDS => ['id', 'name'],
+        ]],
+    ];
 
     /** Source whose changes report work on the table and touch none of its rows */
     public const string PROGRESS_SOURCE = 'tableFreezeProgress';
@@ -1384,6 +1489,9 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
 
     /** @var list<string> Row keys whose change reports work on the table beside the row */
     public array $progressOn = [];
+
+    /** @var list<string> Row keys whose source change builds successfully without a mutation */
+    public array $noMutationOn = [];
 
     public bool $failQuery = false;
 
@@ -1422,6 +1530,9 @@ final class FreezeUnitTable extends TableDefinition implements SelfSnapshotTable
         }
         if (in_array((string) $change->sourceId, $this->failOn, true)) {
             throw new RuntimeException(self::MUTATION_FAILURE);
+        }
+        if (in_array((string) $change->sourceId, $this->noMutationOn, true)) {
+            return null;
         }
 
         $name = $change->rowFields['name'] ?? null;

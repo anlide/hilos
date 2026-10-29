@@ -22,6 +22,9 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Hilos;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenanceNodesPage;
 use Hilos\Pages\Status\AbstractHilosStatusPage;
 use Hilos\Pages\Status\AbstractHilosStatusComponentsPage;
 use Hilos\Pages\Status\AbstractHilosStatusSubscribersPage;
@@ -944,9 +947,49 @@ final class PageCatalogResolverTest extends TestCase
                 'label' => 'Circle', 'lead' => 'Who will check the system after an operation.'],
             ['page' => HilosPageConstants::HILOS_MAINTENANCE_WORDS,
                 'label' => 'Words', 'lead' => 'The words used to announce maintenance.'],
+            ['page' => HilosPageConstants::HILOS_MAINTENANCE_NODES,
+                'label' => 'Nodes', 'lead' => 'Maintenance reports from the cluster nodes.'],
         ], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE));
         self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE_CIRCLE));
         self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_MAINTENANCE_WORDS));
+    }
+
+    public function testNodesIsAClusterOnlyTabOnEveryMaintenancePage(): void
+    {
+        $previousCluster = Hilos::$cluster;
+        $previousEnv = Hilos::$env;
+        $previousEnabled = getenv('CLUSTER_ENABLED');
+        try {
+            Hilos::$env = new EnvAccessor();
+            Hilos::$cluster = new ClusterContext();
+            MaintenanceNodesHeadTestHilos::initBrowser();
+            foreach ([false, true] as $cluster) {
+                putenv('CLUSTER_ENABLED=' . ($cluster ? 'true' : 'false'));
+                $tabs = [
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE_CIRCLE, 'label' => 'Circle'],
+                    ['page' => HilosPageConstants::HILOS_MAINTENANCE_WORDS, 'label' => 'Words'],
+                ];
+                if ($cluster) {
+                    $tabs[] = ['page' => HilosPageConstants::HILOS_MAINTENANCE_NODES, 'label' => 'Nodes'];
+                }
+                foreach ([HilosPageConstants::HILOS_MAINTENANCE, HilosPageConstants::HILOS_MAINTENANCE_CIRCLE,
+                    HilosPageConstants::HILOS_MAINTENANCE_WORDS, HilosPageConstants::HILOS_MAINTENANCE_NODES] as $page) {
+                    self::assertSame(HilosPageConstants::HILOS_MAINTENANCE, PageCatalogResolver::rowOwner($page));
+                    $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+                    self::assertNotNull($head);
+                    self::assertSame($tabs, $head->pageTabs);
+                    self::assertSame([
+                        ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                        ['page' => HilosPageConstants::HILOS_MAINTENANCE, 'label' => 'Maintenance'],
+                    ], $head->pageBreadcrumb);
+                }
+            }
+        } finally {
+            Hilos::$cluster = $previousCluster;
+            Hilos::$env = $previousEnv;
+            putenv($previousEnabled === false ? 'CLUSTER_ENABLED' : 'CLUSTER_ENABLED=' . $previousEnabled);
+        }
     }
 
     public function testAnUnregisteredCircleDoesNotBecomeAMaintenanceTab(): void
@@ -2431,4 +2474,17 @@ final class ConditionalTableHeadPage extends AbstractPage
 final class StatusPageCatalogSubscribersPage extends AbstractHilosStatusSubscribersPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
+/** The installed Nodes page joins the existing owner only in cluster mode. */
+abstract class MaintenanceNodesHeadTestHilos extends MaintenancePageHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_MAINTENANCE_NODES => MaintenanceNodesHeadTestPage::class,
+    ];
+}
+
+final class MaintenanceNodesHeadTestPage extends AbstractHilosMaintenanceNodesPage
+{
 }

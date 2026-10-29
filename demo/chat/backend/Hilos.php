@@ -159,6 +159,7 @@ use Demo\Chat\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Chat\Pages\Hilos\Status\StatusPage;
@@ -290,6 +291,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
@@ -435,6 +437,7 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+        MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
         MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
@@ -713,6 +716,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         ChatTableContext::hilosBackups => HilosBackupHistoryTable::class,
         ChatTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        ChatTableContext::hilosMaintenanceNodes => HilosMaintenanceNodesTable::class,
         ChatTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
         ChatTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
         ChatTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
@@ -927,6 +931,9 @@ final class Hilos extends HilosFacade
         ],
         MaintenanceWordsPage::PAGE => [
             ChatTableContext::hilosMaintenanceWords => [],
+        ],
+        MaintenanceNodesPage::PAGE => [
+            ChatTableContext::hilosMaintenanceNodes => [],
         ],
         CommunicationsPage::PAGE => [
             ChatTableContext::hilosCommunicationsChannels => [],

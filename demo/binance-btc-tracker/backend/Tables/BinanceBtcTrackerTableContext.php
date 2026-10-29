@@ -40,6 +40,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
@@ -64,6 +65,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
+ * @property-read HilosMaintenanceNodesTable $hilosMaintenanceNodes
  * @property-read HilosMaintenanceWordsTable $hilosMaintenanceWords
  * @property-read HilosSettingsTable $settings
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
@@ -103,6 +105,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
+    public const string hilosMaintenanceNodes = HilosMaintenanceNodesTable::TABLE;
     public const string hilosMaintenanceWords = HilosMaintenanceWordsTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;

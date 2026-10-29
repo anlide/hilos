@@ -89,6 +89,7 @@ use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceCirclePage;
+use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
@@ -170,6 +171,7 @@ use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
@@ -544,6 +546,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
+            MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
             MaintenanceWordsPage::PAGE => MaintenanceWordsPage::class,
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
@@ -562,9 +565,12 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
         $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
+        $this->assertSame(MaintenanceNodesPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_NODES]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceCirclePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceWordsPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[MaintenanceNodesPage::PAGE]);
         $this->assertSame([], MaintenanceWordsPage::ACTIONS);
+        $this->assertSame([], MaintenanceNodesPage::ACTIONS);
         $this->assertSame([
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
@@ -584,6 +590,10 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(
             [OnlineTestingTableContext::hilosMaintenanceWords => []],
             Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],
+        );
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosMaintenanceNodes => []],
+            Hilos::PAGE_TABLES[MaintenanceNodesPage::PAGE],
         );
         $this->assertSame(
             [OnlineTestingTableContext::hilosVerifierCircle => []],
@@ -1206,6 +1216,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
             OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
             OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+            OnlineTestingTableContext::hilosMaintenanceNodes => HilosMaintenanceNodesTable::class,
             OnlineTestingTableContext::hilosMaintenanceWords => HilosMaintenanceWordsTable::class,
             OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
             OnlineTestingTableContext::hilosLogNodes => HilosLogNodesTable::class,
@@ -1250,6 +1261,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             MaintenancePage::PAGE,
             MaintenanceCirclePage::PAGE,
             MaintenanceWordsPage::PAGE,
+            MaintenanceNodesPage::PAGE,
             LogsOverviewPage::PAGE,
             LogsKeysPage::PAGE,
             LogsRotationsPage::PAGE,
@@ -1362,6 +1374,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     {
         $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(HilosMaintenanceNodesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosMaintenanceNodes]);
         $this->assertSame(
             [OnlineTestingTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[MaintenancePage::PAGE],

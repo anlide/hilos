@@ -147,6 +147,7 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeWindowDTO::MESSAGE_TYPE => PeerProtectedModeWindowDTO::fromArray($data),
             PeerProtectedModeQuiescedDTO::MESSAGE_TYPE => PeerProtectedModeQuiescedDTO::fromArray($data),
             PeerProtectedModeSettledDTO::MESSAGE_TYPE => PeerProtectedModeSettledDTO::fromArray($data),
+            PeerProtectedModeNodeReportDTO::MESSAGE_TYPE => PeerProtectedModeNodeReportDTO::fromArray($data),
             PeerDbReHydrateDTO::MESSAGE_TYPE => PeerDbReHydrateDTO::fromArray($data),
             PeerDbReHydratedDTO::MESSAGE_TYPE => PeerDbReHydratedDTO::fromArray($data),
             PeerProtectedModeLiftDTO::MESSAGE_TYPE => PeerProtectedModeLiftDTO::fromArray($data),

@@ -4132,8 +4132,8 @@ abstract class BrowserContext
      * at the end of the flush when the change could have moved its numbers
      * ({@see self::skipUnbuiltChange()}). The journal is told once per change and flush
      * ({@see self::$skippedThisFlush}). A window owed whole — frozen earlier or refused — is sent
-     * none of the above: the first mutation the table builds for it is the proof its road is back,
-     * and it brings the whole window instead ({@see self::catchUpOwedWindow()}).
+     * none of the above: a successful build of its own source change, including an empty mutation
+     * list, tries the whole window instead ({@see self::catchUpOwedWindow()}).
      *
      * A {@see WindowScopedViewportTable} builds the change for this window alone and may answer with
      * several mutations. Each of them takes the road above in turn ({@see self::emitViewportMutation()});
@@ -4145,6 +4145,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @throws PageInternalErrorException When the table's browser source declaration is malformed
      * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
      * @throws InvalidArgumentException When a table signal cannot be named
      */
@@ -4183,6 +4184,16 @@ abstract class BrowserContext
             return;
         }
 
+        if ($mutations === []) {
+            if (!Hilos::$sr->isTableWindowOwed($acceptKey, $browserKey)) {
+                return;
+            }
+            $browserConfig = $this->browserConfig($browserKey);
+            if ($browserConfig === null || !$this->browserObservesChange($browserConfig, $change)) {
+                return;
+            }
+        }
+
         $this->emitViewportMutations(
             $table, $viewport, $mutations, $acceptKey, $page, $browserKey, $change->origin, $change->originRequestId,
         );
@@ -4212,15 +4223,15 @@ abstract class BrowserContext
         ?string $originRequestId = null,
         bool $recountTotal = false,
     ): void {
-        if ($mutations === []) {
+        if (Hilos::$sr->isTableWindowOwed($acceptKey, $browserKey)) {
+            // A window owed whole is not sent a delta judged against rows it was never brought up
+            // to date on; a successful source build tries it whole even when no row changed.
+            $this->catchUpOwedWindow($table, $viewport, $page, $acceptKey, $browserKey);
+
             return;
         }
 
-        if (Hilos::$sr->isTableWindowOwed($acceptKey, $browserKey)) {
-            // A window owed whole is not sent a delta judged against rows it was never brought up
-            // to date on; the change that proves the road is back brings the whole window instead.
-            $this->catchUpOwedWindow($table, $viewport, $page, $acceptKey, $browserKey);
-
+        if ($mutations === []) {
             return;
         }
 

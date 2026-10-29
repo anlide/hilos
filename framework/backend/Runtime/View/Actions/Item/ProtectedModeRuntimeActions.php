@@ -53,7 +53,7 @@ final class ProtectedModeRuntimeActions extends RtActions
      * or opens the node from the console. This exception follows the operation and entry mode,
      * not the phase; a restore verification window still keeps its initiating browser. The
      * separate entered-from-browser fact survives either kind of restart for Maintenance's source label.
-     * Live agent diagnostics and watchdog presentation are discarded even if the descriptor carries
+     * Live agent diagnostics, node reports and watchdog presentation are discarded even if the descriptor carries
      * them. They stay unpublished until this node's master publishes its current values again.
      *
      * TODO(HIL-93): the right to enter a frozen node belongs to the roles subsystem (HIL-93
@@ -90,6 +90,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->stoppedAgentCount = null;
         $this->state->preservedAgentTypes = null;
         $this->state->agentStartGateClosed = null;
+        $this->state->maintenanceNodes = null;
         $this->state->watchdogVerdict = null;
         $this->state->watchdogPendingNodeIds = [];
         $this->state->watchdogQuiesceTimeoutSeconds = null;
@@ -97,6 +98,31 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->watchdogAlertIntervalSeconds = null;
         $this->state->watchdogAlertEmails = null;
         $this->state->watchdogManualRestartIsNormal = null;
+        $this->sync();
+    }
+
+    /**
+     * Publishes the local master's diagnostic node projection to this node's workers on change.
+     * The array is the six-field runtime serialization boundary, not a freeze control payload.
+     *
+     * @param ?list<array<string, string|bool|null>> $nodes Node reports, or null while unavailable or unpublished
+     * @throws InvalidFormatException When a report does not match the projection shape
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function updateMaintenanceNodes(?array $nodes): void
+    {
+        $this->ensureCanWrite();
+
+        $validated = StateProtectedModeRuntime::fromRow([
+            ...$this->state->toArray(),
+            StateProtectedModeRuntime::maintenanceNodes => $nodes,
+        ])->maintenanceNodes;
+        if ($this->state->maintenanceNodes === $validated) {
+            return;
+        }
+
+        $this->state->maintenanceNodes = $validated;
         $this->sync();
     }
 

@@ -594,6 +594,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The words used to announce maintenance.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
         ],
+        HilosPageConstants::HILOS_MAINTENANCE_NODES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Nodes',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Maintenance reports from the cluster nodes.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MAINTENANCE,
+        ],
 
         HilosPageConstants::HILOS_STATUS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Status',

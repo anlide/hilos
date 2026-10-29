@@ -150,6 +150,11 @@ export {
   turnOnMaintenance,
 } from './maintenance.js'
 export {
+  MAINTENANCE_NODES_PATH,
+  expectMaintenanceNode,
+  expectMaintenanceNodesInitial,
+} from './maintenanceNodes.js'
+export {
   createTestUserJoined,
   enableEmailChannel,
   openBell,
