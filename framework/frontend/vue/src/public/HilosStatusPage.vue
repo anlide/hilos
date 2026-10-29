@@ -35,6 +35,7 @@ const subscription = createStatusSubscription({
   actions: props.actions,
 })
 const subscriptionUsable = useSignal(subscription.usable)
+const subscriptionOperation = useSignal(subscription.operation)
 const subscriptionDialog = useSignal(subscription.dialog)
 const subscriptionStep = useSignal(subscription.step)
 const subscriptionError = useSignal(subscription.error)
@@ -42,9 +43,28 @@ const subscriptionSuccess = useSignal(subscription.success)
 const subscriptionProgress = computed(() =>
   subscriptionStep.value === 'waiting'
     ? STATUS_SUBSCRIPTION_COPY.waiting
-    : subscriptionStep.value === 'pending'
-      ? 'Waiting for confirmation…'
-      : '',
+    : subscriptionStep.value !== 'pending'
+      ? ''
+      : subscriptionOperation.value === 'confirm'
+        ? 'Confirming your subscription…'
+        : 'Waiting for confirmation…',
+)
+// A confirmed address is the one success; a sent link and an ended
+// subscription are neutral news. The mailed link gets the envelope.
+const subscriptionNoticeClass = computed(() =>
+  subscriptionSuccess.value !== null &&
+  subscriptionOperation.value === 'confirm'
+    ? 'alert-success'
+    : 'alert-secondary',
+)
+const subscriptionNoticeIcon = computed(() =>
+  subscriptionSuccess.value === null
+    ? null
+    : subscriptionOperation.value === 'subscribe'
+      ? 'bi-envelope'
+      : subscriptionOperation.value === 'confirm'
+        ? 'bi-check-circle'
+        : null,
 )
 const projection = useSignal(reader.projection)
 const freshness = useSignal(reader.freshness)
@@ -164,15 +184,21 @@ onUnmounted(() => {
         aria-hidden="true"
         inert
       >
-        {{ STATUS_SUBSCRIPTION_COPY.waiting }}
+        <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
+        {{ STATUS_SUBSCRIPTION_COPY.subscribed }}
       </div>
       <template v-if="!subscriptionDialog">
         <div
           v-if="subscriptionSuccess || subscriptionProgress"
           class="alert mb-0"
-          :class="subscriptionSuccess ? 'alert-success' : 'alert-secondary'"
+          :class="subscriptionNoticeClass"
           data-id="public-status-subscription-notice"
         >
+          <i
+            v-if="subscriptionNoticeIcon"
+            :class="['bi', subscriptionNoticeIcon, 'me-1']"
+            aria-hidden="true"
+          ></i>
           {{ subscriptionSuccess || subscriptionProgress }}
         </div>
       </template>

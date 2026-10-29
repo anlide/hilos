@@ -26,9 +26,10 @@ const TOKEN_PATTERN = /^[a-f0-9]{64}$/i
 
 export const STATUS_SUBSCRIPTION_COPY = {
   subscribe: 'Subscribe to updates',
-  checkInbox: 'Check your inbox',
-  subscribed: 'You are subscribed',
-  unsubscribed: 'You are unsubscribed',
+  checkInbox: 'Check your inbox — we sent a link to confirm the address.',
+  subscribed:
+    'You are subscribed. Letters come on outages and scheduled maintenance.',
+  unsubscribed: 'You are unsubscribed. No more letters will come.',
   keep: 'Keep',
   unsubscribe: 'Unsubscribe',
   waiting: 'Waiting for a live connection to continue.',
@@ -288,17 +289,21 @@ export function createStatusSubscription(
           // A second capability is not queued behind this mounted operation.
           if (busy.get() || token !== null) return
           reset()
-          dialog.set(true)
           const value = confirms[0] ?? unsubscribes[0] ?? ''
           if (
             confirms.length + unsubscribes.length !== 1 ||
             !TOKEN_PATTERN.test(value)
           ) {
+            // A broken link has no window: the page's slot says so.
             error.set(STATUS_SUBSCRIPTION_COPY.invalidLink)
             step.set('error')
           } else {
             token = value
-            operation.set(confirms.length === 1 ? 'confirm' : 'unsubscribe')
+            const confirming = confirms.length === 1
+            operation.set(confirming ? 'confirm' : 'unsubscribe')
+            // Confirming asks nothing of the person, so it waits and answers in
+            // the page's slot; only unsubscribing opens its window to ask.
+            dialog.set(!confirming)
           }
           continueToken()
         }

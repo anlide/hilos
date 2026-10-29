@@ -6,14 +6,15 @@ import {
   hilosAdminAccess,
   type HilosConnection,
 } from '@hilos/core/base'
-import type {
-  PublicStatusFetch,
-  PublicStatusFile,
-  PublicStatusHeartbeat,
-  PublicStatusMaintenancePeriod,
-  PublicStatusOutage,
-  PublicStatusState,
-  PublicStatusWork,
+import {
+  STATUS_SUBSCRIPTION_COPY,
+  type PublicStatusFetch,
+  type PublicStatusFile,
+  type PublicStatusHeartbeat,
+  type PublicStatusMaintenancePeriod,
+  type PublicStatusOutage,
+  type PublicStatusState,
+  type PublicStatusWork,
 } from '@hilos/core/status'
 import { DOMWrapper, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -1026,7 +1027,7 @@ describe('public HilosStatusPage', () => {
       expect(body.find('[data-id="modal"]').exists()).toBe(false)
       expect(
         h.wrapper.get('[data-id="public-status-subscription-notice"]').text(),
-      ).toBe('Check your inbox')
+      ).toBe(STATUS_SUBSCRIPTION_COPY.checkInbox)
       expect(
         h.wrapper.get('[data-id="public-status-subscription-slot"]').element,
       ).toBe(feedback)
@@ -1037,7 +1038,7 @@ describe('public HilosStatusPage', () => {
       await settle()
       expect(
         h.wrapper.get('[data-id="public-status-subscription-notice"]').text(),
-      ).toBe('Check your inbox')
+      ).toBe(STATUS_SUBSCRIPTION_COPY.checkInbox)
     },
   )
 
@@ -1072,12 +1073,16 @@ describe('public HilosStatusPage', () => {
       )
       await settle()
       const body = new DOMWrapper(document.body)
-      expect(document.activeElement).toBe(body.get('[data-id="modal"]').element)
+      expect(body.find('[data-id="modal"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(opener)
+      expect(
+        h.wrapper.get('[data-id="public-status-subscription-notice"]').text(),
+      ).toBe('Confirming your subscription…')
       expect(h.send).toHaveBeenCalledTimes(1)
       h.answer({ status: 'subscribed' })
       await settle()
       expect(document.activeElement).toBe(opener)
-      expect(live.textContent).toBe('You are subscribed')
+      expect(live.textContent).toBe(STATUS_SUBSCRIPTION_COPY.subscribed)
       window.history.pushState({}, '', `/status#status-unsubscribe=${token}`)
       window.dispatchEvent(new Event(event))
       expect(window.location.hash).toBe('')
@@ -1142,9 +1147,10 @@ describe('public HilosStatusPage', () => {
       expect(h.send).not.toHaveBeenCalled()
       await settle()
       const body = new DOMWrapper(document.body)
-      expect(body.get('[data-id="status-subscription-progress"]').text()).toBe(
-        'Waiting for a live connection to continue.',
-      )
+      expect(body.find('[data-id="modal"]').exists()).toBe(false)
+      expect(
+        h.wrapper.get('[data-id="public-status-subscription-notice"]').text(),
+      ).toBe(STATUS_SUBSCRIPTION_COPY.waiting)
       expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
         'All systems operational',
       )
@@ -1167,7 +1173,7 @@ describe('public HilosStatusPage', () => {
       expect(body.find('[data-id="modal"]').exists()).toBe(false)
       expect(
         h.wrapper.get('[data-id="public-status-subscription-notice"]').text(),
-      ).toBe('You are subscribed')
+      ).toBe(STATUS_SUBSCRIPTION_COPY.subscribed)
       expect(stored).not.toHaveBeenCalled()
       expect(
         h.fetchFile.mock.calls.every(([url]) => !url.includes(token)),
@@ -1205,7 +1211,7 @@ describe('public HilosStatusPage', () => {
     expect(body.find('[data-id="modal"]').exists()).toBe(false)
     expect(
       slot.get('[data-id="public-status-subscription-notice"]').text(),
-    ).toBe('You are unsubscribed')
+    ).toBe(STATUS_SUBSCRIPTION_COPY.unsubscribed)
     expect(slot.get('[aria-hidden="true"][inert]').element).toBe(
       reservation.element,
     )
@@ -1214,7 +1220,7 @@ describe('public HilosStatusPage', () => {
     )
   })
 
-  it('keeps a closed waiting operation visible on the page and ignores a completion after unmount', async () => {
+  it('keeps a waiting confirmation visible on the page without a window and ignores a completion after unmount', async () => {
     window.history.replaceState(
       {},
       '',
@@ -1223,7 +1229,7 @@ describe('public HilosStatusPage', () => {
     const h = harness(statusFile(), false)
     await settle()
     const body = new DOMWrapper(document.body)
-    await body.get('[data-id="status-subscription-cancel"]').trigger('click')
+    expect(body.find('[data-id="modal"]').exists()).toBe(false)
     expect(
       h.wrapper.get('[data-id="public-status-subscription-notice"]').text(),
     ).toBe('Waiting for a live connection to continue.')
@@ -1238,7 +1244,9 @@ describe('public HilosStatusPage', () => {
     h.connect()
     await settle()
     expect(body.find('[data-id="modal"]').exists()).toBe(false)
-    expect(document.body.textContent).not.toContain('You are subscribed')
+    expect(document.body.textContent).not.toContain(
+      STATUS_SUBSCRIPTION_COPY.subscribed,
+    )
     expect(h.send).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
   })

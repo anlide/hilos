@@ -884,8 +884,11 @@ The Vue reader's mounted controller reads its initial address and listens to
 owned fragment immediately with
 `history.replaceState` before dispatch, and keeps the token only in mounted
 memory and the correlated action body. It sends one automatic confirmation or
-unsubscribe preview after a usable connection exists. An unsubscribe requires
-an explicit confirmation; Keep does not delete. A disconnected or frozen
+unsubscribe preview after a usable connection exists. A confirmation opens no
+window: it waits, confirms and answers in the page's notice slot, as a broken
+link's refusal does; only an unsubscribe link opens its window, to ask. An
+unsubscribe requires an explicit confirmation; Keep does not delete. A
+disconnected or frozen
 browser waits for the live action path, and no optimistic success or retry loop
 is shown. The history rewrite does not trigger a route transition or loading
 cycle; see

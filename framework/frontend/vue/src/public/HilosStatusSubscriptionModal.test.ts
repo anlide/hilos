@@ -274,7 +274,7 @@ describe('public Status subscription with real modal, form error and LoadingButt
   })
 
   it.each(['timeout', 'disconnect', 'expired', 'malformed'])(
-    'keeps a %s confirmation honest with no success, automatic retry or late resurrection',
+    'keeps a %s confirmation honest without a window, success, automatic retry or late resurrection',
     async (outcome) => {
       const h = harness(
         `#status-confirm=${outcome === 'malformed' ? 'bad' : token}`,
@@ -282,6 +282,7 @@ describe('public Status subscription with real modal, form error and LoadingButt
       h.controller.start()
       await settle()
       expect(window.location.hash).toBe('')
+      expect(body().find('[data-id="modal"]').exists()).toBe(false)
       if (outcome === 'timeout') await vi.advanceTimersByTimeAsync(1001)
       else if (outcome === 'disconnect') h.connect(false)
       else if (outcome === 'expired')
@@ -292,7 +293,7 @@ describe('public Status subscription with real modal, form error and LoadingButt
           errorDetail: token,
         })
       await settle()
-      expect(byId('status-subscription-error').text()).toBe(
+      expect(h.controller.error.get()).toBe(
         outcome === 'malformed'
           ? COPY.invalidLink
           : outcome === 'expired'
@@ -308,7 +309,6 @@ describe('public Status subscription with real modal, form error and LoadingButt
       await settle()
       expect(h.send).toHaveBeenCalledTimes(outcome === 'malformed' ? 0 : 1)
       expect(h.controller.success.get()).toBeNull()
-      await byId('status-subscription-cancel').trigger('click')
       expect(body().find('[data-id="modal"]').exists()).toBe(false)
     },
   )

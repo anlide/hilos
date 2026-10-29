@@ -95,7 +95,9 @@ test('delivered capabilities work in the mounted Status document and keep its so
     await expect(page.getByTestId('status-subscription-form')).toBeHidden()
     await expect(
       page.getByTestId('public-status-subscription-notice'),
-    ).toHaveText('You are subscribed')
+    ).toHaveText(
+      'You are subscribed. Letters come on outages and scheduled maintenance.',
+    )
     await expectTrackedActionReply(
       expect,
       log.wire,
@@ -140,7 +142,7 @@ test('delivered capabilities work in the mounted Status document and keep its so
     }
     await expect(
       page.getByTestId('public-status-subscription-notice'),
-    ).toHaveText('You are unsubscribed')
+    ).toHaveText('You are unsubscribed. No more letters will come.')
     await expectTrackedActionReply(
       expect,
       log.wire,
@@ -250,7 +252,9 @@ test(
         ).toBeHidden()
         await expect(
           reader.getByTestId('public-status-subscription-notice'),
-        ).toHaveText('You are subscribed')
+        ).toHaveText(
+          'You are subscribed. Letters come on outages and scheduled maintenance.',
+        )
         await expectTrackedActionReply(
           expect,
           log,
@@ -442,7 +446,7 @@ test(
         await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
         await expect(
           guest.getByTestId('public-status-subscription-notice'),
-        ).toHaveText('You are unsubscribed')
+        ).toHaveText('You are unsubscribed. No more letters will come.')
         await expectTrackedActionReply(
           expect,
           publicLog.wire,
@@ -469,7 +473,9 @@ test(
       await openStatusMailLink(expect, guest, replacement.confirm!)
       await expect(
         guest.getByTestId('public-status-subscription-notice'),
-      ).toHaveText('You are subscribed')
+      ).toHaveText(
+        'You are subscribed. Letters come on outages and scheduled maintenance.',
+      )
       await showAnnouncedRows(expect, observer)
       const replacementId = await statusSubscriberId(
         expect,
@@ -477,11 +483,13 @@ test(
         recipients[0],
       )
       expect(replacementId).not.toBe(originalId)
-      for (const oldLink of [links[0].confirm!, links[0].unsubscribe]) {
+      // A confirmation answers in the page's slot; only unsubscribing has a window.
+      for (const [oldLink, refusal] of [
+        [links[0].confirm!, 'public-status-subscription-error'],
+        [links[0].unsubscribe, 'status-subscription-error'],
+      ] as const) {
         await openStatusMailLink(expect, guest, oldLink)
-        await expect(
-          guest.getByTestId('status-subscription-error'),
-        ).toContainText(
+        await expect(guest.getByTestId(refusal)).toContainText(
           'This subscription link is invalid or has expired. Request a new link.',
         )
         await expect(
@@ -737,7 +745,9 @@ test('subscriber counts preserve two held windows through Show, confirmation, Ap
     await openStatusMailLink(expect, guest, mail.confirm!)
     await expect(
       guest.getByTestId('public-status-subscription-notice'),
-    ).toHaveText('You are subscribed')
+    ).toHaveText(
+      'You are subscribed. Letters come on outages and scheduled maintenance.',
+    )
     await expect(
       shownByTestId(page, `hilos-status-subscriber-confirmed-${id}`),
     ).toHaveText('Yes')
@@ -913,7 +923,9 @@ test('a live subscriber stays hidden from a viewer and a valid forged removal is
     await openStatusMailLink(expect, guest, links.confirm!)
     await expect(
       guest.getByTestId('public-status-subscription-notice'),
-    ).toHaveText('You are subscribed')
+    ).toHaveText(
+      'You are subscribed. Letters come on outages and scheduled maintenance.',
+    )
     await expect(
       shownByTestId(viewer, `hilos-status-subscriber-confirmed-${id}`),
     ).toHaveText('Yes')

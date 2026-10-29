@@ -192,7 +192,7 @@ export async function subscribeToStatus(
   await expect(page.getByTestId('status-subscription-form')).toBeHidden()
   await expect(
     page.getByTestId('public-status-subscription-notice'),
-  ).toHaveText('Check your inbox')
+  ).toHaveText('Check your inbox — we sent a link to confirm the address.')
   await expectTrackedActionReply(expect, log, 'status_subscribe', since, {
     status: 'check_inbox',
   })

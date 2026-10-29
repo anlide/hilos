@@ -1512,7 +1512,7 @@ test('public Status subscription and mailed unsubscribe expose named keyboard di
     ).toHaveAttribute('role', 'status')
     await expect(
       page.getByTestId('public-status-subscription-live'),
-    ).toHaveText('Check your inbox')
+    ).toHaveText('Check your inbox — we sent a link to confirm the address.')
     await room.unchanged()
     const links = statusMailLinks(
       await waitForMailTo(email, STATUS_CONFIRM_SUBJECT),
@@ -1532,7 +1532,7 @@ test('public Status subscription and mailed unsubscribe expose named keyboard di
     )
     await expect(
       page.getByTestId('public-status-subscription-live'),
-    ).toHaveText('You are unsubscribed')
+    ).toHaveText('You are unsubscribed. No more letters will come.')
   } finally {
     await log.stop()
     await test.info().attach('status-subscriptions-accessibility-wire', {

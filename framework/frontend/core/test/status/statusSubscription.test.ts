@@ -86,6 +86,7 @@ describe('public Status subscription', () => {
     expect(await subscribe).toBe(true)
     h.navigate(fragment('confirm'))
     expect(h.location.hash).toBe('')
+    expect(h.controller.dialog.get()).toBe(false)
     expect(h.controller.success.get()).toBeNull()
     expect(h.sent[1]).toEqual({
       action: 'status_subscription_confirm',
@@ -98,7 +99,7 @@ describe('public Status subscription', () => {
     expect(h.sent).toHaveLength(2)
     h.answer({ status: 'subscribed' })
     await h.flush()
-    expect(h.controller.success.get()).toBe('You are subscribed')
+    expect(h.controller.success.get()).toBe(STATUS_SUBSCRIPTION_COPY.subscribed)
     expect(h.registered.size).toBe(0)
     expect(h.viewports).toEqual([])
     h.dispose()
@@ -142,6 +143,7 @@ describe('public Status subscription', () => {
     for (const keep of [true, false]) {
       h.navigate(fragment('unsubscribe'))
       expect(h.location.hash).toBe('')
+      expect(h.controller.dialog.get()).toBe(true)
       expect(h.sent.at(-1)?.action).toBe('status_unsubscribe_preview')
       expect(await h.controller.submit()).toBe(false)
       h.answer({ maskedEmail: 'r***@example.net' })
@@ -160,7 +162,9 @@ describe('public Status subscription', () => {
     ])
     h.answer({ status: 'unsubscribed' })
     expect(await submit).toBe(true)
-    expect(h.controller.success.get()).toBe('You are unsubscribed')
+    expect(h.controller.success.get()).toBe(
+      STATUS_SUBSCRIPTION_COPY.unsubscribed,
+    )
     h.dispose()
   })
 
@@ -249,7 +253,7 @@ describe('public Status subscription', () => {
     expect(h.controller.success.get()).toBeNull()
     h.answer({ status: 'subscribed' })
     await h.flush()
-    expect(h.controller.success.get()).toBe('You are subscribed')
+    expect(h.controller.success.get()).toBe(STATUS_SUBSCRIPTION_COPY.subscribed)
     expect(h.sent).toHaveLength(2)
     h.dispose()
   })
@@ -287,7 +291,9 @@ describe('public Status subscription', () => {
       expect(h.controller.success.get()).toBeNull()
       h.answer({ status: 'subscribed' })
       await h.flush()
-      expect(h.controller.success.get()).toBe('You are subscribed')
+      expect(h.controller.success.get()).toBe(
+        STATUS_SUBSCRIPTION_COPY.subscribed,
+      )
       expect(h.controller.dialog.get()).toBe(false)
       h.connect('reconnecting')
       h.connect('connected')
@@ -314,6 +320,7 @@ describe('public Status subscription', () => {
       expect(h.controller.error.get()).toBe(
         STATUS_SUBSCRIPTION_COPY.invalidLink,
       )
+      expect(h.controller.dialog.get()).toBe(false)
       expect(h.controller.success.get()).toBeNull()
       expect(h.controller.canSubmit.get()).toBe(false)
       expect(toast).not.toHaveBeenCalled()
@@ -366,7 +373,9 @@ describe('public Status subscription', () => {
     expect(explicit.controller.success.get()).toBeNull()
     explicit.answer({ status: 'unsubscribed' })
     expect(await submit).toBe(true)
-    expect(explicit.controller.success.get()).toBe('You are unsubscribed')
+    expect(explicit.controller.success.get()).toBe(
+      STATUS_SUBSCRIPTION_COPY.unsubscribed,
+    )
     expect(explicit.controller.dialog.get()).toBe(false)
     explicit.dispose()
   })
@@ -393,13 +402,14 @@ describe('public Status subscription', () => {
     h.dispose()
   })
 
-  it('retains an unspent token when the waiting dialog is closed and never reopens it on a late completion', async () => {
+  it('confirms without a window, waits on the page and never opens one on completion', async () => {
     const h = setup(fragment('confirm'))
     h.connect('disconnected')
     h.controller.start()
-    h.controller.close()
+    expect(h.controller.step.get()).toBe('waiting')
     expect(h.controller.dialog.get()).toBe(false)
     h.connect('connected')
+    expect(h.controller.dialog.get()).toBe(false)
     expect(h.sent).toEqual([
       {
         action: 'status_subscription_confirm',
@@ -409,7 +419,7 @@ describe('public Status subscription', () => {
     ])
     h.answer({ status: 'subscribed' })
     await h.flush()
-    expect(h.controller.success.get()).toBe('You are subscribed')
+    expect(h.controller.success.get()).toBe(STATUS_SUBSCRIPTION_COPY.subscribed)
     expect(h.controller.dialog.get()).toBe(false)
     h.dispose()
   })
@@ -496,7 +506,7 @@ describe('public Status subscription', () => {
     expect(h.controller.busy.get()).toBe(true)
     h.answer({ status: 'check_inbox' })
     expect(await submit).toBe(true)
-    expect(h.controller.success.get()).toBe('Check your inbox')
+    expect(h.controller.success.get()).toBe(STATUS_SUBSCRIPTION_COPY.checkInbox)
     expect(h.controller.dialog.get()).toBe(false)
     expect(h.controller.loading.get()).toBe(false)
     expect(h.controller.draft.get()).toEqual({ email: '' })

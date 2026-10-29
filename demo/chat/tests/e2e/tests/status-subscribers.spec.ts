@@ -162,7 +162,9 @@ test('subscriber counts preserve two held windows through Show, confirmation, Ap
     await openStatusMailLink(expect, guest, mail.confirm!)
     await expect(
       guest.getByTestId('public-status-subscription-notice'),
-    ).toHaveText('You are subscribed')
+    ).toHaveText(
+      'You are subscribed. Letters come on outages and scheduled maintenance.',
+    )
     await expect(
       shownByTestId(page, `hilos-status-subscriber-confirmed-${id}`),
     ).toHaveText('Yes')

@@ -29,23 +29,17 @@ const formId = `status-subscription-${useId()}`
 const emailId = `${formId}-email`
 const hintId = `${formId}-hint`
 const errorId = `${formId}-error`
+// Only subscribing and unsubscribing open this window; a confirmation link
+// and a broken one answer in the page's own slot.
 const title = computed(() =>
-  operation.value === 'subscribe'
-    ? COPY.subscribe
-    : operation.value === 'unsubscribe'
-      ? COPY.unsubscribe
-      : operation.value === 'confirm'
-        ? 'Confirm subscription'
-        : 'Subscription link',
+  operation.value === 'subscribe' ? COPY.subscribe : COPY.unsubscribe,
 )
 const progress = computed(() => {
   if (!usable.value || step.value === 'waiting') return COPY.waiting
   if (step.value !== 'pending') return ''
-  return operation.value === 'confirm'
-    ? 'Confirming your subscription…'
-    : operation.value === 'unsubscribe' && maskedEmail.value === null
-      ? 'Checking your unsubscribe link…'
-      : 'Waiting for confirmation…'
+  return operation.value === 'unsubscribe' && maskedEmail.value === null
+    ? 'Checking your unsubscribe link…'
+    : 'Waiting for confirmation…'
 })
 
 function setEmail(event: Event): void {
@@ -137,13 +131,7 @@ function close(open = false): void {
         data-id="status-subscription-cancel"
         @click="close()"
       >
-        {{
-          operation === 'subscribe'
-            ? 'Cancel'
-            : operation === 'unsubscribe'
-              ? COPY.keep
-              : 'Close'
-        }}
+        {{ operation === 'subscribe' ? 'Cancel' : COPY.keep }}
       </button>
       <LoadingButton
         v-if="operation === 'subscribe' || maskedEmail !== null"
