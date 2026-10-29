@@ -53,6 +53,7 @@ const STAND_INSTANCE_DEFAULT_OCTETS = [
     'HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER' => 221,
     'HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER' => 222,
     'HILOS_STAND_NET_ONLINE_TESTING_CLUSTER' => 223,
+    'HILOS_STAND_NET_FRAMEWORK' => 189,
 ];
 
 /**
@@ -62,7 +63,10 @@ const STAND_INSTANCE_DEFAULT_OCTETS = [
  */
 const STAND_INSTANCE_OCTET_BASE = 20;
 
-/** Octets one instance holds: one per stand, with room for stands not yet written. */
+/**
+ * Octets one instance holds, one per stand. All ten are taken: a new stand raises this, and the
+ * last instance's block must still end below the default stands.
+ */
 const STAND_INSTANCE_OCTETS_PER_INSTANCE = 10;
 
 /** The host-port variables of the test stands, which an instance leaves to docker. */

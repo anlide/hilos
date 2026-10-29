@@ -329,3 +329,11 @@ volumes:
 networks:
   hilos-framework-test-network:
     driver: bridge
+    ipam:
+      config:
+        # Claimed outside Docker's default pools, as every demo stand's network is:
+        # an assigned subnet per instance drains those pools, and then any stand
+        # fails with "all predefined address pools have been fully subnetted". No
+        # service holds a fixed address here, so only the subnet moves with an
+        # instance (scripts/stand-instance.php).
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.${HILOS_STAND_NET_FRAMEWORK:-189}.0.0/16}

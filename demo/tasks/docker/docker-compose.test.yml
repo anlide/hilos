@@ -247,6 +247,10 @@ services:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
     profiles:
       - cli
+    # The stand's claimed network: without one, compose makes a <project>_default
+    # from Docker's default pools on every run, and the stands exhaust them.
+    networks:
+      - hilos-tasks-test-network
 
   # Serves the built frontend artifact over the same nginx image and config
   # template as prod (test what you ship) and proxies /ws to the daemon. The

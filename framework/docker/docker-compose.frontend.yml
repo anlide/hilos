@@ -20,6 +20,10 @@ services:
     volumes:
       - ../..:/hilos
     working_dir: /hilos/framework/frontend
+    # The runner needs only the way out to the npm registry. Docker's built-in
+    # bridge already exists; a project network of its own would come from the
+    # default address pools on every run and stay behind until a down.
+    network_mode: bridge
     environment:
       # Silence npm's update-notifier; the version is pinned by the image.
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
