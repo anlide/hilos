@@ -2086,6 +2086,10 @@ describe('reactive log viewer clocks', () => {
         time: '10:00:02.250',
         anchored: true,
       })
+      expect(view.anchorClock.get()).toBe('10:00:02.250')
+      expect(view.entryCountLabel.get()).toBe(
+        'Lines around the entry of 10:00:02.250',
+      )
       const selectionBefore = view.selection.get()
       const addressBefore = [...address.written]
       const actionsBefore = actions.sent.length
@@ -2097,6 +2101,10 @@ describe('reactive log viewer clocks', () => {
         time: '03:00:02.250',
         anchored: true,
       })
+      expect(view.anchorClock.get()).toBe('03:00:02.250')
+      expect(view.entryCountLabel.get()).toBe(
+        'Lines around the entry of 03:00:02.250',
+      )
       expect(view.selection.get()).toEqual(selectionBefore)
       expect(view.selection.get().anchorAtMs).toBe(1788000000250)
       expect(view.followRequested.get()).toBe(false)
@@ -2110,6 +2118,26 @@ describe('reactive log viewer clocks', () => {
       expect(actions.sent).toHaveLength(actionsBefore + 1)
       expect(actions.lastRead()).toMatchObject({ cursor: 4096 })
       expect(actions.lastRead()).not.toHaveProperty('anchorAtMs')
+      expect(view.anchorClock.get()).toBe('03:00:02.250')
+      actions.answer(actions.sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [wireLine('[2026-09-06T09:00:00.000Z] INFO: older entry')],
+        nextCursor: 2048,
+        hasMore: true,
+      })
+      await Promise.resolve()
+
+      expect(view.rows.get()).toHaveLength(2)
+      expect(view.anchorClock.get()).toBe('03:00:02.250')
+      expect(view.entryCountLabel.get()).toBe(
+        'Lines around the entry of 03:00:02.250',
+      )
+      view.editSubstring('draft only')
+      expect(actions.sent).toHaveLength(actionsBefore + 1)
+      expect(view.anchorClock.get()).toBe('03:00:02.250')
+      expect(view.entryCountLabel.get()).toBe(
+        'Lines around the entry of 03:00:02.250',
+      )
     } finally {
       view.dispose()
       zoneGet.mockRestore()
@@ -2120,6 +2148,15 @@ describe('reactive log viewer clocks', () => {
 describe('createHilosLogViewer opened on an entry', () => {
   /** A row of the recent-failures panel leads here: a live file and the moment of one entry in it. */
   const ANCHORED = '/hilos/logs/view/node-1/live/worker-0.log/1788000000250'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(hilosTimeZone, 'get').mockReturnValue('UTC')
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
 
   it('asks for the page starting on the entry, and does not start the tail', () => {
     const { context, actions, address } = viewer(ANCHORED)
@@ -2139,6 +2176,8 @@ describe('createHilosLogViewer opened on an entry', () => {
     expect(view.followRequested.get()).toBe(false)
     expect(view.following.get()).toBe(false)
     expect(view.pinned.get()).toBe(false)
+    expect(view.anchorClock.get()).toBeNull()
+    expect(view.entryCountLabel.get()).toBe('0 entries shown')
   })
 
   it('marks the entry the page starts on, and no other', async () => {
@@ -2161,6 +2200,10 @@ describe('createHilosLogViewer opened on an entry', () => {
     expect(
       view.rows.get().map((row) => row.kind === 'entry' && row.anchored),
     ).toEqual([true, false])
+    expect(view.anchorClock.get()).toBe('10:00:02.250')
+    expect(view.entryCountLabel.get()).toBe(
+      'Lines around the entry of 10:00:02.250',
+    )
   })
 
   it('says so above the tail when the entry is not in the file any more', async () => {
@@ -2182,18 +2225,176 @@ describe('createHilosLogViewer opened on an entry', () => {
     expect(
       rows.slice(1).map((row) => row.kind === 'entry' && row.anchored),
     ).toEqual([false])
+    expect(view.anchorClock.get()).toBeNull()
+    expect(view.entryCountLabel.get()).toBe('1 entries shown')
+    expect(view.selection.get().anchorAtMs).toBe(1788000000250)
+    expect(view.followRequested.get()).toBe(false)
+    expect(actions.sent).toHaveLength(1)
+    expect(address.written).toEqual([])
   })
 
-  it('reads the entry again after a reconnect, since the address still names it', () => {
+  it.each([
+    { readable: false, anchorFound: true, time: '2026-09-06T10:00:02.250Z' },
+    { readable: true, anchorFound: false, time: '2026-09-06T10:00:02.250Z' },
+    { readable: true, anchorFound: null, time: '2026-09-06T10:00:02.250Z' },
+    {
+      readable: true,
+      anchorFound: undefined,
+      time: '2026-09-06T10:00:02.250Z',
+    },
+    { readable: true, anchorFound: true, time: null },
+    { readable: true, anchorFound: true, time: 'invalid' },
+    { readable: true, anchorFound: true, time: '2026-02-30T10:00:02.250Z' },
+  ])(
+    'does not confirm an entry from $readable / $anchorFound / $time',
+    async (answer) => {
+      const { context, actions, address } = viewer(ANCHORED)
+      const view = createHilosLogViewer(context, address)
+      view.start()
+      actions.answer(actions.sent.at(-1)?.requestId, {
+        readable: answer.readable,
+        lines: [{ ...wireLine('entry'), time: answer.time }],
+        nextCursor: null,
+        hasMore: false,
+        ...(answer.anchorFound === undefined
+          ? {}
+          : { anchorFound: answer.anchorFound }),
+      })
+      await Promise.resolve()
+
+      expect(view.anchorClock.get()).toBeNull()
+      expect(view.entryCountLabel.get()).toBe('1 entries shown')
+    },
+  )
+
+  it('does not confirm an empty anchored answer', async () => {
+    const { context, actions, address } = viewer(ANCHORED)
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    actions.answer(actions.sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await Promise.resolve()
+
+    expect(view.anchorClock.get()).toBeNull()
+    expect(view.entryCountLabel.get()).toBe('0 entries shown')
+  })
+
+  it.each([
+    '/hilos/logs/view/node-2/live/daemon.log/1788000000500',
+    '/hilos/logs/view/node-2/live',
+    '/hilos/logs/view/-/live/worker-0.log/1788000000500',
+  ])(
+    'clears confirmation on navigation to %s and rejects the old completion',
+    async (destination) => {
+      const { context, connection, actions, address } = viewer(ANCHORED)
+      const view = createHilosLogViewer(context, address)
+      view.start()
+      const reply = {
+        readable: true,
+        lines: [wireLine('[2026-09-06T10:00:02.250Z] ERROR: found entry')],
+        nextCursor: 4096,
+        hasMore: true,
+        anchorFound: true,
+      }
+      actions.answer(actions.sent.at(-1)?.requestId, reply)
+      await Promise.resolve()
+      expect(view.anchorClock.get()).toBe('10:00:02.250')
+
+      connection.reconnect()
+      const oldRead = actions.sent.at(-1)?.requestId
+      address.navigate(destination)
+      actions.answer(oldRead, reply)
+      await Promise.resolve()
+      expect(view.anchorClock.get()).toBeNull()
+
+      address.navigate(ANCHORED)
+      expect(view.anchorClock.get()).toBeNull()
+      actions.answer(actions.sent.at(-1)?.requestId, reply)
+      await Promise.resolve()
+      expect(view.anchorClock.get()).toBe('10:00:02.250')
+    },
+  )
+
+  it('retains confirmation when pagination trims the anchored line out of the feed', async () => {
+    const { context, actions, address } = viewer(ANCHORED)
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    actions.answer(actions.sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [
+        wireLine('[2026-09-06T10:00:02.250Z] ERROR: found entry'),
+        ...Array.from({ length: FEED_MAX_LINES }, () =>
+          wireLine('later entry'),
+        ),
+      ],
+      nextCursor: 4096,
+      hasMore: true,
+      anchorFound: true,
+    })
+    await Promise.resolve()
+
+    expect(view.rows.get()).toHaveLength(FEED_MAX_LINES)
+    expect(
+      view.rows.get().some((row) => row.kind === 'entry' && row.anchored),
+    ).toBe(false)
+    expect(view.anchorClock.get()).toBe('10:00:02.250')
+    view.readOlder()
+    actions.answer(actions.sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [wireLine('older entry')],
+      nextCursor: 2048,
+      hasMore: true,
+    })
+    await Promise.resolve()
+    expect(view.anchorClock.get()).toBe('10:00:02.250')
+    expect(view.entryCountLabel.get()).toBe(
+      'Lines around the entry of 10:00:02.250',
+    )
+  })
+
+  it('waits for a new confirmation after each reconnect and ignores a superseded read', async () => {
     const { context, connection, actions, address } = viewer(ANCHORED)
-    createHilosLogViewer(context, address).start()
+    const view = createHilosLogViewer(context, address)
+    view.start()
+    const reply = {
+      readable: true,
+      lines: [wireLine('[2026-09-06T10:00:02.250Z] ERROR: found entry')],
+      nextCursor: 4096,
+      hasMore: true,
+      anchorFound: true,
+    }
+    actions.answer(actions.sent.at(-1)?.requestId, reply)
+    await Promise.resolve()
+    expect(view.anchorClock.get()).toBe('10:00:02.250')
 
     connection.reconnect()
+    const superseded = actions.sent.at(-1)?.requestId
+    expect(view.anchorClock.get()).toBeNull()
+    expect(view.entryCountLabel.get()).toBe('1 entries shown')
+
+    connection.reconnect()
+    actions.answer(superseded, reply)
+    await Promise.resolve()
+    expect(view.anchorClock.get()).toBeNull()
+    expect(view.entryCountLabel.get()).toBe('1 entries shown')
+
+    actions.answer(actions.sent.at(-1)?.requestId, reply)
+    await Promise.resolve()
+    expect(view.anchorClock.get()).toBe('10:00:02.250')
+    expect(view.entryCountLabel.get()).toBe(
+      'Lines around the entry of 10:00:02.250',
+    )
 
     expect(actions.lastRead()).toMatchObject({ anchorAtMs: 1788000000250 })
+    expect(address.written).toEqual([])
   })
 
-  it('drops the anchor from the address and from the read on whatever the operator does next', () => {
+  it('drops the anchor from the address and from the read on whatever the operator does next', async () => {
     const moves: ((view: HilosLogViewer) => void)[] = [
       (view) => view.setLevel('ERROR'),
       (view) => {
@@ -2208,9 +2409,20 @@ describe('createHilosLogViewer opened on an entry', () => {
       const { context, actions, address } = viewer(ANCHORED)
       const view = createHilosLogViewer(context, address)
       view.start()
+      actions.answer(actions.sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [wireLine('[2026-09-06T10:00:02.250Z] ERROR: found entry')],
+        nextCursor: 4096,
+        hasMore: true,
+        anchorFound: true,
+      })
+      await Promise.resolve()
+      expect(view.anchorClock.get()).toBe('10:00:02.250')
 
       move(view)
 
+      expect(view.anchorClock.get()).toBeNull()
+      expect(view.entryCountLabel.get()).toBe('1 entries shown')
       expect(address.written.at(-1)).not.toContain('1788000000250')
       expect(view.selection.get().anchorAtMs).toBeNull()
       expect(actions.lastRead()).not.toHaveProperty('anchorAtMs')

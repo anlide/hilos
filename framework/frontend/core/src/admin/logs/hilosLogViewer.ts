@@ -772,6 +772,10 @@ export interface HilosLogViewer {
   readonly selection: ReadonlySignal<HilosLogViewerSelection>
   /** The rows the pane draws — entries and notes — oldest first. */
   readonly rows: ReadonlySignal<readonly HilosLogViewerRow[]>
+  /** The confirmed entry's clock in the reader's zone, or null until found. */
+  readonly anchorClock: ReadonlySignal<string | null>
+  /** The entry count, or the confirmed entry around which lines are shown. */
+  readonly entryCountLabel: ReadonlySignal<string>
   /** Where the Follow switch stands: whether the reader WANTS the tail. */
   readonly followRequested: ReadonlySignal<boolean>
   /** Whether the tail is actually running on the server; this is what the badge burns by. */
@@ -909,6 +913,18 @@ export function createHilosLogViewer(
   // The line the anchored read found, drawn highlighted; null when the viewer was
   // not opened on an entry, did not find it, or has moved off it.
   let anchoredLineId: string | null = null
+  const anchorTime = createSignal<string | null>(null)
+  const anchorClock = computedSignal(() =>
+    selection.get().anchorAtMs === null
+      ? null
+      : logLineClock(anchorTime.get()) || null,
+  )
+  const entryCountLabel = computedSignal(() => {
+    const clock = anchorClock.get()
+    return clock === null
+      ? `${rows.get().filter((row) => row.kind === 'entry').length} entries shown`
+      : `Lines around the entry of ${clock}`
+  })
   let page = 0
   // What arrived while the reader was above the tail, and how many lines fell out
   // of the front of it. The dropped count is held apart from the buffer so that
@@ -1018,6 +1034,9 @@ export function createHilosLogViewer(
   }
 
   const read = (older: boolean): void => {
+    if (!older) {
+      anchorTime.set(null)
+    }
     const current = selection.get()
     const knownDashNode =
       catalog
@@ -1030,6 +1049,7 @@ export function createHilosLogViewer(
       catalog.get()?.clusterEnabled !== true &&
       !knownDashNode
     ) {
+      generation += 1
       return
     }
     if (
@@ -1139,6 +1159,15 @@ export function createHilosLogViewer(
           reply.anchorFound === true && first?.kind === 'line'
             ? first.line.id
             : null
+        if (
+          anchorAtMs !== null &&
+          reply.readable &&
+          reply.anchorFound === true &&
+          first?.kind === 'line' &&
+          logLineClock(first.line.time) !== ''
+        ) {
+          anchorTime.set(first.line.time)
+        }
         // An entry that is not there any more is said so above the tail standing in
         // for it: showing the tail in silence would pass it off as the place.
         publish(
@@ -1309,6 +1338,7 @@ export function createHilosLogViewer(
    * the anchor only because the address was never touched.
    */
   const dropAnchor = (): void => {
+    anchorTime.set(null)
     if (selection.get().anchorAtMs === null) {
       return
     }
@@ -1336,6 +1366,8 @@ export function createHilosLogViewer(
     catalog,
     selection,
     rows,
+    anchorClock,
+    entryCountLabel,
     followRequested,
     following,
     canFollow,

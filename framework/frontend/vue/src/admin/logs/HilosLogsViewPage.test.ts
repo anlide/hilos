@@ -1225,12 +1225,15 @@ describe('HilosLogsViewPage', () => {
   it('lights the tail badge once the start is answered', async () => {
     const { connection, pushCatalog, sent, answer } = makeConnection()
     const wrapper = mountPage(connection, LIVE_FILE)
+    const statusRoom = expectStatusRoom(wrapper)
+    expectCountRoom(wrapper)
     pushCatalog(catalog())
     await nextTick()
 
     expect(wrapper.find('[data-id="hilos-log-tail-badge"]').exists()).toBe(
       false,
     )
+    expect(expectStatusRoom(wrapper).element).toBe(statusRoom.element)
 
     answer(sent.at(-1)?.requestId, {
       readable: true,
@@ -1242,6 +1245,58 @@ describe('HilosLogsViewPage', () => {
 
     expect(wrapper.find('[data-id="hilos-log-tail-badge"]').text()).toBe(
       'Tail is running',
+    )
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.get('[data-id="hilos-log-count"]').text()).toBe(
+      '0 entries shown',
+    )
+    expectStatusRoom(wrapper)
+  })
+
+  it('keeps the tail badge tied to following, not to a released scroll', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-id="hilos-log-tail-badge"]').exists()).toBe(true)
+    await wrapper
+      .get<HTMLInputElement>('[data-id="hilos-log-follow"]')
+      .setValue(false)
+    expect(wrapper.find('[data-id="hilos-log-tail-badge"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
+
+    await wrapper
+      .get<HTMLInputElement>('[data-id="hilos-log-follow"]')
+      .setValue(true)
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await flushPromises()
+    const pane = wrapper.get('[data-id="hilos-log-pane"]').element
+    await scrollUp(pane)
+
+    expect(wrapper.find('[data-id="hilos-log-tail-badge"]').text()).toBe(
+      'Tail is running',
+    )
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
     )
   })
 
@@ -1339,6 +1394,9 @@ describe('HilosLogsViewPage', () => {
       ...LIVE_FILE,
       anchor: '1788000000250',
     })
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
     pushCatalog(catalog())
     await nextTick()
 
@@ -1361,6 +1419,141 @@ describe('HilosLogsViewPage', () => {
     expect(anchored).toHaveLength(1)
     expect(anchored[0].text()).toContain('the entry the row named')
     expect(wrapper.findAll('[aria-current="location"]')).toHaveLength(1)
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').text()).toBe(
+      'Sticking released',
+    )
+    expect(wrapper.findAll('[data-id="hilos-log-anchor-badge"]')).toHaveLength(
+      1,
+    )
+    const icon = wrapper.get('[data-id="hilos-log-anchor-badge"] i')
+    expect(icon.classes()).toContain('bi-pin-angle-fill')
+    expect(icon.attributes('aria-hidden')).toBe('true')
+    expect(wrapper.find('[data-id="hilos-log-tail-badge"]').exists()).toBe(
+      false,
+    )
+    const time = anchored[0].get('[data-id="hilos-log-entry-time"]').text()
+    expect(wrapper.get('[data-id="hilos-log-count"]').text()).toBe(
+      `Lines around the entry of ${time}`,
+    )
+    expect(
+      wrapper.find('[data-id="hilos-log-back-to-tail-count"]').exists(),
+    ).toBe(false)
+    expectStatusRoom(wrapper)
+
+    await wrapper.get('[data-id="hilos-log-back-to-tail"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.get('[data-id="hilos-log-count"]').text()).not.toContain(
+      'Lines around the entry',
+    )
+  })
+
+  it('reformats the anchored label with the reader zone without another answer', async () => {
+    const zone = bindReaderZone()
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: String(DST_MOMENT),
+    })
+
+    try {
+      pushCatalog(catalog())
+      await nextTick()
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [wireLine(`[${DST_MOMENT_ISO}] ERROR: anchored entry`, 'ERROR')],
+        nextCursor: null,
+        hasMore: false,
+        anchorFound: true,
+      })
+      await flushPromises()
+
+      const time = wrapper.get('[data-id="hilos-log-entry-time"]')
+      expect(wrapper.get('[data-id="hilos-log-count"]').text()).toBe(
+        `Lines around the entry of ${time.text()}`,
+      )
+      const sentCount = sent.length
+
+      zone.setZone('Europe/Warsaw')
+      await nextTick()
+
+      expect(wrapper.get('[data-id="hilos-log-entry-time"]').text()).toBe(
+        logTimeLabel('Europe/Warsaw'),
+      )
+      expect(wrapper.get('[data-id="hilos-log-count"]').text()).toBe(
+        `Lines around the entry of ${time.text()}`,
+      )
+      expect(sent).toHaveLength(sentCount)
+    } finally {
+      wrapper.unmount()
+      zone.restore()
+    }
+  })
+
+  it('keeps the confirmed badge through a draft and drops it when Search applies', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    await nextTick()
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [wireLine('[2026-09-06T10:00:02.250Z] ERROR: anchored entry')],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-id="hilos-log-substring"]').setValue('draft')
+    expect(wrapper.find('[data-id="hilos-log-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      true,
+    )
+
+    await wrapper.get('[data-id="hilos-log-search"]').trigger('click')
+
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-log-count"]').text()).toBe(
+      '1 entries shown',
+    )
+    expect(wrapper.find('[data-id="hilos-log-count"]').text()).not.toContain(
+      'Lines around the entry',
+    )
+    expectCountRoom(wrapper)
+    expectStatusRoom(wrapper)
+  })
+
+  it('does not report an anchored state when the anchored read is unreadable', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    await nextTick()
+    answer(sent.at(-1)?.requestId, {
+      readable: false,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-log-count"]').text()).toBe(
+      '0 entries shown',
+    )
+    expectStatusRoom(wrapper)
   })
 
   it('says in the feed that the entry a link named is not in the file any more', async () => {
@@ -1387,6 +1580,13 @@ describe('HilosLogsViewPage', () => {
     expect(wrapper.find('[data-id="hilos-log-entry-anchor"]').exists()).toBe(
       false,
     )
+    expect(wrapper.find('[data-id="hilos-log-anchor-badge"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.get('[data-id="hilos-log-count"]').text()).toBe(
+      '1 entries shown',
+    )
+    expectStatusRoom(wrapper)
   })
 })
 
@@ -1441,12 +1641,43 @@ function expectCountRoom(
   const room = wrapper.find('[data-id="hilos-log-count-room"]')
   expect(room.exists()).toBe(true)
   const twins = room.findAll('.invisible')
-  expect(twins).toHaveLength(1)
-  expect(twins[0].attributes('aria-hidden')).toBe('true')
+  expect(twins).toHaveLength(2)
+  expect(twins.map((twin) => twin.attributes('aria-hidden'))).toEqual([
+    'true',
+    'true',
+  ])
   expect(twins[0].findAll('[data-id]')).toHaveLength(0)
+  expect(twins[0].text()).toBe('Lines around the entry of 23:59:59.999')
+  expect(twins[1].text()).toBe('Not applied yet — press Search')
   const regions = room.findAll('[role="status"]')
   expect(regions).toHaveLength(1)
   expect(regions[0].attributes('aria-live')).toBe('polite')
+
+  return room
+}
+
+/**
+ * Asserts the permanent status cell keeps both badge shapes in the strip.
+ *
+ * @param wrapper The mounted page.
+ */
+function expectStatusRoom(
+  wrapper: ReturnType<typeof mountPage>,
+): ReturnType<ReturnType<typeof mountPage>['find']> {
+  const room = wrapper.find('[data-id="hilos-log-status-room"]')
+  expect(room.exists()).toBe(true)
+  const twins = room.findAll('.invisible')
+  expect(twins).toHaveLength(2)
+  expect(twins.map((twin) => twin.attributes('aria-hidden'))).toEqual([
+    'true',
+    'true',
+  ])
+  for (const twin of twins) {
+    expect(twin.findAll('[data-id]')).toHaveLength(0)
+    expect(
+      twin.findAll('button, a, input, select, textarea, [tabindex]'),
+    ).toHaveLength(0)
+  }
 
   return room
 }

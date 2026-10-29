@@ -110,6 +110,8 @@ const following = useSignal(viewer.following)
 const canFollow = useSignal(viewer.canFollow)
 const pinned = useSignal(viewer.pinned)
 const pendingLines = useSignal(viewer.pendingLines)
+const anchorClock = useSignal(viewer.anchorClock)
+const entryCountLabel = useSignal(viewer.entryCountLabel)
 
 // The node select exists only where nodes have names: a picker with one nameless
 // option is furniture for a choice that does not exist.
@@ -134,12 +136,6 @@ const paneState = computed(() =>
     readable.value,
     level.value !== '' || substring.value !== '',
   ),
-)
-
-// The counter beside the Earlier button counts entries, because that is the word
-// it uses; a note is not one.
-const entryCount = computed(
-  () => rows.value.filter((row) => row.kind === 'entry').length,
 )
 
 // Newest batch first: an operator opening the archive is looking for what just
@@ -423,13 +419,16 @@ function toggle(entry: HilosLogViewerEntry): void {
       </button>
       <!-- The line count and the note that the typed search is not applied
       yet share one cell (HIL-1152); the note stands in the count's place while
-      the two texts differ, and an invisible twin of the note holds the cell at
-      its width always, so neither its coming nor its going moves the pane
+      the two texts differ, and invisible twins of the note and anchored count
+      hold the cell at its width always, so neither state moves the pane
       (styling-rules.md, "The room a live message takes"); the status region
       stands there always so a screen reader hears the note arrive
       (accessibility.md, "Live regions"), and the count stays outside it
       because it changes with every line of the tail. -->
       <span class="hilos-stack" data-id="hilos-log-count-room">
+        <span class="small invisible" aria-hidden="true">
+          Lines around the entry of 23:59:59.999
+        </span>
         <span class="small invisible" aria-hidden="true">
           <i class="bi bi-exclamation-circle me-1"></i>Not applied yet — press
           Search
@@ -449,21 +448,39 @@ function toggle(entry: HilosLogViewerEntry): void {
           class="small text-body-secondary"
           data-id="hilos-log-count"
         >
-          {{ entryCount }} entries shown
+          {{ entryCountLabel }}
         </span>
       </span>
-      <span
-        v-if="following"
-        class="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
-        data-id="hilos-log-tail-badge"
-      >
-        <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Tail is running
+      <span class="hilos-stack ms-auto" data-id="hilos-log-status-room">
+        <span
+          class="badge text-secondary-emphasis bg-secondary-subtle border border-secondary-subtle invisible"
+          aria-hidden="true"
+        >
+          <i class="bi bi-pin-angle-fill me-1"></i>Sticking released
+        </span>
+        <span
+          class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle invisible"
+          aria-hidden="true"
+        >
+          <i class="bi bi-broadcast me-1"></i>Tail is running
+        </span>
+        <span
+          v-if="anchorClock !== null"
+          class="badge text-secondary-emphasis bg-secondary-subtle border border-secondary-subtle"
+          data-id="hilos-log-anchor-badge"
+        >
+          <i class="bi bi-pin-angle-fill me-1" aria-hidden="true"></i>Sticking
+          released
+        </span>
+        <span
+          v-else-if="following"
+          class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
+          data-id="hilos-log-tail-badge"
+        >
+          <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Tail is running
+        </span>
       </span>
-      <span
-        class="hilos-stack"
-        :class="{ 'ms-auto': !following }"
-        data-id="hilos-log-back-to-tail-room"
-      >
+      <span class="hilos-stack" data-id="hilos-log-back-to-tail-room">
         <!-- Holds the room at the widest the control ever gets: a span rather
         than a button, since it keeps a place and must never take the focus. -->
         <span class="btn btn-sm invisible" aria-hidden="true">
