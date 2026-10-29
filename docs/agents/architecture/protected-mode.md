@@ -412,8 +412,11 @@ It runs **on the master**, ticked from the main loop under the same leader gate
 the cron check uses, and there is no choice about that: during a freeze every
 agent but the initiator is stopped, so a watchdog agent would either be stopped
 with them or be the process it is watching. The master's own constraints hold
-unweakened — it reads memory, writes nothing (not the row, not the database) and
-makes no blocking call.
+unweakened: the watchdog judge reads memory, writes nothing, and makes no
+blocking call. The existing master tick bridge separately publishes the
+returned presentation snapshot through the runtime row's item action, only when
+at least one of its seven fields changes. That sync does not make the watchdog
+a writer of freeze state or database data.
 
 | Verdict | What it means |
 |---|---|
@@ -428,9 +431,11 @@ a child and waits for it, so a framework-written "the agent still ticks" mark
 would keep a permanently hung restore invisible forever. The initiator calls
 `AbstractAgent::reportProtectedModeProgress()` when something of its own advanced
 — a new restore phase, output read from the child — and that refreshes
-`progressAt` on the freeze row, stamped by the master that owns the row and never
-carried on the wire, so a skewed clock elsewhere cannot move the arithmetic.
-This is also the answer to "fast restore versus long migration": an operation
+`progressAt` on the freeze row, stamped by the master that owns the row. It is
+not sent to peer nodes; the existing Maintenance subscription projects it to
+the browser as ISO-8601 UTC for display. That display does not feed watchdog
+arithmetic, so a skewed clock elsewhere cannot move the judgment. This is also
+the answer to "fast restore versus long migration": an operation
 that is still running says so, so its *length* stops being a parameter and no
 per-operation timeouts exist. An initiator that marks no progress raises a false
 alarm on an honest long operation — the accepted direction of the error, because
@@ -459,6 +464,97 @@ preserved list feeds the published daemon picture. This permits public file
 publication only, never ordinary ORM writes or durable mail. The Status owner
 still obeys DB silence in every occupied freeze phase. The exact boundary is
 [Status under freeze](status-page.md#freeze-and-disconnection).
+
+### The Current Watchdog Projection On Maintenance
+
+The current judge and the mail notifier have separate state. On every tick with
+a runtime row, `ProtectedModeWatchdog::tick()` returns the internal
+`ProtectedModeWatchdogSnapshot` with the current verdict and effective
+configuration, whether or not a reminder is due. It is a value object, not a
+signal payload. With no runtime context or row the method returns `null`; an
+inactive row returns a clear snapshot with a null verdict and an empty
+pending-node list. Progress can clear `SILENT` from the current screen, but
+does not send an all-clear email. The email remains tied to the existing
+transition to `inactive`, and is sent only if an alarm was raised. Verdict
+priority and the rule that the watchdog never opens the system are unchanged.
+Sticky initiator-lost and restored-from-disk facts, reminder timers, and mail
+notification history remain private watchdog state.
+
+The presentation lives on the existing node-local singleton
+`Hilos::$rt->hilosProtectedModeRuntime`:
+
+| Field | Current presentation value |
+|---|---|
+| `watchdogVerdict` | `null`, or `initiator-lost`, `restored-from-disk`, `quiesce-overdue`, or `silent` |
+| `watchdogPendingNodeIds` | Names for the current `quiesce-overdue` verdict; otherwise `[]` |
+| `watchdogQuiesceTimeoutSeconds`, `watchdogSilenceTimeoutSeconds`, `watchdogAlertIntervalSeconds` | Effective thresholds in seconds |
+| `watchdogAlertEmails` | Effective recipient list; `null` before publication and `[]` when configured empty |
+| `watchdogManualRestartIsNormal` | Latest worker-reported setting, or `null` before a report |
+
+Before first publication the verdict and effective values are `null`, and the
+pending-node list is `[]`. Thresholds and recipients become known after the
+master reads its process environment; the restart policy remains unknown until
+a worker reports it. The snapshot carries resolved integer thresholds and a
+recipient list; the RT fields retain their declared null/default-`[]` values
+until publication. The shared
+`ProtectedModeAlertNotifier::recipients()` reader serves both mail and the
+snapshot with the same trimming and fallback behavior. These seven fields are
+the presentation addition to the existing singleton; no additional runtime
+collection, alias, writer, or owner is added. They do not add history. The
+restart-policy value reflects the existing setting; the projection introduces
+no new setting or business state.
+
+The version-2 freeze descriptor excludes these seven presentation fields.
+Saving strips them, and `restoreFromDisk()` clears all seven even if a descriptor
+contains them. Starting a new freeze or returning to `inactive` clears the
+current verdict and pending-node list, while the effective configuration stays
+on the live row. After a process restart it remains unpublished until the
+master publishes a fresh snapshot.
+
+The master remains the registered writer of this runtime singleton.
+`ProtectedModeWatchdog` returns the snapshot without writing RT; the existing
+`DaemonManager` tick compares all seven values and calls
+`updateWatchdog()` through the item action only when one differs, producing one
+RT sync for that change. The publisher adds no database query, settings read,
+or filesystem read to the master loop. On each node, the row remains local and
+is not replicated to peers. The Maintenance page stays on its existing
+leader-hosted `HILOS_INDEX` holder, so a browser connected through a follower
+receives the state from that same page holder; the follower does not invent its
+own watchdog verdict for the page.
+
+The existing `subscription_page_hilos_maintenance` carries these fields in the
+pre-response state frame and with stale-state updates. It still uses the existing
+admission check, per-viewer copy, `frameForViewer()` privacy pass, and broadcast
+fingerprint. There is no additional request, action, companion frame, or route.
+The recipient list is hidden as one `HiddenValue` for a viewer, including when
+it is `null`, empty, or populated; it is not included in the alert summary or
+details, and the hidden list's size is not shown. The restart policy is marked
+as a setting field; its current catalog entry has
+`admin_view_visible => true`, while the frontend keeps a hideable type for a
+future catalog verdict: `Hideable<boolean | null>`. The other five watchdog
+diagnostic fields are non-personal technical values, not a raw environment
+dump.
+
+Only the Vue Maintenance Overview draws this UI. It reserves one compact,
+polite status row above the state card: initiator-lost and restored-from-disk
+use danger tone; quiesce-overdue and silent use warning tone. The row truncates
+its plain-text summary and keeps “Show details” beside it. While clear, an
+inert, `aria-hidden` twin holds the same room. Details open in the ordinary
+modal with the full plain-text facts and pending node names; they follow live
+verdict updates, and a cleared verdict closes the modal. While the alert remains
+present, Close or Escape returns focus to its trigger. Dismissing details
+changes no freeze state and sends no action. Moment facts use `formatMoment` in
+the reader's time zone; a missing moment shows `—`, never epoch zero or now.
+
+The read-only “Watchdog thresholds” section follows the state and operator
+actions in the open, manual, and operation views. It shows quiesce timeout,
+silence timeout, reminder interval, alert recipients, and manual-restart policy.
+Durations retain their published seconds and units; unknown values show `—`.
+The standard `HilosHideable` renders hidden values, while a visible empty
+recipient list reads “No recipients configured.” Its footer identifies the
+environment sources and the Settings page where the restart policy is changed.
+React and Angular Maintenance parity is HIL-1681 and HIL-1682; Circle and Words
+do not show these thresholds.
 
 ### The Freeze Survives A Restart And A Leader Change
 
@@ -1301,6 +1397,13 @@ Refuse loudly and before any trace of entry, as above.
   the phases that silence the unstopped writers (`ProtectedModeContractTest`), and
   the mail pool dropping and refusing its durable deliveries while its raw half
   keeps sending (`MailDeliveryChannelAgentTest`).
+- The Maintenance watchdog presentation is covered by Vue
+  `HilosMaintenanceWatchdogAlert.test.ts` and `HilosMaintenancePage.test.ts`;
+  Overview e2e checks in `demo/binance-btc-tracker/tests/e2e/tests/`
+  (`protected-mode.spec.ts`, `maintenance-restore.spec.ts`, `a11y.spec.ts`) use
+  `expectMaintenanceWatchdogThresholds()` from `framework/frontend/e2e/maintenance.ts`;
+  the cluster browser check is in
+  `demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts`.
 - `composer run test:framework:integration` — covers the carry-over across a real
   database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`)
   and the analytics collector held by the freeze, forgetting the swapped schema,

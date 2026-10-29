@@ -140,6 +140,7 @@ export {
   expectMaintenanceCodeIssued,
   expectMaintenanceOpen,
   expectMaintenancePageHead,
+  expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
   issueMaintenanceCode,
   maintenanceCircleOnline,

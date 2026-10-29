@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\ProtectedMode\ProtectedModeStuckVerdict;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 
 /**
@@ -75,6 +76,13 @@ final class ProtectedModeRuntime extends RtState
     public const string stoppedAgentCount = 'stoppedAgentCount';
     public const string preservedAgentTypes = 'preservedAgentTypes';
     public const string agentStartGateClosed = 'agentStartGateClosed';
+    public const string watchdogVerdict = 'watchdogVerdict';
+    public const string watchdogPendingNodeIds = 'watchdogPendingNodeIds';
+    public const string watchdogQuiesceTimeoutSeconds = 'watchdogQuiesceTimeoutSeconds';
+    public const string watchdogSilenceTimeoutSeconds = 'watchdogSilenceTimeoutSeconds';
+    public const string watchdogAlertIntervalSeconds = 'watchdogAlertIntervalSeconds';
+    public const string watchdogAlertEmails = 'watchdogAlertEmails';
+    public const string watchdogManualRestartIsNormal = 'watchdogManualRestartIsNormal';
 
     /** Hash algorithm the initiator's session token is stored and compared under. */
     private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
@@ -212,6 +220,27 @@ final class ProtectedModeRuntime extends RtState
      */
     public ?bool $agentStartGateClosed = null;
 
+    /** Current watchdog cause, or null while clear or unpublished. */
+    public ?string $watchdogVerdict = null;
+
+    /** @var list<string> Pending nodes for the current overdue quiesce round, empty otherwise */
+    public array $watchdogPendingNodeIds = [];
+
+    /** Effective quiesce threshold in seconds, or null until published. */
+    public ?int $watchdogQuiesceTimeoutSeconds = null;
+
+    /** Effective silence threshold in seconds, or null until published. */
+    public ?int $watchdogSilenceTimeoutSeconds = null;
+
+    /** Effective reminder interval in seconds, or null until published. */
+    public ?int $watchdogAlertIntervalSeconds = null;
+
+    /** @var ?list<string> Effective mail recipients; null until published, empty when configured so */
+    public ?array $watchdogAlertEmails = null;
+
+    /** Last worker-reported manual restart policy, or null before a report. */
+    public ?bool $watchdogManualRestartIsNormal = null;
+
     /**
      * Creates the inactive singleton runtime row.
      *
@@ -257,6 +286,15 @@ final class ProtectedModeRuntime extends RtState
         $instance->stoppedAgentCount = self::optionalInt($row, self::stoppedAgentCount);
         $instance->preservedAgentTypes = self::optionalStringList($row, self::preservedAgentTypes);
         $instance->agentStartGateClosed = self::optionalBool($row, self::agentStartGateClosed);
+        $instance->watchdogVerdict = self::validateWatchdogVerdict(self::optionalString($row, self::watchdogVerdict));
+        $instance->watchdogPendingNodeIds = array_key_exists(self::watchdogPendingNodeIds, $row)
+            ? self::requireStringList($row, self::watchdogPendingNodeIds)
+            : [];
+        $instance->watchdogQuiesceTimeoutSeconds = self::optionalInt($row, self::watchdogQuiesceTimeoutSeconds);
+        $instance->watchdogSilenceTimeoutSeconds = self::optionalInt($row, self::watchdogSilenceTimeoutSeconds);
+        $instance->watchdogAlertIntervalSeconds = self::optionalInt($row, self::watchdogAlertIntervalSeconds);
+        $instance->watchdogAlertEmails = self::optionalStringList($row, self::watchdogAlertEmails);
+        $instance->watchdogManualRestartIsNormal = self::optionalBool($row, self::watchdogManualRestartIsNormal);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -273,6 +311,23 @@ final class ProtectedModeRuntime extends RtState
      */
     public function applyDiff(array $diff): void
     {
+        // Validate the whole presentation before changing any of its fields.
+        $watchdogVerdict = self::validateWatchdogVerdict(self::patchOptionalString($diff, self::watchdogVerdict, $this->watchdogVerdict));
+        $watchdogPendingNodeIds = self::patchStringList($diff, self::watchdogPendingNodeIds, $this->watchdogPendingNodeIds);
+        $watchdogQuiesceTimeoutSeconds = self::patchOptionalInt(
+            $diff, self::watchdogQuiesceTimeoutSeconds, $this->watchdogQuiesceTimeoutSeconds,
+        );
+        $watchdogSilenceTimeoutSeconds = self::patchOptionalInt(
+            $diff, self::watchdogSilenceTimeoutSeconds, $this->watchdogSilenceTimeoutSeconds,
+        );
+        $watchdogAlertIntervalSeconds = self::patchOptionalInt(
+            $diff, self::watchdogAlertIntervalSeconds, $this->watchdogAlertIntervalSeconds,
+        );
+        $watchdogAlertEmails = self::patchOptionalStringList($diff, self::watchdogAlertEmails, $this->watchdogAlertEmails);
+        $watchdogManualRestartIsNormal = self::patchOptionalBool(
+            $diff, self::watchdogManualRestartIsNormal, $this->watchdogManualRestartIsNormal,
+        );
+
         $this->phase = self::patchString($diff, self::phase, $this->phase);
         $this->entryMode = self::validateEntryMode(self::patchOptionalString($diff, self::entryMode, $this->entryMode));
         $this->operation = self::patchOptionalString($diff, self::operation, $this->operation);
@@ -293,6 +348,13 @@ final class ProtectedModeRuntime extends RtState
         $this->stoppedAgentCount = self::patchOptionalInt($diff, self::stoppedAgentCount, $this->stoppedAgentCount);
         $this->preservedAgentTypes = self::patchOptionalStringList($diff, self::preservedAgentTypes, $this->preservedAgentTypes);
         $this->agentStartGateClosed = self::patchOptionalBool($diff, self::agentStartGateClosed, $this->agentStartGateClosed);
+        $this->watchdogVerdict = $watchdogVerdict;
+        $this->watchdogPendingNodeIds = $watchdogPendingNodeIds;
+        $this->watchdogQuiesceTimeoutSeconds = $watchdogQuiesceTimeoutSeconds;
+        $this->watchdogSilenceTimeoutSeconds = $watchdogSilenceTimeoutSeconds;
+        $this->watchdogAlertIntervalSeconds = $watchdogAlertIntervalSeconds;
+        $this->watchdogAlertEmails = $watchdogAlertEmails;
+        $this->watchdogManualRestartIsNormal = $watchdogManualRestartIsNormal;
     }
 
     /**
@@ -518,7 +580,28 @@ final class ProtectedModeRuntime extends RtState
             self::stoppedAgentCount => $this->stoppedAgentCount,
             self::preservedAgentTypes => $this->preservedAgentTypes,
             self::agentStartGateClosed => $this->agentStartGateClosed,
+            self::watchdogVerdict => $this->watchdogVerdict,
+            self::watchdogPendingNodeIds => $this->watchdogPendingNodeIds,
+            self::watchdogQuiesceTimeoutSeconds => $this->watchdogQuiesceTimeoutSeconds,
+            self::watchdogSilenceTimeoutSeconds => $this->watchdogSilenceTimeoutSeconds,
+            self::watchdogAlertIntervalSeconds => $this->watchdogAlertIntervalSeconds,
+            self::watchdogAlertEmails => $this->watchdogAlertEmails,
+            self::watchdogManualRestartIsNormal => $this->watchdogManualRestartIsNormal,
         ];
+    }
+
+    /**
+     * @param ?string $verdict Serialized current watchdog cause
+     * @return ?string Known cause, or null while clear
+     * @throws InvalidFormatException When the serialized verdict is unknown
+     */
+    private static function validateWatchdogVerdict(?string $verdict): ?string
+    {
+        if ($verdict !== null && ProtectedModeStuckVerdict::tryFrom($verdict) === null) {
+            throw new InvalidFormatException('Runtime row carries an unknown watchdog verdict');
+        }
+
+        return $verdict;
     }
 
     /**

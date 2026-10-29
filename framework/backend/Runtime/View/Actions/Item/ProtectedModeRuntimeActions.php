@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Actions\Item;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -52,8 +53,8 @@ final class ProtectedModeRuntimeActions extends RtActions
      * or opens the node from the console. This exception follows the operation and entry mode,
      * not the phase; a restore verification window still keeps its initiating browser. The
      * separate entered-from-browser fact survives either kind of restart for Maintenance's source label.
-     * The four diagnostic fields do not: whatever the file still carries is dropped, and they stay
-     * null until this node's master publishes them again.
+     * Live agent diagnostics and watchdog presentation are discarded even if the descriptor carries
+     * them. They stay unpublished until this node's master publishes its current values again.
      *
      * TODO(HIL-93): the right to enter a frozen node belongs to the roles subsystem (HIL-93
      * anchors it, HIL-97 enforces it); until it exists this half of the decision is a session
@@ -89,6 +90,37 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->stoppedAgentCount = null;
         $this->state->preservedAgentTypes = null;
         $this->state->agentStartGateClosed = null;
+        $this->state->watchdogVerdict = null;
+        $this->state->watchdogPendingNodeIds = [];
+        $this->state->watchdogQuiesceTimeoutSeconds = null;
+        $this->state->watchdogSilenceTimeoutSeconds = null;
+        $this->state->watchdogAlertIntervalSeconds = null;
+        $this->state->watchdogAlertEmails = null;
+        $this->state->watchdogManualRestartIsNormal = null;
+        $this->sync();
+    }
+
+    /**
+     * Publishes one validated watchdog judgment and configuration to this node's workers.
+     * The freeze descriptor is untouched; none of these values survives a restart.
+     *
+     * @param ProtectedModeWatchdogSnapshot $snapshot Current judgment and effective configuration
+     * @throws InvalidFormatException When a verdict or string list is malformed
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function updateWatchdog(ProtectedModeWatchdogSnapshot $snapshot): void
+    {
+        $this->ensureCanWrite();
+        $validated = ProtectedModeWatchdogSnapshot::fromArray($snapshot->toArray());
+
+        $this->state->watchdogVerdict = $validated->watchdogVerdict;
+        $this->state->watchdogPendingNodeIds = $validated->watchdogPendingNodeIds;
+        $this->state->watchdogQuiesceTimeoutSeconds = $validated->watchdogQuiesceTimeoutSeconds;
+        $this->state->watchdogSilenceTimeoutSeconds = $validated->watchdogSilenceTimeoutSeconds;
+        $this->state->watchdogAlertIntervalSeconds = $validated->watchdogAlertIntervalSeconds;
+        $this->state->watchdogAlertEmails = $validated->watchdogAlertEmails;
+        $this->state->watchdogManualRestartIsNormal = $validated->watchdogManualRestartIsNormal;
         $this->sync();
     }
 
@@ -170,6 +202,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->admittedSessionTokenHashes = [];
         $this->state->circleSessionTokenHashes = [];
         $this->state->circleNamedCount = 0;
+        $this->state->watchdogVerdict = null;
+        $this->state->watchdogPendingNodeIds = [];
         $this->sync();
     }
 
@@ -204,6 +238,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->admittedSessionTokenHashes = [];
         $this->state->circleSessionTokenHashes = [];
         $this->state->circleNamedCount = 0;
+        $this->state->watchdogVerdict = null;
+        $this->state->watchdogPendingNodeIds = [];
         $this->sync();
     }
 
@@ -403,6 +439,8 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->admittedSessionTokenHashes = [];
         $this->state->circleSessionTokenHashes = [];
         $this->state->circleNamedCount = 0;
+        $this->state->watchdogVerdict = null;
+        $this->state->watchdogPendingNodeIds = [];
         $this->sync();
     }
 }

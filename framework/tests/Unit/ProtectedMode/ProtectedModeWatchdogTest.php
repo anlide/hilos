@@ -6,7 +6,9 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -15,6 +17,7 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
+use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
 use Hilos\ProtectedMode\ProtectedModeQuiesceRoster;
 use Hilos\ProtectedMode\ProtectedModeStuckVerdict;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
@@ -315,6 +318,7 @@ final class ProtectedModeWatchdogTest extends TestCase
         $this->assertVerdict(ProtectedModeStuckVerdict::RESTORED_FROM_DISK);
     }
 
+    /** An unknown worker policy stays unknown even after every watchdog threshold. */
     public function testRestoredManualWindowWaitsForTheFirstSettingWithoutAlerting(): void
     {
         $mailer = $this->mailTo('ops@example.com');
@@ -322,14 +326,18 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog = new ProtectedModeWatchdog();
         $watchdog->markRestoredFromDisk();
 
-        $watchdog->tick(self::STARTED_AT + 1);
-        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + self::ALERT_INTERVAL);
+        $first = $watchdog->tick(self::STARTED_AT + 1);
+        $later = $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + self::ALERT_INTERVAL);
 
+        $this->assertNull($first->watchdogVerdict);
+        $this->assertNull($first->watchdogManualRestartIsNormal);
+        $this->assertSame($first->toArray(), $later->toArray());
         $this->assertSame('', $this->written());
         $this->assertSame('', (string)file_get_contents($this->agentMainLogFile));
         $this->assertSame([], $mailer->sent);
     }
 
+    /** A confirmed routine restart stays clear and emits its warning once. */
     public function testRoutineRestoredManualWindowWritesOneLineAndNoMail(): void
     {
         $mailer = $this->mailTo('ops@example.com');
@@ -338,10 +346,12 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog->markRestoredFromDisk();
         $watchdog->onProtectedModeSettings(true);
 
-        $watchdog->tick(self::STARTED_AT + 1);
+        $snapshot = $watchdog->tick(self::STARTED_AT + 1);
         $written = (string)file_get_contents($this->agentMainLogFile);
         $watchdog->tick(self::STARTED_AT + self::ALERT_INTERVAL + 1);
 
+        $this->assertNull($snapshot->watchdogVerdict);
+        $this->assertTrue($snapshot->watchdogManualRestartIsNormal);
         $this->assertStringContainsString(ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL, $written);
         $this->assertStringContainsString('maintenance:pass', $written);
         $this->assertSame($written, (string)file_get_contents($this->agentMainLogFile));
@@ -349,6 +359,7 @@ final class ProtectedModeWatchdogTest extends TestCase
         $this->assertSame([], $mailer->sent);
     }
 
+    /** A confirmed nonroutine manual restart reports its current verdict and keeps reminding. */
     public function testNonroutineRestoredManualWindowAlertsAndReminds(): void
     {
         $mailer = $this->mailTo('ops@example.com');
@@ -357,7 +368,9 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog->markRestoredFromDisk();
         $watchdog->onProtectedModeSettings(false);
 
-        $watchdog->tick(self::STARTED_AT + 1);
+        $snapshot = $watchdog->tick(self::STARTED_AT + 1);
+        $this->assertSame('restored-from-disk', $snapshot->watchdogVerdict);
+        $this->assertFalse($snapshot->watchdogManualRestartIsNormal);
         $this->assertStringContainsString('is stuck: the daemon restarted under manual maintenance', $this->written());
         $this->assertStringContainsString('maintenance:pass', $this->written());
         $this->assertCount(1, $mailer->sent);
@@ -380,6 +393,7 @@ final class ProtectedModeWatchdogTest extends TestCase
         $this->assertStringContainsString('is stuck: the daemon restarted under manual maintenance', $this->written());
     }
 
+    /** A changed policy clears the current verdict while retaining the mail history. */
     public function testTurningOnRoutineRestartStopsRemindersButKeepsTheAllClear(): void
     {
         $mailer = $this->mailTo('ops@example.com');
@@ -390,7 +404,10 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog->tick(self::STARTED_AT + 1);
 
         $watchdog->onProtectedModeSettings(true);
-        $watchdog->tick(self::STARTED_AT + 1 + self::ALERT_INTERVAL);
+        $snapshot = $watchdog->tick(self::STARTED_AT + 1 + self::ALERT_INTERVAL);
+        $this->assertNull($snapshot->watchdogVerdict);
+        $this->assertSame([], $snapshot->watchdogPendingNodeIds);
+        $this->assertTrue($snapshot->watchdogManualRestartIsNormal);
         $this->assertCount(1, $mailer->sent);
 
         $this->lift();
@@ -479,11 +496,14 @@ final class ProtectedModeWatchdogTest extends TestCase
         $this->assertSame('', $this->written());
     }
 
+    /** No runtime context means no snapshot and no configuration reads. */
     public function testAProcessWithoutARuntimeRowWatchesNothingInsteadOfFailing(): void
     {
         Hilos::$rt = null;
+        Hilos::$env = $this->createMock(EnvAccessor::class);
+        Hilos::$env->expects($this->never())->method('offsetGet');
 
-        new ProtectedModeWatchdog()->tick(self::STARTED_AT);
+        $this->assertNull(new ProtectedModeWatchdog()->tick(self::STARTED_AT));
 
         $this->assertSame('', $this->written());
     }
@@ -629,6 +649,7 @@ final class ProtectedModeWatchdogTest extends TestCase
         }
     }
 
+    /** A manual window stays clear even without progress past the silence threshold. */
     public function testAManualMaintenanceWindowIsExemptFromSilenceAlerts(): void
     {
         $mailer = $this->mailTo('ops@example.com');
@@ -643,8 +664,10 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $watchdog->tick(self::STARTED_AT);
         $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
-        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1 + self::ALERT_INTERVAL);
+        $snapshot = $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1 + self::ALERT_INTERVAL);
 
+        $this->assertNull($snapshot->watchdogVerdict);
+        $this->assertSame([], $snapshot->watchdogPendingNodeIds);
         $this->assertSame('', $this->written());
         $this->assertSame([], $mailer->sent);
     }
@@ -698,6 +721,263 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
 
         $this->assertVerdict(ProtectedModeStuckVerdict::SILENT);
+    }
+
+    /** A capture describes the current judgment without changing the freeze or sending extra mail. */
+    public function testSnapshotsFollowSilenceAndProgressWhileAllClearWaitsForInactive(): void
+    {
+        $mailer = $this->mailTo('ops@example.com, oncall@example.com ,');
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $row = Hilos::$rt->hilosProtectedModeRuntime->toArray();
+        $watchdog = new ProtectedModeWatchdog();
+        $healthy = $watchdog->tick(self::STARTED_AT);
+
+        $this->assertSame([
+            ProtectedModeWatchdogSnapshot::watchdogVerdict => null,
+            ProtectedModeWatchdogSnapshot::watchdogPendingNodeIds => [],
+            ProtectedModeWatchdogSnapshot::watchdogQuiesceTimeoutSeconds => self::QUIESCE_TIMEOUT,
+            ProtectedModeWatchdogSnapshot::watchdogSilenceTimeoutSeconds => self::SILENCE_TIMEOUT,
+            ProtectedModeWatchdogSnapshot::watchdogAlertIntervalSeconds => self::ALERT_INTERVAL,
+            ProtectedModeWatchdogSnapshot::watchdogAlertEmails => ['ops@example.com', 'oncall@example.com'],
+            ProtectedModeWatchdogSnapshot::watchdogManualRestartIsNormal => null,
+        ], $healthy->toArray());
+        $this->assertSame([], $mailer->sent);
+
+        $stuckAt = self::STARTED_AT + self::SILENCE_TIMEOUT + 1;
+        $silent = $watchdog->tick($stuckAt);
+        $this->assertSame('silent', $silent->watchdogVerdict);
+        $this->assertSame([], $silent->watchdogPendingNodeIds);
+        $this->assertCount(2, $mailer->sent);
+        $this->assertSame($silent->toArray(), $watchdog->tick($stuckAt + 1)->toArray());
+        $this->assertCount(2, $mailer->sent);
+        $this->assertSame($row, Hilos::$rt->hilosProtectedModeRuntime->toArray());
+
+        $this->stampProgress($stuckAt + 2);
+        $progressRow = Hilos::$rt->hilosProtectedModeRuntime->toArray();
+        $this->assertSame($healthy->toArray(), $watchdog->tick($stuckAt + 2)->toArray());
+        $this->assertCount(2, $mailer->sent);
+        $this->assertSame($progressRow, Hilos::$rt->hilosProtectedModeRuntime->toArray());
+        $this->assertSame('silent', $silent->watchdogVerdict);
+
+        $this->lift();
+        $inactiveRow = Hilos::$rt->hilosProtectedModeRuntime->toArray();
+        $this->assertSame($healthy->toArray(), $watchdog->tick($stuckAt + 3)->toArray());
+        $this->assertCount(4, $mailer->sent);
+        $this->assertSame(MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED, $mailer->sent[2]['templateKey']);
+        $this->assertSame($inactiveRow, Hilos::$rt->hilosProtectedModeRuntime->toArray());
+        $this->assertSame($healthy->toArray(), $watchdog->tick($stuckAt + 4)->toArray());
+        $this->assertCount(4, $mailer->sent);
+    }
+
+    /** @return iterable<string, array{string, bool, bool, string}> Overlapping causes and the strongest verdict */
+    public static function snapshotCauses(): iterable
+    {
+        yield 'silence' => ['active', false, false, 'silent'];
+        yield 'quiesce before silence' => ['activating', false, false, 'quiesce-overdue'];
+        yield 'disk before silence' => ['active', false, true, 'restored-from-disk'];
+        yield 'disk before quiesce' => ['activating', false, true, 'restored-from-disk'];
+        yield 'loss before disk and quiesce' => ['activating', true, true, 'initiator-lost'];
+        yield 'loss before silence' => ['active', true, false, 'initiator-lost'];
+    }
+
+    /**
+     * @param string $phase Freeze phase
+     * @param bool $lost Whether the initiator stopped
+     * @param bool $restored Whether the freeze came back from disk
+     * @param string $expected Strongest current cause
+     */
+    #[DataProvider('snapshotCauses')]
+    public function testSnapshotsKeepTheJudgesPriority(string $phase, bool $lost, bool $restored, string $expected): void
+    {
+        $this->freeze($phase, activatedAt: null);
+        $row = Hilos::$rt->hilosProtectedModeRuntime->toArray();
+        $switch = $this->createMockForIntersectionOfInterfaces([ProtectedModeSwitch::class, ProtectedModeQuiesceRoster::class]);
+        $switch->method('pendingNodeIds')->willReturn(['node-b']);
+        Hilos::$cluster->registerProtectedMode($switch);
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->tick(self::STARTED_AT);
+        if ($lost) {
+            $watchdog->onAgentStopped(self::INITIATOR_ID);
+        }
+        if ($restored) {
+            $watchdog->markRestoredFromDisk();
+        }
+
+        $snapshot = $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
+
+        $this->assertSame($expected, $snapshot->watchdogVerdict);
+        $this->assertSame($expected === 'quiesce-overdue' ? ['node-b'] : [], $snapshot->watchdogPendingNodeIds);
+        $this->assertVerdict(ProtectedModeStuckVerdict::from($expected));
+        $this->assertSame($row, Hilos::$rt->hilosProtectedModeRuntime->toArray());
+    }
+
+    /** Even an inactive row carries the effective configured values rather than catalog or failure defaults. */
+    public function testInactiveSnapshotResolvesTheConfiguredThresholds(): void
+    {
+        putenv(EnvConstants::HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT->name . '=41');
+        putenv(EnvConstants::HILOS_PROTECTED_MODE_SILENCE_TIMEOUT->name . '=721');
+        putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_INTERVAL->name . '=1234');
+        putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name . '=');
+        $this->lift();
+
+        $snapshot = new ProtectedModeWatchdog()->tick(self::STARTED_AT);
+
+        $this->assertNull($snapshot->watchdogVerdict);
+        $this->assertSame([], $snapshot->watchdogPendingNodeIds);
+        $this->assertSame(41, $snapshot->watchdogQuiesceTimeoutSeconds);
+        $this->assertSame(721, $snapshot->watchdogSilenceTimeoutSeconds);
+        $this->assertSame(1234, $snapshot->watchdogAlertIntervalSeconds);
+        $this->assertSame([], $snapshot->watchdogAlertEmails);
+        $this->assertNull($snapshot->watchdogManualRestartIsNormal);
+        $this->assertSame('', $this->written());
+    }
+
+    /** Pending nodes stay current even while a mail reminder is suppressed. */
+    public function testSnapshotsRefreshPendingNodesBeforeTheReminderAndClearThemWithTheCause(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $pending = ['node-b', 'node-c'];
+        $switch = $this->createMockForIntersectionOfInterfaces([ProtectedModeSwitch::class, ProtectedModeQuiesceRoster::class]);
+        $switch->method('pendingNodeIds')->willReturnCallback(static function () use (&$pending): array {
+            return $pending;
+        });
+        Hilos::$cluster->registerProtectedMode($switch);
+        $row = Hilos::$rt->hilosProtectedModeRuntime->toArray();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->tick(self::STARTED_AT);
+        $stuckAt = self::STARTED_AT + self::QUIESCE_TIMEOUT + 1;
+
+        $snapshot = $watchdog->tick($stuckAt);
+        $this->assertSame('quiesce-overdue', $snapshot->watchdogVerdict);
+        $this->assertSame(['node-b', 'node-c'], $snapshot->watchdogPendingNodeIds);
+        $this->assertCount(1, $mailer->sent);
+
+        $pending = ['node-c'];
+        $snapshot = $watchdog->tick($stuckAt + 1);
+        $this->assertSame('quiesce-overdue', $snapshot->watchdogVerdict);
+        $this->assertSame(['node-c'], $snapshot->watchdogPendingNodeIds);
+        $this->assertCount(1, $mailer->sent);
+
+        $pending = [];
+        $snapshot = $watchdog->tick($stuckAt + 2);
+        $this->assertNull($snapshot->watchdogVerdict);
+        $this->assertSame([], $snapshot->watchdogPendingNodeIds);
+        $this->assertCount(1, $mailer->sent);
+        $this->assertSame($row, Hilos::$rt->hilosProtectedModeRuntime->toArray());
+    }
+
+    /** Sticky facts end with a freeze; the last worker policy remains process configuration. */
+    public function testSnapshotsClearStickyFactsOnInactiveAndKeepTheReportedPolicyForANewFreeze(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onAgentStopped(self::INITIATOR_ID);
+        $watchdog->onProtectedModeSettings(false);
+        $snapshot = $watchdog->tick(self::STARTED_AT);
+        $this->assertSame('initiator-lost', $snapshot->watchdogVerdict);
+        $this->assertFalse($snapshot->watchdogManualRestartIsNormal);
+
+        $this->lift();
+        $inactive = $watchdog->tick(self::STARTED_AT + 1);
+        $this->assertNull($inactive->watchdogVerdict);
+        $this->assertSame([], $inactive->watchdogPendingNodeIds);
+        $this->assertFalse($inactive->watchdogManualRestartIsNormal);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $this->assertSame($inactive->toArray(), $watchdog->tick(self::STARTED_AT + 2)->toArray());
+    }
+
+    /** Every resolved configuration value survives a failed env read without a log per tick. */
+    public function testSnapshotsCacheFallbackConfigurationAndRecipientFailures(): void
+    {
+        $env = $this->getMockBuilder(EnvAccessor::class)->onlyMethods(['effectiveValueFor'])->getMock();
+        $env->expects($this->exactly(4))->method('effectiveValueFor')->willThrowException(new EnvInvalidValueException('unreadable'));
+        Hilos::$env = $env;
+        $this->lift();
+        $mailer = new WatchdogRecordingMailer();
+        Hilos::$mail = $mailer;
+        $watchdog = new ProtectedModeWatchdog();
+
+        $snapshot = $watchdog->tick(self::STARTED_AT);
+        $written = $this->written();
+        $this->assertNull($snapshot->watchdogVerdict);
+        $this->assertSame(30, $snapshot->watchdogQuiesceTimeoutSeconds);
+        $this->assertSame(600, $snapshot->watchdogSilenceTimeoutSeconds);
+        $this->assertSame(900, $snapshot->watchdogAlertIntervalSeconds);
+        $this->assertSame([], $snapshot->watchdogAlertEmails);
+        $this->assertSame(3, substr_count($written, 'falling back to'));
+        $this->assertSame(1, substr_count($written, 'The alert recipient list is unreadable'));
+        $this->assertSame($snapshot->toArray(), $watchdog->tick(self::STARTED_AT + 1)->toArray());
+        $this->assertSame($written, $this->written());
+        $this->assertSame([], $mailer->sent);
+    }
+
+    /** @return iterable<string, array{?string, ?bool}> Snapshot values with nullable and confirmed worker policies */
+    public static function snapshotRoundtrips(): iterable
+    {
+        yield 'clear, unknown policy' => [null, null];
+        yield 'silent, routine restart' => ['silent', true];
+        yield 'overdue, nonroutine restart' => ['quiesce-overdue', false];
+        yield 'lost initiator' => ['initiator-lost', null];
+        yield 'restored from disk' => ['restored-from-disk', false];
+    }
+
+    /**
+     * @param ?string $verdict Current cause
+     * @param ?bool $policy Worker-reported restart policy
+     */
+    #[DataProvider('snapshotRoundtrips')]
+    public function testSnapshotRoundtripPreservesEveryField(?string $verdict, ?bool $policy): void
+    {
+        $snapshot = new ProtectedModeWatchdogSnapshot(
+            watchdogVerdict: $verdict,
+            watchdogPendingNodeIds: $verdict === 'quiesce-overdue' ? ['node-b', 'node-c'] : [],
+            watchdogQuiesceTimeoutSeconds: 41,
+            watchdogSilenceTimeoutSeconds: 721,
+            watchdogAlertIntervalSeconds: 1234,
+            watchdogAlertEmails: ['Ops@Example.com', 'oncall@example.com'],
+            watchdogManualRestartIsNormal: $policy,
+        );
+
+        $this->assertEquals($snapshot, ProtectedModeWatchdogSnapshot::fromArray($snapshot->toArray()));
+        $this->assertSame($snapshot->toArray(), ProtectedModeWatchdogSnapshot::fromJson($snapshot->toJson())->toArray());
+    }
+
+    /** @return iterable<string, array{string, mixed}> Invalid fields that must not be coerced or silently dropped */
+    public static function malformedSnapshotFields(): iterable
+    {
+        yield 'nonstring verdict' => [ProtectedModeWatchdogSnapshot::watchdogVerdict, false];
+        yield 'unknown verdict' => [ProtectedModeWatchdogSnapshot::watchdogVerdict, 'unknown'];
+        yield 'pending map' => [ProtectedModeWatchdogSnapshot::watchdogPendingNodeIds, ['node' => 'node-b']];
+        yield 'nonstring pending node' => [ProtectedModeWatchdogSnapshot::watchdogPendingNodeIds, [42]];
+        yield 'missing pending list' => [ProtectedModeWatchdogSnapshot::watchdogPendingNodeIds, null];
+        yield 'string quiesce timeout' => [ProtectedModeWatchdogSnapshot::watchdogQuiesceTimeoutSeconds, '30'];
+        yield 'missing silence timeout' => [ProtectedModeWatchdogSnapshot::watchdogSilenceTimeoutSeconds, null];
+        yield 'float alert interval' => [ProtectedModeWatchdogSnapshot::watchdogAlertIntervalSeconds, 900.0];
+        yield 'missing recipients' => [ProtectedModeWatchdogSnapshot::watchdogAlertEmails, null];
+        yield 'recipient map' => [ProtectedModeWatchdogSnapshot::watchdogAlertEmails, ['ops' => 'ops@example.com']];
+        yield 'nonstring recipient' => [ProtectedModeWatchdogSnapshot::watchdogAlertEmails, [false]];
+        yield 'nonbool restart policy' => [ProtectedModeWatchdogSnapshot::watchdogManualRestartIsNormal, 'false'];
+    }
+
+    /**
+     * @param string $key Field to corrupt
+     * @param mixed $value Invalid field value, or null to remove the required key
+     */
+    #[DataProvider('malformedSnapshotFields')]
+    public function testMalformedSnapshotIsRefused(string $key, mixed $value): void
+    {
+        $data = new ProtectedModeWatchdogSnapshot(null, [], 30, 600, 900, [], null)->toArray();
+        if ($value === null) {
+            unset($data[$key]);
+        } else {
+            $data[$key] = $value;
+        }
+
+        $this->expectException(InvalidFormatException::class);
+        ProtectedModeWatchdogSnapshot::fromArray($data);
     }
 
     /**

@@ -3,15 +3,19 @@ import { test, expect } from '@playwright/test'
 import {
   leaveSecondAdmin,
   shownByTestId,
+  deliveryObject,
   expectPageReady,
   gotoPage,
   PAGE_READY,
   createTestUser,
   grantAdminToSelf,
   typeInto,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+
+// spec-owner: demo — it covers Chat's project setting alongside shared admin views.
 
 // HIL-1253: the browser knows the node's admin view mode from the session
 // response, so the shell draws the admin gear for a viewer who may look — a
@@ -93,6 +97,102 @@ test('a guest reads the view-mode strip on the admin screens and the personal da
         shownByTestId(page.getByTestId(screen.hidden), 'hilos-hidden').first(),
       ).toHaveText('Hidden')
     }
+  }
+})
+
+test('a viewer sees watchdog recipients hidden and thresholds read-only', async ({
+  page,
+}) => {
+  const deliveries = watchDeliveryFrames(page)
+  const isHiddenMark = (value: unknown): boolean => {
+    const mark = deliveryObject(value)
+    return Object.keys(mark).length === 1 && mark._hidden === true
+  }
+
+  try {
+    await setAdminViewMode(true)
+    await gotoPage(expect, page, '/hilos/maintenance', PAGE_READY)
+
+    const maintenanceFrames = () =>
+      deliveries.packets
+        .flatMap((packet) => packet.frames)
+        .filter(
+          ({ wire }) =>
+            deliveryObject(wire).type === 'subscription_page_hilos_maintenance',
+        )
+    const publishedFrames = () =>
+      maintenanceFrames().filter(({ wire }) => {
+        const state = deliveryObject(deliveryObject(wire).data)
+        return (
+          typeof state.watchdogQuiesceTimeoutSeconds === 'number' &&
+          Number.isInteger(state.watchdogQuiesceTimeoutSeconds) &&
+          typeof state.watchdogSilenceTimeoutSeconds === 'number' &&
+          Number.isInteger(state.watchdogSilenceTimeoutSeconds) &&
+          typeof state.watchdogAlertIntervalSeconds === 'number' &&
+          Number.isInteger(state.watchdogAlertIntervalSeconds) &&
+          isHiddenMark(state.watchdogAlertEmails) &&
+          typeof state.watchdogManualRestartIsNormal === 'boolean'
+        )
+      })
+
+    await expect
+      .poll(() => publishedFrames().length, {
+        message:
+          'the viewer receives published watchdog thresholds and the visible restart policy',
+      })
+      .toBeGreaterThan(0)
+
+    const stateFrames = maintenanceFrames()
+    expect(stateFrames.length).toBeGreaterThan(0)
+    for (const frame of stateFrames) {
+      expect(frame.failure).toBeUndefined()
+      expect(frame.raw).toEqual(expect.any(String))
+      expect(
+        deliveryObject(deliveryObject(frame.wire).data).watchdogAlertEmails,
+      ).toEqual({ _hidden: true })
+    }
+
+    const latestFrame = publishedFrames().at(-1)!
+    const state = deliveryObject(deliveryObject(latestFrame.wire).data)
+    const quiesceSeconds = Number(state.watchdogQuiesceTimeoutSeconds)
+    const silentSeconds = Number(state.watchdogSilenceTimeoutSeconds)
+    const repeatSeconds = Number(state.watchdogAlertIntervalSeconds)
+    const restartIsNormal = state.watchdogManualRestartIsNormal === true
+    const secondsText = (value: number): string =>
+      `${value} ${value === 1 ? 'second' : 'seconds'}`
+
+    const strip = page.getByTestId('view-mode-banner')
+    await expect(strip).toBeVisible()
+    await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)
+    const thresholds = page.getByTestId('hilos-maintenance-watchdog-thresholds')
+    await expect(thresholds).toBeVisible()
+    await expect(thresholds.getByRole('heading', { level: 2 })).toHaveText(
+      'Watchdog thresholds',
+    )
+    await expect(thresholds.locator('dl dt')).toHaveText([
+      'Wait for nodes to quiesce',
+      'Consider silent after',
+      'Repeat alert',
+      'Send mail to',
+      'Restart under manual maintenance',
+    ])
+    await expect(thresholds.locator('dl dd')).toHaveText([
+      secondsText(quiesceSeconds),
+      secondsText(silentSeconds),
+      secondsText(repeatSeconds),
+      'Hidden',
+      restartIsNormal ? 'No mail — a log entry' : 'Send an alert',
+    ])
+
+    const recipients = thresholds.locator('dl dd').nth(3)
+    await expect(thresholds.getByTestId('hilos-hidden')).toHaveCount(1)
+    await expect(recipients.getByTestId('hilos-hidden')).toHaveText('Hidden')
+    await expect(recipients).toHaveText('Hidden')
+    await expect(
+      thresholds.locator('input, select, textarea, button, a'),
+    ).toHaveCount(0)
+  } finally {
+    deliveries.stop()
   }
 })
 

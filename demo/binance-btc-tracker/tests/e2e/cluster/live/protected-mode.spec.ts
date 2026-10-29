@@ -8,23 +8,33 @@ import {
   MANUAL_MAINTENANCE_OPERATION,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
+  clearCustomSetting,
+  clickSubmit,
+  deliveryObject,
   dismissToasts,
   expectAdmittedToManualMaintenance,
+  expectDocumentUnchanged,
   expectHeldByManualMaintenance,
   expectMaintenanceCodeIssued,
   expectMaintenanceOpen,
+  expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
   expectNoProtectedModeAgentStops,
   issueMaintenanceCode,
   maintenanceCircleOnline,
   maintenanceCircleRow,
   markClusterNodeLogs,
+  openSettingEdit,
   presentMaintenanceCode,
   readClusterBrowserStand,
+  setCustomSetting,
+  shownByTestId,
   turnOffMaintenance,
   turnOnMaintenance,
   watchClusterMasterUpgrades,
+  watchDeliveryFrames,
   watchSocketFrames,
+  type DeliveryFrameLog,
   type SocketFrame,
   expectPageReady,
   expectSelfReload,
@@ -286,7 +296,34 @@ test('cluster manual maintenance: every master closes, another admitted admin op
   const sessionUsers = new Map<Page, number | null>()
   const frameErrors: unknown[] = []
   const frames: Array<{ page: number; nodeId: string; frame: SocketFrame }> = []
+  const deliveries: DeliveryFrameLog[] = []
+  const watchdogEvidence: Record<string, unknown> = {}
+  const restartPolicyKey = 'protected_mode.manual_maintenance.restart_is_normal'
+  let originalRestartPolicy: { custom: boolean; value: boolean } | undefined
+  let restartPolicyChanged = false
   let circlePrepared = false
+  const restoreRestartPolicy = async (): Promise<void> => {
+    if (!restartPolicyChanged || !originalRestartPolicy) return
+    const actor = pages[1]
+    await gotoPage(expect, actor, '/hilos/settings')
+    await typeInto(shownByTestId(actor, 'hilos-table-search'), restartPolicyKey)
+    await expect(
+      shownByTestId(actor, `hilos-table-row-${restartPolicyKey}`),
+    ).toBeVisible()
+    if (originalRestartPolicy.custom) {
+      await setCustomSetting(
+        actor,
+        restartPolicyKey,
+        originalRestartPolicy.value,
+      )
+    } else {
+      await clearCustomSetting(actor, restartPolicyKey)
+    }
+    await expect(
+      shownByTestId(actor, `hilos-table-row-${restartPolicyKey}`),
+    ).toContainText(originalRestartPolicy.custom ? 'custom' : 'default')
+    restartPolicyChanged = false
+  }
   try {
     for (const node of [
       CLUSTER_FOLLOWER,
@@ -296,6 +333,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     ]) {
       const page = await newMasterPage(browser, node)
       pages.push(page)
+      deliveries.push(watchDeliveryFrames(page))
       upgrades.push(await watchClusterMasterUpgrades(expect, page, stand, node))
       // The admin section has no self-user-id element: read its actual session
       // identity from the handshake, including the one after the final reload.
@@ -326,6 +364,106 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       await gotoPage(expect, admin, MAINTENANCE_PATH)
       await expectMaintenanceOpen(expect, admin)
     }
+    const [operatorLog, otherAdminLog] = deliveries
+    const initialThresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      operator,
+      operatorLog,
+    )
+    const maintenanceFrames = () =>
+      operatorLog.packets
+        .flatMap((packet) => packet.frames)
+        .filter(
+          ({ wire }) =>
+            deliveryObject(wire).type === 'subscription_page_hilos_maintenance',
+        )
+    const initialPolicy = deliveryObject(
+      deliveryObject(maintenanceFrames().at(-1)?.wire).data,
+    ).watchdogManualRestartIsNormal as boolean
+    await gotoPage(expect, otherAdmin, '/hilos/settings')
+    await typeInto(
+      shownByTestId(otherAdmin, 'hilos-table-search'),
+      restartPolicyKey,
+    )
+    await openSettingEdit(otherAdmin, restartPolicyKey)
+    const custom = otherAdmin.getByTestId('hilos-settings-edit-custom')
+    await expect(custom).toBeVisible()
+    await expect(
+      otherAdmin.getByTestId('hilos-settings-edit-value'),
+    ).toBeChecked({
+      checked: initialPolicy,
+    })
+    originalRestartPolicy = {
+      custom: await custom.isChecked(),
+      value: initialPolicy,
+    }
+    await clickSubmit(
+      expect,
+      otherAdmin.getByTestId('hilos-settings-edit-cancel'),
+    )
+    await expect(custom).toHaveCount(0)
+    await markDocument(operator)
+    const sockets = operatorLog.sockets()
+    expect(sockets).toBeGreaterThan(0)
+    const changedPolicy = !initialPolicy
+    const changedAfter = maintenanceFrames().length
+    restartPolicyChanged = true
+    await setCustomSetting(otherAdmin, restartPolicyKey, changedPolicy)
+    await expect
+      .poll(() =>
+        maintenanceFrames()
+          .slice(changedAfter)
+          .map(
+            ({ wire }) =>
+              deliveryObject(deliveryObject(wire).data)
+                .watchdogManualRestartIsNormal,
+          ),
+      )
+      .toContain(changedPolicy)
+    const changedThresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      operator,
+      operatorLog,
+    )
+    expect(changedThresholds).toEqual([
+      ...initialThresholds.slice(0, 4),
+      changedPolicy ? 'No mail — a log entry' : 'Send an alert',
+    ])
+    await expectDocumentUnchanged(expect, operator)
+    expect(operatorLog.sockets()).toBe(sockets)
+    await upgrades[0].assert()
+    await expectLeaderUnmoved(before)
+    const restoredAfter = maintenanceFrames().length
+    await restoreRestartPolicy()
+    await expect
+      .poll(() =>
+        maintenanceFrames()
+          .slice(restoredAfter)
+          .map(
+            ({ wire }) =>
+              deliveryObject(deliveryObject(wire).data)
+                .watchdogManualRestartIsNormal,
+          ),
+      )
+      .toContain(initialPolicy)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, operator, operatorLog),
+    ).toEqual(initialThresholds)
+    await expectDocumentUnchanged(expect, operator)
+    expect(operatorLog.sockets()).toBe(sockets)
+    await upgrades[0].assert()
+    await expectLeaderUnmoved(before)
+    Object.assign(watchdogEvidence, {
+      originalRestartPolicy,
+      changedPolicy,
+      changedAfter,
+      restoredAfter,
+      sockets,
+      initialThresholds,
+      changedThresholds,
+    })
+    await gotoPage(expect, otherAdmin, MAINTENANCE_PATH)
+    await expectMaintenanceOpen(expect, otherAdmin)
     await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
     await clearMaintenanceCircle(operator)
     circlePrepared = true
@@ -360,6 +498,12 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     const marks = markClusterNodeLogs(stand, CLUSTER_MASTERS)
     await turnOnMaintenance(operator)
     await expectManualMaintenanceOn(expect, operator)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, operator, operatorLog),
+    ).toEqual(initialThresholds)
+    await expect(
+      operator.getByTestId('hilos-maintenance-watchdog-alert'),
+    ).toHaveCount(0)
     await expectPageReady(expect, member)
     await expect(member.getByTestId('self-user')).toHaveText(memberName)
     await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
@@ -398,6 +542,16 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     await expectWindow(1)
     await presentMaintenanceCode(otherAdmin, firstCode)
     await expectAdmittedToManualMaintenance(expect, otherAdmin, 1)
+    expect(
+      await expectMaintenanceWatchdogThresholds(
+        expect,
+        otherAdmin,
+        otherAdminLog,
+      ),
+    ).toEqual(initialThresholds)
+    await expect(
+      otherAdmin.getByTestId('hilos-maintenance-watchdog-alert'),
+    ).toHaveCount(0)
     await expect(otherAdmin.getByTestId('conn-state')).toHaveText('connected')
     await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
     await expect(otherAdmin.getByTestId('hilos-maintenance-pass')).toBeEnabled()
@@ -435,6 +589,16 @@ test('cluster manual maintenance: every master closes, another admitted admin op
         new URL(MAINTENANCE_PATH, stand.baseURL).href,
       )
       await expectMaintenanceOpen(expect, admin)
+      expect(
+        await expectMaintenanceWatchdogThresholds(
+          expect,
+          admin,
+          deliveries[pages.indexOf(admin)],
+        ),
+      ).toEqual(initialThresholds)
+      await expect(
+        admin.getByTestId('hilos-maintenance-watchdog-alert'),
+      ).toHaveCount(0)
     }
     await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
     await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
@@ -478,6 +642,8 @@ test('cluster manual maintenance: every master closes, another admitted admin op
         await expectLeaderUnmoved(before)
       })(),
     ])
+    cleanup.push(...(await Promise.allSettled([restoreRestartPolicy()])))
+    for (const log of deliveries) log.stop()
     const stopped = await Promise.allSettled(
       upgrades.map((watcher) => watcher.stop()),
     )
@@ -486,6 +652,16 @@ test('cluster manual maintenance: every master closes, another admitted admin op
     )
     await test.info().attach('manual-maintenance-frames', {
       body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
+    await test.info().attach('manual-maintenance-watchdog', {
+      body: JSON.stringify({
+        ...watchdogEvidence,
+        deliveries: deliveries.slice(0, 2).map(({ packets, connections }) => ({
+          packets,
+          connections,
+        })),
+      }),
       contentType: 'application/json',
     })
     for (const result of [...cleanup, ...stopped, ...closed]) {

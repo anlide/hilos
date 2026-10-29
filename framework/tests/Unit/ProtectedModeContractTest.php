@@ -13,6 +13,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeReadySignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -46,6 +47,13 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertNull($runtime->stoppedAgentCount);
         $this->assertNull($runtime->preservedAgentTypes);
         $this->assertNull($runtime->agentStartGateClosed);
+        $this->assertSame(null, $runtime->watchdogVerdict);
+        $this->assertSame([], $runtime->watchdogPendingNodeIds);
+        $this->assertSame(null, $runtime->watchdogQuiesceTimeoutSeconds);
+        $this->assertSame(null, $runtime->watchdogSilenceTimeoutSeconds);
+        $this->assertSame(null, $runtime->watchdogAlertIntervalSeconds);
+        $this->assertSame(null, $runtime->watchdogAlertEmails);
+        $this->assertSame(null, $runtime->watchdogManualRestartIsNormal);
         $this->assertSame(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::getRtCollectionKey());
     }
 
@@ -72,6 +80,13 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::stoppedAgentCount => null,
             ProtectedModeRuntime::preservedAgentTypes => null,
             ProtectedModeRuntime::agentStartGateClosed => null,
+            ProtectedModeRuntime::watchdogVerdict => null,
+            ProtectedModeRuntime::watchdogPendingNodeIds => [],
+            ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogSilenceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogAlertIntervalSeconds => null,
+            ProtectedModeRuntime::watchdogAlertEmails => null,
+            ProtectedModeRuntime::watchdogManualRestartIsNormal => null,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -105,11 +120,121 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::stoppedAgentCount => null,
             ProtectedModeRuntime::preservedAgentTypes => null,
             ProtectedModeRuntime::agentStartGateClosed => null,
+            ProtectedModeRuntime::watchdogVerdict => null,
+            ProtectedModeRuntime::watchdogPendingNodeIds => [],
+            ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogSilenceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogAlertIntervalSeconds => null,
+            ProtectedModeRuntime::watchdogAlertEmails => null,
+            ProtectedModeRuntime::watchdogManualRestartIsNormal => null,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
 
         $this->assertSame($row, $runtime->toArray());
+    }
+
+    public function testWatchdogFieldsRoundTripAndDiffWithoutClearingAbsentKeys(): void
+    {
+        $runtime = ProtectedModeRuntime::create();
+        $published = [
+            ProtectedModeRuntime::watchdogVerdict => 'quiesce-overdue',
+            ProtectedModeRuntime::watchdogPendingNodeIds => ['node-b', 'node-c'],
+            ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => 31,
+            ProtectedModeRuntime::watchdogSilenceTimeoutSeconds => 601,
+            ProtectedModeRuntime::watchdogAlertIntervalSeconds => 901,
+            ProtectedModeRuntime::watchdogAlertEmails => ['ops@example.test'],
+            ProtectedModeRuntime::watchdogManualRestartIsNormal => false,
+        ];
+        $expected = [...$runtime->toArray(), ...$published];
+
+        $runtime->applyDiff($published);
+        $this->assertSame($expected, $runtime->toArray());
+        $this->assertSame($expected, ProtectedModeRuntime::fromRow($expected)->toArray());
+        $runtime->applyDiff([ProtectedModeRuntime::operation => 'restore']);
+        $this->assertSame([...$expected, ProtectedModeRuntime::operation => 'restore'], $runtime->toArray());
+        $runtime->applyDiff([
+            ProtectedModeRuntime::watchdogVerdict => null,
+            ProtectedModeRuntime::watchdogPendingNodeIds => [],
+            ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogSilenceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogAlertIntervalSeconds => null,
+            ProtectedModeRuntime::watchdogAlertEmails => [],
+            ProtectedModeRuntime::watchdogManualRestartIsNormal => null,
+        ]);
+        $cleared = ProtectedModeRuntime::create()->toArray();
+        $this->assertSame([
+            ...$cleared,
+            ProtectedModeRuntime::operation => 'restore',
+            ProtectedModeRuntime::watchdogAlertEmails => [],
+        ], $runtime->toArray());
+    }
+
+    public function testOldRuntimeRowLeavesAllWatchdogFieldsUnpublished(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        unset(
+            $row[ProtectedModeRuntime::watchdogVerdict],
+            $row[ProtectedModeRuntime::watchdogPendingNodeIds],
+            $row[ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds],
+            $row[ProtectedModeRuntime::watchdogSilenceTimeoutSeconds],
+            $row[ProtectedModeRuntime::watchdogAlertIntervalSeconds],
+            $row[ProtectedModeRuntime::watchdogAlertEmails],
+            $row[ProtectedModeRuntime::watchdogManualRestartIsNormal],
+        );
+
+        $this->assertSame(ProtectedModeRuntime::create()->toArray(), ProtectedModeRuntime::fromRow($row)->toArray());
+    }
+
+    /**
+     * @param string $field Presentation key to corrupt
+     * @param mixed $value Invalid serialized value
+     */
+    #[DataProvider('invalidWatchdogFields')]
+    public function testWatchdogRejectsBadRowsAndDiffsWithoutPartiallyApplyingTheSnapshot(string $field, mixed $value): void
+    {
+        $runtime = ProtectedModeRuntime::create();
+        $before = $runtime->toArray();
+        $diff = [
+            ProtectedModeRuntime::watchdogVerdict => 'silent',
+            ProtectedModeRuntime::watchdogPendingNodeIds => [],
+            ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => 31,
+            ProtectedModeRuntime::watchdogSilenceTimeoutSeconds => 601,
+            ProtectedModeRuntime::watchdogAlertIntervalSeconds => 901,
+            ProtectedModeRuntime::watchdogAlertEmails => ['ops@example.test'],
+            ProtectedModeRuntime::watchdogManualRestartIsNormal => true,
+            $field => $value,
+        ];
+
+        try {
+            ProtectedModeRuntime::fromRow([...$before, ...$diff]);
+            $this->fail('A malformed watchdog row must be refused');
+        } catch (InvalidFormatException) {
+            $this->assertSame($before, $runtime->toArray());
+        }
+        try {
+            $runtime->applyDiff($diff);
+            $this->fail('A malformed watchdog diff must be refused');
+        } catch (InvalidFormatException) {
+            $this->assertSame($before, $runtime->toArray());
+        }
+    }
+
+    /** @return iterable<string, array{string, mixed}> Invalid presentation field values */
+    public static function invalidWatchdogFields(): iterable
+    {
+        yield 'unknown verdict' => [ProtectedModeRuntime::watchdogVerdict, 'healthy'];
+        yield 'numeric verdict' => [ProtectedModeRuntime::watchdogVerdict, 1];
+        yield 'null pending nodes' => [ProtectedModeRuntime::watchdogPendingNodeIds, null];
+        yield 'pending node map' => [ProtectedModeRuntime::watchdogPendingNodeIds, ['node' => 'node-b']];
+        yield 'numeric pending node' => [ProtectedModeRuntime::watchdogPendingNodeIds, [1]];
+        yield 'string quiesce timeout' => [ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds, '31'];
+        yield 'float silence timeout' => [ProtectedModeRuntime::watchdogSilenceTimeoutSeconds, 601.0];
+        yield 'bool interval' => [ProtectedModeRuntime::watchdogAlertIntervalSeconds, false];
+        yield 'string emails' => [ProtectedModeRuntime::watchdogAlertEmails, 'ops@example.test'];
+        yield 'email map' => [ProtectedModeRuntime::watchdogAlertEmails, ['ops' => 'ops@example.test']];
+        yield 'numeric email' => [ProtectedModeRuntime::watchdogAlertEmails, [1]];
+        yield 'numeric policy' => [ProtectedModeRuntime::watchdogManualRestartIsNormal, 1];
     }
 
     public function testRuntimeDiffChangesBrowserOriginOnlyWhenPresent(): void
@@ -836,6 +961,13 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::stoppedAgentCount => null,
             ProtectedModeRuntime::preservedAgentTypes => null,
             ProtectedModeRuntime::agentStartGateClosed => null,
+            ProtectedModeRuntime::watchdogVerdict => null,
+            ProtectedModeRuntime::watchdogPendingNodeIds => [],
+            ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogSilenceTimeoutSeconds => null,
+            ProtectedModeRuntime::watchdogAlertIntervalSeconds => null,
+            ProtectedModeRuntime::watchdogAlertEmails => null,
+            ProtectedModeRuntime::watchdogManualRestartIsNormal => null,
         ]);
         $this->assertNull($runtime->diagnosticsNodeId);
         $this->assertNull($runtime->stoppedAgentCount);

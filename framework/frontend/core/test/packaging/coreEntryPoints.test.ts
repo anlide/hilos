@@ -23,6 +23,7 @@ import * as logs from '../../src/admin/logs/index.js'
 import * as logNodes from '../../src/admin/logs/hilosLogNodes.js'
 import { logsOverviewThresholdPassed } from '../../src/admin/logs/hilosLogsOverview.js'
 import * as maintenance from '../../src/admin/maintenance/index.js'
+import * as maintenanceModel from '../../src/admin/maintenance/hilosMaintenance.js'
 import * as maintenanceWords from '../../src/admin/maintenance/hilosMaintenanceWords.js'
 import * as moderation from '../../src/admin/moderation/index.js'
 import * as moderationKind from '../../src/admin/moderation/hilosModerationKind.js'
@@ -524,6 +525,16 @@ const maintenanceWordsTypes = [
   'HilosMaintenanceWordsRow',
   'HilosMaintenanceWordsTable',
 ]
+/** Watchdog presentation APIs stay exclusive to the lazy Maintenance section. */
+const maintenanceWatchdogValues = [
+  'HILOS_MAINTENANCE_WATCHDOG_COPY',
+  'hilosMaintenanceWatchdogAlert',
+  'hilosMaintenanceWatchdogThresholds',
+]
+const maintenanceWatchdogTypes = [
+  'HilosMaintenanceWatchdogAlert',
+  'HilosMaintenanceWatchdogThresholds',
+]
 /** The node table and threshold verdict stay exclusive to the lazy Logs section. */
 const logNodesValues = [
   'createHilosLogNodesTable',
@@ -932,6 +943,15 @@ describe('core public entries', () => {
               : logNodes[name as keyof typeof logNodes],
           )
         } else if (
+          entry === './admin/maintenance' &&
+          maintenanceWatchdogValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            maintenanceModel[name as keyof typeof maintenanceModel],
+          )
+        } else if (
           entry === './admin/security' &&
           securityOverviewValues.includes(name)
         ) {
@@ -975,6 +995,7 @@ describe('core public entries', () => {
         ...adminModerationKindValues,
         ...adminModerationRulesValues,
         ...maintenanceWordsValues,
+        ...maintenanceWatchdogValues,
         ...logNodesValues,
         ...adminModerationRuleAddValues,
         ...adminModerationRuleDeleteValues,
@@ -1117,6 +1138,26 @@ describe('core public entries', () => {
     expect(presets.test_presets).toBe(
       logs.LOGS_SETTINGS_SIGNAL_SCHEMAS[logs.LOG_SETTINGS_SIGNAL],
     )
+    for (const api of [core, base, maintenance, maintenanceModel]) {
+      expect(api.maintenanceStateSchema).toBe(
+        maintenance.maintenanceStateSchema,
+      )
+      expect(
+        api.MAINTENANCE_STATE_SIGNAL_SCHEMAS[api.MAINTENANCE_STATE_SIGNAL],
+      ).toBe(maintenance.maintenanceStateSchema)
+      expect(
+        api.maintenanceStateSchema.parse({
+          phase: 'inactive',
+          operation: null,
+          manual: false,
+          startedAt: null,
+          enteredFromBrowser: false,
+          passCount: 0,
+          circleNamed: 0,
+          circleAdmitted: 0,
+        }).watchdogVerdict,
+      ).toBeNull()
+    }
   })
 
   it('exports the public reader once, outside base and admin Status', () => {
@@ -1347,6 +1388,11 @@ describe('core public entries', () => {
     ]
     const wordsExports = exportsOf('admin/maintenance/hilosMaintenanceWords.ts')
     const wordsNames = [...maintenanceWordsValues, ...maintenanceWordsTypes]
+    const watchdogExports = exportsOf('admin/maintenance/hilosMaintenance.ts')
+    const watchdogNames = [
+      ...maintenanceWatchdogValues,
+      ...maintenanceWatchdogTypes,
+    ]
     const logNodesExports = new Map([
       ...exportsOf('admin/logs/hilosLogNodes.ts'),
       ...exportsOf('admin/logs/hilosLogsOverview.ts'),
@@ -1460,6 +1506,13 @@ describe('core public entries', () => {
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(wordsExports.get(name))
         } else if (
+          entry === 'admin/maintenance/index.ts' &&
+          watchdogNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(watchdogExports.get(name))
+        } else if (
           entry === 'admin/logs/index.ts' &&
           logNodesNames.includes(name)
         ) {
@@ -1505,6 +1558,7 @@ describe('core public entries', () => {
         ...kindNames,
         ...rulesNames,
         ...wordsNames,
+        ...watchdogNames,
         ...logNodesNames,
         ...ruleAddNames,
         ...ruleDeleteNames,

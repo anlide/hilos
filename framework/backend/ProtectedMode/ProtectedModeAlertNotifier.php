@@ -47,6 +47,9 @@ final class ProtectedModeAlertNotifier
     /** @var string What separates one recipient address from the next in the environment value */
     private const string ADDRESS_SEPARATOR = ',';
 
+    /** @var ?list<string> Parsed process configuration; null until read, empty for no addresses or an unreadable value */
+    private ?array $recipientAddresses = null;
+
     /**
      * Mails the operators that this node is frozen with nothing happening behind it.
      *
@@ -65,6 +68,44 @@ final class ProtectedModeAlertNotifier
     public function notifyCleared(array $params): void
     {
         $this->mailEveryone(MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED, $params, 'freeze-lifted notice');
+    }
+
+    /**
+     * The addresses the alert goes to, as the environment names them.
+     *
+     * Blank entries are dropped rather than refused: an operator editing a list by hand leaves a
+     * trailing comma, and an alert about an unreachable node is not the place to be strict about
+     * punctuation. An unreadable value reads as no recipients at all, which the caller reports.
+     * The process configuration is parsed once, including an empty or unreadable list.
+     *
+     * @return list<string> Recipient addresses, empty when none are configured
+     */
+    public function recipients(): array
+    {
+        if ($this->recipientAddresses !== null) {
+            return $this->recipientAddresses;
+        }
+
+        try {
+            $configured = Hilos::$env[EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS]->string();
+        } catch (EnvException $e) {
+            Logger::logAgentError(
+                self::LOG_AGENT_ID,
+                'The alert recipient list is unreadable, so nothing can be sent: ' . $e->getMessage(),
+            );
+
+            return $this->recipientAddresses = [];
+        }
+
+        $addresses = [];
+        foreach (explode(self::ADDRESS_SEPARATOR, $configured) as $address) {
+            $address = trim($address);
+            if ($address !== '') {
+                $addresses[] = $address;
+            }
+        }
+
+        return $this->recipientAddresses = $addresses;
     }
 
     /**
@@ -110,38 +151,5 @@ final class ProtectedModeAlertNotifier
                 );
             }
         }
-    }
-
-    /**
-     * The addresses the alert goes to, as the environment names them.
-     *
-     * Blank entries are dropped rather than refused: an operator editing a list by hand leaves a
-     * trailing comma, and an alert about an unreachable node is not the place to be strict about
-     * punctuation. An unreadable value reads as no recipients at all, which the caller reports.
-     *
-     * @return list<string> Recipient addresses, empty when none are configured
-     */
-    private function recipients(): array
-    {
-        try {
-            $configured = Hilos::$env[EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS]->string();
-        } catch (EnvException $e) {
-            Logger::logAgentError(
-                self::LOG_AGENT_ID,
-                'The alert recipient list is unreadable, so nothing can be sent: ' . $e->getMessage(),
-            );
-
-            return [];
-        }
-
-        $addresses = [];
-        foreach (explode(self::ADDRESS_SEPARATOR, $configured) as $address) {
-            $address = trim($address);
-            if ($address !== '') {
-                $addresses[] = $address;
-            }
-        }
-
-        return $addresses;
     }
 }

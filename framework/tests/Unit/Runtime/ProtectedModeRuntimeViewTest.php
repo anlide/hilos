@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Runtime;
 
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -28,9 +35,17 @@ final class ProtectedModeRuntimeViewTest extends TestCase
 
     private const string INITIATOR_SESSION_HASH = 'session-hash-9';
 
+    private ?SignalRouter $previousSignalRouter = null;
+
+    protected function setUp(): void
+    {
+        $this->previousSignalRouter = Hilos::$sr;
+    }
+
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
+        Hilos::$sr = $this->previousSignalRouter;
 
         parent::tearDown();
     }
@@ -373,6 +388,117 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
     }
 
+    public function testWatchdogPublicationExposesAllSevenFieldsInOneChange(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $recorder = new WatchdogViewChangeRecorder();
+        Hilos::$sr = $recorder;
+
+        $view->actions->updateWatchdog($this->watchdogSnapshot());
+
+        $this->assertSame('quiesce-overdue', $view->watchdogVerdict);
+        $this->assertSame(['node-b'], $view->watchdogPendingNodeIds);
+        $this->assertSame(31, $view->watchdogQuiesceTimeoutSeconds);
+        $this->assertSame(601, $view->watchdogSilenceTimeoutSeconds);
+        $this->assertSame(901, $view->watchdogAlertIntervalSeconds);
+        $this->assertSame(['ops@example.test'], $view->watchdogAlertEmails);
+        $this->assertFalse($view->watchdogManualRestartIsNormal);
+        $this->assertCount(1, $recorder->changes);
+        $this->assertSame($this->watchdogSnapshot()->toArray(), $recorder->changes[0]->row);
+    }
+
+    public function testWatchdogPublicationRefusesANonOwnerWithoutChangingTheRow(): void
+    {
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $before = $view->toArray();
+        try {
+            $view->actions->updateWatchdog($this->watchdogSnapshot());
+            $this->fail('A non-owner must not publish the watchdog');
+        } catch (RtTruthSourceWriteNotAllowedException) {
+            $this->assertSame($before, $view->toArray());
+        }
+    }
+
+    /**
+     * @param string $field Corrupted snapshot key
+     * @param mixed $value Invalid value accepted by the direct DTO constructor
+     */
+    #[DataProvider('badWatchdogSnapshots')]
+    public function testWatchdogPublicationValidatesBeforeAnyAssignmentOrSync(string $field, mixed $value): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $view->actions->updateWatchdog($this->watchdogSnapshot());
+        $before = $view->toArray();
+        $recorder = new WatchdogViewChangeRecorder();
+        Hilos::$sr = $recorder;
+
+        try {
+            $view->actions->updateWatchdog(new ProtectedModeWatchdogSnapshot(...[
+                ...$this->watchdogSnapshot()->toArray(),
+                ProtectedModeWatchdogSnapshot::watchdogVerdict => 'silent',
+                ProtectedModeWatchdogSnapshot::watchdogQuiesceTimeoutSeconds => 99,
+                $field => $value,
+            ]));
+            $this->fail('An invalid snapshot must not be partially published');
+        } catch (InvalidFormatException) {
+            $this->assertSame($before, $view->toArray());
+            $this->assertSame([], $recorder->changes);
+        }
+    }
+
+    /** @return iterable<string, array{string, mixed}> Invalid direct snapshot constructor values */
+    public static function badWatchdogSnapshots(): iterable
+    {
+        yield 'unknown verdict' => [ProtectedModeWatchdogSnapshot::watchdogVerdict, 'unknown'];
+        yield 'pending map' => [ProtectedModeWatchdogSnapshot::watchdogPendingNodeIds, ['node' => 'node-b']];
+        yield 'email map' => [ProtectedModeWatchdogSnapshot::watchdogAlertEmails, ['ops' => 'ops@example.test']];
+        yield 'numeric email' => [ProtectedModeWatchdogSnapshot::watchdogAlertEmails, [1]];
+    }
+
+    /** @param string $transition Freeze boundary that clears the current alarm */
+    #[DataProvider('watchdogResetTransitions')]
+    public function testFreezeBoundariesClearTheAlarmAndKeepEffectiveConfiguration(string $transition): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $view->actions->updateWatchdog($this->watchdogSnapshot());
+        $recorder = new WatchdogViewChangeRecorder();
+        Hilos::$sr = $recorder;
+
+        if ($transition === 'enterInactive') {
+            $view->actions->enterInactive();
+        } else {
+            $view->actions->$transition($this->freeze(), self::INITIATOR_KEY);
+        }
+
+        $this->assertNull($view->watchdogVerdict);
+        $this->assertSame([], $view->watchdogPendingNodeIds);
+        $this->assertSame(31, $view->watchdogQuiesceTimeoutSeconds);
+        $this->assertSame(601, $view->watchdogSilenceTimeoutSeconds);
+        $this->assertSame(901, $view->watchdogAlertIntervalSeconds);
+        $this->assertSame(['ops@example.test'], $view->watchdogAlertEmails);
+        $this->assertFalse($view->watchdogManualRestartIsNormal);
+        $this->assertCount(1, $recorder->changes);
+        $this->assertArrayHasKey(StateProtectedModeRuntime::watchdogVerdict, $recorder->changes[0]->row);
+        $this->assertSame([], $recorder->changes[0]->row[StateProtectedModeRuntime::watchdogPendingNodeIds]);
+    }
+
+    /** @return iterable<string, array{string}> Alarm-resetting transitions */
+    public static function watchdogResetTransitions(): iterable
+    {
+        yield 'inactive' => ['enterInactive'];
+        yield 'new freeze' => ['enterActivating'];
+        yield 'direct window' => ['enterVerificationWindow'];
+    }
+
+    /** @return ProtectedModeWatchdogSnapshot Published configuration and an overdue quiesce cause */
+    private function watchdogSnapshot(): ProtectedModeWatchdogSnapshot
+    {
+        return new ProtectedModeWatchdogSnapshot('quiesce-overdue', ['node-b'], 31, 601, 901, ['ops@example.test'], false);
+    }
+
     /**
      * @param ?string $initiatorSessionTokenHash Session hash the freeze recognizes, or null when it names none
      * @return ProtectedModeRuntime View over a node frozen for the initiator's restore
@@ -433,5 +559,24 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view->setItemActionsClass(ProtectedModeRuntimeActions::class);
 
         return $view;
+    }
+}
+
+/** Records update sync frames at the router boundary. */
+final class WatchdogViewChangeRecorder extends SignalRouter
+{
+    /** @var list<RtSyncUpdatedSignalData> Published updates for the protected-mode singleton */
+    public array $changes = [];
+
+    /**
+     * @param string $signalName Queued sync signal name
+     * @param RtSyncSignalDataInterface $signalData Queued sync payload
+     */
+    public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
+    {
+        if ($signalData instanceof RtSyncUpdatedSignalData && $signalData->collectionKey === StateProtectedModeRuntime::RT_ITEM) {
+            $this->changes[] = $signalData;
+        }
+        parent::queueRtSyncSignal($signalName, $signalData);
     }
 }

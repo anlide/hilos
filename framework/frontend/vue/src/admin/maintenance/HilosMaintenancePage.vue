@@ -24,16 +24,20 @@ import {
   hilosMaintenanceOtherBrowserLine,
   hilosMaintenancePosition,
   hilosMaintenanceRestoreLadder,
+  hilosMaintenanceWatchdogAlert,
+  hilosMaintenanceWatchdogThresholds,
   type HilosMaintenanceContext,
 } from '@hilos/core/admin/maintenance'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+import HilosMaintenanceWatchdogAlert from './HilosMaintenanceWatchdogAlert.vue'
 
 const props = defineProps<{
   /** The project context: scope stores, the connection, and the action lifecycle. */
@@ -49,6 +53,13 @@ const position = computed(() =>
 )
 const stateCard = computed(() =>
   hilosMaintenanceCard(maintenanceState.value, nowMs.value),
+)
+const watchdogAlert = computed(() => {
+  void timeZone.value
+  return hilosMaintenanceWatchdogAlert(maintenanceState.value)
+})
+const watchdogThresholds = computed(() =>
+  hilosMaintenanceWatchdogThresholds(maintenanceState.value),
 )
 const startedAt = computed(() => {
   void timeZone.value
@@ -327,6 +338,8 @@ onUnmounted(() => {
     head-kind="section"
     tabs-label="Maintenance pages"
   >
+    <HilosMaintenanceWatchdogAlert :alert="watchdogAlert" />
+
     <div aria-live="polite" data-id="hilos-maintenance-state">
       <div
         v-if="position === 'open'"
@@ -537,6 +550,29 @@ onUnmounted(() => {
       <i class="bi bi-person-workspace me-1" aria-hidden="true"></i>
       {{ otherBrowserLine }}
     </div>
+
+    <section
+      v-if="watchdogThresholds"
+      class="card mb-3"
+      data-id="hilos-maintenance-watchdog-thresholds"
+    >
+      <div class="card-header">
+        <h2 class="h6 mb-0">{{ watchdogThresholds.title }}</h2>
+      </div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <template v-for="row in watchdogThresholds.rows" :key="row.label">
+            <dt class="col-sm-5">{{ row.label }}</dt>
+            <dd class="col-sm-7 text-break">
+              <HilosHideable :value="row.value" />
+            </dd>
+          </template>
+        </dl>
+      </div>
+      <div class="card-footer small text-body-secondary">
+        {{ watchdogThresholds.footer }}
+      </div>
+    </section>
 
     <HilosModal
       :model-value="enableOpen"

@@ -8,22 +8,28 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** Holds the Maintenance state frame's first answer, live changes and admission guard. */
@@ -49,10 +55,14 @@ final class HilosMaintenancePageStateTest extends TestCase
 
     private ?ClusterContext $previousCluster = null;
 
+    private ?SettingsAccessor $previousSetting = null;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->previousCluster = Hilos::$cluster;
+        $this->previousSetting = Hilos::$setting;
+        Hilos::$setting = new SettingsAccessor(ProtectedModeSettingsCatalog::class);
         Hilos::$cluster = new ClusterContext();
         Hilos::$sr = new SignalRouter();
         Hilos::initBrowser();
@@ -70,6 +80,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         Hilos::$sr = null;
         Hilos::$browser = null;
         Hilos::$cluster = $this->previousCluster;
+        Hilos::$setting = $this->previousSetting;
         parent::tearDown();
     }
 
@@ -98,6 +109,13 @@ final class HilosMaintenancePageStateTest extends TestCase
             HilosMaintenanceStateSignalData::stoppedAgentCount => null,
             HilosMaintenanceStateSignalData::preservedAgentTypes => null,
             HilosMaintenanceStateSignalData::agentStartGateClosed => null,
+            HilosMaintenanceStateSignalData::watchdogVerdict => null,
+            HilosMaintenanceStateSignalData::watchdogPendingNodeIds => [],
+            HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds => null,
+            HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds => null,
+            HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds => null,
+            HilosMaintenanceStateSignalData::watchdogAlertEmails => null,
+            HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal => null,
         ], $this->payload($signal));
         $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
     }
@@ -186,15 +204,18 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
         $wire = $this->payload(Hilos::$sr?->getNextQueuedSignal());
-        $this->assertCount(17, $wire);
+        $this->assertCount(24, $wire);
         $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, $wire[HilosMaintenanceStateSignalData::phase]);
         $this->assertNull($wire[HilosMaintenanceStateSignalData::preservedAgentTypes]);
-        $this->assertNotContains(HiddenValue::mark(), $wire);
+        $this->assertSame([
+            HilosMaintenanceStateSignalData::watchdogAlertEmails => HiddenValue::mark(),
+        ], array_filter($wire, HiddenValue::isMark(...)));
     }
 
     public function testTwoSessionsShareTheFrameAndDifferOnlyByInitiator(): void
     {
         $row = $this->mountRestore();
+        $this->publishWatchdogState($row);
         $connections = $this->mountSessions();
         $connections->add(MaintenanceStateSessionConnection::create(self::ACCEPT_KEY, 1, self::SESSION_A, 1));
         $connections->add(MaintenanceStateSessionConnection::create(self::OTHER_KEY, 2, self::SESSION_B, 2));
@@ -214,6 +235,7 @@ final class HilosMaintenancePageStateTest extends TestCase
 
         $this->assertTrue($initiator[HilosMaintenanceStateSignalData::isInitiator]);
         $this->assertFalse($other[HilosMaintenanceStateSignalData::isInitiator]);
+        $this->assertWatchdogState($initiator);
         $this->assertSame($this->withoutInitiator($initiator), $this->withoutInitiator($other));
         $this->assertStringNotContainsString(self::SESSION_A, $this->encoded($initiator));
         $this->assertStringNotContainsString(
@@ -312,7 +334,9 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->assertSame(['hilos_mail'], $wire[HilosMaintenanceStateSignalData::preservedAgentTypes]);
         $this->assertSame(6, $wire[HilosMaintenanceStateSignalData::stoppedAgentCount]);
         $this->assertTrue($wire[HilosMaintenanceStateSignalData::agentStartGateClosed]);
-        $this->assertNotContains(HiddenValue::mark(), $wire);
+        $this->assertSame([
+            HilosMaintenanceStateSignalData::watchdogAlertEmails => HiddenValue::mark(),
+        ], array_filter($wire, HiddenValue::isMark(...)));
         $this->assertStringNotContainsString(self::OFF_FRAME_PASS, $this->encoded($wire));
         $this->assertStringNotContainsString(
             StateProtectedModeRuntime::hashSessionToken(self::SESSION_A),
@@ -357,6 +381,14 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->assertNull($restored->stoppedAgentCount);
         $this->assertNull($restored->preservedAgentTypes);
         $this->assertNull($restored->agentStartGateClosed);
+        $this->assertNull($restored->watchdogVerdict);
+        $this->assertSame([], $restored->watchdogPendingNodeIds);
+        $this->assertNull($restored->watchdogQuiesceTimeoutSeconds);
+        $this->assertNull($restored->watchdogSilenceTimeoutSeconds);
+        $this->assertNull($restored->watchdogAlertIntervalSeconds);
+        $this->assertNull($restored->watchdogAlertEmails);
+        $this->assertNull($restored->watchdogManualRestartIsNormal);
+        $this->assertSame($this->stateData()->toArray(), $restored->toArray());
         $this->assertArrayHasKey(
             HilosMaintenanceStateSignalData::isInitiator,
             $restored->toArray(),
@@ -370,6 +402,349 @@ final class HilosMaintenancePageStateTest extends TestCase
             HilosMaintenanceStateSignalData::circleAdmitted => 0,
             HilosMaintenanceStateSignalData::preservedAgentTypes => [],
         ])->preservedAgentTypes);
+    }
+
+    /**
+     * @param string $field Watchdog field changed in isolation
+     * @param mixed $value New published value
+     */
+    #[DataProvider('watchdogChanges')]
+    public function testWatchdogChangePushesOnceAndSubscribeDoesNotConsumeTheBroadcast(string $field, mixed $value): void
+    {
+        $row = $this->mount(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $page = $this->page();
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drain();
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        $this->drain();
+
+        $default = $row->{$field};
+        $row->{$field} = $value;
+        AbstractHilosMaintenancePage::markStale();
+        $page->onSubscribe(self::OTHER_KEY, new PageRouteParams([]));
+        $this->assertSame($value, $this->payload(Hilos::$sr?->getNextQueuedSignal())[$field]);
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        foreach ([self::ACCEPT_KEY, self::OTHER_KEY] as $acceptKey) {
+            $signal = Hilos::$sr?->getNextQueuedSignal();
+            $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MAINTENANCE, $signal?->signalName->getName());
+            $this->assertSame($acceptKey, $signal?->data->targetAcceptKey);
+            $this->assertSame($value, $this->payload($signal)[$field]);
+        }
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $row->{$field} = $default;
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        foreach ([self::ACCEPT_KEY, self::OTHER_KEY] as $acceptKey) {
+            $signal = Hilos::$sr?->getNextQueuedSignal();
+            $this->assertSame($acceptKey, $signal?->data->targetAcceptKey);
+            $this->assertSame($default, $this->payload($signal)[$field]);
+        }
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** @return iterable<string, array{string, mixed}> Independent changes of every watchdog field */
+    public static function watchdogChanges(): iterable
+    {
+        yield 'verdict' => [HilosMaintenanceStateSignalData::watchdogVerdict, 'silent'];
+        yield 'pending nodes' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, ['node-2', 'node-3']];
+        yield 'quiesce threshold' => [HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds, 31];
+        yield 'silence threshold' => [HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds, 301];
+        yield 'reminder interval' => [HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds, 601];
+        yield 'recipients' => [HilosMaintenanceStateSignalData::watchdogAlertEmails, ['operator@example.test']];
+        yield 'manual restart policy' => [HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal, false];
+    }
+
+    /**
+     * @param ?list<string> $emails Recipients before viewer masking
+     * @param ?bool $policy Worker-reported manual restart policy
+     */
+    #[DataProvider('viewerWatchdogValues')]
+    public function testViewerGetsRecipientsHiddenWholeOnFirstAnswerAndPush(?array $emails, ?bool $policy): void
+    {
+        Hilos::$browser = new MaintenanceStateViewerBrowser();
+        $row = $this->mount(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $this->publishWatchdogState($row);
+        $row->watchdogAlertEmails = $emails;
+        $row->watchdogManualRestartIsNormal = $policy;
+        $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $first = Hilos::$sr?->getNextQueuedSignal();
+        $wire = $this->payload($first);
+        $this->assertInstanceOf(SignalData::class, $first?->data->data);
+        $this->assertWatchdogState($wire, HiddenValue::mark(), $policy);
+        foreach ($emails ?? [] as $email) {
+            $this->assertStringNotContainsString($email, $this->encoded($wire));
+        }
+        $this->assertSame($wire, WebSocketSignalData::fromArray($first->data->toArray())->data->toArray());
+        $this->drain();
+
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        $pushed = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertInstanceOf(SignalData::class, $pushed?->data->data);
+        $this->assertSame($wire, $this->payload($pushed));
+        $this->assertSame($wire, WebSocketSignalData::fromArray($pushed->data->toArray())->data->toArray());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** @return iterable<string, array{?list<string>, ?bool}> Hidden null, empty and populated recipient fields */
+    public static function viewerWatchdogValues(): iterable
+    {
+        yield 'unpublished' => [null, null];
+        yield 'configured empty' => [[], false];
+        yield 'configured recipients' => [['operator@example.test', 'backup@example.test'], true];
+    }
+
+    public function testManualRestartPolicyUsesItsCatalogVisibilityOnBothDeliveryPaths(): void
+    {
+        $fields = HilosMaintenanceStateSignalData::wireFields();
+        $this->assertArrayNotHasKey(HilosMaintenanceStateSignalData::watchdogAlertEmails, $fields);
+        $this->assertSame(
+            [ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL],
+            $fields[HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal]->settingKeys,
+        );
+        $this->assertTrue(Hilos::$setting->visibleInAdminViewMode(ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL));
+        foreach ([
+            HilosMaintenanceStateSignalData::watchdogVerdict,
+            HilosMaintenanceStateSignalData::watchdogPendingNodeIds,
+            HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds,
+            HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds,
+            HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds,
+        ] as $field) {
+            $this->assertFalse($fields[$field]->isSetting());
+            $this->assertFalse($fields[$field]->isColumn());
+            $this->assertNull($fields[$field]->fields);
+        }
+
+        Hilos::$setting = new class extends SettingsAccessor {
+            /** @return array<string, array<string, mixed>> Catalog with the manual restart policy closed to viewers */
+            protected function getCatalog(): array
+            {
+                $catalog = ProtectedModeSettingsCatalog::getCatalog();
+                $catalog[ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] = false;
+
+                return $catalog;
+            }
+        };
+        Hilos::$browser = new MaintenanceStateViewerBrowser();
+        $row = $this->mount(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $this->publishWatchdogState($row);
+        $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $wire = $this->payload(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertSame(HiddenValue::mark(), $wire[HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal]);
+        $this->drain();
+
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        $this->assertSame($wire, $this->payload(Hilos::$sr?->getNextQueuedSignal()));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** @param bool $revokeAdmin Whether page access rather than freeze admission is revoked */
+    #[DataProvider('revokedStateGuards')]
+    public function testRevokedGuardClosesFirstAnswerAndWatchdogPush(bool $revokeAdmin): void
+    {
+        $row = $this->mount(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $this->publishWatchdogState($row);
+        $page = $this->page();
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drain();
+        if ($revokeAdmin) {
+            Hilos::$browser = new class(1, false) extends IdentityTestBrowser {
+                /**
+                 * @param string $pageClass Page whose viewer verdict is asked (unused)
+                 * @param string $acceptKey Connection whose rights were revoked (unused)
+                 * @return bool The view mode is off for this guard check
+                 */
+                public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+                {
+                    return false;
+                }
+            };
+        } else {
+            $row->phase = StateProtectedModeRuntime::PHASE_ACTIVE;
+        }
+
+        $row->watchdogVerdict = 'silent';
+        $page->onSubscribe(self::OTHER_KEY, new PageRouteParams([]));
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        AbstractHilosMaintenancePage::markStale();
+        AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** @return iterable<string, array{bool}> Each gate that must close state delivery */
+    public static function revokedStateGuards(): iterable
+    {
+        yield 'admin rights revoked' => [true];
+        yield 'freeze locks out' => [false];
+    }
+
+    /** @param ?string $verdict Each legal watchdog cause, including the cleared state */
+    #[DataProvider('watchdogVerdicts')]
+    public function testWatchdogDtoRoundTripAndInitiatorCopyCarryEveryField(?string $verdict): void
+    {
+        $wire = array_replace($this->stateData()->toArray(), [
+            HilosMaintenanceStateSignalData::watchdogVerdict => $verdict,
+            HilosMaintenanceStateSignalData::watchdogPendingNodeIds => ['node-2', 'node-3'],
+            HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds => 31,
+            HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds => 301,
+            HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds => 601,
+            HilosMaintenanceStateSignalData::watchdogAlertEmails => ['operator@example.test', 'backup@example.test'],
+            HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal => false,
+        ]);
+        $dto = HilosMaintenanceStateSignalData::fromArray($wire);
+        $this->assertSame($wire, $dto->toArray());
+        $this->assertSame($wire, HilosMaintenanceStateSignalData::fromJson($dto->toJson())->toArray());
+        $this->assertSame(
+            array_replace($wire, [HilosMaintenanceStateSignalData::isInitiator => true]),
+            $dto->withIsInitiator(true)->toArray(),
+        );
+        $this->assertSame($wire, $dto->withIsInitiator(true)->withIsInitiator(false)->toArray());
+        $this->assertSame($wire, $dto->toArray());
+    }
+
+    /** @return iterable<string, array{?string}> All legal verdicts and no alarm */
+    public static function watchdogVerdicts(): iterable
+    {
+        yield 'clear' => [null];
+        yield 'initiator lost' => ['initiator-lost'];
+        yield 'restored from disk' => ['restored-from-disk'];
+        yield 'quiesce overdue' => ['quiesce-overdue'];
+        yield 'silent' => ['silent'];
+    }
+
+    /**
+     * @param ?list<string> $emails Nullable or configured recipients
+     * @param ?bool $policy Unknown or published manual restart policy
+     */
+    #[DataProvider('viewerWatchdogValues')]
+    public function testWatchdogDtoKeepsNullableAndEmptyValues(?array $emails, ?bool $policy): void
+    {
+        $wire = array_replace($this->stateData()->toArray(), [
+            HilosMaintenanceStateSignalData::watchdogAlertEmails => $emails,
+            HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal => $policy,
+        ]);
+        $dto = HilosMaintenanceStateSignalData::fromArray($wire);
+        $this->assertSame($wire, $dto->toArray());
+        $this->assertSame($wire, HilosMaintenanceStateSignalData::fromJson($dto->toJson())->toArray());
+        $this->assertSame(
+            array_replace($wire, [HilosMaintenanceStateSignalData::isInitiator => true]),
+            $dto->withIsInitiator(true)->toArray(),
+        );
+    }
+
+    /**
+     * @param string $field Payload field holding malformed input
+     * @param mixed $value Rejected value
+     */
+    #[DataProvider('malformedWatchdogFields')]
+    public function testWatchdogDtoRejectsMalformedFields(string $field, mixed $value): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        HilosMaintenanceStateSignalData::fromArray(array_replace($this->stateData()->toArray(), [$field => $value]));
+    }
+
+    /** @return iterable<string, array{string, mixed}> Wrong scalar, list, enum and hidden-mark shapes */
+    public static function malformedWatchdogFields(): iterable
+    {
+        yield 'verdict type' => [HilosMaintenanceStateSignalData::watchdogVerdict, false];
+        yield 'unknown verdict' => [HilosMaintenanceStateSignalData::watchdogVerdict, 'unknown'];
+        yield 'empty verdict' => [HilosMaintenanceStateSignalData::watchdogVerdict, ''];
+        yield 'pending null' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, null];
+        yield 'pending scalar' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, 'node-2'];
+        yield 'pending map' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, ['node' => 'node-2']];
+        yield 'pending element' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, ['node-2', 2]];
+        yield 'quiesce string' => [HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds, '31'];
+        yield 'silence float' => [HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds, 301.0];
+        yield 'interval boolean' => [HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds, false];
+        yield 'recipients scalar' => [HilosMaintenanceStateSignalData::watchdogAlertEmails, 'operator@example.test'];
+        yield 'recipients map' => [HilosMaintenanceStateSignalData::watchdogAlertEmails, ['email' => 'operator@example.test']];
+        yield 'recipients element' => [HilosMaintenanceStateSignalData::watchdogAlertEmails, ['operator@example.test', 2]];
+        yield 'recipients hidden mark' => [HilosMaintenanceStateSignalData::watchdogAlertEmails, HiddenValue::mark()];
+        yield 'policy integer' => [HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal, 1];
+        yield 'policy string' => [HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal, 'false'];
+        yield 'policy hidden mark' => [HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal, HiddenValue::mark()];
+    }
+
+    public function testMalformedRecipientsRefusalDoesNotIncludeAnAddress(): void
+    {
+        try {
+            HilosMaintenanceStateSignalData::fromArray(array_replace($this->stateData()->toArray(), [
+                HilosMaintenanceStateSignalData::watchdogAlertEmails => ['operator@example.test', false],
+            ]));
+            $this->fail('Malformed recipient list must be refused');
+        } catch (InvalidFormatException $e) {
+            $this->assertStringNotContainsString('operator@example.test', $e->getMessage());
+            $this->assertStringContainsString(HilosMaintenanceStateSignalData::watchdogAlertEmails, $e->getMessage());
+        }
+    }
+
+    /** @return HilosMaintenanceStateSignalData Legacy constructor with unpublished watchdog defaults */
+    private function stateData(): HilosMaintenanceStateSignalData
+    {
+        return new HilosMaintenanceStateSignalData(
+            phase: StateProtectedModeRuntime::PHASE_INACTIVE,
+            operation: null,
+            manual: false,
+            startedAt: null,
+            enteredFromBrowser: false,
+            passCount: 0,
+            circleNamed: 0,
+            circleAdmitted: 0,
+            initiatorAgentType: null,
+            initiatorNodeId: null,
+            activatedAt: null,
+            progressAt: null,
+            isInitiator: false,
+            diagnosticsNodeId: null,
+            stoppedAgentCount: null,
+            preservedAgentTypes: null,
+            agentStartGateClosed: null,
+        );
+    }
+
+    /** @param StateProtectedModeRuntime $row Runtime fixture receiving a complete published watchdog state */
+    private function publishWatchdogState(StateProtectedModeRuntime $row): void
+    {
+        $row->watchdogVerdict = 'quiesce-overdue';
+        $row->watchdogPendingNodeIds = ['node-2', 'node-3'];
+        $row->watchdogQuiesceTimeoutSeconds = 31;
+        $row->watchdogSilenceTimeoutSeconds = 301;
+        $row->watchdogAlertIntervalSeconds = 601;
+        $row->watchdogAlertEmails = ['operator@example.test', 'backup@example.test'];
+        $row->watchdogManualRestartIsNormal = false;
+    }
+
+    /**
+     * @param array<string, mixed> $wire Complete state frame
+     * @param mixed $emails Recipients as visible to this connection, including a hidden mark
+     * @param ?bool $policy Worker-reported manual restart policy
+     */
+    private function assertWatchdogState(
+        array $wire,
+        mixed $emails = ['operator@example.test', 'backup@example.test'],
+        ?bool $policy = false,
+    ): void
+    {
+        $this->assertSame('quiesce-overdue', $wire[HilosMaintenanceStateSignalData::watchdogVerdict]);
+        $this->assertSame(['node-2', 'node-3'], $wire[HilosMaintenanceStateSignalData::watchdogPendingNodeIds]);
+        $this->assertSame(31, $wire[HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds]);
+        $this->assertSame(301, $wire[HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds]);
+        $this->assertSame(601, $wire[HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds]);
+        $this->assertSame($emails, $wire[HilosMaintenanceStateSignalData::watchdogAlertEmails]);
+        $this->assertSame($policy, $wire[HilosMaintenanceStateSignalData::watchdogManualRestartIsNormal]);
     }
 
     private function page(): MaintenanceStateTestPage

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -16,6 +17,9 @@ use Hilos\Mail\Template\MailTemplateRegistry;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
 use Hilos\ProtectedMode\ProtectedModeAlertNotifier;
+use Hilos\ProtectedMode\ProtectedModeWatchdog;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
@@ -43,6 +47,9 @@ final class ProtectedModeAlertMailTest extends TestCase
 
     private ?HilosMailer $previousMailer = null;
 
+    private ?RtContext $previousRuntime = null;
+
+    /** Isolates the environment, mail and runtime facades for each recipient check. */
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,10 +59,12 @@ final class ProtectedModeAlertMailTest extends TestCase
 
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousMailer = Hilos::$mail;
+        $this->previousRuntime = Hilos::$rt;
         Hilos::$env = new EnvAccessor();
         putenv(EnvConstants::MAIL_WORKER_COUNT->name . '=1');
     }
 
+    /** Restores the facades and removes the log streams owned by this case. */
     protected function tearDown(): void
     {
         Logger::resetLogFile();
@@ -71,6 +80,7 @@ final class ProtectedModeAlertMailTest extends TestCase
         putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name);
         Hilos::$env = $this->previousEnv;
         Hilos::$mail = $this->previousMailer;
+        Hilos::$rt = $this->previousRuntime;
 
         parent::tearDown();
     }
@@ -185,6 +195,92 @@ final class ProtectedModeAlertMailTest extends TestCase
         $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
         self::assertFileExists($agentLog);
         self::assertStringContainsString('there is nobody to write to', (string)file_get_contents($agentLog));
+    }
+
+    /** Reading recipients and healthy snapshots sends nothing; both mails use the same parsed list. */
+    public function testRecipientsAreSharedBySnapshotsAlertsRemindersAndAllClear(): void
+    {
+        $configured = " Ops@Example.com, ,\toncall@example.com , Ops@Example.com, ";
+        $recipientReads = 0;
+        $env = $this->getMockBuilder(EnvAccessor::class)->onlyMethods(['effectiveValueFor'])->getMock();
+        $env->method('effectiveValueFor')->willReturnCallback(static function (string $key) use ($configured, &$recipientReads): mixed {
+            if ($key === EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name) {
+                $recipientReads++;
+
+                return $configured;
+            }
+
+            return new EnvAccessor()->effectiveValueFor($key);
+        });
+        Hilos::$env = $env;
+        $notifier = new ProtectedModeAlertNotifier();
+        $mailer = new AlertRecordingMailer();
+        Hilos::$mail = $mailer;
+        Hilos::$rt = new class extends RtContext {
+            /** No project state is needed; the framework supplies the freeze row. */
+            public function configure(): void
+            {
+            }
+        };
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
+        $watchdog = new ProtectedModeWatchdog($notifier);
+
+        $expected = ['Ops@Example.com', 'oncall@example.com', 'Ops@Example.com'];
+        self::assertSame($expected, $notifier->recipients());
+        self::assertSame($expected, $watchdog->tick(1)->watchdogAlertEmails);
+        self::assertSame($expected, $watchdog->tick(2)->watchdogAlertEmails);
+        self::assertSame([], $mailer->sent);
+
+        $notifier->notifyStuck(self::stuckParams(still: false));
+        $notifier->notifyStuck(self::stuckParams(still: true));
+        $notifier->notifyCleared([]);
+
+        self::assertSame([...$expected, ...$expected, ...$expected], array_column($mailer->sent, 'to'));
+        self::assertSame(MailTemplateCatalogConstants::PROTECTED_MODE_STUCK, $mailer->sent[0]['templateKey']);
+        self::assertFalse($mailer->sent[0]['params'][ProtectedModeStuckMailTemplate::PARAM_STILL]);
+        self::assertTrue($mailer->sent[3]['params'][ProtectedModeStuckMailTemplate::PARAM_STILL]);
+        self::assertSame(MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED, $mailer->sent[6]['templateKey']);
+        self::assertSame(1, $recipientReads);
+    }
+
+    /** A configured empty list is a cached result, and whitespace-only entries do not become addresses. */
+    public function testEmptyRecipientConfigurationIsReadOnlyOnce(): void
+    {
+        $env = $this->getMockBuilder(EnvAccessor::class)->onlyMethods(['effectiveValueFor'])->getMock();
+        $env->expects(self::once())->method('effectiveValueFor')
+            ->with(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name)->willReturn(" , \t, ");
+        Hilos::$env = $env;
+        $mailer = new AlertRecordingMailer();
+        Hilos::$mail = $mailer;
+        $notifier = new ProtectedModeAlertNotifier();
+
+        self::assertSame([], $notifier->recipients());
+        self::assertSame([], $notifier->recipients());
+        $notifier->notifyStuck(self::stuckParams(still: false));
+        self::assertSame([], $mailer->sent);
+    }
+
+    /** A failed read stays empty for this notifier and logs its env exception once. */
+    public function testUnreadableRecipientsAreCachedWithoutRepeatingTheExceptionLog(): void
+    {
+        $env = $this->getMockBuilder(EnvAccessor::class)->onlyMethods(['effectiveValueFor'])->getMock();
+        $env->expects(self::once())->method('effectiveValueFor')
+            ->with(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name)
+            ->willThrowException(new EnvInvalidValueException('unreadable recipients'));
+        Hilos::$env = $env;
+        $mailer = new AlertRecordingMailer();
+        Hilos::$mail = $mailer;
+        $notifier = new ProtectedModeAlertNotifier();
+
+        self::assertSame([], $notifier->recipients());
+        self::assertSame([], $notifier->recipients());
+        $notifier->notifyStuck(self::stuckParams(still: false));
+        $notifier->notifyStuck(self::stuckParams(still: true));
+        $notifier->notifyCleared([]);
+
+        $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
+        self::assertSame(1, substr_count((string)file_get_contents($agentLog), 'The alert recipient list is unreadable'));
+        self::assertSame([], $mailer->sent);
     }
 
     /**

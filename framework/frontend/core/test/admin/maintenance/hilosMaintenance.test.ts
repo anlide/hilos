@@ -6,6 +6,7 @@ import {
   createHilosMaintenanceState,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
+  HILOS_MAINTENANCE_WATCHDOG_COPY,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   MAINTENANCE_RESTORE_CLOSE_ACTION,
@@ -23,9 +24,13 @@ import {
   hilosMaintenanceOtherBrowserLine,
   hilosMaintenancePosition,
   hilosMaintenanceRestoreLadder,
+  hilosMaintenanceWatchdogAlert,
+  hilosMaintenanceWatchdogThresholds,
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
+import { formatMoment } from '../../../src/format/moment.js'
+import { bindTimeZoneState } from '../../../src/timeZone/timeZoneState.js'
 import type { ActionSuccessSignal } from '../../../src/protocol/parseSignal.js'
 import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { Emitter } from '../../../src/connection/events.js'
@@ -824,6 +829,13 @@ function state(
     stoppedAgentCount: null,
     preservedAgentTypes: null,
     agentStartGateClosed: null,
+    watchdogVerdict: null,
+    watchdogPendingNodeIds: [],
+    watchdogQuiesceTimeoutSeconds: null,
+    watchdogSilenceTimeoutSeconds: null,
+    watchdogAlertIntervalSeconds: null,
+    watchdogAlertEmails: null,
+    watchdogManualRestartIsNormal: null,
     ...overrides,
   }
 }
@@ -867,6 +879,13 @@ describe('maintenance state frame', () => {
       stoppedAgentCount: null,
       preservedAgentTypes: null,
       agentStartGateClosed: null,
+      watchdogVerdict: null,
+      watchdogPendingNodeIds: [],
+      watchdogQuiesceTimeoutSeconds: null,
+      watchdogSilenceTimeoutSeconds: null,
+      watchdogAlertIntervalSeconds: null,
+      watchdogAlertEmails: null,
+      watchdogManualRestartIsNormal: null,
     })
     expect(
       MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse({
@@ -916,6 +935,328 @@ describe('maintenance state frame', () => {
     expect(handle.state.get()?.passCount).toBe(2)
     handle.dispose()
     expect(listeners.size).toBe(0)
+  })
+})
+
+describe('maintenance watchdog schema', () => {
+  const schema = MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL]
+
+  it.each([
+    'initiator-lost',
+    'restored-from-disk',
+    'quiesce-overdue',
+    'silent',
+  ] as const)(
+    'accepts the server verdict %s and effective configuration',
+    (watchdogVerdict) => {
+      const frame = state({
+        watchdogVerdict,
+        watchdogPendingNodeIds: ['node-3', 'node-4'],
+        watchdogQuiesceTimeoutSeconds: 31,
+        watchdogSilenceTimeoutSeconds: 601,
+        watchdogAlertIntervalSeconds: 901,
+        watchdogAlertEmails: ['ops@example.test'],
+        watchdogManualRestartIsNormal: false,
+      })
+      expect(schema.parse(frame)).toEqual(frame)
+    },
+  )
+
+  it('keeps unknown, empty and hidden values distinct and normalizes both hidden marks', () => {
+    expect(schema.parse(state())).toMatchObject({
+      watchdogAlertEmails: null,
+      watchdogManualRestartIsNormal: null,
+    })
+    expect(
+      schema.parse(
+        state({ watchdogAlertEmails: [], watchdogManualRestartIsNormal: true }),
+      ),
+    ).toMatchObject({
+      watchdogAlertEmails: [],
+      watchdogManualRestartIsNormal: true,
+    })
+    const hidden = schema.parse({
+      ...state(),
+      watchdogAlertEmails: { _hidden: true },
+      watchdogManualRestartIsNormal: { _hidden: true },
+    })
+    expect(hidden.watchdogAlertEmails).toBe(HIDDEN_VALUE)
+    expect(hidden.watchdogManualRestartIsNormal).toBe(HIDDEN_VALUE)
+  })
+
+  it.each([
+    ['watchdogVerdict', 'unknown'],
+    ['watchdogVerdict', false],
+    ['watchdogPendingNodeIds', null],
+    ['watchdogPendingNodeIds', [3]],
+    ['watchdogQuiesceTimeoutSeconds', 1.5],
+    ['watchdogSilenceTimeoutSeconds', '600'],
+    ['watchdogAlertIntervalSeconds', 1.5],
+    ['watchdogAlertEmails', [3]],
+    ['watchdogAlertEmails', { _hidden: true, extra: true }],
+    ['watchdogManualRestartIsNormal', 'true'],
+    ['watchdogManualRestartIsNormal', { _hidden: false }],
+  ])('rejects malformed %s: %j', (field, value) => {
+    expect(schema.safeParse({ ...state(), [field]: value }).success).toBe(false)
+  })
+})
+
+describe('maintenance watchdog alert', () => {
+  it.each([
+    ['initiator-lost', 'danger', 'The initiator is gone'],
+    ['restored-from-disk', 'danger', 'The node started already frozen'],
+    ['quiesce-overdue', 'warning', 'Nodes did not quiesce in time'],
+    ['silent', 'warning', 'No movement behind the freeze'],
+  ] as const)(
+    'projects %s with its own tone and words',
+    (verdict, tone, title) => {
+      const alert = hilosMaintenanceWatchdogAlert(
+        state({ watchdogVerdict: verdict }),
+      )
+      expect(alert).toMatchObject({
+        verdict,
+        tone,
+        title,
+        summary: HILOS_MAINTENANCE_WATCHDOG_COPY.alerts[verdict].summary,
+      })
+      expect(
+        new Set(
+          Object.values(HILOS_MAINTENANCE_WATCHDOG_COPY.alerts).map(
+            (copy) => copy.summary,
+          ),
+        ).size,
+      ).toBe(4)
+    },
+  )
+
+  it('stays clear without a server verdict despite old progress, phase or manual policy', () => {
+    expect(hilosMaintenanceWatchdogAlert(null)).toBeNull()
+    for (const frame of [
+      state(),
+      state({
+        phase: 'active',
+        startedAt: '2000-01-01T00:00:00Z',
+        progressAt: '2000-01-01T00:00:00Z',
+        watchdogSilenceTimeoutSeconds: 1,
+      }),
+      state({
+        phase: 'verifying',
+        manual: true,
+        watchdogManualRestartIsNormal: false,
+      }),
+    ]) {
+      expect(hilosMaintenanceWatchdogAlert(frame)).toBeNull()
+    }
+    const alarm = state({
+      watchdogVerdict: 'silent',
+      progressAt: '2999-01-01T00:00:00Z',
+    })
+    expect(hilosMaintenanceWatchdogAlert(alarm)?.verdict).toBe('silent')
+    expect(
+      hilosMaintenanceWatchdogAlert({ ...alarm, watchdogVerdict: null }),
+    ).toBeNull()
+  })
+
+  it('explains the usual CLI doors after a manual restart without overriding a server alarm', () => {
+    const alert = hilosMaintenanceWatchdogAlert(
+      state({
+        manual: true,
+        watchdogVerdict: 'restored-from-disk',
+        watchdogManualRestartIsNormal: true,
+      }),
+    )
+    expect(alert?.tone).toBe('danger')
+    expect(alert?.summary).toBe(
+      HILOS_MAINTENANCE_WATCHDOG_COPY.manualRestartSummary,
+    )
+    expect(alert?.summary).toContain('maintenance:pass')
+    expect(alert?.summary).toContain('maintenance:disable')
+    expect(alert?.summary).toContain(
+      'Previous codes and admissions no longer work',
+    )
+  })
+
+  it('preserves all diagnostics and pending names as plain text without recipients', () => {
+    const frame = state({
+      phase: 'activating',
+      operation: 'restore',
+      initiatorAgentType: 'hilos_backup',
+      initiatorNodeId: 'node-1',
+      startedAt: '2026-10-10T10:00:00Z',
+      activatedAt: '2026-10-10T10:00:05Z',
+      progressAt: '2026-10-10T10:01:00Z',
+      diagnosticsNodeId: 'node-2',
+      stoppedAgentCount: 0,
+      preservedAgentTypes: ['hilos_mail', 'hilos_logs'],
+      agentStartGateClosed: false,
+      watchdogVerdict: 'quiesce-overdue',
+      watchdogPendingNodeIds: ['node-3', '<node-4>'],
+      watchdogAlertEmails: ['private@example.test'],
+    })
+    const alert = hilosMaintenanceWatchdogAlert(frame)
+    expect(alert?.facts).toEqual([
+      { label: 'Phase', value: 'activating' },
+      { label: 'Operation', value: 'restore' },
+      { label: 'Manual maintenance', value: 'No' },
+      { label: 'Initiator', value: 'hilos_backup · node node-1' },
+      { label: 'Started', value: formatMoment(frame.startedAt!) },
+      { label: 'Frozen', value: formatMoment(frame.activatedAt!) },
+      { label: 'Last movement', value: formatMoment(frame.progressAt!) },
+      { label: 'Nodes awaiting quiescence', value: 'node-3, <node-4>' },
+      { label: 'Diagnostics node', value: 'node-2' },
+      { label: 'Agents stopped', value: '0' },
+      { label: 'Agents left running', value: 'hilos_mail, hilos_logs' },
+      { label: 'Agent start', value: 'open' },
+    ])
+    expect(JSON.stringify(alert)).not.toContain('private@example.test')
+    expect(
+      hilosMaintenanceWatchdogAlert({
+        ...frame,
+        watchdogAlertEmails: HIDDEN_VALUE,
+      }),
+    ).toEqual(alert)
+  })
+
+  it('keeps missing timestamps and diagnostics absent while preserving an independent agent list', () => {
+    const alert = hilosMaintenanceWatchdogAlert(
+      state({
+        watchdogVerdict: 'initiator-lost',
+        preservedAgentTypes: ['hilos_mail'],
+      }),
+    )
+    expect(alert?.facts).toEqual([
+      { label: 'Phase', value: 'inactive' },
+      { label: 'Operation', value: '—' },
+      { label: 'Manual maintenance', value: 'No' },
+      { label: 'Initiator', value: '— · node —' },
+      { label: 'Started', value: '—' },
+      { label: 'Frozen', value: '—' },
+      { label: 'Last movement', value: '—' },
+      { label: 'Nodes awaiting quiescence', value: '—' },
+      { label: 'Diagnostics node', value: '—' },
+      { label: 'Agents stopped', value: '—' },
+      { label: 'Agents left running', value: 'hilos_mail' },
+      { label: 'Agent start', value: '—' },
+    ])
+    const empty = hilosMaintenanceWatchdogAlert(
+      state({
+        watchdogVerdict: 'silent',
+        preservedAgentTypes: [],
+        agentStartGateClosed: true,
+      }),
+    )
+    expect(empty?.facts).toContainEqual({
+      label: 'Agents left running',
+      value: 'None',
+    })
+    expect(empty?.facts).toContainEqual({
+      label: 'Agent start',
+      value: 'closed',
+    })
+  })
+
+  it('formats unchanged UTC moments again when the reader zone changes', () => {
+    const listeners = new Set<(signal: never) => void>()
+    const connection = {
+      projectTimeZone: 'UTC',
+      on(event: string, listener: (signal: never) => void) {
+        if (event === 'projectSignal') listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    } as unknown as HilosConnection
+    const release = bindTimeZoneState(connection)
+    const frame = state({
+      watchdogVerdict: 'silent',
+      progressAt: '2026-10-10T10:01:00Z',
+    })
+    try {
+      const choose = (timeZone: string) => {
+        for (const listener of listeners)
+          listener({
+            type: 'handshake_response',
+            data: { entities: { currentUser: { id: 1, timeZone } } },
+          } as never)
+      }
+      choose('UTC')
+      const utc = hilosMaintenanceWatchdogAlert(frame)?.facts.find(
+        (fact) => fact.label === 'Last movement',
+      )?.value
+      expect(utc).toBe(formatMoment(frame.progressAt!))
+      choose('Asia/Kathmandu')
+      const local = hilosMaintenanceWatchdogAlert(frame)?.facts.find(
+        (fact) => fact.label === 'Last movement',
+      )?.value
+      expect(local).toBe(formatMoment(frame.progressAt!))
+      expect(local).not.toBe(utc)
+      expect(frame.progressAt).toBe('2026-10-10T10:01:00Z')
+    } finally {
+      release()
+    }
+  })
+})
+
+describe('maintenance watchdog thresholds', () => {
+  it('leaves the block absent before the frame and shows unknown values honestly', () => {
+    expect(hilosMaintenanceWatchdogThresholds(null)).toBeNull()
+    expect(hilosMaintenanceWatchdogThresholds(state())).toEqual({
+      title: 'Watchdog thresholds',
+      rows: [
+        { label: 'Wait for nodes to quiesce', value: '—' },
+        { label: 'Consider silent after', value: '—' },
+        { label: 'Repeat alert', value: '—' },
+        { label: 'Send mail to', value: '—' },
+        { label: 'Restart under manual maintenance', value: '—' },
+      ],
+      footer:
+        'Thresholds and addresses come from the environment. Restart under manual maintenance is a setting changed in Settings.',
+    })
+  })
+
+  it.each([
+    [31, 601, 901],
+    [30, 600, 900],
+    [0, 1, 9007199254740991],
+  ])(
+    'uses effective %s/%s/%s seconds, including published server fallbacks',
+    (quiesce, silence, interval) => {
+      for (const position of [
+        state(),
+        state({ phase: 'verifying', manual: true }),
+        state({ phase: 'active', operation: 'restore' }),
+      ]) {
+        const thresholds = hilosMaintenanceWatchdogThresholds({
+          ...position,
+          watchdogQuiesceTimeoutSeconds: quiesce,
+          watchdogSilenceTimeoutSeconds: silence,
+          watchdogAlertIntervalSeconds: interval,
+          watchdogAlertEmails: ['first@example.test', 'second@example.test'],
+          watchdogManualRestartIsNormal: true,
+        })
+        expect(thresholds?.rows.map((row) => row.value)).toEqual([
+          `${quiesce} seconds`,
+          `${silence} ${silence === 1 ? 'second' : 'seconds'}`,
+          `${interval} seconds`,
+          'first@example.test, second@example.test',
+          'No mail — a log entry',
+        ])
+      }
+    },
+  )
+
+  it('distinguishes empty recipients from unknown and hidden and reads both restart settings', () => {
+    const empty = hilosMaintenanceWatchdogThresholds(
+      state({ watchdogAlertEmails: [], watchdogManualRestartIsNormal: false }),
+    )
+    expect(empty?.rows[3]?.value).toBe('No recipients configured')
+    expect(empty?.rows[4]?.value).toBe('Send an alert')
+    const hidden = hilosMaintenanceWatchdogThresholds(
+      state({
+        watchdogAlertEmails: HIDDEN_VALUE,
+        watchdogManualRestartIsNormal: HIDDEN_VALUE,
+      }),
+    )
+    expect(hidden?.rows[3]?.value).toBe(HIDDEN_VALUE)
+    expect(hidden?.rows[4]?.value).toBe(HIDDEN_VALUE)
   })
 })
 

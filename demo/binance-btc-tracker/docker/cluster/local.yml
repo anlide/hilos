@@ -7,6 +7,7 @@ services:
     ports: !reset []
     volumes:
       - data-export:/data_export:ro
+      - status:/status:ro
     networks:
       cluster-net:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.30
@@ -33,6 +34,7 @@ services:
       hilos.role: app
     volumes:
       - data-export:/app/data/data_export
+      - status:/app/data/status
       - ../../data/logs-cluster/m1:/var/log/hilos
     depends_on:
       binance-btc-tracker-cluster-mysql:
@@ -52,6 +54,7 @@ services:
       - ./nodes/m2.env
     volumes:
       - data-export:/app/data/data_export
+      - status:/app/data/status
       - ../../data/logs-cluster/m2:/var/log/hilos
     depends_on:
       binance-btc-tracker-cluster-mysql:
@@ -71,6 +74,7 @@ services:
       - ./nodes/m3.env
     volumes:
       - data-export:/app/data/data_export
+      - status:/app/data/status
       - ../../data/logs-cluster/m3:/var/log/hilos
     depends_on:
       binance-btc-tracker-cluster-mysql:
@@ -90,6 +94,7 @@ services:
       - ./nodes/s1.env
     volumes:
       - data-export:/app/data/data_export
+      - status:/app/data/status
       - ../../data/logs-cluster/s1:/var/log/hilos
     depends_on:
       binance-btc-tracker-cluster-mysql:
@@ -109,6 +114,7 @@ services:
       - ./nodes/s2.env
     volumes:
       - data-export:/app/data/data_export
+      - status:/app/data/status
       - ../../data/logs-cluster/s2:/var/log/hilos
     depends_on:
       binance-btc-tracker-cluster-mysql:
@@ -130,6 +136,7 @@ services:
     profiles: [stranger]
     volumes:
       - data-export:/app/data/data_export
+      - status:/app/data/status
       - ../../data/logs-cluster/x1:/var/log/hilos
     depends_on:
       binance-btc-tracker-cluster-mysql:
@@ -145,6 +152,11 @@ volumes:
   # this disk, and the harness's down --volumes clears it with the database each run.
   data-export:
     name: hilos-binance-btc-tracker-cluster-data-export${HILOS_STAND_SUFFIX:-}
+
+  # Independent test installations must not overwrite each other's Status files.
+  # Every node and the entry within this cluster share this one volume.
+  status:
+    name: hilos-binance-btc-tracker-cluster-status${HILOS_STAND_SUFFIX:-}
 
 networks:
   cluster-net:

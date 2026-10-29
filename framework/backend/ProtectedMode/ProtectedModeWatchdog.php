@@ -16,6 +16,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
+use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Server\WorkerServer;
@@ -164,22 +165,24 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      * initiator is then found gone says so, because it is a stronger statement about the same node.
      *
      * @param int $now Epoch seconds to judge against
+     * @return ?ProtectedModeWatchdogSnapshot Current judgment and configuration, or null without runtime state
      * @throws HilosException When the server text policy cannot be resolved
      */
-    public function tick(int $now): void
+    public function tick(int $now): ?ProtectedModeWatchdogSnapshot
     {
         $view = $this->freezeRow();
         if ($view === null || $view->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
             $this->reportLifted($now);
             $this->forgetFreeze();
 
-            return;
+            return $view === null ? null : $this->snapshot(null);
         }
 
         $this->adoptFreeze(self::fingerprintOf($view), $now);
         $this->noteQuietRestart($view);
 
         $verdict = $this->judge($view, $now);
+        $snapshot = $this->snapshot($verdict);
         if ($verdict === null) {
             if (
                 $this->restoredFromDiskFor === $this->freeze
@@ -191,7 +194,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
                 $this->reported = null;
             }
 
-            return;
+            return $snapshot;
         }
 
         if ($verdict === ProtectedModeStuckVerdict::INITIATOR_LOST && $this->initiatorLostAt === null) {
@@ -202,7 +205,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
         $isNews = $verdict !== $this->reported;
         if (!$isNews && !$this->reminderIsDue($now)) {
-            return;
+            return $snapshot;
         }
 
         $this->reported = $verdict;
@@ -220,6 +223,8 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
 
         $this->notifier->notifyStuck($this->stuckParams($view, $problem, $now, still: !$isNews));
+
+        return $snapshot;
     }
 
     /**
@@ -274,6 +279,28 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
 
         $this->initiatorLostFor = self::fingerprintOf($view);
+    }
+
+    /**
+     * Captures the current judgment independently of the notification history.
+     *
+     * @param ?ProtectedModeStuckVerdict $verdict Current cause, or null while clear
+     * @return ProtectedModeWatchdogSnapshot Judgment and effective process configuration
+     */
+    private function snapshot(?ProtectedModeStuckVerdict $verdict): ProtectedModeWatchdogSnapshot
+    {
+        $switch = Hilos::$cluster?->protectedMode();
+
+        return new ProtectedModeWatchdogSnapshot(
+            watchdogVerdict: $verdict?->value,
+            watchdogPendingNodeIds: $verdict === ProtectedModeStuckVerdict::QUIESCE_OVERDUE
+                && $switch instanceof ProtectedModeQuiesceRoster ? $switch->pendingNodeIds() : [],
+            watchdogQuiesceTimeoutSeconds: $this->quiesceTimeoutSeconds(),
+            watchdogSilenceTimeoutSeconds: $this->silenceTimeoutSeconds(),
+            watchdogAlertIntervalSeconds: $this->alertIntervalSeconds(),
+            watchdogAlertEmails: $this->notifier->recipients(),
+            watchdogManualRestartIsNormal: $this->manualRestartIsNormal,
+        );
     }
 
     /**

@@ -5,7 +5,9 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 import {
   dismissToasts,
   expectMaintenanceOpen,
+  expectMaintenanceWatchdogThresholds,
   MAINTENANCE_PATH,
+  liesAbove,
   presentMaintenanceCode,
   shownByTestId,
   expectPageReady,
@@ -14,6 +16,7 @@ import {
   markDocument,
   grantAdminToSelf,
   typeInto,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   inspectProtectedMode,
@@ -92,6 +95,7 @@ test('a real restore lets the initiating browser open the system from Maintenanc
   page,
   browser,
 }) => {
+  const frames = watchDeliveryFrames(page)
   const party = await openOutsiders(browser, 2)
   const admitted = party.pages[0]
   const waiting = party.pages[1]
@@ -114,6 +118,15 @@ test('a real restore lets the initiating browser open the system from Maintenanc
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/hilos\/maintenance$/)
     await expectInitiatorLadder(page)
+    const thresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      page,
+      frames,
+    )
+    await liesAbove(
+      page.getByTestId('hilos-maintenance-restore-ladder'),
+      page.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    )
 
     const code = await mintRestoreCode(page)
     await expect(page.getByTestId('hilos-maintenance-pass-count')).toHaveText(
@@ -128,6 +141,15 @@ test('a real restore lets the initiating browser open the system from Maintenanc
     await expect(admitted.getByTestId('maintenance')).toBeHidden()
     await expectPageReady(expect, admitted)
     await expectOtherBrowser(admitted)
+    await expect(
+      admitted
+        .getByTestId('hilos-maintenance-watchdog-thresholds')
+        .getByRole('definition'),
+    ).toHaveText(thresholds)
+    await liesAbove(
+      admitted.getByTestId('hilos-maintenance-other-browser'),
+      admitted.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    )
     await expectInitiatorLadder(page)
 
     await dismissToasts(page)
@@ -154,7 +176,15 @@ test('a real restore lets the initiating browser open the system from Maintenanc
       await expectMaintenanceOpen(expect, openPage)
       await expect(openPage.getByTestId('hilos-toasts')).not.toContainText(code)
     }
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, page, frames),
+    ).toEqual(thresholds)
   } finally {
+    frames.stop()
+    await test.info().attach('maintenance-watchdog-restore-open-wire', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
     await party.close()
   }
 })
@@ -163,6 +193,7 @@ test('closing the restore window from Maintenance takes the page and the dialog 
   page,
   browser,
 }) => {
+  const frames = watchDeliveryFrames(page)
   const party = await openOutsiders(browser, 1)
   const admitted = party.pages[0]
   if (admitted === undefined) {
@@ -180,12 +211,30 @@ test('closing the restore window from Maintenance takes the page and the dialog 
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/hilos\/maintenance$/)
     await expectInitiatorLadder(page)
+    const thresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      page,
+      frames,
+    )
+    await liesAbove(
+      page.getByTestId('hilos-maintenance-restore-ladder'),
+      page.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    )
 
     const code = await mintRestoreCode(page)
     await presentMaintenanceCode(admitted, code)
     await expect(admitted.getByTestId('maintenance')).toBeHidden()
     await expectPageReady(expect, admitted)
     await expectOtherBrowser(admitted)
+    await expect(
+      admitted
+        .getByTestId('hilos-maintenance-watchdog-thresholds')
+        .getByRole('definition'),
+    ).toHaveText(thresholds)
+    await liesAbove(
+      admitted.getByTestId('hilos-maintenance-other-browser'),
+      admitted.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    )
 
     await dismissToasts(page)
     await press(page.getByTestId('hilos-maintenance-restore-close'))
@@ -212,6 +261,9 @@ test('closing the restore window from Maintenance takes the page and the dialog 
       await expect(openPage.getByTestId('hilos-maintenance-state')).toHaveCount(
         0,
       )
+      await expect(
+        openPage.getByTestId('hilos-maintenance-watchdog-thresholds'),
+      ).toHaveCount(0)
       await expect(openPage.getByTestId('maintenance-pass-form')).toHaveCount(0)
       await expect(
         openPage.getByTestId('maintenance-pass-pending'),
@@ -223,6 +275,11 @@ test('closing the restore window from Maintenance takes the page and the dialog 
       await expect(openPage.getByTestId('hilos-toasts')).not.toContainText(code)
     }
   } finally {
+    frames.stop()
+    await test.info().attach('maintenance-watchdog-restore-close-wire', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
     await party.close()
   }
 })

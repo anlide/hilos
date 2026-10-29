@@ -8,11 +8,14 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeStuckVerdict;
 
 /**
  * Current protected-mode state for the Maintenance section (server to browser).
  *
- * Every field describes the freeze or its verifier circle, without identifying a person.
+ * Freeze diagnostics are not personal; watchdog recipients stay hidden from a viewer,
+ * and the manual restart policy follows its settings catalog's visibility verdict.
  * `isInitiator` is that viewer's own verdict and is filled in per delivery; the frame
  * never carries a session hash, an accept key, or a pass.
  */
@@ -35,6 +38,13 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
     public const string stoppedAgentCount = 'stoppedAgentCount';
     public const string preservedAgentTypes = 'preservedAgentTypes';
     public const string agentStartGateClosed = 'agentStartGateClosed';
+    public const string watchdogVerdict = 'watchdogVerdict';
+    public const string watchdogPendingNodeIds = 'watchdogPendingNodeIds';
+    public const string watchdogQuiesceTimeoutSeconds = 'watchdogQuiesceTimeoutSeconds';
+    public const string watchdogSilenceTimeoutSeconds = 'watchdogSilenceTimeoutSeconds';
+    public const string watchdogAlertIntervalSeconds = 'watchdogAlertIntervalSeconds';
+    public const string watchdogAlertEmails = 'watchdogAlertEmails';
+    public const string watchdogManualRestartIsNormal = 'watchdogManualRestartIsNormal';
 
     /**
      * @param string $phase Protected-mode phase from the runtime row
@@ -54,6 +64,13 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
      * @param ?int $stoppedAgentCount Agents this node is holding stopped, or null until published
      * @param ?list<string> $preservedAgentTypes Agent types left running, or null until published
      * @param ?bool $agentStartGateClosed Whether agent start is closed, or null until published
+     * @param ?string $watchdogVerdict Current watchdog cause, or null while clear or unpublished
+     * @param list<string> $watchdogPendingNodeIds Pending nodes for quiesce-overdue, empty otherwise
+     * @param ?int $watchdogQuiesceTimeoutSeconds Effective quiesce threshold in seconds, or null until published
+     * @param ?int $watchdogSilenceTimeoutSeconds Effective silence threshold in seconds, or null until published
+     * @param ?int $watchdogAlertIntervalSeconds Effective reminder interval in seconds, or null until published
+     * @param ?list<string> $watchdogAlertEmails Effective recipients, null until published, empty when configured so
+     * @param ?bool $watchdogManualRestartIsNormal Worker-reported manual restart policy, or null before a report
      */
     public function __construct(
         public readonly string $phase,
@@ -73,6 +90,13 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
         public readonly ?int $stoppedAgentCount,
         public readonly ?array $preservedAgentTypes,
         public readonly ?bool $agentStartGateClosed,
+        public readonly ?string $watchdogVerdict = null,
+        public readonly array $watchdogPendingNodeIds = [],
+        public readonly ?int $watchdogQuiesceTimeoutSeconds = null,
+        public readonly ?int $watchdogSilenceTimeoutSeconds = null,
+        public readonly ?int $watchdogAlertIntervalSeconds = null,
+        public readonly ?array $watchdogAlertEmails = null,
+        public readonly ?bool $watchdogManualRestartIsNormal = null,
     ) {
     }
 
@@ -99,11 +123,20 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             self::stoppedAgentCount => $this->stoppedAgentCount,
             self::preservedAgentTypes => $this->preservedAgentTypes,
             self::agentStartGateClosed => $this->agentStartGateClosed,
+            self::watchdogVerdict => $this->watchdogVerdict,
+            self::watchdogPendingNodeIds => $this->watchdogPendingNodeIds,
+            self::watchdogQuiesceTimeoutSeconds => $this->watchdogQuiesceTimeoutSeconds,
+            self::watchdogSilenceTimeoutSeconds => $this->watchdogSilenceTimeoutSeconds,
+            self::watchdogAlertIntervalSeconds => $this->watchdogAlertIntervalSeconds,
+            self::watchdogAlertEmails => $this->watchdogAlertEmails,
+            self::watchdogManualRestartIsNormal => $this->watchdogManualRestartIsNormal,
         ];
     }
 
     /**
-     * @return array<string, WireField> Non-personal classification of every frame field
+     * Recipients are undeclared so the viewer bridge hides the whole field, including null and empty lists.
+     *
+     * @return array<string, WireField> Diagnostic and settings origins of the fields open to viewers
      */
     public static function wireFields(): array
     {
@@ -125,16 +158,27 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             self::stoppedAgentCount => WireField::notPersonal(),
             self::preservedAgentTypes => WireField::notPersonal(),
             self::agentStartGateClosed => WireField::notPersonal(),
+            self::watchdogVerdict => WireField::notPersonal(),
+            self::watchdogPendingNodeIds => WireField::notPersonal(),
+            self::watchdogQuiesceTimeoutSeconds => WireField::notPersonal(),
+            self::watchdogSilenceTimeoutSeconds => WireField::notPersonal(),
+            self::watchdogAlertIntervalSeconds => WireField::notPersonal(),
+            self::watchdogManualRestartIsNormal => WireField::setting(ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL),
         ];
     }
 
     /**
      * @param array<string, mixed> $data Wire form of the section state
      * @return static Restored section state
-     * @throws InvalidFormatException When a required field is missing or has the wrong type
+     * @throws InvalidFormatException When a required field is missing, a field is mistyped or the watchdog verdict is unknown
      */
     public static function fromArray(array $data): static
     {
+        $watchdogVerdict = self::optionalString($data, self::watchdogVerdict);
+        if ($watchdogVerdict !== null && ProtectedModeStuckVerdict::tryFrom($watchdogVerdict) === null) {
+            throw new InvalidFormatException('Payload carries an unknown watchdog verdict');
+        }
+
         return new static(
             phase: self::requireString($data, self::phase),
             operation: self::optionalString($data, self::operation),
@@ -155,6 +199,16 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             stoppedAgentCount: self::optionalInt($data, self::stoppedAgentCount),
             preservedAgentTypes: self::optionalStringList($data, self::preservedAgentTypes),
             agentStartGateClosed: self::optionalBool($data, self::agentStartGateClosed),
+            watchdogVerdict: $watchdogVerdict,
+            watchdogPendingNodeIds: array_key_exists(self::watchdogPendingNodeIds, $data)
+                ? self::optionalStringList($data, self::watchdogPendingNodeIds)
+                    ?? throw new InvalidFormatException('Payload carries no list of strings under key ' . self::watchdogPendingNodeIds)
+                : [],
+            watchdogQuiesceTimeoutSeconds: self::optionalInt($data, self::watchdogQuiesceTimeoutSeconds),
+            watchdogSilenceTimeoutSeconds: self::optionalInt($data, self::watchdogSilenceTimeoutSeconds),
+            watchdogAlertIntervalSeconds: self::optionalInt($data, self::watchdogAlertIntervalSeconds),
+            watchdogAlertEmails: self::optionalStringList($data, self::watchdogAlertEmails),
+            watchdogManualRestartIsNormal: self::optionalBool($data, self::watchdogManualRestartIsNormal),
         );
     }
 
@@ -187,6 +241,13 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             stoppedAgentCount: $this->stoppedAgentCount,
             preservedAgentTypes: $this->preservedAgentTypes,
             agentStartGateClosed: $this->agentStartGateClosed,
+            watchdogVerdict: $this->watchdogVerdict,
+            watchdogPendingNodeIds: $this->watchdogPendingNodeIds,
+            watchdogQuiesceTimeoutSeconds: $this->watchdogQuiesceTimeoutSeconds,
+            watchdogSilenceTimeoutSeconds: $this->watchdogSilenceTimeoutSeconds,
+            watchdogAlertIntervalSeconds: $this->watchdogAlertIntervalSeconds,
+            watchdogAlertEmails: $this->watchdogAlertEmails,
+            watchdogManualRestartIsNormal: $this->watchdogManualRestartIsNormal,
         );
     }
 }

@@ -42,6 +42,13 @@ use Hilos\HilosException;
  * @property-read ?int $stoppedAgentCount Agents this node is holding stopped; null until published
  * @property-read ?list<string> $preservedAgentTypes Agent types the full-stop policy leaves running; null until published
  * @property-read ?bool $agentStartGateClosed Whether agent start is actually closed; null until published
+ * @property-read ?string $watchdogVerdict Current watchdog cause; null while clear or unpublished
+ * @property-read list<string> $watchdogPendingNodeIds Pending nodes for the current overdue quiesce round; empty otherwise
+ * @property-read ?int $watchdogQuiesceTimeoutSeconds Effective quiesce threshold in seconds; null until published
+ * @property-read ?int $watchdogSilenceTimeoutSeconds Effective silence threshold in seconds; null until published
+ * @property-read ?int $watchdogAlertIntervalSeconds Effective reminder interval in seconds; null until published
+ * @property-read ?list<string> $watchdogAlertEmails Effective mail recipients; null until published, empty when configured so
+ * @property-read ?bool $watchdogManualRestartIsNormal Last worker-reported manual restart policy; null before a report
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
  */
 final class ProtectedModeRuntime extends RtItem
@@ -84,6 +91,13 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::stoppedAgentCount => $this->_state->stoppedAgentCount,
             StateProtectedModeRuntime::preservedAgentTypes => $this->_state->preservedAgentTypes,
             StateProtectedModeRuntime::agentStartGateClosed => $this->_state->agentStartGateClosed,
+            StateProtectedModeRuntime::watchdogVerdict => $this->_state->watchdogVerdict,
+            StateProtectedModeRuntime::watchdogPendingNodeIds => $this->_state->watchdogPendingNodeIds,
+            StateProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => $this->_state->watchdogQuiesceTimeoutSeconds,
+            StateProtectedModeRuntime::watchdogSilenceTimeoutSeconds => $this->_state->watchdogSilenceTimeoutSeconds,
+            StateProtectedModeRuntime::watchdogAlertIntervalSeconds => $this->_state->watchdogAlertIntervalSeconds,
+            StateProtectedModeRuntime::watchdogAlertEmails => $this->_state->watchdogAlertEmails,
+            StateProtectedModeRuntime::watchdogManualRestartIsNormal => $this->_state->watchdogManualRestartIsNormal,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

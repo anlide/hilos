@@ -3,6 +3,7 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
+  HIDDEN_VALUE,
   MAINTENANCE_STATE_SIGNAL,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -22,6 +23,7 @@ import {
   HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
   HILOS_MAINTENANCE_RESTORE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
+  HILOS_MAINTENANCE_WATCHDOG_COPY,
   hilosMaintenanceOtherBrowserLine,
 } from '@hilos/core/admin/maintenance'
 import type {
@@ -231,6 +233,13 @@ function maintenanceState(
     stoppedAgentCount: null,
     preservedAgentTypes: null,
     agentStartGateClosed: null,
+    watchdogVerdict: null,
+    watchdogPendingNodeIds: [],
+    watchdogQuiesceTimeoutSeconds: null,
+    watchdogSilenceTimeoutSeconds: null,
+    watchdogAlertIntervalSeconds: null,
+    watchdogAlertEmails: null,
+    watchdogManualRestartIsNormal: null,
     ...overrides,
   }
 }
@@ -1376,6 +1385,53 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     expect(passButton('cancel').disabled).toBe(false)
   })
 
+  it('keeps watchdog details readable for a viewer and draws hidden thresholds through HiddenMark', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { actions, dispatched } = makeActions()
+    const { context, pushState } = seededContext(actions)
+    const wrapper = await mountPage(context)
+    pushState(
+      restoreFrame({
+        watchdogVerdict: 'silent',
+        watchdogAlertEmails: HIDDEN_VALUE,
+        watchdogManualRestartIsNormal: HIDDEN_VALUE,
+      }),
+    )
+    await nextTick()
+    const card = wrapper.get(
+      '[data-id="hilos-maintenance-watchdog-thresholds"]',
+    )
+    expect(card.findAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    expect(card.findAll('dd').map((row) => row.text())).toEqual([
+      '—',
+      '—',
+      '—',
+      'Hidden',
+      'Hidden',
+    ])
+    expect(card.text()).not.toContain('No recipients configured')
+    const opener = wrapper.get<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-watchdog-details"]',
+    )
+    expect(opener.element.disabled).toBe(false)
+    opener.element.focus()
+    await opener.trigger('click')
+    await settled()
+    expect(
+      document.querySelector('[data-id="hilos-maintenance-watchdog-full"]')
+        ?.textContent,
+    ).toContain('No movement behind the freeze')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-maintenance-watchdog-close"]',
+      )!
+      .click()
+    await settled()
+    expect(document.activeElement).toBe(opener.element)
+    expect(dispatched).toEqual([])
+  })
+
   it('shows restore facts to a viewer and blocks the ladder and its confirm', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
@@ -2205,6 +2261,264 @@ describe('Maintenance Overview head', () => {
     expect(tableTraffic).toEqual([])
     wrapper.unmount()
     mounted.splice(mounted.indexOf(wrapper), 1)
+    expect(tableTraffic).toEqual([])
+  })
+})
+
+describe('HilosMaintenancePage watchdog', () => {
+  it('reserves the alarm slot before a frame without inventing threshold values', async () => {
+    const { context, tableTraffic } = seededContext()
+    const wrapper = await mountPage(context)
+    const slot = wrapper.get('[data-id="hilos-maintenance-watchdog-slot"]')
+    expect(slot.attributes('role')).toBe('status')
+    expect(slot.attributes('aria-live')).toBe('polite')
+    expect(slot.findAll('button')).toHaveLength(0)
+    expect(slot.get('[aria-hidden="true"][inert]').classes()).toContain(
+      'invisible',
+    )
+    expect(
+      wrapper
+        .find('[data-id="hilos-maintenance-watchdog-thresholds"]')
+        .exists(),
+    ).toBe(false)
+    expect(wrapper.text()).not.toContain('No recipients configured')
+    expect(tableTraffic).toEqual([])
+  })
+
+  it.each([
+    ['open', 'hilos-maintenance-enable'],
+    ['manual', 'hilos-maintenance-disable'],
+    ['operation', 'hilos-maintenance-restore-close'],
+  ] as const)(
+    'places alert, state, operator actions and read-only thresholds in order when %s',
+    async (position, actionId) => {
+      const { context, pushState } = seededContext()
+      const wrapper = await mountPage(context)
+      const state =
+        position === 'operation'
+          ? restoreFrame()
+          : maintenanceState(
+              position === 'manual'
+                ? {
+                    phase: 'verifying',
+                    manual: true,
+                    operation: 'manual_maintenance',
+                  }
+                : {},
+            )
+      pushState({
+        ...state,
+        watchdogQuiesceTimeoutSeconds: 61,
+        watchdogSilenceTimeoutSeconds: 901,
+        watchdogAlertIntervalSeconds: 1801,
+        watchdogAlertEmails: ['ops@example.com', 'alerts@example.com'],
+        watchdogManualRestartIsNormal: true,
+      })
+      await nextTick()
+      const slot = wrapper.get(
+        '[data-id="hilos-maintenance-watchdog-slot"]',
+      ).element
+      const stateRoot = wrapper.get(
+        '[data-id="hilos-maintenance-state"]',
+      ).element
+      const action = wrapper.get(`[data-id="${actionId}"]`).element
+      const thresholds = wrapper.get(
+        '[data-id="hilos-maintenance-watchdog-thresholds"]',
+      )
+      for (const [before, after] of [
+        [slot, stateRoot],
+        [stateRoot, action],
+        [action, thresholds.element],
+      ]) {
+        expect(
+          before!.compareDocumentPosition(after!) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).not.toBe(0)
+      }
+      expect(stateRoot.contains(slot)).toBe(false)
+      expect(stateRoot.contains(thresholds.element)).toBe(false)
+      expect(thresholds.get('h2').text()).toBe('Watchdog thresholds')
+      expect(
+        thresholds
+          .get('dl')
+          .findAll('dt')
+          .map((row) => row.text()),
+      ).toEqual([
+        'Wait for nodes to quiesce',
+        'Consider silent after',
+        'Repeat alert',
+        'Send mail to',
+        'Restart under manual maintenance',
+      ])
+      expect(
+        thresholds
+          .get('dl')
+          .findAll('dd')
+          .map((row) => row.text()),
+      ).toEqual([
+        '61 seconds',
+        '901 seconds',
+        '1801 seconds',
+        'ops@example.com, alerts@example.com',
+        'No mail — a log entry',
+      ])
+      expect(thresholds.get('.card-footer').text()).toBe(
+        'Thresholds and addresses come from the environment. Restart under manual maintenance is a setting changed in Settings.',
+      )
+      expect(
+        thresholds.findAll('input, select, textarea, button, a'),
+      ).toHaveLength(0)
+      expect(slot.querySelectorAll('button')).toHaveLength(0)
+    },
+  )
+
+  it('keeps unknown, empty and real configuration distinct and redraws a live restart policy', async () => {
+    const { context, pushState } = seededContext()
+    const wrapper = await mountPage(context)
+    pushState(maintenanceState())
+    await nextTick()
+    const card = wrapper.get(
+      '[data-id="hilos-maintenance-watchdog-thresholds"]',
+    )
+    expect(card.findAll('dd').map((row) => row.text())).toEqual([
+      '—',
+      '—',
+      '—',
+      '—',
+      '—',
+    ])
+    pushState(
+      maintenanceState({
+        watchdogAlertEmails: [],
+        watchdogManualRestartIsNormal: false,
+      }),
+    )
+    await nextTick()
+    expect(card.findAll('dd').map((row) => row.text())).toEqual([
+      '—',
+      '—',
+      '—',
+      'No recipients configured',
+      'Send an alert',
+    ])
+    pushState(
+      maintenanceState({
+        watchdogQuiesceTimeoutSeconds: 60,
+        watchdogSilenceTimeoutSeconds: 900,
+        watchdogAlertIntervalSeconds: 1800,
+        watchdogAlertEmails: ['ops@example.com'],
+        watchdogManualRestartIsNormal: true,
+      }),
+    )
+    await nextTick()
+    expect(card.findAll('dd').map((row) => row.text())).toEqual([
+      '60 seconds',
+      '900 seconds',
+      '1800 seconds',
+      'ops@example.com',
+      'No mail — a log entry',
+    ])
+    expect(card.text()).not.toContain('No recipients configured')
+  })
+
+  it('uses only the server verdict and keeps manual maintenance clear across elapsed time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-28T12:00:00.000Z'))
+    const { context, pushState } = seededContext()
+    const wrapper = await mountPage(context)
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        manual: true,
+        operation: 'manual_maintenance',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        watchdogSilenceTimeoutSeconds: 1,
+        watchdogManualRestartIsNormal: true,
+      }),
+    )
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-watchdog-alert"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-watchdog-idle"]').exists(),
+    ).toBe(true)
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        manual: true,
+        operation: 'manual_maintenance',
+        watchdogVerdict: 'restored-from-disk',
+        watchdogManualRestartIsNormal: false,
+      }),
+    )
+    await nextTick()
+    expect(
+      wrapper.get('[data-id="hilos-maintenance-watchdog-alert"]').text(),
+    ).toContain(HILOS_MAINTENANCE_WATCHDOG_COPY.manualRestartSummary)
+  })
+
+  it('updates diagnostic moments through the reader-zone bridge without another state frame or backend action', async () => {
+    const setZone = readerTimeZone()
+    const { actions, dispatched } = makeActions()
+    const { context, pushState, tableTraffic } = seededContext(actions)
+    const wrapper = await mountPage(context)
+    pushState(
+      restoreFrame({
+        watchdogVerdict: 'silent',
+        watchdogPendingNodeIds: ['node-3', 'node-4'],
+      }),
+    )
+    await nextTick()
+    const opener = wrapper.get<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-watchdog-details"]',
+    )
+    opener.element.focus()
+    await opener.trigger('click')
+    await settled()
+    const full = document.querySelector(
+      '[data-id="hilos-maintenance-watchdog-full"]',
+    )!
+    const moments = () =>
+      [...full.querySelectorAll('dd')].slice(4, 7).map((row) => row.textContent)
+    expect(moments()).toEqual([
+      'Sep 11, 2026, 3:14:02 AM',
+      'Sep 11, 2026, 3:14:09 AM',
+      'Sep 11, 2026, 3:21:44 AM',
+    ])
+    expect(full.textContent).toContain('node-3, node-4')
+    setZone('America/Los_Angeles')
+    await nextTick()
+    expect(moments()).toEqual([
+      'Sep 10, 2026, 8:14:02 PM',
+      'Sep 10, 2026, 8:14:09 PM',
+      'Sep 10, 2026, 8:21:44 PM',
+    ])
+    setZone('Europe/Kyiv')
+    await nextTick()
+    expect(moments()).toEqual([
+      'Sep 11, 2026, 6:14:02 AM',
+      'Sep 11, 2026, 6:14:09 AM',
+      'Sep 11, 2026, 6:21:44 AM',
+    ])
+    pushState(
+      restoreFrame({
+        watchdogVerdict: 'initiator-lost',
+        watchdogPendingNodeIds: [],
+      }),
+    )
+    await nextTick()
+    expect(full.textContent).toContain('The initiator is gone')
+    expect(full.textContent).not.toContain('No movement behind the freeze')
+    expect(full.textContent).not.toContain('node-3')
+    pushState(maintenanceState())
+    await settled()
+    expect(
+      document.querySelector('[data-id="hilos-maintenance-watchdog-full"]'),
+    ).toBeNull()
+    expect(document.body.textContent).not.toContain('The initiator is gone')
+    expect(dispatched).toEqual([])
     expect(tableTraffic).toEqual([])
   })
 })

@@ -3,6 +3,8 @@ import {
   DAEMON_NODE_PATH,
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
+  MAINTENANCE_PATH,
+  expectMaintenanceWatchdogThresholds,
   expectDaemonNodeTableName,
   expectPublicStatusAccessibility,
   expectPublicStatusPair,
@@ -69,6 +71,33 @@ const pausedExpect = statusExpect.configure({
 // Status's two pages and incident modal over the real socket. The framework's
 // broader shell/table audit stays with its existing representative demos.
 test.use({ colorScheme: 'light' })
+
+test('Maintenance Overview exposes one shared heading and five readable, read-only watchdog thresholds', async ({
+  page,
+}) => {
+  const frames = watchDeliveryFrames(page)
+  try {
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenanceWatchdogThresholds(expect, page, frames)
+    const slot = page.getByTestId('hilos-maintenance-watchdog-slot')
+    await expect(slot).toHaveRole('status')
+    await expect(slot).toHaveAttribute('aria-live', 'polite')
+    const idle = slot.getByTestId('hilos-maintenance-watchdog-idle')
+    await expect(idle).toHaveAttribute('aria-hidden', 'true')
+    await expect(idle.locator('button, a, input, [tabindex]')).toHaveCount(0)
+    await expect(
+      slot.getByTestId('hilos-maintenance-watchdog-details'),
+    ).toHaveCount(0)
+  } finally {
+    frames.stop()
+    await test.info().attach('maintenance-watchdog-accessibility-wire', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
+  }
+})
 
 test('Backups names its table from one heading and exposes both Maintenance links to the keyboard', async ({
   page,

@@ -12,6 +12,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
 use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -375,6 +376,97 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertFalse($view->agentStartGateClosed);
     }
 
+    public function testFreezeSaveExcludesExactlyTheSevenWatchdogPresentationKeys(): void
+    {
+        $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
+        $row[StateProtectedModeRuntime::diagnosticsNodeId] = 'node-a';
+        $row[StateProtectedModeRuntime::stoppedAgentCount] = 4;
+        $snapshot = $this->watchdogSnapshot();
+
+        new ProtectedModeFreezeStore()->save([...$row, ...$snapshot->toArray()]);
+
+        $json = file_get_contents($this->freezeFile());
+        $this->assertIsString($json);
+        $this->assertSame(['version' => 2, 'row' => array_diff_key($row, $snapshot->toArray())], json_decode($json, true));
+        foreach (array_keys($snapshot->toArray()) as $key) {
+            $this->assertStringNotContainsString($key, $json);
+        }
+        $this->assertStringNotContainsString('ops@example.test', $json);
+        $this->assertStringNotContainsString('quiesce-overdue', $json);
+        $this->assertStringNotContainsString('node-pending', $json);
+    }
+
+    public function testVersionTwoWithoutWatchdogKeysLoadsWithUnpublishedDefaults(): void
+    {
+        $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
+        unset(
+            $row[StateProtectedModeRuntime::watchdogVerdict],
+            $row[StateProtectedModeRuntime::watchdogPendingNodeIds],
+            $row[StateProtectedModeRuntime::watchdogQuiesceTimeoutSeconds],
+            $row[StateProtectedModeRuntime::watchdogSilenceTimeoutSeconds],
+            $row[StateProtectedModeRuntime::watchdogAlertIntervalSeconds],
+            $row[StateProtectedModeRuntime::watchdogAlertEmails],
+            $row[StateProtectedModeRuntime::watchdogManualRestartIsNormal],
+        );
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2, 'row' => $row]));
+
+        $loaded = new ProtectedModeFreezeStore()->load();
+
+        $this->assertNotNull($loaded);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $loaded->phase);
+        $this->assertNull($loaded->watchdogVerdict);
+        $this->assertSame([], $loaded->watchdogPendingNodeIds);
+        $this->assertNull($loaded->watchdogQuiesceTimeoutSeconds);
+        $this->assertNull($loaded->watchdogSilenceTimeoutSeconds);
+        $this->assertNull($loaded->watchdogAlertIntervalSeconds);
+        $this->assertNull($loaded->watchdogAlertEmails);
+        $this->assertNull($loaded->watchdogManualRestartIsNormal);
+    }
+
+    public function testRestoreDiscardsAllWatchdogFieldsEvenIfAnOlderDescriptorContainsThem(): void
+    {
+        $this->mountNode();
+        Hilos::$rt->hilosProtectedModeRuntime->actions->updateWatchdog($this->watchdogSnapshot());
+        file_put_contents($this->freezeFile(), (string)json_encode([
+            'version' => 2,
+            'row' => [...$this->restoredRow()->toArray(), ...$this->watchdogSnapshot()->toArray()],
+        ]));
+        $loaded = new ProtectedModeFreezeStore()->load();
+        $this->assertNotNull($loaded);
+        $this->assertSame('quiesce-overdue', $loaded->watchdogVerdict);
+
+        Hilos::$rt->hilosProtectedModeRuntime->actions->restoreFromDisk($loaded);
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogVerdict);
+        $this->assertSame([], Hilos::$rt->hilosProtectedModeRuntime->watchdogPendingNodeIds);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogQuiesceTimeoutSeconds);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogSilenceTimeoutSeconds);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogAlertIntervalSeconds);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogAlertEmails);
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogManualRestartIsNormal);
+    }
+
+    public function testWatchdogPublicationDoesNotRewriteTheFreezeFileAndConfigurationSurvivesLift(): void
+    {
+        $executor = $this->executorOnAMountedNode();
+        $executor->enterActivating($this->freeze(), 'accept-7');
+        $before = file_get_contents($this->freezeFile());
+
+        Hilos::$rt->hilosProtectedModeRuntime->actions->updateWatchdog($this->watchdogSnapshot());
+
+        $this->assertSame($before, file_get_contents($this->freezeFile()));
+        $executor->enterInactive();
+        $this->assertFileDoesNotExist($this->freezeFile());
+        $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogVerdict);
+        $this->assertSame([], Hilos::$rt->hilosProtectedModeRuntime->watchdogPendingNodeIds);
+        $this->assertSame(31, Hilos::$rt->hilosProtectedModeRuntime->watchdogQuiesceTimeoutSeconds);
+        $this->assertSame(601, Hilos::$rt->hilosProtectedModeRuntime->watchdogSilenceTimeoutSeconds);
+        $this->assertSame(901, Hilos::$rt->hilosProtectedModeRuntime->watchdogAlertIntervalSeconds);
+        $this->assertSame(['ops@example.test'], Hilos::$rt->hilosProtectedModeRuntime->watchdogAlertEmails);
+        $this->assertFalse(Hilos::$rt->hilosProtectedModeRuntime->watchdogManualRestartIsNormal);
+    }
+
     public function testAForeignPreservedTypeListIsRefusedBeforeItIsPublished(): void
     {
         $this->mountNode();
@@ -428,6 +520,12 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $worker->phase);
         $this->assertSame(self::INITIATOR_TYPE, $worker->initiatorAgentType);
         $this->assertSame(self::INITIATOR_SESSION_HASH, $worker->initiatorSessionTokenHash);
+    }
+
+    /** @return ProtectedModeWatchdogSnapshot Current process's effective configuration and alarm */
+    private function watchdogSnapshot(): ProtectedModeWatchdogSnapshot
+    {
+        return new ProtectedModeWatchdogSnapshot('quiesce-overdue', ['node-pending'], 31, 601, 901, ['ops@example.test'], false);
     }
 
     /**

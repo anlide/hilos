@@ -1028,7 +1028,7 @@ abstract class DaemonManager extends BaseManager implements
                 // Notice a freeze that has stopped moving and tell a person about it. Under
                 // the leader gate for the same reason cron is: one stuck freeze must not
                 // produce one alert per node. It never lifts anything (HIL-482).
-                $this->protectedModeWatchdog->tick(time());
+                $this->tickProtectedModeWatchdog(time());
             }
 
             // Every master may accept browsers; a slave never opens its WebSocket.
@@ -1124,6 +1124,35 @@ abstract class DaemonManager extends BaseManager implements
             $this->departure = DaemonDeparture::Failed;
             $this->shouldExit = true;
         }
+    }
+
+    /**
+     * Publishes one current watchdog snapshot, only when any of its seven values changed.
+     * Called under the singleton-duties leader gate; null means this process has no runtime state.
+     *
+     * @param int $now Epoch seconds to judge against
+     * @throws HilosException When the watchdog text policy or the runtime write fails
+     */
+    private function tickProtectedModeWatchdog(int $now): void
+    {
+        $snapshot = $this->protectedModeWatchdog->tick($now);
+        if ($snapshot === null || Hilos::$rt?->hilosProtectedModeRuntime === null) {
+            return;
+        }
+
+        if (
+            Hilos::$rt->hilosProtectedModeRuntime->watchdogVerdict === $snapshot->watchdogVerdict
+            && Hilos::$rt->hilosProtectedModeRuntime->watchdogPendingNodeIds === $snapshot->watchdogPendingNodeIds
+            && Hilos::$rt->hilosProtectedModeRuntime->watchdogQuiesceTimeoutSeconds === $snapshot->watchdogQuiesceTimeoutSeconds
+            && Hilos::$rt->hilosProtectedModeRuntime->watchdogSilenceTimeoutSeconds === $snapshot->watchdogSilenceTimeoutSeconds
+            && Hilos::$rt->hilosProtectedModeRuntime->watchdogAlertIntervalSeconds === $snapshot->watchdogAlertIntervalSeconds
+            && Hilos::$rt->hilosProtectedModeRuntime->watchdogAlertEmails === $snapshot->watchdogAlertEmails
+            && Hilos::$rt->hilosProtectedModeRuntime->watchdogManualRestartIsNormal === $snapshot->watchdogManualRestartIsNormal
+        ) {
+            return;
+        }
+
+        Hilos::$rt->hilosProtectedModeRuntime->actions->updateWatchdog($snapshot);
     }
 
     /**

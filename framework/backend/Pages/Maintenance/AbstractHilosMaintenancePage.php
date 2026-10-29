@@ -266,6 +266,13 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             stoppedAgentCount: $row->stoppedAgentCount,
             preservedAgentTypes: $row->preservedAgentTypes,
             agentStartGateClosed: $row->agentStartGateClosed,
+            watchdogVerdict: $row->watchdogVerdict,
+            watchdogPendingNodeIds: $row->watchdogPendingNodeIds,
+            watchdogQuiesceTimeoutSeconds: $row->watchdogQuiesceTimeoutSeconds,
+            watchdogSilenceTimeoutSeconds: $row->watchdogSilenceTimeoutSeconds,
+            watchdogAlertIntervalSeconds: $row->watchdogAlertIntervalSeconds,
+            watchdogAlertEmails: $row->watchdogAlertEmails,
+            watchdogManualRestartIsNormal: $row->watchdogManualRestartIsNormal,
         );
     }
 

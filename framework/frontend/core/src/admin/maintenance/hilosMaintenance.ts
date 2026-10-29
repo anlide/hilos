@@ -26,13 +26,14 @@ import {
 import { z } from 'zod'
 import { elapsedSecondsSince } from '../backup/hilosBackups.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatMoment } from '../../format/moment.js'
 import { HilosPages, type HilosPageKey } from '../../routing/hilosPages.js'
 import {
   readBoolean,
   readHideableString,
   readString,
 } from '../../state/fieldReaders.js'
-import { type Hideable } from '../../state/hiddenValue.js'
+import { isHiddenValue, type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
@@ -215,6 +216,231 @@ export interface HilosMaintenanceCard {
 export type HilosMaintenanceRestoreLadder = 'initiator' | 'other' | null
 
 const ABSENT = '—'
+
+/** Words of the watchdog alarm, its details and the read-only thresholds. */
+export const HILOS_MAINTENANCE_WATCHDOG_COPY = {
+  details: 'Details',
+  close: 'Close',
+  alerts: {
+    'initiator-lost': {
+      title: 'The initiator is gone',
+      summary:
+        'The agent holding the freeze stopped. The system remains frozen and needs an operator.',
+    },
+    'restored-from-disk': {
+      title: 'The node started already frozen',
+      summary:
+        'The daemon restarted and restored the freeze from disk. The operation was interrupted by the restart.',
+    },
+    'quiesce-overdue': {
+      title: 'Nodes did not quiesce in time',
+      summary:
+        'Some nodes have not confirmed the freeze. The operation is waiting for them and has not started.',
+    },
+    silent: {
+      title: 'No movement behind the freeze',
+      summary:
+        'No progress has been reported. The operation may still be working or may have stopped.',
+    },
+  },
+  manualRestartSummary:
+    'The daemon restored manual maintenance from disk. Previous codes and admissions no longer work. Issue a new code with maintenance:pass, or turn maintenance off with maintenance:disable through the usual CLI.',
+  pendingNodes: 'Nodes awaiting quiescence',
+  preservedAgents: 'Agents left running',
+  none: 'None',
+  manual: 'Manual maintenance',
+  yes: 'Yes',
+  no: 'No',
+  thresholdsTitle: 'Watchdog thresholds',
+  quiesceTimeout: 'Wait for nodes to quiesce',
+  silenceTimeout: 'Consider silent after',
+  alertInterval: 'Repeat alert',
+  alertEmails: 'Send mail to',
+  manualRestartIsNormal: 'Restart under manual maintenance',
+  noRecipients: 'No recipients configured',
+  restartIsNormal: 'No mail — a log entry',
+  restartIsAlert: 'Send an alert',
+  second: 'second',
+  seconds: 'seconds',
+  thresholdsFooter:
+    'Thresholds and addresses come from the environment. Restart under manual maintenance is a setting changed in Settings.',
+} as const
+
+/** One text-only diagnostic or threshold line, in display order. */
+interface WatchdogLine<T = string> {
+  readonly label: string
+  readonly value: T
+}
+
+/** A current server alarm; null from the selector leaves the reserved row empty. */
+export interface HilosMaintenanceWatchdogAlert {
+  readonly verdict: NonNullable<HilosMaintenanceState['watchdogVerdict']>
+  readonly tone: 'danger' | 'warning'
+  readonly title: string
+  readonly summary: string
+  /** Complete diagnostic lines for the details dialog, without recipient addresses. */
+  readonly facts: readonly WatchdogLine[]
+}
+
+/** Five read-only threshold lines; hidden fields remain the shared hidden value. */
+export interface HilosMaintenanceWatchdogThresholds {
+  readonly title: string
+  readonly rows: readonly WatchdogLine<Hideable<string>>[]
+  readonly footer: string
+}
+
+/** Format a published moment in the reader's zone, leaving a missing one absent. */
+function watchdogMoment(moment: string | null): string {
+  return moment === null ? ABSENT : (formatMoment(moment) ?? ABSENT)
+}
+
+/**
+ * Project the server's current judgment without running a second judge or clock.
+ * Re-evaluate through the view's reader-zone bridge when its zone changes.
+ *
+ * @param state The newest section frame, or null before it arrives.
+ */
+export function hilosMaintenanceWatchdogAlert(
+  state: HilosMaintenanceState | null,
+): HilosMaintenanceWatchdogAlert | null {
+  if (state === null || state.watchdogVerdict === null) {
+    return null
+  }
+  const verdict = state.watchdogVerdict
+  const copy = HILOS_MAINTENANCE_WATCHDOG_COPY
+  const alert = copy.alerts[verdict]
+
+  return {
+    verdict,
+    tone:
+      verdict === 'initiator-lost' || verdict === 'restored-from-disk'
+        ? 'danger'
+        : 'warning',
+    title: alert.title,
+    summary:
+      verdict === 'restored-from-disk' && state.manual
+        ? copy.manualRestartSummary
+        : alert.summary,
+    facts: [
+      { label: HILOS_MAINTENANCE_STATE_COPY.phase, value: state.phase },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.operation,
+        value: state.operation ?? ABSENT,
+      },
+      { label: copy.manual, value: state.manual ? copy.yes : copy.no },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.initiator,
+        value: initiatorCaption(
+          state.initiatorAgentType,
+          state.initiatorNodeId,
+        ),
+      },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.started,
+        value: watchdogMoment(state.startedAt),
+      },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.frozen,
+        value: watchdogMoment(state.activatedAt),
+      },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.lastMovement,
+        value: watchdogMoment(state.progressAt),
+      },
+      {
+        label: copy.pendingNodes,
+        value: state.watchdogPendingNodeIds.join(', ') || ABSENT,
+      },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.diagnosticsNode,
+        value: state.diagnosticsNodeId ?? ABSENT,
+      },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.agentsStopped,
+        value:
+          state.stoppedAgentCount === null
+            ? ABSENT
+            : String(state.stoppedAgentCount),
+      },
+      {
+        label: copy.preservedAgents,
+        value:
+          state.preservedAgentTypes === null
+            ? ABSENT
+            : state.preservedAgentTypes.join(', ') || copy.none,
+      },
+      {
+        label: HILOS_MAINTENANCE_STATE_COPY.agentStart,
+        value: agentStartCaption(state.agentStartGateClosed),
+      },
+    ],
+  }
+}
+
+/** A duration in exact published seconds, with no local fallback or rounding. */
+function watchdogSeconds(seconds: number | null): string {
+  if (seconds === null) {
+    return ABSENT
+  }
+
+  return `${seconds} ${seconds === 1 ? HILOS_MAINTENANCE_WATCHDOG_COPY.second : HILOS_MAINTENANCE_WATCHDOG_COPY.seconds}`
+}
+
+/**
+ * Project the effective configuration for open, manual and operation positions.
+ * Null is unpublished; an empty recipient list and a hidden field stay distinct.
+ *
+ * @param state The newest section frame, or null before it arrives.
+ */
+export function hilosMaintenanceWatchdogThresholds(
+  state: HilosMaintenanceState | null,
+): HilosMaintenanceWatchdogThresholds | null {
+  if (state === null) {
+    return null
+  }
+  const copy = HILOS_MAINTENANCE_WATCHDOG_COPY
+  const emails = state.watchdogAlertEmails
+  const restart = state.watchdogManualRestartIsNormal
+
+  return {
+    title: copy.thresholdsTitle,
+    rows: [
+      {
+        label: copy.quiesceTimeout,
+        value: watchdogSeconds(state.watchdogQuiesceTimeoutSeconds),
+      },
+      {
+        label: copy.silenceTimeout,
+        value: watchdogSeconds(state.watchdogSilenceTimeoutSeconds),
+      },
+      {
+        label: copy.alertInterval,
+        value: watchdogSeconds(state.watchdogAlertIntervalSeconds),
+      },
+      {
+        label: copy.alertEmails,
+        value: isHiddenValue(emails)
+          ? emails
+          : emails === null
+            ? ABSENT
+            : emails.length === 0
+              ? copy.noRecipients
+              : emails.join(', '),
+      },
+      {
+        label: copy.manualRestartIsNormal,
+        value: isHiddenValue(restart)
+          ? restart
+          : restart === null
+            ? ABSENT
+            : restart
+              ? copy.restartIsNormal
+              : copy.restartIsAlert,
+      },
+    ],
+    footer: copy.thresholdsFooter,
+  }
+}
 
 /**
  * Choose the restore ladder row from the server's verdict.

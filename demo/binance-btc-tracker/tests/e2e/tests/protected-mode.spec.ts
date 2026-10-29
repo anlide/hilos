@@ -17,6 +17,7 @@ import {
   expectMaintenanceOpen,
   expectMaintenancePageHead,
   expectMaintenanceMoment,
+  expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
   issueMaintenanceCode,
   maintenanceCircleOnline,
@@ -215,69 +216,105 @@ test.describe('maintenance moments in the reader zone', () => {
 test('Maintenance Overview and Circle share one head through links, history, direct entry and reload', async ({
   page,
 }) => {
-  // No circle request can leave Overview: viewport, focus and rendered frames
-  // all name the existing table key. Arm before the first socket opens.
-  const circleRequests = countSentFrames(page, 'hilosVerifierCircle')
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
-  await expectMaintenanceOpen(expect, page)
-  await expect(page.getByTestId('hilos-maintenance-circle-table')).toHaveCount(
-    0,
-  )
-  expect(circleRequests()).toBe(0)
+  const frames = watchDeliveryFrames(page)
+  try {
+    // No circle request can leave Overview: viewport, focus and rendered frames
+    // all name the existing table key. Arm before the first socket opens.
+    const circleRequests = countSentFrames(page, 'hilosVerifierCircle')
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenanceOpen(expect, page)
+    const thresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      page,
+      frames,
+    )
+    await expect(
+      page.getByTestId('hilos-maintenance-circle-table'),
+    ).toHaveCount(0)
+    expect(circleRequests()).toBe(0)
 
-  const overview = page.getByTestId('hilos-page-tab-hilos_maintenance')
-  const circle = page.getByTestId('hilos-page-tab-hilos_maintenance_circle')
-  const document = await watchClientDocument(page)
-  await circle.focus()
-  await expect(circle).toBeFocused()
-  await circle.press('Enter')
-  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
-  await expectPageReady(expect, page)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
-  const table = page.getByTestId('hilos-maintenance-circle-table')
-  await expect(table).toBeVisible()
-  await shownByTestId(table, 'hilos-table-loading').waitFor({ state: 'hidden' })
-  await expect(
-    table.locator(
-      'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " card ")]',
-    ),
-  ).toHaveCount(0)
-  await expect(page.getByTestId('hilos-maintenance-state-open')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-maintenance-enable')).toHaveCount(0)
-  await document.unchanged()
-  await document.dispose()
+    const overview = page.getByTestId('hilos-page-tab-hilos_maintenance')
+    const circle = page.getByTestId('hilos-page-tab-hilos_maintenance_circle')
+    const document = await watchClientDocument(page)
+    await circle.focus()
+    await expect(circle).toBeFocused()
+    await circle.press('Enter')
+    await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+    await expectPageReady(expect, page)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    const table = page.getByTestId('hilos-maintenance-circle-table')
+    await expect(table).toBeVisible()
+    await shownByTestId(table, 'hilos-table-loading').waitFor({
+      state: 'hidden',
+    })
+    await expect(
+      table.locator(
+        'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " card ")]',
+      ),
+    ).toHaveCount(0)
+    await expect(page.getByTestId('hilos-maintenance-state-open')).toHaveCount(
+      0,
+    )
+    await expect(page.getByTestId('hilos-maintenance-enable')).toHaveCount(0)
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    ).toHaveCount(0)
+    await document.unchanged()
+    await document.dispose()
 
-  await page.reload()
-  await expectPageReady(expect, page)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
-  await expect(table).toBeVisible()
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expect(table).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    ).toHaveCount(0)
 
-  const reloadedDocument = await watchClientDocument(page)
-  await overview.click()
-  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expectPageReady(expect, page)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
-  await expectMaintenanceOpen(expect, page)
-  await expect(table).toHaveCount(0)
+    const reloadedDocument = await watchClientDocument(page)
+    await overview.click()
+    await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+    await expectPageReady(expect, page)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenanceOpen(expect, page)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, page, frames),
+    ).toEqual(thresholds)
+    await expect(table).toHaveCount(0)
 
-  await page.goBack()
-  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
-  await expectPageReady(expect, page)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
-  await expect(table).toBeVisible()
-  await page.goForward()
-  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expectPageReady(expect, page)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
-  await expect(table).toHaveCount(0)
-  await reloadedDocument.unchanged()
-  await reloadedDocument.dispose()
+    await page.goBack()
+    await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+    await expectPageReady(expect, page)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expect(table).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    ).toHaveCount(0)
+    await page.goForward()
+    await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+    await expectPageReady(expect, page)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, page, frames),
+    ).toEqual(thresholds)
+    await expect(table).toHaveCount(0)
+    await reloadedDocument.unchanged()
+    await reloadedDocument.dispose()
 
-  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
-  await expect(table).toBeVisible()
+    await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expect(table).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-thresholds'),
+    ).toHaveCount(0)
+  } finally {
+    frames.stop()
+    await test.info().attach('maintenance-watchdog-overview-wire', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
+  }
 })
 
 test('two administrators close the system by hand, one lets the other in with a code, and that one opens it', async ({
@@ -285,19 +322,38 @@ test('two administrators close the system by hand, one lets the other in with a 
   browser,
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
+  const frames = watchDeliveryFrames(page)
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
   await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+  const thresholds = await expectMaintenanceWatchdogThresholds(
+    expect,
+    page,
+    frames,
+  )
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
+  const otherFrames = watchDeliveryFrames(other)
   try {
     await grantAdminToSelf(expect, other)
     await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
 
     await turnOnMaintenance(page)
     await expectManualMaintenanceOn(expect, page)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, page, frames),
+    ).toEqual(thresholds)
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-idle'),
+    ).toHaveCount(1)
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-alert'),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId('hilos-maintenance-watchdog-details'),
+    ).toHaveCount(0)
     await expect(
       page.getByTestId('hilos-maintenance-circle-table'),
     ).toHaveCount(0)
@@ -309,6 +365,9 @@ test('two administrators close the system by hand, one lets the other in with a 
 
     await presentMaintenanceCode(other, code)
     await expectAdmittedToManualMaintenance(expect, other, 1)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, other, otherFrames),
+    ).toEqual(thresholds)
 
     await turnOffMaintenance(other)
 
@@ -316,8 +375,20 @@ test('two administrators close the system by hand, one lets the other in with a 
     for (const admin of [page, other]) {
       await expectMaintenanceOpen(expect, admin)
     }
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, page, frames),
+    ).toEqual(thresholds)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, other, otherFrames),
+    ).toEqual(thresholds)
     expect((await inspectProtectedMode()).phase).toBe('inactive')
   } finally {
+    frames.stop()
+    otherFrames.stop()
+    await test.info().attach('maintenance-watchdog-manual-wire', {
+      body: JSON.stringify({ frames, otherFrames }),
+      contentType: 'application/json',
+    })
     await otherContext.close()
   }
 })

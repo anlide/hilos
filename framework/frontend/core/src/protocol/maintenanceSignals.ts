@@ -1,11 +1,12 @@
 // Framework wire definitions shared by eager connections and lazy admin models.
 import { z } from 'zod'
+import { hideable } from '../state/hideableSchema.js'
 
 /** Server→client state frame sent before the Maintenance page response and on change. */
 export const MAINTENANCE_STATE_SIGNAL = 'subscription_page_hilos_maintenance'
 
 /**
- * The whole non-personal state frame (PHP `HilosMaintenanceStateSignalData`).
+ * The whole state frame (PHP `HilosMaintenanceStateSignalData`).
  * `startedAt`, `activatedAt` and `progressAt` are ISO-8601 UTC moments ending in Z,
  * or null when the row has no such moment. A frame from before those keys existed
  * still parses: the new fields default to null, and `isInitiator` to false.
@@ -34,6 +35,16 @@ export const maintenanceStateSchema = z.looseObject({
   stoppedAgentCount: z.number().int().nullable().default(null),
   preservedAgentTypes: z.array(z.string()).nullable().default(null),
   agentStartGateClosed: z.boolean().nullable().default(null),
+  watchdogVerdict: z
+    .enum(['initiator-lost', 'restored-from-disk', 'quiesce-overdue', 'silent'])
+    .nullable()
+    .default(null),
+  watchdogPendingNodeIds: z.array(z.string()).default([]),
+  watchdogQuiesceTimeoutSeconds: z.number().int().nullable().default(null),
+  watchdogSilenceTimeoutSeconds: z.number().int().nullable().default(null),
+  watchdogAlertIntervalSeconds: z.number().int().nullable().default(null),
+  watchdogAlertEmails: hideable(z.array(z.string()).nullable()).default(null),
+  watchdogManualRestartIsNormal: hideable(z.boolean().nullable()).default(null),
 })
 
 /** One state frame of the Maintenance section. */

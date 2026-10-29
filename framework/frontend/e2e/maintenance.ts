@@ -1,6 +1,8 @@
 import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
+import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
+import { liesAbove } from './geometry.js'
 import { shownByTestId } from './table.js'
 
 // Maintenance section steps shared by all three SDKs, whose data-id controls match,
@@ -463,4 +465,95 @@ export async function expectMaintenanceOpen(
 ): Promise<void> {
   await expect(page.getByTestId('hilos-maintenance-state-open')).toBeVisible()
   await expect(page.getByTestId('hilos-maintenance-disable')).toHaveCount(0)
+}
+
+/**
+ * Read-only threshold copy, verbatim from HILOS_MAINTENANCE_WATCHDOG_COPY in
+ * core/src/admin/maintenance/hilosMaintenance.ts. The e2e package builds against
+ * no framework source; these literals stay beside the check that reads them.
+ */
+const WATCHDOG_THRESHOLD_LABELS = [
+  'Wait for nodes to quiesce',
+  'Consider silent after',
+  'Repeat alert',
+  'Send mail to',
+  'Restart under manual maintenance',
+]
+const WATCHDOG_THRESHOLDS_FOOTER =
+  'Thresholds and addresses come from the environment. Restart under manual maintenance is a setting changed in Settings.'
+
+/**
+ * An administrator's Overview thresholds, compared with the real published frame.
+ * Waits out unpublished startup values; never supplies mock configuration.
+ * Requires a delivery log armed before the page's socket opened. The returned
+ * values can also prove that navigation or a maintenance window kept the config.
+ *
+ * @param expect The spec's expect.
+ * @param page An administrator's page on an SDK building the Overview thresholds.
+ * @param log The page's real incoming deliveries, including live updates.
+ * @returns The five displayed values in label order.
+ */
+export async function expectMaintenanceWatchdogThresholds(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+): Promise<string[]> {
+  const latest = () =>
+    log.packets
+      .flatMap((packet) => packet.frames)
+      .filter(
+        ({ wire }) =>
+          deliveryObject(wire).type === 'subscription_page_hilos_maintenance',
+      )
+      .at(-1)
+  await expect
+    .poll(() => deliveryObject(latest()?.wire).data)
+    .toMatchObject({
+      watchdogQuiesceTimeoutSeconds: expect.any(Number),
+      watchdogSilenceTimeoutSeconds: expect.any(Number),
+      watchdogAlertIntervalSeconds: expect.any(Number),
+      watchdogAlertEmails: expect.any(Array),
+      watchdogManualRestartIsNormal: expect.any(Boolean),
+    })
+  const frame = latest()!
+  expect(frame.failure).toBeUndefined()
+  expect(frame.raw).toEqual(expect.any(String))
+  const state = deliveryObject(deliveryObject(frame.wire).data)
+  const seconds = [
+    state.watchdogQuiesceTimeoutSeconds,
+    state.watchdogSilenceTimeoutSeconds,
+    state.watchdogAlertIntervalSeconds,
+  ]
+  for (const value of seconds) expect(Number.isInteger(value)).toBe(true)
+  const recipients = state.watchdogAlertEmails as unknown[]
+  for (const recipient of recipients) {
+    expect(recipient).toEqual(expect.any(String))
+  }
+  // Value words are also copied from HILOS_MAINTENANCE_WATCHDOG_COPY above.
+  const values = [
+    ...seconds.map((value) => `${value} ${value === 1 ? 'second' : 'seconds'}`),
+    recipients.length === 0
+      ? 'No recipients configured'
+      : recipients.join(', '),
+    state.watchdogManualRestartIsNormal
+      ? 'No mail — a log entry'
+      : 'Send an alert',
+  ]
+  const thresholds = page.getByTestId('hilos-maintenance-watchdog-thresholds')
+  await expect(thresholds).toBeVisible()
+  const heading = thresholds.getByRole('heading', { level: 2 })
+  await expect(heading).toHaveText('Watchdog thresholds')
+  await expect(heading).toHaveAccessibleName('Watchdog thresholds')
+  await expect(thresholds.getByRole('term')).toHaveText(
+    WATCHDOG_THRESHOLD_LABELS,
+  )
+  await expect(thresholds.getByRole('definition')).toHaveText(values)
+  await expect(thresholds.locator('.card-footer')).toHaveText(
+    WATCHDOG_THRESHOLDS_FOOTER,
+  )
+  await expect(
+    thresholds.locator('input, select, textarea, button, a, [contenteditable]'),
+  ).toHaveCount(0)
+  await liesAbove(page.getByTestId('hilos-maintenance-state'), thresholds)
+  return values
 }

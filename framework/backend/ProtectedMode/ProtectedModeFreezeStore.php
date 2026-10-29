@@ -80,6 +80,15 @@ final class ProtectedModeFreezeStore
      */
     public function save(array $row): void
     {
+        unset(
+            $row[ProtectedModeRuntime::watchdogVerdict],
+            $row[ProtectedModeRuntime::watchdogPendingNodeIds],
+            $row[ProtectedModeRuntime::watchdogQuiesceTimeoutSeconds],
+            $row[ProtectedModeRuntime::watchdogSilenceTimeoutSeconds],
+            $row[ProtectedModeRuntime::watchdogAlertIntervalSeconds],
+            $row[ProtectedModeRuntime::watchdogAlertEmails],
+            $row[ProtectedModeRuntime::watchdogManualRestartIsNormal],
+        );
         $path = self::path();
         $payload = json_encode([
             self::KEY_VERSION => self::FORMAT_VERSION,

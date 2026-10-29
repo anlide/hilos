@@ -356,6 +356,13 @@ function maintenanceState(
     stoppedAgentCount: null,
     preservedAgentTypes: null,
     agentStartGateClosed: null,
+    watchdogVerdict: null,
+    watchdogPendingNodeIds: [],
+    watchdogQuiesceTimeoutSeconds: null,
+    watchdogSilenceTimeoutSeconds: null,
+    watchdogAlertIntervalSeconds: null,
+    watchdogAlertEmails: null,
+    watchdogManualRestartIsNormal: null,
     ...overrides,
   }
 }
