@@ -90,6 +90,15 @@ onUnmounted(() => {
     head-kind="entity"
     tabs-label="Kind pages"
   >
+    <template v-if="row" #head-visual>
+      <span
+        class="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
+        aria-hidden="true"
+        data-id="hilos-moderation-kind-visual"
+      >
+        <i class="bi bi-shield-check"></i>
+      </span>
+    </template>
     <template v-if="row" #head-badges>
       <span
         class="badge border"

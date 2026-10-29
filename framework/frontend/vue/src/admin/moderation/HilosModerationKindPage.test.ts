@@ -188,6 +188,11 @@ describe('HilosModerationKindPage', () => {
     ])
     expect(crumbs.get('li:last-child').text()).toBe('Profile name')
     expect(crumbs.get('li:last-child').find('a').exists()).toBe(false)
+    expect(
+      view
+        .get('[data-id="hilos-moderation-kind-visual"]')
+        .attributes('aria-hidden'),
+    ).toBe('true')
     expect(view.get('[data-id="hilos-moderation-kind-owner"]').text()).toBe(
       'Framework',
     )

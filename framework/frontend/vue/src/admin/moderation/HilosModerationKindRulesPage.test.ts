@@ -280,6 +280,11 @@ describe('HilosModerationKindRulesPage', () => {
     expect(tabs.get('ul').classes()).toContain('flex-nowrap')
     expect(tabs.get('ul').classes()).toContain('overflow-x-auto')
     expect(view.find('[role="tablist"]').exists()).toBe(false)
+    expect(
+      view
+        .get('[data-id="hilos-moderation-kind-visual"]')
+        .attributes('aria-hidden'),
+    ).toBe('true')
     expect(view.get('[data-id="hilos-moderation-kind-owner"]').text()).toBe(
       'Framework',
     )
