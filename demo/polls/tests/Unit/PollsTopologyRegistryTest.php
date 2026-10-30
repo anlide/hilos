@@ -283,6 +283,7 @@ use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
+use Hilos\Files\Upload\DTO\UploadHoldSettleSignalData;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Core\Agent\TopologyAgentFactory;
@@ -559,6 +560,7 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
             HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
             HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+            HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE => UploadHoldSettleSignalData::class,
             HilosSignalConstants::HILOS_IMAGE_RENDER => ImageRenderSignalData::class,
         ] as $signal => $dtoClass) {
             self::assertSame($dtoClass, Hilos::getAgentSignalDtoRoutes()[$signal]);
@@ -992,6 +994,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
                 HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
                 HilosSignalConstants::HILOS_UPLOAD_PUBLISH => HilosAgentType::HILOS_UPLOADS,
+                HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE => HilosAgentType::HILOS_UPLOADS,
                 HilosSignalConstants::HILOS_IMAGE_RENDER => HilosAgentType::HILOS_IMAGES,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::POLLS,

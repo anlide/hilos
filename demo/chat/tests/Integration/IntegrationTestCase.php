@@ -155,7 +155,6 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::userRenames, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::eventAttachments, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::bots, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::moderatorPromptPieces, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Framework tables these cases write through their real writers - a login, a code, a
         // notification, a merge - and not through the library that owns them. The guard asks on every
         // table since HIL-716, while a test process runs the writers under this harness id

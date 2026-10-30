@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Item;
 
+use Hilos\Files\Upload\UploadSnapshotCollection;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
@@ -24,6 +25,10 @@ use Hilos\Runtime\View\Actions\Item\HilosModerationCheckActions;
  * @property-read int $startedAt Opening moment in epoch milliseconds
  * @property-read int $deadlineAt Moment the wait ends, in epoch milliseconds
  * @property-read ?string $sessionTokenHash Session name-change correlation, or null for a connection-bound check
+ * @property-read list<string> $clientUploadIds Ordered upload ids for a text-with-files check
+ * @property-read bool $imageCopy Whether to check a CONTAIN JPEG copy of the image
+ * @property-read ?string $uploadHoldId First stage request id holding the admitted bytes
+ * @property-read UploadSnapshotCollection $uploadSnapshots Immutable admitted attachment identities
  * @property-read HilosModerationCheckActions $actions
  */
 final class HilosModerationCheck extends RtItem
@@ -36,12 +41,12 @@ final class HilosModerationCheck extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|int|null|HilosModerationCheckActions Property value
+     * @return string|int|list<string>|bool|null|HilosModerationCheckActions|UploadSnapshotCollection Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws RtItemActionsClassException When item actions are unavailable
      * @throws HilosException Whatever an inherited getter raises
      */
-    public function __get(string $name): string|int|null|HilosModerationCheckActions
+    public function __get(string $name): string|int|array|bool|null|HilosModerationCheckActions|UploadSnapshotCollection
     {
         return match ($name) {
             StateHilosModerationCheck::acceptKey => $this->_state->acceptKey,
@@ -54,6 +59,10 @@ final class HilosModerationCheck extends RtItem
             StateHilosModerationCheck::startedAt => $this->_state->startedAt,
             StateHilosModerationCheck::deadlineAt => $this->_state->deadlineAt,
             StateHilosModerationCheck::sessionTokenHash => $this->_state->sessionTokenHash,
+            StateHilosModerationCheck::clientUploadIds => $this->_state->clientUploadIds,
+            StateHilosModerationCheck::imageCopy => $this->_state->imageCopy,
+            StateHilosModerationCheck::uploadHoldId => $this->_state->uploadHoldId,
+            StateHilosModerationCheck::uploadSnapshots => $this->_state->uploadSnapshots,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

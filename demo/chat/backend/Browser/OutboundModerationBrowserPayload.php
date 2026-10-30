@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Browser;
 
-use Demo\Chat\Agents\DTO\ModerationDecision;
+use Demo\Chat\Moderation\ChatModerationRefusal;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection;
@@ -37,20 +37,20 @@ final class OutboundModerationBrowserPayload
             $connection->outboundModerationPhase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED
             && $connection->outboundModerationPicture !== null
         ) {
-            $reason = ModerationDecision::publicPictureReason(
+            $reason = ChatModerationRefusal::publicPictureReason(
                 $reason,
                 ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
                 ...self::pictureOf($connection),
             );
         } elseif ($connection->outboundModerationPhase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED) {
-            $reason = ModerationDecision::publicMessageReason(
+            $reason = ChatModerationRefusal::publicMessageReason(
                 $reason,
                 ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
             );
         } elseif ($connection->outboundModerationPhase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE) {
             // Keep the already-readable file registry refusal if present, otherwise format unavailable message.
             if ($reason === null || in_array($reason, ['', 'service_unavailable', 'unknown'], true)) {
-                $reason = ModerationDecision::publicMessageReason(
+                $reason = ChatModerationRefusal::publicMessageReason(
                     $reason,
                     ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                 );

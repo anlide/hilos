@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Runtime;
 
+use Error;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidStateException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\ModerationFeature;
@@ -18,10 +18,13 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Files\Upload\DTO\UploadSnapshotData;
+use Hilos\Files\Upload\UploadSnapshotCollection;
 use Hilos\Hilos;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
@@ -30,7 +33,9 @@ use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Hilos\Runtime\View\Context\RtContext;
@@ -135,6 +140,8 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertSame(self::TEXT, $restored->text);
         $this->assertNull($restored->clientUploadId);
         $this->assertNull($restored->sessionTokenHash);
+        $this->assertSame([], $restored->clientUploadIds);
+        $this->assertFalse($restored->imageCopy);
         $this->assertArrayHasKey(HilosModerationCheck::sessionTokenHash, $restored->toArray());
     }
 
@@ -158,6 +165,170 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertSame(self::UPLOAD, $restored->clientUploadId);
     }
 
+    /**
+     * @param string $kind Kind the check is opened for
+     * @param ?string $text Text handed over
+     * @param ?string $clientUploadId Image upload handed over
+     * @param list<string> $clientUploadIds Ordered attachment uploads handed over
+     * @param bool $imageCopy Whether to check an image copy
+     */
+    #[DataProvider('acceptedInputs')]
+    public function testAcceptedInputsSurviveTheViewSyncAndSnapshot(
+        string $kind,
+        ?string $text,
+        ?string $clientUploadId,
+        array $clientUploadIds,
+        bool $imageCopy,
+    ): void {
+        ExecutionContext::setCurrentAgentId(
+            $kind === ModerationCheckTestDirectory::B_PHOTO ? self::INITIATOR_B : self::INITIATOR_A,
+        );
+        // All arguments are positional to keep both the old prefix and the appended fields covered.
+        $check = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, $kind, $text, $clientUploadId, null, null, null, $clientUploadIds, $imageCopy,
+        );
+        $row = $check->toArray();
+        $id = $check->getId();
+
+        self::assertSame($text, $check->text);
+        self::assertSame($clientUploadId, $check->clientUploadId);
+        self::assertSame($clientUploadIds, $check->clientUploadIds);
+        self::assertSame($imageCopy, $check->imageCopy);
+        self::assertNull($check->uploadHoldId);
+        self::assertCount(0, $check->uploadSnapshots);
+        self::assertSame([], $row[HilosModerationCheck::uploadSnapshots]);
+        self::assertSame($clientUploadIds, $row[HilosModerationCheck::clientUploadIds]);
+        self::assertSame($imageCopy, $row[HilosModerationCheck::imageCopy]);
+        self::assertSame($row, HilosModerationCheck::fromRow($row)->toArray());
+
+        $check->actions->forget();
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, $kind));
+        $created = new RtSyncCreatedSignalData(HilosModerationCheck::RT_COLLECTION, $id, $row);
+        RtSyncApplicator::applyCreated(RtSyncCreatedSignalData::fromArray($created->toArray()), false);
+
+        self::assertSame($clientUploadIds, Hilos::$rt->hilosModerationChecks[$id]->clientUploadIds);
+        self::assertSame($imageCopy, Hilos::$rt->hilosModerationChecks[$id]->imageCopy);
+        self::assertSame($row, Hilos::$rt->hilosModerationChecks[$id]->toArray());
+        self::assertSame([$id => $row], RtSnapshot::rows(HilosModerationCheck::RT_COLLECTION));
+
+        RtSnapshot::replace(HilosModerationCheck::RT_COLLECTION, [$id => $row]);
+        self::assertSame($clientUploadIds, Hilos::$rt->hilosModerationChecks[$id]->clientUploadIds);
+        self::assertSame($imageCopy, Hilos::$rt->hilosModerationChecks[$id]->imageCopy);
+        self::assertSame($row, Hilos::$rt->hilosModerationChecks[$id]->toArray());
+    }
+
+    /** @return iterable<string, array{string, ?string, ?string, list<string>, bool}> Valid input combinations */
+    public static function acceptedInputs(): iterable
+    {
+        yield 'text' => [ModerationCheckTestDirectory::A_NOTE, self::TEXT, null, [], false];
+        yield 'empty text' => [ModerationCheckTestDirectory::A_NOTE, '', null, [], false];
+        yield 'text with no files' => [ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT, null, [], false];
+        yield 'text with ordered files' => [
+            ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT, null, ['upload-2', self::UPLOAD, '0', '01', '1'], false,
+        ];
+        yield 'empty text with no files' => [ModerationCheckTestDirectory::A_ATTACHMENTS, '', null, [], false];
+        yield 'empty text with files' => [ModerationCheckTestDirectory::A_ATTACHMENTS, '', null, [self::UPLOAD], false];
+        yield 'original image' => [ModerationCheckTestDirectory::B_PHOTO, null, self::UPLOAD, [], false];
+        yield 'image copy' => [ModerationCheckTestDirectory::B_PHOTO, null, self::UPLOAD, [], true];
+    }
+
+    /**
+     * @param string $field New field to omit
+     */
+    #[DataProvider('newFields')]
+    public function testRefusesASyncRowThatLostANewField(string $field): void
+    {
+        $row = $this->textRow();
+        unset($row[$field]);
+
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage($field);
+        HilosModerationCheck::fromRow($row);
+    }
+
+    /** @return iterable<string, array{string}> New required sync keys */
+    public static function newFields(): iterable
+    {
+        yield 'uploads' => [HilosModerationCheck::clientUploadIds];
+        yield 'image copy' => [HilosModerationCheck::imageCopy];
+        yield 'hold id' => [HilosModerationCheck::uploadHoldId];
+        yield 'snapshots' => [HilosModerationCheck::uploadSnapshots];
+    }
+
+    /**
+     * @param string $field Field carrying a wrong type
+     * @param mixed $value Mistyped value
+     */
+    #[DataProvider('mistypedNewFields')]
+    public function testRefusesMistypedNewFieldsWithoutCoercion(string $field, mixed $value): void
+    {
+        $row = $this->textRow();
+        $row[$field] = $value;
+
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage($field);
+        HilosModerationCheck::fromRow($row);
+    }
+
+    /** @return iterable<string, array{string, mixed}> Wrong types for the new fields */
+    public static function mistypedNewFields(): iterable
+    {
+        foreach ([null, false, self::UPLOAD, 1, [1], [false], [null], [[self::UPLOAD]], ['file' => self::UPLOAD]] as $index => $value) {
+            yield 'upload ids ' . $index => [HilosModerationCheck::clientUploadIds, $value];
+        }
+        foreach ([null, 0, 1, 'false', 'true', []] as $index => $value) {
+            yield 'image copy ' . $index => [HilosModerationCheck::imageCopy, $value];
+        }
+        foreach ([false, 1, [], 'orphan-token', ''] as $index => $value) {
+            yield 'hold token ' . $index => [HilosModerationCheck::uploadHoldId, $value];
+        }
+        foreach ([null, false, 1, '[]', ['id' => []], ['upload'], [[]]] as $index => $value) {
+            yield 'snapshots ' . $index => [HilosModerationCheck::uploadSnapshots, $value];
+        }
+    }
+
+    /**
+     * @param string $field Field whose write must be refused
+     * @param mixed $value Replacement value
+     */
+    #[DataProvider('immutableNewFields')]
+    public function testNewFieldsCannotBeRewritten(string $field, mixed $value): void
+    {
+        $check = HilosModerationCheck::fromRow($this->textRow());
+
+        $this->expectException(Error::class);
+        $check->$field = $value;
+    }
+
+    /** @return iterable<string, array{string, mixed}> Attempted edits of immutable fields */
+    public static function immutableNewFields(): iterable
+    {
+        yield 'uploads' => [HilosModerationCheck::clientUploadIds, [self::UPLOAD]];
+        yield 'image copy' => [HilosModerationCheck::imageCopy, true];
+        yield 'hold token' => [HilosModerationCheck::uploadHoldId, self::REQUEST_ID];
+        yield 'snapshots' => [HilosModerationCheck::uploadSnapshots, new UploadSnapshotCollection()];
+    }
+
+    public function testAttachmentArraysAreDetachedAndDiffsCannotRewriteTheSnapshot(): void
+    {
+        $uploadIds = ['upload-2', self::UPLOAD];
+        $check = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_ATTACHMENTS, '',
+            clientUploadIds: $uploadIds,
+        );
+        $row = $check->toArray();
+        $state = HilosModerationCheck::fromRow($row);
+        $uploadIds[] = 'later-upload';
+        $viewIds = $check->clientUploadIds;
+        $viewIds[] = 'another-upload';
+        $row[HilosModerationCheck::clientUploadIds][] = 'snapshot-edit';
+        $state->applyDiff([HilosModerationCheck::clientUploadIds => [], HilosModerationCheck::imageCopy => true]);
+
+        self::assertSame(['upload-2', self::UPLOAD], $check->clientUploadIds);
+        self::assertSame($check->toArray(), $state->toArray());
+        self::assertFalse($check->imageCopy);
+    }
+
     public function testRefusesASyncRowThatLostItsRequestId(): void
     {
         $row = $this->textRow();
@@ -174,7 +345,22 @@ final class HilosModerationCheckTest extends TestCase
 
         $restored = HilosModerationCheck::fromRow($row);
         self::assertNull($restored->sessionTokenHash);
-        self::assertSame([...$row, HilosModerationCheck::sessionTokenHash => null], $restored->toArray());
+        self::assertSame([
+            HilosModerationCheck::acceptKey => self::ACCEPT_KEY,
+            HilosModerationCheck::userId => self::USER_ID,
+            HilosModerationCheck::kind => ModerationCheckTestDirectory::A_NOTE,
+            HilosModerationCheck::requestId => 'request-1',
+            HilosModerationCheck::verdictTo => self::INITIATOR_A,
+            HilosModerationCheck::text => self::TEXT,
+            HilosModerationCheck::clientUploadId => null,
+            HilosModerationCheck::startedAt => 1000,
+            HilosModerationCheck::deadlineAt => 91000,
+            HilosModerationCheck::sessionTokenHash => null,
+            HilosModerationCheck::clientUploadIds => [],
+            HilosModerationCheck::imageCopy => false,
+            HilosModerationCheck::uploadHoldId => null,
+            HilosModerationCheck::uploadSnapshots => [],
+        ], $restored->toArray());
     }
 
     public function testRoundTripsANewSessionHash(): void
@@ -241,6 +427,8 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertSame(self::TEXT, $check->text);
         $this->assertNull($check->clientUploadId);
         $this->assertNull($check->sessionTokenHash);
+        $this->assertSame([], $check->clientUploadIds);
+        $this->assertFalse($check->imageCopy);
         $this->assertGreaterThanOrEqual($before, $check->startedAt);
         $this->assertLessThanOrEqual($after, $check->startedAt);
         $this->assertSame($check->startedAt + 30000, $check->deadlineAt);
@@ -270,6 +458,67 @@ final class HilosModerationCheckTest extends TestCase
             $first->startedAt + 30000,
             Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ModerationCheckTestDirectory::A_NOTE)?->deadlineAt,
         );
+    }
+
+    public function testConnectionChecksKeepOneDeadlineAcrossStagesAndSettingsChanges(): void
+    {
+        $deadlineAt = TimeHelper::nowMs() + 15000;
+        $text = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT,
+            deadlineAt: $deadlineAt, clientUploadIds: [self::UPLOAD],
+        );
+        self::assertSame($deadlineAt, $text->deadlineAt);
+        ModerationCheckTestSettings::$timeoutSec = self::RAISED_TIMEOUT_SEC;
+        ExecutionContext::setCurrentAgentId(self::INITIATOR_B);
+        $image = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::B_PHOTO, clientUploadId: self::UPLOAD,
+            deadlineAt: $text->deadlineAt, imageCopy: true,
+        );
+
+        self::assertSame($deadlineAt, $image->deadlineAt);
+        self::assertSame($deadlineAt, $text->deadlineAt);
+        self::assertNotSame($text->requestId, $image->requestId);
+        self::assertNull($image->sessionTokenHash);
+    }
+
+    public function testExplicitConnectionDeadlineNeedsNoTimeoutSetting(): void
+    {
+        Hilos::$setting = null;
+        $deadlineAt = PHP_INT_MAX;
+        $check = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_NOTE, self::TEXT,
+            deadlineAt: $deadlineAt,
+        );
+
+        self::assertSame($deadlineAt, $check->deadlineAt);
+        self::assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $check->requestId);
+    }
+
+    /**
+     * @param int $deadlineAt Expired deadline to refuse
+     */
+    #[DataProvider('expiredDeadlines')]
+    public function testRefusesAnExpiredExplicitConnectionDeadline(int $deadlineAt): void
+    {
+        $before = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_NOTE, self::TEXT,
+                deadlineAt: $deadlineAt,
+            );
+            self::fail('An expired deadline was accepted');
+        } catch (InvalidArgumentException $refusal) {
+            self::assertSame('A moderation check deadline must be in the future.', $refusal->getMessage());
+        }
+        self::assertSame($before, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** @return iterable<string, array{int}> Deadlines at or before admission */
+    public static function expiredDeadlines(): iterable
+    {
+        yield 'past' => [TimeHelper::nowMs() - 1];
+        yield 'current' => [TimeHelper::nowMs()];
+        yield 'zero' => [0];
     }
 
     public function testEveryOpeningDrawsAFreshRequestId(): void
@@ -321,16 +570,54 @@ final class HilosModerationCheckTest extends TestCase
         yield 'image kind with an empty upload id' => [ModerationCheckTestDirectory::B_PHOTO, null, ''];
     }
 
-    public function testRefusesTextWithFilesAsNotSupportedYet(): void
-    {
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('A check of text with attached files is not supported yet.');
-        Hilos::$rt->hilosModerationChecks->actions->open(
-            self::ACCEPT_KEY,
-            self::USER_ID,
-            ModerationCheckTestDirectory::A_ATTACHMENTS,
-            self::TEXT,
+    /**
+     * @param string $kind Kind the check is opened for
+     * @param ?string $text Text handed over
+     * @param ?string $clientUploadId Image upload handed over
+     * @param array<array-key, mixed> $clientUploadIds Attachment input, including malformed lists
+     * @param bool $imageCopy Whether to check an image copy
+     */
+    #[DataProvider('invalidExtendedInputs')]
+    public function testRefusesInvalidExtendedInputsWithoutChangingTheQueue(
+        string $kind,
+        ?string $text,
+        ?string $clientUploadId,
+        array $clientUploadIds,
+        bool $imageCopy,
+    ): void {
+        ExecutionContext::setCurrentAgentId(
+            $kind === ModerationCheckTestDirectory::B_PHOTO ? self::INITIATOR_B : self::INITIATOR_A,
         );
+        $before = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, $kind, $text, $clientUploadId,
+                clientUploadIds: $clientUploadIds, imageCopy: $imageCopy,
+            );
+            self::fail('An invalid extended input was accepted');
+        } catch (InvalidArgumentException) {
+        }
+        self::assertSame($before, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** @return iterable<string, array{string, ?string, ?string, array<array-key, mixed>, bool}> Invalid extended inputs */
+    public static function invalidExtendedInputs(): iterable
+    {
+        yield 'text with attachments' => [ModerationCheckTestDirectory::A_NOTE, self::TEXT, null, [self::UPLOAD], false];
+        yield 'text with image copy' => [ModerationCheckTestDirectory::A_NOTE, self::TEXT, null, [], true];
+        yield 'files without text' => [ModerationCheckTestDirectory::A_ATTACHMENTS, null, null, [self::UPLOAD], false];
+        yield 'files without text or uploads' => [ModerationCheckTestDirectory::A_ATTACHMENTS, null, null, [], false];
+        yield 'files with singular upload' => [ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT, self::UPLOAD, [], false];
+        yield 'files with empty singular upload' => [ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT, '', [], false];
+        yield 'files with image copy' => [ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT, null, [], true];
+        yield 'image with attachments' => [ModerationCheckTestDirectory::B_PHOTO, null, self::UPLOAD, [self::UPLOAD], false];
+        yield 'copy with text' => [ModerationCheckTestDirectory::B_PHOTO, '', self::UPLOAD, [], true];
+        yield 'copy without upload' => [ModerationCheckTestDirectory::B_PHOTO, null, null, [], true];
+        foreach ([
+            [''], [self::UPLOAD, self::UPLOAD], [1], [false], [null], [[self::UPLOAD]], ['file' => self::UPLOAD], [1 => self::UPLOAD],
+        ] as $index => $uploads) {
+            yield 'malformed uploads ' . $index => [ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT, null, $uploads, false];
+        }
     }
 
     public function testRefusesASecondCheckOfTheSameKindOnOneConnection(): void
@@ -400,6 +687,22 @@ final class HilosModerationCheckTest extends TestCase
         $this->assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ModerationCheckTestDirectory::B_PHOTO));
     }
 
+    public function testAnInitiatorCannotOpenTextWithFilesInAnotherSet(): void
+    {
+        ExecutionContext::setCurrentAgentId(self::INITIATOR_B);
+        $before = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_ATTACHMENTS, '',
+                clientUploadIds: [self::UPLOAD],
+            );
+            self::fail('An initiator opened a text-with-files check in another set');
+        } catch (RtTruthSourceWriteNotAllowedException $refusal) {
+            self::assertStringContainsString("it holds set '" . self::INITIATOR_B . "'", $refusal->getMessage());
+        }
+        self::assertSame($before, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
     public function testTwoInitiatorsKeepTheirChecksApart(): void
     {
         $checks = Hilos::$rt->hilosModerationChecks;
@@ -448,6 +751,8 @@ final class HilosModerationCheckTest extends TestCase
         self::assertSame($deadlineAt, $check->deadlineAt);
         self::assertSame($startedAt, $check->startedAt);
         self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $check->verdictTo);
+        self::assertSame([], $check->clientUploadIds);
+        self::assertFalse($check->imageCopy);
         self::assertSame(self::ACCEPT_KEY . '|' . ModerationKindKey::PROFILE_NAME, $check->getId());
         self::assertSame($check->toArray(), HilosModerationCheck::fromRow($check->toArray())->toArray());
         self::assertSame(self::REQUEST_ID, Hilos::$rt->hilosProfileNameChanges[self::SESSION_HASH]->requestId);
@@ -606,7 +911,6 @@ final class HilosModerationCheckTest extends TestCase
         yield 'missing deadline' => [self::SESSION_HASH, self::REQUEST_ID, null];
         yield 'missing request' => [self::SESSION_HASH, null, PHP_INT_MAX];
         yield 'request alone' => [null, self::REQUEST_ID, null];
-        yield 'deadline alone' => [null, null, PHP_INT_MAX];
         yield 'missing hash' => [null, self::REQUEST_ID, PHP_INT_MAX];
         yield 'empty hash' => ['', self::REQUEST_ID, PHP_INT_MAX];
         yield 'empty request' => [self::SESSION_HASH, '', PHP_INT_MAX];
@@ -668,6 +972,121 @@ final class HilosModerationCheckTest extends TestCase
             $startedAt ?? TimeHelper::nowMs(), $deadlineAt ?? TimeHelper::nowMs() + 90000,
         );
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_USERS_LIBRARY);
+    }
+
+    public function testSnapshotStagesShareTheFirstTokenAndKeepNewRequestIdsAndTheFixedDeadline(): void
+    {
+        $snapshots = new UploadSnapshotCollection(
+            new UploadSnapshotData('upload-2', str_repeat('b', 32), hash('sha256', 'second')),
+            new UploadSnapshotData(self::UPLOAD, str_repeat('a', 32), hash('sha256', 'first')),
+        );
+        $deadlineAt = TimeHelper::nowMs() + 90000;
+        // The appended arguments preserve every old positional argument.
+        $first = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_ATTACHMENTS, '', null,
+            null, null, $deadlineAt, ['upload-2', self::UPLOAD], false, $snapshots, null,
+        );
+        self::assertSame($first->requestId, $first->uploadHoldId);
+        self::assertSame($snapshots, $first->uploadSnapshots);
+        $row = $first->toArray();
+        $state = HilosModerationCheck::fromRow($row);
+        $state->applyDiff([HilosModerationCheck::uploadSnapshots => [], HilosModerationCheck::uploadHoldId => 'changed']);
+        self::assertSame($row, $state->toArray());
+        $first->actions->forget();
+        $created = new RtSyncCreatedSignalData(HilosModerationCheck::RT_COLLECTION, $first->getId(), $row);
+        RtSyncApplicator::applyCreated(RtSyncCreatedSignalData::fromArray($created->toArray()), false);
+        self::assertSame($snapshots->toArray(), Hilos::$rt->hilosModerationChecks[$first->getId()]->uploadSnapshots->toArray());
+        self::assertSame($first->uploadHoldId, Hilos::$rt->hilosModerationChecks[$first->getId()]->uploadHoldId);
+        RtSnapshot::replace(HilosModerationCheck::RT_COLLECTION, [$first->getId() => $row]);
+        self::assertSame([$first->getId() => $row], RtSnapshot::rows(HilosModerationCheck::RT_COLLECTION));
+
+        ExecutionContext::setCurrentAgentId(self::INITIATOR_B);
+        $next = Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::B_PHOTO, null, self::UPLOAD,
+            null, null, $deadlineAt, [], true, $snapshots, $first->uploadHoldId,
+        );
+        self::assertNotSame($first->requestId, $next->requestId);
+        self::assertSame($first->uploadHoldId, $next->uploadHoldId);
+        self::assertSame($deadlineAt, $next->deadlineAt);
+        self::assertSame([], $next->clientUploadIds);
+        self::assertSame($snapshots->toArray(), $next->uploadSnapshots->toArray());
+    }
+
+    /**
+     * @param string $case Invalid snapshot/input correlation
+     */
+    #[DataProvider('mismatchedSnapshots')]
+    public function testRefusesSnapshotInputMismatchBeforeOpeningAQueueRow(string $case): void
+    {
+        $snapshots = new UploadSnapshotCollection(new UploadSnapshotData(self::UPLOAD, str_repeat('a', 32), hash('sha256', 'first')));
+        $kind = ModerationCheckTestDirectory::A_ATTACHMENTS;
+        $text = self::TEXT;
+        $singular = null;
+        $ids = [self::UPLOAD];
+        $token = null;
+        if ($case === 'text only') {
+            $kind = ModerationCheckTestDirectory::A_NOTE;
+            $ids = [];
+        } elseif ($case === 'image outside snapshot') {
+            $kind = ModerationCheckTestDirectory::B_PHOTO;
+            ExecutionContext::setCurrentAgentId(self::INITIATOR_B);
+            $text = null;
+            $singular = 'other-upload';
+            $ids = [];
+        } elseif ($case === 'wrong order') {
+            $snapshots = new UploadSnapshotCollection(
+                new UploadSnapshotData('upload-2', str_repeat('b', 32), hash('sha256', 'second')),
+                ...iterator_to_array($snapshots),
+            );
+            $ids = [self::UPLOAD, 'upload-2'];
+        } elseif ($case === 'missing attachment') {
+            $ids = [self::UPLOAD, 'upload-2'];
+        } elseif ($case === 'empty token') {
+            $token = '';
+        } else {
+            $snapshots = $case === 'null snapshot with token' ? null : new UploadSnapshotCollection();
+            $token = self::REQUEST_ID;
+        }
+        $before = Hilos::$rt->hilosModerationChecks->toArray();
+        try {
+            Hilos::$rt->hilosModerationChecks->actions->open(
+                self::ACCEPT_KEY, self::USER_ID, $kind, $text, $singular,
+                clientUploadIds: $ids, uploadSnapshots: $snapshots, uploadHoldId: $token,
+            );
+            self::fail('A snapshot that did not match the input was accepted.');
+        } catch (InvalidArgumentException) {
+        }
+        self::assertSame($before, Hilos::$rt->hilosModerationChecks->toArray());
+    }
+
+    /** @return iterable<string, array{string}> Snapshot/input mismatches */
+    public static function mismatchedSnapshots(): iterable
+    {
+        foreach (['text only', 'image outside snapshot', 'wrong order', 'missing attachment', 'empty token',
+            'empty snapshot with token', 'null snapshot with token'] as $case) {
+            yield $case => [$case];
+        }
+    }
+
+    public function testSnapshotCannotSupplyAChosenRequestIdWithoutSessionCorrelation(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT,
+            requestId: self::REQUEST_ID, clientUploadIds: [self::UPLOAD],
+            uploadSnapshots: new UploadSnapshotCollection(new UploadSnapshotData(self::UPLOAD, str_repeat('a', 32), hash('sha256', 'first'))),
+        );
+    }
+
+    public function testSnapshotCreationStillBelongsOnlyToTheKindsInitiator(): void
+    {
+        ExecutionContext::setCurrentAgentId(self::INITIATOR_B);
+        $this->expectException(RtTruthSourceWriteNotAllowedException::class);
+        Hilos::$rt->hilosModerationChecks->actions->open(
+            self::ACCEPT_KEY, self::USER_ID, ModerationCheckTestDirectory::A_ATTACHMENTS, self::TEXT,
+            clientUploadIds: [self::UPLOAD],
+            uploadSnapshots: new UploadSnapshotCollection(new UploadSnapshotData(self::UPLOAD, str_repeat('a', 32), hash('sha256', 'first'))),
+        );
     }
 
     /**

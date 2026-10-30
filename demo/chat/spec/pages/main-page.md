@@ -2,7 +2,9 @@
 
 **Page constant:** `PageConstants::MAIN` | **Agent:** `ChatAgent`
 
-The primary chat page. Handles subscription, message submit, outbound moderation results, and the publication of an approved message's files. The files themselves are sent to the framework uploads agent, not to this page ([file-upload-flow.md](../data-flow/file-upload-flow.md)).
+The primary chat page. Handles subscription and message admission; `ChatAgent`
+owns moderation results and file publication. Files are sent to the framework
+uploads agent, not to this page ([file-upload-flow.md](../data-flow/file-upload-flow.md)).
 
 ## onSubscribe
 
@@ -17,15 +19,15 @@ The primary chat page. Handles subscription, message submit, outbound moderation
 
 | Action | DTO | Handler |
 |---|---|---|
-| `message` | `MessageActionDTO` (`content`, `attachments: list<clientUploadId>`) | Common rate limit -> named uploads -> non-empty -> outbound moderation |
+| `message` | `MessageActionDTO` (`content`, `attachments: list<clientUploadId>`) | Common rate limit -> named uploads -> non-empty -> record composer -> `ChatAgent::startMessageModeration()` |
 
 ## Attachments
 
-The page reads the uploads a message names and publishes them once it is approved:
+The page validates the uploads a message names and admits the submission:
 
 - Each id must be named once (`Attachment is listed twice`) and be a complete `chat_attachment` upload of this connection (`Attachment is not ready`); empty text with no file is `Message cannot be empty`.
-- The text and the ids are kept on `Connection` (`outboundModerationAttachments`) while `ModeratorAgent` judges them.
-- On approval with files it calls `Hilos::$files->publishUploads()` and handles the agent signal `chat_attachments_published` (`FilesPublishedSignalData`): writes the event with its `event_attachment` links and marks the files bound, turns the moderation `unavailable` on a refusal, or removes files nobody waits for any more ([file-moderation-flow.md](../data-flow/file-moderation-flow.md)).
+- The text and ordered ids are kept in the six-field composer projection on `Connection`; `ChatAgent` opens the immutable check in the shared moderation collection.
+- `ChatAgent` receives the framework verdict, checks each image separately, and only after the full chain approves calls `Hilos::$files->publishUploads()`. It receives `chat_attachments_published`, writes the event, then clears the composer and marks the files bound ([file-moderation-flow.md](../data-flow/file-moderation-flow.md)).
 
 ## Incremental Signals
 

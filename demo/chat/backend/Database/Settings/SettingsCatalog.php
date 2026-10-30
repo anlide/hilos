@@ -109,31 +109,6 @@ final class SettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'ru',
             ],
-            // Chat Moderation LLM settings
-            ChatSettingsConstants::CHAT_MODERATION_MODEL => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => [
-                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => ChatSettingsConstants::DEFAULT_BOT_MODEL,
-                ],
-            ],
-            ChatSettingsConstants::CHAT_MODERATION_URL => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => [
-                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => ChatSettingsConstants::DEFAULT_BOT_URL,
-                ],
-            ],
-            ChatSettingsConstants::CHAT_MODERATION_PROVIDER => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => [
-                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => ChatSettingsConstants::DEFAULT_BOT_PROVIDER,
-                ],
-            ],
-            ChatSettingsConstants::CHAT_MODERATION_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_FLOAT,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => [
-                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => ChatSettingsConstants::DEFAULT_BOT_TIMEOUT_SEC,
-                ],
-            ],
             ChatSettingsConstants::CHAT_ATTACHMENT_MAX_FILE_BYTES => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_FILE_BYTES,

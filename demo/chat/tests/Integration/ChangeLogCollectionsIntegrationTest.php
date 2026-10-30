@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use DateTimeImmutable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Database;
+use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Hilos;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -56,6 +57,7 @@ use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournaledTables;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\IntegrationTest;
@@ -218,9 +220,9 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $this->assertNull($before['event']->changesLast24h);
             $this->assertNull($before['event']->lastChangeAt);
             $this->assertSame('framework', $before['hilos_user']->owner->value);
-            $this->assertSame('project', $before['moderator_prompt_piece']->owner->value);
-            $this->assertTrue($before['moderator_prompt_piece']->journaled);
-            $this->assertSame(['record_key' => 1, 'value' => 2], $before['moderator_prompt_piece']->modeCounts);
+            $this->assertSame('framework', $before['hilos_moderation_rule']->owner->value);
+            $this->assertTrue($before['hilos_moderation_rule']->journaled);
+            $this->assertSame(['record_key' => 1, 'value' => 2], $before['hilos_moderation_rule']->modeCounts);
             $live = EntitySchemaAudit::liveTables(0);
             $this->assertGreaterThan(50, count($live));
             $this->assertSame($live, array_keys($before));
@@ -332,9 +334,10 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                 $this->assertGreaterThan(0, $trigger->validFromMigration);
                 $this->assertSame(['name', 'event', 'table', 'validFromMigration'], array_keys(get_object_vars($trigger)));
             }
-            $project = Hilos::$db->changeLogTables->sectionTable('moderator_prompt_piece');
-            $this->assertSame('project', $project->summary->owner->value);
-            $this->assertSame('long', array_column($project->columns, null, 'name')['prompt_piece']->storage);
+            $framework = Hilos::$db->changeLogTables->sectionTable('hilos_moderation_rule');
+            $this->assertSame('framework', $framework->summary->owner->value);
+            $this->assertSame('long', array_column($framework->columns, null, 'name')['rule']->storage);
+            $this->assertSame('project', Hilos::$db->changeLogTables->sectionTable('bot')->summary->owner->value);
             $untracked = Hilos::$db->changeLogTables->sectionTable('event');
             $this->assertFalse($untracked->summary->journaled);
             $this->assertSame([], $untracked->triggers);
@@ -961,15 +964,15 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
     {
         $old = str_repeat('Original prompt Я ', 1000);
         $new = str_repeat('Changed prompt Ж ', 1000);
-        $promptId = null;
+        $ruleId = null;
         $receiptId = JournalReceiptScope::run(
-            JournalReceiptData::web(12, 13, 14, 'section.real.long', 'fixture-agent'),
-            static function () use ($old, $new, &$promptId): ?int {
-                Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
-                    ['message_rule', $old], index: 0);
-                $promptId = Database::lastInsertId(0);
-                Database::sql('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `id` = ?', [$new, $promptId], index: 0);
-                Database::sql('DELETE FROM `moderator_prompt_piece` WHERE `id` = ?', [$promptId], index: 0);
+            JournalReceiptData::web(12, 13, 14, 'section.real.long', ModerationRulesLibraryAgent::AGENT_TYPE),
+            static function () use ($old, $new, &$ruleId): ?int {
+                Database::sql('INSERT INTO `hilos_moderation_rule` (`kind`, `rule`) VALUES (?, ?)',
+                    [ChatModerationKindKey::MESSAGE, $old], index: 0);
+                $ruleId = Database::lastInsertId(0);
+                Database::sql('UPDATE `hilos_moderation_rule` SET `rule` = ? WHERE `id` = ?', [$new, $ruleId], index: 0);
+                Database::sql('DELETE FROM `hilos_moderation_rule` WHERE `id` = ?', [$ruleId], index: 0);
                 return JournalReceiptScope::currentId();
             },
         );
@@ -978,24 +981,24 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $this->assertCount(3, $entries);
         $this->assertSame(['create', 'update', 'delete'], array_column($entries->toArray(), 'mutation'));
         foreach ($entries as $entry) {
-            $this->assertSame('moderator_prompt_piece', $entry->table);
-            $this->assertSame([$promptId], $entry->recordKey);
+            $this->assertSame('hilos_moderation_rule', $entry->table);
+            $this->assertSame([$ruleId], $entry->recordKey);
             $this->assertSame($receiptId, $entry->receiptId);
             $this->assertEquals($entry, Hilos::$db->changeLogEntries->sectionEntry($entry->id));
         }
         $this->assertSame([], $entries->first()->changes);
         $update = $entries->get(1);
         $this->assertCount(1, $update->changes);
-        $this->assertSame(['prompt_piece', 'long', true, true, $old, $new, false], array_values(get_object_vars($update->changes[0])));
+        $this->assertSame(['rule', 'long', true, true, $old, $new, false], array_values(get_object_vars($update->changes[0])));
         $omitted = Hilos::$db->changeLogEntries->sectionEntriesByIds([$update->id], false)->get($update->id);
-        $this->assertSame(['prompt_piece', 'long', true, true, null, null, true], array_values(get_object_vars($omitted->changes[0])));
+        $this->assertSame(['rule', 'long', true, true, null, null, true], array_values(get_object_vars($omitted->changes[0])));
         $deleted = array_column($entries->last()->changes, null, 'field');
-        $this->assertSame(['section', 'prompt_piece'], array_keys($deleted));
-        $this->assertSame(['prompt_piece', 'long', true, false, $new, null, false], array_values(get_object_vars($deleted['prompt_piece'])));
-        $this->assertSame(['section', 'inline', true, false, 'message_rule', null, false],
-            array_values(get_object_vars($deleted['section'])));
-        $this->assertSame(0, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `moderator_prompt_piece` WHERE `id` = ?',
-            [$promptId], index: 0)->field('n'));
+        $this->assertSame(['kind', 'rule'], array_keys($deleted));
+        $this->assertSame(['rule', 'long', true, false, $new, null, false], array_values(get_object_vars($deleted['rule'])));
+        $this->assertSame(['kind', 'inline', true, false, ChatModerationKindKey::MESSAGE, null, false],
+            array_values(get_object_vars($deleted['kind'])));
+        $this->assertSame(0, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `hilos_moderation_rule` WHERE `id` = ?',
+            [$ruleId], index: 0)->field('n'));
     }
 
     /** Stored keys retain large integer strings and legacy scalar conversion; malformed or masked keys stay null. */
@@ -1416,12 +1419,12 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
     {
         $old = str_repeat('Bare original Я ', 1000);
         $new = str_repeat('Bare changed Ж ', 1000);
-        Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
-            ['message_rule', $old], index: 0);
-        $promptId = Database::lastInsertId(0);
-        Database::sql('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `id` = ?', [$new, $promptId], index: 0);
-        Database::sql('DELETE FROM `moderator_prompt_piece` WHERE `id` = ?', [$promptId], index: 0);
-        $filter = new ChangeLogFeedFilter(table: 'moderator_prompt_piece');
+        Database::sql('INSERT INTO `hilos_moderation_rule` (`kind`, `rule`) VALUES (?, ?)',
+            [ChatModerationKindKey::MESSAGE, $old], index: 0);
+        $ruleId = Database::lastInsertId(0);
+        Database::sql('UPDATE `hilos_moderation_rule` SET `rule` = ? WHERE `id` = ?', [$new, $ruleId], index: 0);
+        Database::sql('DELETE FROM `hilos_moderation_rule` WHERE `id` = ?', [$ruleId], index: 0);
+        $filter = new ChangeLogFeedFilter(table: 'hilos_moderation_rule');
         $before = self::selectCount();
         $feed = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 50);
         $this->assertSame(7, self::selectCount() - $before, 'Feed, entry and field queries only, with guard probes');
@@ -1433,26 +1436,26 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $this->assertSame(ChangeLogFeedItemKind::ENTRY, $row->kind);
             $this->assertNull($row->receipt);
             $this->assertNull($row->entry->receiptId);
-            $this->assertSame([$promptId], $row->entry->recordKey);
-            $this->assertSame('moderator_prompt_piece', $row->entry->table);
+            $this->assertSame([$ruleId], $row->entry->recordKey);
+            $this->assertSame('hilos_moderation_rule', $row->entry->table);
             $this->assertEquals($row->createdAt, $row->entry->createdAt);
         }
         $update = $feed->get(1)->entry;
-        $this->assertSame(['prompt_piece', 'long', true, true, null, null, true],
+        $this->assertSame(['rule', 'long', true, true, null, null, true],
             array_values(get_object_vars($update->changes[0])));
-        $this->assertSame(['prompt_piece', 'long', true, true, $old, $new, false], array_values(get_object_vars(
+        $this->assertSame(['rule', 'long', true, true, $old, $new, false], array_values(get_object_vars(
             Hilos::$db->changeLogEntries->sectionEntry($update->id)->changes[0],
         )));
         $deletedFields = array_column($feed->first()->entry->changes, null, 'field');
-        $this->assertSame(['section', 'prompt_piece'], array_keys($deletedFields));
-        $this->assertSame(['section', 'inline', true, false, 'message_rule', null, false],
-            array_values(get_object_vars($deletedFields['section'])));
-        $this->assertSame(['prompt_piece', 'long', true, false, null, null, true],
-            array_values(get_object_vars($deletedFields['prompt_piece'])));
+        $this->assertSame(['kind', 'rule'], array_keys($deletedFields));
+        $this->assertSame(['kind', 'inline', true, false, ChatModerationKindKey::MESSAGE, null, false],
+            array_values(get_object_vars($deletedFields['kind'])));
+        $this->assertSame(['rule', 'long', true, false, null, null, true],
+            array_values(get_object_vars($deletedFields['rule'])));
         $this->assertSame([], $feed->last()->entry->changes);
         $this->assertSame(3, Hilos::$db->changeLogReceipts->feedCount($filter));
         $this->assertSame(0, Hilos::$db->changeLogReceipts->feedCount(
-            new ChangeLogFeedFilter(table: 'moderator_prompt_piece', channel: 'web'),
+            new ChangeLogFeedFilter(table: 'hilos_moderation_rule', channel: 'web'),
         ));
     }
 
@@ -1877,25 +1880,26 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $old = str_repeat('History old Я ', 1000);
         $new = str_repeat('History new Ж ', 1000);
         $receipt = JournalReceiptScope::run(JournalReceiptData::cli('history.long', null), static function () use ($old, $new): int {
-            Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)', ['message_rule', $old], index: 0);
-            $prompt = Database::lastInsertId(0);
-            Database::sql('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `id` = ?', [$new, $prompt], index: 0);
-            Database::sql('DELETE FROM `moderator_prompt_piece` WHERE `id` = ?', [$prompt], index: 0);
+            Database::sql('INSERT INTO `hilos_moderation_rule` (`kind`, `rule`) VALUES (?, ?)', [ChatModerationKindKey::MESSAGE, $old], index: 0);
+            $ruleId = Database::lastInsertId(0);
+            Database::sql('UPDATE `hilos_moderation_rule` SET `rule` = ? WHERE `id` = ?', [$new, $ruleId], index: 0);
+            Database::sql('DELETE FROM `hilos_moderation_rule` WHERE `id` = ?', [$ruleId], index: 0);
             return JournalReceiptScope::currentId();
         });
         $filter = new ChangeLogHistoryFilter();
-        $window = Hilos::$db->changeLogEntries->historyWindow('moderator_prompt_piece', $filter, false, null, TableAnchorDirection::After, 50);
+        $window = Hilos::$db->changeLogEntries->historyWindow('hilos_moderation_rule', $filter, false, null, TableAnchorDirection::After, 50);
         $this->assertSame(['create', 'update', 'delete'], array_map(
             static fn(ChangeLogHistoryRow $row): string => $row->entry->mutation, $window->toArray(),
         ));
         $this->assertSame([], $window->first()->entry->changes);
-        $this->assertSame(['prompt_piece', 'long', true, true, null, null, true], array_values(get_object_vars($window->get(1)->entry->changes[0])));
-        $this->assertSame(['prompt_piece', 'long', true, true, $old, $new, false], array_values(get_object_vars(
+        $this->assertSame(['rule', 'long', true, true, null, null, true], array_values(get_object_vars($window->get(1)->entry->changes[0])));
+        $this->assertSame(['rule', 'long', true, true, $old, $new, false], array_values(get_object_vars(
             Hilos::$db->changeLogEntries->sectionEntry($window->get(1)->entry->id)->changes[0],
         )));
         $fields = array_column($window->last()->entry->changes, null, 'field');
-        $this->assertSame(['section', 'inline', true, false, 'message_rule', null, false], array_values(get_object_vars($fields['section'])));
-        $this->assertSame(['prompt_piece', 'long', true, false, null, null, true], array_values(get_object_vars($fields['prompt_piece'])));
+        $this->assertSame(['kind', 'inline', true, false, ChatModerationKindKey::MESSAGE, null, false],
+            array_values(get_object_vars($fields['kind'])));
+        $this->assertSame(['rule', 'long', true, false, null, null, true], array_values(get_object_vars($fields['rule'])));
         foreach ($window as $row) {
             $this->assertSame($receipt, $row->receipt->id);
             $this->assertSame('history.long', $row->receipt->action);
@@ -1905,15 +1909,15 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         Database::sql("UPDATE {$journal}.`hilos_change_log` SET `receipt_id` = NULL WHERE `id` = ?", [$window->first()->entry->id], index: 0);
         Database::sql("DELETE FROM {$journal}.`hilos_change_log_receipt` WHERE `id` = ?", [$receipt], index: 0);
         $withoutHeaders = Hilos::$db->changeLogEntries->historyWindow(
-            'moderator_prompt_piece', $filter, false, null, TableAnchorDirection::After, 50,
+            'hilos_moderation_rule', $filter, false, null, TableAnchorDirection::After, 50,
         );
         $this->assertSame(self::historyIds($window), self::historyIds($withoutHeaders));
         foreach ($withoutHeaders as $index => $row) {
             $this->assertNull($row->receipt);
             $this->assertSame($index === 0 ? null : $receipt, $row->entry->receiptId);
         }
-        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('moderator_prompt_piece', $filter));
-        $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('moderator_prompt_piece', new ChangeLogHistoryFilter(who: '0')));
+        $this->assertSame(3, Hilos::$db->changeLogEntries->historyCount('hilos_moderation_rule', $filter));
+        $this->assertSame(0, Hilos::$db->changeLogEntries->historyCount('hilos_moderation_rule', new ChangeLogHistoryFilter(who: '0')));
     }
 
     /** A row disappearing after selection leaves a dense snapshot of the remaining selected ids. */

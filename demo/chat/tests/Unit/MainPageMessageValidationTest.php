@@ -16,6 +16,14 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\UploadsFeature;
+use Hilos\Core\Feature\Definition\ModerationFeature;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
+use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Moderation\ChatModerationKindKey;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
@@ -34,12 +42,16 @@ final class MainPageMessageValidationTest extends TestCase
 
     private const string ACCEPT_KEY = 'message-ak';
 
+    private ?SettingsAccessor $previousSetting = null;
+
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->previousSetting = Hilos::$setting;
+        Hilos::$setting = new SettingsAccessor(ModerationSettingsCatalog::class);
         $rt = new ChatRtContext();
-        $rt->mountFeatureRuntime([new UploadsFeature()]);
+        $rt->mountFeatureRuntime([new UploadsFeature(), new ModerationFeature()]);
         $rt->configure();
         $rt->bindStateCollectionNames();
         Hilos::$rt = $rt;
@@ -50,6 +62,7 @@ final class MainPageMessageValidationTest extends TestCase
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         ExecutionContext::clear();
         Hilos::$rt = null;
+        Hilos::$setting = $this->previousSetting;
 
         parent::tearDown();
     }
@@ -142,6 +155,10 @@ final class MainPageMessageValidationTest extends TestCase
             Hilos::$rt->connections[self::ACCEPT_KEY]?->outboundModerationPhase,
         );
         self::assertSame(['done'], Hilos::$rt->connections[self::ACCEPT_KEY]?->outboundModerationAttachments);
+        $check = Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE);
+        self::assertNotNull($check);
+        self::assertSame('', $check->text);
+        self::assertSame(['done'], $check->clientUploadIds);
     }
 
     /**
@@ -155,6 +172,8 @@ final class MainPageMessageValidationTest extends TestCase
         RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
 
+        RtTruthSourceRegistry::register(HilosModerationCheck::RT_COLLECTION, TruthSourceKeys::set(AgentType::CHAT),
+            self::TEST_AGENT_ID, TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove));
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
         ExecutionContext::setCurrentAcceptKey(self::ACCEPT_KEY);
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, 1);
@@ -179,9 +198,10 @@ final class MainPageMessageValidationTest extends TestCase
             'a.txt',
             'text/plain',
             3,
-            'tmp-' . $clientUploadId,
+            md5($clientUploadId),
         );
         if ($complete) {
+            $upload->actions->inspect(hash('sha256', 'abc'), 'text/plain');
             $upload->actions->complete();
         }
     }

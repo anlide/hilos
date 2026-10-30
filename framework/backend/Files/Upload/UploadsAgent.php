@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Files\Upload;
 
 use finfo;
+use Generator;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -21,6 +22,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -37,6 +39,7 @@ use Hilos\Files\Upload\Check\DuplicateContentCheck;
 use Hilos\Files\Upload\Check\SizeLimitCheck;
 use Hilos\Files\Upload\Check\StorageLimitCheck;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
+use Hilos\Files\Upload\DTO\UploadHoldSettleSignalData;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
@@ -47,9 +50,12 @@ use Hilos\Fs\FsTmpDirectory;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
+use Hilos\Runtime\View\Item\HilosModerationCheck;
 use Hilos\Runtime\View\Item\HilosUpload;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use LogicException as NativeLogicException;
 
 /**
@@ -89,10 +95,11 @@ final class UploadsAgent extends AbstractAgent
     ];
 
     /**
-     * The one frame the agent is addressed by from the project's side: publish these uploads.
+     * The consumer's publication request and final settlement of held bytes.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+        HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE => UploadHoldSettleSignalData::class,
     ];
 
     /**
@@ -115,6 +122,9 @@ final class UploadsAgent extends AbstractAgent
 
     /** Shortest time between two sweeps of the uploads, so the tick stays cheap. */
     private const float SWEEP_INTERVAL_SECONDS = 1.0;
+
+    /** Maximum rows of each recovery walk processed in one tick. */
+    private const int SWEEP_ROWS_PER_TICK = 16;
 
     /** Bytes of the head of a received file its type is read from - the amount libmagic reads itself. */
     private const int SNIFF_HEAD_BYTES = 1048576;
@@ -143,6 +153,10 @@ final class UploadsAgent extends AbstractAgent
 
     private const string MESSAGE_SIGN_IN = 'Sign in to keep this file';
 
+    private const string MESSAGE_HELD = 'This file is being checked; wait for the result';
+
+    private const string MESSAGE_NOT_APPROVED = 'This file is not approved for publication; try again';
+
     /** @var array<string, AbstractUploadTarget> Targets by name, created once on start */
     private array $targets = [];
 
@@ -160,6 +174,12 @@ final class UploadsAgent extends AbstractAgent
 
     /** Moment of the last sweep. */
     private float $lastSweepAt = 0.0;
+
+    /** @var ?Generator<mixed, HilosUpload> Process-local cursor, never a second store of upload facts */
+    private ?Generator $uploadSweep = null;
+
+    /** @var ?Generator<mixed, HilosModerationCheck> Process-local recovery cursor over the existing RT requests */
+    private ?Generator $holdSweep = null;
 
     /**
      * Creates the targets and drops whatever a predecessor left: its chunks will not continue.
@@ -268,6 +288,11 @@ final class UploadsAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE:
+                $this->settleHold($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -279,19 +304,35 @@ final class UploadsAgent extends AbstractAgent
      * An upload that cannot be dropped - its file will not delete - is logged and tried again on
      * the next sweep; one bad file does not stop the others from being dropped.
      *
-     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException When runtime requests cannot be read or hold marks cannot be written
      */
     public function onTick(): void
     {
         $now = microtime(true);
-        if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS) {
-            return;
+        if ($this->uploadSweep === null && $this->holdSweep === null) {
+            if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS) {
+                return;
+            }
+            $this->lastSweepAt = $now;
+            $this->uploadSweep = Hilos::$rt->hilosUploads->getIterator();
+            if (Hilos::hasFeature(HilosFeature::MODERATION)) {
+                $this->holdSweep = Hilos::$rt->hilosModerationChecks->getIterator();
+            }
         }
-        $this->lastSweepAt = $now;
 
         $connections = Hilos::$rt->connectionsSource();
         $expiredBefore = time() - self::UPLOAD_TTL_SECONDS;
-        foreach (iterator_to_array(Hilos::$rt->hilosUploads, false) as $upload) {
+        for ($i = 0; $i < self::SWEEP_ROWS_PER_TICK && $this->uploadSweep?->valid(); $i++) {
+            $upload = Hilos::$rt->hilosUploads[$this->uploadSweep->key()];
+            $this->uploadSweep->next();
+            if ($upload === null) {
+                continue;
+            }
+            if ($upload->uploadHoldId !== null && $upload->uploadHoldDeadlineAt !== null
+                && $upload->uploadHoldDeadlineAt <= TimeHelper::nowMs()
+            ) {
+                $upload->actions->releaseHold($upload->uploadHoldId);
+            }
             $connectionGone = $connections !== null && $connections->get($upload->acceptKey) === null;
             if (!$connectionGone && $upload->updatedAt >= $expiredBefore) {
                 continue;
@@ -307,6 +348,37 @@ final class UploadsAgent extends AbstractAgent
 
             if (!$connectionGone) {
                 $this->sendState($upload->acceptKey, UploadStateSignalData::gone($upload->clientUploadId));
+            }
+        }
+        if (!$this->uploadSweep?->valid()) {
+            $this->uploadSweep = null;
+        }
+        for ($i = 0; $i < self::SWEEP_ROWS_PER_TICK && $this->holdSweep?->valid(); $i++) {
+            $check = Hilos::$rt->hilosModerationChecks[$this->holdSweep->key()];
+            $this->holdSweep->next();
+            if ($check !== null) {
+                $this->admitHold($check);
+            }
+        }
+        if (!$this->holdSweep?->valid()) {
+            $this->holdSweep = null;
+        }
+    }
+
+    /**
+     * A check is the hold request. Other shared created signals are deliberately ignored.
+     *
+     * @param RtSyncCreatedSignalData $data Applied runtime creation
+     * @param string $source Framework signal source (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException When the request cannot be read or hold marks cannot be written
+     */
+    public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        if (Hilos::hasFeature(HilosFeature::MODERATION) && $data->collectionKey === StateHilosModerationCheck::RT_COLLECTION) {
+            $check = Hilos::$rt->hilosModerationChecks[$data->stateId];
+            if ($check !== null) {
+                $this->admitHold($check);
             }
         }
     }
@@ -330,6 +402,79 @@ final class UploadsAgent extends AbstractAgent
         $this->receivedBytes = [];
         $this->writtenAt = [];
         $this->hashes = [];
+        $this->uploadSweep = null;
+        $this->holdSweep = null;
+    }
+
+    /**
+     * Checks the whole immutable group before writing any mark. A missing or mismatched request
+     * waits out its original deadline; a later replica never refreshes its expected bytes.
+     *
+     * @param HilosModerationCheck $check Current request from the mounted moderation feature
+     * @throws HilosException When uploads cannot be read or hold marks cannot be written
+     */
+    private function admitHold(HilosModerationCheck $check): void
+    {
+        $nowMs = TimeHelper::nowMs();
+        if ($check->staleSince() !== null || $check->uploadHoldId === null || $check->uploadHoldId === ''
+            || count($check->uploadSnapshots) === 0 || count($check->uploadSnapshots) > self::MAX_OPEN_UPLOADS_PER_CONNECTION
+            || $check->deadlineAt <= $nowMs
+        ) {
+            return;
+        }
+        $uploads = [];
+        foreach ($check->uploadSnapshots as $snapshot) {
+            $upload = Hilos::$rt->hilosUploads->find($check->acceptKey, $snapshot->clientUploadId);
+            if ($upload === null || $upload->staleSince() !== null || $upload->phase !== UploadPhase::COMPLETE
+                || $upload->userId !== $check->userId || $upload->tmpIndex !== $snapshot->tmpIndex
+                || $upload->contentHash !== $snapshot->contentHash
+                || ($upload->uploadHoldId === $check->uploadHoldId && $upload->uploadHoldDeadlineAt !== $check->deadlineAt)
+                || ($upload->uploadHoldId !== $check->uploadHoldId
+                    && $upload->uploadHoldDeadlineAt !== null && $upload->uploadHoldDeadlineAt > $nowMs)
+            ) {
+                return;
+            }
+            $uploads[] = $upload;
+        }
+        foreach ($uploads as $upload) {
+            $upload->actions->hold($check->uploadHoldId, $check->deadlineAt);
+        }
+    }
+
+    /**
+     * A late settlement never changes a different token. Deleting a check is deliberately not a
+     * settlement: all stages of the consumer's original group keep the same marks.
+     *
+     * @param UploadHoldSettleSignalData $settlement Consumer's final approval or release
+     * @throws HilosException When uploads cannot be read or hold marks cannot be written
+     */
+    private function settleHold(UploadHoldSettleSignalData $settlement): void
+    {
+        foreach (Hilos::$rt->hilosUploads->forConnection($settlement->acceptKey) as $upload) {
+            if ($upload->uploadHoldId !== $settlement->uploadHoldId) {
+                continue;
+            }
+            if ($settlement->outcome === UploadHoldOutcome::RELEASED) {
+                $upload->actions->releaseHold($settlement->uploadHoldId);
+            } elseif ($upload->uploadHoldDeadlineAt !== null && $upload->uploadHoldDeadlineAt > TimeHelper::nowMs()
+                && $upload->phase === UploadPhase::COMPLETE && $upload->tmpIndex !== null && $upload->contentHash !== null
+            ) {
+                $upload->actions->approveHold($settlement->uploadHoldId);
+            }
+        }
+    }
+
+    /**
+     * @param HilosUpload $upload Authoritative row before a browser mutation
+     * @throws ValidationException When the owner holds the upload for a live attempt
+     */
+    private function assertNotHeld(HilosUpload $upload): void
+    {
+        if ($upload->uploadHoldId !== null && $upload->uploadHoldDeadlineAt !== null
+            && $upload->uploadHoldDeadlineAt > TimeHelper::nowMs()
+        ) {
+            throw new ValidationException(self::MESSAGE_HELD);
+        }
     }
 
     /**
@@ -352,9 +497,16 @@ final class UploadsAgent extends AbstractAgent
 
         $uploads = Hilos::$rt->hilosUploads;
         $existing = $uploads->find($acceptKey, $dto->clientUploadId);
+        if ($existing !== null && $existing->phase->isReceiving()) {
+            throw new ValidationException(self::MESSAGE_IN_PROGRESS);
+        }
         if ($existing !== null) {
-            if ($existing->phase->isReceiving()) {
-                throw new ValidationException(self::MESSAGE_IN_PROGRESS);
+            $this->assertNotHeld($existing);
+        }
+        $target->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
+        if ($existing !== null) {
+            if ($existing->target !== $dto->target) {
+                $this->targets[$existing->target]->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
             }
             $this->forget($existing);
         }
@@ -443,6 +595,21 @@ final class UploadsAgent extends AbstractAgent
                 return;
             }
             $uploads[] = $upload;
+        }
+
+        if ($this->targets[$request->target]->requiresUploadHoldForPublication()) {
+            $holdId = null;
+            foreach ($uploads as $upload) {
+                if ($upload->phase !== UploadPhase::COMPLETE || $upload->uploadHoldId === null || $upload->uploadHoldId === ''
+                    || $upload->uploadHoldDeadlineAt === null || $upload->uploadHoldDeadlineAt <= TimeHelper::nowMs()
+                    || !$upload->uploadHoldApproved || ($holdId !== null && $upload->uploadHoldId !== $holdId)
+                ) {
+                    $this->refuseHandOver($request, self::MESSAGE_NOT_APPROVED);
+
+                    return;
+                }
+                $holdId = $upload->uploadHoldId;
+            }
         }
 
         $files = [];
@@ -560,6 +727,8 @@ final class UploadsAgent extends AbstractAgent
             return;
         }
 
+        $this->assertNotHeld($upload);
+        $this->targets[$upload->target]->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
         $this->forget($upload);
         $this->sendState($acceptKey, UploadStateSignalData::gone($dto->clientUploadId));
     }

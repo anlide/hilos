@@ -18,10 +18,10 @@ use Hilos\LLM\Routing\LlmProvider;
 /**
  * Applies admin-editable settings on top of the env-resolved chat LLM profiles.
  *
- * The runtime settings-override the router's ADR leaves as a seam: the bot and
- * moderation profiles become authoritative from the CHAT_*_PROVIDER/MODEL/URL/
- * TIMEOUT settings (admin-editable via the settings page), while the analyzer
- * (env-only, no settings) and the framework default profile pass through.
+ * The runtime settings-override the router's ADR leaves as a seam: the bot
+ * profile becomes authoritative from the CHAT_*_PROVIDER/MODEL/URL/TIMEOUT
+ * settings (admin-editable via the settings page), while the analyzer
+ * (env-only, no settings) and framework profiles pass through.
  * Provider is taken from the setting, so an admin can switch a role local <->
  * external; the external URL/API key still come from env (never a settings row).
  * An empty URL setting leaves the address the profile got from env, so an address
@@ -45,13 +45,6 @@ final class ChatLlmProfileOverrideSource implements LlmProfileOverrideSource
                 ChatSettingsConstants::CHAT_BOT_URL,
                 ChatSettingsConstants::CHAT_BOT_MODEL,
                 ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC,
-            ),
-            ChatLLMConstants::PROFILE_MODERATION => $this->fromSettings(
-                $profile,
-                ChatSettingsConstants::CHAT_MODERATION_PROVIDER,
-                ChatSettingsConstants::CHAT_MODERATION_URL,
-                ChatSettingsConstants::CHAT_MODERATION_MODEL,
-                ChatSettingsConstants::CHAT_MODERATION_TIMEOUT_SEC,
             ),
             default => $profile,
         };

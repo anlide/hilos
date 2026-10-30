@@ -31,22 +31,6 @@ final class ChatEnvCatalog implements CatalogProviderInterface
     {
         return array_replace(EnvCatalogStub::getCatalog(), [
             EnvConstants::DB_DATABASE->name => self::stringEntry('hilos_demo', emptyIsMissing: true),
-            EnvConstants::CHAT_MODERATION_MODEL->name => self::stringEntry(
-                ChatLLMConstants::MODEL_MODERATION,
-                emptyIsMissing: true,
-            ),
-            EnvConstants::CHAT_MODERATION_PROVIDER->name => self::stringEntry(
-                LLMConstants::PROVIDER_LOCAL,
-                emptyIsMissing: true,
-            ),
-            EnvConstants::CHAT_PHOTO_MODERATION_MODEL->name => self::stringEntry(
-                ChatLLMConstants::MODEL_PHOTO_MODERATION,
-                emptyIsMissing: true,
-            ),
-            EnvConstants::CHAT_PHOTO_MODERATION_PROVIDER->name => self::stringEntry(
-                LLMConstants::PROVIDER_LOCAL,
-                emptyIsMissing: true,
-            ),
             EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL->name => self::stringEntry(
                 ChatLLMConstants::MODEL_CONTEXT_ANALYZER,
                 emptyIsMissing: true,

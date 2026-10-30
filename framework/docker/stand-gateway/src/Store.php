@@ -21,7 +21,7 @@ namespace Hilos\StandGateway;
  *
  * What arrived is deliberately NOT here (HIL-653). A caught message leaves as a letter
  * to Mailpit, so the readable side of every channel is the inbox a person already
- * opens, and this file holds only what a spec arranges up front.
+ * opens. The model alone keeps scoped arrival ordinals and image hashes here, without prompts or bytes.
  *
  * The file is deliberately not a volume. State that outlives the container would
  * make a spec's outcome depend on what an earlier run left behind, which is exactly
@@ -41,6 +41,7 @@ final class Store
         'oauthTokens' => [],
         'oauthExpiredCodes' => [],
         'answers' => [],
+        'modelRequests' => [],
     ];
 
     /**
@@ -179,6 +180,53 @@ final class Store
         });
 
         return $taken;
+    }
+
+    /**
+     * Records a real model request before its answer can be delayed.
+     *
+     * @param string $key Announced correlation key matched by the provider route
+     * @param list<string> $imageHashes Hashes of the decoded image bytes, empty for text
+     */
+    public static function observeModelRequest(string $key, array $imageHashes): void
+    {
+        self::mutate(static function (array $state) use ($key, $imageHashes): array {
+            $state['modelRequests'][$key][] = [
+                'ordinal' => count($state['modelRequests'][$key] ?? []) + 1,
+                'key' => $key,
+                'imageHashes' => $imageHashes,
+            ];
+
+            return $state;
+        });
+    }
+
+    /**
+     * @param string $key Test whose observations are requested
+     * @return list<array{ordinal: int, key: string, imageHashes: list<string>}> Requests in arrival order
+     */
+    public static function modelRequests(string $key): array
+    {
+        return self::read()['modelRequests'][$key] ?? [];
+    }
+
+    /**
+     * Forgets only one test's observations and unspent model arrangements. A delayed connection
+     * already holds its own answer and behavior; it never writes an old Store snapshot back.
+     *
+     * @param string $path Model provider route whose behaviors are removed
+     * @param string $key Test whose arrangements and observations are removed
+     */
+    public static function forgetModel(string $path, string $key): void
+    {
+        self::mutate(static function (array $state) use ($path, $key): array {
+            unset($state['modelRequests'][$key], $state['answers'][$key], $state['behaviors'][$path][$key]);
+            if (($state['behaviors'][$path] ?? null) === []) {
+                unset($state['behaviors'][$path]);
+            }
+
+            return $state;
+        });
     }
 
     /**
@@ -402,7 +450,7 @@ final class Store
 
     /**
      * Forgets every declared number, every declared behavior, the whole world of the OAuth emulator and its orders for
-     * expired codes, and every dictated model answer.
+     * expired codes, every dictated model answer and every model observation.
      */
     public static function reset(): void
     {
@@ -417,7 +465,8 @@ final class Store
      *     oauthCodes: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
      *     oauthTokens: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
      *     oauthExpiredCodes: array<string, array<string, int>>,
-     *     answers: array<string, list<string>>
+     *     answers: array<string, list<string>>,
+     *     modelRequests: array<string, list<array{ordinal: int, key: string, imageHashes: list<string>}>>
      * } Current state
      */
     private static function read(): array

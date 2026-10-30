@@ -1,35 +1,28 @@
 import { test, expect } from '@playwright/test'
 
 import {
-  clearCustomSetting,
   openBell,
-  setCustomSetting,
   unreadBadge,
   clickSubmit,
   typeInto,
-  gotoPage,
-  createTestUser,
   createTestUserJoined,
-  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation'
+import { dictateModerationVerdict } from '../helpers/moderation.js'
 
-// spec-owner: demo — chat's moderator judging a message
+// spec-owner: demo — chat consumes framework moderation verdicts for its messages
 
-// Message moderation on a real call to the stand's model (HIL-927): a refusal, and
-// a model that does not answer. Until this leaf the moderator swapped in an
-// in-process client on the stand that always allowed, so neither outcome had ever
-// been seen by a run — only the path on which moderation never fired.
+// A message rides the real WS action, runtime check and framework moderator;
+// ChatAgent applies the verdict before the browser sees publication or a refusal.
+// Invalid answers and unavailable calls return the draft without a content notice.
 //
-// The moderator agent asks the stand gateway's model, and the model says only what
+// The framework moderator asks the stand gateway's model, which says only what
 // a spec dictated (helpers/moderation.ts). Each test coins its own key and puts it
 // into the text of its message, so it disturbs no other spec. /test/reset is never
 // called here — it would wipe what the other workers dictated.
 //
-// The Send button is not asserted on: a send starts the re-send lockout, and
-// waiting it out would test the lockout, not moderation (room.spec.ts holds
-// the lockout).
+// Recovery waits for the original re-send lockout through the control's state;
+// room.spec.ts holds the lockout itself.
 
 test('a rejected message stays out of the room and its author is told', async ({
   page,
@@ -63,12 +56,13 @@ test('a rejected message stays out of the room and its author is told', async ({
   const menu = page.getByTestId('hilos-notification-menu')
   await expect(menu).toContainText('Your message was not published')
   await expect(menu).toContainText('Message rejected: it appears to be spam.')
+  await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(1)
 })
 
-test('a message nobody dictated a verdict for comes back as moderation unavailable', async ({
+test('an unavailable message returns its draft and a corrected retry publishes once', async ({
   page,
 }) => {
-  await createTestUser(expect, page)
+  await createTestUserJoined(expect, page)
 
   // No verdict is dictated: the model refuses the call with a 503, which for the
   // product is a model that is not answering.
@@ -85,12 +79,32 @@ test('a message nobody dictated a verdict for comes back as moderation unavailab
     page.getByTestId('event-text').filter({ hasText: key }),
   ).toHaveCount(0)
   await expect(page.getByTestId('message-input')).toHaveValue(text)
+
+  await openBell(page)
+  await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
+  await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
+  await expect(unreadBadge(page)).toBeHidden()
+  await page.getByTestId('hilos-notification-toggle').click()
+
+  const corrected = `a corrected message ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+  await typeInto(page.getByTestId('message-input'), corrected)
+  // Unavailable does not clear the original ten-second submit lockout.
+  await expect(page.getByTestId('message-send')).toBeEnabled({
+    timeout: 20_000,
+  })
+  await clickSubmit(expect, page.getByTestId('message-send'))
+  await expect(page.getByTestId('moderation-text')).toHaveCount(0)
+  await expect(page.getByTestId('message-input')).toHaveValue('')
+  const messages = page.getByTestId('event-text').filter({ hasText: key })
+  await expect(messages).toHaveCount(1)
+  await expect(messages).toHaveText(corrected)
 })
 
-test('a message refused without a reason shows generic message rejection and preserves draft', async ({
+test('an undeclared refusal reason returns the draft as unavailable without a content notice', async ({
   page,
 }) => {
-  await createTestUser(expect, page)
+  await createTestUserJoined(expect, page)
 
   const key = modelKey()
   const text = `a message blocked without category ${key}`
@@ -100,75 +114,16 @@ test('a message refused without a reason shows generic message rejection and pre
   await clickSubmit(expect, page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
-    'Message rejected.',
+    'Moderation is unavailable right now. Your message is still here.',
   )
   await expect(page.getByTestId('moderation-text')).not.toContainText('blocked')
   await expect(
     page.getByTestId('event-text').filter({ hasText: key }),
   ).toHaveCount(0)
   await expect(page.getByTestId('message-input')).toHaveValue(text)
-})
 
-test('a saved invalid moderation model is refused then a restored model handles the next message', async ({
-  page,
-}) => {
-  // Setup, two settings writes, and two moderation rounds outlive the base test cap.
-  test.slow()
-  await grantAdminToSelf(expect, page)
-  const settingKey = 'chat_moderation_model'
-  const key = modelKey()
-  const text = `moderation after changing the model ${key}`
-  let changed = false
-
-  try {
-    await gotoPage(expect, page, '/hilos/settings')
-    await typeInto(page.getByTestId('hilos-table-search'), settingKey)
-    await expect(
-      page.getByTestId(`hilos-table-row-${settingKey}`),
-    ).toBeVisible()
-
-    // The stand model accepts any nonempty model name. An empty saved model
-    // makes the real Ollama client refuse before it sends the dictated call.
-    await setCustomSetting(page, settingKey, '')
-    changed = true
-    await dictateModerationVerdict(key, true, 'ok')
-
-    await gotoPage(expect, page, '/')
-    await typeInto(page.getByTestId('message-input'), text)
-    await clickSubmit(expect, page.getByTestId('message-send'))
-    await expect(page.getByTestId('moderation-text')).toHaveText(
-      'Moderation is unavailable right now. Your message is still here.',
-    )
-    await expect(
-      page.getByTestId('event-text').filter({ hasText: key }),
-    ).toHaveCount(0)
-
-    await gotoPage(expect, page, '/hilos/settings')
-    await typeInto(page.getByTestId('hilos-table-search'), settingKey)
-    await expect(
-      page.getByTestId(`hilos-table-row-${settingKey}`),
-    ).toBeVisible()
-    await clearCustomSetting(page, settingKey)
-    changed = false
-
-    await gotoPage(expect, page, '/')
-    await typeInto(page.getByTestId('message-input'), text)
-    // The first submit's re-send lockout survives navigation; await its control state.
-    await expect(page.getByTestId('message-send')).toBeEnabled({
-      timeout: 20_000,
-    })
-    await clickSubmit(expect, page.getByTestId('message-send'))
-    await expect(
-      page.getByTestId('event-text').filter({ hasText: key }),
-    ).toHaveCount(1)
-  } finally {
-    if (changed) {
-      await gotoPage(expect, page, '/hilos/settings')
-      await typeInto(page.getByTestId('hilos-table-search'), settingKey)
-      await expect(
-        page.getByTestId(`hilos-table-row-${settingKey}`),
-      ).toBeVisible()
-      await clearCustomSetting(page, settingKey)
-    }
-  }
+  await openBell(page)
+  await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
+  await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
+  await expect(unreadBadge(page)).toBeHidden()
 })

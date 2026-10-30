@@ -117,7 +117,7 @@ final class JournalTriggerStartupIntegrationTest extends IntegrationTestCase
             copy($file, $this->path . '/' . basename($file));
         }
         JournalTriggerInstaller::apply();
-        $this->assertCount(21, self::catalog());
+        $this->assertCount(18, self::catalog());
         $before = self::ddlCounts();
         JournalTriggerInstaller::apply();
         $this->assertSame($before, self::ddlCounts(), 'A repeated start must execute no trigger DDL');
@@ -272,7 +272,7 @@ final class JournalTriggerStartupIntegrationTest extends IntegrationTestCase
         JournalTriggerInstaller::apply();
         $after = self::ddlCounts();
         $this->assertSame($before['Com_drop_trigger'], $after['Com_drop_trigger']);
-        $this->assertSame($before['Com_create_trigger'] + 9, $after['Com_create_trigger']);
+        $this->assertSame($before['Com_create_trigger'] + 6, $after['Com_create_trigger']);
         $this->assertCanonical();
     }
 

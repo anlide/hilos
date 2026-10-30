@@ -45,17 +45,17 @@ public function onSignalCron(SignalDataInterface $data, string $source, string $
 public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
 {
     switch ($name) {
-        case ChatSignalConstants::MODERATION_RESULT:
-            $moderationResult = $data->data;
-            if (!$moderationResult instanceof ModerationResultSignalData) {
+        case ChatSignalConstants::ATTACHMENTS_PUBLISHED:
+            $published = $data->data;
+            if (!$published instanceof FilesPublishedSignalData) {
                 throw new InvalidAgentSignalPayloadException(
                     $name,
-                    ModerationResultSignalData::class,
-                    $moderationResult,
+                    FilesPublishedSignalData::class,
+                    $published,
                 );
             }
 
-            $this->handleModerationResult($moderationResult);
+            $this->handleAttachmentsPublished($published);
 
             return;
 

@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Files;
 
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
+use Hilos\HilosException;
 
 /**
  * The chat's one upload target: a file attached to a message (HIL-144).
@@ -33,6 +36,8 @@ final class ChatAttachmentUploadTarget extends AbstractUploadTarget
     /** Types the composer's file picker offers; content of any other type is refused. */
     private const array ACCEPTED_MIME_TYPES = ['image/*', 'application/pdf', 'text/plain'];
 
+    private const string MESSAGE_HELD = 'This attachment cannot be changed while its message is being checked';
+
     /**
      * Reads the chat's own per-file limit on every declaration, so an administrator's change applies at once.
      *
@@ -49,6 +54,12 @@ final class ChatAttachmentUploadTarget extends AbstractUploadTarget
      * @return bool Always true: a guest reads the chat but sends nothing into it
      */
     public function requiresSignIn(): bool
+    {
+        return true;
+    }
+
+    /** @return bool Publication requires final owner approval of the whole original attachment group */
+    public function requiresUploadHoldForPublication(): bool
     {
         return true;
     }
@@ -73,6 +84,39 @@ final class ChatAttachmentUploadTarget extends AbstractUploadTarget
     public function sniffsContent(): bool
     {
         return true;
+    }
+
+    /**
+     * Protects every upload in the held composer, including earlier approvals and publication wait.
+     *
+     * The connections collection is held process-wide by the runtime context. The composer,
+     * rather than the current image check, covers the whole attempt and survives a chat restart.
+     *
+     * @param string $acceptKey Connection whose held composer supplies the policy
+     * @param string $clientUploadId Attachment the browser would create, remove or replace
+     * @throws ValidationException When the composer holds the attachment or its source is stale
+     * @throws HilosException When the connection runtime cannot be read
+     */
+    public function assertBrowserMutationAllowed(string $acceptKey, string $clientUploadId): void
+    {
+        if (Hilos::$rt->connections[$acceptKey] === null) {
+            if (Hilos::$rt->connections->staleSince() !== null) {
+                throw new ValidationException(self::MESSAGE_HELD);
+            }
+
+            return;
+        }
+
+        if (
+            Hilos::$rt->connections[$acceptKey]->staleSince() !== null
+            || (
+                Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
+                    === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+                && in_array($clientUploadId, Hilos::$rt->connections[$acceptKey]->outboundModerationAttachments, true)
+            )
+        ) {
+            throw new ValidationException(self::MESSAGE_HELD);
+        }
     }
 
     /**

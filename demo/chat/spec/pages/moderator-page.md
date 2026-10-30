@@ -1,14 +1,11 @@
-# ModeratorPage and Other Pages
+# Moderation Page and Other Pages
 
-## ModeratorPage
+## Retired project moderator page
 
-**Page constant:** `PageConstants::MODERATOR` | **Agent:** `ModeratorAgent`
-
-Moderation console page. Shows pending moderation items, allows manual override.
-
-`onSubscribe`: sends current moderation queue state.
-
-Actions: ban user and allow/reject moderation.
+Chat has no project-owned moderator console or `PageConstants::MODERATOR` page.
+The common Moderation section is framework-owned; see the canonical
+[moderation guide](../../../../docs/agents/architecture/moderation.md) and its
+[activation recipe](../../../../docs/agents/architecture/admin-feature-scaffold.md#moderation--the-moderation-section).
 
 ---
 

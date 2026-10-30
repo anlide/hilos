@@ -15,6 +15,7 @@ use Demo\Chat\Notification\ChatMentionNotifier;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Database;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -143,8 +144,8 @@ final class EventsActions extends DbActions
             message: $message,
         );
 
-        // Every feed message is born here, so both authors reach mention detection once.
-        ChatMentionNotifier::notifyMentions((int)$event->id, $message, $userId, $botId);
+        // A mention must not escape a transaction whose later attachment write rolls back.
+        Database::afterCommit(static fn () => ChatMentionNotifier::notifyMentions((int)$event->id, $message, $userId, $botId));
 
         foreach ($fileIds as $fileId) {
             Hilos::$db->eventAttachments->actions->create((int)$event->id, $fileId);

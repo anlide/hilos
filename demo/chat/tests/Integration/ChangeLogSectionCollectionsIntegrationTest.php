@@ -130,8 +130,8 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
         $this->assertGreaterThanOrEqual(1, $tables['hilos_setting']->changesLast24h);
         $this->assertNotNull($tables['hilos_setting']->lastChangeAt);
         $this->assertSame(1, $tables['hilos_setting']->modeCounts[JournalColumnMode::RECORD_KEY->value]);
-        foreach (['bot' => 12, 'moderator_prompt_piece' => 2] as $table => $valueColumns) {
-            $this->assertSame('project', $tables[$table]->owner->value);
+        foreach (['bot' => 12, 'hilos_moderation_rule' => 2] as $table => $valueColumns) {
+            $this->assertSame($table === 'bot' ? 'project' : 'framework', $tables[$table]->owner->value);
             $this->assertTrue($tables[$table]->journaled);
             $this->assertSame(1, $tables[$table]->modeCounts[JournalColumnMode::RECORD_KEY->value]);
             $this->assertSame($valueColumns, $tables[$table]->modeCounts[JournalColumnMode::VALUE->value]);
@@ -256,12 +256,12 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
             $this->assertGreaterThan(0, $trigger->validFromMigration);
         }
 
-        foreach (['bot', 'moderator_prompt_piece'] as $table) {
+        foreach (['bot' => 95, 'hilos_moderation_rule' => 101] as $table => $validFrom) {
             $project = Hilos::$db->changeLogTables->sectionTable($table);
             $this->assertNotNull($project);
             $this->assertCount(3, $project->triggers);
             foreach ($project->triggers as $trigger) {
-                $this->assertSame(95, $trigger->validFromMigration);
+                $this->assertSame($validFrom, $trigger->validFromMigration);
             }
             $this->assertSame(JournalColumnMode::RECORD_KEY, $project->columns[0]->mode);
             foreach (array_slice($project->columns, 1) as $column) {

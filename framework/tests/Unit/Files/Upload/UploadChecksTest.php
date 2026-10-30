@@ -146,6 +146,9 @@ final class UploadChecksTest extends TestCase
             StateHilosUpload::errorCode => null,
             StateHilosUpload::errorMessage => null,
             StateHilosUpload::updatedAt => 1,
+            StateHilosUpload::uploadHoldId => null,
+            StateHilosUpload::uploadHoldDeadlineAt => null,
+            StateHilosUpload::uploadHoldApproved => false,
         ]));
     }
 }

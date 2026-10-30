@@ -54,11 +54,8 @@ page is the approved research design of the split erasure and merge and not
 code: the users library and the sessions holder keep the writes they have, and
 the read path and the placement axes below are not touched by it.
 
-`demo/chat/backend/Agents/LibraryAgent.php` is the prototype in the repository
-and also the shape the rule cuts: it registers two collections
-(`ChatDbContext::bots` and `ChatDbContext::moderatorPromptPieces`) in one
-`onStart()`, and two entities in one holder is exactly what one entity, one
-library forbids. Its page
+`demo/chat/backend/Agents/LibraryAgent.php` is the live one-entity, one-library
+shape: it registers only `ChatDbContext::bots` in `onStart()`. Its page
 `demo/chat/backend/Pages/AdminBotsPage.php`, pointing
 `SUBSCRIPTION_AGENT_TYPE` at `AgentType::LIBRARY`, is otherwise the read path
 this approach keeps.
@@ -748,7 +745,7 @@ needs an owner's decision and an interview of its own before any leaf is cut.
 // Wrong: one holder for several entities - the monolith at an earlier size.
 public const array OWNS_DB = [
     ChatDbContext::bots => TruthSourceOperation::BY_KIND,
-    ChatDbContext::moderatorPromptPieces => TruthSourceOperation::BY_KIND,
+    ChatDbContext::users => TruthSourceOperation::BY_KIND,
 ];
 ```
 

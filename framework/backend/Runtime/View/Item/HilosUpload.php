@@ -35,6 +35,9 @@ use Hilos\HilosException;
  * @property-read ?string $errorCode Code of the failure, on the failed phase alone
  * @property-read ?string $errorMessage Sentence of the failure, on the failed phase alone
  * @property-read int $updatedAt Unix seconds of the last change of the row
+ * @property-read ?string $uploadHoldId Attempt holding the bytes, or its released tombstone
+ * @property-read ?int $uploadHoldDeadlineAt Fixed epoch-millisecond deadline, or null before a hold or after release
+ * @property-read bool $uploadHoldApproved Final approval of this token; expired deadlines grant no permission
  * @property-read HilosUploadActions $actions Actions for write operations
  */
 final class HilosUpload extends RtItem
@@ -49,12 +52,12 @@ final class HilosUpload extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|int|UploadPhase|HilosUploadActions|null Property value
+     * @return string|int|bool|UploadPhase|HilosUploadActions|null Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
      * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
-    public function __get(string $name): string|int|UploadPhase|HilosUploadActions|null
+    public function __get(string $name): string|int|bool|UploadPhase|HilosUploadActions|null
     {
         return match ($name) {
             StateHilosUpload::acceptKey => $this->_state->acceptKey,
@@ -73,6 +76,9 @@ final class HilosUpload extends RtItem
             StateHilosUpload::errorCode => $this->_state->errorCode,
             StateHilosUpload::errorMessage => $this->_state->errorMessage,
             StateHilosUpload::updatedAt => $this->_state->updatedAt,
+            StateHilosUpload::uploadHoldId => $this->_state->uploadHoldId,
+            StateHilosUpload::uploadHoldDeadlineAt => $this->_state->uploadHoldDeadlineAt,
+            StateHilosUpload::uploadHoldApproved => $this->_state->uploadHoldApproved,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

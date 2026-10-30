@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Backup;
 
 use Demo\Chat\Database\Object\Collection\Bots;
+use Demo\Chat\Database\Schema\ChatTablesWithoutEntity;
 use Hilos\Backup\BackupConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
@@ -28,6 +29,8 @@ use Hilos\Database\Entity\Item\Entity;
  * deliberately: each table carries its own verdict on its Entity ({@see Entity::META_PII}
  * and {@see Entity::META_PII_NOT_PERSONAL}), so a migration that adds a column is
  * classified in the file it was added to.
+ * Retired tables keep their historical verdicts in the tables-without-entity provider
+ * so old archives pass coverage before forward migrations remove those tables.
  */
 final class BackupCatalog implements CatalogProviderInterface
 {
@@ -40,6 +43,9 @@ final class BackupCatalog implements CatalogProviderInterface
         return [
             BackupConstants::CATALOG_REFERENCES => [
                 0 => [Bots::class],
+            ],
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                0 => ChatTablesWithoutEntity::class,
             ],
         ];
     }

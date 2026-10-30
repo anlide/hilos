@@ -4,11 +4,13 @@
 // spec did not order, and a call nobody ordered an answer for is refused with a
 // 503 — for the product, a model that is not answering.
 //
-// The model is an interlocutor, not a delivery channel: nothing it is told
-// reaches a mailbox, so there is nothing to read back. A spec dictates the
-// answer and checks what the product did with it.
+// The model is an interlocutor, not a delivery channel. Scoped observations
+// record actual provider arrivals before a delayed response, without exposing
+// prompts or image bytes. A spec dictates answers and checks the product.
 
-import { postToGateway } from './standGateway.mjs'
+import { URLSearchParams } from 'node:url'
+
+import { postToGateway, STAND_GATEWAY_URL } from './standGateway.mjs'
 
 /**
  * Coin a key no other test's prompt can contain.
@@ -51,4 +53,92 @@ export function modelKey() {
  */
 export async function dictateModelAnswer(key, response) {
   await postToGateway('/model/test/answer', { key, response })
+}
+
+/**
+ * @typedef {object} ModelRequest
+ * @property {number} ordinal Gateway arrival order within this key.
+ * @property {string} key The exact test key under observation.
+ * @property {string[]} imageHashes SHA-256 of decoded provider image bytes, empty for text.
+ */
+
+/**
+ * Read actual arrivals for one owned key. Empty is evidence only after the
+ * caller's causal checkpoint; this function introduces no wait or retry.
+ * Preserve the gateway's ordinals and reject duplicated or reversed arrivals.
+ *
+ * @param {string} key Nonsecret key coined by this test.
+ * @returns {Promise<ModelRequest[]>} Ordered, validated arrivals.
+ * @throws {Error} On transport, HTTP, JSON or observation-schema failure.
+ */
+export async function readModelRequests(key) {
+  requireModelKey(key)
+  const path = `/model/test/requests?${new URLSearchParams({ key })}`
+  const response = await globalThis.fetch(`${STAND_GATEWAY_URL}${path}`)
+  if (response.status !== 200)
+    throw new Error(`stand model refused requests: ${response.status}`)
+  const arrivals = await response.json()
+  if (!Array.isArray(arrivals))
+    throw new Error('Invalid model request observations: expected a list')
+  let previous = 0
+  return arrivals.map((arrival) => {
+    if (
+      !arrival ||
+      typeof arrival !== 'object' ||
+      Array.isArray(arrival) ||
+      Object.keys(arrival).sort().join() !== 'imageHashes,key,ordinal' ||
+      !Number.isSafeInteger(arrival.ordinal) ||
+      arrival.ordinal <= previous ||
+      arrival.key !== key ||
+      !Array.isArray(arrival.imageHashes) ||
+      !arrival.imageHashes.every(
+        (hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash),
+      )
+    )
+      throw new Error('Invalid model request observation')
+    previous = arrival.ordinal
+    return {
+      ordinal: arrival.ordinal,
+      key: arrival.key,
+      imageHashes: [...arrival.imageHashes],
+    }
+  })
+}
+
+/**
+ * Forget only this key's arrivals, unspent answers and model-route behavior.
+ * Cleanup is idempotent at the gateway; a failed acknowledgement still fails
+ * the test, so an unavailable API cannot pass as successful cleanup.
+ *
+ * @param {string} key Nonsecret key owned by this test.
+ * @returns {Promise<void>}
+ * @throws {Error} On transport, HTTP, JSON or acknowledgement-schema failure.
+ */
+export async function forgetModelKey(key) {
+  requireModelKey(key)
+  const response = await globalThis.fetch(
+    `${STAND_GATEWAY_URL}/model/test/forget`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    },
+  )
+  if (response.status !== 200)
+    throw new Error(`stand model refused forget: ${response.status}`)
+  const reply = await response.json()
+  if (
+    !reply ||
+    typeof reply !== 'object' ||
+    Array.isArray(reply) ||
+    Object.keys(reply).join() !== 'ok' ||
+    reply.ok !== true
+  )
+    throw new Error('Invalid model forget acknowledgement')
+}
+
+/** Refuse an unscoped request before it reaches the gateway. */
+function requireModelKey(key) {
+  if (typeof key !== 'string' || key === '')
+    throw new Error('A model observation needs a nonempty test key')
 }

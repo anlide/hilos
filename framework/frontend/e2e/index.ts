@@ -553,6 +553,7 @@ export {
   type MonopolisticWorker,
 } from './daemonWorker.js'
 export { watchUploadFrames } from './uploadFrames.js'
+export { watchUploadIncarnations } from './uploadIncarnations.js'
 export { watchUploadReady } from './uploadTiming.js'
 export { watchTableSearch, watchTableModalFocus } from './tableFocus.js'
 export { watchTableContinuity } from './tableContinuity.js'

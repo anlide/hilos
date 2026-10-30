@@ -110,6 +110,9 @@ final class UploadDtoTest extends TestCase
             StateHilosUpload::errorCode => UploadFailureCode::SIZE_OVERFLOW,
             StateHilosUpload::errorMessage => 'Uploaded data exceeds declared size',
             StateHilosUpload::updatedAt => 1,
+            StateHilosUpload::uploadHoldId => null,
+            StateHilosUpload::uploadHoldDeadlineAt => null,
+            StateHilosUpload::uploadHoldApproved => false,
         ])));
 
         $this->assertSame([

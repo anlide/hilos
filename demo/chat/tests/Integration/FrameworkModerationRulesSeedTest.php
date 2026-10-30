@@ -29,8 +29,8 @@ use Hilos\Tables\Moderation\HilosModerationRuleTableRow;
 
 /**
  * The chat's own moderation rules in the framework table `hilos_moderation_rule` (HIL-1624): the
- * fresh seed that carries the rules of seeds 002 and 005 over, and the journal of the table through
- * its generated trigger files, written by the one library that owns it.
+ * six agreed seed rules, and the journal of the table through its generated trigger files,
+ * written by the one library that owns it.
  */
 final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
 {
@@ -38,23 +38,19 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
 
     private const string SEED = '006_framework_moderation_rules';
 
-    /** Message rules exactly as seed 002 writes them into the old table, in its order. */
+    /** Agreed message rules in seed order. */
     private const array MESSAGE_RULES = [
         'Allow benign. Block: insults, threats, hate speech, sexual, spam. Don\'t block greetings, names, neutral.',
         'Explicit text only; no inference. Uncertain→allow. Attachments never cause a block.',
         'Reasons: ok, insult, threat, hate_speech, sexual, spam.',
     ];
 
-    /** Name rules exactly as seed 005 writes them into the old table, in its order. */
+    /** Agreed name rules in seed order. */
     private const array NAME_RULES = [
         'Allow benign display names. Block: insults, threats, hate speech, sexual, spam, impersonation.',
         'Explicit text only; no inference. Uncertain→allow.',
         'Reasons: ok, insult, threat, hate_speech, sexual, spam, impersonation.',
     ];
-
-    /** Sections of the old table the two kinds were seeded from. */
-    private const string OLD_MESSAGE_SECTION = 'message_rule';
-    private const string OLD_NAME_SECTION = 'name_rule';
 
     /** A rule of a third kind the seed must leave alone. */
     private const string PICTURE_RULE = 'Seed fixture: a picture rule of the administrator.';
@@ -93,7 +89,6 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
     /** The SQL seed and the warmed ORM must agree on both rule identities and text. */
     public function testSeedGivesThreeMessageAndThreeNameRulesAndNothingForPictures(): void
     {
-        $oldPieces = self::oldPieces();
         $this->assertRulesMatchDatabase();
 
         $this->applySeed();
@@ -101,12 +96,6 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         $this->assertSame(self::seededRows(), self::ruleRows());
         $this->assertSame([ChatModerationKindKey::MESSAGE, ModerationKindKey::PROFILE_NAME], self::kinds());
         $this->assertRulesMatchDatabase();
-        // The old table and its readers keep their rows, and the new rows are their texts word for word.
-        $this->assertSame($oldPieces, self::oldPieces());
-        $this->assertSame([
-            self::OLD_MESSAGE_SECTION => self::MESSAGE_RULES,
-            self::OLD_NAME_SECTION => self::NAME_RULES,
-        ], $oldPieces);
 
         $expectedRules = [
             ModerationKindKey::PROFILE_NAME => self::NAME_RULES,
@@ -135,7 +124,6 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
     /** Replacing the six seeded rows preserves the third kind and refreshes warmed ORM selections. */
     public function testRepeatedSeedNeitherDuplicatesNorErasesAThirdKind(): void
     {
-        $oldPieces = self::oldPieces();
         $this->assertRulesMatchDatabase();
         $this->applySeed();
         $this->assertRulesMatchDatabase();
@@ -151,7 +139,6 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         $this->assertRulesMatchDatabase();
         Database::sql('SELECT `kind`, `rule` FROM `hilos_moderation_rule` WHERE `id` = ?', [$this->pictureRuleId]);
         $this->assertSame(['kind' => ChatModerationKindKey::MESSAGE_PICTURE, 'rule' => self::PICTURE_RULE], Database::row());
-        $this->assertSame($oldPieces, self::oldPieces());
     }
 
     public function testLibraryWritesAreJournaledByTheGeneratedTriggersUnderTheirReceipt(): void
@@ -329,18 +316,5 @@ final class FrameworkModerationRulesSeedTest extends IntegrationTestCase
         Database::sql('SELECT DISTINCT `kind` FROM `hilos_moderation_rule` ORDER BY `kind`');
 
         return array_column(Database::rows(), 'kind');
-    }
-
-    /** @return array<string, list<string>> Texts of the old table's two rule sections, by id */
-    private static function oldPieces(): array
-    {
-        $pieces = [self::OLD_MESSAGE_SECTION => [], self::OLD_NAME_SECTION => []];
-        Database::sql('SELECT `section`, `prompt_piece` FROM `moderator_prompt_piece` WHERE `section` IN (?, ?) ORDER BY `id`',
-            [self::OLD_MESSAGE_SECTION, self::OLD_NAME_SECTION]);
-        foreach (Database::rows() as $row) {
-            $pieces[$row['section']][] = $row['prompt_piece'];
-        }
-
-        return $pieces;
     }
 }

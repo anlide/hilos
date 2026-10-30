@@ -6,9 +6,12 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\Database as ChatDatabase;
 use Demo\Chat\Database\Entity\Item\Bot;
-use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece;
 use Demo\Chat\Hilos;
+use Demo\Chat\Moderation\ChatModerationKindKey;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Table\TableAnchorDirection;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
@@ -36,6 +39,7 @@ use Hilos\Database\Schema\JournaledTables;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 
 /** The chat migration schema satisfies the Entity declarations the daemon judges. */
 final class JournalCoverageTest extends IntegrationTestCase
@@ -63,7 +67,7 @@ final class JournalCoverageTest extends IntegrationTestCase
         $this->assertSame(ChangeLogDatabase::configuredName(), Database::getConnectionConfig(ChangeLogDatabase::CONNECTION_INDEX)->database);
     }
 
-    public function testExactlySevenConfigurationTablesPassOnTheLiveSchema(): void
+    public function testExactlySixConfigurationTablesPassOnTheLiveSchema(): void
     {
         $schemas = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
         $pii = PiiRegistry::collect();
@@ -73,18 +77,17 @@ final class JournalCoverageTest extends IntegrationTestCase
         sort($names, SORT_STRING);
         $this->assertSame([
             'bot', 'hilos_identity', 'hilos_moderation_rule', 'hilos_second_factor', 'hilos_setting', 'hilos_user',
-            'moderator_prompt_piece',
         ], $names);
         $this->assertNotContains('event', $names);
         $this->assertNotContains('event_message', $names);
         foreach ([
-            User::class, Identity::class, SecondFactor::class, Setting::class, ModerationRule::class, Bot::class, ModeratorPromptPiece::class,
+            User::class, Identity::class, SecondFactor::class, Setting::class, ModerationRule::class, Bot::class,
         ] as $entityClass) {
             $this->assertContains($entityClass, $mounted);
             $this->assertArrayHasKey($entityClass::_table, $schemas);
             $placements = JournalColumnPolicy::forTable($entityClass, $schemas[$entityClass::_table], $pii);
             $this->assertCount(count($schemas[$entityClass::_table]->columns), $placements);
-            if (in_array($entityClass, [ModerationRule::class, Bot::class, ModeratorPromptPiece::class], true)) {
+            if (in_array($entityClass, [ModerationRule::class, Bot::class], true)) {
                 foreach ($placements as $column => $placement) {
                     $this->assertSame($column === $entityClass::_primary
                         ? JournalColumnMode::RECORD_KEY : JournalColumnMode::VALUE, $placement->mode);
@@ -101,32 +104,46 @@ final class JournalCoverageTest extends IntegrationTestCase
         }
     }
 
-    public function testProjectConfigurationCrudHasReceiptsAndCompleteValues(): void
+    public function testProjectAndFrameworkConfigurationCrudHasReceiptsAndCompleteValues(): void
     {
         $scratch = $this->openJournalScratch();
         $botId = null;
-        $pieceId = null;
+        $ruleId = null;
+        $library = new ModerationRulesLibraryAgent();
+        $this->startAgent($library);
         try {
             JournalTriggerInstaller::apply();
-            $receiptId = null;
-            JournalReceiptScope::run(JournalReceiptData::web(1453, null, 1453, 'configuration.crud', 'test-agent'),
-                function () use (&$botId, &$pieceId, &$receiptId): void {
-                    $receiptId = JournalReceiptScope::currentId();
+            $botReceiptId = JournalReceiptScope::run(
+                JournalReceiptData::web(1453, null, 1453, 'configuration.crud', 'test-agent'),
+                function () use (&$botId): ?int {
                     $botId = Hilos::$db->bots->actions->create('Journal bot', description: 'Initial description')->id;
-                    $pieceId = Hilos::$db->moderatorPromptPieces->actions->create('message_rule', 'Initial prompt')->id;
                     Hilos::$db->bots[$botId]->actions->update(name: 'Journal bot renamed');
-                    Hilos::$db->moderatorPromptPieces[$pieceId]->actions->update(promptPiece: str_repeat('Long prompt. ', 600));
                     Hilos::$db->bots[$botId]->actions->delete();
-                    Hilos::$db->moderatorPromptPieces[$pieceId]->actions->delete();
-                });
-            $this->assertNotNull($receiptId);
-            foreach (['bot' => $botId, 'moderator_prompt_piece' => $pieceId] as $table => $id) {
+                    return JournalReceiptScope::currentId();
+                },
+            );
+            $ruleReceiptId = $this->underAgent($library, function () use ($library, &$ruleId): ?int {
+                return JournalReceiptScope::run(
+                    JournalReceiptData::web(1453, null, 1453, 'configuration.crud', $library->getId()),
+                    function () use (&$ruleId): ?int {
+                        $ruleId = Hilos::$db->moderationRules->actions->create(ChatModerationKindKey::MESSAGE, 'Initial rule')->id;
+                        Hilos::$db->moderationRules[$ruleId]->actions->update(str_repeat('Long rule. ', 600));
+                        Hilos::$db->moderationRules[$ruleId]->actions->delete();
+                        return JournalReceiptScope::currentId();
+                    },
+                );
+            });
+            $this->assertNotNull($botReceiptId);
+            $this->assertNotNull($ruleReceiptId);
+            $this->assertNotNull($ruleId);
+            foreach (['bot' => $botId, 'hilos_moderation_rule' => $ruleId] as $table => $id) {
                 $history = Hilos::$db->changeLogEntries->historyWindow($table, new ChangeLogHistoryFilter(recordKey: [$id]),
                     false, null, TableAnchorDirection::After, 10);
                 $this->assertCount(3, $history);
                 $this->assertSame(['create', 'update', 'delete'], array_map(static fn($row): string => $row->entry->mutation, $history->toArray()));
                 foreach ($history as $row) {
-                    $this->assertSame($receiptId, $row->entry->receiptId);
+                    $this->assertSame($table === 'bot' ? $botReceiptId : $ruleReceiptId, $row->entry->receiptId);
+                    $this->assertSame($table === 'bot' ? 'test-agent' : $library->getId(), $row->receipt->agent);
                     $this->assertSame('configuration.crud', $row->receipt->action);
                     $this->assertSame([$id], $row->entry->recordKey);
                 }
@@ -156,26 +173,32 @@ final class JournalCoverageTest extends IntegrationTestCase
                     $this->assertSame('Initial description', $snapshot['description']->oldValue);
                     $this->assertSame('80', $snapshot['reaction_chance']->oldValue);
                 } else {
-                    $this->assertSame('prompt_piece', $changed->field);
+                    $this->assertSame('rule', $changed->field);
                     $this->assertSame('long', $changed->kind);
                     $this->assertFalse($changed->bodyOmitted);
-                    $this->assertSame('Initial prompt', $changed->oldValue);
-                    $this->assertSame(str_repeat('Long prompt. ', 600), $changed->newValue);
-                    $this->assertSame(['section', 'prompt_piece'], array_keys($snapshot));
-                    $this->assertSame('message_rule', $snapshot['section']->oldValue);
-                    $this->assertSame('long', $snapshot['prompt_piece']->kind);
-                    $this->assertSame($changed->newValue, $snapshot['prompt_piece']->oldValue);
+                    $this->assertSame('Initial rule', $changed->oldValue);
+                    $this->assertSame(str_repeat('Long rule. ', 600), $changed->newValue);
+                    $this->assertSame(['kind', 'rule'], array_keys($snapshot));
+                    $this->assertSame(ChatModerationKindKey::MESSAGE, $snapshot['kind']->oldValue);
+                    $this->assertSame('long', $snapshot['rule']->kind);
+                    $this->assertSame($changed->newValue, $snapshot['rule']->oldValue);
                 }
             }
         } finally {
-            $this->closeJournalScratch($scratch, static function () use (&$botId, &$pieceId): void {
-                if (isset(Hilos::$db->bots[$botId])) {
-                    Hilos::$db->bots[$botId]->actions->delete();
-                }
-                if (isset(Hilos::$db->moderatorPromptPieces[$pieceId])) {
-                    Hilos::$db->moderatorPromptPieces[$pieceId]->actions->delete();
-                }
-            });
+            try {
+                $this->closeJournalScratch($scratch, function () use (&$botId, &$ruleId, $library): void {
+                    if (isset(Hilos::$db->bots[$botId])) {
+                        Hilos::$db->bots[$botId]->actions->delete();
+                    }
+                    if (isset(Hilos::$db->moderationRules[$ruleId])) {
+                        $this->underAgent($library, fn () => Hilos::$db->moderationRules[$ruleId]->actions->delete());
+                    }
+                });
+            } finally {
+                $library->onStop();
+                TruthSourceRegistry::unregisterAgent($library->getId());
+                SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($library->getId()));
+            }
         }
     }
 

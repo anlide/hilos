@@ -72,6 +72,16 @@ different audience for the same target. A project target name beginning with
 `hilos_` is refused at startup; that prefix belongs to framework targets.
 `Hilos::uploadTargets()` combines project and enabled framework targets.
 
+`assertBrowserMutationAllowed(string $acceptKey, string $clientUploadId): void`
+lets a target refuse browser init or cancel with `ValidationException`. Init
+asks the declared target and, when replacing an upload of another target, its
+**existing** target too; cancel asks the existing target. All guards run before
+deleting an existing row or file. Init is guarded even when no upload remains,
+so internal cleanup cannot allow a held id to be reintroduced. The default
+permits mutation. A consumer's policy reads its runtime View collection; the
+connections collection is already held process-wide. Internal handover, expiry,
+connection cleanup and agent start/stop do not call this browser-only guard.
+
 Every check implements `UploadCheckInterface`: `checkDeclared()` judges the
 declaration before any byte is accepted, `checkReceived()` the whole file
 before the upload completes; a check with nothing to say at one moment answers
@@ -136,18 +146,57 @@ and the uploads agent, which creates its checks when it starts, does not start.
 A declared type that differs from the detected one is not a refusal by itself:
 browsers declare `application/octet-stream` for everything they do not know.
 
+## Consumer Holds
+
+A consumer that needs the original bytes unchanged across several checks captures
+`hilosUploads->snapshotForConnection($acceptKey, $clientUploadIds)`. The immutable
+`UploadSnapshotCollection` carries ordered `(clientUploadId, tmpIndex, contentHash)`
+identities, without paths or bytes. Admit the intended target and person before
+opening a moderation check with that snapshot. The check's first request id becomes
+its `uploadHoldId`; later stages keep the full group, token and original deadline.
+
+The check itself requests the hold. The uploads owner reads checks only when
+`MODERATION` is enabled, validates the entire group against its own complete,
+fresh rows and their person, then writes each upload's `uploadHoldId` and fixed
+`uploadHoldDeadlineAt`. A mismatch grants no marks and never refreshes the
+expected incarnation. A bounded recovery walk retries existing requests. The
+owner refuses browser init, cancel and cross-target replacement of an active hold
+before any destructive change, independently of a target's replica-based policy.
+Complete uploads still accept no chunks. Internal cleanup keeps its ordinary path.
+
+Removing a check does not release the group: it is also the boundary between
+stages. The consumer settles the final outcome with the internal agent signal
+`HILOS_UPLOAD_HOLD_SETTLE`, carrying `UploadHoldSettleSignalData`:
+`{acceptKey, uploadHoldId, outcome}`. Every field is required; `outcome` is
+`UploadHoldOutcome::APPROVED` or `RELEASED`, serialized as `approved` or `released`.
+Approval marks only matching active holds as `uploadHoldApproved`. Release and
+expiry clear the deadline and approval, retaining the token as a tombstone.
+Repeating that token cannot revive it; a fresh attempt may hold the bytes again.
+A late release for a different token changes nothing.
+
+`AbstractUploadTarget::requiresUploadHoldForPublication()` defaults to false.
+An opted-in target requires every requested upload to remain complete, held by
+one nonempty token, before its deadline, and finally approved. The authoritative
+gate is in the uploads owner's handover handler, before descriptors or row
+deletion. The consumer queues approval before the unchanged publication request
+on its ordinary FIFO channel; missing, delayed or lost approval refuses handover.
+The publication and files-library payloads stay unchanged. Restart still drops
+all uploads and their files; holds promise no recovery of those bytes or of a
+publication response lost after handover.
+
 ## Declaring, Refusing, Sending
 
 `hilos_upload_init {target, clientUploadId, filename, mimeType, size}` is a
 tracked action; success accepts the declaration. A nonempty file then needs
-upload credit before any chunks are sent. It is refused, with no row
+upload credit before any chunks are sent. It is refused, with no new row
 left behind, in this order: a malformed payload (the reader: an id outside
 1–64 of `[A-Za-z0-9_-]`, an empty or over-255-character name once its path is
 cut, a negative size); a look-only state (a view-only takeover, a freeze) — the
 action does not only read; an unknown target; sign-in required by the target
 on an anonymous connection (401, `ActionUnauthorizedException`); the same id
-still ready or uploading (a failed or complete one is replaced with its file);
-sixteen uploads holding a file on the connection; a target check; a tmp file
+still ready or uploading; an active owner hold; the declared or existing target's
+browser mutation guard (a failed or complete upload is replaced with its file only after both
+permit it); sixteen uploads holding a file on the connection; a target check; a tmp file
 that cannot be created.
 
 Every chunk is a signed `frame_binary` frame (`UploadFrame`):
@@ -422,11 +471,13 @@ upload's own touches it again.
 An upload goes with its file when:
 
 - the browser cancels it (`hilos_upload_cancel {clientUploadId}`, in any phase;
-  canceling one that is already gone succeeds) — frame `gone`;
-- the same id is declared again after it failed or completed;
+  canceling one that is already gone succeeds), unless a live owner hold or its
+  target's browser mutation guard refuses — frame `gone` on success;
+- the same id is declared again after it failed or completed, unless the
+  owner hold or the existing target's browser mutation guard refuses;
 - its connection is no longer among the live ones — silently, on the agent's
-  sweep (at most once a second); a project with no connections collection
-  skips this comparison;
+  bounded sweep (a new pass begins at most once a second); a project with no
+  connections collection skips this comparison;
 - it has not changed for `UPLOAD_TTL_SECONDS` (an hour) — frame `gone`;
 - the agent starts (a predecessor's uploads cannot continue) or stops (every
   connection still here gets `gone`).

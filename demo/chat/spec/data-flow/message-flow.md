@@ -13,29 +13,28 @@ WS Server -> WS_ACTION signal -> PageSignalRouter
         |
 MainPage::onAction('message', MessageActionDTO)
         |
-Validate connection, active moderation, 10s common submit limit, and the named uploads
+Validate connection, active moderation, 10s common submit limit and named uploads
         |
 ConnectionActions::startOutboundModeration(content, attachments)
         |
-ModeratorAgent::onTick() picks up the connection whose phase is `checking`
+ChatAgent::startMessageModeration(acceptKey)
         |
-LLM call (async, non-blocking)
+Shared hilosModerationChecks: chat_message / TEXT_WITH_FILES
         |
-ModeratorAgent::sendToAgent(MODERATION_RESULT, ModerationResultSignalData)
+Framework ModerationAgent -> HILOS_MODERATION_VERDICT -> ChatAgent
         |
-        v
-PageSignalRouter routes MODERATION_RESULT to MainPage::onSignalAgent()
+For each image in attach order: chat_message_picture / IMAGE / imageCopy=true
         |
-With files: Hilos::$files->publishUploads() -> chat_attachments_published -> MainPage
+After all checks approve:
+  no files -> add event
+  with files -> publish uploads -> chat_attachments_published -> ChatAgent
         |
-Hilos::$db->events->actions->addMessage(content, userId, fileIds)
+Write event, clear composer, bind files when present
         |
 Browser source fan-out updates subscribed main-page event rows
-        |
-Subscribed clients receive the new message_sent row with its attachments
 ```
 
-`MainPage` refuses the submit before moderation when an id is not a complete `chat_attachment` upload of this connection (`Attachment is not ready`), when an id repeats (`Attachment is listed twice`), and when the text is empty and no file is named (`Message cannot be empty`). The approved message's files are published into the registry and linked in order; the full approval path is [file-moderation-flow.md](file-moderation-flow.md).
+`MainPage` refuses the submit before moderation when an id is not a complete `chat_attachment` upload of this connection (`Attachment is not ready`), when an id repeats (`Attachment is listed twice`), or when the text is empty and no file is named (`Message cannot be empty`). It records the draft on `Connection` and delegates the start to `ChatAgent`. That agent stores the immutable attempt and fixed deadline in the shared check collection. The text model receives each attachment's name, MIME type and size as metadata only; after text approval, images are checked separately in attach order. The approved message's files are published only after the entire chain approves ([file-moderation-flow.md](file-moderation-flow.md)).
 
 ## Attachment-Only Messages
 
@@ -44,11 +43,12 @@ Attachments are `event_attachment` links `(event_id, file_id)` to rows of the fi
 
 ## Rejected or Unavailable
 
-`MainPage` keeps the outbound state instead of publishing an event:
+`ChatAgent` keeps the outbound state instead of publishing an event:
 
-- `phase = rejected` for normal moderation denial.
-- `phase = unavailable` for service errors, or when the registry refuses to publish the files (its sentence is the reason).
-- The frontend keeps the composer content and the chips so the user can retry after the common submit cooldown.
+- `phase = rejected` for a content refusal or a local `unreadable` image-render failure.
+- `phase = unavailable` for service errors, expired checks, or when the registry refuses to publish the files.
+- A content refusal may send the existing best-effort notification; `unreadable` and `service_unavailable` are not content refusals and send no notification.
+- The frontend keeps the composer text and chips so the user can retry after the common submit cooldown. Unavailable results do not name an image.
 
 ## Rate Limiting
 

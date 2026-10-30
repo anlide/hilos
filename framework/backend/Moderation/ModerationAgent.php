@@ -16,6 +16,12 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\ModerationRules;
+use Hilos\Files\Image\ImageCopy;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImageRenderException;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -30,12 +36,18 @@ use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\DTO\ModerationObserveCommandData;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosModerationCheck;
+use Hilos\Runtime\View\Item\HilosUpload as ViewHilosUpload;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\WiringRefusal;
+use Throwable;
 
 /**
  * ModerationAgent - the cluster's one moderator (HIL-1625).
@@ -66,6 +78,10 @@ class ModerationAgent extends AbstractHilosAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_MODERATOR;
 
+    public const array AGENT_COMMANDS = [
+        ModerationCommandConstants::TEST_OBSERVE => ModerationObserveCommandData::class,
+    ];
+
     /**
      * The rules of each kind, the settings the model profiles are overridden from, and the person
      * whose name a prompt carries; the moderator writes none of them.
@@ -85,6 +101,10 @@ class ModerationAgent extends AbstractHilosAgent
 
     /** Tokens a verdict needs; the answer is one short JSON object. */
     private const int VERDICT_MAX_TOKENS = 32;
+
+    /** Internal name and frame of the temporary copy, never published in the registry. */
+    private const string IMAGE_COPY_NAME = 'moderation';
+    private const int IMAGE_COPY_SIDE_PX = 512;
 
     /** Profile the client in hand was built from, or null before the first check. */
     private ?LlmProfile $profile = null;
@@ -107,18 +127,50 @@ class ModerationAgent extends AbstractHilosAgent
     /** The kind as declared when the attempt in hand went to the model; null while no model is asked. */
     private ?ModerationKind $kind = null;
 
+    /** Immutable row in hand, including attachment order and the choice of image bytes. */
+    private ?HilosModerationCheck $attempt = null;
+
     /** Whether the verdict of the attempt in hand has gone out. */
     private bool $answered = false;
 
     /** Whether the queue may hold a check the moderator has not looked at since it changed. */
     private bool $queueChanged = true;
 
+    /** @var array<string, CommandRequestDTO> Process-private reply obligations, discharged by the next tick or stop */
+    private array $observations = [];
+
     /**
-     * Drops the attempt in hand without a verdict.
+     * Drops the attempt without a verdict and refuses commands whose tick will never run.
+     *
+     * @throws InvalidArgumentException When a pending command carries an empty correlation id
      */
     public function onStop(): void
     {
+        $this->replyObservations('Moderator stopped before the observation tick');
         $this->forgetAttempt();
+    }
+
+    /**
+     * Parks a read-only observation until the next natural tick, without advancing any check.
+     *
+     * @param CommandRequestDTO $data Topology-hydrated command
+     * @param string $source Command source, unused
+     * @param string $name Signal name, unused
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command !== ModerationCommandConstants::TEST_OBSERVE) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+            return;
+        }
+        if (!NonProductionGate::admitted()) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Moderation observation is test-only'));
+
+            return;
+        }
+        $this->observations[$data->correlationId] = $data;
     }
 
     /**
@@ -163,25 +215,33 @@ class ModerationAgent extends AbstractHilosAgent
     /**
      * Drives the attempt in hand, or starts the oldest waiting check once the queue has changed.
      *
-     * Short by construction: an attempt in flight only pumps its async client, an answered one only
-     * compares its deadline, and the queue is walked in memory, and only after it changed.
+     * An attempt in flight only pumps its async client, an answered one only compares its deadline,
+     * and the queue is walked in memory after it changed. A requested image copy is drawn on starting
+     * its check in the moderator's monopolistic worker.
      *
      * @throws HilosException When the checks cannot be read or a verdict cannot be queued
      */
     public function onTick(): void
     {
-        if ($this->acceptKey !== null) {
-            $this->advanceAttempt();
+        try {
+            if ($this->acceptKey !== null) {
+                $this->advanceAttempt();
 
-            return;
-        }
-        if (!$this->queueChanged) {
-            return;
-        }
-        $this->queueChanged = false;
-        $oldest = $this->oldestWaitingCheck();
-        if ($oldest !== null) {
-            $this->start($oldest);
+                return;
+            }
+            if (!$this->queueChanged) {
+                return;
+            }
+            $this->queueChanged = false;
+            $oldest = $this->oldestWaitingCheck();
+            if ($oldest !== null) {
+                $this->start($oldest);
+            }
+        } catch (Throwable $failure) {
+            $this->replyObservations('Moderator tick failed before observation');
+            throw $failure;
+        } finally {
+            $this->replyObservations();
         }
     }
 
@@ -208,13 +268,54 @@ class ModerationAgent extends AbstractHilosAgent
      */
     private function noteQueueChange(string $collectionKey): void
     {
-        if ($collectionKey !== StateHilosModerationCheck::RT_COLLECTION) {
+        if ($collectionKey !== StateHilosModerationCheck::RT_COLLECTION && $collectionKey !== HilosUpload::RT_COLLECTION) {
             return;
         }
         $this->queueChanged = true;
         if ($this->acceptKey !== null && !$this->isStillAsked()) {
             $this->forgetAttempt();
         }
+    }
+
+    /**
+     * Takes obligations out before answering, so a stop or failure cannot answer them twice.
+     *
+     * @param ?string $refusal Stop or failed-tick reason, null for a completed tick
+     * @throws InvalidArgumentException When a pending command carries an empty correlation id
+     */
+    private function replyObservations(?string $refusal = null): void
+    {
+        $observations = $this->observations;
+        $this->observations = [];
+        foreach ($observations as $request) {
+            try {
+                $reply = $refusal === null
+                    ? CommandReplyDTO::ok($request->correlationId, $this->observation($request->parsedPayload))
+                    : CommandReplyDTO::error($request->correlationId, $refusal);
+            } catch (Throwable $failure) {
+                $this->logAgentError('Moderation observation failed: ' . $failure->getMessage());
+                $reply = CommandReplyDTO::error($request->correlationId, 'Cannot observe moderation check');
+            }
+            $this->replyToCommand($reply);
+        }
+    }
+
+    /**
+     * @param ModerationObserveCommandData $query Exact connection/kind pair
+     * @return array{checkRequestId: ?string, activeRequestId: ?string, waitingForUploadHold: bool} Command result
+     * @throws HilosException When the checks or uploads cannot be read
+     */
+    private function observation(ModerationObserveCommandData $query): array
+    {
+        $check = Hilos::$rt->hilosModerationChecks->find($query->acceptKey, $query->kind);
+        $activeRequestId = $this->acceptKey === $query->acceptKey && $this->kindKey === $query->kind ? $this->requestId : null;
+
+        return [
+            ModerationCommandConstants::checkRequestId => $check?->requestId,
+            ModerationCommandConstants::activeRequestId => $activeRequestId,
+            ModerationCommandConstants::waitingForUploadHold => $check !== null && $activeRequestId === null
+                && count($check->uploadSnapshots) > 0 && $check->deadlineAt > TimeHelper::nowMs() && !$this->uploadsHeldFor($check),
+        ];
     }
 
     /**
@@ -242,6 +343,12 @@ class ModerationAgent extends AbstractHilosAgent
             return;
         }
         try {
+            if (TimeHelper::nowMs() >= $this->deadlineAt) {
+                $client->reset();
+                $this->answer(ModerationDecision::unavailable());
+
+                return;
+            }
             $client->tick(microtime(true) * TimeConstants::MS_PER_SECOND);
             if ($client->isBusy() || !$client->hasResult()) {
                 return;
@@ -273,6 +380,9 @@ class ModerationAgent extends AbstractHilosAgent
             if ($check->deadlineAt <= $now) {
                 continue;
             }
+            if (!$this->uploadsHeldFor($check)) {
+                continue;
+            }
             if (($check->sessionTokenHash === null || $check->kind !== ModerationKindKey::PROFILE_NAME)
                 && $connections !== null && $connections->get($check->acceptKey)?->userId !== $check->userId
             ) {
@@ -301,17 +411,27 @@ class ModerationAgent extends AbstractHilosAgent
         $this->kindKey = $check->kind;
         $this->requestId = $check->requestId;
         $this->deadlineAt = $check->deadlineAt;
+        $this->attempt = $check;
         try {
             $kind = Hilos::moderationKinds()[$check->kind]
                 ?? throw new InvalidArgumentException("Unknown moderation kind: {$check->kind}");
             $messages = $this->messagesOf($check, $kind);
             $profile = $this->profileOf($kind->input);
+            $now = TimeHelper::nowMs();
+            if ($now >= $this->deadlineAt || !$this->uploadsHeldFor($check)) {
+                $this->answer(ModerationDecision::unavailable());
+
+                return;
+            }
             $this->clientOf($profile)->startGenerate($messages, new ChatGenerateOptions(
                 model: $profile->model,
-                timeoutSec: min($profile->timeoutSec, ($this->deadlineAt - TimeHelper::nowMs()) / TimeConstants::MS_PER_SECOND),
+                timeoutSec: min($profile->timeoutSec, ($this->deadlineAt - $now) / TimeConstants::MS_PER_SECOND),
                 maxTokens: self::VERDICT_MAX_TOKENS,
             ));
             $this->kind = $kind;
+        } catch (ImageRenderException $e) {
+            $this->logAgentWarning("Moderation check {$check->kind} cannot draw its image copy: {$e->getMessage()}");
+            $this->answer(new ModerationDecision(false, ModerationReason::UNREADABLE));
         } catch (WiringRefusal $refusal) {
             $this->logAgentError("Moderation check {$check->kind} cannot read what it needs: {$refusal->getMessage()}");
             $this->answer(ModerationDecision::unavailable());
@@ -330,13 +450,17 @@ class ModerationAgent extends AbstractHilosAgent
      * @param HilosModerationCheck $check Check being started
      * @param ModerationKind $kind Its kind, as declared now
      * @return list<Message> System and user messages
-     * @throws InvalidStateException When the kind has no rules, the person is gone, or the kind looks at text with files
+     * @throws InvalidStateException When the kind has no rules, the person is gone, or an upload is unavailable
      * @throws InvalidArgumentException When the project no longer publishes the kind
      * @throws FsException When the uploaded image cannot be read
+     * @throws ImageRenderException When the requested image copy cannot be drawn
      * @throws HilosException When the rules, the person or the upload cannot be read
      */
     private function messagesOf(HilosModerationCheck $check, ModerationKind $kind): array
     {
+        if (!$this->uploadsHeldFor($check)) {
+            throw new InvalidStateException('The uploads of the check are no longer held.');
+        }
         $rules = Hilos::$db->moderationRules->effectiveForKind($kind->key);
         if ($rules === []) {
             throw new InvalidStateException("Moderation kind {$kind->key} has no rules to apply");
@@ -347,17 +471,18 @@ class ModerationAgent extends AbstractHilosAgent
         $policy = new Message(Message::ROLE_SYSTEM, self::policyOf($kind, $rules));
 
         return match ($kind->input) {
-            ModerationInput::TEXT => [
+            ModerationInput::TEXT, ModerationInput::TEXT_WITH_FILES => [
                 $policy,
-                new Message(Message::ROLE_USER, implode("\n\n", [...$context, "Text:\n" . $check->text])),
+                new Message(Message::ROLE_USER, implode("\n\n", [
+                    ...$context,
+                    "Text:\n" . $check->text,
+                    ...$this->attachmentsOf($check),
+                ])),
             ],
             ModerationInput::IMAGE => [
                 $policy,
-                new Message(Message::ROLE_USER, implode("\n\n", $context), [$this->imageOf($check)]),
+                $this->imageMessageOf($check, $context),
             ],
-            ModerationInput::TEXT_WITH_FILES => throw new InvalidStateException(
-                "Moderation kind {$kind->key} looks at text with files, which the moderator cannot ask about yet",
-            ),
         };
     }
 
@@ -379,38 +504,165 @@ class ModerationAgent extends AbstractHilosAgent
                 ModerationDecision::reason,
                 implode('|', $kind->reasons),
             ),
+            ...($kind->input === ModerationInput::TEXT_WITH_FILES ? [
+                'Attachment names, types and sizes are context only, never grounds for blocking the text.',
+            ] : []),
             'Rules:',
             ...array_map(static fn (string $rule): string => "- {$rule}", $rules),
         ]);
     }
 
     /**
-     * Reads the complete upload an image check names out of the cluster's temporary directory.
+     * Attachment metadata alone: no file is opened, and no vision payload is built.
      *
-     * The upload is found by its connection and id and the file by its temporary index, so no path
-     * travels between processes.
-     *
-     * @param HilosModerationCheck $check Image check being started
-     * @return MessageImage The image, with the type read from its content when there is one
-     * @throws InvalidStateException When the check names no upload, the upload is gone or not complete, or files are
-     *     unavailable in this process
-     * @throws FsException When the temporary directory is not configured or the file cannot be read
+     * @param HilosModerationCheck $check Text check being started
+     * @return list<string> Attachment lines in the supplied order
+     * @throws InvalidStateException When any named upload is unavailable
      * @throws HilosException When the uploads cannot be read
      */
-    private function imageOf(HilosModerationCheck $check): MessageImage
+    private function attachmentsOf(HilosModerationCheck $check): array
     {
-        $clientUploadId = $check->clientUploadId
-            ?? throw new InvalidStateException('An image check names no upload');
-        $upload = Hilos::$rt->hilosUploads->find($check->acceptKey, $clientUploadId);
-        if ($upload?->phase !== UploadPhase::COMPLETE || $upload->tmpIndex === null) {
-            throw new InvalidStateException('The upload of the check is gone or no longer complete');
+        $attachments = [];
+        foreach ($check->clientUploadIds as $clientUploadId) {
+            $upload = $this->completeUploadOf($check->acceptKey, $clientUploadId);
+            $attachments[] = sprintf(
+                'Attachment: name=%s, mime=%s, size=%d bytes',
+                $upload->filename,
+                $upload->detectedMimeType ?? $upload->mimeType,
+                $upload->declaredSize,
+            );
+        }
+
+        return $attachments;
+    }
+
+    /**
+     * @param HilosModerationCheck $check Image check being started
+     * @param list<string> $context Person's id and current name
+     * @return Message One named image without message text
+     * @throws InvalidStateException When the check names no complete, current upload
+     * @throws FsException When temporary files cannot be read or the copy cleaned up
+     * @throws ImageRenderException When the requested copy cannot be drawn
+     * @throws HilosException When the upload or image engine cannot be read
+     */
+    private function imageMessageOf(HilosModerationCheck $check, array $context): Message
+    {
+        $upload = $this->completeUploadOf(
+            $check->acceptKey,
+            $check->clientUploadId ?? throw new InvalidStateException('An image check names no upload'),
+        );
+
+        return new Message(
+            Message::ROLE_USER,
+            implode("\n\n", [...$context, 'Picture: name=' . $upload->filename]),
+            [$this->imageOf($check, $upload)],
+        );
+    }
+
+    /**
+     * Reads the original or draws a disposable JPEG in the cluster's temporary directory.
+     *
+     * @param HilosModerationCheck $check Image check being started
+     * @param ViewHilosUpload $upload Complete, current upload of the same connection
+     * @return MessageImage Original bytes and type, or the requested JPEG copy
+     * @throws InvalidStateException When the upload has no file, files are unavailable, or image memory cannot be reserved
+     * @throws FsException When temporary files cannot be read, written or removed
+     * @throws ImageRenderException When the requested copy cannot be drawn
+     * @throws HilosException When the image engine cannot be resolved
+     */
+    private function imageOf(HilosModerationCheck $check, ViewHilosUpload $upload): MessageImage
+    {
+        if (!$this->uploadsHeldFor($check)) {
+            throw new InvalidStateException('The uploads of the check are no longer held.');
+        }
+        $tmpIndex = $upload->tmpIndex ?? throw new InvalidStateException('The upload of the check has no file');
+        foreach ($check->uploadSnapshots as $snapshot) {
+            if ($snapshot->clientUploadId === $upload->clientUploadId) {
+                $tmpIndex = $snapshot->tmpIndex;
+                break;
+            }
         }
         $fs = Hilos::$fs ?? throw new InvalidStateException('Temporary files are unavailable in this process');
+        $tmp = $fs->getTmp();
+        $bytes = FsPath::read($tmp[$tmpIndex]->getPath());
+        if (!$check->imageCopy) {
+            return new MessageImage($upload->detectedMimeType ?? $upload->mimeType, base64_encode($bytes));
+        }
 
-        return new MessageImage(
-            $upload->detectedMimeType ?? $upload->mimeType,
-            base64_encode(FsPath::read($fs->getTmp()[$upload->tmpIndex]->getPath())),
-        );
+        $engine = ImageCopy::engine();
+        $previousMemoryLimit = ini_set('memory_limit', ImagesAgent::MEMORY_LIMIT);
+        if ($previousMemoryLimit === false) {
+            throw new InvalidStateException('Cannot reserve memory for the moderation image copy');
+        }
+        try {
+            $copyIndex = $tmp->create();
+            try {
+                ImageCopy::draw($engine, $bytes, new ImageVariant(
+                    self::IMAGE_COPY_NAME,
+                    self::IMAGE_COPY_SIDE_PX,
+                    self::IMAGE_COPY_SIDE_PX,
+                    ImageFit::CONTAIN,
+                    ImageFormat::JPEG,
+                ), $tmp[$copyIndex]->getPath());
+
+                return new MessageImage(ImageFormat::JPEG->value, base64_encode(FsPath::read($tmp[$copyIndex]->getPath())));
+            } finally {
+                $tmp[$copyIndex]->unlink();
+            }
+        } finally {
+            if (ini_set('memory_limit', $previousMemoryLimit) === false) {
+                $this->logAgentWarning('Cannot restore memory_limit after the moderation image copy');
+            }
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection that submitted the check
+     * @param string $clientUploadId Upload named by the check
+     * @return ViewHilosUpload Complete upload whose source is current
+     * @throws InvalidStateException When the upload is missing, incomplete or stale
+     * @throws HilosException When the uploads cannot be read
+     */
+    private function completeUploadOf(string $acceptKey, string $clientUploadId): ViewHilosUpload
+    {
+        $upload = Hilos::$rt->hilosUploads->find($acceptKey, $clientUploadId);
+        if ($upload === null || $upload->phase !== UploadPhase::COMPLETE || $upload->staleSince() !== null) {
+            throw new InvalidStateException('The upload of the check is missing, incomplete or stale');
+        }
+
+        return $upload;
+    }
+
+    /**
+     * The whole admitted group must still match the owner's positive marks, including earlier
+     * image stages. Empty-snapshot consumers keep their original input path.
+     *
+     * @param HilosModerationCheck $check Immutable attempt
+     * @return bool Whether every original upload has a matching, live and fresh owner hold
+     * @throws HilosException When the uploads cannot be read
+     */
+    private function uploadsHeldFor(HilosModerationCheck $check): bool
+    {
+        if (count($check->uploadSnapshots) === 0) {
+            return true;
+        }
+        if ($check->uploadHoldId === null || $check->uploadHoldId === '' || $check->staleSince() !== null
+            || $check->deadlineAt <= TimeHelper::nowMs()
+        ) {
+            return false;
+        }
+        foreach ($check->uploadSnapshots as $snapshot) {
+            $upload = Hilos::$rt->hilosUploads->find($check->acceptKey, $snapshot->clientUploadId);
+            if ($upload === null || $upload->staleSince() !== null || $upload->phase !== UploadPhase::COMPLETE
+                || $upload->userId !== $check->userId || $upload->tmpIndex !== $snapshot->tmpIndex
+                || $upload->contentHash !== $snapshot->contentHash || $upload->uploadHoldId !== $check->uploadHoldId
+                || $upload->uploadHoldDeadlineAt !== $check->deadlineAt
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -485,6 +737,25 @@ class ModerationAgent extends AbstractHilosAgent
 
             return;
         }
+        if (TimeHelper::nowMs() >= $this->deadlineAt) {
+            $decision = ModerationDecision::unavailable();
+        }
+        if ($this->attempt !== null && !$this->uploadsHeldFor($this->attempt)) {
+            $decision = ModerationDecision::unavailable();
+        }
+        if ($decision->allow && $this->attempt !== null) {
+            try {
+                foreach ($this->attempt->clientUploadIds as $clientUploadId) {
+                    $this->completeUploadOf($this->acceptKey, $clientUploadId);
+                }
+                if ($this->attempt->clientUploadId !== null) {
+                    $this->completeUploadOf($this->acceptKey, $this->attempt->clientUploadId);
+                }
+            } catch (WiringRefusal|HilosException $e) {
+                $this->logAgentError("Moderation check {$this->kindKey} lost its upload before the verdict: {$e->getMessage()}");
+                $decision = ModerationDecision::unavailable();
+            }
+        }
         $this->sendToAgent(
             HilosSignalConstants::HILOS_MODERATION_VERDICT,
             new ModerationVerdictSignalData($this->acceptKey, $this->kindKey, $this->requestId, $decision->allow, $decision->reason),
@@ -494,16 +765,21 @@ class ModerationAgent extends AbstractHilosAgent
     }
 
     /**
-     * Whether the row of the attempt in hand is still there under the same request id.
+     * Whether the row in hand is still there under the same request id and immutable input snapshot.
      *
      * @return bool False when the moderator holds no attempt, or its row left or was replaced
      * @throws HilosException When the checks cannot be read
      */
     private function isStillAsked(): bool
     {
-        return $this->acceptKey !== null
-            && $this->kindKey !== null
-            && Hilos::$rt->hilosModerationChecks->find($this->acceptKey, $this->kindKey)?->requestId === $this->requestId;
+        if ($this->acceptKey === null || $this->kindKey === null || $this->attempt === null) {
+            return false;
+        }
+        $current = Hilos::$rt->hilosModerationChecks->find($this->acceptKey, $this->kindKey);
+
+        return $current !== null
+            && $current->requestId === $this->requestId
+            && $current->toArray() === $this->attempt->toArray();
     }
 
     /**
@@ -517,6 +793,7 @@ class ModerationAgent extends AbstractHilosAgent
         $this->requestId = null;
         $this->deadlineAt = 0;
         $this->kind = null;
+        $this->attempt = null;
         $this->answered = false;
         $this->queueChanged = true;
     }

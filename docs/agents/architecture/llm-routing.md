@@ -27,14 +27,14 @@ return $provider === LLMConstants::PROVIDER_EXTERNAL
 ```
 
 That is wrong for bot-agents: different tasks want different backends at the
-same time — a cheap local model moderates every message, a stronger external
-model writes a bot reply, an analyzer summarises context. The chat demo already
-needs this and works around the missing framework layer by re-implementing the
-choice **three times**, each keyed on a different config source:
+same time — a stronger external model writes a bot reply, an analyzer summarizes
+context, and the former project-owned message moderator had its own provider
+configuration.
+At the time, the chat demo worked around the missing framework layer by
+re-implementing provider choice three times, keyed by different config sources:
 
-- `BotAgent` — keyed on setting `CHAT_BOT_PROVIDER`.
-- `ModeratorAgent` — keyed on setting `CHAT_MODERATION_PROVIDER`.
-- `ChatContextAnalyzerAgent` — keyed on env `CHAT_CONTEXT_ANALYZER_PROVIDER`.
+- `BotAgent` and the former message moderator used settings.
+- `ChatContextAnalyzerAgent` used env.
 
 Each duplicates `provider === external ? createChatClient() :
 createChatClientWithConfig(url ?: LLM_LOCAL_URL, model)`. The only override seam,
@@ -86,10 +86,10 @@ the built-in keys resolve in a project that declares only its own keys; a
 project entry under a built-in key replaces the framework one. Use them for the
 common [moderator](moderation.md).
 
-Today's `chat.moderation` and `chat.photo_moderation`, declared in
-`demo/chat/backend/Environment/ChatLlmProfileCatalog.php`, are transitional;
-HIL-1627 removes them when chat becomes a consumer of framework moderation.
-(not in the code yet — HIL-1627)
+Chat has no project-owned moderation profiles. Its outgoing messages,
+attached pictures, profile photos and own-name checks use the framework's
+`hilos.moderation.text` and `hilos.moderation.image` profiles. The demo keeps
+its own profiles for bot replies and context analysis.
 
 ### 2. Resolution: env defaults, settings override
 
@@ -133,9 +133,6 @@ and whose settings switched it to local.
 The moderator resolves its profile before each check, so a change takes effect
 without restarting it; a check already with the model finishes on the profile it
 started with.
-
-Today's transitional chat override source overrides `chat.moderation` but lets
-`chat.photo_moderation` pass through from env.
 
 ### 3. The router API — one seam above `ClientFactory`
 
@@ -192,27 +189,20 @@ same-process execution.
 
 ## What migrates
 
-The original migration moved chat's bot, moderator and analyzer onto named
-profiles, replacing their copied provider branches. Chat's present moderation
-profiles are a transition, not the activation recipe for a new project:
-HIL-1627 removes them and the project moderator in favor of the common door.
-(not in the code yet — HIL-1627)
-
-The transitional `ModeratorAgent` has no test swap: on the test stand its
-`chat.moderation` profile resolves to the model emulator (see
-[stand-services.md](../stand-services.md)), so a test rides the same router and
-client production does. Framework moderation keeps that path for both its
-profiles: on the chat stand `hilos.moderation.text` and `hilos.moderation.image`
-resolve through `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` to
-the same emulator.
+The original migration moved chat's bot, message moderator and analyzer onto
+named profiles, replacing their copied provider branches. HIL-1627 retired the
+project moderator and its profiles; chat now consumes the common moderation
+door. The test stand points both framework moderation profiles,
+`hilos.moderation.text` and `hilos.moderation.image`, at the model emulator
+through `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` (see
+[stand-services.md](../stand-services.md)).
 
 What carries the stand's address there is the resolution rule above taken
 literally — "absent an override, the env default stands": an EMPTY URL setting is
-an absent override, so the local address the env profile resolved stands, the
-role's `CHAT_*_URL` and then `LLM_LOCAL_URL`
-(`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`). A profile env
-resolved as external lends no address to a role the settings keep local; such a
-role falls back to `LLM_LOCAL_URL`.
+an absent override, so the local address the env profile resolved stands, then
+`LLM_LOCAL_URL` (`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`).
+A profile env resolved as external lends no address to the bot role if its
+settings switch it to local; the bot then falls back to `LLM_LOCAL_URL`.
 
 ## Scope boundary — TS agent-host is out
 

@@ -205,14 +205,8 @@ services:
       # Local model (HIL-925): the stand's own model, which answers exactly what a
       # spec dictated. Only the channel prefix is given - the local model client
       # appends its completion path itself - and https is what makes it speak TLS.
-      # Each role uses its own address so tests can dictate moderation, analyzer,
-      # and bot answers independently without moving the global LLM_LOCAL_URL.
-      # CHAT_MODERATION_URL and CHAT_PHOTO_MODERATION_URL belong to the chat's own moderator,
-      # which keeps its place until the message and message-image checks move off it (HIL-1627);
-      # HILOS_MODERATION_TEXT_URL and HILOS_MODERATION_IMAGE_URL are the cluster
-      # moderator's text and image roles (HIL-1625).
-      - CHAT_MODERATION_URL=https://stand-gateway:18000/model
-      - CHAT_PHOTO_MODERATION_URL=https://stand-gateway:18000/model
+      # Framework moderation text and image roles use the existing stand model
+      # endpoint, independently of the bot and analyzer profiles.
       - HILOS_MODERATION_TEXT_URL=https://stand-gateway:18000/model
       - HILOS_MODERATION_IMAGE_URL=https://stand-gateway:18000/model
       - CHAT_BOT_URL=https://stand-gateway:18000/model

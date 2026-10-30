@@ -46,6 +46,7 @@ use Hilos\Core\CLI\Commands\ClusterTestUploadPoolCommand;
 use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandTestEchoCommand;
+use Hilos\Core\CLI\Commands\ModerationTestObserveCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
@@ -235,6 +236,8 @@ class CliManager
         $this->commands[CliCommands::NOTIFICATION_TEST_SEED] = new NotificationTestSeedCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
         $this->commands[CliCommands::COMMAND_TEST_ECHO] = new CommandTestEchoCommand();
+        $moderationObserve = new ModerationTestObserveCommand();
+        $this->commands[$moderationObserve->getName()] = $moderationObserve;
         $this->commands[CliCommands::LOG_TEST_APPEND] = new LogTestAppendCommand();
         $this->commands[CliCommands::ADMIN_GRANT] = new AdminGrantCommand();
         $this->commands[CliCommands::ADMIN_REVOKE] = new AdminRevokeCommand();

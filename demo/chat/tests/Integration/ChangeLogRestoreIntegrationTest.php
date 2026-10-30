@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupConnectionMeta;
@@ -16,7 +18,9 @@ use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifier;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Backup\RestoreEnvGuard;
 use Hilos\Backup\RestorePhase;
+use Hilos\Constants\AppEnv;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
@@ -85,6 +89,9 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
 
     /** @var array<string, array<string, mixed>> Primary trigger definitions before the case */
     private array $originalTriggers = [];
+
+    /** @var array<int, array<string, list<array<string, mixed>>>> Original rows in both databases */
+    private array $originalContents = [];
 
     /**
      * The journal rolls back with the data, without recording the anonymizer's writes.
@@ -173,6 +180,58 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         $this->assertSame(['mutation_type' => 'update', 'name' => 'hilos_user'], Database::row());
     }
 
+    /** A production archive predating retirement passes preflight and migrates before anonymization. */
+    public function testFullProductionRestoreRetiresHistoricalModerationTable(): void
+    {
+        $this->assertSame(110, Migration::getCurrentIndex());
+        $this->assertSame(1, Migration::migrateDown(109));
+        Schema::reset();
+        Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
+            ['message_rule', 'Historical non-personal moderation rule']);
+        Database::sql('INSERT INTO `hilos_user` (`name`) VALUES (?)', ['Historical archive person']);
+        $userId = Database::lastInsertId();
+        $this->seedEveryJournalField();
+        $archivedCounts = $this->journalCounts();
+
+        // Label only this test-data dump as production, then return to the test environment.
+        $previousEnv = getenv('APP_ENV');
+        try {
+            putenv('APP_ENV=prod');
+            $archive = new BackupCreator()->create(self::ARCHIVE_ID, BackupScope::FULL);
+        } finally {
+            $previousEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $previousEnv);
+        }
+        $this->assertSame('prod', $archive->env);
+        $this->assertSame([0, 1], array_column($archive->connections, 'index'));
+        $this->assertSame(109, $archive->connections[0]->migrationIndex);
+        $this->assertNotNull($archive->sha256);
+        $this->assertArchiveHasNoTriggers(BackupScope::FULL);
+        $this->assertStringContainsString('CREATE TABLE `moderator_prompt_piece`',
+            file_get_contents($this->storeRoot . '/unpacked/db-0.sql'));
+        foreach (self::JOURNAL_TABLES as $table) {
+            $this->assertStringContainsString('CREATE TABLE `' . $table . '`',
+                file_get_contents($this->storeRoot . '/unpacked/db-1.sql'));
+        }
+
+        $this->assertSame(1, Migration::migrateUp());
+        Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Written after historical archive', $userId]);
+        $decision = RestoreEnvGuard::decide(AppEnv::fromString($archive->env), AppEnv::TEST, false)->decision;
+        $this->assertSame(RestoreEnvDecision::REQUIRE_ANONYMIZATION, $decision);
+        new BackupRestorer()->restore(self::ARCHIVE_ID, BackupScope::FULL, $decision);
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+
+        $this->assertSame(110, Migration::getCurrentIndex());
+        $this->assertArrayNotHasKey('moderator_prompt_piece', LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX));
+        $this->assertSame([], Database::sql('SELECT `key` FROM `hilos_setting` WHERE `key` IN (?, ?, ?, ?)', [
+            'chat_moderation_model', 'chat_moderation_url', 'chat_moderation_provider', 'chat_moderation_timeout_sec',
+        ])->rows());
+        $this->assertSame('User ' . $userId, Database::sql('SELECT `name` FROM `hilos_user` WHERE `id` = ?', [$userId])->field('name'));
+        $this->assertSame($archivedCounts, $this->journalCounts());
+        $this->assertInstalledTriggersMatchFiles();
+        AnonymizationStartupGuard::assertLiveSchemaClassified();
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
     /**
      * The journal receives neither migration bookkeeping nor rows on a schema restore.
      *
@@ -244,6 +303,7 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         Migration::setMigrationName('Schema');
         JournalTriggerFiles::setPath(dirname(__DIR__, 2) . '/backend/Database/Migration/Triggers');
         $this->originalTriggers = self::triggerCatalog();
+        $this->originalContents = $this->databaseContents();
         $this->storeRoot = sys_get_temp_dir() . '/hilos-chat-change-log-restore-' . getmypid();
         $this->previousBackupDir = getenv('BACKUP_DIR');
         putenv('BACKUP_DIR=' . $this->storeRoot);
@@ -273,6 +333,7 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                         . '` FOR EACH ROW ' . $row['ACTION_STATEMENT']);
                 }
                 $this->assertSame($this->originalTriggers, self::triggerCatalog());
+                $this->assertSame($this->originalContents, $this->databaseContents(), 'Both databases must return to their original rows');
             }
         } finally {
             $this->previousBackupDir === false ? putenv('BACKUP_DIR') : putenv('BACKUP_DIR=' . $this->previousBackupDir);
@@ -368,7 +429,7 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         $live = self::triggerCatalog();
         $names = array_map(static fn (JournalTriggerFile $file): string => $file->name, $files);
         sort($names);
-        $this->assertCount(21, $names);
+        $this->assertCount(18, $names);
         $this->assertSame($names, array_keys($live));
         foreach ($files as $file) {
             $this->assertTrue($file->matches($live[$file->name], ChangeLogDatabase::configuredName()), $file->name);

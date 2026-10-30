@@ -12,9 +12,9 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 | File | Read when... |
 |---|---|
 | [agents/chat-agent.md](spec/agents/chat-agent.md) | working with ChatAgent: handshake, messages, files, user admin, truth source |
-| [agents/library-agent.md](spec/agents/library-agent.md) | working with LibraryAgent: admin CRUD for bots and moderator prompt pieces |
+| [agents/library-agent.md](spec/agents/library-agent.md) | working with LibraryAgent: admin CRUD for bots |
 | [agents/bot-agent.md](spec/agents/bot-agent.md) | working with BotAgent: bot lifecycle, LLM messages, per-bot indexing |
-| [agents/moderator-agent.md](spec/agents/moderator-agent.md) | working with ModeratorAgent: LLM moderation, queue, provider config |
+| [agents/moderator-agent.md](spec/agents/moderator-agent.md) | the retired project moderator and the shared framework moderation path |
 | [agents/context-analyzer-agent.md](spec/agents/context-analyzer-agent.md) | working with ChatContextAnalyzerAgent: chat summary, context for bots |
 | [agents/demo-hilos-agents.md](spec/agents/demo-hilos-agents.md) | working with /hilos/* pages: dashboard, settings, guardian, analytics, logs |
 
@@ -23,7 +23,7 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 | File | Read when... |
 |---|---|
 | [pages/main-page.md](spec/pages/main-page.md) | subscription flow, initial state, the message action and the files it names |
-| [pages/moderator-page.md](spec/pages/moderator-page.md) | moderator console, profile, user, admin, hilos system pages |
+| [pages/moderator-page.md](spec/pages/moderator-page.md) | the retired project moderator page and the shared framework section |
 
 ## Data Flow
 
@@ -48,7 +48,7 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 | File | Read when... |
 |---|---|
 | [ai/ollama-config.md](spec/ai/ollama-config.md) | Ollama setup, env vars, GPU, model selection |
-| [ai/moderation-settings.md](spec/ai/moderation-settings.md) | DB settings for moderation, prompt pieces, runtime config |
+| [ai/moderation-settings.md](spec/ai/moderation-settings.md) | the framework moderation profiles consumed by Chat |
 
 ## Issues
 
@@ -61,11 +61,11 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 ## Key rules for this project
 
 1. `ChatAgent` is the **only** truth source for: `events`, `eventAttachments`, `users`, `connections`, `userStates`
-2. `LibraryAgent` is the **only** truth source for admin library DB collections: `bots`, `moderatorPromptPieces`
+2. `LibraryAgent` is the **only** truth source for the admin library DB collection `bots`
 3. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
-4. Uploads belong to the framework uploads agent (`hilosUploads`) and attached files to the files registry (`hilos_file`); moderation lives on `Connection` (per-connection), the submit rate limit on `ChatUserState` (per-user)
+4. Uploads belong to the framework uploads agent (`hilosUploads`) and attached files to the files registry (`hilos_file`); the composer projection lives on `Connection`, the shared moderation attempt lives in `hilosModerationChecks`, and the submit rate limit lives on `ChatUserState`.
 5. All LLM calls are **async** — never block in `onTick()`
-6. Moderation always goes through `ModeratorAgent` — `ChatAgent` never calls LLM directly
+6. Outbound message moderation uses the framework moderation door. `ChatAgent` coordinates each check and publication; it does not call an LLM directly.
 
 ## Signal flow summary
 

@@ -6,6 +6,8 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -15,12 +17,14 @@ use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
@@ -39,17 +43,21 @@ use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
+use Hilos\Files\Upload\DTO\UploadHoldSettleSignalData;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
 use Hilos\Files\Upload\UploadCheckInterface;
+use Hilos\Files\Upload\UploadHoldOutcome;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Log\AgentLogStream;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
@@ -57,7 +65,9 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosUpload;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 
 /**
@@ -91,6 +101,10 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 
     /** Name the asker gives its answer. */
     private const string REPLY = 'gallery_published';
+
+    private const string HOLD_TOKEN = 'original-attempt';
+
+    private const string HOLD_REFUSAL = 'This file is not approved for publication; try again';
 
     /** A 1x1 PNG: the smallest content libmagic names image/png. */
     private const string PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -169,7 +183,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$fs = new FilePublishTestFsContext($this->tmpPath, $this->filesPath);
         Hilos::$fs->configure();
         Hilos::$files = new HilosFiles(new LocalFilesStorage());
-        Hilos::$sr = new SignalRouter();
+        Hilos::$sr = new FilePublishTestSignalRouter();
         $this->browser = new FilePublishTestBrowserContext();
         Hilos::$browser = $this->browser;
         self::bindAppClass(FilePublishTestHilos::class);
@@ -328,6 +342,63 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame('u2.txt', self::row($answer->fileIds[0])['filename']);
         self::assertSame('u1.txt', self::row($answer->fileIds[1])['filename']);
         self::assertSame([[self::SIGNED_IN, 'u2'], [self::SIGNED_IN, 'u1']], $this->goneFrames);
+    }
+
+    public function testAConsumerApprovalQueuedBeforePublicationHandsOverExactlyTheHeldFiles(): void
+    {
+        $deadlineAt = TimeHelper::nowMs() + 60000;
+        foreach (['u1' => 'original first', 'u2' => 'original second'] as $id => $bytes) {
+            $this->complete(self::SIGNED_IN, $id, $bytes, FilePublishTestHilos::HELD);
+            Hilos::$rt->hilosUploads->find(self::SIGNED_IN, $id)->actions->hold(self::HOLD_TOKEN, $deadlineAt);
+        }
+        $answer = $this->publish(self::SIGNED_IN, ['u2', 'u1'], FilePublishTestHilos::HELD,
+            new UploadHoldSettleSignalData(self::SIGNED_IN, self::HOLD_TOKEN, UploadHoldOutcome::APPROVED));
+        self::assertNull($answer->error);
+        self::assertSame(['u2', 'u1'], $answer->clientUploadIds);
+        self::assertCount(2, $answer->fileIds);
+        foreach ($answer->fileIds as $i => $fileId) {
+            $row = self::row($fileId);
+            self::assertSame(hash('sha256', $i === 0 ? 'original second' : 'original first'), $row['content_hash']);
+        }
+        self::assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u1'));
+        self::assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u2'));
+    }
+
+    /** @return iterable<string, array{string}> Owner states that must never reach the files library */
+    public static function refusedHoldStates(): iterable
+    {
+        foreach (['unheld', 'unapproved', 'expired', 'released', 'mixed-token', 'replacement'] as $state) {
+            yield $state => [$state];
+        }
+    }
+
+    /** @param string $state Authoritative owner condition immediately before handover */
+    #[DataProvider('refusedHoldStates')]
+    public function testAnOptedInTargetRefusesEveryUnapprovedOrLostHold(string $state): void
+    {
+        $deadlineAt = TimeHelper::nowMs() + 60000;
+        foreach (['u1', 'u2'] as $id) {
+            $this->complete(self::SIGNED_IN, $id, 'original ' . $id, FilePublishTestHilos::HELD);
+            if ($state === 'unheld') {
+                continue;
+            }
+            $token = $state === 'mixed-token' && $id === 'u2' ? 'other-attempt' : self::HOLD_TOKEN;
+            Hilos::$rt->hilosUploads->find(self::SIGNED_IN, $id)->actions->hold($token, $deadlineAt);
+            if ($state !== 'unapproved') {
+                Hilos::$rt->hilosUploads->find(self::SIGNED_IN, $id)->actions->approveHold($token);
+            }
+        }
+        if ($state === 'expired') {
+            RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(StateHilosUpload::RT_COLLECTION,
+                StateHilosUpload::keyFor(self::SIGNED_IN, 'u2'), [StateHilosUpload::uploadHoldDeadlineAt => TimeHelper::nowMs() - 1]), false);
+        } elseif ($state === 'released') {
+            Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u2')->actions->releaseHold(self::HOLD_TOKEN);
+        } elseif ($state === 'replacement') {
+            // Internal cleanup can end a hold; recreating that id does not inherit its approval.
+            Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u2')->actions->forgetWithFile();
+            $this->complete(self::SIGNED_IN, 'u2', 'replacement', FilePublishTestHilos::HELD);
+        }
+        $this->assertRefusedAndUntouched(self::HOLD_REFUSAL, self::SIGNED_IN, ['u1', 'u2'], ['u1', 'u2'], FilePublishTestHilos::HELD);
     }
 
     public function testAnUploadThatIsNotThereIsRefusedAsGone(): void
@@ -727,6 +798,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $acceptKey Connection the uploads belong to
      * @param list<string> $clientUploadIds Uploads to publish
      * @param string $target Target to publish for
+     * @param ?UploadHoldSettleSignalData $settlement Optional approval queued before the unchanged publication request
      * @return FilesPublishedSignalData The answer under the asker's name
      * @throws HilosException When an agent fails to handle a frame
      */
@@ -734,21 +806,28 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         string $acceptKey,
         array $clientUploadIds,
         string $target = FilePublishTestHilos::OPEN,
+        ?UploadHoldSettleSignalData $settlement = null,
     ): FilesPublishedSignalData {
         $this->goneFrames = [];
         $this->libraryAsked = false;
 
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
-        $this->uploads->onSignalAgent(
-            new AgentSignalData(new UploadPublishSignalData($acceptKey, $target, $clientUploadIds, self::REPLY)),
-            '',
-            HilosSignalConstants::HILOS_UPLOAD_PUBLISH,
-        );
+        $consumer = new FilePublishTestConsumer();
+        if ($settlement !== null) {
+            $consumer->sendToAgent(HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE, $settlement);
+        }
+        $consumer->sendToAgent(HilosSignalConstants::HILOS_UPLOAD_PUBLISH,
+            new UploadPublishSignalData($acceptKey, $target, $clientUploadIds, self::REPLY));
 
         $answer = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
             $name = $signal->signalName->getName();
-            if ($name === HilosSignalConstants::HILOS_UPLOAD_STATE
+            if ($name === HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE || $name === HilosSignalConstants::HILOS_UPLOAD_PUBLISH) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertEquals([new AgentDestination(HilosAgentType::HILOS_UPLOADS)], Hilos::$sr->getDestinations($signal));
+                $parsed = Hilos::$sr->createAgentSignalPayloadDTO($name, AgentSignalData::fromArray($signal->data->toArray()));
+                $this->uploads->onSignalAgent($parsed, $consumer->getId(), $name);
+            } elseif ($name === HilosSignalConstants::HILOS_UPLOAD_STATE
                 && $signal->data instanceof WebSocketSignalData
                 && $signal->data->data instanceof UploadStateSignalData
                 && $signal->data->data->phase === null) {
@@ -900,12 +979,19 @@ class FilePublishTestHilos extends Hilos
 
     public const string DEDUP = 'dedup';
 
+    public const string HELD = 'held';
+
     protected const array FEATURES = [HilosFeature::FILES, HilosFeature::UPLOADS];
+
+    public const array AGENTS = [
+        HilosAgentType::HILOS_UPLOADS => [AgentRegistryKey::WORKER => UploadsAgent::class, AgentRegistryKey::DAEMON => UploadsAgentDaemon::class],
+    ];
 
     public const array UPLOAD_TARGETS = [
         self::OPEN => FilePublishTestOpenTarget::class,
         self::SNIFFING => FilePublishTestSniffingTarget::class,
         self::DEDUP => FilePublishTestDedupTarget::class,
+        self::HELD => FilePublishTestHeldTarget::class,
     ];
 
     /**
@@ -923,6 +1009,55 @@ class FilePublishTestHilos extends Hilos
 final class FilePublishUploadsOnlyTestHilos extends FilePublishTestHilos
 {
     protected const array FEATURES = [HilosFeature::UPLOADS];
+}
+
+/** Routes both consumer signals through the fixture's uploads declaration. */
+final class FilePublishTestSignalRouter extends SignalRouter
+{
+    /** @return class-string<Hilos> Fixture topology */
+    protected function hilosClass(): string
+    {
+        return FilePublishTestHilos::class;
+    }
+}
+
+/** A consumer sending approval and publication on its ordinary FIFO agent channel. */
+final class FilePublishTestConsumer extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'publication_consumer';
+
+    /** This sender owns no resources to release. */
+    public function onStop(): void
+    {
+    }
+}
+
+/** Generic opt-in target; existing targets keep the base's false default. */
+final class FilePublishTestHeldTarget extends AbstractUploadTarget
+{
+    /** @return int A kilobyte */
+    public function maxBytes(): int
+    {
+        return 1024;
+    }
+
+    /** @return bool Signed-in people only */
+    public function requiresSignIn(): bool
+    {
+        return true;
+    }
+
+    /** @return FileVisibility Only the owner reads the published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::OWNER;
+    }
+
+    /** @return bool Require both the owner hold and final consumer approval */
+    public function requiresUploadHoldForPublication(): bool
+    {
+        return true;
+    }
 }
 
 /**

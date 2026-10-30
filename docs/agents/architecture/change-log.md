@@ -75,10 +75,9 @@ and `hilos_second_factor` is purged whole. Its key still identifies a row, while
 every non-key, non-secret, non-noisy column is journaled only as a fact.
 
 In a demo, journal what a person changes by a decision, not the stream.
-All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals seven tables:
-all five framework tables above, its own `bot`, and `moderator_prompt_piece`,
-the old rules table that stays journaled beside `hilos_moderation_rule` until
-HIL-1627 removes it. Binance-btc-tracker, ecommerce-shop, tasks, online-testing
+All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals six tables:
+the five framework tables above and its own `bot`. Binance-btc-tracker,
+ecommerce-shop, tasks, online-testing
 and polls each journal the four framework tables other than
 `hilos_moderation_rule`, which none of them has until it declares `MODERATION`;
 this activation adds no subject tables.

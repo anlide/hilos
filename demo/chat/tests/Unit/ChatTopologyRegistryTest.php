@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Demo\Chat\Constants\ChatCommandConstants;
+use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
+use Hilos\Moderation\ModerationCommandConstants;
+use Hilos\Moderation\DTO\ModerationObserveCommandData;
+
 use Demo\Chat\Core\Daemon\ChatWorkerManager;
 use Demo\Chat\Pages\Hilos\TermsHistoryPage;
 use Demo\Chat\Pages\Hilos\PrivacyHistoryPage;
@@ -347,6 +352,7 @@ use Hilos\Files\Image\DTO\ImageRenderSignalData;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
+use Hilos\Files\Upload\DTO\UploadHoldSettleSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\Image\DTO\ImageRenderedSignalData;
 use Hilos\Files\HilosFiles;
@@ -1461,8 +1467,7 @@ final class ChatTopologyRegistryTest extends TestCase
      * The chat switches moderation on (HIL-1625): the rules library of HIL-1624 and the cluster's one
      * moderator are the framework pairs themselves, without a project subclass, each placed once for
      * the cluster, and the moderation settings sit in the chat's own catalog because that is the one
-     * the activation check reads. The chat's own moderator keeps its place until the photo path
-     * moves off it.
+     * the activation check reads. Chat messages and pictures consume that same moderator.
      */
     public function testModerationIsOnWithItsRulesLibraryAndItsModerator(): void
     {
@@ -1554,7 +1559,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertFalse(AgentRegistry::requiresIndex($moderator));
         $this->assertTrue((new ModerationAgentDaemon())->requiresMonopolisticProcess());
 
-        $this->assertArrayHasKey(AgentType::MODERATOR, Hilos::AGENTS);
+        $this->assertArrayNotHasKey('moderator', Hilos::AGENTS);
         $catalog = SettingsCatalog::getCatalog();
         foreach (ModerationSettingsCatalog::getCatalog() as $key => $settingEntry) {
             $this->assertSame($settingEntry, $catalog[$key]);
@@ -1882,8 +1887,6 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             SignalTypeConstants::AGENT_SIGNAL => [
-                ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
-                ChatSignalConstants::ATTACHMENTS_PUBLISHED => PageConstants::MAIN,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SETTINGS,
                 HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE => HilosPageConstants::HILOS_APPEARANCE,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => HilosPageConstants::HILOS_BACKUP,
@@ -1922,8 +1925,6 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             SignalTypeConstants::AGENT_SIGNAL => [
-                ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
-                ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => AgentType::HILOS_INDEX,
@@ -1961,6 +1962,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_SESSION_STATE => AgentType::CHAT,
+            ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
             HilosSignalConstants::HILOS_USER_RENAME => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,
@@ -2073,6 +2075,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_UPLOAD_PUBLISH => HilosAgentType::HILOS_UPLOADS,
+            HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE => HilosAgentType::HILOS_UPLOADS,
             HilosSignalConstants::HILOS_IMAGE_RENDER => HilosAgentType::HILOS_IMAGES,
             HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -2143,6 +2146,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedCommandRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
+            ChatCommandConstants::SUBMISSION_TEST_OBSERVE => AgentType::CHAT,
             CliCommands::LEGAL_TEST_HOLD => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::VERIFICATION_TEST_SWEEP => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::VERIFICATION_TEST_END_PAUSE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2176,6 +2180,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_COUNTRY_NAMES_SEED => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR => HilosAgentType::HILOS_I18N_LIBRARY,
+            ModerationCommandConstants::TEST_OBSERVE => HilosAgentType::HILOS_MODERATOR,
             CliCommands::COMMAND_TEST_ECHO => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
@@ -2198,7 +2203,10 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::LOG_TEST_APPEND => HilosAgentType::HILOS_LOG_STORE,
             CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
-        $this->assertSame([], Hilos::getCommandDtoRoutes());
+        $this->assertSame([
+            ChatCommandConstants::SUBMISSION_TEST_OBSERVE => SubmissionObserveCommandData::class,
+            ModerationCommandConstants::TEST_OBSERVE => ModerationObserveCommandData::class,
+        ], Hilos::getCommandDtoRoutes());
     }
 
     /**
@@ -2301,6 +2309,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class,
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
+            ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
@@ -2413,6 +2422,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
             HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
             HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+            HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE => UploadHoldSettleSignalData::class,
             HilosSignalConstants::HILOS_IMAGE_RENDER => ImageRenderSignalData::class,
             HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
@@ -2956,7 +2966,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         // The kinds the chat publishes to the moderator, pinned by hand: the framework's name and
         // photo first, untouched, then the chat's text and picture kinds. The chat takes profile
-        // photos, so the photo kind is in the set. The old ModeratorAgent keeps its own prompts.
+        // photos, so the photo kind is in the set. Each chat kind declares its own built-in rules.
         $this->assertSame(ChatModerationKindDirectory::class, Hilos::moderationKindDirectoryClass());
 
         $kinds = Hilos::moderationKinds();

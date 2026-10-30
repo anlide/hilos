@@ -48,6 +48,9 @@ final class HilosUpload extends RtState
     public const string errorCode = 'errorCode';
     public const string errorMessage = 'errorMessage';
     public const string updatedAt = 'updatedAt';
+    public const string uploadHoldId = 'uploadHoldId';
+    public const string uploadHoldDeadlineAt = 'uploadHoldDeadlineAt';
+    public const string uploadHoldApproved = 'uploadHoldApproved';
 
     /** Accept key of the connection the upload belongs to. */
     private(set) string $acceptKey = '';
@@ -93,6 +96,15 @@ final class HilosUpload extends RtState
 
     /** Unix seconds of the last change of the row. */
     private(set) int $updatedAt = 0;
+
+    /** Attempt holding these bytes, retained as a tombstone after release. */
+    private(set) ?string $uploadHoldId = null;
+
+    /** Fixed hold deadline in epoch milliseconds; null for an initial or released hold. */
+    private(set) ?int $uploadHoldDeadlineAt = null;
+
+    /** Final approval for this token; an expired deadline never grants permission. */
+    private(set) bool $uploadHoldApproved = false;
 
     /**
      * Composes the row id from the connection and the id the client gave the upload.
@@ -170,6 +182,15 @@ final class HilosUpload extends RtState
         $instance->errorCode = self::optionalString($row, self::errorCode);
         $instance->errorMessage = self::optionalString($row, self::errorMessage);
         $instance->updatedAt = self::requireInt($row, self::updatedAt);
+        foreach ([self::uploadHoldId, self::uploadHoldDeadlineAt] as $field) {
+            if (!array_key_exists($field, $row)) {
+                throw new InvalidFormatException("Missing runtime field: {$field}");
+            }
+        }
+        $instance->uploadHoldId = self::optionalString($row, self::uploadHoldId);
+        $instance->uploadHoldDeadlineAt = self::optionalInt($row, self::uploadHoldDeadlineAt);
+        $instance->uploadHoldApproved = self::requireBool($row, self::uploadHoldApproved);
+        self::assertUploadHold($instance->uploadHoldId, $instance->uploadHoldDeadlineAt, $instance->uploadHoldApproved);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -187,6 +208,11 @@ final class HilosUpload extends RtState
      */
     public function applyDiff(array $diff): void
     {
+        $uploadHoldId = self::patchOptionalString($diff, self::uploadHoldId, $this->uploadHoldId);
+        $uploadHoldDeadlineAt = self::patchOptionalInt($diff, self::uploadHoldDeadlineAt, $this->uploadHoldDeadlineAt);
+        $uploadHoldApproved = self::patchBool($diff, self::uploadHoldApproved, $this->uploadHoldApproved);
+        self::assertUploadHold($uploadHoldId, $uploadHoldDeadlineAt, $uploadHoldApproved);
+
         $this->receivedBytes = self::patchInt($diff, self::receivedBytes, $this->receivedBytes);
         $this->tmpIndex = self::patchOptionalString($diff, self::tmpIndex, $this->tmpIndex);
         $this->phase = self::readPhase(self::patchString($diff, self::phase, $this->phase));
@@ -195,6 +221,9 @@ final class HilosUpload extends RtState
         $this->errorCode = self::patchOptionalString($diff, self::errorCode, $this->errorCode);
         $this->errorMessage = self::patchOptionalString($diff, self::errorMessage, $this->errorMessage);
         $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
+        $this->uploadHoldId = $uploadHoldId;
+        $this->uploadHoldDeadlineAt = $uploadHoldDeadlineAt;
+        $this->uploadHoldApproved = $uploadHoldApproved;
     }
 
     /**
@@ -234,7 +263,26 @@ final class HilosUpload extends RtState
             self::errorCode => $this->errorCode,
             self::errorMessage => $this->errorMessage,
             self::updatedAt => $this->updatedAt,
+            self::uploadHoldId => $this->uploadHoldId,
+            self::uploadHoldDeadlineAt => $this->uploadHoldDeadlineAt,
+            self::uploadHoldApproved => $this->uploadHoldApproved,
         ];
+    }
+
+    /**
+     * @param ?string $uploadHoldId Attempt token or null before the first hold
+     * @param ?int $deadlineAt Fixed positive epoch-millisecond deadline or null after release
+     * @param bool $approved Whether this token has final approval
+     * @throws InvalidFormatException When hold marks cannot describe an initial, active, expired or released hold
+     */
+    private static function assertUploadHold(?string $uploadHoldId, ?int $deadlineAt, bool $approved): void
+    {
+        if (
+            $uploadHoldId === '' || ($deadlineAt !== null && ($deadlineAt <= 0 || $uploadHoldId === null))
+            || ($approved && ($uploadHoldId === null || $deadlineAt === null))
+        ) {
+            throw new InvalidFormatException('Invalid uploadHoldId, uploadHoldDeadlineAt or uploadHoldApproved marks.');
+        }
     }
 
     /**

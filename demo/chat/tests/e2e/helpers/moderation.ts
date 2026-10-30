@@ -1,16 +1,16 @@
 import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
-// Moderation on the chat stand. The framework moderator checks profile names;
-// chat's moderator still checks messages and pictures. Both ask the stand's
-// local model with a real call and read the same {allow, reason} JSON shape.
-// The gateway hands back raw text; the product's parser decides its meaning.
+// Moderation on the chat stand. Profile names, messages and pictures use the
+// framework moderator and its strict {allow, reason} parser. The stand's local
+// model answers a real call with raw text; the framework validates its meaning.
 
 /**
  * Dictate the verdict the model gives on the next moderated action that mentions a key.
  *
- * Profile names use the framework's strict parser and PROFILE_NAME kind.
- * Messages and pictures still use `ModerationDecision::fromModelOutput()`
- * (demo/chat/backend/Agents/DTO/ModerationDecision.php).
+ * Names use PROFILE_NAME, messages use chat_message (TEXT_WITH_FILES metadata
+ * only), and pictures use chat_message_picture (IMAGE, one JPEG copy per call).
+ * Approval requires reason `ok`; a refusal requires one of the kind's declared
+ * reasons. An unknown reason makes the check unavailable, never rejected.
  *
  * EVERY moderated action needs a verdict — sending a message, and
  * renaming oneself from the profile. A message with pictures calls the model
@@ -25,8 +25,8 @@ import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/st
  * text, then the pictures. Dictate BEFORE the action that calls the model.
  *
  * @param key The string the moderated text or file name contains.
- * @param allow Whether the model lets the text through.
- * @param reason The reason the model gives; the product shows it to the author on a refusal.
+ * @param allow Whether the model approves the check.
+ * @param reason The model's raw reason; valid refusals become public product sentences.
  */
 export async function dictateModerationVerdict(
   key: string,

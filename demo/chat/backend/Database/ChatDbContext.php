@@ -9,23 +9,19 @@ use Demo\Chat\Database\Actions\Collection\EventAttachmentsActions;
 use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
 use Demo\Chat\Database\Actions\Collection\EventUserRegistrationsActions;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
-use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
 use Demo\Chat\Database\Actions\Collection\UserRenamesActions;
 use Demo\Chat\Database\Actions\Item\BotActions;
-use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
 use Demo\Chat\Database\Actions\Item\UserRenameActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
 use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUserRegistrations;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
-use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Database\View\Collection\EventMessages;
 use Demo\Chat\Database\View\Collection\EventUserRegistrations;
 use Demo\Chat\Database\View\Collection\Events;
-use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\UserRenames;
 use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
@@ -46,7 +42,6 @@ use Hilos\Database\Object\Objects;
  * @property-read EventUserRegistrations $eventUserRegistrations
  * @property-read EventAttachments $eventAttachments
  * @property-read Bots $bots
- * @property-read ModeratorPromptPieces $moderatorPromptPieces
  * @property-read UserRenames $userRenames
  */
 final class ChatDbContext extends HilosDbContext
@@ -56,14 +51,12 @@ final class ChatDbContext extends HilosDbContext
     public const string eventUserRegistrations = 'eventUserRegistrations';
     public const string eventAttachments = 'eventAttachments';
     public const string bots = 'bots';
-    public const string moderatorPromptPieces = 'moderatorPromptPieces';
 
     public const string event = 'event';
     public const string eventMessage = 'eventMessage';
     public const string eventUserRegistration = 'eventUserRegistration';
     public const string eventAttachment = 'eventAttachment';
     public const string bot = 'bot';
-    public const string moderatorPromptPiece = 'moderatorPromptPiece';
 
     /**
      * Configures database context with object collections and view representations.
@@ -84,19 +77,12 @@ final class ChatDbContext extends HilosDbContext
         $this->mountObjectCollection(ObjectEventUserRegistrations::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectEventAttachments::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectBots::class, Objects::LAZY_STRATEGY_NONE);
-        $this->mountObjectCollection(ObjectModeratorPromptPieces::class, Objects::LAZY_STRATEGY_NONE);
 
         $this->setRepresent(self::events, Events::class, EventsActions::class);
         $this->setRepresent(self::eventMessages, EventMessages::class, EventMessagesActions::class);
         $this->setRepresent(self::eventUserRegistrations, EventUserRegistrations::class, EventUserRegistrationsActions::class);
         $this->setRepresent(self::eventAttachments, EventAttachments::class, EventAttachmentsActions::class);
         $this->setRepresent(self::bots, Bots::class, BotsActions::class, BotActions::class);
-        $this->setRepresent(
-            self::moderatorPromptPieces,
-            ModeratorPromptPieces::class,
-            ModeratorPromptPiecesActions::class,
-            ModeratorPromptPieceActions::class,
-        );
     }
 
     /**

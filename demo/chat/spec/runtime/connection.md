@@ -2,7 +2,11 @@
 
 **Collection:** `ChatRtContext::connections` | **Key:** `acceptKey`
 
-Runtime row for one active WebSocket connection. Holds transport metadata plus connection-local outbound moderation for this socket. The files a person attaches are not here: they are rows of the framework uploads agent (`Hilos::$rt->hilosUploads`), and the row names the ones a moderated message carries by their client ids.
+Runtime row for one active WebSocket connection. Holds transport metadata plus
+the browser-facing composer draft and status for this socket. The files a
+person attaches are not here: they are rows of the framework uploads agent
+(`Hilos::$rt->hilosUploads`), and the row names the ones a moderated message
+carries by their client ids.
 
 ## Fields
 
@@ -16,19 +20,25 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 
 ### Outbound Moderation
 
-| Field | Meaning |
-|---|---|
-| `outboundModerationPhase` | `checking`, `rejected`, `unavailable`, or empty when clear |
-| `outboundModerationMessage` | Submitted message text |
-| `outboundModerationAttachments` | Client ids of the complete uploads the submitted message carries, in attach order; empty when none |
-| `outboundModerationPicture` | Client id of the picture a refusal is about; null when the refusal is about the text or nothing is refused |
-| `outboundModerationReason` | Rejection/unavailable reason, empty when none |
-| `outboundModerationUpdatedAt` | Unix time of last moderation field change |
+| Field | Type | Meaning |
+|---|---|---|
+| `outboundModerationPhase` | `string` | `checking`, `rejected`, `unavailable`, or empty when clear |
+| `outboundModerationMessage` | `?string` | Submitted message text |
+| `outboundModerationAttachments` | `list<string>` | Client ids of the complete uploads the submitted message carries, in attach order; empty when none |
+| `outboundModerationPicture` | `?string` | Client id of a picture content refusal or `unreadable` renderer result; null otherwise |
+| `outboundModerationReason` | `?string` | Rejection/unavailable reason, null when none |
+| `outboundModerationUpdatedAt` | `int` | Unix time in seconds of the last moderation field change |
+
+These six fields describe the composer to the browser. They do not hold the
+moderation queue or current image stage: the immutable attempt, ordered input
+snapshot and fixed deadline live in the shared
+`Hilos::$rt->hilosModerationChecks` collection, keyed by connection and kind.
+The session holder does not own this chat composer.
 
 ## Lifecycle
 
 - **Created**: `ConnectionsActions::register(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`.
-- **Updated**: moderation fields set during message submit/result handling.
+- **Updated**: `ChatAgent` sets composer fields during message admission and result handling.
 - **Deleted**: `Hilos::$rt->connections[$acceptKey]->actions->unregister()` in `ChatAgent::onSignalConnectionClose()`.
 
 Uploads have not lived on this row since HIL-144: the uploads agent keeps them per connection and removes them once the connection is gone.

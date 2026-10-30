@@ -26,9 +26,6 @@ final class AgentType
     /** @var string Bot agent type (regular) */
     public const string BOT = 'bot';
 
-    /** @var string Moderator agent type (regular) */
-    public const string MODERATOR = 'moderator';
-
     /** @var string Chat context analyzer agent type (monopolistic) */
     public const string CHAT_CONTEXT_ANALYZER = 'chat_context_analyzer';
 

@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Database\Database;
+use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogFeedPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -23,6 +24,8 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
@@ -35,6 +38,8 @@ use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogEntryReadActionDTO;
 use Hilos\Pages\ChangeLog\DTO\HilosChangeLogReceiptReadActionDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -67,8 +72,8 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
     /** @var list<int> Fixture sessions */
     private array $sessionIds = [];
 
-    /** @var list<int> Fixture moderator pieces */
-    private array $pieceIds = [];
+    /** @var list<int> Fixture moderation rules */
+    private array $ruleIds = [];
 
     private int $adminId;
     private int $adminSessionId;
@@ -116,8 +121,8 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
         foreach ($this->userIds as $id) {
             Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$id]);
         }
-        foreach ($this->pieceIds as $id) {
-            Database::sqlRun('DELETE FROM `moderator_prompt_piece` WHERE `id` = ?', [$id]);
+        foreach ($this->ruleIds as $id) {
+            Database::sqlRun('DELETE FROM `hilos_moderation_rule` WHERE `id` = ?', [$id]);
         }
         Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` LIKE ?', [self::KEY_PREFIX . '%']);
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
@@ -139,14 +144,15 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
         $before = str_repeat('Long body before. ', 300);
         $after = str_repeat('Long body after. ', 400);
         $receiptId = JournalReceiptScope::run(
-            JournalReceiptData::web($this->adminId, $subjectId, $this->adminSessionId, 'moderator_prompt_piece_update', 'library'),
+            JournalReceiptData::web($this->adminId, $subjectId, $this->adminSessionId,
+                'hilos_moderation_rule_update', ModerationRulesLibraryAgent::AGENT_TYPE),
             function () use ($subjectId, $before, $after): ?int {
-                Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)', ['name_rule', $before]);
-                $pieceId = Database::lastInsertId();
-                $this->pieceIds[] = $pieceId;
-                Database::sqlRun('UPDATE `moderator_prompt_piece` SET `section` = ?, `prompt_piece` = ? WHERE `id` = ?',
-                    ['message_rule', $after, $pieceId]);
-                Database::sqlRun('DELETE FROM `moderator_prompt_piece` WHERE `id` = ?', [$pieceId]);
+                Database::sql('INSERT INTO `hilos_moderation_rule` (`kind`, `rule`) VALUES (?, ?)', [ModerationKindKey::PROFILE_NAME, $before]);
+                $ruleId = Database::lastInsertId();
+                $this->ruleIds[] = $ruleId;
+                Database::sqlRun('UPDATE `hilos_moderation_rule` SET `kind` = ?, `rule` = ? WHERE `id` = ?',
+                    [ChatModerationKindKey::MESSAGE, $after, $ruleId]);
+                Database::sqlRun('DELETE FROM `hilos_moderation_rule` WHERE `id` = ?', [$ruleId]);
                 Database::sqlRun('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Receipt subject after', $subjectId]);
                 return JournalReceiptScope::currentId();
             },
@@ -159,28 +165,28 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
             'receiptId' => $receiptId, 'createdAt' => $admin['receipt']['createdAt'],
             'actorId' => $this->adminId, 'actorLabel' => 'Receipt detail admin', 'actorDeleted' => false,
             'subjectId' => $subjectId, 'subjectLabel' => 'Receipt subject after', 'subjectDeleted' => false,
-            'sessionId' => $this->adminSessionId, 'channel' => 'web', 'action' => 'moderator_prompt_piece_update',
-            'agent' => 'library', 'source' => 'session #' . $this->adminSessionId, 'entryCount' => 4,
+            'sessionId' => $this->adminSessionId, 'channel' => 'web', 'action' => 'hilos_moderation_rule_update',
+            'agent' => ModerationRulesLibraryAgent::AGENT_TYPE, 'source' => 'session #' . $this->adminSessionId, 'entryCount' => 4,
         ], $admin['receipt']);
         self::assertMatchesRegularExpression('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\z/', $admin['receipt']['createdAt']);
         self::assertSame(['create', 'update', 'delete', 'update'], array_column($admin['entries'], 'mutation'));
         self::assertSame([], $admin['entries'][0]['changes'], 'Create records only a fact');
         $update = array_column($admin['entries'][1]['changes'], null, 'field');
-        self::assertSame('inline', $update['section']['kind']);
-        self::assertSame('name_rule', $update['section']['oldValue']);
-        self::assertSame('message_rule', $update['section']['newValue']);
-        self::assertSame('long', $update['prompt_piece']['kind']);
-        self::assertSame($before, $update['prompt_piece']['oldValue']);
-        self::assertSame($after, $update['prompt_piece']['newValue']);
-        self::assertTrue($update['prompt_piece']['oldPresent']);
-        self::assertTrue($update['prompt_piece']['newPresent']);
-        self::assertFalse($update['prompt_piece']['bodyOmitted']);
+        self::assertSame('inline', $update['kind']['kind']);
+        self::assertSame(ModerationKindKey::PROFILE_NAME, $update['kind']['oldValue']);
+        self::assertSame(ChatModerationKindKey::MESSAGE, $update['kind']['newValue']);
+        self::assertSame('long', $update['rule']['kind']);
+        self::assertSame($before, $update['rule']['oldValue']);
+        self::assertSame($after, $update['rule']['newValue']);
+        self::assertTrue($update['rule']['oldPresent']);
+        self::assertTrue($update['rule']['newPresent']);
+        self::assertFalse($update['rule']['bodyOmitted']);
         $deleted = array_column($admin['entries'][2]['changes'], null, 'field');
-        self::assertSame($after, $deleted['prompt_piece']['oldValue']);
-        self::assertNull($deleted['prompt_piece']['newValue']);
-        self::assertTrue($deleted['prompt_piece']['oldPresent']);
-        self::assertFalse($deleted['prompt_piece']['newPresent']);
-        self::assertFalse($deleted['prompt_piece']['bodyOmitted']);
+        self::assertSame($after, $deleted['rule']['oldValue']);
+        self::assertNull($deleted['rule']['newValue']);
+        self::assertTrue($deleted['rule']['oldPresent']);
+        self::assertFalse($deleted['rule']['newPresent']);
+        self::assertFalse($deleted['rule']['bodyOmitted']);
         $personal = array_column($admin['entries'][3]['changes'], null, 'field');
         self::assertSame('fact', $personal['name']['kind']);
         self::assertNull($personal['name']['oldValue']);
@@ -338,17 +344,25 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
 
     public function testBareEntryActionIncludesFullLongValuesAndFactsForAdminAndViewer(): void
     {
-        $piece = Hilos::$db->moderatorPromptPieces->actions->create('name_rule', str_repeat('bare before', 400));
-        $pieceId = (int)$piece->id;
-        $this->pieceIds[] = $pieceId;
-        Database::sqlRun('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `id` = ?', [str_repeat('bare after', 500), $pieceId]);
+        $library = new ModerationRulesLibraryAgent();
+        $this->startAgent($library);
+        try {
+            $ruleId = $this->underAgent($library, static fn (): int =>
+                (int)Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, str_repeat('bare before', 400))->id);
+            $this->ruleIds[] = $ruleId;
+        } finally {
+            $library->onStop();
+            TruthSourceRegistry::unregisterAgent($library->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($library->getId()));
+        }
+        Database::sqlRun('UPDATE `hilos_moderation_rule` SET `rule` = ? WHERE `id` = ?', [str_repeat('bare after', 500), $ruleId]);
         $entryId = $this->lastBareEntry();
         $counts = $this->journalCounts();
         $admin = $this->success(self::ADMIN, HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ, ['entryId' => $entryId]);
         self::assertSame($counts, $this->journalCounts());
         self::assertSame($entryId, $admin['entry']['entryId']);
         self::assertNull($admin['entry']['receiptId']);
-        self::assertSame([$pieceId], $admin['entry']['recordKey']);
+        self::assertSame([$ruleId], $admin['entry']['recordKey']);
         self::assertSame('long', $admin['entry']['changes'][0]['kind']);
         self::assertSame(str_repeat('bare before', 400), $admin['entry']['changes'][0]['oldValue']);
         self::assertSame(str_repeat('bare after', 500), $admin['entry']['changes'][0]['newValue']);

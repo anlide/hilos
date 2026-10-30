@@ -53,6 +53,14 @@ it('rejects an error reply with its command and message', async () => {
   )
 })
 
+it.each(['not json', 'null', '[]', '{}', '{"status":"success"}'])(
+  'rejects malformed command data without throwing out of the socket callback (%s)',
+  async (line) => {
+    const port = await listen((socket) => socket.end(`${line}\n`))
+    await expect(sendTo(port)('test:malformed', {})).rejects.toThrow()
+  },
+)
+
 it("uses the caller's refusal class", async () => {
   class CommandRefused extends Error {}
 

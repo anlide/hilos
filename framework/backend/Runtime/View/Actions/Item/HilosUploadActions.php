@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Files\ContentHash;
+use Hilos\Files\Upload\DTO\UploadSnapshotData;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
@@ -17,6 +21,7 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Item\HilosUpload as ViewHilosUpload;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Write operations for one upload (HIL-135).
@@ -30,6 +35,92 @@ use Hilos\Runtime\View\Item\HilosUpload as ViewHilosUpload;
  */
 final class HilosUploadActions extends RtActions
 {
+    /**
+     * Holds received bytes until a fixed deadline. A released token never reopens, and repeating
+     * a live token with its original deadline preserves any approval already recorded.
+     *
+     * @param string $uploadHoldId Fresh attempt token, shared across its stages
+     * @param int $deadlineAt Fixed future epoch-millisecond deadline
+     * @throws InvalidArgumentException When the token is empty or the deadline is not in the future
+     * @throws InvalidStateException When bytes are incomplete, another token is active, or this token ended or changed deadline
+     * @throws InvalidFormatException When the received byte identity is malformed
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the upload owner
+     */
+    public function hold(string $uploadHoldId, int $deadlineAt): void
+    {
+        $this->ensureCanWrite();
+        $nowMs = TimeHelper::nowMs();
+        if ($uploadHoldId === '' || $deadlineAt <= $nowMs) {
+            throw new InvalidArgumentException('An upload hold requires a nonempty token and a future deadline.');
+        }
+        $this->assertHoldable();
+        if ($this->state->uploadHoldId === $uploadHoldId) {
+            if ($this->state->uploadHoldDeadlineAt !== $deadlineAt) {
+                throw new InvalidStateException('A released hold cannot reopen and a hold deadline cannot change.');
+            }
+
+            return;
+        }
+        if ($this->state->uploadHoldDeadlineAt !== null && $this->state->uploadHoldDeadlineAt > $nowMs) {
+            throw new InvalidStateException('Another attempt already holds these upload bytes.');
+        }
+        $this->applyDiffWithSync([
+            StateHilosUpload::uploadHoldId => $uploadHoldId,
+            StateHilosUpload::uploadHoldDeadlineAt => $deadlineAt,
+            StateHilosUpload::uploadHoldApproved => false,
+        ]);
+    }
+
+    /**
+     * @param string $uploadHoldId Attempt whose final verdict approved these bytes
+     * @throws InvalidArgumentException When the token is empty
+     * @throws InvalidStateException When the hold is missing, mismatched, expired or released, or its bytes are incomplete
+     * @throws InvalidFormatException When the received byte identity is malformed
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the upload owner
+     */
+    public function approveHold(string $uploadHoldId): void
+    {
+        $this->ensureCanWrite();
+        if ($uploadHoldId === '') {
+            throw new InvalidArgumentException('An upload hold token must be nonempty.');
+        }
+        if (
+            $this->state->uploadHoldId !== $uploadHoldId || $this->state->uploadHoldDeadlineAt === null
+            || $this->state->uploadHoldDeadlineAt <= TimeHelper::nowMs()
+        ) {
+            throw new InvalidStateException('Only the matching live upload hold can be approved.');
+        }
+        $this->assertHoldable();
+        if (!$this->state->uploadHoldApproved) {
+            $this->applyDiffWithSync([StateHilosUpload::uploadHoldApproved => true]);
+        }
+    }
+
+    /**
+     * Leaves a tombstone for a matching token. A late release for another token changes nothing.
+     *
+     * @param string $uploadHoldId Attempt releasing these bytes
+     * @throws InvalidArgumentException When the token is empty
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the upload owner
+     */
+    public function releaseHold(string $uploadHoldId): void
+    {
+        $this->ensureCanWrite();
+        if ($uploadHoldId === '') {
+            throw new InvalidArgumentException('An upload hold token must be nonempty.');
+        }
+        if ($this->state->uploadHoldId !== $uploadHoldId || $this->state->uploadHoldDeadlineAt === null) {
+            return;
+        }
+        $this->applyDiffWithSync([
+            StateHilosUpload::uploadHoldDeadlineAt => null,
+            StateHilosUpload::uploadHoldApproved => false,
+        ]);
+    }
+
     /**
      * Records how many bytes have arrived; the first write moves the upload to uploading.
      *
@@ -145,6 +236,21 @@ final class HilosUploadActions extends RtActions
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
         $this->remove();
+    }
+
+    /**
+     * @throws InvalidStateException When the upload has no complete received byte identity
+     * @throws InvalidFormatException When the received byte identity is malformed
+     */
+    private function assertHoldable(): void
+    {
+        if (
+            $this->state->phase !== UploadPhase::COMPLETE->value
+            || $this->state->tmpIndex === null || $this->state->contentHash === null
+        ) {
+            throw new InvalidStateException('An upload hold requires complete bytes with a temporary file and fingerprint.');
+        }
+        new UploadSnapshotData($this->state->clientUploadId, $this->state->tmpIndex, $this->state->contentHash);
     }
 
     /**

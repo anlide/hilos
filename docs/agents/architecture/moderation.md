@@ -155,27 +155,47 @@ The moderation door is the runtime collection `hilosModerationChecks`, which
 read as `Hilos::$rt->hilosModerationChecks` and found by
 `find($acceptKey, $kind)`. A row remains keyed `acceptKey|kind`. Ordinary
 connection-bound checks carry `acceptKey`, `userId`, `kind`, `requestId`,
-`verdictTo`, `text`, `clientUploadId`, `startedAt` and `deadlineAt`; a name
-check also carries its optional `sessionTokenHash`. Thus the original
-connection still gives a name check its queue slot and compatibility-status
-destination, but the accepted session attempt and its `requestId` identify the
+`verdictTo`, `text`, `clientUploadId`, `clientUploadIds`, `imageCopy`,
+`startedAt` and `deadlineAt`; a name check also carries its optional
+`sessionTokenHash`. `clientUploadIds` is an ordered list of upload ids for
+`TEXT_WITH_FILES`, without paths or bytes; `imageCopy` asks an `IMAGE` check to
+use a rendered copy. These fields are part of the immutable attempt snapshot.
+Thus the original connection still gives a name check its queue slot and
+compatibility-status destination, but the accepted session attempt and its
+`requestId` identify the
 work after that socket disappears. A name check and a photo check from the
 same connection still have separate queue slots. The session holder, not this
 queue, serializes concurrent name requests from tabs of the same session.
 
-Open a `TEXT` check with
-`Hilos::$rt->hilosModerationChecks->actions->open($acceptKey, $userId, $kind, text: …)`
-or an `IMAGE` check with `clientUploadId:` naming a complete upload on the same
-connection. Ordinary calls draw a fresh `requestId` and fix `deadlineAt` from
-`moderation.check_timeout_sec` when opened. For an admitted own-name attempt,
+Open a `TEXT` or `TEXT_WITH_FILES` check with
+`Hilos::$rt->hilosModerationChecks->actions->open($acceptKey, $userId, $kind, text: …)`;
+the latter may carry ordered upload ids in `clientUploadIds`, including an empty
+list. Open an `IMAGE` check with `clientUploadId:` naming a complete upload on
+the same connection, and set `imageCopy` only when the caller requests a
+rendered image copy. Ordinary calls draw a fresh `requestId` and fix
+`deadlineAt` from `moderation.check_timeout_sec` when opened; an initiator may
+also pass a future epoch-millisecond deadline without a session token, and no
+stage may extend it. An expired explicit deadline is refused and the initiator
+ends the check as unavailable. For an admitted own-name attempt,
 `ProfileNameCommands` passes the session holder's `sessionTokenHash`, the same
 `requestId`, and its already-fixed `deadlineAt`; reconnecting does not extend
 that deadline. `open()` refuses a project without `MODERATION`
 (`InvalidStateException`); a person id that is not positive, a kind the project
 does not publish or an input the kind does not look at
-(`InvalidArgumentException`); a `TEXT_WITH_FILES` kind (`ValidationException`)
-until the moderator can ask about text with files, which is HIL-1627's; and a
-connection already waiting on that kind (`DuplicateValueException`).
+(`InvalidArgumentException`); and a connection already waiting on that kind
+(`DuplicateValueException`). Input-shape mismatches, including a non-list or
+duplicate upload id, are `InvalidArgumentException` refusals.
+
+The two optional arguments are appended after the existing `open()` arguments,
+so positional callers keep their order. `TEXT` requires non-null text,
+`clientUploadId: null`, an empty `clientUploadIds` list and `imageCopy: false`.
+`TEXT_WITH_FILES` requires non-null text (which may be empty), no singular upload
+id, an ordered list of distinct non-empty string ids (which may be empty), and
+`imageCopy: false`. `IMAGE` requires null text, a non-empty singular upload id
+and an empty `clientUploadIds` list; `imageCopy` may be either boolean value.
+The connection-bound caller does not choose `requestId`; a supplied request id
+without `sessionTokenHash` is refused. The session-bound own-name path keeps its
+existing request id and attempt checks.
 
 The collection is cut into sets by `verdictTo` (`SET_VIA`), which the row takes
 from the kind and not from the caller: an initiator writes only the checks
@@ -227,9 +247,33 @@ non-stale session attempt before applying any verdict. Right
 before asking it reads the kind, the kind's effective rules and the person's
 current name, and resolves the kind's profile. The policy goes as the system
 message — the kind's title, the two answers the model may give, and the rules —
-and the person's id and name with the text, or with the upload's picture read
-from the cluster's temporary directory, as the user message. The model answers
-one JSON object with `allow` and `reason`
+and the person's id and name with the text, or with the upload's picture as the
+user message. For `TEXT_WITH_FILES`, the user message adds one metadata line per
+ordered upload id with its filename, detected MIME type (or declared type) and
+declared size; the moderator does not read non-image file bytes, and attachment
+names, types and sizes are not grounds for refusing the text. A missing,
+incomplete or stale upload makes the check `service_unavailable`. For `IMAGE`,
+the upload must be complete on the same connection. When `imageCopy` is true,
+the moderator lazily renders a 512-by-512 JPEG with `CONTAIN` and sends that
+copy; when it is false, the profile-photo check keeps its existing source path.
+A local image-render failure returns `unreadable`, not a model reason; that
+value is neither a kind reason nor accepted by the model-output parser. Other
+file, model, deadline or parsing failures return `service_unavailable`. The
+framework handles the declared input shape and does not know project kind keys.
+
+A check carrying `uploadSnapshots` and `uploadHoldId` additionally waits for
+positive [owner hold marks](uploads.md#consumer-holds) on every original
+attachment. A partial, mismatched, incomplete, stale or expired group is not
+eligible and does not block another ready check. Upload creation, update and
+deletion wake queue selection. The moderator rechecks the entire snapshot and
+its exact token/deadline before constructing input and before answering;
+image bytes come from the matching snapshot's temporary name. Earlier image
+stages remain part of that group. The initial fixed deadline includes admission
+waiting; the initiator's existing deadline sweep also ends unconfirmed checks
+as unavailable. Empty snapshots preserve the previous input path, including
+profile photos with `imageCopy: false`.
+
+The model answers one JSON object with `allow` and `reason`
 ([ModerationDecision](../../../framework/backend/Moderation/ModerationDecision.php));
 no model, no file, no rules, no person, a failed or timed-out request, or an
 answer that is not a verdict ends as `service_unavailable`. A check whose row
@@ -257,8 +301,9 @@ and `TEXT_WITH_FILES`, and `hilos.moderation.image` (`PROFILE_IMAGE`) for
 `IMAGE`. Both profiles belong to the framework and use the ordinary
 [LLM router](llm-routing.md).
 
-Attachment information in a text check does not make it a vision check of all
-the attached pictures. (not in the code yet — HIL-1627)
+`TEXT_WITH_FILES` is a metadata-only text check. Each image attachment is a
+separate `IMAGE` check; callers request a rendered JPEG copy with `imageCopy`
+when they need that behavior.
 
 Both models are controlled by framework settings, with environment values as
 defaults and secrets kept in the environment. Each role has four keys of its
@@ -384,16 +429,31 @@ use the same binding; their moderation activation remains separate.
 
 ## Chat Is A Consumer
 
-Check the text and attachment information through `chat_message` first. Then
-check each picture separately through `chat_message_picture`, using vision.
-The first refusal stops the remaining checks; a picture refusal identifies
-which picture failed. The composer's states belong to chat.
-(not in the code yet — HIL-1627)
+`MainPage` keeps its existing submission validation, records the composer on
+the `Connection`, and asks `ChatAgent` to start moderation. `ChatAgent` opens a
+`chat_message` `TEXT_WITH_FILES` check with the message text and ordered upload
+ids. The framework moderator sees attachment metadata only. After that check is
+approved, `ChatAgent` opens a separate `chat_message_picture` `IMAGE` check for
+each image upload in attachment order, setting `imageCopy: true`. Each stage
+gets a fresh `requestId`; the chain stops on its first refusal. Every stage
+carries the deadline fixed by the first check; opening the next image does not
+extend it.
 
-HIL-1627 removes chat's own moderator, rules table and moderation profiles.
-Until then those parts of the existing demo are transitional, not a pattern
-for a new project's moderation mechanism.
-(not in the code yet — HIL-1627)
+`ChatAgent` receives the shared verdict and owns the chat outcome and file
+publication. It publishes no message until every check is approved; with files,
+it waits for the registry's publication reply, writes the event, then clears the
+composer and marks the files bound. `MainPage` does not receive the verdict or
+publication reply. The six existing composer fields on
+`Connection` remain the browser-facing draft and status. The attempt queue and
+current stage are in the shared `hilosModerationChecks` RT collection, not in a
+session-held composer.
+
+A content refusal uses the existing public reason and may send the existing
+best-effort message-rejected notification. A renderer refusal (`unreadable`)
+identifies the image but sends no notification; `service_unavailable` is not a
+content refusal, does not identify an image, and sends no notification. The
+chat-owned moderator, prompt-piece table and chat moderation profiles have
+been retired; chat declares kinds and consumes the framework mechanism.
 
 ## The Admin Section And Activation
 
@@ -606,12 +666,13 @@ There is no verdict journal and no per-kind on/off switch in this design.
 
 **Built so far:** the kinds directory, the rules table and its library, the check
 queue and its signals, the moderator, its profiles and settings, the profile
-photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), the
-kinds/rules browser tables registered by Chat (HIL-1628), and the section pages
-with Vue Rules Add, Edit and Delete flows and their focused e2e coverage.
+photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), and Chat as a
+consumer (HIL-1627). Also built are the kinds/rules browser tables registered
+by Chat (HIL-1628), and the section pages with Vue Rules Add, Edit and Delete
+flows and their focused e2e coverage.
 
-**Not built yet:** chat as a consumer (HIL-1627); React/tasks and Angular/polls
-SDK mounts (HIL-1636/HIL-1637); the broader moderation e2e coverage and cluster
+**Not built yet:** React/tasks and Angular/polls SDK mounts (HIL-1636/HIL-1637);
+the broader moderation e2e coverage and cluster
 coverage (HIL-1638/HIL-1639); enabling profile photos in tasks/polls
 (HIL-1644/HIL-1645).
 

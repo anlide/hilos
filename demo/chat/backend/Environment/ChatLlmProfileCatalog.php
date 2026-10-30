@@ -13,12 +13,12 @@ use Hilos\LLM\Routing\LlmProfileCatalogStub;
 /**
  * Chat demo LLM profile catalog.
  *
- * Declares one named profile per chat LLM role (bot / moderation / analyzer),
- * each drawing from that role's CHAT_* env variables, on top of the framework
- * `default` profile. The per-role local URL falls back to LLM_LOCAL_URL when
- * unset; the external provider uses the same per-role model and the global
- * external URL / API key. Admin-settings overrides land in HIL-262 via the
- * router's override source.
+ * Declares one named profile per chat LLM role (bot / analyzer), each drawing
+ * from that role's CHAT_* env variables, on top of the framework `default`
+ * profile. The per-role local URL falls back to LLM_LOCAL_URL when unset; the
+ * external provider uses the same per-role model and the global external URL /
+ * API key. Admin-settings overrides land in HIL-262 via the router's override
+ * source.
  */
 final class ChatLlmProfileCatalog implements CatalogProviderInterface
 {
@@ -33,18 +33,6 @@ final class ChatLlmProfileCatalog implements CatalogProviderInterface
                 EnvConstants::CHAT_BOT_URL,
                 EnvConstants::CHAT_BOT_MODEL,
                 EnvConstants::CHAT_BOT_TIMEOUT_SEC,
-            ),
-            ChatLLMConstants::PROFILE_MODERATION => self::role(
-                EnvConstants::CHAT_MODERATION_PROVIDER,
-                EnvConstants::CHAT_MODERATION_URL,
-                EnvConstants::CHAT_MODERATION_MODEL,
-                EnvConstants::CHAT_MODERATION_TIMEOUT_SEC,
-            ),
-            ChatLLMConstants::PROFILE_PHOTO_MODERATION => self::role(
-                EnvConstants::CHAT_PHOTO_MODERATION_PROVIDER,
-                EnvConstants::CHAT_PHOTO_MODERATION_URL,
-                EnvConstants::CHAT_PHOTO_MODERATION_MODEL,
-                EnvConstants::CHAT_PHOTO_MODERATION_TIMEOUT_SEC,
             ),
             ChatLLMConstants::PROFILE_ANALYZER => self::role(
                 EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER,

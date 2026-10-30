@@ -22,6 +22,8 @@ use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Moderation\ModerationLlmConstants;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 
 /**
@@ -37,7 +39,10 @@ final class SettingsAccessorTest extends IntegrationTestCase
     public function testReadsResolvedTypedSettings(): void
     {
         $this->assertSame('qwen2.5:3b', Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string());
-        $this->assertSame('qwen2.5:3b', Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_MODEL]->string());
+        $this->assertSame(
+            ModerationLlmConstants::DEFAULT_TEXT_MODEL,
+            Hilos::$setting[ModerationSettingsCatalog::TEXT_MODEL]->string(),
+        );
         $this->assertSame(90.0, Hilos::$setting[ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC]->float());
     }
 
@@ -52,7 +57,7 @@ final class SettingsAccessorTest extends IntegrationTestCase
         );
         $this->assertSame(
             ChatSettingsConstants::DEFAULT_BOT_TIMEOUT_SEC,
-            Hilos::$setting->defaultReferenceKeyFor(ChatSettingsConstants::CHAT_MODERATION_TIMEOUT_SEC),
+            Hilos::$setting->defaultReferenceKeyFor(ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC),
         );
     }
 

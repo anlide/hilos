@@ -12,7 +12,9 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
+use Demo\Chat\Moderation\ChatModerationKindKey;
+use Hilos\Files\DTO\FilesPublishedSignalData;
+use Hilos\Core\Router\SignalData;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Constants\HilosSignalConstants;
@@ -249,24 +251,35 @@ final class ChatSignalRouterTest extends TestCase
         ], $destinations);
     }
 
-    public function testModerationResultRoutesToChatAgentThroughPageSignalOwnership(): void
+    public function testChatVerdictsRouteByKindAndTheRegistryAnswerBelongsToTheAgent(): void
     {
-        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
+        foreach ([ChatModerationKindKey::MESSAGE, ChatModerationKindKey::MESSAGE_PICTURE] as $kind) {
+            $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(HilosSignalConstants::HILOS_MODERATION_VERDICT),
+                new AgentSignalData(new ModerationVerdictSignalData('accept-key', $kind, 'attempt', true, 'ok')),
+            ));
+            $this->assertEquals([new AgentDestination(AgentType::CHAT)], $destinations);
+        }
+        $this->assertEquals([new AgentDestination(AgentType::CHAT)], new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
-            new SignalName(ChatSignalConstants::MODERATION_RESULT),
-            new AgentSignalData(new ModerationResultSignalData(
-                acceptKey: 'accept-key',
-                userId: 7,
-                message: 'hello',
-                allow: true,
-                reason: '',
-            )),
-        ));
-
-        $this->assertEquals([
-            new AgentDestination(AgentType::CHAT),
-        ], $destinations);
+            new SignalName(ChatSignalConstants::ATTACHMENTS_PUBLISHED),
+            new AgentSignalData(new FilesPublishedSignalData('accept-key', ['u1'], [1], null)),
+        )));
+        $this->assertSame(AgentType::CHAT, Hilos::getAgentSignalRoutes()[ChatSignalConstants::ATTACHMENTS_PUBLISHED]);
+        $this->assertArrayNotHasKey(ChatSignalConstants::ATTACHMENTS_PUBLISHED, Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]);
+        foreach (['moderation_result', 'subscription_page_moderator'] as $name) {
+            $this->assertSame([], new ChatSignalRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName($name),
+                new AgentSignalData(new SignalData()),
+            )));
+        }
+        $this->assertArrayNotHasKey('moderator', Hilos::getPageRoutes());
+        $this->assertArrayNotHasKey(HilosSignalConstants::HILOS_MODERATION_VERDICT, Hilos::getAgentSignalRoutes());
     }
 
     public function testNameModerationVerdictRoutesByKindToTheUsersLibrary(): void
@@ -295,7 +308,7 @@ final class ChatSignalRouterTest extends TestCase
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName('rename_moderation_result'),
-            new AgentSignalData(new ModerationResultSignalData('accept-key', 7, 'name', true, 'ok')),
+            new AgentSignalData(new SignalData()),
         )));
         self::assertArrayNotHasKey('rename', Hilos::getAgentActionRoutes());
     }

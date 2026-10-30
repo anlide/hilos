@@ -60,14 +60,25 @@ export function createCommandChannel({
         clearTimeout(timer)
         socket.destroy()
 
-        const reply = JSON.parse(buffer.slice(0, newline))
-        if (reply.status === 'ok') {
-          resolve(reply.payload ?? {})
-          return
-        }
+        try {
+          const reply = JSON.parse(buffer.slice(0, newline))
+          if (
+            reply === null ||
+            typeof reply !== 'object' ||
+            Array.isArray(reply) ||
+            (reply.status !== 'ok' && reply.status !== 'error')
+          )
+            throw new Error(`Invalid command-channel reply to ${command}`)
+          if (reply.status === 'ok') {
+            resolve(reply.payload ?? {})
+            return
+          }
 
-        const message = reply.payload?.message ?? 'unknown error'
-        reject(refuse(`${command} failed: ${message}`))
+          const message = reply.payload?.message ?? 'unknown error'
+          reject(refuse(`${command} failed: ${message}`))
+        } catch (error) {
+          reject(error)
+        }
       })
       socket.on('error', (error) => {
         clearTimeout(timer)

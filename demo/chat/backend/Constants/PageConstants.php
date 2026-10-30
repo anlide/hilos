@@ -25,9 +25,6 @@ final class PageConstants
     /** @var string Bot page */
     public const string BOT = 'bot';
 
-    /** @var string Moderator page */
-    public const string MODERATOR = 'moderator';
-
     /** @var string Admin page */
     public const string ADMIN = 'admin';
 

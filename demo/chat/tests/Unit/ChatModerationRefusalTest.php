@@ -4,80 +4,16 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
-use Demo\Chat\Agents\DTO\ModerationDecision;
+use Demo\Chat\Moderation\ChatModerationRefusal;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Hilos\Core\Exception\InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for moderation model decision parsing.
+ * Unit tests for the chat public refusal sentences.
  */
-final class ModerationDecisionTest extends TestCase
+final class ChatModerationRefusalTest extends TestCase
 {
-    public function testFromModelOutputExtractsJsonObjectAndFields(): void
-    {
-        $decision = ModerationDecision::fromModelOutput(
-            'Model says: {"allow": false, "reason": "spam"}',
-        );
-
-        $this->assertFalse($decision->allow);
-        $this->assertSame('spam', $decision->reason);
-    }
-
-    /**
-     * The reason is a label the model may omit for clear-cut cases; the allow
-     * decision stands and the reason defaults rather than failing moderation.
-     *
-     * @param string $text Raw model output
-     * @param bool $allow Expected allow decision
-     * @param string $reason Expected defaulted reason
-     */
-    #[DataProvider('defaultedReasonProvider')]
-    public function testFromModelOutputDefaultsMissingOrEmptyReason(string $text, bool $allow, string $reason): void
-    {
-        $decision = ModerationDecision::fromModelOutput($text);
-
-        $this->assertSame($allow, $decision->allow);
-        $this->assertSame($reason, $decision->reason);
-    }
-
-    /**
-     * @return list<array{0: string, 1: bool, 2: string}>
-     */
-    public static function defaultedReasonProvider(): array
-    {
-        return [
-            ['{"allow": true}', true, ModerationDecision::REASON_ALLOWED],
-            ['{"allow": true, "reason": ""}', true, ModerationDecision::REASON_ALLOWED],
-            ['{"allow": true, "reason": "   "}', true, ModerationDecision::REASON_ALLOWED],
-            ['{"allow": false}', false, ModerationDecision::REASON_BLOCKED],
-        ];
-    }
-
-    /**
-     * @param string $text Raw invalid model output
-     */
-    #[DataProvider('invalidDecisionOutputProvider')]
-    public function testFromModelOutputRejectsInvalidDecisionShape(string $text): void
-    {
-        $this->expectException(InvalidArgumentException::class);
-
-        ModerationDecision::fromModelOutput($text);
-    }
-
-    /**
-     * @return list<array{0: string}>
-     */
-    public static function invalidDecisionOutputProvider(): array
-    {
-        return [
-            ['{"allow": "yes", "reason": "spam"}'],
-            ['{"reason": "spam"}'],
-            ['not json'],
-        ];
-    }
-
     /**
      * @param string $rawReason Input raw reason
      * @param ?string $phase Runtime phase
@@ -86,7 +22,7 @@ final class ModerationDecisionTest extends TestCase
     #[DataProvider('publicMessageReasonProvider')]
     public function testPublicMessageReason(string $rawReason, ?string $phase, string $expected): void
     {
-        $this->assertSame($expected, ModerationDecision::publicMessageReason($rawReason, $phase));
+        $this->assertSame($expected, ChatModerationRefusal::publicMessageReason($rawReason, $phase));
     }
 
     /**
@@ -134,7 +70,7 @@ final class ModerationDecisionTest extends TestCase
     ): void {
         $this->assertSame(
             $expected,
-            ModerationDecision::publicPictureReason($rawReason, $phase, $ordinal, $filename),
+            ChatModerationRefusal::publicPictureReason($rawReason, $phase, $ordinal, $filename),
         );
     }
 
@@ -187,22 +123,19 @@ final class ModerationDecisionTest extends TestCase
 
     public function testIsAboutTheContentRejectsACheckThatCouldNotRun(): void
     {
-        $this->assertTrue(ModerationDecision::isAboutTheContent('nudity'));
-        $this->assertTrue(ModerationDecision::isAboutTheContent('blocked'));
-        $this->assertTrue(ModerationDecision::isAboutTheContent('contains a watermark'));
-        $this->assertFalse(ModerationDecision::isAboutTheContent(ModerationDecision::REASON_UNREADABLE));
-        $this->assertFalse(ModerationDecision::isAboutTheContent('service_unavailable'));
-        $this->assertFalse(ModerationDecision::isAboutTheContent('unknown'));
+        $this->assertTrue(ChatModerationRefusal::isAboutTheContent('nudity'));
+        $this->assertTrue(ChatModerationRefusal::isAboutTheContent('blocked'));
+        $this->assertTrue(ChatModerationRefusal::isAboutTheContent('contains a watermark'));
+        $this->assertFalse(ChatModerationRefusal::isAboutTheContent(ChatModerationRefusal::REASON_UNREADABLE));
+        $this->assertFalse(ChatModerationRefusal::isAboutTheContent('service_unavailable'));
+        $this->assertFalse(ChatModerationRefusal::isAboutTheContent('unknown'));
     }
 
-    public function testIsNaturalLanguagePhraseRejectsInvalidPatterns(): void
+    public function testPublicReasonRejectsInvalidNaturalLanguagePatterns(): void
     {
-        $this->assertTrue(ModerationDecision::isNaturalLanguagePhrase('this is a natural phrase'));
-        $this->assertFalse(ModerationDecision::isNaturalLanguagePhrase(''));
-        $this->assertFalse(ModerationDecision::isNaturalLanguagePhrase('singleword'));
-        $this->assertFalse(ModerationDecision::isNaturalLanguagePhrase('has_underscore label'));
-        $this->assertFalse(ModerationDecision::isNaturalLanguagePhrase("has\nnewline phrase"));
-        $this->assertFalse(ModerationDecision::isNaturalLanguagePhrase("has\x07control phrase"));
-        $this->assertFalse(ModerationDecision::isNaturalLanguagePhrase(str_repeat('word ', 35)));
+        $this->assertSame('Message rejected: this is a natural phrase', ChatModerationRefusal::publicMessageReason('this is a natural phrase'));
+        foreach (['', 'singleword', 'has_underscore label', "has\nnewline phrase", "has\x07control phrase", str_repeat('word ', 35)] as $reason) {
+            $this->assertSame('Message rejected.', ChatModerationRefusal::publicMessageReason($reason));
+        }
     }
 }

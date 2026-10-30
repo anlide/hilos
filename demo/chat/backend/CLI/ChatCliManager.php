@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Chat\CLI;
 
+use Demo\Chat\CLI\Commands\SubmissionTestObserveCommand;
 use Hilos\Core\CLI\CliManager;
 
 /**
- * Chat CLI manager - the place a project adds commands of its own, kept empty on purpose.
+ * Chat CLI manager - the project's own submission observation command.
  *
- * All current commands belong to the framework, including the feature-aware
- * paired test database reset. This override demonstrates the project seam.
+ * General commands, including the feature-aware paired test database reset, come from the framework.
  */
 final class ChatCliManager extends CliManager
 {
-    /** No project commands are registered; the framework supplies the complete registry. */
+    /** Registers the read-only checkpoint answered by the Chat agent. */
     protected function registerProjectCommands(): void
     {
+        $this->addCommand(new SubmissionTestObserveCommand());
     }
 }

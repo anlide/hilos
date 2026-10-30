@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Files\ContentHash;
+use Hilos\Files\Upload\DTO\UploadSnapshotData;
+use Hilos\Files\Upload\UploadFrame;
 use Hilos\Files\Upload\UploadPhase;
+use Hilos\Files\Upload\UploadSnapshotCollection;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -47,6 +53,43 @@ final class HilosUploads extends RtCollection
     public function find(string $acceptKey, string $clientUploadId): ?HilosUpload
     {
         return $this[StateHilosUpload::keyFor($acceptKey, $clientUploadId)];
+    }
+
+    /**
+     * Captures complete, fresh upload identities in admission order. The caller checks target
+     * and person against these same connection rows in the same admission handler.
+     *
+     * @param string $acceptKey Connection admitting the attachments
+     * @param list<string> $clientUploadIds Distinct upload ids in attachment order
+     * @return UploadSnapshotCollection Immutable byte identities without backing state or paths
+     * @throws InvalidArgumentException When the ids are not a list of distinct valid upload ids
+     * @throws InvalidStateException When an upload is absent, stale, incomplete or has no received file identity
+     * @throws InvalidFormatException When a received file identity is malformed
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     */
+    public function snapshotForConnection(string $acceptKey, array $clientUploadIds): UploadSnapshotCollection
+    {
+        if (!array_is_list($clientUploadIds)) {
+            throw new InvalidArgumentException('Snapshot upload ids must be a list.');
+        }
+        $seen = [];
+        $snapshots = [];
+        foreach ($clientUploadIds as $clientUploadId) {
+            if (!is_string($clientUploadId) || !UploadFrame::isValidId($clientUploadId) || in_array($clientUploadId, $seen, true)) {
+                throw new InvalidArgumentException('Snapshot upload ids must be distinct valid upload ids.');
+            }
+            $seen[] = $clientUploadId;
+            $upload = $this->find($acceptKey, $clientUploadId);
+            if (
+                $upload === null || $upload->staleSince() !== null || $upload->phase !== UploadPhase::COMPLETE
+                || $upload->tmpIndex === null || $upload->contentHash === null
+            ) {
+                throw new InvalidStateException('A snapshot requires a complete, fresh upload with a received file identity.');
+            }
+            $snapshots[] = new UploadSnapshotData($clientUploadId, $upload->tmpIndex, $upload->contentHash);
+        }
+
+        return new UploadSnapshotCollection(...$snapshots);
     }
 
     /**

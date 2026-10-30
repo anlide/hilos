@@ -8,6 +8,7 @@ use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
 use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
+use Hilos\Backup\Anonymization\CatalogRestoreAnonymizer;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
@@ -120,6 +121,39 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         AnonymizationStartupGuard::assertLiveSchemaClassified();
 
         $this->expectNotToPerformAssertions();
+    }
+
+    /** The retired table retains exactly its historical verdict, on the primary connection alone. */
+    public function testHistoricalModerationVerdictIsNonPersonal(): void
+    {
+        $registry = PiiRegistry::collect();
+        $this->assertSame([], $registry->strategiesFor(self::CONNECTION_INDEX, 'moderator_prompt_piece'));
+        $this->assertFalse($registry->isPurged(self::CONNECTION_INDEX, 'moderator_prompt_piece'));
+        $this->assertSame(['id', 'section', 'prompt_piece'], $registry->notPersonalColumns(self::CONNECTION_INDEX, 'moderator_prompt_piece'));
+        $this->assertNull($registry->strategiesFor(ChangeLogDatabase::CONNECTION_INDEX, 'moderator_prompt_piece'));
+        $this->assertNull($registry->notPersonalColumns(ChangeLogDatabase::CONNECTION_INDEX, 'moderator_prompt_piece'));
+        $this->assertArrayNotHasKey('moderator_prompt_piece', LiveSchemaReader::read(self::CONNECTION_INDEX));
+    }
+
+    /** Keeping a retired verdict does not admit any other unclassified archive table. */
+    public function testHistoricalArchiveStillRefusesAnUnknownTable(): void
+    {
+        $tables = [];
+        try {
+            foreach ([self::CONNECTION_INDEX, ChangeLogDatabase::CONNECTION_INDEX] as $index) {
+                $tables[$index] = array_keys(LiveSchemaReader::read($index));
+            }
+        } finally {
+            Database::useConnection(self::CONNECTION_INDEX);
+        }
+        $tables[self::CONNECTION_INDEX][] = 'moderator_prompt_piece';
+        $tables[self::CONNECTION_INDEX][] = 'unclassified_archive_probe';
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage(
+            'The PII registry does not match the archive: connection 0: tables carry no PII declaration: unclassified_archive_probe',
+        );
+        CatalogRestoreAnonymizer::fromCatalog()->validateArchive($tables);
     }
 
     /**

@@ -17,8 +17,8 @@ use Hilos\Constants\HttpConstants;
  * it opens every scenario that turns on what the model said.
  *
  * The kind of resident is the interlocutor: nothing it is told is delivered to a person, so there is
- * no mail domain, no forward to Mailpit and no way to read what arrived. A spec dictates the answer
- * and checks what the product did with it.
+ * no mail domain or forward to Mailpit. A spec dictates the answer and checks what the product did
+ * with it; scoped test observations expose only arrival ordinals and decoded image hashes.
  *
  * What is dictated is the raw TEXT of the answer, not a parsed verdict. Parsing an allow/deny out of
  * that text is the business of whichever demo asked, and knowing it here would make the house the
@@ -50,6 +50,10 @@ final class ModelRoutes implements GatewayResident
 
     /** Route a spec dictates an answer at. */
     private const string PATH_TEST_ANSWER = '/model/test/answer';
+
+    /** Scoped observation and cleanup routes, owned by the spec's correlation key. */
+    private const string PATH_TEST_REQUESTS = '/model/test/requests';
+    private const string PATH_TEST_FORGET = '/model/test/forget';
 
     /** Request field of a model call carrying the prompt the key is looked for in. */
     private const string FIELD_PROMPT = 'prompt';
@@ -91,11 +95,28 @@ final class ModelRoutes implements GatewayResident
             HttpConstants::METHOD_POST,
             self::PATH_GENERATE,
             $this->generate(...),
-            static fn(array $fields): string => self::announcedKey($fields) ?? '',
+            static function (array $fields): string {
+                $key = self::announcedKey($fields);
+                if ($key !== null) {
+                    $hashes = [];
+                    $images = $fields['images'] ?? [];
+                    foreach (is_array($images) ? $images : [] as $image) {
+                        $bytes = is_string($image) ? base64_decode($image, true) : false;
+                        if ($bytes !== false) {
+                            $hashes[] = hash('sha256', $bytes);
+                        }
+                    }
+                    Store::observeModelRequest($key, $hashes);
+                }
+
+                return $key ?? '';
+            },
         );
 
         // Test side: what the model says next, which no spec can arrange any other way.
         $routes->test(HttpConstants::METHOD_POST, self::PATH_TEST_ANSWER, $this->testAnswer(...));
+        $routes->test(HttpConstants::METHOD_GET, self::PATH_TEST_REQUESTS, $this->testRequests(...));
+        $routes->test(HttpConstants::METHOD_POST, self::PATH_TEST_FORGET, $this->testForget(...));
     }
 
     /**
@@ -177,5 +198,51 @@ final class ModelRoutes implements GatewayResident
         }
 
         return ['ok' => true];
+    }
+
+    /**
+     * @param array<string, mixed> $fields Query fields; key identifies a test, never a credential
+     * @return array Observation list or the resident's ordinary invalid-input response
+     */
+    private function testRequests(array $fields): array
+    {
+        try {
+            return Store::modelRequests(self::testKey($fields));
+        } catch (InvalidModelAnswerException $refusal) {
+            return StandGatewayTlsServer::json(['ok' => false, 'error' => $refusal->error], HttpConstants::HTTP_BAD_REQUEST);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $fields Cleanup request
+     * @return array<string, mixed> Acknowledgement or invalid-input response
+     */
+    private function testForget(array $fields): array
+    {
+        try {
+            Store::forgetModel(self::PATH_GENERATE, self::testKey($fields));
+        } catch (InvalidModelAnswerException $refusal) {
+            return StandGatewayTlsServer::json(['ok' => false, 'error' => $refusal->error], HttpConstants::HTTP_BAD_REQUEST);
+        }
+
+        return ['ok' => true];
+    }
+
+    /**
+     * @param array<string, mixed> $fields Fields of a scoped test request
+     * @return string Required correlation key
+     * @throws InvalidModelAnswerException When the key is missing, empty, mistyped or accompanied by unknown fields
+     */
+    private static function testKey(array $fields): string
+    {
+        if (array_diff(array_keys($fields), [self::FIELD_KEY]) !== []) {
+            throw new InvalidModelAnswerException(InvalidModelAnswerException::FIELD_UNKNOWN);
+        }
+        $key = $fields[self::FIELD_KEY] ?? null;
+        if (!is_string($key) || $key === '') {
+            throw new InvalidModelAnswerException(InvalidModelAnswerException::KEY_REQUIRED);
+        }
+
+        return $key;
     }
 }

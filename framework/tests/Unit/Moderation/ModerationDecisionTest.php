@@ -58,6 +58,10 @@ final class ModerationDecisionTest extends TestCase
         yield 'reason missing on a permission' => ['{"allow":true}'];
         yield 'reason missing on a refusal' => ['{"allow":false}'];
         yield 'reason as a number' => ['{"allow":false,"reason":1}'];
+        yield 'reason null' => ['{"allow":false,"reason":null}'];
+        yield 'reason as an array' => ['{"allow":false,"reason":[]}'];
+        yield 'boolean as a number' => ['{"allow":1,"reason":"ok"}'];
+        yield 'invalid JSON object' => ['{"allow":true,"reason":"ok",}'];
     }
 
     #[DataProvider('malformedAnswers')]
@@ -77,6 +81,9 @@ final class ModerationDecisionTest extends TestCase
         yield 'refused with a reason of no kind' => ['{"allow":false,"reason":"spam"}'];
         yield 'refused with an empty reason' => ['{"allow":false,"reason":""}'];
         yield 'refused as unavailable' => ['{"allow":false,"reason":"service_unavailable"}'];
+        yield 'generic blocked is no kind reason' => ['{"allow":false,"reason":"blocked"}'];
+        yield 'model unreadable is no renderer failure' => ['{"allow":false,"reason":"unreadable"}'];
+        yield 'whitespace is not ok' => ['{"allow":true,"reason":"   "}'];
     }
 
     #[DataProvider('inconsistentAnswers')]

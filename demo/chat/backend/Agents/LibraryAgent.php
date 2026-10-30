@@ -12,17 +12,15 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 /**
  * Monopolistic library worker for admin-managed chat catalog entities.
  *
- * Owns bot profiles and moderator prompt pieces.
+ * Owns bot profiles.
  */
 final class LibraryAgent extends AbstractAgent
 {
     /**
-     * @var array<string, list<TruthSourceOperation>> The two catalogs its admin CRUD pages write:
-     *     the bots of the chat and the pieces a moderator prompt is built from.
+     * @var array<string, list<TruthSourceOperation>> The bot catalog its admin CRUD pages write
      */
     public const array OWNS_DB = [
         ChatDbContext::bots => TruthSourceOperation::BY_KIND,
-        ChatDbContext::moderatorPromptPieces => TruthSourceOperation::BY_KIND,
     ];
 
     public const string AGENT_TYPE = AgentType::LIBRARY;

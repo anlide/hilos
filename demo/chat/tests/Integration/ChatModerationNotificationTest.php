@@ -10,19 +10,12 @@ use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Page\ActionRouteConfig;
-use Hilos\Core\Page\HilosPageFactory;
-use Hilos\Core\Page\PageSignalRouter;
-use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -41,19 +34,22 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 /**
  * Proves a moderation refusal reaches its author as a notification (HIL-557).
  *
- * The action error the page raises is a reply to the tab that acted; the notification
- * is the copy that survives, so the author still learns the verdict from another
+ * The composer retains a refusal for the tab that acted; the notification is its
+ * durable copy, so the author still learns the verdict from another
  * device or after a reload. Only a verdict about the content notifies: an unavailable
  * moderator, or a picture that cannot be checked, says nothing about what was sent.
  */
 final class ChatModerationNotificationTest extends IntegrationTestCase
 {
+    use ChatModerationFixture;
+
     private const string TEST_AGENT_ID = 'test-agent';
 
     /** Registers chat fixture ownership and starts with no notifications or connections. */
     protected function setUp(): void
     {
         parent::setUp();
+        $this->claimChatChecks();
         TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $this->deleteChatNotifications();
@@ -66,6 +62,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         ExecutionContext::setCurrentAcceptKey(null);
+        $this->forgetChatChecks();
         $this->deleteChatNotifications();
         RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
@@ -83,25 +80,16 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections['reject-notify-ak']?->actions->startOutboundModeration('blocked message', []);
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchTextModerationSignalToMainPage(
-            new ChatAgent(),
-            new ModerationResultSignalData(
-                acceptKey: 'reject-notify-ak',
-                userId: $user->id,
-                message: 'blocked message',
-                allow: false,
-                reason: 'policy',
-            ),
-        );
+        $this->deliverMessageDecision(new ChatAgent(), 'reject-notify-ak', false, 'insult');
 
         $notification = $this->onlyNotificationFor($user->id);
 
         self::assertSame(ChatNotificationType::MESSAGE_REJECTED, $notification->type);
         self::assertSame(NotificationSeverity::WARNING, $notification->severity);
         self::assertSame('Your message was not published', $notification->title);
-        self::assertSame('Message rejected.', $notification->body);
+        self::assertSame('Message rejected: it appears to contain an insult.', $notification->body);
         self::assertSame(
-            ['reason' => 'Message rejected.', 'message' => 'blocked message'],
+            ['reason' => 'Message rejected: it appears to contain an insult.', 'message' => 'blocked message'],
             $notification->decodedData(),
         );
     }
@@ -114,16 +102,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections['reject-spam-ak']?->actions->startOutboundModeration('spam message', []);
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchTextModerationSignalToMainPage(
-            new ChatAgent(),
-            new ModerationResultSignalData(
-                acceptKey: 'reject-spam-ak',
-                userId: $user->id,
-                message: 'spam message',
-                allow: false,
-                reason: 'spam',
-            ),
-        );
+        $this->deliverMessageDecision(new ChatAgent(), 'reject-spam-ak', false, 'spam');
 
         $notification = $this->onlyNotificationFor($user->id);
 
@@ -145,16 +124,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections['unavailable-notify-ak']?->actions->startOutboundModeration('pending message', []);
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchTextModerationSignalToMainPage(
-            new ChatAgent(),
-            new ModerationResultSignalData(
-                acceptKey: 'unavailable-notify-ak',
-                userId: $user->id,
-                message: 'pending message',
-                allow: false,
-                reason: 'service_unavailable',
-            ),
-        );
+        $this->deliverMessageDecision(new ChatAgent(), 'unavailable-notify-ak', false, 'service_unavailable');
 
         self::assertSame(
             ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
@@ -177,17 +147,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         );
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchTextModerationSignalToMainPage(
-            new ChatAgent(),
-            new ModerationResultSignalData(
-                acceptKey: 'picture-notify-ak',
-                userId: $user->id,
-                message: 'hello',
-                allow: false,
-                reason: 'nudity',
-                picture: 'pic-1',
-            ),
-        );
+        $this->deliverMessageDecision(new ChatAgent(), 'picture-notify-ak', false, 'nudity', 'pic-1');
 
         $notification = $this->onlyNotificationFor($user->id);
 
@@ -209,17 +169,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections['picture-unreadable-notify-ak']?->actions->startOutboundModeration('hello', ['pic-1']);
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        $this->dispatchTextModerationSignalToMainPage(
-            new ChatAgent(),
-            new ModerationResultSignalData(
-                acceptKey: 'picture-unreadable-notify-ak',
-                userId: $user->id,
-                message: 'hello',
-                allow: false,
-                reason: 'unreadable',
-                picture: 'pic-1',
-            ),
-        );
+        $this->deliverMessageDecision(new ChatAgent(), 'picture-unreadable-notify-ak', false, 'unreadable', 'pic-1');
 
         self::assertSame(
             ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
@@ -325,48 +275,6 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     }
 
     /**
-     * Routes an outbound-moderation verdict to the main page, as the moderator agent does.
-     *
-     * @param ChatAgent $agent Agent the page is built on
-     * @param ModerationResultSignalData $result Verdict to deliver
-     */
-    private function completeUpload(
-        string $acceptKey,
-        int $userId,
-        string $clientUploadId,
-        string $filename,
-        string $mimeType,
-        string $bytes,
-    ): void {
-        $tmpIndex = Hilos::$fs?->getTmp()->create();
-        self::assertNotNull($tmpIndex);
-        Hilos::$fs?->getTmp()[$tmpIndex]->append($bytes);
-        Hilos::$rt->hilosUploads->actions->open(
-            $acceptKey,
-            $clientUploadId,
-            ChatAttachmentUploadTarget::NAME,
-            $userId,
-            $filename,
-            $mimeType,
-            strlen($bytes),
-            $tmpIndex,
-        )->actions->complete();
-    }
-
-    private function dispatchTextModerationSignalToMainPage(
-        ChatAgent $agent,
-        ModerationResultSignalData $result,
-    ): void
-    {
-        $this->dispatch(
-            $agent,
-            new AgentSignalData($result),
-            ChatSignalConstants::MODERATION_RESULT,
-            MainPage::PAGE,
-        );
-    }
-
-    /**
      * Hands a rename verdict to the users library, as the moderator agent does (HIL-771).
      *
      * The verdict stopped being a page's to take when the rename it answers moved onto the
@@ -384,41 +292,6 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
             $library = $this->usersLibrary();
             $this->underAgent($library, static fn () => $library->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT));
             self::assertSame(0, $this->deliverPersonAgentFrames(), 'A refused check sends no owner ask');
-        } finally {
-            ExecutionContext::setCurrentAcceptKey(null);
-        }
-    }
-
-    /**
-     * Dispatches one agent signal through a router that knows only the page under test.
-     *
-     * The page raises a validation exception on every rejection, which the router turns
-     * into the action error the acting tab receives; these cases are about what the
-     * notification center holds once that has happened.
-     *
-     * @param ChatAgent $agent Agent the page is built on
-     * @param AgentSignalData $signal Signal envelope carrying the verdict
-     * @param string $signalName Agent signal name to route
-     * @param string $page Page key the signal is routed to
-     */
-    private function dispatch(
-        ChatAgent $agent,
-        AgentSignalData $signal,
-        string $signalName,
-        string $page,
-    ): void
-    {
-        $router = new PageSignalRouter(
-            new HilosPageFactory($agent, Hilos::class),
-            new ActionRouteConfig(),
-            new SignalRouteConfig([
-                SignalTypeConstants::AGENT_SIGNAL => [$signalName => $page],
-            ]),
-        );
-
-        ExecutionContext::setCurrentAcceptKey($signal->getAcceptKey());
-        try {
-            $router->dispatchAgentSignal($signal, '', $signalName);
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
         }

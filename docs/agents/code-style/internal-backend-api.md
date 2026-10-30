@@ -63,19 +63,6 @@ $dbBot = Hilos::$db->bots->actions->create(
 );
 ```
 
-Keep the same shape for moderator prompt pieces:
-
-```php
-// Wrong.
-$dbPiece = Hilos::$db->moderatorPromptPieces->actions->create([
-    ObjectPiece::section => $section,
-    ObjectPiece::promptPiece => $promptPiece,
-]);
-
-// Good.
-$dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($section, $promptPiece);
-```
-
 Settings already model the preferred shape: the action names the operation and
 takes typed parameters instead of a generic field map.
 
@@ -92,15 +79,17 @@ business data as an intermediate array just to call the next backend layer.
 ```php
 // Wrong: DTO fields are copied into an ad-hoc backend array.
 $data = [
-    ObjectPiece::section => $dto->section,
-    ObjectPiece::promptPiece => $dto->promptPiece,
+    ObjectBot::name => $dto->name,
+    ObjectBot::personality => $dto->personality,
+    ObjectBot::active => $dto->active,
 ];
-$dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($data);
+$dbBot = Hilos::$db->bots->actions->create($data);
 
 // Good: pass a typed contract to the next layer.
-$dbPiece = Hilos::$db->moderatorPromptPieces->actions->create(
-    $dto->section,
-    $dto->promptPiece,
+$dbBot = Hilos::$db->bots->actions->create(
+    $dto->name,
+    $dto->personality,
+    $dto->active,
 );
 ```
 

@@ -255,35 +255,6 @@ enum EnvConstants
     /** @var float Image moderation request timeout in seconds */
     case HILOS_MODERATION_IMAGE_TIMEOUT_SEC;
 
-    // ── Chat moderation (demo) ──────────────────────────────────────────────
-
-    /** @var string Moderation model name */
-    case CHAT_MODERATION_MODEL;
-
-    /** @var string Moderation API base URL */
-    case CHAT_MODERATION_URL;
-
-    /** @var string Moderation request timeout in seconds */
-    case CHAT_MODERATION_TIMEOUT_SEC;
-
-    /** @var string Moderation provider: local | external */
-    case CHAT_MODERATION_PROVIDER;
-
-    /** @var string Model name for the chat moderator's check of images attached to messages (HIL-1627) */
-    case CHAT_PHOTO_MODERATION_MODEL;
-
-    /** @var string Chat moderator image check API base URL */
-    case CHAT_PHOTO_MODERATION_URL;
-
-    /** @var float Chat moderator image check timeout in seconds */
-    case CHAT_PHOTO_MODERATION_TIMEOUT_SEC;
-
-    /** @var string Chat moderator image check provider: local | external */
-    case CHAT_PHOTO_MODERATION_PROVIDER;
-
-    /** @var string Enable moderation for bot messages: 1|0, true|false (default: false) */
-    case CHAT_MODERATION_BOTS;
-
     // ── Chat context analyzer (demo) ────────────────────────────────────────
 
     /** @var string Context analyzer model name */

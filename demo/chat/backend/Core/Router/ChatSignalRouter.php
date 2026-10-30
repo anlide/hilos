@@ -49,7 +49,6 @@ final class ChatSignalRouter extends SignalRouter
             AgentType::CHAT,
             AgentType::LIBRARY,
             AgentType::CHAT_CONTEXT_ANALYZER,
-            AgentType::MODERATOR,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_GUARDIAN,
             AgentType::HILOS_ANALYTICS,

@@ -13,6 +13,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Moderation\ModerationCommandConstants;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Utils\Helpers\JsonHelper;
@@ -217,6 +218,33 @@ final class CommandClientTestOnlyGateTest extends TestCase
             TestOnlyCommandOnProductionException::message('test:gate:fixture'),
             $client->lastReply()[CommandConstants::FIELD_PAYLOAD][CommandConstants::FIELD_MESSAGE] ?? null,
         );
+    }
+
+    /** @return iterable<array{string, string}> Both observation names on production-like nodes */
+    public static function observationNames(): iterable
+    {
+        foreach ([ModerationCommandConstants::TEST_OBSERVE, 'test:chat:submission-observe'] as $command) {
+            foreach (['prod', 'staging'] as $env) {
+                yield [$command, $env];
+            }
+        }
+    }
+
+    /**
+     * @param string $command Actual observational command wire name
+     * @param string $env Production-like environment
+     */
+    #[DataProvider('observationNames')]
+    public function testObservationNamesAreRefusedBeforeRouting(string $command, string $env): void
+    {
+        Hilos::$sr = new SignalRouter();
+        $client = $this->clientOn($env);
+        $client->feed([
+            'correlationId' => 'observe-gate', 'command' => $command, 'payload' => ['acceptKey' => 'ak', 'kind' => 'photo'],
+        ]);
+        $this->assertSame('error', $client->lastReply()['status']);
+        $this->assertSame(TestOnlyCommandOnProductionException::message($command), $client->lastReply()['payload']['message']);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     /**

@@ -39,6 +39,12 @@ abstract class AbstractUploadTarget
      */
     abstract public function requiresSignIn(): bool;
 
+    /** @return bool Whether publication requires the owner's live hold and final consumer approval */
+    public function requiresUploadHoldForPublication(): bool
+    {
+        return false;
+    }
+
     /**
      * @return FileVisibility Who may read a published file received under this target
      */
@@ -65,6 +71,22 @@ abstract class AbstractUploadTarget
     public function sniffsContent(): bool
     {
         return false;
+    }
+
+    /**
+     * Guards browser init and cancel before any upload row or file is changed.
+     *
+     * Init asks the declared target and, on replacement, the existing target as well. Cancel
+     * asks the existing target. Both run before a replaced row or its file is removed.
+     * A consumer may protect a held submission through its project's runtime View collection.
+     * Internal publication and cleanup do not call this guard. The default permits mutation.
+     *
+     * @param string $acceptKey Connection declaring, replacing or canceling the upload
+     * @param string $clientUploadId Upload id the browser would create, replace or remove
+     * @throws HilosException When the consumer refuses mutation or its runtime policy cannot be read
+     */
+    public function assertBrowserMutationAllowed(string $acceptKey, string $clientUploadId): void
+    {
     }
 
     /**

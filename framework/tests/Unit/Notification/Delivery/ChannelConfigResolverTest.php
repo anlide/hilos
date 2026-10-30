@@ -147,7 +147,7 @@ final class ChannelConfigResolverTest extends TestCase
             [SettingsCatalogConstants::TYPE_STRING, EnvConstants::MAIL_FROM_ADDRESS, '', '', 'descriptor'],
             [SettingsCatalogConstants::TYPE_INTEGER, EnvConstants::MAIL_SMTP_PORT, '0', 0, 25],
             [SettingsCatalogConstants::TYPE_BOOLEAN, EnvConstants::BACKUP_ENABLED, 'false', false, true],
-            [SettingsCatalogConstants::TYPE_FLOAT, EnvConstants::CHAT_MODERATION_TIMEOUT_SEC, '0', 0.0, 1.0],
+            [SettingsCatalogConstants::TYPE_FLOAT, EnvConstants::HILOS_MODERATION_TEXT_TIMEOUT_SEC, '0', 0.0, 1.0],
         ];
         try {
             foreach ($cases as [$type, $envKey, $envValue, $expected, $default]) {

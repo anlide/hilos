@@ -370,12 +370,6 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::MESSAGE => MessageActionDTO::class,
     ];
 
-    public const array SIGNALS = [
-        SignalTypeConstants::AGENT_SIGNAL => [
-            ChatSignalConstants::MODERATION_RESULT => ModerationResultSignalData::class,
-            ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
-        ],
-    ];
 }
 
 public const array PAGES = [
@@ -390,6 +384,7 @@ final class ChatAgent extends AbstractAgent
 {
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
+        ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
     ];
 }
 

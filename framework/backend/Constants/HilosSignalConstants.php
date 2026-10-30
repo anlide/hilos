@@ -2472,6 +2472,9 @@ final class HilosSignalConstants
      */
     public const string HILOS_UPLOAD_PUBLISH = 'hilos_upload_publish';
 
+    /** Consumer agent → uploads owner: approve or release the matching attempt's hold. */
+    public const string HILOS_UPLOAD_HOLD_SETTLE = 'hilos_upload_hold_settle';
+
     // ── Hilos auth throttle: worker ⇄ throttle agent (agent signals) ─────────
     /**
      * Worker dispatching a throttled action → the throttle agent: judge this attempt.

@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Feature\Definition\ModerationFeature;
+use Hilos\Files\Upload\UploadSnapshotCollection;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Runtime\State\Collection\HilosModerationChecks;
 
@@ -28,9 +29,6 @@ final class HilosModerationCheck extends RtState
     /** Runtime collection key mounted by the moderation feature and used for RT sync. */
     public const string RT_COLLECTION = 'hilosModerationChecks';
 
-    /** Separator of the two halves of the row id; a kind key never contains it. */
-    private const string KEY_SEPARATOR = '|';
-
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
     public const string kind = 'kind';
@@ -41,9 +39,16 @@ final class HilosModerationCheck extends RtState
     public const string startedAt = 'startedAt';
     public const string deadlineAt = 'deadlineAt';
     public const string sessionTokenHash = 'sessionTokenHash';
+    public const string clientUploadIds = 'clientUploadIds';
+    public const string imageCopy = 'imageCopy';
+    public const string uploadHoldId = 'uploadHoldId';
+    public const string uploadSnapshots = 'uploadSnapshots';
 
     /** The set a check is in is the agent its verdict goes to. */
     public const string SET_VIA = self::verdictTo;
+
+    /** Separator of the two halves of the row id; a kind key never contains it. */
+    private const string KEY_SEPARATOR = '|';
 
     /** Accept key of the connection awaiting the verdict. */
     private(set) string $acceptKey = '';
@@ -75,6 +80,18 @@ final class HilosModerationCheck extends RtState
     /** Session name-change correlation, or null for a connection-bound check. */
     private(set) ?string $sessionTokenHash = null;
 
+    /** @var list<string> Ordered upload ids accompanying a text-with-files check */
+    private(set) array $clientUploadIds = [];
+
+    /** Whether the image is checked through a 512 by 512 CONTAIN JPEG copy. */
+    private(set) bool $imageCopy = false;
+
+    /** First stage request id shared by all stages holding these bytes, or null without snapshots. */
+    private(set) ?string $uploadHoldId = null;
+
+    /** Immutable identities of all attachments admitted for this attempt. */
+    private(set) UploadSnapshotCollection $uploadSnapshots;
+
     /**
      * Composes the row id from the connection and the kind.
      *
@@ -100,7 +117,12 @@ final class HilosModerationCheck extends RtState
      * @param int $startedAt Opening moment in epoch milliseconds
      * @param int $deadlineAt Moment the wait ends, in epoch milliseconds
      * @param ?string $sessionTokenHash Session name-change correlation, or null for a connection-bound check
+     * @param list<string> $clientUploadIds Ordered upload ids for a text-with-files check
+     * @param bool $imageCopy Whether to check a CONTAIN JPEG copy of the image
+     * @param ?UploadSnapshotCollection $uploadSnapshots Admitted byte identities, or null for an empty snapshot
+     * @param ?string $uploadHoldId First stage request id, or null to use this request id for nonempty snapshots
      * @return static Fresh check row
+     * @throws InvalidFormatException When the hold token and snapshots do not agree
      */
     public static function create(
         string $acceptKey,
@@ -113,6 +135,10 @@ final class HilosModerationCheck extends RtState
         int $startedAt,
         int $deadlineAt,
         ?string $sessionTokenHash = null,
+        array $clientUploadIds = [],
+        bool $imageCopy = false,
+        ?UploadSnapshotCollection $uploadSnapshots = null,
+        ?string $uploadHoldId = null,
     ): static {
         $instance = new static();
         $instance->acceptKey = $acceptKey;
@@ -125,6 +151,11 @@ final class HilosModerationCheck extends RtState
         $instance->startedAt = $startedAt;
         $instance->deadlineAt = $deadlineAt;
         $instance->sessionTokenHash = $sessionTokenHash;
+        $instance->clientUploadIds = $clientUploadIds;
+        $instance->imageCopy = $imageCopy;
+        $instance->uploadSnapshots = $uploadSnapshots ?? new UploadSnapshotCollection();
+        $instance->uploadHoldId = $uploadHoldId ?? (count($instance->uploadSnapshots) > 0 ? $requestId : null);
+        $instance->assertUploadHold();
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -148,6 +179,18 @@ final class HilosModerationCheck extends RtState
         $instance->startedAt = self::requireInt($row, self::startedAt);
         $instance->deadlineAt = self::requireInt($row, self::deadlineAt);
         $instance->sessionTokenHash = self::optionalString($row, self::sessionTokenHash);
+        $instance->clientUploadIds = self::requireStringList($row, self::clientUploadIds);
+        $instance->imageCopy = self::requireBool($row, self::imageCopy);
+        if (!array_key_exists(self::uploadHoldId, $row)) {
+            throw new InvalidFormatException("Missing runtime field: " . self::uploadHoldId);
+        }
+        $instance->uploadHoldId = self::optionalString($row, self::uploadHoldId);
+        try {
+            $instance->uploadSnapshots = UploadSnapshotCollection::fromArray(self::requireArray($row, self::uploadSnapshots));
+        } catch (InvalidFormatException $invalidSnapshot) {
+            throw new InvalidFormatException('Invalid uploadSnapshots: ' . $invalidSnapshot->getMessage(), 0, $invalidSnapshot);
+        }
+        $instance->assertUploadHold();
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -185,6 +228,21 @@ final class HilosModerationCheck extends RtState
             self::startedAt => $this->startedAt,
             self::deadlineAt => $this->deadlineAt,
             self::sessionTokenHash => $this->sessionTokenHash,
+            self::clientUploadIds => $this->clientUploadIds,
+            self::imageCopy => $this->imageCopy,
+            self::uploadHoldId => $this->uploadHoldId,
+            self::uploadSnapshots => $this->uploadSnapshots->toArray(),
         ];
+    }
+
+    /** @throws InvalidFormatException When a hold token is empty or does not accompany snapshots */
+    private function assertUploadHold(): void
+    {
+        if (
+            $this->uploadHoldId === ''
+            || (count($this->uploadSnapshots) > 0) !== ($this->uploadHoldId !== null)
+        ) {
+            throw new InvalidFormatException('The uploadHoldId must accompany nonempty uploadSnapshots.');
+        }
     }
 }

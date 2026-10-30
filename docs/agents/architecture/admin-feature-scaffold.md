@@ -724,7 +724,7 @@ For its data and privacy boundaries, read
 The schema, receipt, trigger and restore contracts live in
 [change-log.md](change-log.md). All six demos activate the backend section.
 Chat journals five framework tables, `hilos_moderation_rule` among them, plus
-`bot` and `moderator_prompt_piece`; binance-btc-tracker, ecommerce-shop, tasks,
+`bot`; binance-btc-tracker, ecommerce-shop, tasks,
 online-testing and polls each journal only the four framework tables they have,
 without the rules table until they declare `MODERATION`. Chat and
 binance-btc-tracker mount all three Vue pages of the section. The remaining

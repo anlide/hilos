@@ -106,7 +106,7 @@ composer run daemon-stop      # stop containers (data is preserved)
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
-`hilos_second_factor`, `hilos_setting`, `bot` and `moderator_prompt_piece`.
+`hilos_second_factor`, `hilos_setting`, `hilos_moderation_rule` and `bot`.
 Messages, events, attachments, guests and rename histories stay outside the
 journal. The journal is the primary database name plus `-change-log`, on the
 same MariaDB server with the same host, port, user,

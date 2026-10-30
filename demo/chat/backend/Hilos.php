@@ -44,7 +44,6 @@ use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Agents\LibraryAgent;
-use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
@@ -61,7 +60,6 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
-use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Chat\Backup\BackupCatalog;
 use Demo\Chat\Browser\ChatBrowserContext;
@@ -208,7 +206,6 @@ use Demo\Chat\Pages\Hilos\TermsHistoryPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
-use Demo\Chat\Pages\ModeratorPage;
 use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotsTable;
@@ -421,7 +418,6 @@ final class Hilos extends HilosFacade
         ProfileDevicesPage::PAGE => ProfileDevicesPage::class,
         ChatUserPage::PAGE => ChatUserPage::class,
         BotPage::PAGE => BotPage::class,
-        ModeratorPage::PAGE => ModeratorPage::class,
         AdminPage::PAGE => AdminPage::class,
         AdminBotsPage::PAGE => AdminBotsPage::class,
         DashboardPage::PAGE => DashboardPage::class,
@@ -607,10 +603,6 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => BotAgent::class,
             AgentRegistryKey::DAEMON => BotAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
-        ],
-        ModeratorAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => ModeratorAgent::class,
-            AgentRegistryKey::DAEMON => ModeratorAgentDaemon::class,
         ],
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,

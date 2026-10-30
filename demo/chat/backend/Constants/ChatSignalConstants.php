@@ -29,9 +29,6 @@ final class ChatSignalConstants
     /** @var string Subscription page bot signal name */
     public const string SUBSCRIPTION_PAGE_BOT = 'subscription_page_bot';
 
-    /** @var string Subscription page moderator signal name */
-    public const string SUBSCRIPTION_PAGE_MODERATOR = 'subscription_page_moderator';
-
     /** @var string Subscription page admin signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN = 'subscription_page_admin';
 
@@ -39,9 +36,6 @@ final class ChatSignalConstants
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
 
     // ── Agent-to-agent signals ───────────────────────────────────────────
-    /** @var string ModeratorAgent → ChatAgent: message moderation result */
-    public const string MODERATION_RESULT = 'moderation_result';
-
     /**
      * @var string Files library → ChatAgent: the attachments of an approved message are published
      *     into the registry, or why not - the answer to Hilos::$files->publishUploads() (HIL-144)

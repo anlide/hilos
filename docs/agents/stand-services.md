@@ -168,14 +168,22 @@ model that is not answering (the owner's decision, 17.09.2026).
 **The model's key is a substring of the prompt, and that is the one departure
 from "the key is a value of the call".** No field of a model call carries a value
 the spec knows in advance: the product builds `prompt` from its own template
-(`demo/chat/backend/Agents/ModeratorAgent.php`,
-`buildMessageModerationMessages()`), and `model` is the same for every call —
+(`framework/backend/Moderation/ModerationAgent.php`, `messagesOf()`), and
+`model` is the same for every call —
 keying by it would let a neighboring worker spend the answer. What the spec does
 know is the string it put into the conversation itself — the text of a message,
 a new name — and the prompt carries it verbatim, so the resident looks for it
 there: the first announced key the prompt contains wins, the dictated answers'
 keys first and the route's behaviors' keys after them (`Store::keyAnnouncedIn()`).
 A key therefore has to be unique AND must not be a part of another spec's text.
+
+`GET /model/test/requests?key=<test-key>` reads only that key's real provider
+arrivals, in order as `{ordinal, key, imageHashes}`. Hashes are SHA-256 of decoded
+image bytes; text and attachment metadata carry an empty list. Capture precedes
+any delayed response and exposes neither prompt nor bytes. The key identifies a
+test and grants no access. `POST /model/test/forget` with `{key}` idempotently
+removes only that test's observations, unspent answers and model-route behaviors
+through the existing Store lock; it leaves other keys and other routes intact.
 
 The halves differ in whom they trust. The provider half checks what the real
 service checks — the Telegram gateway refuses a call without a bearer token,
@@ -360,10 +368,9 @@ turns red on the defect ten runs out of ten (HIL-929).
 
 The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
-`docker/docker-compose.{local,dev,test}.yml`; the transitional
-`CHAT_MODERATION_URL` and `CHAT_PHOTO_MODERATION_URL` on the chat test stack,
-beside the framework moderator's `HILOS_MODERATION_TEXT_URL` and
-`HILOS_MODERATION_IMAGE_URL` there;
+`docker/docker-compose.{local,dev,test}.yml`; the framework moderation role
+URLs `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` on the chat
+test stack;
 `OAUTH_ENDPOINT_URL` on the test stacks of all three).
 `stand-gateway` is a network alias the gateway service carries in every stack,
 and it is also the name its certificate is issued for: the daemon checks the
@@ -374,8 +381,7 @@ does not reissue it.
 Both framework moderation profiles resolve to
 `https://stand-gateway:18000/model` on the chat stand, each through its own
 role key: `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` in the
-chat test stack's compose file. The chat URL keys beside them are the
-transitional chat moderator's, not the framework contract.
+chat test stack's compose file.
 Tasks uses that same address for both roles. (not in the code yet — HIL-1636)
 Polls uses that same address for both roles. (not in the code yet — HIL-1637)
 
@@ -556,13 +562,11 @@ and name it before writing.
    emulator's** — the way `SMS_ENDPOINT_URL` and `TELEGRAM_GATEWAY_ENDPOINT_URL`
    do. The switch is one address in the daemon's configuration, not a DNS trick
    and not a code path that knows it is on a stand. Where the product reads the
-   address per role, set that role's key. Today's transitional chat moderation
-   keys are `CHAT_MODERATION_URL` and `CHAT_PHOTO_MODERATION_URL`, both set to
+   address per role, set that role's key. Framework moderation supplies two role
+   addresses for this resident, `HILOS_MODERATION_TEXT_URL` and
+   `HILOS_MODERATION_IMAGE_URL`, which the chat stack sets to
    `https://stand-gateway:18000/model`. Do not set the global `LLM_LOCAL_URL` to
    move only moderation: the bot and context analyzer also fall back to it.
-   Framework moderation supplies two role addresses for this same resident,
-   `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL`, which the chat
-   stack sets to the same address.
    Tasks wires both roles. (not in the code yet — HIL-1636)
    Polls wires both roles. (not in the code yet — HIL-1637)
    An address the environment gives one role reaches that role's agent only if the
@@ -614,8 +618,8 @@ and name it before writing.
 What a resident does NOT bring:
 
 - its own container, its own port, its own image;
-- its own way of reading what it delivered — a list route, a file, a database
-  read from the spec;
+- its own way of reading delivered messages — those go to Mailpit; the model's
+  scoped arrival observations above carry only ordinals and image hashes;
 - its own state file or its own reset;
 - a new in-process stub in the framework "for the unit tests". That is the
   sunset rule, next.
