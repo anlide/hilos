@@ -149,6 +149,7 @@ export const HilosPages = {
   PRIVACY: 'hilos_privacy',
   PRIVACY_HISTORY: 'hilos_privacy_history',
   LICENSE: 'hilos_license',
+  LICENSE_DEPENDENCIES: 'hilos_license_dependencies',
 } as const
 
 /** A framework page key: one of the values of {@link HilosPages}. */
@@ -496,6 +497,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.PRIVACY]: { path: '/privacy', admin: false },
   [HilosPages.PRIVACY_HISTORY]: { path: '/privacy/history', admin: false },
   [HilosPages.LICENSE]: { path: '/license', admin: false },
+  [HilosPages.LICENSE_DEPENDENCIES]: {
+    path: '/license/dependencies',
+    admin: false,
+  },
 }
 
 /**

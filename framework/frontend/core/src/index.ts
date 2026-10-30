@@ -367,6 +367,7 @@ export {
   type HilosTableColumnOf,
 } from './table/hilosTableColumn.js'
 export {
+  type HilosTableAuxiliaryAction,
   type HilosTableBody,
   type HilosTableBulkAction,
   type HilosTableEmpty,
@@ -547,6 +548,11 @@ export {
   licenseLanguageLabel,
   renderLicenseCsv,
 } from './license/licenseInventory.js'
+export {
+  createHilosLicenseDependencies,
+  type HilosLicenseDependenciesController,
+  HILOS_LICENSE_TABS,
+} from './license/licenseDependencies.js'
 // The /privacy page's headless half, next to the /license page's above it: the
 // declaring form a project declares its own keys with, the framework's collected
 // list, and the sweep the erase block runs.

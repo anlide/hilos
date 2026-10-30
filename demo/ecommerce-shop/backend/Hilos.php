@@ -67,6 +67,7 @@ use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\PeoplePage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
+use Demo\EcommerceShop\Pages\Hilos\LicenseDependenciesPage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceWordsPage;
@@ -297,6 +298,7 @@ final class Hilos extends HilosFacade
         TermsHistoryPage::PAGE => TermsHistoryPage::class,
         PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
+        LicenseDependenciesPage::PAGE => LicenseDependenciesPage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,

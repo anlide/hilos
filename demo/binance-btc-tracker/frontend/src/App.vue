@@ -25,6 +25,7 @@ import { currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About.vue'
 import License from './views/License/License.vue'
+import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.vue'
 import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
@@ -256,6 +257,7 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
   [HilosPages.LICENSE]: License,
+  [HilosPages.LICENSE_DEPENDENCIES]: LicenseDependencies,
   [HilosPages.PUBLIC_STATUS]: lazyPage(() =>
     import('./views/Status/Status.vue').then((m) => m.default),
   ),

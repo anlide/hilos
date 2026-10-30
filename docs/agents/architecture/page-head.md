@@ -954,6 +954,7 @@ The Profile owner and its served pages now use the shared head in Vue, React,
 and Angular. Other project-page redraws, including their server adoption,
 remain Phase 2. The public Terms and Privacy history page keys, route declarations and
 history views are implemented. Those routes do not expand the footer
-prerender set. LICENSE content remains HIL-1610; dependencies remain HIL-1611.
+prerender set. LICENSE content remains HIL-1610; its Dependencies view is a
+separate public page and does not expand the footer prerender set.
 Mockup examples do not activate those changes. Own deletion and redirect
 behavior are not decided by this document.

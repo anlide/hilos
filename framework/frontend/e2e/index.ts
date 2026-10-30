@@ -465,6 +465,7 @@ export {
 export { expectPasswordVisibility } from './passwordVisibility.js'
 export { expectDesktopShell } from './layout.js'
 export { expectAccessLossNotice } from './accessLoss.js'
+export { expectLicenseDependenciesAccessibility } from './licenseDependencies.js'
 export {
   trackedActionReplies,
   expectTrackedActionReply,

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 
 // SSG (build-and-docker.md): the public footer pages are prerendered to static
 // HTML through Vue's native server renderer, so a crawler — or any no-JS fetch —
@@ -23,17 +24,19 @@ test('a public page is prerendered with its content and title', async ({
   expect(html).toMatch(/<title>About[^<]*<\/title>/)
 })
 
-test('the license page is prerendered with the build inventory in it', async ({
+test('the project license is prerendered as exact text', async ({
   request,
 }) => {
   const res = await request.get('/license')
   expect(res.status()).toBe(200)
   const html = await res.text()
-  // The inventory is a build-time snapshot handed to the page as a prop, so the
-  // rows are in the served HTML before any JavaScript runs — and one of them is
-  // the framework itself, read from this project's own composer.lock.
-  expect(html).toContain('data-id="license-row"')
-  expect(html).toContain('anlide/hilos')
+  const projectLicenseText = await readFile(
+    new URL('../../../LICENSE', import.meta.url),
+    'utf8',
+  )
+  // SSR may serialize quotes as text or as &quot;; compare the response with the
+  // complete source text after normalizing that HTML representation.
+  expect(html.replaceAll('&quot;', '"')).toContain(projectLicenseText)
 })
 
 test('the privacy page is prerendered with the erase block whole', async ({

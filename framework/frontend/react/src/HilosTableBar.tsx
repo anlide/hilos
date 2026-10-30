@@ -70,6 +70,7 @@ export function HilosTableBar<R>({
   const subtitle = declaration.subtitle
   const searchBox = declaration.search
   const mainAction = declaration.mainAction
+  const auxiliaryActions = declaration.auxiliaryActions ?? []
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.
@@ -125,6 +126,7 @@ export function HilosTableBar<R>({
     searchBox === undefined &&
     filters.length === 0 &&
     mainAction === undefined &&
+    auxiliaryActions.length === 0 &&
     orderMenuNarrowOnly
 
   // Below md an order a header click gave is offered, and its item is the active
@@ -155,6 +157,7 @@ export function HilosTableBar<R>({
     searchBox !== undefined ||
     filters.length > 0 ||
     mainAction !== undefined ||
+    auxiliaryActions.length > 0 ||
     orders.length > 0
 
   const renderControls = (inStack: boolean) => (
@@ -294,6 +297,30 @@ export function HilosTableBar<R>({
         >
           Filters
         </button>
+      ) : null}
+
+      {auxiliaryActions.length > 0 ? (
+        <div
+          className="d-flex flex-wrap gap-2 ms-auto"
+          role="group"
+          aria-label="List actions"
+          data-id="hilos-table-actions"
+        >
+          {auxiliaryActions.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              data-id={`hilos-table-action-${action.key}`}
+              onClick={() => action.press()}
+            >
+              {action.icon ? (
+                <i className={`bi me-1 ${action.icon}`} aria-hidden="true" />
+              ) : null}
+              {action.label}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {mainAction ? (

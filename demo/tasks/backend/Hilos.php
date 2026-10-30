@@ -77,6 +77,7 @@ use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Tasks\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Tasks\Pages\Hilos\Analytics\PersonPage;
 use Demo\Tasks\Pages\Hilos\LicensePage;
+use Demo\Tasks\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonNodePage;
@@ -359,6 +360,7 @@ final class Hilos extends HilosFacade
         TermsHistoryPage::PAGE => TermsHistoryPage::class,
         PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
+        LicenseDependenciesPage::PAGE => LicenseDependenciesPage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityStepUpPage::PAGE => SecurityStepUpPage::class,

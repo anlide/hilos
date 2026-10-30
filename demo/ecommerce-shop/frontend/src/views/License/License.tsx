@@ -2,9 +2,20 @@
 // page; this project supplies the content — the root LICENSE file and dependency
 // inventory through the build-time snapshot. See views/About/About.tsx.
 import { HilosLicensePage } from '@hilos/react/base'
+import { HILOS_LICENSE_TABS, HilosPages } from '@hilos/core/base'
 
 import { hilosLicenseInventory } from '../../generated/hilosLicenseInventory.js'
+import { router } from '../../pages/routes.js'
 
 export default function License() {
-  return <HilosLicensePage inventory={hilosLicenseInventory} />
+  return (
+    <HilosLicensePage
+      inventory={hilosLicenseInventory}
+      navigation={{
+        page: HilosPages.LICENSE,
+        tabs: HILOS_LICENSE_TABS,
+        resolvePath: router.path,
+      }}
+    />
+  )
 }

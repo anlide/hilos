@@ -71,6 +71,7 @@ use Demo\Polls\Pages\Hilos\AnalyticsPage;
 use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
 use Demo\Polls\Pages\Hilos\LicensePage;
+use Demo\Polls\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonNodePage;
@@ -357,6 +358,7 @@ final class Hilos extends HilosFacade
         TermsHistoryPage::PAGE => TermsHistoryPage::class,
         PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
+        LicenseDependenciesPage::PAGE => LicenseDependenciesPage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityStepUpPage::PAGE => SecurityStepUpPage::class,

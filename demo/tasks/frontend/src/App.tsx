@@ -42,6 +42,7 @@ import ProfileSignIn from './views/Profile/ProfileSignIn.js'
 import ProfileSecurity from './views/Profile/ProfileSecurity'
 import ProfileData from './views/Profile/ProfileData.js'
 import License from './views/License/License'
+import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.js'
 import Main from './views/Main/Main'
 import MainSkeleton from './views/Main/MainSkeleton'
 import Privacy from './views/Privacy/Privacy'
@@ -299,6 +300,7 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
   [HilosPages.LICENSE]: License,
+  [HilosPages.LICENSE_DEPENDENCIES]: LicenseDependencies,
 }
 
 // The pages that draw a skeleton of their own shape while they wait for their

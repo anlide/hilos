@@ -287,8 +287,9 @@ The build is **hybrid**. The authenticated, real-time area is a pure SPA shell
 auth). The public, SEO-relevant surface — the framework's footer pages (About,
 Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**,
 all four pages, through the view framework's own server renderer. A public page
-is no longer prose alone — all four pages carry framework-owned behavior, while
-Terms and Privacy also carry catalog text and a line that differs per reader
+is no longer prose alone — all four pages carry a framework-owned presentation,
+while Terms and Privacy also carry catalog text and a line that differs per
+reader
 ([sdk-packaging.md](sdk-packaging.md), tier 2) — and no page leaves
 the prerendered set for having a per-reader part. What
 is prerendered is the **guest view**: what a person with no session sees. For the
@@ -318,14 +319,17 @@ the page for the line. Three rules follow, and every public page keeps them:
   at all (prerender)". The erase button renders as a button and a description;
   the registry sweep happens on the click.
 - **The license inventory is a build-time snapshot.** It is gathered while the
-  project's frontend is built, carried into the artifact and handed to the page
-  as an input, so /license's static file holds the whole list and the page asks
-  the backend for nothing. Gathering it at runtime would make the static file —
-  the one a crawler and a person without a socket see — the only version of the
-  page without its main content; it would buy no freshness, because the list
-  changes when dependencies change and dependencies change by rebuilding; and it
-  would have the daemon parse `composer.lock` and `package.json` per request and
-  then cache it — the same snapshot, built later and in the wrong process.
+  project's frontend is built, carried into the artifact and supplied to both
+  License SDK pages. `/license` remains the footer page and its static file
+  renders the project's license text; `/license/dependencies` renders the
+  dependency inventory from that same snapshot in a separate page. Neither page
+  asks the backend to gather or serve the inventory. Gathering it at runtime
+  would make the static file — the one a crawler and a person without a socket
+  see — the only version of the page without its main content; it would buy no
+  freshness, because the list changes when dependencies change and dependencies
+  change by rebuilding; and it would have the daemon parse `composer.lock` and
+  `package.json` per request and then cache it — the same snapshot, built later
+  and in the wrong process.
   It is written by `framework/frontend/scripts/generate-license-inventory.mjs`
   into the project's `src/generated/hilosLicenseInventory.ts`, out of that
   project's own two lockfiles (`composer.lock` and `frontend/package-lock.json`)
@@ -343,14 +347,17 @@ the page for the line. Three rules follow, and every public page keeps them:
 What each static file contains: /about the prose, the support block and the
 modal in its closed state; /privacy the heading, reader and policy loading
 states, the project's introduction and the erase block, button included, inert
-until the SPA mounts; /license the project's root LICENSE text and the full
-inventory; /terms the heading, reader loading state, project introduction and
-policy loading state, with the revision history absent from the file and arriving over the
-subscription. The legal catalog lives on the server, and the frontend build
-does not read it. The backend pages behind About and License answer their
-subscriptions with nothing; Terms and Privacy answer with their own legal
-sections ([legal-documents.md](../architecture/legal-documents.md), *Public
-Terms and Privacy pages*).
+until the SPA mounts; /license the project's root LICENSE text and shared page
+frame; /terms the heading, reader loading state, project introduction and
+policy loading state, with the revision history absent from the file and
+arriving over the subscription. The dependency inventory is rendered by the
+separate `/license/dependencies` page and is not added to the footer prerender
+set here; extra-address discovery and production SSG serving remain HIL-216.
+The legal catalog lives on the server, and the frontend build does not read it.
+The backend pages behind About and License answer their subscriptions with
+nothing; Terms and Privacy answer with their own legal sections
+([legal-documents.md](../architecture/legal-documents.md), *Public Terms and
+Privacy pages*).
 
 Vue and React run a Vite SSR build of a prerender entry that writes a flat
 `<route>.html` (and `robots.txt` + `sitemap.xml`). Angular uses its **native

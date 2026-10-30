@@ -1,11 +1,12 @@
 // @vitest-environment node
 
-import { useRef } from 'react'
+import { StrictMode, useRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { HIDDEN_VALUE, TableViewportController } from '@hilos/core/base'
 
 import { HilosModal } from '../src/HilosModal.js'
+import { HilosLicenseDependenciesPage } from '../src/public/HilosLicenseDependenciesPage.js'
 import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
 import { HilosTableValue } from '../src/HilosTableValue.js'
 import { HilosTableText } from '../src/HilosTableText.js'
@@ -187,7 +188,7 @@ describe('React server rendering', () => {
     expect(html).toBe('')
   })
 
-  it('renders the license page without a browser document', () => {
+  it('renders only the exact project License document without a browser document', () => {
     const html = renderToStaticMarkup(
       <HilosLicensePage inventory={inventory} />,
     )
@@ -201,10 +202,35 @@ describe('React server rendering', () => {
     expect(html).toContain(
       'The license of this project, and of everything it is built on.',
     )
-    expect(html).not.toContain('hilos-page-head-skeleton')
-    expect(html).not.toContain('data-id="hilos-breadcrumb"')
-    expect(html).not.toContain('data-id="hilos-page-tabs"')
+    expect(html).not.toContain('data-id="hilos-viewport-table"')
+    expect(html).not.toContain('data-id="license-package-open"')
+    expect(html).not.toContain('data-id="hilos-table-action-copy"')
+    expect(html).not.toContain('data-id="license-copy-status"')
+    expect(html).not.toContain('data-id="license-text-missing"')
+  })
+
+  it('renders the complete Dependencies table and actions without browser globals', () => {
+    expect(typeof window).toBe('undefined')
+    expect(typeof document).toBe('undefined')
+    const html = renderToStaticMarkup(
+      <StrictMode>
+        <HilosLicenseDependenciesPage inventory={inventory} />
+      </StrictMode>,
+    )
+
+    expect(html).toContain('data-id="hilos-page-head-title">License</h1>')
+    expect(html).toContain('data-id="hilos-viewport-table"')
+    expect(html).toContain('data-id="hilos-table-count">1 – 1 of 1</span>')
+    expect(html).toContain('data-id="license-package-open"')
+    expect(html.match(/data-id="license-package-open"/g)).toHaveLength(2)
     expect(html).toContain('react')
     expect(html).toContain('19.2.7')
+    expect(html).toContain('data-id="hilos-table-action-copy"')
+    expect(html).toContain('Copy the list')
+    expect(html).toContain('data-id="hilos-table-action-download"')
+    expect(html).toContain('Download as a file')
+    expect(html).toContain('data-id="license-copy-status"')
+    expect(html).not.toContain('data-id="hilos-table-loading"')
+    expect(html.match(/<h1\b/g) ?? []).toHaveLength(1)
   })
 })

@@ -1,7 +1,8 @@
 // HilosTableBar — the strip above a table, drawn from what the page DECLARED
 // (HilosTableFrame) and never from inputs of its own: the title and subtitle, the
-// search box, the declared filters, and the one main action pinned right. Under the
-// title it holds the bar's controls and the selection panel in one room stacked in
+// search box, the declared filters and auxiliary list actions, and the one main
+// action pinned right. Under the title it holds the bar's controls and the selection
+// panel in one room stacked in
 // one cell (.hilos-stack), sized to the taller of the two so that marking rows never
 // moves the table below (Design D2). Under the title it shows EITHER those controls
 // OR the selection panel, the inactive one invisible (Flow F1). It holds
@@ -79,6 +80,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
             searchBox() ||
             filters().length > 0 ||
             mainAction() ||
+            auxiliaryActions().length > 0 ||
             orders().length > 0
           ) {
             <div
@@ -229,6 +231,29 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                 </button>
               }
 
+              @if (auxiliaryActions().length > 0) {
+                <div
+                  class="d-flex flex-wrap gap-2 ms-auto"
+                  role="group"
+                  aria-label="List actions"
+                  data-id="hilos-table-actions"
+                >
+                  @for (action of auxiliaryActions(); track action.key) {
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      [attr.data-id]="'hilos-table-action-' + action.key"
+                      (click)="action.press()"
+                    >
+                      @if (action.icon; as icon) {
+                        <i [class]="'bi me-1 ' + icon" aria-hidden="true"></i>
+                      }
+                      {{ action.label }}
+                    </button>
+                  }
+                </div>
+              }
+
               @if (mainAction(); as mainAction) {
                 <button
                   type="button"
@@ -251,6 +276,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
         searchBox() ||
         filters().length > 0 ||
         mainAction() ||
+        auxiliaryActions().length > 0 ||
         orders().length > 0
       ) {
         <div
@@ -397,6 +423,29 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
             </button>
           }
 
+          @if (auxiliaryActions().length > 0) {
+            <div
+              class="d-flex flex-wrap gap-2 ms-auto"
+              role="group"
+              aria-label="List actions"
+              data-id="hilos-table-actions"
+            >
+              @for (action of auxiliaryActions(); track action.key) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  [attr.data-id]="'hilos-table-action-' + action.key"
+                  (click)="action.press()"
+                >
+                  @if (action.icon; as icon) {
+                    <i [class]="'bi me-1 ' + icon" aria-hidden="true"></i>
+                  }
+                  {{ action.label }}
+                </button>
+              }
+            </div>
+          }
+
           @if (mainAction(); as mainAction) {
             <button
               type="button"
@@ -465,6 +514,9 @@ export class HilosTableBar<R> {
   protected readonly subtitle = computed(() => this.declaration().subtitle)
   protected readonly searchBox = computed(() => this.declaration().search)
   protected readonly mainAction = computed(() => this.declaration().mainAction)
+  protected readonly auxiliaryActions = computed(
+    () => this.declaration().auxiliaryActions ?? [],
+  )
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.
@@ -527,6 +579,7 @@ export class HilosTableBar<R> {
       !this.searchBox() &&
       this.filters().length === 0 &&
       !this.mainAction() &&
+      this.auxiliaryActions().length === 0 &&
       this.orderMenuNarrowOnly(),
   )
 

@@ -73,6 +73,10 @@ export {
   type HilosLicensePageProps,
 } from '../public/HilosLicensePage.js'
 export {
+  HilosLicenseDependenciesPage,
+  type HilosLicenseDependenciesPageProps,
+} from '../public/HilosLicenseDependenciesPage.js'
+export {
   HilosPrivacyPage,
   type HilosPrivacyPageProps,
 } from '../public/HilosPrivacyPage.js'

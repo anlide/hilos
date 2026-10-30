@@ -16,6 +16,7 @@ import {
   expectDesktopShell,
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
+  expectLicenseDependenciesAccessibility,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
   expectStandaloneWebsockets,
@@ -60,6 +61,21 @@ async function openUsers(page: Page): Promise<void> {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
+
+test('public Dependencies exposes a named table and keyboard navigation', async ({
+  page,
+}) => {
+  await gotoPage(expect, page, '/license')
+  const dependencies = page.getByTestId(
+    'hilos-page-tab-hilos_license_dependencies',
+  )
+  await dependencies.focus()
+  await expect(dependencies).toBeFocused()
+  await dependencies.press('Enter')
+  await expect(page).toHaveURL('/license/dependencies')
+  await expectPageReady(expect, page)
+  await expectLicenseDependenciesAccessibility(expect, page, 'Hilos Tasks')
+})
 
 test('the viewport table has an accessible name and a labelled search', async ({
   page,

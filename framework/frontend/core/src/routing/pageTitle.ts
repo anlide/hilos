@@ -25,6 +25,9 @@ function frameworkPageLabel(pageKey: string): string | undefined {
   if (pageKey === HilosPages.PRIVACY_HISTORY) {
     return 'Privacy · Revision history'
   }
+  if (pageKey === HilosPages.LICENSE_DEPENDENCIES) {
+    return 'License · Dependencies'
+  }
   return HILOS_FOOTER_LINKS.find((link) => link.page === pageKey)?.label
 }
 

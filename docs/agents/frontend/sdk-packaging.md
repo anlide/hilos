@@ -298,17 +298,17 @@ context-bound wrappers and any overrides it needs. Pages its view layer has not
 built are hidden through `HILOS_UNBUILT_PAGES` (see
 [page-module-structure.md](page-module-structure.md)).
 
-The public framework pages are tier 2 as well. The four footer pages are not
-prose alone — License carries a dependency inventory with a search, a filter, a
-per-row modal and an export; Privacy reads the policy and reader's standing and
-offers an erase of what this browser holds behind a confirmation; About has a
-support modal; Terms reads the revision and reader's standing. All four have
-framework-owned behavior, and Terms and Privacy also carry catalog text. The
-framework owns these parts: `HilosAboutPage`,
-`HilosTermsPage`, `HilosPrivacyPage` and
-`HilosLicensePage` under `@hilos/vue/src/public/` (and the React / Angular
-twins), one file per page. Each passes the same fixed presentation values to
-`HilosStaticPage` in Vue, React and Angular:
+The public framework pages are tier 2 as well. The four footer pages have
+framework-owned presentations: Privacy reads the policy and reader's standing
+and offers an erase of what this browser holds behind a confirmation; About has
+a support modal; Terms reads the revision and reader's standing; License shows
+the project's license text. Terms and Privacy also carry catalog text. The
+dependency inventory has its own public SDK page, separate from the footer
+License text page. The framework owns these parts: `HilosAboutPage`,
+`HilosTermsPage`, `HilosPrivacyPage`, `HilosLicensePage` and
+`HilosLicenseDependenciesPage` under `@hilos/vue/src/public/` (and the React /
+Angular twins). The two License components share the same static-page frame and
+presentation values:
 
 | Page | `title` | `icon` | `subtitle` |
 |---|---|---|---|
@@ -316,6 +316,18 @@ twins), one file per page. Each passes the same fixed presentation values to
 | Terms | `Terms` | `bi-file-earmark-text` | `The terms of using this project: the revision in force and every one before it.` |
 | Privacy | `Privacy` | `bi-shield-lock` | `What this project keeps about you: the revision in force, every one before it, and wiping this browser.` |
 | License | `License` | `bi-journal-code` | `The license of this project, and of everything it is built on.` |
+
+`HilosLicensePage` is text-only: its `inventory` input supplies the project's
+literal `projectLicenseText`. `HilosLicenseDependenciesPage` takes the complete
+build-time `inventory` and optional `navigation` inputs, then renders the
+dependency table with package search and License / Language filters, a reader
+for each package, and copy / download actions. It uses the same License title,
+icon and subtitle. The core exports
+`HilosLicenseDependenciesController`, `createHilosLicenseDependencies(inventory)`
+and `HILOS_LICENSE_TABS` for the per-mount table state and the shared License /
+Dependencies navigation from `/base` and the compatibility root. Each view kit
+exports the page from `/base` and its compatibility root; React also exports
+`HilosLicenseDependenciesPageProps`.
 
 Terms and Privacy use the shared
 `HilosLegalDocumentReader` and take `context: HilosLegalContext`, an object with
@@ -356,31 +368,39 @@ Each of `HilosAboutPage`, `HilosTermsPage`, `HilosPrivacyPage` and
 project-content slot (children in React, projected content in Angular) remain
 unchanged; built-in pages add no title override. The Terms and Privacy mounts
 pass the shared legal navigation, and their history views receive the same
-navigation for the complementary tab row. Custom static pages can supply their
-own navigation. The License dependency route remains future work under
-HIL-1611.
+navigation for the complementary tab row. Both License pages accept the same
+optional navigation input; the Dependencies page uses the shared License tabs.
+Custom static pages can supply their own navigation.
 
-No aggregate collects the four — there is no `hilosPublicViews()`. Each needs a
-project-supplied input, which is the same exception `hilosAdminViews.ts` already
+No aggregate collects the footer pages — there is no `hilosPublicViews()`.
+Each needs a project-supplied input, which is the same exception
+`hilosAdminViews.ts` already
 makes for `HilosUsersPage` / `HilosSettingsPage` / `HilosBackupPage`: a project
 mounts them directly under their `HilosPages` keys. A project that wants its own
 License page mounts its own component under `HilosPages.LICENSE` and gets none
 of the framework behavior — the existing extension model, and the reason About,
 Privacy and Terms take their project introduction through a slot rather than
-through configuration. `HilosLicensePage` takes `inventory` as a prop/input and renders
-both the project's own text and the dependency inventory, so a project mounts the
-component thinly without prose slots (`<HilosLicensePage :inventory="hilosLicenseInventory" />`).
-The project's own view keeps its file and its name (`views/License/License.vue`
-and the twins) and mounts the framework page instead of `HilosStaticPage`;
-nothing else in the project moves — not the page key, not the route, not the
-footer link, not the prerender entry's component map. A behavior block takes
+through configuration. `HilosLicensePage` takes `inventory` as a prop/input and
+renders only the project's own text, so a project mounts it thinly without
+prose slots (`<HilosLicensePage :inventory="hilosLicenseInventory" />`). The
+project's License text view keeps its file and name
+(`views/License/License.vue` and the twins) and mounts the framework page
+instead of `HilosStaticPage`; its page key, `/license` route, footer link and
+prerender entry stay as they are. A project mounts
+`HilosLicenseDependenciesPage` under `HilosPages.LICENSE_DEPENDENCIES` at
+`/license/dependencies`, passing the same build-time snapshot and shared
+License navigation. It is a separate public SPA route, not another footer or
+prerender entry. The Dependencies page adapts that complete input to a
+synchronous local table window; it does not request the inventory from the
+backend or send server table frames. A behavior block takes
 its first-render data in its own page subscription. The legal catalog is read by
 the backend; the legal pages use their page context and add no companion
-first-render request. `HilosLicensePage` takes the inventory as a prop, and the
-project passes the snapshot its own build produced
+first-render request. The project passes the snapshot its own build produced
+to both License components
 ([build-and-docker.md](build-and-docker.md), *SSG and the public surface*). Each
 page is created by the leaf that first needs it:
-`HilosLicensePage`, `HilosPrivacyPage`, `HilosAboutPage`, `HilosTermsPage`.
+`HilosLicensePage`, `HilosLicenseDependenciesPage`, `HilosPrivacyPage`,
+`HilosAboutPage`, `HilosTermsPage`.
 
 The mechanism across both tiers is the same — slots + scoped slots + shared
 composables, no mixins — and "empty inheritance" (a one-line re-export) is the
@@ -500,9 +520,11 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   the footer links come from the framework (`HILOS_FOOTER_LINKS`), so every
   project shows the same About / Terms / Privacy / License set and supplies the
   page's project content: prose for About, Terms and Privacy, optional browser
-  values for Privacy's erase, and the inventory snapshot for License;
-- **`HilosStaticPage`** — the reusable frame for a static page, used by projects
-  and by the four footer pages and two legal history pages (tier 2, above). It
+  values for Privacy's erase, and the generated inventory used by both License
+  pages; the footer License page reads only its project text;
+- **`HilosStaticPage`** — the reusable frame for a static page, used by projects,
+  the four footer pages, both legal history pages and the License Dependencies
+  page (tier 2, above). It
   takes required `title: string` and optional `icon?: string`,
   `subtitle?: string`, and
   `navigation?: HilosStaticPageNavigation`. Calls that supply only `title` keep
@@ -525,13 +547,16 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   relationship. The frame remains available to a project with its own static
   page; this does not activate project routes or server catalog adoption. The
   public pages are declared in `@hilos/core` (`HilosPages` / `HILOS_PAGE_ROUTES`)
-  and subscribe like any page. About and License carry no page payload. Terms
+  and subscribe like any page. About, License and License Dependencies carry no
+  server page payload; the project supplies their build snapshot as an input.
+  Terms
   carries its current legal document and reader state; Privacy carries
   `legalPrivacy` and, for a signed-in reader with a published policy,
   `legalAgreements`. Each history page carries its matching legal document,
   the signed-in `legalAgreements` projection when that document is available,
   and the first native table window. The history routes are separate from the
-  four footer links and their prerender entries. The legal pages receive the
+  four footer links and their prerender entries. The Dependencies route is also
+  separate from that footer and prerender set. The legal pages receive the
   connection, scopes and tracked actions through `HilosLegalContext`, and the
   project gives the Terms and Privacy pages an introduction only;
 - a **`HilosErrorBoundary`** wrapping each page or major block, so one

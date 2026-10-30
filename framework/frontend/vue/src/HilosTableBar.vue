@@ -1,6 +1,6 @@
 <!-- HilosTableBar — the strip above a table, drawn from what the page DECLARED
 (HilosTableFrame) and never from props of its own: the title and subtitle, the
-search box, the declared filters, and the one main action pinned right. Under the
+search box, the declared filters, and the main and list actions pinned right. Under the
 title it holds the bar's controls and the selection panel in one room stacked in
 one cell (.hilos-stack), sized to the taller of the two so that marking rows never
 moves the table below (Design D2). Under the title it shows EITHER those controls
@@ -51,6 +51,7 @@ const title = declaration.title
 const subtitle = declaration.subtitle
 const searchBox = declaration.search
 const mainAction = declaration.mainAction
+const auxiliaryActions = declaration.auxiliaryActions ?? []
 const views = declaration.views
 const tableView = useSignal(props.controller.frame.view)
 
@@ -102,6 +103,7 @@ const controlsNarrowOnly = computed(
     !searchBox &&
     filters.value.length === 0 &&
     !mainAction &&
+    auxiliaryActions.length === 0 &&
     !views &&
     orderMenuNarrowOnly.value,
 )
@@ -187,7 +189,11 @@ function onSearchInput(event: Event): void {
       >
         <div
           v-if="
-            searchBox || filters.length > 0 || mainAction || orders.length > 0
+            searchBox ||
+            filters.length > 0 ||
+            mainAction ||
+            auxiliaryActions.length > 0 ||
+            orders.length > 0
           "
           class="d-flex flex-wrap align-items-center gap-2"
           :class="{
@@ -327,6 +333,30 @@ function onSearchInput(event: Event): void {
             Filters
           </button>
 
+          <div
+            v-if="auxiliaryActions.length > 0"
+            class="d-flex flex-wrap gap-2 ms-auto"
+            role="group"
+            aria-label="List actions"
+            data-id="hilos-table-actions"
+          >
+            <button
+              v-for="action in auxiliaryActions"
+              :key="action.key"
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :data-id="`hilos-table-action-${action.key}`"
+              @click="action.press()"
+            >
+              <i
+                v-if="action.icon"
+                :class="['bi me-1', action.icon]"
+                aria-hidden="true"
+              ></i
+              >{{ action.label }}
+            </button>
+          </div>
+
           <button
             v-if="mainAction"
             type="button"
@@ -374,6 +404,7 @@ function onSearchInput(event: Event): void {
         searchBox ||
         filters.length > 0 ||
         mainAction ||
+        auxiliaryActions.length > 0 ||
         orders.length > 0 ||
         views
       "
@@ -536,6 +567,30 @@ function onSearchInput(event: Event): void {
             aria-hidden="true"
           ></i
           >{{ TABLE_VIEW_COPY[choice] }}
+        </button>
+      </div>
+
+      <div
+        v-if="auxiliaryActions.length > 0"
+        class="d-flex flex-wrap gap-2 ms-auto"
+        role="group"
+        aria-label="List actions"
+        data-id="hilos-table-actions"
+      >
+        <button
+          v-for="action in auxiliaryActions"
+          :key="action.key"
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          :data-id="`hilos-table-action-${action.key}`"
+          @click="action.press()"
+        >
+          <i
+            v-if="action.icon"
+            :class="['bi me-1', action.icon]"
+            aria-hidden="true"
+          ></i
+          >{{ action.label }}
         </button>
       </div>
 

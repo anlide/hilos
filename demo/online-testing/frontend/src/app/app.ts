@@ -27,6 +27,7 @@ import { connection } from './bootstrap/connection.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import { About } from './views/about/about.js'
 import { License } from './views/license/license.js'
+import { LicenseDependencies } from './views/license-dependencies/license-dependencies.js'
 import { Main } from './views/main/main.js'
 import { MainSkeleton } from './views/main/main-skeleton.js'
 import { Privacy } from './views/privacy/privacy.js'
@@ -292,6 +293,7 @@ export class App {
     [HilosPages.PRIVACY]: Privacy,
     [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
     [HilosPages.LICENSE]: License,
+    [HilosPages.LICENSE_DEPENDENCIES]: LicenseDependencies,
   }
 
   // The pages that draw a skeleton of their own shape while they wait for their

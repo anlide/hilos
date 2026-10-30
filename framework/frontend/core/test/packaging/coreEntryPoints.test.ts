@@ -56,6 +56,7 @@ import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
 import * as profileRenameMemory from '../../src/profile/profileRenameMemory.js'
 import * as legalHistory from '../../src/legal/legalHistory.js'
+import * as licenseDependencies from '../../src/license/licenseDependencies.js'
 import * as profileHead from '../../src/profile/profileHead.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
@@ -122,6 +123,15 @@ const pageHeadTypes = [
   'HilosPageHeadAction',
   'HilosPageTabLink',
   'HilosStaticPageNavigation',
+]
+/** The local dependency window API, shared by the compatibility root and base. */
+const licenseDependenciesValues = [
+  'createHilosLicenseDependencies',
+  'HILOS_LICENSE_TABS',
+]
+const licenseDependenciesTypes = [
+  'HilosLicenseDependenciesController',
+  'HilosTableAuxiliaryAction',
 ]
 /** Public legal document APIs added for the Privacy page and shared SDK reader. */
 const publicLegalValues = [
@@ -820,6 +830,7 @@ const expectedValues = [
   ...logViewerValues,
   ...i18nOverviewValues,
   ...pageHeadValues,
+  ...licenseDependenciesValues,
   ...publicLegalValues,
   ...legalHistoryValues,
   ...momentValues,
@@ -900,6 +911,24 @@ function runtimeClosure(entry: string): string[] {
 }
 
 describe('core public entries', () => {
+  it('exports the local dependency controller from one implementation in root and base', () => {
+    expect(core.createHilosLicenseDependencies).toBe(
+      licenseDependencies.createHilosLicenseDependencies,
+    )
+    expect(base.createHilosLicenseDependencies).toBe(
+      licenseDependencies.createHilosLicenseDependencies,
+    )
+    expect(core.HILOS_LICENSE_TABS).toBe(licenseDependencies.HILOS_LICENSE_TABS)
+    expect(base.HILOS_LICENSE_TABS).toBe(licenseDependencies.HILOS_LICENSE_TABS)
+    expect(core.HILOS_LICENSE_TABS).toEqual([
+      { page: core.HilosPages.LICENSE, label: 'License' },
+      { page: core.HilosPages.LICENSE_DEPENDENCIES, label: 'Dependencies' },
+    ])
+    expectTypeOf<core.HilosLicenseDependenciesController>().toEqualTypeOf<licenseDependencies.HilosLicenseDependenciesController>()
+    expectTypeOf<base.HilosLicenseDependenciesController>().toEqualTypeOf<licenseDependencies.HilosLicenseDependenciesController>()
+    expectTypeOf<core.HilosTableAuxiliaryAction>().toEqualTypeOf<base.HilosTableAuxiliaryAction>()
+  })
+
   it('exports public history from one implementation in root and base', () => {
     for (const name of legalHistoryValues) {
       const value = legalHistory[name as keyof typeof legalHistory]
@@ -1269,6 +1298,7 @@ describe('core public entries', () => {
     }
     for (const name of [
       ...pageHeadValues,
+      ...licenseDependenciesValues,
       ...publicLegalValues,
       ...legalHistoryValues,
       ...momentValues,
@@ -1540,6 +1570,7 @@ describe('core public entries', () => {
         'HilosProfileDeviceKind',
         ...i18nOverviewTypes,
         ...pageHeadTypes,
+        ...licenseDependenciesTypes,
         ...publicLegalTypes,
         ...legalHistoryTypes,
         ...momentTypes,
@@ -1563,6 +1594,8 @@ describe('core public entries', () => {
     const baseExports = exportsOf('base/index.ts')
     for (const name of [
       ...pageHeadTypes,
+      ...licenseDependenciesTypes,
+      ...licenseDependenciesValues,
       ...publicLegalTypes,
       ...legalHistoryTypes,
       ...momentTypes,
@@ -2072,6 +2105,7 @@ describe('core public entries', () => {
     'dom/interactionBlock.ts',
     'dom/focusTrap.ts',
     'dom/tableFocusReturn.ts',
+    'license/licenseDependencies.ts',
     'format/moment.ts',
     'timeZone/timeZoneState.ts',
     'timeZone/timeZonePicker.ts',

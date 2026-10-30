@@ -5,7 +5,7 @@ import type { HilosPathResolver } from '../routing/hilosAdmin.js'
  * Navigation supplied by a static page for its section tab row.
  *
  * Built-in Terms and Privacy pages and their history views use this for the
- * legal tabs. The License dependency route remains future work under HIL-1611.
+ * legal tabs. The License and Dependencies pages use the shared License tabs.
  */
 export interface HilosStaticPageNavigation {
   /** The page key represented by the current tab. */

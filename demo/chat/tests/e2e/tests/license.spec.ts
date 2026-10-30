@@ -1,64 +1,66 @@
 import { test, expect } from '@playwright/test'
 import {
   gotoPage,
+  shownByTestId,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-// The /license inventory e2e: the build-time snapshot generated from this
-// project's own lockfiles reaches the framework page as a prop, and the page's
-// three active elements work over it — the filter narrows the list, an
-// unmatched filter says so instead of showing an empty page, and a row opens
-// that package's own license text. Copy and download are left to the unit
-// tests: clipboard permissions and download interception buy flakiness, not
-// truth.
+// The /license/dependencies inventory e2e: the build-time snapshot generated
+// from this project's lockfiles reaches the framework page as a prop, and its
+// standard table, search, empty state and package reader work over it. Copy and
+// download are left to the unit tests: clipboard permissions and download
+// interception buy flakiness, not truth.
 
 test('the search narrows the list to what it asks for', async ({ page }) => {
-  await gotoPage(expect, page, '/license')
-  const rows = page.getByTestId('license-row')
-  await expect(rows.first()).toBeVisible()
-  const wholeBuild = await rows.count()
+  await gotoPage(expect, page, '/license/dependencies')
+  const packages = shownByTestId(page, 'license-package-open')
+  await expect(packages.first()).toBeVisible()
+  const wholeBuild = await packages.count()
   expect(wholeBuild).toBeGreaterThan(1)
 
-  const search = page.getByTestId('license-search')
+  const search = shownByTestId(page, 'hilos-table-search')
   await typeInto(search, 'bootstrap')
 
-  await expect(rows).not.toHaveCount(wholeBuild)
-  const shown = await rows.allTextContents()
+  await expect(packages).not.toHaveCount(wholeBuild)
+  const shown = await packages.allTextContents()
   expect(shown.length).toBeGreaterThan(0)
-  for (const row of shown) {
-    expect(row).toContain('bootstrap')
+  for (const packageName of shown) {
+    expect(packageName).toContain('bootstrap')
   }
 })
 
 test('an unmatched filter says so, and the export stays live', async ({
   page,
 }) => {
-  await gotoPage(expect, page, '/license')
-  await expect(page.getByTestId('license-row').first()).toBeVisible()
+  await gotoPage(expect, page, '/license/dependencies')
+  const packages = shownByTestId(page, 'license-package-open')
+  await expect(packages.first()).toBeVisible()
 
-  const search = page.getByTestId('license-search')
+  const search = shownByTestId(page, 'hilos-table-search')
   await typeInto(search, 'nothing-stands-on-this')
 
-  await expect(page.getByTestId('license-row')).toHaveCount(0)
-  await expect(page.getByTestId('license-empty')).toBeVisible()
+  await expect(packages).toHaveCount(0)
+  const empty = shownByTestId(page, 'hilos-table-no-matches')
+  await expect(empty).toBeVisible()
+  await expect(empty).toContainText('Nothing found')
   // The empty result is this page's most valuable answer, so the choice that
   // produced it stays visible and removable, and the list can still be taken
   // away — on an empty result that is the header row alone.
   await expect(search).toBeVisible()
-  await expect(page.getByTestId('license-copy')).toBeEnabled()
-  await expect(page.getByTestId('license-download')).toBeEnabled()
+  await expect(shownByTestId(page, 'hilos-table-action-copy')).toBeEnabled()
+  await expect(shownByTestId(page, 'hilos-table-action-download')).toBeEnabled()
 })
 
-test("a row opens that package's own license text and closes again", async ({
+test('a package opens its own license text and closes again', async ({
   page,
 }) => {
-  await gotoPage(expect, page, '/license')
-  const search = page.getByTestId('license-search')
+  await gotoPage(expect, page, '/license/dependencies')
+  const search = shownByTestId(page, 'hilos-table-search')
   await typeInto(search, 'bootstrap')
 
-  const row = page.getByTestId('license-row').first()
-  await expect(row).toBeVisible()
-  await row.click()
+  const packageButton = shownByTestId(page, 'license-package-open').first()
+  await expect(packageButton).toBeVisible()
+  await packageButton.click()
 
   const modal = page.getByTestId('modal')
   await expect(modal).toBeVisible()

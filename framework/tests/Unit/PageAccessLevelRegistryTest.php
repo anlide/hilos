@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\AbstractHilosAboutPage;
+use Hilos\Pages\AbstractHilosLicenseDependenciesPage;
 use Hilos\Pages\AbstractHilosLicensePage;
 use Hilos\Pages\AbstractHilosPrivacyHistoryPage;
 use Hilos\Pages\AbstractHilosPrivacyPage;
@@ -39,6 +40,7 @@ final class PageAccessLevelRegistryTest extends TestCase
     /** Exact set of framework pages readable without a session. */
     private const array PUBLIC_PAGES = [
         AbstractHilosAboutPage::class,
+        AbstractHilosLicenseDependenciesPage::class,
         AbstractHilosLicensePage::class,
         AbstractHilosPrivacyHistoryPage::class,
         AbstractHilosPrivacyPage::class,

@@ -27,6 +27,7 @@ import { currentUserName } from './bootstrap/session.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import About from './views/About/About.js'
 import License from './views/License/License.js'
+import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.js'
 import Main from './views/Main/Main.js'
 import MainSkeleton from './views/Main/MainSkeleton.js'
 import Privacy from './views/Privacy/Privacy.js'
@@ -216,6 +217,7 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
   [HilosPages.LICENSE]: License,
+  [HilosPages.LICENSE_DEPENDENCIES]: LicenseDependencies,
 }
 
 // The pages that draw a skeleton of their own shape while they wait for their

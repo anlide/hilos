@@ -253,7 +253,8 @@ so a table cannot be built without its declaration.
 | `title`, `subtitle` | what the table is called |
 | `search` | present means the table searches; carries the placeholder |
 | `filters` | the filters offered in the bar, each a dropdown, a date range, or a toggle |
-| `mainAction` | the one button at the right of the bar, offered again by the empty state |
+| `mainAction` | the primary button at the right of the bar, offered again by the empty state |
+| `auxiliaryActions` | independent actions over the current list, separate from main and bulk actions |
 | `columns` | the columns, in display order |
 | `views` | opt in to the shared `table` and `tiles` views of the same window; see “The table and Tiles views” below |
 | `bulkActions` | the operations offered for the marked rows — key, label, danger |
@@ -264,6 +265,15 @@ Everything else on the bar and everything in the footer is the framework's:
 the count and its precision, the row range, the pager, "Nothing found", the row
 skeleton, the announcement and staleness bars. **A page owns the content of a
 cell and nothing around it.**
+
+`auxiliaryActions` declares a separate client-side action group. Each action has
+a unique key, label, optional decorative icon hidden from assistive technology,
+and callback; the callback runs only after the reader presses its button. The
+group has role `group` and accessible name `List actions`. Each of the Vue,
+React and Angular TableBars renders it in both bar branches when it is nonempty,
+including when the window is `empty` or
+`empty_filtered`, when no `mainAction` exists, and while the mobile filters are
+open. It is not a main action, a bulk operation or a server action.
 
 `columns` and `filters` accept a fixed array or a callback returning the current
 array. The callback may call a page `ReadonlySignal.get()`; the controller then
@@ -701,9 +711,14 @@ neither flag nor predicate is drawn exactly as before. No `data-id` is new.
   backups, deliveries, or orders are filtered by. It owns the place in the bar
   and the shapes available — a dropdown, a date range, a toggle — and the page
   declares which filters its table has.
-- **No filter is ever applied on the client.** They all ride to the server as one
-  open map and become query conditions there. Filtering locally would make the
-  count, the pages, and the live classification lie at once.
+- **A server-backed table applies filters on the server.** They ride to the
+  backend as one open map and become query conditions there. Filtering only the
+  current window locally would make the count, the pages, and the live
+  classification lie at once. The License Dependencies view is a narrow local
+  adapter over the complete build-time inventory: it applies the descriptor's
+  filters to that full snapshot and synchronously ingests the complete result.
+  That view needs no `HilosConnection` or server table frames; this local path
+  does not change the server-backed table contract.
 - **Search is a filter, not a framework feature.** There is no framework page
   search and no command palette. A keystroke is an explicit window change →
   loading → the backend returns the window, the same path as any sort or
@@ -1809,6 +1824,7 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   controls and the selection panel (only when the table declared bulk operations),
   `hilos-table-controls` — the strip of controls in the bar (present on every
   table), `hilos-table-title`, `hilos-table-main-action`,
+  `hilos-table-actions`, `hilos-table-action-<key>`,
   `hilos-table-search`, `hilos-table-filters`,
   `hilos-table-filter-<filterKey>`, `hilos-table-facet-<filterKey>-<value>` — the
   number beside one option of a dropdown filter, keyed by `String(value)`,

@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\BinanceBtcTracker\Tests\Unit;
 
+use Demo\BinanceBtcTracker\Pages\Hilos\LicenseDependenciesPage;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageReach;
 use Demo\BinanceBtcTracker\Core\Daemon\BinanceBtcTrackerWorkerManager;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsHistoryPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyHistoryPage;
@@ -281,6 +286,24 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 {
+    /** The dependency snapshot stays a build input on an ordinary public page. */
+    public function testLicenseDependenciesUsesThePublicIndexPageWithoutServerData(): void
+    {
+        self::assertSame('hilos_license_dependencies', LicenseDependenciesPage::PAGE);
+        self::assertSame(LicenseDependenciesPage::class, Hilos::PAGES[LicenseDependenciesPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[LicenseDependenciesPage::PAGE]);
+        self::assertSame(PageAccessLevel::PUBLIC, LicenseDependenciesPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, LicenseDependenciesPage::REACH);
+        self::assertSame([], LicenseDependenciesPage::ACTIONS);
+        self::assertSame([], LicenseDependenciesPage::SIGNALS);
+        self::assertSame([], LicenseDependenciesPage::BROWSER);
+        self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, HilosPageCatalog::CATALOG);
+        self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, PageCatalog::pages());
+        $factory = new HilosPageFactory($this->createStub(PageAgentInterface::class), Hilos::class);
+        self::assertInstanceOf(LicenseDependenciesPage::class, $factory->getPage(LicenseDependenciesPage::PAGE));
+    }
+
     /** Every served profile section binds the common personal identity source once. */
     public function testEveryProfileSectionBindsTheIdentityList(): void
     {
@@ -639,6 +662,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             TermsHistoryPage::PAGE => TermsHistoryPage::class,
             PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
             LicensePage::PAGE => LicensePage::class,
+            LicenseDependenciesPage::PAGE => LicenseDependenciesPage::class,
             StatusPage::PAGE => StatusPage::class,
             StatusComponentsPage::PAGE => StatusComponentsPage::class,
             StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
@@ -1142,6 +1166,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             TermsHistoryPage::class,
             PrivacyHistoryPage::class,
             LicensePage::class,
+            LicenseDependenciesPage::class,
         ];
         foreach ($hilosPages as $page) {
             $this->assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);

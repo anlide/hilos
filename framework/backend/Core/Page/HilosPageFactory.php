@@ -138,6 +138,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_TERMS_HISTORY => true,
         HilosPageConstants::HILOS_PRIVACY_HISTORY => true,
         HilosPageConstants::HILOS_LICENSE => true,
+        HilosPageConstants::HILOS_LICENSE_DEPENDENCIES => true,
     ];
 
     /**

@@ -1,11 +1,11 @@
 // The Angular port of vue/src/HilosTableBar.test.ts, under the same case names the
 // Vue reference and the React port run, for the layer the Angular bar draws:
-// title, search, filters, badge, the order menu, main action, and the filters
-// modal. Every case
+// title, search, filters, badge, the order menu, main and auxiliary actions, and
+// the filters modal. Every case
 // mounts a host that binds the two inputs.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TableViewportController,
@@ -663,6 +663,205 @@ describe('HilosTableBar', () => {
     expect(byId(fixture, 'hilos-table-main-action')).toBeNull()
   })
 })
+
+describe.each([false, true])(
+  'HilosTableBar list actions, bulk enabled: %s',
+  (bulk) => {
+    function makeActions() {
+      const copy = vi.fn()
+      const download = vi.fn()
+      const frame: HilosTableFrame = {
+        columns: COLUMNS,
+        auxiliaryActions: [
+          {
+            key: 'copy',
+            label: 'Copy the list',
+            icon: 'bi-clipboard',
+            press: copy,
+          },
+          {
+            key: 'download',
+            label: 'Download as a file',
+            icon: 'bi-download',
+            press: download,
+          },
+        ],
+        ...(bulk
+          ? {
+              bulkActions: [
+                {
+                  key: 'archive',
+                  label: 'Archive',
+                  refusalTitle: 'Cannot archive',
+                  run: () => {
+                    throw new Error('Not pressed')
+                  },
+                },
+              ],
+            }
+          : {}),
+      }
+
+      return { frame, copy, download }
+    }
+
+    it('offers a named group of buttons and calls only the pressed action', () => {
+      const { frame, copy, download } = makeActions()
+      const { controller, sent } = makeController(frame)
+      const fixture = mountBar(controller)
+      const group = byId(fixture, 'hilos-table-actions') as HTMLElement
+
+      expect(group.getAttribute('role')).toBe('group')
+      expect(group.getAttribute('aria-label')).toBe('List actions')
+      expect(
+        Array.from(group.querySelectorAll('button')).map((button) => [
+          button.textContent?.trim(),
+          (button as HTMLButtonElement).type,
+          button.getAttribute('data-id'),
+          (button as HTMLButtonElement).disabled,
+        ]),
+      ).toEqual([
+        ['Copy the list', 'button', 'hilos-table-action-copy', false],
+        ['Download as a file', 'button', 'hilos-table-action-download', false],
+      ])
+      expect(
+        Array.from(group.querySelectorAll('i')).map((icon) =>
+          icon.getAttribute('aria-hidden'),
+        ),
+      ).toEqual(['true', 'true'])
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+      expect(byId(fixture, 'hilos-table-search')).toBeNull()
+      expect(byId(fixture, 'hilos-table-main-action')).toBeNull()
+
+      click(fixture, 'hilos-table-action-copy')
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+
+      click(fixture, 'hilos-table-action-download')
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).toHaveBeenCalledTimes(1)
+      expect(sent).toEqual([])
+    })
+
+    it.each(['empty', 'empty_filtered'] as const)(
+      'keeps both list actions available when the body is %s',
+      (body) => {
+        const { frame, copy, download } = makeActions()
+        const { controller } = makeController(
+          { ...frame, search: {} },
+          body === 'empty_filtered' ? { search: 'missing' } : undefined,
+        )
+        controller.ingestWindow([], 0, true, null, null, 10)
+        expect(controller.frame.body.get()).toBe(body)
+        const fixture = mountBar(controller)
+
+        expect(copy).not.toHaveBeenCalled()
+        expect(download).not.toHaveBeenCalled()
+        click(fixture, 'hilos-table-action-copy')
+        click(fixture, 'hilos-table-action-download')
+        expect(copy).toHaveBeenCalledTimes(1)
+        expect(download).toHaveBeenCalledTimes(1)
+      },
+    )
+
+    it('keeps list actions in the bar while the mobile filters open and close', () => {
+      const { frame, copy, download } = makeActions()
+      const { controller } = makeController({
+        ...FILTERED,
+        ...frame,
+        columns: COLUMNS,
+      })
+      const fixture = mountBar(controller)
+      const group = byId(fixture, 'hilos-table-actions')
+      expect(group).not.toBeNull()
+
+      click(fixture, 'hilos-table-filters-open')
+      const modal = byId(fixture, 'modal')
+      expect(modal).not.toBeNull()
+      expect(modal?.querySelector('[data-id="hilos-table-actions"]')).toBeNull()
+      expect(byId(fixture, 'hilos-table-actions')).toBe(group)
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+
+      click(fixture, 'hilos-table-filters-done')
+      expect(byId(fixture, 'modal')).toBeNull()
+      expect(byId(fixture, 'hilos-table-actions')).toBe(group)
+      click(fixture, 'hilos-table-action-copy')
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+    })
+
+    it('keeps the main action independent of list actions', () => {
+      const { frame, copy, download } = makeActions()
+      const main = vi.fn()
+      const { controller } = makeController({
+        ...frame,
+        mainAction: { label: 'Create backup', press: main },
+      })
+      const fixture = mountBar(controller)
+
+      expect(
+        byId(fixture, 'hilos-table-main-action')?.textContent?.trim(),
+      ).toBe('Create backup')
+      click(fixture, 'hilos-table-main-action')
+      expect(main).toHaveBeenCalledTimes(1)
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+
+      click(fixture, 'hilos-table-action-copy')
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+    })
+
+    it.each([undefined, []])(
+      'omits the group and preserves the main action for auxiliaryActions=%j',
+      (auxiliaryActions) => {
+        const { frame } = makeActions()
+        const main = vi.fn()
+        const { controller } = makeController({
+          ...frame,
+          auxiliaryActions,
+          mainAction: { label: 'Create backup', press: main },
+        })
+        const fixture = mountBar(controller)
+
+        expect(byId(fixture, 'hilos-table-actions')).toBeNull()
+        expect(
+          byId(fixture, 'hilos-table-main-action')?.textContent?.trim(),
+        ).toBe('Create backup')
+        click(fixture, 'hilos-table-main-action')
+        expect(main).toHaveBeenCalledTimes(1)
+      },
+    )
+
+    it('creates no empty group or ordinary controls for an empty action array', () => {
+      const { frame } = makeActions()
+      const { controller } = makeController({ ...frame, auxiliaryActions: [] })
+      const fixture = mountBar(controller)
+
+      expect(byId(fixture, 'hilos-table-actions')).toBeNull()
+      expect(byId(fixture, 'hilos-table-controls')).toBeNull()
+    })
+
+    it('renders a text-only action without a decorative icon', () => {
+      const { frame } = makeActions()
+      const press = vi.fn()
+      const { controller } = makeController({
+        ...frame,
+        auxiliaryActions: [{ key: 'copy', label: 'Copy the list', press }],
+      })
+      const fixture = mountBar(controller)
+      const button = byId(fixture, 'hilos-table-action-copy')
+
+      expect(button?.textContent?.trim()).toBe('Copy the list')
+      expect(button?.querySelector('i')).toBeNull()
+      expect(press).not.toHaveBeenCalled()
+      click(fixture, 'hilos-table-action-copy')
+      expect(press).toHaveBeenCalledTimes(1)
+    })
+  },
+)
 
 describe('HilosTableBar showing the selection panel instead of its controls', () => {
   /**

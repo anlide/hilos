@@ -4,6 +4,40 @@ import { HilosPages } from '../../src/routing/hilosPages.js'
 import { resolvePageTitle } from '../../src/routing/pageTitle.js'
 
 describe('resolvePageTitle', () => {
+  it.each([false, true])(
+    'titles Dependencies independently of the page answer (%s)',
+    (answered) => {
+      expect(
+        resolvePageTitle(
+          HilosPages.LICENSE_DEPENDENCIES,
+          {},
+          'Demo',
+          'Catalog',
+          answered,
+          'Owner',
+        ),
+      ).toBe('License · Dependencies · Demo')
+      expect(
+        resolvePageTitle(
+          HilosPages.LICENSE_DEPENDENCIES,
+          {},
+          '',
+          undefined,
+          answered,
+        ),
+      ).toBe('License · Dependencies')
+      expect(
+        resolvePageTitle(
+          HilosPages.LICENSE_DEPENDENCIES,
+          { [HilosPages.LICENSE_DEPENDENCIES]: 'Packages' },
+          'Demo',
+          'Catalog',
+          answered,
+        ),
+      ).toBe('Packages · Demo')
+    },
+  )
+
   it.each([
     [HilosPages.TERMS_HISTORY, 'Terms · Revision history'],
     [HilosPages.PRIVACY_HISTORY, 'Privacy · Revision history'],

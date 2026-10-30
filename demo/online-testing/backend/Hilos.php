@@ -44,6 +44,7 @@ use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
+use Demo\OnlineTesting\Pages\Hilos\LicenseDependenciesPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonNodePage;
@@ -302,6 +303,7 @@ final class Hilos extends HilosFacade
         TermsHistoryPage::PAGE => TermsHistoryPage::class,
         PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
+        LicenseDependenciesPage::PAGE => LicenseDependenciesPage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,

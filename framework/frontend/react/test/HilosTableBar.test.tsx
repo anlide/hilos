@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TableViewportController,
@@ -616,6 +616,227 @@ describe('HilosTableBar', () => {
     expect(byId('hilos-table-main-action')).toBeNull()
   })
 })
+
+describe.each([false, true])(
+  'HilosTableBar list actions, bulk enabled: %s',
+  (bulk) => {
+    function makeActions() {
+      const copy = vi.fn()
+      const download = vi.fn()
+      const frame: HilosTableFrame = {
+        columns: COLUMNS,
+        auxiliaryActions: [
+          {
+            key: 'copy',
+            label: 'Copy the list',
+            icon: 'bi-clipboard',
+            press: copy,
+          },
+          {
+            key: 'download',
+            label: 'Download as a file',
+            icon: 'bi-download',
+            press: download,
+          },
+        ],
+        ...(bulk
+          ? {
+              bulkActions: [
+                {
+                  key: 'archive',
+                  label: 'Archive',
+                  refusalTitle: 'Cannot archive',
+                  run: () => {
+                    throw new Error('Not pressed')
+                  },
+                },
+              ],
+            }
+          : {}),
+      }
+
+      return { frame, copy, download }
+    }
+
+    it('offers a named group of buttons and calls only the pressed action', () => {
+      const { frame, copy, download } = makeActions()
+      const { controller, sent } = makeController(frame)
+      const rendered = renderBar(controller)
+
+      const group = screen.getByRole('group', { name: 'List actions' })
+      expect(group.getAttribute('data-id')).toBe('hilos-table-actions')
+      expect(
+        Array.from(group.querySelectorAll('button')).map((button) => [
+          button.textContent,
+          button.type,
+          button.getAttribute('data-id'),
+          button.disabled,
+        ]),
+      ).toEqual([
+        ['Copy the list', 'button', 'hilos-table-action-copy', false],
+        ['Download as a file', 'button', 'hilos-table-action-download', false],
+      ])
+      expect(
+        Array.from(group.querySelectorAll('i')).map((icon) =>
+          icon.getAttribute('aria-hidden'),
+        ),
+      ).toEqual(['true', 'true'])
+      expect(screen.getByRole('button', { name: 'Copy the list' })).toBeTruthy()
+      expect(
+        screen.getByRole('button', { name: 'Download as a file' }),
+      ).toBeTruthy()
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+      expect(byId('hilos-table-search')).toBeNull()
+      expect(byId('hilos-table-main-action')).toBeNull()
+
+      fireEvent.click(byId('hilos-table-action-copy') as HTMLElement)
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+
+      fireEvent.click(byId('hilos-table-action-download') as HTMLElement)
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).toHaveBeenCalledTimes(1)
+      expect(sent).toEqual([])
+      rendered.unmount()
+      controller.dispose()
+    })
+
+    it.each(['empty', 'empty_filtered'] as const)(
+      'keeps both list actions available when the body is %s',
+      (body) => {
+        const { frame, copy, download } = makeActions()
+        const { controller } = makeController(
+          { ...frame, search: {} },
+          body === 'empty_filtered' ? { search: 'missing' } : undefined,
+        )
+        controller.ingestWindow([], 0, true, null, null, 10)
+        expect(controller.frame.body.get()).toBe(body)
+        const rendered = renderBar(controller)
+
+        expect(copy).not.toHaveBeenCalled()
+        expect(download).not.toHaveBeenCalled()
+        for (const key of ['copy', 'download']) {
+          const button = screen.getByRole('button', {
+            name: key === 'copy' ? 'Copy the list' : 'Download as a file',
+          })
+          expect(button).toBeTruthy()
+          expect((button as HTMLButtonElement).disabled).toBe(false)
+          fireEvent.click(button)
+        }
+        expect(copy).toHaveBeenCalledTimes(1)
+        expect(download).toHaveBeenCalledTimes(1)
+        rendered.unmount()
+        controller.dispose()
+      },
+    )
+
+    it('keeps list actions in the bar while the mobile filters open and close', () => {
+      const { frame, copy, download } = makeActions()
+      const { controller } = makeController({
+        ...FILTERED,
+        ...frame,
+        columns: COLUMNS,
+      })
+      const rendered = renderBar(controller)
+      const group = byId('hilos-table-actions')
+      expect(group).not.toBeNull()
+
+      fireEvent.click(byId('hilos-table-filters-open') as HTMLElement)
+      const dialog = byId('modal')
+      expect(dialog).not.toBeNull()
+      expect(
+        dialog?.querySelector('[data-id="hilos-table-actions"]'),
+      ).toBeNull()
+      expect(byId('hilos-table-actions')).toBe(group)
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+
+      fireEvent.click(byId('hilos-table-filters-done') as HTMLElement)
+      expect(byId('modal')).toBeNull()
+      expect(byId('hilos-table-actions')).toBe(group)
+      fireEvent.click(byId('hilos-table-action-copy') as HTMLElement)
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+      rendered.unmount()
+      controller.dispose()
+    })
+
+    it('keeps the main action independent of list actions', () => {
+      const { frame, copy, download } = makeActions()
+      const main = vi.fn()
+      const { controller } = makeController({
+        ...frame,
+        mainAction: { label: 'Create backup', press: main },
+      })
+      const rendered = renderBar(controller)
+
+      expect(byId('hilos-table-main-action')?.textContent).toBe('Create backup')
+      fireEvent.click(byId('hilos-table-main-action') as HTMLElement)
+      expect(main).toHaveBeenCalledTimes(1)
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+
+      fireEvent.click(byId('hilos-table-action-copy') as HTMLElement)
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+      rendered.unmount()
+      controller.dispose()
+    })
+
+    it.each([undefined, []])(
+      'omits the group and preserves main action for auxiliaryActions=%j',
+      (auxiliaryActions) => {
+        const { frame } = makeActions()
+        const main = vi.fn()
+        const { controller } = makeController({
+          ...frame,
+          auxiliaryActions,
+          mainAction: { label: 'Create backup', press: main },
+        })
+        const rendered = renderBar(controller)
+
+        expect(byId('hilos-table-actions')).toBeNull()
+        expect(byId('hilos-table-main-action')?.textContent).toBe(
+          'Create backup',
+        )
+        fireEvent.click(byId('hilos-table-main-action') as HTMLElement)
+        expect(main).toHaveBeenCalledTimes(1)
+        rendered.unmount()
+        controller.dispose()
+      },
+    )
+
+    it('creates no empty group or controls for an empty action array', () => {
+      const { frame } = makeActions()
+      const { controller } = makeController({ ...frame, auxiliaryActions: [] })
+      const rendered = renderBar(controller)
+
+      expect(byId('hilos-table-actions')).toBeNull()
+      expect(byId('hilos-table-controls')).toBeNull()
+      rendered.unmount()
+      controller.dispose()
+    })
+
+    it('renders a text-only action without a decorative icon', () => {
+      const { frame } = makeActions()
+      const press = vi.fn()
+      const { controller } = makeController({
+        ...frame,
+        auxiliaryActions: [{ key: 'copy', label: 'Copy the list', press }],
+      })
+      const rendered = renderBar(controller)
+
+      const button = screen.getByRole('button', { name: 'Copy the list' })
+      expect(button.querySelector('i')).toBeNull()
+      expect(press).not.toHaveBeenCalled()
+      fireEvent.click(button)
+      expect(press).toHaveBeenCalledTimes(1)
+      rendered.unmount()
+      controller.dispose()
+    })
+  },
+)
 
 describe('HilosTableBar showing the selection panel instead of its controls', () => {
   /**

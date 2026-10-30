@@ -1,97 +1,37 @@
-// The Angular peer of vue/src/public/HilosLicensePage.test.ts and
-// react/test/HilosLicensePage.test.tsx: the same cases by the same names, so a
-// drift between the three view layers shows up as one of them failing rather
-// than as a page nobody compared. What is Angular's own is the mount (TestBed),
-// the fact that a frame is read by running change detection, and that the modal
-// renders in place rather than through a portal — one root covers the page and
-// its dialog alike.
+// The Angular peer of the Vue and React public License page tests. The License
+// page owns the project's literal text; the dependency inventory has its own
+// page and component suite.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { By } from '@angular/platform-browser'
-import type { HilosLicenseEntry } from '@hilos/core'
-import type { HilosStaticPageNavigation } from '@hilos/core/base'
+import { HILOS_LICENSE_TABS, HilosPages } from '@hilos/core/base'
+import type {
+  HilosLicenseInventory,
+  HilosStaticPageNavigation,
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
+
+const inventory: HilosLicenseInventory = {
+  project: 'demo-polls',
+  projectLicenseText:
+    'Custom Project License\n\n  Indented clause   with spaces\nTrailing newline\n',
+  entries: [],
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function entry(over: Partial<HilosLicenseEntry> = {}): HilosLicenseEntry {
-  return {
-    name: 'vue',
-    version: '3.5.35',
-    language: 'js',
-    license: 'MIT',
-    licenseText: 'The MIT License (MIT)\n\nCopyright (c) 2018-present',
-    repository: 'https://github.com/vuejs/core',
-    ...over,
-  }
-}
-
-const inventory = {
-  project: 'demo-polls',
-  projectLicenseText:
-    'Custom Project License\n\n  Indented clause   with spaces\nTrailing newline\n',
-  entries: [
-    entry(),
-    entry({ name: 'bootstrap', version: '5.3.3', licenseText: null }),
-    entry({
-      name: 'reactphp/event-loop',
-      version: 'v1.5.0',
-      language: 'php',
-      license: 'Apache-2.0',
-      repository: null,
-    }),
-  ],
-}
-
-/**
- * Mount the page with the snapshot a project's build hands it.
- *
- * @returns The mounted fixture, already rendered once.
- */
-function mountPage(): ComponentFixture<HilosLicensePage> {
+function mountPage(
+  pageInventory: HilosLicenseInventory = inventory,
+): ComponentFixture<HilosLicensePage> {
   const fixture = TestBed.createComponent(HilosLicensePage)
-  fixture.componentRef.setInput('inventory', inventory)
+  fixture.componentRef.setInput('inventory', pageInventory)
   fixture.detectChanges()
 
   return fixture
 }
 
-/**
- * Navigation that resolves sibling pages against one project route parameter.
- *
- * @param page The page key marked current.
- * @param project The project route parameter.
- * @param label The accessible name of the tabs row.
- * @returns A static-page navigation fixture.
- */
-function publicNavigation(
-  page = 'fixture_public_page',
-  project = 'first',
-  label = 'Public pages',
-): HilosStaticPageNavigation {
-  return {
-    page,
-    tabs: [
-      { page: 'fixture_public_page', label: 'Public page' },
-      { page: 'fixture_history', label: 'Revision history' },
-    ],
-    params: { project },
-    resolvePath: (target, params = {}) =>
-      `/projects/${params.project}/${target}`,
-    label,
-  }
-}
-
-/**
- * Find a node of the mounted page by its stable test id.
- *
- * @param fixture The mounted page to look inside.
- * @param id The `data-id` the page renders on the node.
- * @returns The node, or null when this state does not render it.
- */
 function byId(
   fixture: ComponentFixture<HilosLicensePage>,
   id: string,
@@ -101,321 +41,69 @@ function byId(
   )
 }
 
-/**
- * Every node of the mounted page carrying one test id.
- *
- * @param fixture The mounted page to look inside.
- * @param id The `data-id` the page renders on the nodes.
- * @returns The nodes, in document order.
- */
-function allById(
-  fixture: ComponentFixture<HilosLicensePage>,
-  id: string,
-): HTMLElement[] {
-  return [
-    ...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
-      `[data-id="${id}"]`,
-    ),
-  ]
-}
-
-/**
- * Click the row at `index`, the way the person does, and render what follows.
- *
- * @param fixture The mounted page to click inside.
- * @param index The row's position in the list currently shown.
- * @throws Error When the list is not that long.
- */
-function clickRow(
-  fixture: ComponentFixture<HilosLicensePage>,
-  index: number,
-): void {
-  const row = allById(fixture, 'license-row')[index]
-  if (row === undefined) {
-    throw new Error(`the page is not showing a row at index ${index}`)
+function navigation(page: string): HilosStaticPageNavigation {
+  return {
+    page,
+    tabs: HILOS_LICENSE_TABS,
+    resolvePath: (target) =>
+      target === HilosPages.LICENSE ? '/license' : '/license/dependencies',
   }
-  row.click()
-  fixture.detectChanges()
-}
-
-/**
- * Type into a field or pick in a select, then render what follows.
- *
- * @param fixture The mounted page to act on.
- * @param id The `data-id` the page renders on the control.
- * @param value The value the control is left holding.
- * @param event The event the control announces the change with.
- * @throws Error When this state does not render the control at all.
- */
-function setValue(
-  fixture: ComponentFixture<HilosLicensePage>,
-  id: string,
-  value: string,
-  event: 'input' | 'change',
-): void {
-  const control = byId(fixture, id)
-  if (control === null) {
-    throw new Error(`the page is not offering a control with data-id="${id}"`)
-  }
-  ;(control as HTMLInputElement | HTMLSelectElement).value = value
-  control.dispatchEvent(new Event(event))
-  fixture.detectChanges()
 }
 
 describe('HilosLicensePage', () => {
-  it('renders its exact head and forwards optional navigation reactively', () => {
+  it('renders one License heading and the exact project text without inventory UI', () => {
     const fixture = mountPage()
     const container = fixture.nativeElement as HTMLElement
+    const heading = container.querySelector('h1')
 
     expect(container.querySelectorAll('h1')).toHaveLength(1)
-    const heading = byId(fixture, 'hilos-page-head-title')
     expect(heading?.textContent?.trim()).toBe('License')
-    const icon = byId(fixture, 'hilos-page-head-block')?.querySelector(
-      'i.bi-journal-code',
+    expect(byId(fixture, 'license-project-text')?.textContent).toBe(
+      inventory.projectLicenseText,
     )
-    expect(icon?.parentElement?.getAttribute('aria-hidden')).toBe('true')
-    expect(
-      byId(fixture, 'hilos-page-head-block')
-        ?.querySelector('p')
-        ?.textContent?.trim(),
-    ).toBe('The license of this project, and of everything it is built on.')
-    expect(byId(fixture, 'hilos-breadcrumb')).toBeNull()
-    expect(byId(fixture, 'hilos-page-tabs')).toBeNull()
+    expect(byId(fixture, 'hilos-viewport-table')).toBeNull()
+    expect(byId(fixture, 'license-search')).toBeNull()
+    expect(byId(fixture, 'license-copy')).toBeNull()
+    expect(byId(fixture, 'license-download')).toBeNull()
+    expect(byId(fixture, 'modal')).toBeNull()
+  })
 
-    fixture.componentRef.setInput('navigation', publicNavigation())
+  it('renders markup in the project text as literal text', () => {
+    const projectLicenseText =
+      'Custom License with <script>alert("xss")</script> and <b>bold</b>'
+    const fixture = mountPage({ ...inventory, projectLicenseText })
+    const pre = byId(fixture, 'license-project-text')
+
+    expect(pre?.textContent).toBe(projectLicenseText)
+    expect(pre?.children).toHaveLength(0)
+  })
+
+  it('forwards public navigation and marks the current License page', () => {
+    const fixture = mountPage()
+    fixture.componentRef.setInput('navigation', navigation(HilosPages.LICENSE))
     fixture.detectChanges()
+
     const tabs = byId(fixture, 'hilos-page-tabs')
-    expect(tabs?.getAttribute('aria-label')).toBe('Public pages')
     expect(
       [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
         link.textContent?.trim(),
         link.getAttribute('href'),
       ]),
     ).toEqual([
-      ['Public page', '/projects/first/fixture_public_page'],
-      ['Revision history', '/projects/first/fixture_history'],
+      ['License', '/license'],
+      ['Dependencies', '/license/dependencies'],
     ])
-    expect(
-      tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
-    ).toBe('hilos-page-tab-fixture_public_page')
+    expect(tabs?.querySelector('[aria-current="page"]')?.textContent).toBe(
+      'License',
+    )
 
     fixture.componentRef.setInput(
       'navigation',
-      publicNavigation('fixture_history', 'next', 'More public pages'),
+      navigation(HilosPages.LICENSE_DEPENDENCIES),
     )
     fixture.detectChanges()
-    expect(byId(fixture, 'hilos-page-head-title')).toBe(heading)
-    expect(tabs?.getAttribute('aria-label')).toBe('More public pages')
-    expect(
-      tabs?.querySelector('[aria-current="page"]')?.getAttribute('data-id'),
-    ).toBe('hilos-page-tab-fixture_history')
-    expect(
-      tabs
-        ?.querySelector('[data-id="hilos-page-tab-fixture_history"]')
-        ?.getAttribute('href'),
-    ).toBe('/projects/next/fixture_history')
-  })
-
-  it('renders both filters from state, keeps late options selected and resets to the empty choices', async () => {
-    const fixture = mountPage()
-    const select = (id: string) => byId(fixture, id) as HTMLSelectElement
-    const change = (id: string, value: string) => {
-      fixture.debugElement
-        .query(By.css(`[data-id="${id}"]`))
-        .triggerEventHandler('change', { target: { value } })
-      fixture.detectChanges()
-    }
-    const license = 'license-filter-license'
-    const language = 'license-filter-language'
-    expect(select(license).value).toBe('')
-    expect(select(language).value).toBe('')
-    change(license, 'MIT')
-    change(language, 'php')
-    expect(select(license).value).toBe('MIT')
-    expect(select(language).value).toBe('php')
-
-    fixture.componentRef.setInput('inventory', { ...inventory, entries: [] })
-    fixture.detectChanges()
-    fixture.componentRef.setInput('inventory', inventory)
-    await fixture.whenStable()
-    fixture.detectChanges()
-    expect(select(license).value).toBe('MIT')
-    expect(select(license).selectedOptions[0]?.textContent?.trim()).toBe('MIT')
-    expect(select(language).value).toBe('php')
-    expect(select(language).selectedOptions[0]?.textContent?.trim()).toBe('PHP')
-    change(license, '')
-    change(language, '')
-    expect(select(license).value).toBe('')
-    expect(select(license).selectedOptions[0]?.textContent?.trim()).toBe(
-      'All licenses',
+    expect(tabs?.querySelector('[aria-current="page"]')?.textContent).toBe(
+      'Dependencies',
     )
-    expect(select(language).value).toBe('')
-    expect(select(language).selectedOptions[0]?.textContent?.trim()).toBe(
-      'All languages',
-    )
-    expect(allById(fixture, 'license-row')).toHaveLength(3)
-  })
-
-  it('draws one row per package the build stands on', () => {
-    const fixture = mountPage()
-    const rows = allById(fixture, 'license-row')
-    expect(rows).toHaveLength(3)
-    expect(rows[0]?.textContent).toContain('vue')
-    expect(rows[0]?.textContent).toContain('3.5.35')
-    // The language wire value is labelled in one place and never shown raw.
-    expect(rows[2]?.textContent).toContain('PHP')
-    expect(rows[2]?.textContent).toContain('Apache-2.0')
-    // The version is the lockfile's, `v` prefix and all.
-    expect(rows[2]?.textContent).toContain('v1.5.0')
-  })
-
-  it('offers the licenses and languages the snapshot actually holds', () => {
-    const fixture = mountPage()
-    const licenses = [
-      ...(byId(fixture, 'license-filter-license')?.querySelectorAll('option') ??
-        []),
-    ].map((option) => option.textContent?.trim())
-    expect(licenses).toEqual(['All licenses', 'Apache-2.0', 'MIT'])
-    const languages = [
-      ...(byId(fixture, 'license-filter-language')?.querySelectorAll(
-        'option',
-      ) ?? []),
-    ].map((option) => option.textContent?.trim())
-    expect(languages).toEqual(['All languages', 'JS', 'PHP'])
-  })
-
-  it('narrows the list by the search box', () => {
-    const fixture = mountPage()
-    setValue(fixture, 'license-search', '  BOOT ', 'input')
-    const rows = allById(fixture, 'license-row')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.textContent).toContain('bootstrap')
-  })
-
-  it('narrows the list by the license select', () => {
-    const fixture = mountPage()
-    setValue(fixture, 'license-filter-license', 'Apache-2.0', 'change')
-    const rows = allById(fixture, 'license-row')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.textContent).toContain('reactphp/event-loop')
-  })
-
-  it('says so when the filters admit nothing, and keeps the bar and the buttons', () => {
-    const fixture = mountPage()
-    setValue(fixture, 'license-search', 'nothing-here', 'input')
-    expect(allById(fixture, 'license-row')).toHaveLength(0)
-    expect(byId(fixture, 'license-empty')?.textContent?.trim()).toBe(
-      'Nothing in this build matches these filters',
-    )
-    // The empty result is the page's most valuable answer, so the choice that
-    // produced it stays visible and removable, and the export stays live.
-    expect(byId(fixture, 'license-search')).not.toBeNull()
-    expect(byId(fixture, 'license-copy')?.hasAttribute('disabled')).toBe(false)
-    expect(byId(fixture, 'license-download')?.hasAttribute('disabled')).toBe(
-      false,
-    )
-  })
-
-  it('opens a row on its own license text', () => {
-    const fixture = mountPage()
-    clickRow(fixture, 0)
-    expect(byId(fixture, 'modal')).not.toBeNull()
-    expect(byId(fixture, 'modal')?.getAttribute('aria-label')).toBe(
-      'vue 3.5.35 · MIT',
-    )
-    expect(byId(fixture, 'license-text')?.textContent).toContain(
-      'The MIT License (MIT)',
-    )
-    expect(byId(fixture, 'license-text-missing')).toBeNull()
-    expect(byId(fixture, 'license-repository')?.getAttribute('href')).toBe(
-      'https://github.com/vuejs/core',
-    )
-  })
-
-  it('opens the license text in a wide dialog', () => {
-    const fixture = mountPage()
-    clickRow(fixture, 0)
-    expect(
-      byId(fixture, 'modal')
-        ?.querySelector('.modal-dialog')
-        ?.classList.contains('modal-lg'),
-    ).toBe(true)
-  })
-
-  it('opens a package that ships no license file on the second state', () => {
-    const fixture = mountPage()
-    clickRow(fixture, 1)
-    expect(byId(fixture, 'license-text')).toBeNull()
-    expect(byId(fixture, 'license-text-missing')?.textContent).toContain(
-      'This package ships no license file',
-    )
-    // The row itself stayed truthful — the type is in the header above.
-    expect(byId(fixture, 'modal')?.getAttribute('aria-label')).toBe(
-      'bootstrap 5.3.3 · MIT',
-    )
-  })
-
-  it('leaves out the repository button when the package declares no address', () => {
-    const fixture = mountPage()
-    clickRow(fixture, 2)
-    // An absent action, not a disabled one: there is nothing to grey out.
-    expect(byId(fixture, 'license-repository')).toBeNull()
-  })
-
-  it('renders the copy status region before it has anything to say', () => {
-    const fixture = mountPage()
-    const status = byId(fixture, 'license-copy-status')
-    expect(status?.getAttribute('role')).toBe('status')
-    expect(status?.getAttribute('aria-live')).toBe('polite')
-    expect(status?.textContent).toBe('')
-  })
-
-  it("hands the list over under the project's own file name", () => {
-    const fixture = mountPage()
-    const button = byId(fixture, 'license-download')
-    expect(button).not.toBeNull()
-
-    const anchor = {
-      href: '',
-      download: '',
-      click: vi.fn(),
-      remove: vi.fn(),
-    }
-    vi.stubGlobal('document', {
-      createElement: vi.fn(() => anchor),
-      body: { appendChild: vi.fn() },
-    })
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn(() => 'blob:hilos/test'),
-      revokeObjectURL: vi.fn(),
-    })
-
-    button!.click()
-
-    expect(anchor.download).toBe('demo-polls-license-hilos-framework.csv')
-    expect(anchor.click).toHaveBeenCalledOnce()
-  })
-
-  it('renders the project license text verbatim before the inventory list', () => {
-    const fixture = mountPage()
-    const pre = byId(fixture, 'license-project-text')
-    expect(pre).not.toBeNull()
-    expect(pre?.textContent).toBe(inventory.projectLicenseText)
-  })
-
-  it('renders markup in project license text as plain text and produces no nested elements', () => {
-    const markupText =
-      'Custom License with <script>alert("xss")</script> and <b>bold</b>'
-    const fixture = TestBed.createComponent(HilosLicensePage)
-    fixture.componentRef.setInput('inventory', {
-      ...inventory,
-      projectLicenseText: markupText,
-    })
-    fixture.detectChanges()
-
-    const pre = byId(fixture, 'license-project-text')
-    expect(pre).not.toBeNull()
-    expect(pre?.textContent).toBe(markupText)
-    expect(pre?.children.length).toBe(0)
   })
 })

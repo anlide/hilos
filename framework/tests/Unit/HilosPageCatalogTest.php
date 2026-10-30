@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -24,9 +28,10 @@ final class HilosPageCatalogTest extends TestCase
      * Number of entries in the catalog. Sixty of them came over from the frontend when the
      * identity moved to the backend (HIL-624); the profile tree joined in HIL-288 and gained
      * sign-in, notification and security sections in HIL-493, then legal agreements and
-     * their revision history in HIL-498 and the Legal admin section in HIL-941, while six
-     * routed keys still carry no entry on purpose - four public footer pages and the guardian pair - and
-     * every page declared since is one more, the logging modes of HIL-762 being the first.
+     * their revision history in HIL-498 and the Legal admin section in HIL-941. Nine routed
+     * keys carry no entry on purpose: four public footer pages, two public legal history
+     * pages, the public Dependencies page and the guardian pair. Each new admin page adds
+     * an entry, the logging modes of HIL-762 being the first.
      *
      * It is a deliberate-addition guard rather than a count worth knowing: a page that reaches the
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
@@ -58,6 +63,24 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_CHANGE_LOG_TABLE_TRIGGERS => 'Triggers',
             HilosPageConstants::HILOS_CHANGE_LOG_TABLE_HISTORY => 'History',
         ], $children);
+    }
+
+    /** Public License tabs never join the admin display catalog. */
+    public function testLicensePagesHaveNoAdminCatalogEntry(): void
+    {
+        self::assertArrayNotHasKey(HilosPageConstants::HILOS_LICENSE, HilosPageCatalog::CATALOG);
+        self::assertArrayNotHasKey(HilosPageConstants::HILOS_LICENSE_DEPENDENCIES, HilosPageCatalog::CATALOG);
+    }
+
+    /** Knowing the public key does not supply a project implementation. */
+    public function testLicenseDependenciesRequiresAProjectBinding(): void
+    {
+        $factory = new HilosPageFactory($this->createStub(PageAgentInterface::class), Hilos::class);
+        self::assertTrue($factory->hasPage(HilosPageConstants::HILOS_LICENSE_DEPENDENCIES));
+
+        $this->expectException(PageNotFoundException::class);
+        $this->expectExceptionMessage("Hilos page 'hilos_license_dependencies' requires implementation in project.");
+        $factory->getPage(HilosPageConstants::HILOS_LICENSE_DEPENDENCIES);
     }
 
     public function testProfileIsAnAdoptedEntityWithExplicitChildCaptions(): void

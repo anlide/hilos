@@ -153,6 +153,7 @@ use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Chat\Pages\Hilos\I18n\Lists\LanguagesListPage;
 use Demo\Chat\Pages\Hilos\I18nPage;
 use Demo\Chat\Pages\Hilos\LicensePage;
+use Demo\Chat\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
@@ -514,6 +515,7 @@ final class Hilos extends HilosFacade
         TermsHistoryPage::PAGE => TermsHistoryPage::class,
         PrivacyHistoryPage::PAGE => PrivacyHistoryPage::class,
         LicensePage::PAGE => LicensePage::class,
+        LicenseDependenciesPage::PAGE => LicenseDependenciesPage::class,
         StatusPage::PAGE => StatusPage::class,
         StatusComponentsPage::PAGE => StatusComponentsPage::class,
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,

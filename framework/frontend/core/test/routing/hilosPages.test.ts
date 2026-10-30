@@ -758,6 +758,33 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
+  it('serves Dependencies as a public License tab with no route params', () => {
+    const page = HilosPages.LICENSE_DEPENDENCIES
+    const path = '/license/dependencies'
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const php = readFileSync(
+      new URL(
+        '../../../../backend/Constants/HilosPageConstants.php',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+
+    expect(page).toBe('hilos_license_dependencies')
+    expect(php).toContain(`HILOS_LICENSE_DEPENDENCIES = '${page}';`)
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: false })
+    expect(HILOS_PAGE_ROUTES[page]).toBe(path)
+    expect(router.path(page, {})).toBe(path)
+    expect(resolveHilosPath(page)).toBe(path)
+    expect(router.match(path)).toEqual({ page, params: {}, admin: false })
+    expect(router.match('/license')).toEqual({
+      page: HilosPages.LICENSE,
+      params: {},
+      admin: false,
+    })
+    expect(HILOS_FOOTER_LINKS.map((link) => link.page)).not.toContain(page)
+  })
+
   it.each([
     [HilosPages.TERMS_HISTORY, 'hilos_terms_history', '/terms/history'],
     [HilosPages.PRIVACY_HISTORY, 'hilos_privacy_history', '/privacy/history'],
@@ -893,6 +920,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       HilosPages.PUBLIC_STATUS,
       HilosPages.TERMS_HISTORY,
       HilosPages.PRIVACY_HISTORY,
+      HilosPages.LICENSE_DEPENDENCIES,
       ...HILOS_FOOTER_LINKS.map((l) => l.page),
     ])
     for (const [page, declaration] of Object.entries(

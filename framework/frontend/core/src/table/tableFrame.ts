@@ -1,10 +1,10 @@
 // What a page DECLARES about the bar above its table and the footer below it —
-// its title, whether it searches, which filters it offers, its main action, its
-// columns, its bulk operations, and what it says when it is empty. The framework
-// owns the whole bar and the whole footer; the page owns the content of a cell
-// and nothing around it (table-subscription.md, mockups/components/table
-// section 2). Like hilosTableColumn.ts this file holds declaration types only —
-// no window logic, which lives in the TableViewportController.
+// its title, whether it searches, which filters it offers, its main and
+// auxiliary actions, its columns, its bulk operations, and what it says when it
+// is empty. The framework owns the whole bar and the whole footer; the page owns
+// the content of a cell and nothing around it (table-subscription.md,
+// mockups/components/table section 2). Like hilosTableColumn.ts this file holds
+// declaration types only — no window logic, which lives in the controller.
 
 import { type ActionHandle } from '../connection/actionLifecycle.js'
 import { type ReadonlySignal } from '../state/signal.js'
@@ -42,9 +42,9 @@ export interface HilosTableFilterOption {
  * for the reason there is none for composite orders — the framework owns the
  * place in the bar and the look, the page owns which filters are there.
  *
- * Every shape names the filter-map key(s) it writes, because that map is what
- * travels to the backend and becomes the query condition; no filter is ever
- * applied on the client.
+ * Every shape names the filter-map key(s) it writes. A server-backed table
+ * sends that map to the backend as query conditions; a local adapter over a
+ * complete in-memory snapshot may apply the same declaration to that snapshot.
  */
 export type HilosTableFilter =
   | {
@@ -91,6 +91,18 @@ export interface HilosTableMainAction {
   /** Button text. */
   readonly label: string
   /** What the press does — typically opening the page's modal. */
+  readonly press: () => void
+}
+
+/** An independent action over the readable list, apart from creation and bulk work. */
+export interface HilosTableAuxiliaryAction {
+  /** Action id, unique within this declaration. */
+  readonly key: string
+  /** Button text. */
+  readonly label: string
+  /** Optional decorative icon class. */
+  readonly icon?: string
+  /** Run only on user intent, never while rendering the declaration. */
   readonly press: () => void
 }
 
@@ -154,6 +166,8 @@ export interface HilosTableFrame {
     readonly HilosTableFilter[] | (() => readonly HilosTableFilter[])
   /** The one button at the right of the bar, offered again by the empty state. */
   readonly mainAction?: HilosTableMainAction
+  /** Independent list actions, available even when the current window is empty. */
+  readonly auxiliaryActions?: readonly HilosTableAuxiliaryAction[]
   /** The columns of the table, in display order. */
   readonly columns:
     readonly HilosTableColumn[] | (() => readonly HilosTableColumn[])

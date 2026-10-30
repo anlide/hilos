@@ -357,6 +357,9 @@ final class HilosPageConstants
     /** @var string Hilos — public License page */
     public const string HILOS_LICENSE = 'hilos_license';
 
+    /** Hilos — public dependency inventory page. */
+    public const string HILOS_LICENSE_DEPENDENCIES = 'hilos_license_dependencies';
+
     /** Legal administration pages. */
     public const string HILOS_LEGAL = 'hilos_legal';
     public const string HILOS_LEGAL_DOCUMENTS = 'hilos_legal_documents';

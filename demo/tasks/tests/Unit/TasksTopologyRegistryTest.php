@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tests\Unit;
 
+use Demo\Tasks\Pages\Hilos\LicenseDependenciesPage;
+use Demo\Tasks\Database\Pages\PageCatalog;
+use Hilos\Database\Pages\HilosPageCatalog;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageReach;
 use Demo\Tasks\Core\Daemon\TasksWorkerManager;
 use Demo\Tasks\Pages\Hilos\TermsHistoryPage;
 use Demo\Tasks\Pages\Hilos\PrivacyHistoryPage;
@@ -315,6 +321,24 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class TasksTopologyRegistryTest extends TestCase
 {
+    /** The dependency snapshot stays a build input on an ordinary public page. */
+    public function testLicenseDependenciesUsesThePublicIndexPageWithoutServerData(): void
+    {
+        self::assertSame('hilos_license_dependencies', LicenseDependenciesPage::PAGE);
+        self::assertSame(LicenseDependenciesPage::class, Hilos::PAGES[LicenseDependenciesPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[LicenseDependenciesPage::PAGE]);
+        self::assertSame(PageAccessLevel::PUBLIC, LicenseDependenciesPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, LicenseDependenciesPage::REACH);
+        self::assertSame([], LicenseDependenciesPage::ACTIONS);
+        self::assertSame([], LicenseDependenciesPage::SIGNALS);
+        self::assertSame([], LicenseDependenciesPage::BROWSER);
+        self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, HilosPageCatalog::CATALOG);
+        self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, PageCatalog::pages());
+        $factory = new HilosPageFactory($this->createStub(PageAgentInterface::class), Hilos::class);
+        self::assertInstanceOf(LicenseDependenciesPage::class, $factory->getPage(LicenseDependenciesPage::PAGE));
+    }
+
     /** Every served profile section binds the common personal identity source once. */
     public function testEveryProfileSectionBindsTheIdentityList(): void
     {

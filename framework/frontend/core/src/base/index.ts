@@ -123,6 +123,7 @@ export {
   type HilosTableColumnOf,
 } from '../table/hilosTableColumn.js'
 export {
+  type HilosTableAuxiliaryAction,
   type HilosTableBody,
   type HilosTableBulkAction,
   type HilosTableEmpty,
@@ -303,6 +304,11 @@ export {
   licenseLanguageLabel,
   renderLicenseCsv,
 } from '../license/licenseInventory.js'
+export {
+  createHilosLicenseDependencies,
+  type HilosLicenseDependenciesController,
+  HILOS_LICENSE_TABS,
+} from '../license/licenseDependencies.js'
 export {
   browserValue,
   type HilosBrowserValue,
