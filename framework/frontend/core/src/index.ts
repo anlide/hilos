@@ -1548,6 +1548,7 @@ export {
   type HilosUserImpersonationSettings,
   HILOS_USER_LIFECYCLE_COPY,
   HILOS_USER_OVERVIEW_COPY,
+  HILOS_USERS_LIST_COPY,
   HILOS_USER_STANDING_SECTION,
   HILOS_USERS_LAPSED_FILTER,
   hilosStandingBadge,
@@ -1604,6 +1605,7 @@ export {
   type HilosUserRow,
   type HilosUsersContext,
   type HilosUsersTable,
+  type HilosUsersTableOptions,
   type HilosUserRename,
   type HilosImpersonate,
 } from './admin/users/hilosUsers.js'

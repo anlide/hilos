@@ -670,10 +670,12 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame(HilosPageConstants::HILOS_DAEMON, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH));
     }
 
-    /** Providers that have not adopted the user keep the legacy breadcrumb through each child. */
+    /** A project without adoption keeps both user owners on the legacy presentation. */
     public function testUserEntityAndItsChildrenStayLegacyWithoutAProjectOptIn(): void
     {
         UserPageHeadTestHilos::initBrowser();
+        self::assertSame(HilosPageConstants::HILOS_USERS, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_USERS));
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_USERS, new PageRouteParams([])));
         foreach ([
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_USER_ROLES,
@@ -696,11 +698,36 @@ final class PageCatalogResolverTest extends TestCase
         ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_USER_ROLES));
     }
 
-    /** Both real Vue providers preserve the framework row and omit unserved future tabs. */
-    public function testVueProvidersAdoptTheUserHeadWithOnlyOverviewServed(): void
+    /** Both real Vue providers adopt the Users and User heads with only served pages. */
+    public function testVueProvidersAdoptTheUsersAndUserHeadsWithOnlyOverviewServed(): void
     {
         foreach ([ChatUserPageHeadTestHilos::class, BinanceUserPageHeadTestHilos::class] as $hilos) {
             $hilos::initBrowser();
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USERS],
+                [
+                    PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Users',
+                    PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+                ],
+            ), PageCatalogResolver::catalog()[HilosPageConstants::HILOS_USERS]);
+            self::assertSame(HilosPageConstants::HILOS_USERS, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_USERS));
+            $usersHead = PageCatalogResolver::head(HilosPageConstants::HILOS_USERS, new PageRouteParams([]));
+            self::assertNotNull($usersHead);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_USERS,
+                    'label' => 'Users',
+                    'lead' => 'Application users and panel operators: presence, roles, and access.',
+                    'icon' => 'bi-people',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Users'],
+                ],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $usersHead->toArray());
+
             self::assertSame(array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USER],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
@@ -723,7 +750,6 @@ final class PageCatalogResolverTest extends TestCase
                 'pageChildren' => [],
             ], $head->toArray());
             self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_USER));
-            self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_USERS, new PageRouteParams([])));
         }
     }
 
@@ -2233,6 +2259,7 @@ final class CommunicationsPageHeadTestCatalog implements PageCatalogProviderInte
 abstract class UserPageHeadTestHilos extends Hilos
 {
     public const array PAGES = [
+        HilosPageConstants::HILOS_USERS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_USER => PageHeadTestPage::class,
     ];
 }

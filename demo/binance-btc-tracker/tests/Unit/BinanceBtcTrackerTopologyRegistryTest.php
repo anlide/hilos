@@ -812,6 +812,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             $pages[HilosPageConstants::HILOS_BACKUP],
         );
         self::assertSame([
+            HilosPageConstants::HILOS_USERS,
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LOGS,
             HilosPageConstants::HILOS_CHANGE_LOG,

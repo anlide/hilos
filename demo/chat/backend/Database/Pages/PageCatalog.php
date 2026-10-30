@@ -33,6 +33,13 @@ final class PageCatalog implements PageCatalogProviderInterface
     public static function pages(): array
     {
         return [
+            HilosPageConstants::HILOS_USERS => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USERS],
+                [
+                    PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Users',
+                    PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+                ],
+            ),
             HilosPageConstants::HILOS_USER => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_USER],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],

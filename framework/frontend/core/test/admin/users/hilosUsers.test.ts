@@ -17,6 +17,7 @@ import {
   hilosPresenceBadge,
   HILOS_PRESENCE_WIDEST_LABEL,
   HILOS_USER_OVERVIEW_COPY,
+  HILOS_USERS_LIST_COPY,
   hilosStandingBadge,
   HILOS_USER_ANALYTICS_ENABLED_KEY,
   hilosUserAnalyticsEnabled,
@@ -40,6 +41,7 @@ import {
   type HilosUserCardWindow,
   type HilosUserDetailRow,
   type HilosUsersContext,
+  type HilosUsersTableOptions,
 } from '../../../src/admin/users/hilosUsers.js'
 import { hilosLegalLapsedHref } from '../../../src/admin/legal/hilosLegal.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
@@ -57,7 +59,7 @@ import {
   bindSessionScope,
   type HilosAccountStanding,
 } from '../../../src/session/sessionScope.js'
-import { createSignal } from '../../../src/state/signal.js'
+import { computedSignal, createSignal } from '../../../src/state/signal.js'
 import {
   ActionError,
   type ActionHandle,
@@ -84,6 +86,64 @@ function userStore(): {
 
   return { scopes, users }
 }
+
+describe('resolveHilosUserRow', () => {
+  it('defaults block to false until the user entity is available', () => {
+    const { users } = userStore()
+    expect(
+      resolveHilosUserRow({ rowKey: '7', slots: {} }, users),
+    ).toMatchObject({
+      id: 7,
+      block: false,
+    })
+    expect(
+      resolveHilosUserRow(
+        { rowKey: '7', slots: { users: { type: 'user', id: 7 } } },
+        users,
+      ).block,
+    ).toBe(false)
+  })
+
+  it.each([false, true])(
+    'reads block=%s from the reactive entity while preserving hidden name, merge and presence',
+    (block) => {
+      const { scopes, users } = userStore()
+      const ref = { type: 'user', id: 7 }
+      scopes.page()!.entities.upsert(ref, {
+        id: 7,
+        name: HIDDEN_VALUE,
+        block,
+        admin: !block,
+      })
+      const row: TableRow = {
+        rowKey: '7',
+        slots: {
+          users: ref,
+          connections: { presence: 'online', onlineSessionCount: 2 },
+          merge: { merged: true },
+        },
+      }
+      const resolved = computedSignal(() => resolveHilosUserRow(row, users))
+
+      expect(resolved.get()).toEqual({
+        id: 7,
+        name: HIDDEN_VALUE,
+        block,
+        lastActivity: null,
+        presence: 'online',
+        onlineSessionCount: 2,
+        merged: true,
+      })
+      scopes.page()!.entities.upsert(ref, { block: !block })
+      expect(resolved.get()).toMatchObject({
+        block: !block,
+        name: HIDDEN_VALUE,
+        merged: true,
+        presence: 'online',
+      })
+    },
+  )
+})
 
 describe('activity display projections', () => {
   it.each([
@@ -1654,13 +1714,17 @@ describe('the card link to the person in Analytics (HIL-1420)', () => {
   })
 })
 
-describe('createHilosUsersTable lapsed filter (HIL-945)', () => {
+describe('createHilosUsersTable', () => {
   /**
    * The users table over a recording connection and a fake address.
    *
    * @param params The route params the page opened on.
+   * @param options The optional users-list presentation configuration.
    */
-  function usersTable(params: Record<string, string>) {
+  function usersTable(
+    params: Record<string, string>,
+    options?: HilosUsersTableOptions,
+  ) {
     const { scopes, users } = userStore()
     const sent: TableViewportDescriptor[] = []
     const connection = {
@@ -1695,52 +1759,184 @@ describe('createHilosUsersTable lapsed filter (HIL-945)', () => {
           })
         },
       },
+      options,
     )
 
-    return { table, sent, replaced }
+    return { table, sent, replaced, scopes, users }
   }
 
-  it('opens on the document its address names and keeps the address in step', () => {
-    const { table, sent, replaced } = usersTable({ lapsed: 'terms' })
-    table.start()
+  it('keeps the original factory call and follows the session identity without a viewport request', () => {
+    const { scopes, users } = userStore()
+    const send = vi.fn(() => true)
+    const table = createHilosUsersTable({
+      scopes,
+      users,
+      connection: { sendTableViewport: send },
+    } as unknown as HilosUsersContext)
 
-    expect(table.controller.filter.get()).toEqual({ lapsed: 'terms' })
-    table.controller.setSearch('maria')
-    expect(sent.at(-1)?.filter).toEqual({ lapsed: 'terms', search: 'maria' })
-    expect(replaced).toEqual([])
-
-    table.controller.setFilter('lapsed', 'privacy')
-    expect(replaced).toEqual(['/hilos/users/privacy'])
-
-    // The reset brings back the whole list, not the filter the address opened on.
-    table.controller.resetFilters()
-    expect(table.controller.filter.get()).toEqual({})
-    expect(sent.at(-1)?.filter).toEqual({})
-    expect(replaced).toEqual(['/hilos/users/privacy', '/hilos/users'])
+    expect(table.currentUserId.get()).toBeNull()
+    scopes.session.data.set('currentUser', { type: 'user', id: 7 })
+    expect(table.currentUserId.get()).toBe(7)
+    scopes.session.data.set('currentUser', { type: 'user', id: 12 })
+    expect(table.currentUserId.get()).toBe(12)
+    scopes.session.data.set('currentUser', null)
+    expect(table.currentUserId.get()).toBeNull()
+    expect(send).not.toHaveBeenCalled()
+    expect(HILOS_USERS_LIST_COPY.you).toBe('You')
     table.dispose()
   })
 
-  it('offers the filter in the bar and ignores a tail it does not know', () => {
-    const { table, replaced } = usersTable({ lapsed: 'cookies' })
-    table.start()
+  it.each([undefined, { idInName: false }, { idInName: true }])(
+    'preserves row data, operations and the server opening order with options %j',
+    (options) => {
+      const { table, scopes, sent } = usersTable({}, options)
+      const controller = table.controller
+      table.start()
+      const ref = { type: 'user', id: 7 }
+      scopes.page()!.entities.upsert(ref, {
+        id: 7,
+        name: 'Maria',
+        block: false,
+        lastActivity: 1790244000000,
+      })
+      const rows: TableRow[] = [
+        {
+          rowKey: '7',
+          slots: {
+            users: ref,
+            connections: {
+              presence: 'probably_offline',
+              onlineSessionCount: 2,
+            },
+            merge: { merged: true },
+          },
+        },
+      ]
+      controller.ingestSubscriptionWindow(
+        rows,
+        1,
+        true,
+        null,
+        null,
+        10,
+        [{ field: 'id', direction: 'asc' }],
+        [],
+      )
 
-    expect(table.controller.filter.get()).toEqual({})
-    const filter = table.controller.frame.filters.get()[0]?.filter
-    expect(filter).toMatchObject({
-      kind: 'select',
-      key: 'lapsed',
-      label: 'Past deadline on',
-      anyLabel: 'All',
-    })
-    expect(filter?.kind === 'select' ? filter.options() : undefined).toEqual([
-      { value: 'terms', label: 'Terms of use' },
-      { value: 'privacy', label: 'Privacy policy' },
-    ])
+      expect(controller.rows.get()[0]).toMatchObject({
+        rowKey: '7',
+        row: {
+          id: 7,
+          name: 'Maria',
+          block: false,
+          lastActivity: 'Sep 24, 2026, 10:00:00 AM',
+          presence: 'probably_offline',
+          onlineSessionCount: 2,
+          merged: true,
+        },
+      })
+      scopes.page()!.entities.upsert(ref, { block: true })
+      expect(controller.rows.get()[0].row?.block).toBe(true)
+      expect(controller.pendingCount.get()).toBe(0)
+      const columns = controller.frame.columns.get()
+      expect(columns.some((column) => column.key === 'id')).toBe(
+        options?.idInName !== true,
+      )
+      expect(columns.find((column) => column.key === 'name')?.reads).toEqual(
+        options?.idInName ? ['id', 'block', 'merged'] : ['merged'],
+      )
+      expect(
+        columns.filter((column) => column.sortable).map((column) => column.key),
+      ).toEqual(
+        options?.idInName
+          ? ['name', 'presence', 'onlineSessionCount', 'lastActivity']
+          : ['id', 'name', 'presence', 'onlineSessionCount', 'lastActivity'],
+      )
+      expect(columns.find((column) => column.key === 'actions')?.reads).toEqual(
+        ['id'],
+      )
+      expect(controller.frame.searchPlaceholder.get()).toBe('Search users…')
+      expect(controller.frame.declaration.empty?.title).toBe('No users yet.')
+      expect(controller.descriptor()?.sort).toEqual([
+        { field: 'id', direction: 'asc' },
+      ])
+      controller.setSort('name')
+      expect(sent.at(-1)?.sort).toEqual([{ field: 'name', direction: 'asc' }])
+      controller.setSort('name')
+      expect(sent.at(-1)?.sort).toEqual([{ field: 'name', direction: 'desc' }])
+      controller.setSort('name')
+      expect(sent.at(-1)?.sort).toEqual([{ field: 'id', direction: 'asc' }])
+      expect(sent.at(-1)?.rendered).toEqual(
+        options?.idInName
+          ? [
+              'name',
+              'id',
+              'block',
+              'merged',
+              'presence',
+              'onlineSessionCount',
+              'lastActivity',
+            ]
+          : [
+              'id',
+              'name',
+              'merged',
+              'presence',
+              'onlineSessionCount',
+              'lastActivity',
+            ],
+      )
+      table.dispose()
+    },
+  )
 
-    table.controller.setFilter('lapsed', 'terms')
-    expect(replaced).toEqual(['/hilos/users/terms'])
-    table.dispose()
-  })
+  it.each([undefined, { idInName: true }])(
+    'opens on the document its address names and keeps the address in step with options %j',
+    (options) => {
+      const { table, sent, replaced } = usersTable({ lapsed: 'terms' }, options)
+      table.start()
+
+      expect(table.controller.filter.get()).toEqual({ lapsed: 'terms' })
+      table.controller.setSearch('maria')
+      expect(sent.at(-1)?.filter).toEqual({ lapsed: 'terms', search: 'maria' })
+      expect(replaced).toEqual([])
+
+      table.controller.setFilter('lapsed', 'privacy')
+      expect(replaced).toEqual(['/hilos/users/privacy'])
+
+      // The reset brings back the whole list, not the filter the address opened on.
+      table.controller.resetFilters()
+      expect(table.controller.filter.get()).toEqual({})
+      expect(sent.at(-1)?.filter).toEqual({})
+      expect(replaced).toEqual(['/hilos/users/privacy', '/hilos/users'])
+      table.dispose()
+    },
+  )
+
+  it.each([undefined, { idInName: true }])(
+    'offers the filter in the bar and ignores a tail it does not know with options %j',
+    (options) => {
+      const { table, replaced } = usersTable({ lapsed: 'cookies' }, options)
+      table.start()
+
+      expect(table.controller.filter.get()).toEqual({})
+      const filter = table.controller.frame.filters.get()[0]?.filter
+      expect(filter).toMatchObject({
+        kind: 'select',
+        key: 'lapsed',
+        label: 'Past deadline on',
+        anyLabel: 'All',
+      })
+      expect(filter?.kind === 'select' ? filter.options() : undefined).toEqual([
+        { value: 'terms', label: 'Terms of use' },
+        { value: 'privacy', label: 'Privacy policy' },
+      ])
+
+      table.controller.setFilter('lapsed', 'terms')
+      expect(replaced).toEqual(['/hilos/users/terms'])
+      table.dispose()
+    },
+  )
 
   it('is where the legal root sends its third count', () => {
     expect(hilosLegalLapsedHref('terms')).toBe('/hilos/users/terms')

@@ -27,6 +27,7 @@ import {
   watchDeliveryFrames,
   watchFirstRowTop,
   watchHeight,
+  watchHandshakeFrames,
   watchSocketFrames,
   type SocketFrame,
   clickSubmit,
@@ -99,7 +100,7 @@ test('lists users in the framework table and opens a detail page', async ({
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
@@ -856,6 +857,10 @@ test('closes an idle block confirmation when another tab changes the block', asy
   })
   const personPage = await personContext.newPage()
   const pageB = await page.context().newPage()
+  const listPage = await page.context().newPage()
+  const listPageRequests = countSentFrames(listPage, '"type":"page_')
+  const listTableRequests = countSentFrames(listPage, '"type":"table_')
+  const listHandshakes = watchHandshakeFrames(listPage)
 
   try {
     await grantAdminToSelf(expect, page)
@@ -864,27 +869,83 @@ test('closes an idle block confirmation when another tab changes the block', asy
 
     await gotoPage(expect, page, `/hilos/user/${targetId}`)
     await gotoPage(expect, pageB, `/hilos/user/${targetId}`)
+    const targetName = await page.getByRole('heading', { level: 1 }).innerText()
 
-    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
-    await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
-    await expect(pageB.getByTestId('modal')).toBeVisible()
+    await gotoPage(expect, listPage, '/hilos/users')
+    await typeInto(listPage.getByTestId('hilos-table-search'), targetName)
+    // The known id is this table's stable rowKey, even if another generated
+    // account happens to have the same name in the search results.
+    const targetRow = listPage.getByTestId(`hilos-table-row-${targetId}`)
+    await expect(targetRow).toBeVisible()
+    await expect(targetRow).toContainText(targetName)
+    await expect(targetRow).toContainText(`#${targetId}`)
+    await expect(targetRow.getByText('Blocked', { exact: true })).toHaveCount(0)
+    const requests = [
+      listPageRequests(),
+      listTableRequests(),
+      listHandshakes.length,
+    ]
+    expect(requests.every((count) => count > 0)).toBe(true)
+    const listDocument = await watchClientDocument(listPage)
+    try {
+      await test.step('block updates both cards and the open list row', async () => {
+        await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
+        await expect(page.getByTestId('modal')).toBeVisible()
+        await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
+        await expect(pageB.getByTestId('modal')).toBeVisible()
 
-    await clickSubmit(expect, pageB.getByTestId('hilos-user-lifecycle-confirm'))
-    await expectHilosUserBlockSettled(expect, pageB, true)
-    await expectHilosUserBlockSettled(expect, page, true)
+        await clickSubmit(
+          expect,
+          pageB.getByTestId('hilos-user-lifecycle-confirm'),
+        )
+        await expectHilosUserBlockSettled(expect, pageB, true)
+        await expectHilosUserBlockSettled(expect, page, true)
 
-    await dismissToasts(pageB)
+        await expect(
+          targetRow.getByText('Blocked', { exact: true }),
+        ).toBeVisible()
+        await expect(targetRow).toContainText(targetName)
+        await expect(targetRow).toContainText(`#${targetId}`)
+        await listDocument.unchanged()
+        expect([
+          listPageRequests(),
+          listTableRequests(),
+          listHandshakes.length,
+        ]).toEqual(requests)
+      })
 
-    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
-    await expect(page.getByTestId('modal')).toBeVisible()
-    await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
-    await expect(pageB.getByTestId('modal')).toBeVisible()
+      await dismissToasts(pageB)
 
-    await clickSubmit(expect, pageB.getByTestId('hilos-user-lifecycle-confirm'))
-    await expectHilosUserBlockSettled(expect, pageB, false)
-    await expectHilosUserBlockSettled(expect, page, false)
+      await test.step('unblock updates both cards and the same open list row', async () => {
+        await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
+        await expect(page.getByTestId('modal')).toBeVisible()
+        await clickSubmit(expect, pageB.getByTestId('hilos-user-block-open'))
+        await expect(pageB.getByTestId('modal')).toBeVisible()
+
+        await clickSubmit(
+          expect,
+          pageB.getByTestId('hilos-user-lifecycle-confirm'),
+        )
+        await expectHilosUserBlockSettled(expect, pageB, false)
+        await expectHilosUserBlockSettled(expect, page, false)
+
+        await expect(
+          targetRow.getByText('Blocked', { exact: true }),
+        ).toHaveCount(0)
+        await expect(targetRow).toContainText(targetName)
+        await expect(targetRow).toContainText(`#${targetId}`)
+        await listDocument.unchanged()
+        expect([
+          listPageRequests(),
+          listTableRequests(),
+          listHandshakes.length,
+        ]).toEqual(requests)
+      })
+    } finally {
+      await listDocument.dispose()
+    }
   } finally {
+    await listPage.close()
     await pageB.close()
     await personContext.close()
   }

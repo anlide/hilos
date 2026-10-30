@@ -1229,6 +1229,7 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_LEGAL]);
         self::assertSame([
+            HilosPageConstants::HILOS_USERS,
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LOGS,
             HilosPageConstants::HILOS_CHANGE_LOG,

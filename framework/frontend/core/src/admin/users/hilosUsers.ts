@@ -171,6 +171,8 @@ export interface HilosUserRow {
    * {@link HIDDEN_VALUE} for a viewer of the admin view mode, who is sent it hidden.
    */
   readonly name: Hideable<string>
+  /** Whether the account is blocked from signing in, from the user entity. */
+  readonly block: boolean
   /** Ready dateTime display text in the reader's zone, or null without a valid moment. */
   readonly lastActivity: string | null
   /** Live connection presence (from the inline `connections` slot). */
@@ -200,8 +202,6 @@ export interface HilosUserDetailRow extends HilosUserRow {
   readonly unverifiedPasswordAddress: string | null
   /** Whether the account can open the admin panel. */
   readonly admin: boolean
-  /** Whether the account is blocked from signing in. */
-  readonly block: boolean
   /** Scheduled erasure in absolute server epoch milliseconds, or null when none stands. */
   readonly deletionEffectiveAt: number | null
   /** Positive whole-day duration fixed by that deletion request, or null. */
@@ -326,6 +326,10 @@ const MERGE_CANDIDATES_TABLE = 'mergeCandidates'
 // Row slots: the user entity (typed `user` via pageEntityTypes) and the inline
 // runtime connection summary a project fills on its backend.
 const USER_SLOT = 'users'
+/** Row payload key of the user id, also the table row key. */
+const USER_ID_FIELD = 'id'
+/** Row payload key of whether the account is blocked from signing in. */
+const USER_BLOCK_FIELD = 'block'
 /** Field of the user entity carrying the display name (`userFromFields`). */
 const USER_NAME_FIELD = 'name'
 /** Field of the user entity carrying the person's own time zone. */
@@ -510,6 +514,7 @@ export function resolveHilosUserRow<TUser extends User>(
   return {
     id: Number(user?.id ?? row.rowKey),
     name: nameHidden ? HIDDEN_VALUE : (user?.name ?? ''),
+    block: user?.block ?? false,
     lastActivity:
       user?.lastActivity == null ? null : formatMoment(user.lastActivity),
     presence: toHilosPresence(connection?.[USER_PRESENCE_FIELD]),
@@ -635,10 +640,20 @@ export function hilosUsersPath(lapsed: string): string {
 export interface HilosUsersTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
   readonly controller: TableViewportController<HilosUserRow>
+  /** The current session's user id, or null before identity is known. */
+  readonly currentUserId: ReadonlySignal<number | null>
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
   dispose(): void
+}
+
+/** Compatible presentation options for the shared users-list frame. */
+export interface HilosUsersTableOptions {
+  /**
+   * Draw the id inside Name instead of a separate column; defaults to false.
+   */
+  readonly idInName?: boolean
 }
 
 /** The merge-candidates table handle a user-detail view drives while its modal is open. */
@@ -662,8 +677,19 @@ export interface HilosMergeCandidates {
  * record in the database, and a database does not go quiet.
  */
 const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
-  { key: 'id', label: 'ID', sortable: true, cellClass: 'text-body-secondary' },
-  { key: 'name', label: 'Name', sortable: true, cellClass: 'fw-medium' },
+  {
+    key: USER_ID_FIELD,
+    label: 'ID',
+    sortable: true,
+    cellClass: 'text-body-secondary',
+  },
+  {
+    key: USER_NAME_FIELD,
+    label: 'Name',
+    sortable: true,
+    cellClass: 'fw-medium',
+    reads: [USER_MERGED_FIELD],
+  },
   {
     key: USER_PRESENCE_FIELD,
     label: 'Presence',
@@ -685,7 +711,7 @@ const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
     headerClass: 'text-end',
     cellClass: 'text-end',
     // The takeover button stands on every row but the reader's own.
-    reads: ['id'],
+    reads: [USER_ID_FIELD],
   },
 ]
 
@@ -773,10 +799,12 @@ const MERGE_CANDIDATES_FRAME: HilosTableFrame = {
  *
  * @param context The project context (connection, scopes, and user collection).
  * @param address The navigator the lapsed filter is read from and written to, or none.
+ * @param options Compatible users-list presentation options.
  */
 export function createHilosUsersTable<TUser extends User>(
   context: HilosUsersContext<TUser>,
   address?: HilosUsersAddress,
+  options: HilosUsersTableOptions = {},
 ): HilosUsersTable {
   const entered =
     address === undefined
@@ -796,7 +824,21 @@ export function createHilosUsersTable<TUser extends User>(
         HILOS_USERS_TABLE,
         rendered,
       ),
-    frame: USERS_FRAME,
+    frame: options.idInName
+      ? {
+          ...USERS_FRAME,
+          columns: USERS_COLUMNS.filter(
+            (column) => column.key !== USER_ID_FIELD,
+          ).map((column) =>
+            column.key === USER_NAME_FIELD
+              ? {
+                  ...column,
+                  reads: [USER_ID_FIELD, USER_BLOCK_FIELD, USER_MERGED_FIELD],
+                }
+              : column,
+          ),
+        }
+      : USERS_FRAME,
     initialFilter:
       entered === '' ? undefined : { [HILOS_USERS_LAPSED_FILTER]: entered },
   })
@@ -809,6 +851,7 @@ export function createHilosUsersTable<TUser extends User>(
 
   return {
     controller,
+    currentUserId: sessionUserId(context.scopes),
     start() {
       teardown.push(
         bindTableViewport(
@@ -932,7 +975,6 @@ export function createHilosUserDetail<TUser extends User>(
       ...resolveHilosUserRow(row, context.users),
       timeZone: timeZoneHidden ? HIDDEN_VALUE : (user?.timeZone ?? null),
       admin: user?.admin ?? false,
-      block: user?.block ?? false,
       deletionEffectiveAt,
       deletionGraceDays:
         deletionGraceDays !== null &&
@@ -1461,6 +1503,11 @@ export function createHilosUserLifecycle(
       }),
   }
 }
+
+/**
+ * Presentation copy for the users list.
+ */
+export const HILOS_USERS_LIST_COPY = { you: 'You' } as const
 
 /** Presentation copy for the user Overview, without changing lifecycle verdicts. */
 export const HILOS_USER_OVERVIEW_COPY = {

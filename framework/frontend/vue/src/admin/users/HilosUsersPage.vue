@@ -9,14 +9,16 @@ person's card since HIL-1170. The bar's "Past deadline on" filter narrows the
 list to the people past one legal document's deadline and lives in the address
 too (`/hilos/users/terms`, HIL-945): the legal section's root links its count
 there, and changing the filter rewrites the address. An account folded into
-another one wears a gray "Merged" badge beside its name (HIL-1292). The presence
-badge says one of three words (HIL-1566) and holds the room of the widest one, so
-a presence changing live neither moves the row nor spills out of its column.
+another one wears "Merged" instead of the Blocked and You badges beside its
+name; the person's id remains available below it. The presence badge says one of
+three words (HIL-1566) and holds the room of the widest one, so a presence changing
+live neither moves the row nor spills out of its column.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosUsersTable,
   HILOS_PRESENCE_WIDEST_LABEL,
+  HILOS_USERS_LIST_COPY,
   hilosPresenceBadge,
   hilosStandingBadge,
   type HilosUserRow,
@@ -29,6 +31,7 @@ import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{
   /** The project context: scope stores, connection, and the user collection. */
@@ -44,33 +47,52 @@ defineSlots<{
 // back as it changes; mounted without a navigator, the list opens whole and
 // leaves the address alone.
 const router = inject(hilosRouterKey, undefined)
-const users = createHilosUsersTable(props.context, router)
+const users = createHilosUsersTable(props.context, router, { idInName: true })
 const usersTable = users.controller
+const currentUserId = useSignal(users.currentUserId)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
 onMounted(() => users.start())
 onUnmounted(() => users.dispose())
 
-// The one badge the list draws: the merged standing, read off the row's merge
-// slot rather than off a standing the list does not carry.
+// The list reads its flags directly, without composing a card's standing.
 const mergedBadge = hilosStandingBadge('merged')
+const blockedBadge = hilosStandingBadge('blocked')
 </script>
 
 <template>
-  <HilosAdminPage :page="HilosPages.USERS">
+  <HilosAdminPage :page="HilosPages.USERS" head-kind="section">
     <HilosViewportTable :controller="usersTable">
-      <template #cell-id="{ row }">{{ row.id }}</template>
-      <template #cell-name="{ row }"
-        ><HilosHideable :value="row.name" /><span
+      <template #cell-name="{ row }">
+        <HilosHideable :value="row.name" /><span
           v-if="row.merged && mergedBadge !== null"
           class="badge ms-1"
           :class="`text-bg-${mergedBadge.tone}`"
           data-id="hilos-users-merged"
           ><i class="bi me-1" :class="mergedBadge.icon" aria-hidden="true"></i
           >{{ mergedBadge.label }}</span
-        ></template
-      >
+        >
+        <template v-if="!row.merged">
+          <span
+            v-if="row.block && blockedBadge !== null"
+            class="badge ms-1"
+            :class="`text-bg-${blockedBadge.tone}`"
+            ><i
+              class="bi me-1"
+              :class="blockedBadge.icon"
+              aria-hidden="true"
+            ></i
+            >{{ blockedBadge.label }}</span
+          >
+          <span
+            v-if="row.id === currentUserId"
+            class="badge bg-body-secondary text-body-emphasis border ms-1"
+            >{{ HILOS_USERS_LIST_COPY.you }}</span
+          >
+        </template>
+        <div class="small text-body-secondary">#{{ row.id }}</div>
+      </template>
       <template #cell-presence="{ row }">
         <span class="hilos-stack d-inline-grid">
           <span class="badge invisible" aria-hidden="true">{{

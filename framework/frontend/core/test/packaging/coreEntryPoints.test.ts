@@ -637,7 +637,7 @@ const profileRenameValues = [
 /** The original deletion duration, shared by the compatibility root and base. */
 const accountDeletionValues = ['accountDeletionGraceDays']
 /** Presentation copy shared by the user section and compatibility root. */
-const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY']
+const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY', 'HILOS_USERS_LIST_COPY']
 /** Approved Moderation section exports; keep the legacy snapshot and base graph unchanged. */
 const adminModerationValues = [
   'HILOS_MODERATION_COPY',
@@ -1574,6 +1574,7 @@ describe('core public entries', () => {
         'HilosDaemonNodeOverviewData',
         'HilosDaemonWebsocketsData',
         'HilosProfileDeviceKind',
+        'HilosUsersTableOptions',
         ...i18nOverviewTypes,
         ...pageHeadTypes,
         ...licenseDependenciesTypes,

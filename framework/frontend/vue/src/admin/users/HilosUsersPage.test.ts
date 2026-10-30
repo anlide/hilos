@@ -1,14 +1,15 @@
 // HilosUsersPage (Vue) — the framework people list over a seeded, server-windowed
-// table: a row per person, the gray "Merged" badge beside the name of an
-// account folded into another one (HIL-1292), read off the row's inline merge slot,
-// and the presence badge in its three words (HIL-1566), live and apart from the
-// mark of a source gone quiet.
+// table: the shared section identity, names and ids, Blocked and You flags with
+// Merged taking precedence, and the three presence words (HIL-1566) changing live
+// apart from the mark of a source gone quiet.
 import { type DOMWrapper, flushPromises, mount } from '@vue/test-utils'
-import { markRaw, nextTick } from 'vue'
+import { h, markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
   formatMoment,
+  HIDDEN_VALUE,
+  HilosPages,
   ScopeManager,
   createSignal,
   entityCollection,
@@ -18,29 +19,52 @@ import {
 import type {
   ActionLifecycleSource,
   Hideable,
+  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core/base'
-import type { HilosUsersContext } from '@hilos/core/admin/users'
+import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
 
 import HilosUsersPage from './HilosUsersPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { readerTimeZone } from '../../../test/helpers/readerTimeZone.js'
 
+const USERS_IDENTITY: HilosPageIdentity = {
+  label: 'Users',
+  lead: 'Application users and panel operators: presence, roles, and access.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.USERS, label: 'Users' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.USERS,
+    label: 'Users',
+    lead: 'Application users and panel operators: presence, roles, and access.',
+    icon: 'bi-people',
+  },
+  pageTabs: [{ page: HilosPages.USERS, label: 'Overview' }],
+}
+
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
-      page: '',
+      page: HilosPages.USERS,
       params: {},
-      admin: false,
+      admin: true,
     }),
-    currentPath: createSignal(''),
+    currentPath: createSignal('/hilos/users'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal(USERS_IDENTITY),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page) =>
+      page === HilosPages.DASHBOARD
+        ? '/hilos'
+        : page === HilosPages.USERS
+          ? '/hilos/users'
+          : undefined,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -58,6 +82,7 @@ interface UserSeed {
   lastActivity: number | null
   presence: string
   onlineSessionCount: number
+  block?: boolean
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
   merged?: boolean
 }
@@ -75,6 +100,7 @@ function wireRow(user: UserSeed): Record<string, unknown> {
         id: user.id,
         name: user.name,
         lastActivity: user.lastActivity,
+        block: user.block ?? false,
       },
       connections: {
         presence: user.presence,
@@ -211,11 +237,35 @@ async function mountList(
   const wrapper = mount(HilosUsersPage, {
     props: { context: markRaw(context) },
     global: { provide: { [hilosRouterKey as symbol]: router() } },
+    slots: {
+      'row-actions': ({ row }: { row: HilosUserRow }) =>
+        h('a', { href: `/hilos/user/${row.id}` }, 'Open'),
+    },
   })
   mounted.push(wrapper)
   await nextTick()
 
   return wrapper
+}
+
+/**
+ * Read a row's value by the column's semantic heading.
+ *
+ * @param wrapper The mounted list.
+ * @param id The person's id.
+ * @param heading The column's heading.
+ */
+function cell(
+  wrapper: ReturnType<typeof mount>,
+  id: number,
+  heading: string,
+): DOMWrapper<Element> {
+  const index = wrapper
+    .findAll('thead th')
+    .findIndex((column) => column.text().startsWith(heading))
+  expect(index).toBeGreaterThanOrEqual(0)
+
+  return wrapper.get(`[data-id="hilos-table-row-${id}"]`).findAll('td')[index]!
 }
 
 describe('HilosUsersPage', () => {
@@ -277,66 +327,195 @@ describe('HilosUsersPage', () => {
 
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).toContain('Bob')
-    expect(wrapper.find('.text-bg-success').text()).toBe('online')
+    expect(cell(wrapper, 1, 'Presence').text()).toContain('online')
     expect(wrapper.findAll('[data-id="hilos-users-merged"]')).toHaveLength(0)
   })
 
-  it('marks a merged account beside its name and nobody else (HIL-1292)', async () => {
+  it('names the table through its single Users heading and keeps row ids available to Open', async () => {
     const wrapper = await mountList(
       seededContext([
         {
-          id: 1,
+          id: 7,
           name: 'Alice',
           lastActivity: null,
           presence: 'offline',
           onlineSessionCount: 0,
-          merged: true,
-        },
-        {
-          id: 2,
-          name: 'Bob',
-          lastActivity: null,
-          presence: 'online',
-          onlineSessionCount: 1,
         },
       ]),
     )
+    const headings = wrapper.findAll('h1')
+    expect(headings).toHaveLength(1)
+    const heading = headings[0]!
+    expect(heading.text()).toBe('Users')
+    expect(heading.attributes('id')).toBeTruthy()
+    expect(wrapper.get('table').attributes('aria-labelledby')).toBe(
+      heading.attributes('id'),
+    )
+    const icon = wrapper.get('[data-id="hilos-page-head-block"] i')
+    expect(icon.element.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(
+      wrapper.get('nav[aria-label="Breadcrumb"] a').attributes('href'),
+    ).toBe('/hilos')
+    expect(wrapper.get('[aria-current="page"]').text()).toBe('Users')
+    expect(cell(wrapper, 7, 'Name').text()).toContain('Alice')
+    expect(cell(wrapper, 7, 'Name').text()).toContain('#7')
+    expect(
+      wrapper.get('[data-id="hilos-table-row-7"] a').attributes('href'),
+    ).toBe('/hilos/user/7')
+  })
 
-    // The table draws every row twice - the row and the card of the narrow
-    // layout - so the badge is counted by whose row it sits in, not by number.
-    const badges = wrapper.findAll('[data-id="hilos-users-merged"]')
-    expect(badges.length).toBeGreaterThan(0)
-    for (const badge of badges) {
-      expect(badge.text()).toBe('Merged')
-      expect(badge.classes()).toContain('text-bg-secondary')
-      expect(badge.find('.bi-sign-merge-left').exists()).toBe(true)
-      expect(
-        badge.element
-          .closest(
-            '[data-id^="hilos-table-row-"], [data-id^="hilos-table-card-"]',
-          )
-          ?.getAttribute('data-id'),
-      ).toMatch(/-1$/)
+  it('reads Blocked initially and changes it through row and entity updates', async () => {
+    const alice: UserSeed = {
+      id: 1,
+      name: 'Alice',
+      lastActivity: null,
+      presence: 'offline',
+      onlineSessionCount: 0,
+      block: true,
     }
+    const live = liveUsers([alice])
+    const wrapper = await mountList(live.context)
+    const name = (): DOMWrapper<Element> => cell(wrapper, 1, 'Name')
+
+    expect(name().text()).toContain('Blocked')
+    expect(name().get('i').attributes('aria-hidden')).toBe('true')
+    live.update({ ...alice, block: false })
+    await flushPromises()
+    expect(name().text()).not.toContain('Blocked')
+    live.context.scopes
+      .page()!
+      .entities.upsert({ type: USER_ENTITY_TYPE, id: 1 }, { block: true })
+    await nextTick()
+    expect(name().text()).toContain('Blocked')
+    live.update({ ...alice, block: false })
+    await flushPromises()
+    expect(name().text()).not.toContain('Blocked')
+    live.update(alice)
+    await flushPromises()
+    expect(name().text()).toContain('Blocked')
+    expect(name().text()).toContain('#1')
+  })
+
+  it.each([null, 99, 1])(
+    'follows the session person from %s through changes and sign-out',
+    async (initialId) => {
+      const context = seededContext(
+        [1, 2].map((id) => ({
+          id,
+          name: `Person ${id}`,
+          lastActivity: null,
+          presence: 'offline',
+          onlineSessionCount: 0,
+          block: id === 1,
+        })),
+      )
+      context.scopes.session.data.set(
+        'currentUser',
+        initialId === null ? null : { type: USER_ENTITY_TYPE, id: initialId },
+      )
+      const wrapper = await mountList(context)
+      const you = (id: number): boolean =>
+        cell(wrapper, id, 'Name').text().includes('You')
+
+      expect(you(1)).toBe(initialId === 1)
+      expect(you(2)).toBe(false)
+      context.scopes.session.data.set('currentUser', {
+        type: USER_ENTITY_TYPE,
+        id: 1,
+      })
+      await nextTick()
+      expect(you(1)).toBe(true)
+      expect(cell(wrapper, 1, 'Name').text()).toContain('Blocked')
+      context.scopes.session.data.set('currentUser', {
+        type: USER_ENTITY_TYPE,
+        id: 2,
+      })
+      await nextTick()
+      expect(you(1)).toBe(false)
+      expect(you(2)).toBe(true)
+      context.scopes.session.data.set('currentUser', null)
+      await nextTick()
+      expect(you(1)).toBe(false)
+      expect(you(2)).toBe(false)
+    },
+  )
+
+  it('lets Merged replace Blocked and You, including when the merge arrives live', async () => {
+    const alice: UserSeed = {
+      id: 1,
+      name: 'Alice',
+      lastActivity: null,
+      presence: 'offline',
+      onlineSessionCount: 0,
+      block: true,
+      merged: true,
+    }
+    const bob: UserSeed = { ...alice, id: 2, name: 'Bob', merged: false }
+    const live = liveUsers([alice, bob])
+    live.context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 1,
+    })
+    const wrapper = await mountList(live.context)
+    const name = (): DOMWrapper<Element> => cell(wrapper, 1, 'Name')
+    const merged = name().get('[data-id="hilos-users-merged"]')
+    expect(merged.text()).toBe('Merged')
+    expect(merged.get('i').attributes('aria-hidden')).toBe('true')
+    expect(name().text()).not.toContain('Blocked')
+    expect(name().text()).not.toContain('You')
     expect(
-      wrapper
-        .find('[data-id="hilos-table-row-1"]')
-        .find('[data-id="hilos-users-merged"]')
-        .exists(),
-    ).toBe(true)
-    expect(
-      wrapper
-        .find('[data-id="hilos-table-row-2"]')
-        .find('[data-id="hilos-users-merged"]')
-        .exists(),
+      cell(wrapper, 2, 'Name').find('[data-id="hilos-users-merged"]').exists(),
     ).toBe(false)
+
+    live.update({ ...alice, merged: false })
+    await flushPromises()
+    expect(name().find('[data-id="hilos-users-merged"]').exists()).toBe(false)
+    expect(name().text()).toContain('Blocked')
+    expect(name().text()).toContain('You')
+    live.update(alice)
+    await flushPromises()
+    expect(name().get('[data-id="hilos-users-merged"]').text()).toBe('Merged')
+    expect(name().text()).not.toContain('Blocked')
+    expect(name().text()).not.toContain('You')
+    expect(name().text()).toContain('#1')
+  })
+
+  it('keeps a hidden name hidden while the public id and flags remain readable', async () => {
+    const context = seededContext([
+      {
+        id: 1,
+        name: HIDDEN_VALUE,
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+        block: true,
+      },
+    ])
+    context.scopes.session.entities.upsert(
+      { type: USER_ENTITY_TYPE, id: 1 },
+      { name: 'Private name' },
+    )
+    context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 1,
+    })
+    const wrapper = await mountList(context)
+    const name = cell(wrapper, 1, 'Name')
+
+    expect(name.text()).toContain('Hidden')
+    expect(wrapper.text()).not.toContain('Private name')
+    expect(name.text()).toContain('#1')
+    expect(name.text()).toContain('Blocked')
+    expect(name.text()).toContain('You')
+    expect(
+      wrapper.get('[data-id="hilos-table-row-1"] a').attributes('href'),
+    ).toBe('/hilos/user/1')
   })
 })
 
 describe('HilosUsersPage presence (HIL-1566)', () => {
   /**
-   * The presence cell of a person's row: the room the twin holds, the twin, and
-   * the badge drawn over it.
+   * The person's presence word, separate from the hidden reserve text.
    *
    * @param wrapper The mounted list.
    * @param id The person's id.
@@ -344,32 +523,17 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
   function presence(
     wrapper: ReturnType<typeof mount>,
     id: number,
-  ): {
-    room: DOMWrapper<Element>
-    twin: DOMWrapper<Element>
-    badge: DOMWrapper<Element>
-  } {
-    const row = wrapper.find(`[data-id="hilos-table-row-${id}"]`)
-
-    return {
-      room: row.find('.hilos-stack.d-inline-grid'),
-      twin: row.find('.badge.invisible'),
-      badge: row.find('.badge:not(.invisible)'),
-    }
+  ): DOMWrapper<Element> {
+    return cell(wrapper, id, 'Presence')
+      .findAll('span')
+      .find(
+        (word) =>
+          word.element.childElementCount === 0 &&
+          word.element.closest('[aria-hidden="true"]') === null,
+      )!
   }
 
-  const TONES = ['text-bg-success', 'text-bg-warning', 'text-bg-secondary']
-
-  /**
-   * The one tone a badge wears.
-   *
-   * @param badge The badge.
-   */
-  function tone(badge: DOMWrapper<Element>): string[] {
-    return badge.classes().filter((name) => TONES.includes(name))
-  }
-
-  it('says every presence in words and a doubt in the warning tone, over the widest word', async () => {
+  it('says every presence in words and hides the reserve text from assistive technology', async () => {
     const wrapper = await mountList(
       seededContext([
         {
@@ -403,26 +567,23 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
       ]),
     )
 
-    const expected: Record<number, [string, string]> = {
-      1: ['online', 'text-bg-success'],
-      2: ['probably offline', 'text-bg-warning'],
-      3: ['offline', 'text-bg-secondary'],
-      4: ['offline', 'text-bg-secondary'],
+    const expected: Record<number, string> = {
+      1: 'online',
+      2: 'probably offline',
+      3: 'offline',
+      4: 'offline',
     }
-    for (const [id, [word, color]] of Object.entries(expected)) {
-      const { room, twin, badge } = presence(wrapper, Number(id))
-      expect(badge.text()).toBe(word)
-      expect(tone(badge)).toEqual([color])
+    for (const [id, word] of Object.entries(expected)) {
+      expect(presence(wrapper, Number(id)).text()).toBe(word)
+      const twin = cell(wrapper, Number(id), 'Presence').get(
+        '[aria-hidden="true"]',
+      )
       expect(twin.text()).toBe('probably offline')
       expect(twin.attributes('aria-hidden')).toBe('true')
-      expect(tone(twin)).toEqual([])
-      expect(room.findAll('.badge')).toHaveLength(2)
     }
     expect(wrapper.text()).not.toContain('probably_offline')
     // The doubted connections are still registered, so the count keeps them.
-    expect(
-      wrapper.find('[data-id="hilos-table-row-2"]').findAll('td')[3]?.text(),
-    ).toBe('2')
+    expect(cell(wrapper, 2, 'Sessions').text()).toBe('2')
     expect(wrapper.text()).toContain('Oct 21, 2026, 11:00:00 AM')
   })
 
@@ -443,44 +604,35 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     const stale = (): boolean =>
       wrapper.find('[data-id="hilos-table-stale-row-1"]').exists()
 
-    expect(presence(wrapper, 1).badge.text()).toBe('online')
+    expect(presence(wrapper, 1).text()).toBe('online')
 
     // Every connection stopped answering: in doubt, still counted, nothing quiet.
     live.update({ ...alice, presence: 'probably_offline' })
     await settle()
-    expect(presence(wrapper, 1).badge.text()).toBe('probably offline')
-    expect(tone(presence(wrapper, 1).badge)).toEqual(['text-bg-warning'])
-    expect(presence(wrapper, 1).twin.text()).toBe('probably offline')
+    expect(presence(wrapper, 1).text()).toBe('probably offline')
     expect(stale()).toBe(false)
-    expect(
-      wrapper.find('[data-id="hilos-table-row-1"]').findAll('td')[3]?.text(),
-    ).toBe('1')
+    expect(cell(wrapper, 1, 'Sessions').text()).toBe('1')
 
     // The source going quiet marks the row and leaves the word alone.
     live.stale(1, ['connections'])
     await settle()
     expect(stale()).toBe(true)
-    expect(presence(wrapper, 1).badge.text()).toBe('probably offline')
+    expect(presence(wrapper, 1).text()).toBe('probably offline')
 
     live.stale(1, [])
     await settle()
     expect(stale()).toBe(false)
-    expect(presence(wrapper, 1).badge.text()).toBe('probably offline')
+    expect(presence(wrapper, 1).text()).toBe('probably offline')
 
     // A connection answered again, then the last one closed.
     live.update({ ...alice, presence: 'online', onlineSessionCount: 2 })
     await settle()
-    expect(presence(wrapper, 1).badge.text()).toBe('online')
-    expect(tone(presence(wrapper, 1).badge)).toEqual(['text-bg-success'])
-    expect(
-      wrapper.find('[data-id="hilos-table-row-1"]').findAll('td')[3]?.text(),
-    ).toBe('2')
+    expect(presence(wrapper, 1).text()).toBe('online')
+    expect(cell(wrapper, 1, 'Sessions').text()).toBe('2')
 
     live.update({ ...alice, presence: 'offline', onlineSessionCount: 0 })
     await settle()
-    expect(presence(wrapper, 1).badge.text()).toBe('offline')
-    expect(tone(presence(wrapper, 1).badge)).toEqual(['text-bg-secondary'])
-    expect(presence(wrapper, 1).twin.text()).toBe('probably offline')
+    expect(presence(wrapper, 1).text()).toBe('offline')
     expect(wrapper.text()).toContain('Oct 21, 2026, 10:00:00 AM')
   })
 })
