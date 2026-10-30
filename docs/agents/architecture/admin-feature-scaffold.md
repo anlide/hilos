@@ -657,10 +657,36 @@ supplies the `browserSession` table preset. It also registers a thin
 `userId` supplies the `user` table preset. On its frontend the demo mounts its
 own view layer's SDK views — `HilosAnalyticsBrowserSessionPage` and
 `HilosAnalyticsPersonPage` in Vue, React or Angular — through thin wrappers that
-pass the project's connection and scopes; the overview comes from the layer's
-default admin views. The admin user card links to the person page by itself
-once the feature is on and the person page is in `PAGES`; the project binds
-nothing for the link.
+pass the project's connection and scopes. The Analytics Overview is
+context-dependent too, so a project mounts it through its own thin wrapper
+rather than the context-free default admin view map; Tasks and ecommerce-shop
+do this for React. The admin user card links to the person page by itself once
+the feature is on and the person page is in `PAGES`; the project binds nothing
+for the link.
+
+The People page is an optional extension; `HilosFeature::ANALYTICS` does not
+require its page or table. A project that opts in registers a thin `PeoplePage`
+declared `final` and extending `AbstractHilosAnalyticsPeoplePage`, with only
+its existing Analytics agent as
+`SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_ANALYTICS`, in `PAGES`.
+Add the framework `HilosAnalyticsPeopleTable` to the project's `TableContext`
+with `@property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople` and
+`public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE`,
+and to `TABLES`; bind that table only to `PeoplePage::PAGE` in `PAGE_TABLES`.
+The base page supplies its existing empty route params, admin guard and
+subscription; no custom subscribe handler, query, table subclass or new URL is
+needed. Its address remains
+`/hilos/analytics/people`.
+
+The React SDK exports `HilosAnalyticsPeoplePage` and
+`HilosAnalyticsPeoplePageProps` from `@hilos/react/admin/analytics`; its
+props require `{ context: HilosAnalyticsContext }`, supplied by a thin project
+wrapper. Mount it under the literal `HilosPages.ANALYTICS_PEOPLE` lazy page
+entry. Tasks and ecommerce-shop are the current examples of this optional
+activation. The React Overview and People pages both receive that context
+explicitly and stay outside the default admin view map. People is not bound to
+Overview or Person, and projects without this opt-in continue to use the rest
+of Analytics independently.
 For its data and privacy boundaries, read
 [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 

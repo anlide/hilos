@@ -31,7 +31,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.STATUS_WORKS]: ['react', 'angular'],
   [HilosPages.STATUS_HISTORY]: ['react', 'angular'],
   [HilosPages.PUBLIC_STATUS]: ['react', 'angular'],
-  [HilosPages.ANALYTICS_PEOPLE]: ['react', 'angular'],
+  [HilosPages.ANALYTICS_PEOPLE]: ['angular'],
   [HilosPages.ANALYTICS_BROWSER_SESSIONS]: ['react', 'angular'],
   [HilosPages.GUARDIAN]: ['vue', 'react', 'angular'],
   [HilosPages.GUARDIAN_AGENT]: ['vue', 'react', 'angular'],

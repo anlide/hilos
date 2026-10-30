@@ -442,10 +442,22 @@ export async function expectAnalyticsSectionHead(
     if (active) await expect(link).toHaveAttribute('aria-current', 'page')
     else await expect(link).not.toHaveAttribute('aria-current')
   }
-  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
-    'Hilos',
-    'Analytics',
-  ])
+  // React draws decorative, aria-hidden separators inside the breadcrumb items.
+  await expect
+    .poll(() =>
+      page
+        .getByTestId('hilos-breadcrumb')
+        .locator('li')
+        .evaluateAll((items) =>
+          items.map((item) => {
+            const words = item.cloneNode(true) as Element
+            for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+              hidden.remove()
+            return words.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+          }),
+        ),
+    )
+    .toEqual(['Hilos', 'Analytics'])
 }
 
 /** A real signed-in person's period count and moment agree with the served row. */
@@ -606,8 +618,9 @@ export async function expectAnalyticsPeopleAccessibility(
   expect: Expect,
   page: Page,
   direction: 'ascending' | 'descending',
+  kit: 'vue' | 'react' = 'vue',
 ): Promise<void> {
-  await expectAnalyticsSectionHead(expect, page, 'people')
+  await expectAnalyticsSectionHead(expect, page, 'people', kit)
   const table = page
     .getByTestId(PEOPLE_HANDLE)
     .getByRole('table', { name: 'Analytics', exact: true })
@@ -643,12 +656,26 @@ export async function expectAnalyticsPersonNavigation(
   await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByRole('tablist')).toHaveCount(0)
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
-    'Hilos',
-    'Analytics',
-    'People',
-    `${person.name} (#${person.userId})`,
-  ])
+  await expect
+    .poll(() =>
+      page
+        .getByTestId('hilos-breadcrumb')
+        .locator('li')
+        .evaluateAll((items) =>
+          items.map((item) => {
+            const words = item.cloneNode(true) as Element
+            for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+              hidden.remove()
+            return words.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+          }),
+        ),
+    )
+    .toEqual([
+      'Hilos',
+      'Analytics',
+      'People',
+      `${person.name} (#${person.userId})`,
+    ])
   await expect(
     page.getByTestId('hilos-breadcrumb-hilos_analytics_people'),
   ).toHaveAttribute('href', '/hilos/analytics/people')
@@ -850,12 +877,12 @@ export async function expectAnalyticsDashboardCard(
  *
  * @param expect The spec's expect.
  * @param page The page showing the ready overview.
- * @param kit Vue has list navigation and count links; React and Angular do not.
+ * @param kit Vue has both lists and count links; React has People navigation.
  */
 export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
-  kit: 'legacy' | 'vue' = 'legacy',
+  kit: 'legacy' | 'vue' | 'react' = 'legacy',
 ): Promise<void> {
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
@@ -863,8 +890,8 @@ export async function expectAnalyticsOverview(
   await expect(heading).toBeVisible()
   const tiles = page.getByTestId('hilos-analytics-overview-tiles')
   await expect(tiles).toBeVisible()
-  if (kit === 'vue') {
-    await expectAnalyticsSectionHead(expect, page, 'overview')
+  if (kit !== 'legacy') {
+    await expectAnalyticsSectionHead(expect, page, 'overview', kit)
   } else {
     const crumbs = page.getByTestId('hilos-breadcrumb')
     await expect(

@@ -20,16 +20,24 @@ import {
   createHilosAnalyticsBrowserSessionsTable,
   formatAnalyticsSessionNumber,
   formatAnalyticsTime,
+  hilosAnalyticsPerson,
   readAnalyticsRouteId,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosTimeZone,
+  isHiddenValue,
+} from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosAvatar } from '../../HilosAvatar.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { usePageInstanceName } from '../../usePageInstanceName.js'
 import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosAnalyticsPersonPage}. */
@@ -53,6 +61,51 @@ export function HilosAnalyticsPersonPage({
       'HilosAnalyticsPersonPage requires a provided Hilos router.',
     )
   }
+
+  const pageLabel = useMemo(
+    () => context.scopes.pageDataSignal('pageLabel'),
+    [context.scopes],
+  )
+  const permittedName = useMemo(
+    () =>
+      computedSignal(() => {
+        if (context.scopes.page()?.key !== HilosPages.ANALYTICS_PERSON) {
+          return undefined
+        }
+        const label = pageLabel.get()
+        return typeof label === 'string' ? label : undefined
+      }),
+    [context.scopes, pageLabel],
+  )
+  usePageInstanceName(
+    context.scopes,
+    HilosPages.ANALYTICS_PERSON,
+    permittedName,
+  )
+
+  const person = useMemo(
+    () => hilosAnalyticsPerson(context.scopes),
+    [context.scopes],
+  )
+  const currentPerson = useSignal(person)
+  const identity = useSignal(router.pageIdentity)
+  const missingName =
+    currentPerson === undefined ||
+    currentPerson.name === null ||
+    isHiddenValue(currentPerson.name)
+  const avatarName =
+    currentPerson === undefined ||
+    currentPerson.name === null ||
+    isHiddenValue(currentPerson.name)
+      ? ''
+      : currentPerson.name
+  const avatarPhoto =
+    currentPerson === undefined ||
+    currentPerson.name === null ||
+    isHiddenValue(currentPerson.name) ||
+    isHiddenValue(currentPerson.photo)
+      ? null
+      : currentPerson.photo
 
   const route = useSignal(router.currentRoute)
   useSignal(hilosTimeZone)
@@ -83,7 +136,31 @@ export function HilosAnalyticsPersonPage({
   }, [sessions])
 
   return (
-    <HilosAdminPage page={HilosPages.ANALYTICS_PERSON}>
+    <HilosAdminPage
+      page={HilosPages.ANALYTICS_PERSON}
+      headKind="entity"
+      headVisual={
+        <span data-id="analytics-person-head-avatar" aria-hidden="true">
+          <HilosAvatar
+            name={avatarName}
+            photo={avatarPhoto}
+            icon={missingName ? 'bi-person' : null}
+            size="md"
+          />
+        </span>
+      }
+      headDescription={
+        <p
+          className="text-body-secondary mb-0"
+          data-id="analytics-person-head-description"
+        >
+          {identity?.pageHeadOwner?.lead}
+        </p>
+      }
+      headSkeletonVisual={
+        <span className="hilos-avatar-md rounded-circle bg-secondary-subtle flex-shrink-0" />
+      }
+    >
       {sessions !== null ? (
         <HilosViewportTable
           key={userId}

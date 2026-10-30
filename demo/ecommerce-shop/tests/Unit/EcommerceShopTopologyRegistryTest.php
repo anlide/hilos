@@ -22,6 +22,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\EcommerceShop\Pages\Hilos\Analytics\PeoplePage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
@@ -170,6 +171,7 @@ use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
@@ -542,6 +544,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionPage::PAGE => BrowserSessionPage::class,
+            PeoplePage::PAGE => PeoplePage::class,
             PersonPage::PAGE => PersonPage::class,
             BackupPage::PAGE => BackupPage::class,
             ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
@@ -1700,6 +1703,27 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([EcommerceShopTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The People list uses its existing Analytics owner, signal and framework table. */
+    public function testAnalyticsPeoplePageIsWired(): void
+    {
+        self::assertSame(PeoplePage::class, Hilos::PAGES[PeoplePage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, PeoplePage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PeoplePage::PAGE]);
+        self::assertSame(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_PEOPLE,
+            PeoplePage::BROWSER[BrowserConfigKey::SIGNAL],
+        );
+        self::assertSame(HilosAnalyticsPeopleTable::TABLE, EcommerceShopTableContext::hilosAnalyticsPeople);
+        self::assertSame(
+            HilosAnalyticsPeopleTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosAnalyticsPeople],
+        );
+        self::assertSame(
+            [EcommerceShopTableContext::hilosAnalyticsPeople => []],
+            Hilos::PAGE_TABLES[PeoplePage::PAGE],
+        );
     }
 
     /** The person's sessions page uses the Analytics owner and its existing sessions table. */

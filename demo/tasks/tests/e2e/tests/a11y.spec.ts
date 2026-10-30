@@ -7,7 +7,11 @@ import {
   openSignIn,
   PASSWORD,
   createTestUser,
+  analyticsPersonLink,
   expectAnalyticsOverview,
+  expectAnalyticsPeopleAccessibility,
+  expectAnalyticsPeopleWindow,
+  expectAnalyticsPersonNavigation,
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
@@ -28,11 +32,18 @@ import {
   expectPageReady,
   gotoPage,
   grantAdminToSelf,
+  login,
+  uniqueEmail,
+  waitAnalyticsBrowserSession,
+  watchDeliveryFrames,
   watchProfileRenameStatus,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
+import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -472,7 +483,7 @@ test('Analytics overview exposes one heading, breadcrumb landmark and semantic v
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/analytics')
   await expectPageReady(expect, page)
-  await expectAnalyticsOverview(expect, page)
+  await expectAnalyticsOverview(expect, page, 'react')
 
   const head = page.getByTestId('hilos-page-head')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
@@ -518,6 +529,119 @@ test('Analytics overview exposes one heading, breadcrumb landmark and semantic v
     const count = tiles.getByTestId(`hilos-analytics-visitors-${period}-count`)
     await expect(count.getByRole('link')).toHaveCount(0)
     await expect(count.getByRole('button')).toHaveCount(0)
+  }
+})
+
+test('Analytics People and Person name their tables and support keyboard navigation and sorting', async ({
+  page,
+}) => {
+  // A real sign-in and journal-writer wait precede the keyboard journey.
+  test.slow()
+  const user = await seedTestUser({ email: uniqueEmail() })
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page)
+  await login(expect, page, user.email, PASSWORD)
+  await grantAdminToSelf(expect, page)
+  await waitAnalyticsBrowserSession(
+    expect,
+    createStandCommandChannel({ timeoutMs: 5_000 }),
+    user.userId,
+    AUTH_ACTION_LOGIN,
+  )
+  const frames = watchDeliveryFrames(page)
+  try {
+    await gotoPage(expect, page, '/hilos/analytics')
+    await expectAnalyticsOverview(expect, page, 'react')
+    const people = page.getByTestId('hilos-page-tab-hilos_analytics_people')
+    await people.focus()
+    await expect(people).toBeFocused()
+    await people.press('Enter')
+    await expect(page).toHaveURL('/hilos/analytics/people')
+    await expectPageReady(expect, page)
+    const today = await expectAnalyticsPeopleWindow(
+      expect,
+      page,
+      frames,
+      'today',
+    )
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await expectAnalyticsPeopleAccessibility(
+      expect,
+      page,
+      'descending',
+      'react',
+    )
+    const sorting = frames.sent.length
+    const sort = page
+      .getByTestId('hilos-analytics-people-table')
+      .getByTestId('hilos-table-sort-lastSeenTs')
+    await sort.focus()
+    await expect(sort).toBeFocused()
+    await sort.press('Enter')
+    const ascending = await expectAnalyticsPeopleWindow(
+      expect,
+      page,
+      frames,
+      'today',
+      sorting,
+    )
+    expect(ascending.request.sort).toEqual([
+      { field: 'lastSeenTs', direction: 'asc' },
+    ])
+    expect(ascending.request.filter).toEqual(today.request.filter)
+    await expectAnalyticsPeopleAccessibility(expect, page, 'ascending', 'react')
+    await expect(sort).toBeFocused()
+
+    const person = analyticsPersonLink(page, user.userId)
+    await person.focus()
+    await expect(person).toBeFocused()
+    await person.press('Enter')
+    await expect(page).toHaveURL(`/hilos/analytics/people/${user.userId}`)
+    await expectPageReady(expect, page)
+    await expectAnalyticsPersonNavigation(expect, page, frames, user)
+    const heading = page.getByRole('heading', { level: 1 })
+    const label = `${user.name} (#${user.userId})`
+    const table = page
+      .getByTestId('hilos-analytics-browser-sessions-table')
+      .getByRole('table', { name: label, exact: true })
+    await expect(table).toBeVisible()
+    await expect(table).toHaveAttribute(
+      'aria-labelledby',
+      (await heading.getAttribute('id'))!,
+    )
+    const head = page.getByTestId('hilos-page-head')
+    const avatar = head.getByTestId('analytics-person-head-avatar')
+    await expect(avatar).toHaveAttribute('aria-hidden', 'true')
+    await expect(avatar.locator('img:not([alt=""])')).toHaveCount(0)
+    await expect(head.getByRole('img')).toHaveCount(0)
+    const breadcrumb = head.getByTestId('hilos-breadcrumb')
+    await expect(breadcrumb).toHaveRole('navigation')
+    await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
+    const current = breadcrumb.locator('[aria-current="page"]')
+    await expect(current).toHaveCount(1)
+    await expect
+      .poll(() =>
+        current.evaluate((crumb) => {
+          const words = crumb.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+        }),
+      )
+      .toBe(label)
+    await expect(current.getByRole('link')).toHaveCount(0)
+    await expect(head.getByTestId('hilos-page-tabs')).toHaveCount(0)
+    await expect(page.getByRole('tablist')).toHaveCount(0)
+  } finally {
+    await test.info().attach('analytics-people-accessibility', {
+      body: JSON.stringify(
+        { sent: frames.sent, packets: frames.packets },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    frames.stop()
   }
 })
 

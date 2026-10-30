@@ -463,7 +463,11 @@ describe('HilosAdminPage with the shared head', () => {
     }
     const { container } = render(
       <HilosRouterContext.Provider value={navigator}>
-        <HilosAdminPage page={HilosPages.I18N} headKind="entity" />
+        <HilosAdminPage
+          page={HilosPages.I18N}
+          headKind="entity"
+          headSkeletonVisual={<span data-id="probe-skeleton-visual" />}
+        />
       </HilosRouterContext.Provider>,
     )
 
@@ -471,17 +475,13 @@ describe('HilosAdminPage with the shared head', () => {
       container.querySelector('[data-id="hilos-page-head-skeleton"]'),
     ).not.toBeNull()
     expect(
+      container.querySelector('[data-id="probe-skeleton-visual"]'),
+    ).not.toBeNull()
+    expect(
       container.querySelector('[data-id="hilos-admin-title-skeleton"]'),
     ).toBeNull()
     expect(container.querySelector('h1')).toBeNull()
     expect(container.querySelector('[data-id="hilos-admin-empty"]')).toBeNull()
-    // The kind shapes the skeleton's tile: an entity block, not a section circle.
-    expect(
-      container.querySelector(
-        '[data-id="hilos-page-head-skeleton"] .rounded-3',
-      ),
-    ).not.toBeNull()
-
     act(() => {
       identity.set(OWNER_IDENTITY)
     })
@@ -490,6 +490,9 @@ describe('HilosAdminPage with the shared head', () => {
     ).toBe('Internationalization')
     expect(
       container.querySelector('[data-id="hilos-page-head-skeleton"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="probe-skeleton-visual"]'),
     ).toBeNull()
 
     // The kind never opts the page in: an answer without an owner is legacy.

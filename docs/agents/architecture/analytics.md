@@ -436,8 +436,10 @@ layer that has built the section, which all three layers have.
   Analytics agent: its page payload is empty, and one `page_response` carries
   the catalog, shared Analytics head and table. The Vue bindings expose the
   `Overview`, `Browser sessions` and `People` tabs in Chat and Binance, with
-  People active on this page; React and Angular People views remain in
-  HIL-1739/1740, and the table is not required by every Analytics activation.
+  People active on this page. Tasks and ecommerce-shop mount the React Overview
+  and People pages, whose row contains those two tabs; Angular People remains
+  with HIL-1740. People is optional and its table is not required by every
+  Analytics activation.
   The accessible table/list name is `Analytics`, supplied by the section's one
   heading.
 - People groups rows from `hilos_analytics_browser_session` where
@@ -458,8 +460,8 @@ layer that has built the section, which all three layers have.
 - A People row keeps its numeric user id only in the envelope `rowKey`; the
   inline `person` slot contains `name`, `sessionCount` and `lastSeenTs`. Names
   come from the mounted `Hilos::$db->users` collection for rows in the window;
-  an absent account is shown as `Deleted user #<id>`. The current Vue list links
-  the public number to the registered Person page. The standard total and
+  an absent account is shown as `Deleted user #<id>`. The Vue and React lists
+  link the public number to the registered Person page. The standard total and
   Period facets remain available as aggregate counts capped at 500 with an
   exactness flag. In admin view mode all three row values are Hidden while the
   public number remains; the table does not declare them `notPersonal()`, and a
@@ -482,15 +484,18 @@ layer that has built the section, which all three layers have.
   `userPhotos.fileId`. A viewer gets Hidden for both fields, even when no photo
   is published. A user or photo source failure remains a page failure; this
   adds no request or live fan-out.
-  In Chat and Binance, Vue opts this page into the entity head and uses the
-  permitted `pageLabel` for its name, with `name` and `photo` for the avatar.
-  The avatar shows initials/name and the published photo, falls back to
-  initials when the image fails, and shows `bi-person` for a deleted or hidden
-  name; a hidden photo is not used as an image source. A live empty name remains
-  distinct from a deleted person and may have a published photo. Its description
-  is the current catalog lead about browser sessions, not visit-based copy.
-  React and Angular retain their legacy Person presentation for their own
-  adoption leaves. The heading and the table remain a snapshot of the
+  Chat and Binance opt the Vue page into the entity head; Tasks and
+  ecommerce-shop do the same for React. Both use the permitted `pageLabel` for
+  the owner name and breadcrumb, with `name` and `photo` from the same
+  `page_response` snapshot for the avatar. The avatar shows initials/name and
+  the published photo, falls back to initials when the image fails, and shows
+  `bi-person` for a deleted or hidden name; a hidden photo is not used as an
+  image source. A live empty name remains distinct from a deleted person and
+  may have a published photo. The React page supplies a blank circular picture
+  through `headSkeletonVisual` while the answer is pending. The description is
+  the current catalog lead about browser sessions, not visit-based copy; name
+  and photo do not receive live updates. Angular retains its legacy Person
+  presentation until HIL-1740. The heading and the table remain a snapshot of the
   subscription, without live updates. It remains an all-time page and does not
   inherit the People period. In the shared head it is a child of People; direct
   opens and list links resolve `Hilos › Analytics › People › Name (#N)` with
@@ -536,9 +541,10 @@ layer that has built the section, which all three layers have.
   options. These reads do not promise a repeatable snapshot. The existing
   FILTER_USER detail table and person-page behavior are unchanged.
 - In Chat and Binance, Vue currently renders the Browser sessions page and its
-  Overview, Browser sessions and People tabs. React and Angular have not yet
-  built this list (HIL-1743 and HIL-1744); the existing browser-session detail
-  child route remains available through `STAGED_CHILDREN`. This list adds no
+  Overview, Browser sessions and People tabs. React renders Overview and
+  People, but its Browser sessions list remains with HIL-1743; Angular's list
+  remains with HIL-1744. The existing browser-session detail child route remains
+  available through `STAGED_CHILDREN`. This list adds no
   separate Analytics feature requirement. The session catalog entry remains a
   child of Browser sessions, so that ancestor is present whether the detail is
   opened from the list, from Person, or directly (the list, period and parent
@@ -600,8 +606,9 @@ These tables have no search, mutations or live source-change frames. The
 frontend core supplies their controllers, column declarations, row readers and
 local-time labels. In all three view layers the browser-session page opens the
 actions table with its route's session number as the preset, and the person
-page opens the browser-sessions table with its route's `userId` as the preset;
-the People and Browser sessions tables are currently rendered in Vue.
+page opens the browser-sessions table with its route's `userId` as the preset.
+The People table is rendered in Vue and React; the Browser sessions list remains
+Vue-only.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a
@@ -614,17 +621,21 @@ polls; its shared checks live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422). The shared `expectAnalyticsBrowserSessionHead(expect, page,
 label)` checks one `h1` with the exact label, the circular icon and owner lead,
 the breadcrumb, no tab row or legacy title/child cards, and the real actions
-  table's accessible name from that `h1`. Chat's
+table's accessible name from that `h1`. Chat's
 `demo/chat/tests/e2e/tests/analytics-browser-session.spec.ts` checks user and
 administrator sessions and reloads the current address; its
 `demo/chat/tests/e2e/tests/analytics.spec.ts` checks the viewer's list-to-session
 path, generic head and `Hidden` values. The existing
 `expectAnalyticsSessionReturn` and `expectAnalyticsSessionHeader` keep their
 `locator.or` legacy/shared title lookup and `toHaveCount(1)` assertion for the
-  older React and Angular carriers. The mirrored order, privacy and body/frame
-  assertions remain unchanged. Chat also has a People flow in
-`demo/chat/tests/e2e/tests/analytics.spec.ts`; People navigation and table
-accessibility checks are not implied for the other demos.
+older React and Angular carriers. The mirrored order, privacy and body/frame
+assertions remain unchanged. Chat also has a People flow in
+`demo/chat/tests/e2e/tests/analytics.spec.ts`. Tasks carries the React
+People-to-Person and Period flows in `demo/tasks/tests/e2e/tests/analytics.spec.ts`,
+keeps the User-to-Person-to-session regression in
+`demo/tasks/tests/e2e/tests/analytics-browser-session.spec.ts`, and checks the
+assembled People/Person outlet in `demo/tasks/tests/e2e/tests/a11y.spec.ts`.
+These People navigation and accessibility checks are not implied for other demos.
 Every action of the registered person's session stands on `main`, checked by
 `expectAnalyticsActionsOnPage`.
 

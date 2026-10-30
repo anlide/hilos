@@ -2,7 +2,7 @@
 // the person's browser sessions with links to each session, the Hidden view,
 // the table states, and one controller per person in the address.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   createSignal,
   formatAnalyticsTime,
@@ -103,6 +103,8 @@ function harness(
 
   return {
     view,
+    router,
+    scopes,
     registered,
     listeners,
     sendTableViewport,
@@ -127,6 +129,34 @@ function harness(
         data.set('pageBreadcrumb', [
           { page: HilosPages.ANALYTICS, label: 'Analytics' },
         ])
+      })
+    },
+    sharedIdentity(
+      label = 'Ada (#7)',
+      name: unknown = 'Ada',
+      photo: unknown = null,
+      lead = LEAD,
+    ) {
+      act(() => {
+        const data = scopes.page()!.data
+        data.set('pageLabel', label)
+        data.set('name', name)
+        data.set('photo', photo)
+        data.set('pageLead', lead)
+        data.set('pageHeadOwner', {
+          page: PAGE,
+          label: 'Person',
+          lead,
+          icon: null,
+        })
+        data.set('pageBreadcrumb', [
+          { page: HilosPages.DASHBOARD, label: 'Hilos' },
+          { page: HilosPages.ANALYTICS, label: 'Analytics' },
+          { page: HilosPages.ANALYTICS_PEOPLE, label: 'People' },
+          { page: PAGE, label: 'Person' },
+        ])
+        data.set('pageTabs', [{ page: PAGE, label: 'Overview' }])
+        data.set('pageChildren', [])
       })
     },
     coldWindow() {
@@ -213,7 +243,7 @@ describe('HilosAnalyticsPersonPage', () => {
 
   it('draws the shared identity, the person preset and real cells with session links', () => {
     const h = harness()
-    h.identity()
+    h.sharedIdentity()
     h.coldWindow()
     expect(h.sendTableViewport).toHaveBeenCalledWith(
       PAGE,
@@ -232,6 +262,41 @@ describe('HilosAnalyticsPersonPage', () => {
     expect(h.view.container.querySelectorAll('h1')).toHaveLength(1)
     expect(find(h.view, 'h1')?.textContent?.trim()).toBe('Ada (#7)')
     expect(h.view.container.textContent).toContain(LEAD)
+    expect(find(h.view, '[data-id="hilos-page-head"]')).not.toBeNull()
+    expect(find(h.view, '[data-id="hilos-admin-title"]')).toBeNull()
+    expect(
+      [
+        ...h.view.container.querySelectorAll('[data-id="hilos-breadcrumb"] li'),
+      ].map((crumb) =>
+        (crumb.querySelector('a')?.textContent ?? crumb.lastChild?.textContent)
+          ?.trim()
+          .replace(/^\//, ''),
+      ),
+    ).toEqual(['Hilos', 'Analytics', 'People', 'Ada (#7)'])
+    expect(
+      find(h.view, '[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        ?.lastChild?.textContent,
+    ).toBe('Ada (#7)')
+    expect(h.router.pageIdentity.get()?.pageHeadOwner).toEqual({
+      page: PAGE,
+      label: 'Ada (#7)',
+      lead: LEAD,
+      icon: null,
+    })
+    expect(
+      find(h.view, '[data-id="analytics-person-head-avatar"]')?.textContent,
+    ).toBe('A')
+    expect(
+      find(h.view, '[data-id="analytics-person-head-avatar"]')?.getAttribute(
+        'aria-hidden',
+      ),
+    ).toBe('true')
+    expect(
+      find(h.view, '[data-id="analytics-person-head-description"]')
+        ?.textContent,
+    ).toBe(LEAD)
+    expect(find(h.view, '[data-id="hilos-page-tabs"]')).toBeNull()
+    expect(find(h.view, '[data-id="hilos-admin-children"]')).toBeNull()
     expect(h.view.container.querySelectorAll('h2')).toHaveLength(0)
     expect(table(h.view).getAttribute('aria-labelledby')).toBe(
       find(h.view, 'h1')?.getAttribute('id'),
@@ -281,10 +346,151 @@ describe('HilosAnalyticsPersonPage', () => {
     ])
   })
 
+  it('draws only the blank head skeleton until the page answer arrives', () => {
+    const h = harness()
+    const skeleton = find(h.view, '[data-id="hilos-page-head-skeleton"]')
+
+    expect(skeleton?.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      skeleton?.querySelector('[data-id="analytics-person-head-avatar"]'),
+    ).toBeNull()
+    expect(find(h.view, 'h1')).toBeNull()
+    expect(find(h.view, '[data-id="hilos-breadcrumb"]')).toBeNull()
+    expect(find(h.view, '[data-id="hilos-page-tabs"]')).toBeNull()
+    expect(
+      find(h.view, '[data-id="analytics-person-head-description"]'),
+    ).toBeNull()
+    expect(h.view.container.querySelector('img')).toBeNull()
+    expect(h.view.container.textContent).not.toContain('Ada')
+
+    h.sharedIdentity('Ada (#7)', 'Ada Lovelace', '/ada-avatar')
+
+    expect(find(h.view, 'h1')?.textContent).toBe('Ada (#7)')
+    expect(find(h.view, '[data-id="hilos-page-head-skeleton"]')).toBeNull()
+    expect(
+      find(
+        h.view,
+        '[data-id="analytics-person-head-avatar"] img',
+      )?.getAttribute('src'),
+    ).toBe('/ada-avatar')
+  })
+
+  it('uses the target name, published photo and built-in image-error fallback', () => {
+    const h = harness()
+    h.sharedIdentity('Ada Lovelace (#7)', 'Ada Lovelace', '/first-avatar')
+
+    const avatar = find(h.view, '[data-id="analytics-person-head-avatar"]')
+    const photo = avatar?.querySelector('img')
+    expect(find(h.view, 'h1')?.textContent).toBe('Ada Lovelace (#7)')
+    expect(photo?.getAttribute('src')).toBe('/first-avatar')
+    expect(photo?.getAttribute('alt')).toBe('')
+    expect(avatar?.getAttribute('aria-hidden')).toBe('true')
+
+    if (photo === null || photo === undefined) {
+      throw new Error('The published person photo is rendered.')
+    }
+    fireEvent.error(photo)
+    expect(avatar?.querySelector('img')).toBeNull()
+    expect(avatar?.textContent).toBe('AL')
+
+    h.sharedIdentity('Grace Hopper (#7)', 'Grace Hopper', '/second-avatar')
+    expect(avatar?.querySelector('img')?.getAttribute('src')).toBe(
+      '/second-avatar',
+    )
+    h.sharedIdentity('Grace Hopper (#7)', 'Grace Hopper')
+    expect(avatar?.querySelector('img')).toBeNull()
+    expect(avatar?.textContent).toBe('GH')
+    expect(avatar?.hasAttribute('title')).toBe(false)
+    expect(avatar?.hasAttribute('aria-label')).toBe(false)
+  })
+
+  it('preserves a live empty name and hides null or hidden identity data', () => {
+    const h = harness()
+    h.sharedIdentity('(#7)', '', '/empty-name-avatar')
+    const avatar = find(h.view, '[data-id="analytics-person-head-avatar"]')
+
+    expect(find(h.view, 'h1')?.textContent).toBe('(#7)')
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('(#7)')
+    expect(avatar?.querySelector('img')?.getAttribute('src')).toBe(
+      '/empty-name-avatar',
+    )
+
+    h.sharedIdentity('', '', '/empty-name-avatar')
+    expect(find(h.view, 'h1')?.textContent).toBe('')
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('')
+
+    h.sharedIdentity('(#7)', '', null)
+    expect(avatar?.querySelector('img')).toBeNull()
+
+    h.sharedIdentity('Ada (#7)', 'Ada', { _hidden: true })
+    expect(avatar?.querySelector('img')).toBeNull()
+    expect(avatar?.textContent).toBe('A')
+
+    for (const name of [null, { _hidden: true }]) {
+      h.sharedIdentity('Person', name, '/unpermitted-avatar')
+      expect(avatar?.textContent).toBe('')
+      expect(
+        avatar?.querySelector('[data-id="hilos-avatar-icon"]'),
+      ).not.toBeNull()
+      expect(h.view.container.innerHTML).not.toContain('/unpermitted-avatar')
+      expect(h.view.container.innerHTML).not.toContain('_hidden')
+    }
+  })
+
+  it('reads the current owner lead from the catalog identity', () => {
+    const h = harness()
+    h.sharedIdentity('Ada (#7)', 'Ada', null, 'Project catalog description')
+    const description = find(
+      h.view,
+      '[data-id="analytics-person-head-description"]',
+    )
+
+    expect(description?.tagName).toBe('P')
+    expect(description?.textContent).toBe('Project catalog description')
+    h.sharedIdentity('Ada (#7)', 'Ada', null, 'Updated catalog description')
+    expect(
+      find(h.view, '[data-id="analytics-person-head-description"]')
+        ?.textContent,
+    ).toBe('Updated catalog description')
+    expect(h.view.container.textContent).not.toContain(LEAD)
+    expect(h.view.container.querySelectorAll('h1')).toHaveLength(1)
+  })
+
+  it('uses only the active Person scope and releases its name binding on unmount', () => {
+    const h = harness()
+    h.sharedIdentity()
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Ada (#7)')
+
+    const outsidePerson = h.scopes.openPage(HilosPages.ANALYTICS_PEOPLE)
+    outsidePerson.data.set('pageLabel', 'Another page')
+    outsidePerson.data.set('pageHeadOwner', {
+      page: PAGE,
+      label: 'Person',
+      lead: LEAD,
+      icon: null,
+    })
+    outsidePerson.data.set('pageBreadcrumb', [
+      { page: HilosPages.ANALYTICS, label: 'Analytics' },
+      { page: PAGE, label: 'Person' },
+    ])
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Person')
+
+    h.scopes.openPage(PAGE)
+    h.sharedIdentity()
+    const activePerson = h.scopes.page()!
+    h.view.unmount()
+    activePerson.data.set('pageLabel', 'Changed after unmount')
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Person')
+  })
+
   it('takes a deleted account label from the page answer', () => {
     const h = harness()
     h.identity('Deleted user #7')
     expect(find(h.view, 'h1')?.textContent?.trim()).toBe('Deleted user #7')
+    expect(find(h.view, '[data-id="hilos-page-head"]')).toBeNull()
+    expect(find(h.view, '[data-id="hilos-admin-title"]')?.textContent).toBe(
+      'Deleted user #7',
+    )
   })
 
   it('draws Hidden in every value without epoch dates, zeros or values in attributes', () => {

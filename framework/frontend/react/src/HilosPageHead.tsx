@@ -62,6 +62,8 @@ export interface HilosPageHeadProps {
   tabsLabel?: string
   /** The one transition the head offers as a button. */
   action?: HilosPageHeadAction
+  /** The picture in the loading skeleton; omitted keeps the kind's default. */
+  skeletonVisual?: ReactNode
   /** The block's picture: an entity's tile or avatar; a section's icon by default. */
   visual?: ReactNode
   /** A short mark beside the title, such as the entity's code. */
@@ -88,6 +90,7 @@ export function HilosPageHead({
   breadcrumbLabel = 'Breadcrumb',
   tabsLabel = 'Page sections',
   action,
+  skeletonVisual,
   visual,
   meta,
   badges,
@@ -143,11 +146,15 @@ export function HilosPageHead({
           aria-hidden="true"
           data-id="hilos-page-head-skeleton"
         >
-          <span
-            className={`hilos-avatar-md bg-secondary-subtle flex-shrink-0 ${
-              kind === 'entity' ? 'rounded-3' : 'rounded-circle'
-            }`}
-          />
+          {skeletonVisual === undefined ? (
+            <span
+              className={`hilos-avatar-md bg-secondary-subtle flex-shrink-0 ${
+                kind === 'entity' ? 'rounded-3' : 'rounded-circle'
+              }`}
+            />
+          ) : (
+            skeletonVisual
+          )}
           <div className="flex-grow-1 min-w-0">
             <span className="placeholder placeholder-lg col-4 d-block mb-2 rounded" />
             <span className="placeholder col-9 d-block rounded" />

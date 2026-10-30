@@ -555,6 +555,26 @@ describe('HilosPageHead', () => {
     expect(head.container.textContent).toBe('')
   })
 
+  it('uses the optional skeleton picture only while the owner is unanswered', () => {
+    const head = mountHead({
+      identity: undefined,
+      skeletonVisual: <span data-id="probe-skeleton-visual" />,
+    })
+
+    const skeleton = find(head, '[data-id="hilos-page-head-skeleton"]')
+    expect(skeleton?.getAttribute('aria-hidden')).toBe('true')
+    expect(find(head, '[data-id="probe-skeleton-visual"]')).not.toBeNull()
+    expect(find(head, 'h1')).toBeNull()
+    expect(find(head, '[data-id="hilos-breadcrumb"]')).toBeNull()
+    expect(find(head, '[data-id="hilos-page-tabs"]')).toBeNull()
+    expect(find(head, '[data-id="hilos-page-head-block"]')).toBeNull()
+
+    head.update({ identity: SECTION })
+
+    expect(find(head, '[data-id="probe-skeleton-visual"]')).toBeNull()
+    expect(find(head, '[data-id="hilos-page-head-block"]')).not.toBeNull()
+  })
+
   it("draws a section's skeleton tile round", () => {
     const head = mountHead({ identity: undefined })
 

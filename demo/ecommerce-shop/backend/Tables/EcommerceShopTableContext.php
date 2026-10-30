@@ -17,6 +17,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogNoisyColumnsTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -78,6 +79,7 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
  * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
  * @property-read HilosDaemonEnvKeysTable $hilosDaemonEnvKeys
@@ -117,6 +119,7 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
     public const string hilosDaemonEnvKeys = HilosDaemonEnvKeysTable::TABLE;

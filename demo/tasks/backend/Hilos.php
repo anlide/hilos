@@ -17,6 +17,7 @@ use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -73,6 +74,7 @@ use Demo\Tasks\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\AnalyticsPage;
 use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Tasks\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Tasks\Pages\Hilos\Analytics\PersonPage;
 use Demo\Tasks\Pages\Hilos\LicensePage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
@@ -310,6 +312,7 @@ final class Hilos extends HilosFacade
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PeoplePage::PAGE => PeoplePage::class,
         PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
@@ -588,6 +591,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        TasksTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
         HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
@@ -644,6 +648,9 @@ final class Hilos extends HilosFacade
         ],
         BrowserSessionPage::PAGE => [
             TasksTableContext::hilosAnalyticsActions => [],
+        ],
+        PeoplePage::PAGE => [
+            TasksTableContext::hilosAnalyticsPeople => [],
         ],
         PersonPage::PAGE => [
             TasksTableContext::hilosAnalyticsBrowserSessions => [],

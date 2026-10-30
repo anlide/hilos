@@ -999,13 +999,20 @@ the account-isolation boundary; cached settings alone do not prove delivery.
 `ANALYTICS_SIGN_UP_LAST_ACTION`, the frame observer `watchAnalyticsFrames`
 (called before the page signs in), the row reader `readAnalyticsActionRows` (the
 no-value sign reads as a null page name, as the frames carry it) and the cell
-locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` and
-`expectAnalyticsOverview` check the way in; the shared Overview check always
-requires tiles and has no body `kind` or empty mode. Its `kit` argument selects
-Vue's section tabs and count links; current React and Angular checks use their
-breadcrumb and tiles without count links. The chat (Vue), tasks (React) and polls
-(Angular) Overview specs arm `watchSocketFrames` before setup and bookmark the
-log before opening Analytics from the dashboard. `readAnalyticsOverviewSnapshot`
+locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` checks the way
+in. The shared Overview check always requires tiles and has no body `kind` or
+empty mode. Its signature is
+`expectAnalyticsOverview(expect: Expect, page: Page, kit: 'legacy' | 'vue' | 'react' = 'legacy'): Promise<void>`:
+Vue expects Overview, Browser sessions and People tabs plus count links; React
+expects Overview and People tabs without count links; legacy checks the
+breadcrumb and tiles without a shared head.
+`expectAnalyticsSectionHead(expect: Expect, page: Page, current: 'overview' | 'sessions' | 'people', kit: 'vue' | 'react' = 'vue'): Promise<void>`
+and
+`expectAnalyticsPeopleAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' = 'vue'): Promise<void>`
+select the right tab row and People table for React callers. The chat (Vue),
+tasks (React) and polls (Angular) Overview specs arm `watchSocketFrames` before
+setup and bookmark the log before opening Analytics from the dashboard.
+`readAnalyticsOverviewSnapshot`
 reads one complete reply from that opening's frames;
 `expectAnalyticsOverviewTiles` compares all three counts and their captured
 period/zone labels with an independent `Intl` oracle. Missing or malformed
@@ -1017,9 +1024,20 @@ action row shown for the session stands on the same named page; registration
 expects `main` for every row. Every check takes the spec's `expect` first, then
 its `Page`. A spec waits for the journal writer by polling
 `readAnalyticsBrowserSession(sendCommand, userId)` until the last registration
-action of both tabs — the person's and the administrator's — has landed, then follows the
-person's admin card into Analytics. The three kits' browser-session specs use
-the shared checks and command transport; Chat composes its message sign-in entry.
+action of both tabs — the person's and the administrator's — has landed, then
+follows the person's admin card into Analytics. The three kits' browser-session
+specs use the shared checks and command transport; Chat composes its message
+sign-in entry.
+
+Tasks' React `analytics.spec.ts` uses the shared Overview helper with the
+`'react'` kit, keeps the snapshot oracle and carries People-to-Person navigation,
+direct entry, F5, browser history and return to
+People, plus Period changes and Reset over the captured context. Its existing
+`analytics-browser-session.spec.ts` keeps the User-to-Person-to-session
+regression. The Analytics accessibility group in `a11y.spec.ts` covers the
+assembled People/Person outlet, including keyboard navigation and table
+semantics. These are the Tasks React carriers; other demo carriers keep their
+own existing scenario coverage.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master

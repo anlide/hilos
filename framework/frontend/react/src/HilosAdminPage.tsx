@@ -101,6 +101,8 @@ export interface HilosAdminPageProps {
   breadcrumbLabel?: string
   /** The shared head's tab row navigation's accessible name. */
   tabsLabel?: string
+  /** The shared head's loading picture; omitted keeps its kind's default. */
+  headSkeletonVisual?: ReactNode
   /**
    * The shared head's block picture: an entity's tile or avatar. Omitted keeps
    * the section's icon; null turns it off.
@@ -140,6 +142,7 @@ export function HilosAdminPage({
   headAction,
   breadcrumbLabel,
   tabsLabel,
+  headSkeletonVisual,
   headVisual,
   headMeta,
   headBadges,
@@ -221,6 +224,7 @@ export function HilosAdminPage({
                   action={headAction}
                   breadcrumbLabel={breadcrumbLabel}
                   tabsLabel={tabsLabel}
+                  skeletonVisual={headSkeletonVisual}
                   visual={headVisual}
                   meta={headMeta}
                   badges={headBadges}

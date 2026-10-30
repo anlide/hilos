@@ -1144,6 +1144,50 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([], $head->toArray()['pageChildren']);
     }
 
+    /** React Analytics pages share only their registered navigation. */
+    public function testReactAnalyticsOverviewAndPeopleShareOnlyEligibleNavigation(): void
+    {
+        foreach ([TasksAnalyticsPageHeadTestHilos::class, EcommerceAnalyticsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            self::assertArrayNotHasKey(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, $hilos::PAGES);
+
+            $params = new PageRouteParams([]);
+            $overviewPage = HilosPageConstants::HILOS_ANALYTICS;
+            $peoplePage = HilosPageConstants::HILOS_ANALYTICS_PEOPLE;
+            $overviewHead = PageCatalogResolver::head($overviewPage, $params);
+            self::assertNotNull($overviewHead);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => $overviewPage,
+                    'label' => 'Analytics',
+                    'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
+                    'icon' => 'bi-bar-chart',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => $overviewPage, 'label' => 'Analytics'],
+                ],
+                'pageTabs' => [
+                    ['page' => $overviewPage, 'label' => 'Overview'],
+                    ['page' => $peoplePage, 'label' => 'People'],
+                ],
+                'pageChildren' => [],
+            ], $overviewHead->toArray());
+            self::assertSame(
+                $overviewHead->toArray(),
+                PageCatalogResolver::head($peoplePage, $params)?->toArray(),
+            );
+            self::assertSame($overviewPage, PageCatalogResolver::rowOwner($overviewPage));
+            self::assertSame($overviewPage, PageCatalogResolver::rowOwner($peoplePage));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => $overviewPage, 'label' => 'Analytics'],
+                ['page' => $peoplePage, 'label' => 'People'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_PERSON, 'label' => 'Person'],
+            ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_ANALYTICS_PERSON));
+        }
+    }
+
     /** Vue opts both Analytics entities into their own Overview-only heads. */
     public function testVueProvidersAdoptBothAnalyticsEntityHeadsWithOnlyOverview(): void
     {
@@ -1208,6 +1252,74 @@ final class PageCatalogResolverTest extends TestCase
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Browser session'],
             ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION));
+        }
+    }
+
+    /** React opts Person into its own head without enabling Browser session. */
+    public function testReactProvidersAdoptOnlyTheAnalyticsPersonHead(): void
+    {
+        foreach ([TasksAnalyticsPageHeadTestHilos::class, EcommerceAnalyticsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            $personPage = HilosPageConstants::HILOS_ANALYTICS_PERSON;
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[$personPage],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), PageCatalogResolver::catalog()[$personPage]);
+            self::assertSame($personPage, PageCatalogResolver::rowOwner($personPage));
+            $personHead = PageCatalogResolver::head($personPage, new PageRouteParams(['userId' => '42']));
+            self::assertNotNull($personHead);
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => $personPage,
+                    'label' => 'Person',
+                    'lead' => 'Browser sessions where this person signed in last. '
+                        . 'Other people may have performed actions in the same browser.',
+                ],
+                'pageBreadcrumb' => [
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                    ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+                    ['page' => $personPage, 'label' => 'Person'],
+                ],
+                'pageTabs' => [['page' => $personPage, 'label' => 'Overview']],
+                'pageChildren' => [],
+            ], $personHead->toArray());
+            self::assertSame($personHead->pageBreadcrumb, PageCatalogResolver::breadcrumb($personPage));
+
+            $browserSessionPage = HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION;
+            self::assertSame(
+                HilosPageCatalog::CATALOG[$browserSessionPage],
+                PageCatalogResolver::catalog()[$browserSessionPage],
+            );
+            self::assertSame($browserSessionPage, PageCatalogResolver::rowOwner($browserSessionPage));
+            self::assertNull(PageCatalogResolver::head(
+                $browserSessionPage,
+                new PageRouteParams(['browserSessionId' => '58']),
+            ));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS, 'label' => 'Browser sessions'],
+                ['page' => $browserSessionPage, 'label' => 'Browser session'],
+            ], PageCatalogResolver::breadcrumb($browserSessionPage));
+        }
+    }
+
+    /** The framework default and Angular provider keep Person on the legacy catalog path. */
+    public function testFrameworkAndAngularKeepTheAnalyticsPersonHeadLegacy(): void
+    {
+        foreach ([AnalyticsPageHeadTestHilos::class, PollsAnalyticsPageHeadTestHilos::class] as $hilos) {
+            $hilos::initBrowser();
+            $personPage = HilosPageConstants::HILOS_ANALYTICS_PERSON;
+            self::assertSame(HilosPageCatalog::CATALOG[$personPage], PageCatalogResolver::catalog()[$personPage]);
+            self::assertSame($personPage, PageCatalogResolver::rowOwner($personPage));
+            self::assertNull(PageCatalogResolver::head($personPage, new PageRouteParams(['userId' => '42'])));
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Analytics'],
+                ['page' => HilosPageConstants::HILOS_ANALYTICS_PEOPLE, 'label' => 'People'],
+                ['page' => $personPage, 'label' => 'Person'],
+            ], PageCatalogResolver::breadcrumb($personPage));
         }
     }
 
@@ -2103,6 +2215,38 @@ abstract class ChatAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
 abstract class BinanceAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** Tasks serves its React Analytics overview, People, Person and session detail pages. */
+abstract class TasksAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_ANALYTICS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_PEOPLE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_PERSON => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => PageHeadTestPage::class,
+    ];
+
+    protected const string PAGE_CATALOG = TasksPageCatalog::class;
+}
+
+/** Ecommerce Shop serves its React Analytics overview, People, Person and session detail pages. */
+abstract class EcommerceAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_ANALYTICS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_PEOPLE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_PERSON => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => PageHeadTestPage::class,
+    ];
+
+    protected const string PAGE_CATALOG = EcommercePageCatalog::class;
+}
+
+/** Polls keeps the Angular Analytics Person on the framework's legacy catalog entry. */
+abstract class PollsAnalyticsPageHeadTestHilos extends AnalyticsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = PollsPageCatalog::class;
 }
 
 /** The Maintenance owner is registered without its optional Circle view. */

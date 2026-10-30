@@ -9,7 +9,7 @@ use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
-/** Communications head adoption for the ecommerce-shop demo. */
+/** Page-head adoption for the ecommerce-shop demo. */
 final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
@@ -27,6 +27,10 @@ final class PageCatalog implements PageCatalogProviderInterface
             ),
             HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            HilosPageConstants::HILOS_ANALYTICS_PERSON => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_PERSON],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
         ];

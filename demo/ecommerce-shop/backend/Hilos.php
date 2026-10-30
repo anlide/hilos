@@ -64,6 +64,7 @@ use Demo\EcommerceShop\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\EcommerceShop\Pages\Hilos\Analytics\PeoplePage;
 use Demo\EcommerceShop\Pages\Hilos\Analytics\PersonPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenanceCirclePage;
@@ -144,6 +145,7 @@ use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -244,6 +246,7 @@ final class Hilos extends HilosFacade
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PeoplePage::PAGE => PeoplePage::class,
         PersonPage::PAGE => PersonPage::class,
         BackupPage::PAGE => BackupPage::class,
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
@@ -452,6 +455,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         EcommerceShopTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         EcommerceShopTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        EcommerceShopTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         EcommerceShopTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         EcommerceShopTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
         EcommerceShopTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
@@ -505,6 +509,9 @@ final class Hilos extends HilosFacade
         ],
         BrowserSessionPage::PAGE => [
             EcommerceShopTableContext::hilosAnalyticsActions => [],
+        ],
+        PeoplePage::PAGE => [
+            EcommerceShopTableContext::hilosAnalyticsPeople => [],
         ],
         PersonPage::PAGE => [
             EcommerceShopTableContext::hilosAnalyticsBrowserSessions => [],

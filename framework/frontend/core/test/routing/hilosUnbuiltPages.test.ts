@@ -79,6 +79,21 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
+  it('serves People in Vue and React while keeping it unbuilt in Angular', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.ANALYTICS_PEOPLE]).toEqual([
+      'angular',
+    ])
+    expect(hilosUnbuiltPages('vue').has(HilosPages.ANALYTICS_PEOPLE)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.ANALYTICS_PEOPLE)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('angular').has(HilosPages.ANALYTICS_PEOPLE)).toBe(
+      true,
+    )
+  })
+
   it('serves the contextual Frame page in all three kits', () => {
     for (const kit of ['vue', 'react', 'angular'] as const) {
       expect(

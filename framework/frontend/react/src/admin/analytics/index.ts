@@ -10,3 +10,7 @@ export {
   type HilosAnalyticsPersonPageProps,
   HilosAnalyticsPersonPage,
 } from './HilosAnalyticsPersonPage.js'
+export {
+  type HilosAnalyticsPeoplePageProps,
+  HilosAnalyticsPeoplePage,
+} from './HilosAnalyticsPeoplePage.js'

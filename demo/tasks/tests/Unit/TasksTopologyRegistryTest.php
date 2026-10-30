@@ -46,6 +46,7 @@ use Demo\Tasks\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Tasks\Pages\Hilos\AnalyticsPage;
 use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Tasks\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Tasks\Pages\Hilos\Analytics\PersonPage;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
@@ -67,6 +68,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -1471,6 +1473,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
             TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
             TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+            TasksTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
             HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
             HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
             HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
@@ -1490,6 +1493,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 TermsHistoryPage::PAGE,
                 PrivacyHistoryPage::PAGE,
                 BrowserSessionPage::PAGE,
+                PeoplePage::PAGE,
                 PersonPage::PAGE,
                 ChangeLogFeedPage::PAGE,
                 ChangeLogTablesPage::PAGE,
@@ -1935,6 +1939,27 @@ final class TasksTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([TasksTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The People list uses its existing Analytics owner, signal and framework table. */
+    public function testAnalyticsPeoplePageIsWired(): void
+    {
+        self::assertSame(PeoplePage::class, Hilos::PAGES[PeoplePage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, PeoplePage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[PeoplePage::PAGE]);
+        self::assertSame(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_PEOPLE,
+            PeoplePage::BROWSER[BrowserConfigKey::SIGNAL],
+        );
+        self::assertSame(HilosAnalyticsPeopleTable::TABLE, TasksTableContext::hilosAnalyticsPeople);
+        self::assertSame(
+            HilosAnalyticsPeopleTable::class,
+            Hilos::TABLES[TasksTableContext::hilosAnalyticsPeople],
+        );
+        self::assertSame(
+            [TasksTableContext::hilosAnalyticsPeople => []],
+            Hilos::PAGE_TABLES[PeoplePage::PAGE],
+        );
     }
 
     /** The person's sessions page uses the Analytics owner and its existing sessions table. */
