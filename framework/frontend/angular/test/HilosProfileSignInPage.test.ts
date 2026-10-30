@@ -3,6 +3,7 @@ import {
   ActionError,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
   bindProfileFlows,
+  bindTimeZoneState,
   cancelOAuthTrip,
   createConnectionInteractionState,
   createSignal,
@@ -22,6 +23,8 @@ import { profileSectionFixture } from '../../core/test/profile/profileSectionFix
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
 import { HILOS_CONNECTION_INTERACTION } from '../src/hilosConnectionInteraction.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+
+let releaseTimeZone: (() => void) | undefined
 
 /** The server's answer to the add-a-way-in confirmation start. */
 const NO_STEP = { required: false, purpose: 'add a way to sign in' }
@@ -159,13 +162,7 @@ function setMethods(
   const identities = current.map((method) => {
     const id = Number(method.key)
     const ref = { type: 'identities', id }
-    page.entities.upsert(ref, {
-      id,
-      type: method.type,
-      provider: method.provider,
-      identifier: method.identifier,
-      verified: method.verified,
-    })
+    upsertIdentity(scopes, method)
     return ref
   })
   page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
@@ -174,13 +171,41 @@ function setMethods(
   })
 }
 
+/**
+ * Upsert one normalized identity, leaving its page-list references untouched.
+ *
+ * @param scopes The scope manager containing the profile page.
+ * @param method The normalized identity to write.
+ */
+function upsertIdentity(
+  scopes: ScopeManager,
+  method: HilosProfileSignInMethod,
+): void {
+  const id = Number(method.key)
+  const page = scopes.page() ?? scopes.openPage('hilos_profile_sign_in')
+  page.entities.upsert(
+    { type: 'identities', id },
+    {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+      passwordChangedAt: method.passwordChangedAt,
+      providerName: method.providerName,
+    },
+  )
+}
+
 function setup(
   opening: object = NO_STEP,
   methods = resolveHilosProfileSignInMethods([], []),
   offered: readonly object[] = OFFERED,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
+  let frameCount = 0
   const emit = (type: string, data: unknown) => {
+    frameCount += 1
     for (const listener of listeners)
       listener({ kind: 'project', type, data } as ProjectSignal)
   }
@@ -249,9 +274,11 @@ function setup(
     scopes: new ScopeManager(),
     channels: [],
   } as unknown as HilosAuthContext
+  let scopeUpdates = 0
   const stopFlows = bindProfileFlows(context.connection as HilosConnection)
   emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
   context.scopes.session.data.set('authMethods', offered)
+  scopeUpdates += 1
   setMethods(context.scopes, methods)
   const router = profileSectionFixture(context.scopes, 'hilos_profile_sign_in')
   TestBed.configureTestingModule({
@@ -278,14 +305,30 @@ function setup(
     emit,
     stopFlows,
     node,
+    context,
+    frameCount: () => frameCount,
+    identityList: () =>
+      context.scopes.pageListSignal(HILOS_PROFILE_IDENTITIES_LIST).get(),
+    identityFields: (id: number) =>
+      context.scopes.entitySignal({ type: 'identities', id }).get()?.fields,
+    scopeUpdateCount: () => scopeUpdates,
+    updateIdentity: (method: HilosProfileSignInMethod) => {
+      upsertIdentity(context.scopes, method)
+      scopeUpdates += 1
+      fixture.detectChanges()
+    },
     setMethods: (next: readonly HilosProfileSignInMethod[]) => {
       setMethods(context.scopes, next)
+      scopeUpdates += 1
       fixture.detectChanges()
     },
   }
 }
 
 afterEach(() => {
+  releaseTimeZone?.()
+  releaseTimeZone = undefined
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -296,13 +339,13 @@ it('renders each profile method with its glyph and normalized subtitle', () => {
     { key: 'oauth:other', name: 'Other' },
   ])
   const rows = [
-    ['10', 'bi-lock', 'Password', 'a@example.test'],
-    ['11', 'bi-phone', 'Phone', '+15551234567 · verified'],
-    ['12', 'bi-phone', 'Phone', '+15557654321'],
+    ['10', 'bi-lock', 'Password', 'Set'],
+    ['11', 'bi-phone', 'Phone', '+1 555 123 4567 · verified'],
+    ['12', 'bi-phone', 'Phone', '+1 555 765 4321'],
     ['13', 'bi-envelope', 'Email link', 'b@example.test'],
-    ['14', 'bi-github', 'GitHub', 'octocat'],
-    ['15', 'bi-google', 'Google', 'c@example.test'],
-    ['16', 'bi-box-arrow-in-right', 'Other', 'other-account'],
+    ['14', 'bi-github', 'GitHub', 'Linked'],
+    ['15', 'bi-google', 'Google', 'Linked'],
+    ['16', 'bi-box-arrow-in-right', 'Other', 'Linked'],
   ] as const
   for (const [key, glyph, title, subtitle] of rows) {
     const row = fixtureRow(node, key)
@@ -329,6 +372,172 @@ it('renders each profile method with its glyph and normalized subtitle', () => {
   expect(add.querySelector('i')?.className).toBe('bi bi-plus-lg me-1')
   expect(add.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
   expect(add.textContent).toContain('Add a way to sign in')
+})
+
+it('keeps an unknown method subtitle on its normalized identifier', () => {
+  const [unknown] = resolveHilosProfileSignInMethods(
+    [
+      {
+        id: 18,
+        type: 'external_method',
+        provider: null,
+        identifier: 'opaque-reference',
+        verified: false,
+      },
+    ],
+    [],
+  )
+  const { node } = setup(NO_STEP, [unknown!])
+  const row = fixtureRow(node, '18')
+
+  expect(
+    row.querySelector('[data-id="identity-type"]')?.textContent?.trim(),
+  ).toBe('external_method')
+  expect(
+    row.querySelector('[data-id="identity-identifier"]')?.textContent?.trim(),
+  ).toBe('opaque-reference')
+})
+
+it('redraws a password subtitle from a live identity entity update', async () => {
+  const resolved = new Intl.DateTimeFormat().resolvedOptions()
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
+    () => ({ ...resolved, timeZone: 'Europe/Warsaw' }),
+  )
+
+  const [password] = resolveHilosProfileSignInMethods(
+    [
+      {
+        id: 1,
+        type: 'password',
+        identifier: 'a@example.test',
+        verified: true,
+        provider: null,
+      },
+    ],
+    [],
+  )
+  const world = setup(NO_STEP, [password!])
+  releaseTimeZone = bindTimeZoneState(world.context.connection)
+  await flush(world.fixture)
+  const row = fixtureRow(world.node, '1')
+  const rowElement = row
+  const subtitle = row.querySelector('[data-id="identity-identifier"]')!
+  const subtitleElement = subtitle
+  const identityList = world.identityList()
+  const scopeUpdates = world.scopeUpdateCount()
+  const frames = world.frameCount()
+  const dispatches = world.dispatch.mock.calls.length
+
+  expect(password?.passwordChangedAt).toBeNull()
+  expect(subtitle.textContent?.trim()).toBe('Set')
+  world.updateIdentity({ ...password!, passwordChangedAt: 1767227400000 })
+  await flush(world.fixture)
+
+  expect(fixtureRow(world.node, '1')).toBe(rowElement)
+  expect(row.querySelector('[data-id="identity-identifier"]')).toBe(
+    subtitleElement,
+  )
+  expect(subtitle.textContent?.trim()).toBe(
+    'Set · last changed Jan 1, 2026, 1:30:00 AM',
+  )
+  expect(world.identityList()).toBe(identityList)
+  expect(world.scopeUpdateCount()).toBe(scopeUpdates + 1)
+  expect(world.frameCount()).toBe(frames)
+  expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
+})
+
+it('redraws OAuth with the trimmed provider-reported name', async () => {
+  const [oauth] = resolveHilosProfileSignInMethods(
+    [
+      {
+        id: 5,
+        type: 'oauth',
+        identifier: 'github:provider-subject',
+        verified: true,
+        provider: 'oauth:github',
+      },
+    ],
+    [],
+  )
+  const world = setup(NO_STEP, [oauth!])
+  const row = fixtureRow(world.node, '5')
+  const rowElement = row
+  const subtitle = row.querySelector('[data-id="identity-identifier"]')!
+  const subtitleElement = subtitle
+  const identityList = world.identityList()
+  const scopeUpdates = world.scopeUpdateCount()
+  const frames = world.frameCount()
+  const dispatches = world.dispatch.mock.calls.length
+
+  expect(oauth?.providerName).toBeNull()
+  expect(oauth?.identifier).toBe('github:provider-subject')
+  expect(subtitle.textContent?.trim()).toBe('Linked')
+  world.updateIdentity({ ...oauth!, providerName: '  Octocat  ' })
+  await flush(world.fixture)
+
+  expect(fixtureRow(world.node, '5')).toBe(rowElement)
+  expect(row.querySelector('[data-id="identity-identifier"]')).toBe(
+    subtitleElement,
+  )
+  expect(subtitle.textContent?.trim()).toBe('Octocat')
+  expect(world.identityList()).toBe(identityList)
+  expect(world.scopeUpdateCount()).toBe(scopeUpdates + 1)
+  expect(world.frameCount()).toBe(frames)
+  expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
+})
+
+it('reformats a password subtitle when only the reader time zone changes', async () => {
+  let browserZone = 'Asia/Tokyo'
+  const resolved = new Intl.DateTimeFormat().resolvedOptions()
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
+    () => ({ ...resolved, timeZone: browserZone }),
+  )
+
+  const [password] = resolveHilosProfileSignInMethods(
+    [
+      {
+        id: 1,
+        type: 'password',
+        identifier: 'a@example.test',
+        verified: true,
+        provider: null,
+        passwordChangedAt: 1767227400000,
+      },
+    ],
+    [],
+  )
+  const world = setup(NO_STEP, [password!])
+  releaseTimeZone = bindTimeZoneState(world.context.connection)
+  await flush(world.fixture)
+  const row = fixtureRow(world.node, '1')
+  const rowElement = row
+  const subtitle = row.querySelector('[data-id="identity-identifier"]')!
+  const subtitleElement = subtitle
+  const identityList = world.identityList()
+  const identityFields = world.identityFields(1)
+  const scopeUpdates = world.scopeUpdateCount()
+  const frames = world.frameCount()
+  const dispatches = world.dispatch.mock.calls.length
+
+  expect(subtitle.textContent?.trim()).toBe(
+    'Set · last changed Jan 1, 2026, 9:30:00 AM',
+  )
+  browserZone = 'America/New_York'
+  window.dispatchEvent(new Event('focus'))
+  await flush(world.fixture)
+
+  expect(fixtureRow(world.node, '1')).toBe(rowElement)
+  expect(row.querySelector('[data-id="identity-identifier"]')).toBe(
+    subtitleElement,
+  )
+  expect(subtitle.textContent?.trim()).toBe(
+    'Set · last changed Dec 31, 2025, 7:30:00 PM',
+  )
+  expect(world.identityList()).toBe(identityList)
+  expect(world.identityFields(1)).toBe(identityFields)
+  expect(world.scopeUpdateCount()).toBe(scopeUpdates)
+  expect(world.frameCount()).toBe(frames)
+  expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
 })
 
 it('uses provider glyphs in the live chooser and its inert twin', async () => {

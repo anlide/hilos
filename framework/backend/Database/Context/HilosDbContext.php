@@ -20,6 +20,7 @@ use Hilos\Database\Exception\UnboundedCollectionReadException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Actions\Collection\DbActions as CollectionDbActions;
 use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
+use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Object\Objects;
@@ -398,7 +399,12 @@ abstract class HilosDbContext extends DbContext
             SettingsActions::class,
             SettingActions::class,
         );
-        $this->mountFramework(self::identities, Objects::LAZY_STRATEGY_KEY, DbCollectionIdentities::class);
+        $this->mountFramework(
+            self::identities,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionIdentities::class,
+            itemActions: IdentityActions::class,
+        );
         $this->mountFramework(self::verifications, Objects::LAZY_STRATEGY_KEY, DbCollectionUserVerifications::class);
         $this->mountFramework(
             self::registrationReservations,

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -14,7 +17,10 @@ use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerification
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The two-step spend a password recovery is built on (HIL-416).
@@ -32,10 +38,15 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     /** @var list<string> Framework tables this case needs */
     private const array TABLES = [
         'hilos_user',
+        'hilos_user_merge',
+        'hilos_identity',
         'hilos_user_verification',
+        'hilos_second_factor_trust',
     ];
 
     private const string CODE = '424242';
@@ -46,6 +57,8 @@ final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTest
 
     /** Attempts one code gets in this case, small enough to exhaust in a short loop. */
     private const int MAX_ATTEMPTS = 2;
+
+    private const int PASSWORD_CHANGED_AT = 1700000000123;
 
     /** @var list<string> Environment names this case sets and has to unset again */
     private const array VERIFICATION_KNOBS = [
@@ -84,6 +97,7 @@ final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTest
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         foreach (self::VERIFICATION_KNOBS as $knob) {
             putenv($knob);
         }
@@ -94,6 +108,61 @@ final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTest
         self::runStubs(down: true);
 
         parent::tearDown();
+    }
+
+    /** A matched recovery code advances the moment only when the person's owner writes the new password. */
+    public function testCompletingRecoveryRecordsTheNewPasswordMoment(): void
+    {
+        Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('Recovery person')");
+        $userId = Database::lastInsertId();
+        $email = $this->uniqueEmail();
+        $passwordId = Hilos::$db->identities->createPasswordIdentity($userId, $email, 'old-recovery-secret', verified: true)->id;
+        self::assertNotNull($passwordId);
+        Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ? WHERE `id` = ?', [self::PASSWORD_CHANGED_AT, $passwordId]);
+        Hilos::$db->forgetLoadedDataForTest();
+        $this->seedCode($email);
+        $recovery = new PasswordRecoveryService();
+
+        self::assertTrue($recovery->acceptCode($email, self::CODE));
+        self::assertSame(self::PASSWORD_CHANGED_AT, Hilos::$db->identities[$passwordId]->passwordChangedAt);
+        $password = $recovery->complete($email, 'new-recovery-secret');
+        self::assertNotNull($password);
+        self::assertSame($passwordId, $password->id);
+        self::assertSame(self::PASSWORD_CHANGED_AT, Hilos::$db->identities[$passwordId]->passwordChangedAt);
+        self::assertTrue(Hilos::$db->identities[$passwordId]->verifyPassword('old-recovery-secret'));
+        $before = TimeHelper::nowMs();
+        $this->asPerson($userId, static fn ($agent) => $agent->onSignalAgent(new AgentSignalData(data: new UserPasswordResetSignalData(
+            userId: $userId,
+            identityId: $passwordId,
+            passwordHash: Hilos::$db->identities->hashPassword('new-recovery-secret'),
+            email: $email,
+            keepSessionId: 0,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
+            acceptKey: 'recovery-browser',
+            requestId: 'recovery-password-moment',
+            action: HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+            successMessage: null,
+        )), '', HilosSignalConstants::HILOS_USER_PASSWORD_RESET));
+
+        $answers = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof UserPasswordResetDoneSignalData) {
+                $answers[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $answers);
+        self::assertNull($answers[0]->error);
+        $row = Database::sql('SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$passwordId])->rows()[0];
+        self::assertTrue(password_verify('new-recovery-secret', $row['secret']));
+        self::assertGreaterThan(self::PASSWORD_CHANGED_AT, (int)$row['password_changed_at']);
+        self::assertGreaterThanOrEqual($before, (int)$row['password_changed_at']);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$row['password_changed_at']);
+        self::assertSame((int)$row['password_changed_at'], Hilos::$db->identities[$passwordId]->passwordChangedAt);
+        self::assertNull($recovery->complete($email, 'another-recovery-secret'));
+        self::assertSame($row, Database::sql(
+            'SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+            [$passwordId],
+        )->rows()[0]);
     }
 
     /**

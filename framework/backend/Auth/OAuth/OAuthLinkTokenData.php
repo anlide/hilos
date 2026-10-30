@@ -21,11 +21,13 @@ final readonly class OAuthLinkTokenData
      * @param string $provider Provider key the pending link belongs to, e.g. 'oauth:github'
      * @param string $subject Provider-immutable account id to link (non-empty)
      * @param string $email Provider-reported email that collided with a verified identity
+     * @param ?string $providerName Personal name reported by the provider
      */
     public function __construct(
         public string $provider,
         public string $subject,
         public string $email,
+        public ?string $providerName = null,
     ) {
     }
 }

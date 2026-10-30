@@ -242,6 +242,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
                 $op->acceptKey,
                 $op->sessionToken,
                 $op->tripKeyHash,
+                providerName: $info->name,
             ),
         );
     }
@@ -521,7 +522,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
         }
 
         try {
-            $db->identities->createOauthIdentity($op->linkUserId, $op->provider, $info->subject);
+            $db->identities->createOauthIdentity($op->linkUserId, $op->provider, $info->subject, $info->name);
         } catch (DuplicateValueException) {
             $this->logAgentWarning("OAuth link refused for {$op->getId()} (provider={$op->provider}): already linked");
             $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_DUPLICATE);

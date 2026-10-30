@@ -51,6 +51,20 @@ final class IdentitiesWritePathParityTest extends TestCase
         }
     }
 
+    public function testOauthProviderNameIsAnOptionalNullableFourthParameterOnBothLayers(): void
+    {
+        foreach ([ObjectIdentities::class, ViewIdentities::class] as $collection) {
+            $method = new ReflectionMethod($collection, 'createOauthIdentity');
+            self::assertSame(3, $method->getNumberOfRequiredParameters());
+            self::assertCount(4, $method->getParameters());
+            $parameter = $method->getParameters()[3];
+            self::assertSame('providerName', $parameter->getName());
+            self::assertSame('?string', (string)$parameter->getType());
+            self::assertTrue($parameter->isDefaultValueAvailable());
+            self::assertNull($parameter->getDefaultValue());
+        }
+    }
+
     /**
      * Renders a method's parameter list as `type $name` fragments for signature comparison.
      *

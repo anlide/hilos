@@ -377,6 +377,7 @@ class Identities extends DbCollection
      * @param int $userId Owning user id
      * @param string $provider Provider key, e.g. 'oauth:github'
      * @param string $subject Provider-immutable account subject id
+     * @param ?string $providerName Provider-reported name; blank input is stored as null
      * @return Identity The created identity's read-facing Db item
      * @throws EmptyValueException When provider or subject is empty
      * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
@@ -385,9 +386,13 @@ class Identities extends DbCollection
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function createOauthIdentity(int $userId, string $provider, string $subject): Identity
-    {
-        $objectIdentity = $this->objectCollection->createOauthIdentity($userId, $provider, $subject);
+    public function createOauthIdentity(
+        int $userId,
+        string $provider,
+        string $subject,
+        ?string $providerName = null,
+    ): Identity {
+        $objectIdentity = $this->objectCollection->createOauthIdentity($userId, $provider, $subject, $providerName);
 
         $id = $objectIdentity->id;
         if ($id === null) {

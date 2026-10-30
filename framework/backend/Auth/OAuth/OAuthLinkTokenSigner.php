@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\OAuth;
 
+use JsonException;
+
 /**
  * Issues and verifies the stateless, signed OAuth account-link token (HIL-282).
  *
@@ -11,7 +13,8 @@ namespace Hilos\Auth\OAuth;
  * linking a new OAuth account to an existing one after a full re-authentication.
  * Kept storage-free, exactly like {@see OAuthStateSigner}: the token is a signed
  * `base64url(payload).base64url(HMAC)` whose payload binds a fixed domain tag, the
- * provider, the account subject, the colliding email, and an absolute expiry.
+ * provider, the account subject, the colliding email, an absolute expiry, and a
+ * separately encoded nullable provider name. Legacy five-field tokens carry no name.
  * Verification recomputes the HMAC in constant time and checks the domain tag,
  * field shape, and expiry — nothing is persisted, so there is no ledger to reap.
  *
@@ -34,7 +37,8 @@ final class OAuthLinkTokenSigner
 
     private const string FIELD_SEPARATOR = '|';
     private const string PART_SEPARATOR = '.';
-    private const int FIELD_COUNT = 5;
+    private const int LEGACY_FIELD_COUNT = 5;
+    private const int FIELD_COUNT = 6;
 
     /**
      * @param string $secret HMAC signing secret (env-sourced by the caller)
@@ -51,13 +55,27 @@ final class OAuthLinkTokenSigner
      * @param string $subject Provider-immutable account id to link
      * @param string $email Provider-reported email that collided with a verified identity
      * @param int $ttlSeconds Lifetime in seconds from now
+     * @param ?string $providerName Personal name reported by the provider
      * @return string Signed link token
+     * @throws JsonException When the provider name cannot be encoded
      */
-    public function issue(string $provider, string $subject, string $email, int $ttlSeconds): string
-    {
+    public function issue(
+        string $provider,
+        string $subject,
+        string $email,
+        int $ttlSeconds,
+        ?string $providerName = null,
+    ): string {
         $expiry = time() + $ttlSeconds;
 
-        $payload = implode(self::FIELD_SEPARATOR, [self::DOMAIN_TAG, $provider, $subject, $email, $expiry]);
+        $payload = implode(self::FIELD_SEPARATOR, [
+            self::DOMAIN_TAG,
+            $provider,
+            $subject,
+            $email,
+            $expiry,
+            $this->base64UrlEncode(json_encode($providerName, JSON_THROW_ON_ERROR)),
+        ]);
         $encodedPayload = $this->base64UrlEncode($payload);
 
         return $encodedPayload . self::PART_SEPARATOR . $this->sign($encodedPayload);
@@ -92,7 +110,7 @@ final class OAuthLinkTokenSigner
         }
 
         $fields = explode(self::FIELD_SEPARATOR, $payload);
-        if (count($fields) !== self::FIELD_COUNT) {
+        if (count($fields) !== self::LEGACY_FIELD_COUNT && count($fields) !== self::FIELD_COUNT) {
             return null;
         }
 
@@ -107,7 +125,24 @@ final class OAuthLinkTokenSigner
             return null;
         }
 
-        return new OAuthLinkTokenData($provider, $subject, $email);
+        $providerName = null;
+        if (count($fields) === self::FIELD_COUNT) {
+            $encodedName = $fields[self::LEGACY_FIELD_COUNT];
+            $nameJson = $this->base64UrlDecode($encodedName);
+            if ($nameJson === null || $this->base64UrlEncode($nameJson) !== $encodedName) {
+                return null;
+            }
+            try {
+                $providerName = json_decode($nameJson, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return null;
+            }
+            if ($providerName !== null && !is_string($providerName)) {
+                return null;
+            }
+        }
+
+        return new OAuthLinkTokenData($provider, $subject, $email, $providerName);
     }
 
     /**

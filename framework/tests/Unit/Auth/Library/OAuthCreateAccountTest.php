@@ -8,6 +8,9 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\ActingSession;
 use Hilos\Auth\Library\Command\OAuthCommands;
 use Hilos\Auth\Library\DTO\OAuthCreateAccountActionDTO;
+use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\OAuthAccountTokenSigner;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
@@ -16,6 +19,7 @@ use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\Identity;
@@ -108,11 +112,12 @@ final class OAuthCreateAccountTest extends TestCase
     public function testValidProofKeepsItsSignedIdentityRegardlessOfTheHint(?string $provider): void
     {
         $service = $this->service();
-        $token = $service->issueAccountToken('oauth:github', 'signed-subject', null, 'Signed Person', self::SESSION);
+        $token = $service->issueAccountToken('oauth:github', 'signed-subject', null, 'Project Person', self::SESSION, 'Provider Person');
         $identity = $this->createMock(Identity::class);
         $identity->method('__get')->with('userId')->willReturn(42);
         $identities = $this->createMock(Identities::class);
         $identities->expects(self::once())->method('findByIdentity')->with('oauth', 'oauth:github:signed-subject')->willReturn($identity);
+        $identities->expects(self::never())->method('createOauthIdentity');
         $db = $this->createMock(HilosDbContext::class);
         $db->method('__get')->with('identities')->willReturn($identities);
         Hilos::$db = $db;
@@ -126,6 +131,68 @@ final class OAuthCreateAccountTest extends TestCase
         self::assertNull(new OAuthCommands($library)->createAccount(
             'accept-test',
             new OAuthCreateAccountActionDTO($token, null, provider: $provider),
+        ));
+    }
+
+    /** @return array<string, array{bool, ?string}> Consent or reauth, with or without a reported name */
+    public static function pausedProviderNames(): array
+    {
+        return [
+            'consent with name' => [false, '李 | Provider'], 'consent withheld' => [false, null],
+            'reauth with name' => [true, '李 | Provider'], 'reauth withheld' => [true, null],
+        ];
+    }
+
+    /**
+     * @param bool $collision Whether the email belongs to an existing person
+     * @param ?string $providerName Provider fact that must survive the pause
+     */
+    #[DataProvider('pausedProviderNames')]
+    public function testPauseSignsProviderNameSeparatelyFromProjectName(bool $collision, ?string $providerName): void
+    {
+        $service = $this->service();
+        $identities = $this->createMock(Identities::class);
+        $identities->method('findByIdentity')->willReturn(null);
+        $identities->method('findUserIdByVerifiedEmail')->with('user@example.test')->willReturn($collision ? 42 : null);
+        $identities->expects(self::never())->method('createOauthIdentity');
+        $db = $this->createMock(HilosDbContext::class);
+        $db->method('__get')->with('identities')->willReturn($identities);
+        Hilos::$db = $db;
+        $library = $this->createMock(AbstractUsersLibraryAgent::class);
+        $library->method('oauthService')->willReturn($service);
+        $library->expects(self::never())->method('grantSession');
+        $library->expects(self::once())->method('sendToAgent')->with(
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,
+            self::callback(static function (OAuthTripEndedSignalData $ending) use ($service, $collision, $providerName): bool {
+                self::assertSame('trip', $ending->tripKeyHash);
+                self::assertSame('user@example.test', $ending->email);
+                self::assertSame(
+                    $collision ? OAuthResultSignalData::REASON_REAUTH_REQUIRED : OAuthResultSignalData::REASON_CONSENT_REQUIRED,
+                    $ending->reason,
+                );
+                if ($collision) {
+                    self::assertNotNull($ending->linkToken);
+                    $pass = $service->verifyLinkToken($ending->linkToken);
+                    self::assertNull($ending->accountToken);
+                } else {
+                    self::assertNotNull($ending->accountToken);
+                    $pass = $service->verifyAccountToken($ending->accountToken, self::SESSION);
+                    self::assertNotNull($pass);
+                    self::assertSame('Project Person', $pass->displayName);
+                    self::assertNull($ending->linkToken);
+                }
+                self::assertNotNull($pass);
+                self::assertSame('oauth:github', $pass->provider);
+                self::assertSame('signed-subject', $pass->subject);
+                self::assertSame($providerName, $pass->providerName);
+
+                return true;
+            }),
+        );
+
+        new OAuthCommands($library)->completeLogin(new OAuthLoginReadySignalData(
+            'oauth:github', 'signed-subject', 'user@example.test', 'Project Person', 'accept-test', self::SESSION, 'trip',
+            providerName: $providerName,
         ));
     }
 

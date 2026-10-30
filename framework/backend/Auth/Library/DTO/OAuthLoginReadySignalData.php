@@ -30,6 +30,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
      * @param string $tripKeyHash Hash of the key the tab minted, naming the trip the ending belongs to (HIL-1044)
      * @param ?string $requestId Request id of the action that started it, or null when untracked
      * @param ?string $action Action name to answer, or null when nothing is waiting on an answer
+     * @param ?string $providerName Personal name reported by the provider, separate from the account name
      */
     public function __construct(
         public readonly string $provider,
@@ -41,6 +42,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
         public readonly string $tripKeyHash,
         public readonly ?string $requestId = null,
         public readonly ?string $action = null,
+        public readonly ?string $providerName = null,
     ) {
     }
 
@@ -61,6 +63,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
             'tripKeyHash' => $this->tripKeyHash,
             'requestId' => $this->requestId,
             'action' => $this->action,
+            'providerName' => $this->providerName,
         ];
     }
 
@@ -69,7 +72,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload names no provider, no subject, no connection to answer, or no trip
+     * @throws InvalidFormatException When required facts are absent or a supplied field has the wrong type
      */
     public static function fromArray(array $data): static
     {
@@ -83,6 +86,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
             tripKeyHash: self::requireString($data, 'tripKeyHash'),
             requestId: self::optionalString($data, 'requestId'),
             action: self::optionalString($data, 'action'),
+            providerName: self::optionalString($data, 'providerName'),
         );
     }
 }

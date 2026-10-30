@@ -1,4 +1,4 @@
--- valid from migration #85
+-- valid from migration #110
 CREATE TRIGGER `hilos_cl_hilos_identity_after_delete` AFTER DELETE ON `hilos_identity`
 FOR EACH ROW BEGIN
     DECLARE v_created_at DATETIME(6);
@@ -40,6 +40,16 @@ FOR EACH ROW BEGIN
     INSERT INTO {{change_log_database}}.`hilos_change_log_change`
         (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
         VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`verified` AS CHAR), NULL);
+    INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'password_changed_at');
+    SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'password_changed_at';
+    INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+        (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+        VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`password_changed_at` AS CHAR), NULL);
+    INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'provider_name');
+    SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'provider_name';
+    INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+        (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+        VALUES (v_created_at, v_log_id, v_field_id, 'fact', 1, 0, NULL, NULL);
     INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'created_at');
     SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'created_at';
     INSERT INTO {{change_log_database}}.`hilos_change_log_change`

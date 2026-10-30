@@ -88,6 +88,32 @@ const passkeyOnly = resolveHilosProfileSignInMethods(
   [],
 )
 
+/**
+ * Write one normalized identity row to the page's ordinary entity scope.
+ *
+ * @param scopes The scope manager owned by the mounted profile page.
+ * @param method The normalized identity to put in its entity store.
+ */
+function upsertIdentity(
+  scopes: ScopeManager,
+  method: HilosProfileSignInMethod,
+): void {
+  const id = Number(method.key)
+  const page = scopes.page() ?? scopes.openPage('hilos_profile_sign_in')
+  page.entities.upsert(
+    { type: 'identities', id },
+    {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+      passwordChangedAt: method.passwordChangedAt,
+      providerName: method.providerName,
+    },
+  )
+}
+
 /** Feed the framework list and its normalized identity fields into a page scope. */
 function setMethods(
   scopes: ScopeManager,
@@ -97,13 +123,7 @@ function setMethods(
   const identities = current.map((method) => {
     const id = Number(method.key)
     const ref = { type: 'identities', id }
-    page.entities.upsert(ref, {
-      id,
-      type: method.type,
-      provider: method.provider,
-      identifier: method.identifier,
-      verified: method.verified,
-    })
+    upsertIdentity(scopes, method)
     return ref
   })
   const passkeyCredentials = current.flatMap((method) => {
@@ -198,7 +218,12 @@ function setup(
   )
   const scopes = new ScopeManager()
   scopes.session.data.set('authMethods', offered)
-  setMethods(scopes, initial)
+  let scopeUpdates = 0
+  const applyMethods = (next: readonly HilosProfileSignInMethod[]) => {
+    scopeUpdates++
+    setMethods(scopes, next)
+  }
+  applyMethods(initial)
   const context = {
     scopes,
     actions: { dispatch },
@@ -227,8 +252,14 @@ function setup(
   return {
     wrapper,
     dispatch,
-    setMethods: (next: readonly HilosProfileSignInMethod[]) =>
-      setMethods(scopes, next),
+    setMethods: applyMethods,
+    updateIdentity: (method: HilosProfileSignInMethod) => {
+      scopeUpdates++
+      upsertIdentity(scopes, method)
+    },
+    identityList: () =>
+      scopes.pageListSignal(HILOS_PROFILE_IDENTITIES_LIST).get(),
+    scopeUpdateCount: () => scopeUpdates,
     emit,
   }
 }
@@ -340,6 +371,7 @@ describe('profile sign-in page dialogs', () => {
           identifier: 'octocat',
           verified: true,
           provider: 'oauth:github',
+          providerName: 'Octocat',
         },
         {
           id: 6,
@@ -371,13 +403,13 @@ describe('profile sign-in page dialogs', () => {
       { key: 'oauth:other', name: 'Other' },
     ])
     const rows = [
-      ['1', 'bi-lock', 'Password', 'a@example.test'],
-      ['2', 'bi-phone', 'Phone', '+15551234567 · verified'],
-      ['3', 'bi-phone', 'Phone', '+15557654321'],
+      ['1', 'bi-lock', 'Password', 'Set'],
+      ['2', 'bi-phone', 'Phone', '+1 555 123 4567 · verified'],
+      ['3', 'bi-phone', 'Phone', '+1 555 765 4321'],
       ['4', 'bi-envelope', 'Email link', 'a@example.test'],
-      ['5', 'bi-github', 'GitHub', 'octocat'],
-      ['6', 'bi-google', 'Google', 'a@example.test'],
-      ['7', 'bi-box-arrow-in-right', 'Other', 'another-account'],
+      ['5', 'bi-github', 'GitHub', 'Octocat'],
+      ['6', 'bi-google', 'Google', 'Linked'],
+      ['7', 'bi-box-arrow-in-right', 'Other', 'Linked'],
       ['8', 'bi-fingerprint', 'Laptop key', null],
     ] as const
     for (const [key, glyph, name, subtitle] of rows) {
@@ -405,6 +437,130 @@ describe('profile sign-in page dialogs', () => {
     expect(add.get('i').classes()).toEqual(['bi', 'bi-plus-lg', 'me-1'])
     expect(add.get('i').attributes('aria-hidden')).toBe('true')
     expect(add.text()).toBe('Add a way to sign in')
+  })
+
+  it('redraws the password subtitle from a live identity entity update', async () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      'resolvedOptions',
+    ).mockImplementation(() => ({ ...resolved, timeZone: 'Europe/Warsaw' }))
+    releaseTimeZone = bindTimeZoneState({
+      on: () => () => {},
+    } as unknown as HilosConnection)
+
+    const [password] = resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          identifier: 'a@example.test',
+          verified: true,
+          provider: null,
+        },
+      ],
+      [],
+    )
+    const world = setup(NO_STEP, [password!])
+    const row = world.wrapper.get('[data-identity-key="1"]')
+    const rowElement = row.element
+    const subtitle = row.get('[data-id="identity-identifier"]')
+    const subtitleElement = subtitle.element
+    const identityList = world.identityList()
+    const scopeUpdates = world.scopeUpdateCount()
+
+    expect(subtitle.text()).toBe('Set')
+    world.updateIdentity({
+      ...password!,
+      passwordChangedAt: 1767227400000,
+    })
+    await flushPromises()
+
+    expect(row.element).toBe(rowElement)
+    expect(row.get('[data-id="identity-identifier"]').element).toBe(
+      subtitleElement,
+    )
+    expect(subtitle.text()).toBe('Set · last changed Jan 1, 2026, 1:30:00 AM')
+    expect(world.identityList()).toBe(identityList)
+    expect(world.scopeUpdateCount()).toBe(scopeUpdates + 1)
+    expect(world.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('redraws the OAuth subtitle from a live provider-name entity update', async () => {
+    const [oauth] = resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 5,
+          type: 'oauth',
+          identifier: 'octocat',
+          verified: true,
+          provider: 'oauth:github',
+        },
+      ],
+      [],
+    )
+    const world = setup(NO_STEP, [oauth!])
+    const row = world.wrapper.get('[data-identity-key="5"]')
+    const subtitle = row.get('[data-id="identity-identifier"]')
+    const identityList = world.identityList()
+    const scopeUpdates = world.scopeUpdateCount()
+
+    expect(subtitle.text()).toBe('Linked')
+    world.updateIdentity({ ...oauth!, providerName: '  Octocat  ' })
+    await flushPromises()
+
+    expect(subtitle.text()).toBe('Octocat')
+    expect(world.identityList()).toBe(identityList)
+    expect(world.scopeUpdateCount()).toBe(scopeUpdates + 1)
+    expect(world.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('reformats the password subtitle when only the reader time zone changes', async () => {
+    let browserZone = 'Asia/Tokyo'
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      'resolvedOptions',
+    ).mockImplementation(() => ({ ...resolved, timeZone: browserZone }))
+    releaseTimeZone = bindTimeZoneState({
+      on: () => () => {},
+    } as unknown as HilosConnection)
+
+    const [password] = resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          identifier: 'a@example.test',
+          verified: true,
+          provider: null,
+          passwordChangedAt: 1767227400000,
+        },
+      ],
+      [],
+    )
+    const world = setup(NO_STEP, [password!])
+    const row = world.wrapper.get('[data-identity-key="1"]')
+    const rowElement = row.element
+    const subtitle = row.get('[data-id="identity-identifier"]')
+    const subtitleElement = subtitle.element
+    const identityList = world.identityList()
+    const scopeUpdates = world.scopeUpdateCount()
+    const dispatches = world.dispatch.mock.calls.length
+
+    expect(subtitle.text()).toBe('Set · last changed Jan 1, 2026, 9:30:00 AM')
+    browserZone = 'America/New_York'
+    window.dispatchEvent(new Event('focus'))
+    await nextTick()
+
+    expect(row.element).toBe(rowElement)
+    expect(row.get('[data-id="identity-identifier"]').element).toBe(
+      subtitleElement,
+    )
+    expect(subtitle.text()).toBe('Set · last changed Dec 31, 2025, 7:30:00 PM')
+    expect(world.identityList()).toBe(identityList)
+    expect(world.scopeUpdateCount()).toBe(scopeUpdates)
+    expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
   })
 
   it.each(['unlink', 'add'] as const)(

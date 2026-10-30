@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
@@ -24,13 +25,16 @@ use Hilos\HilosException;
  * @property-read string $identifier
  * @property-read ?string $provider
  * @property-read bool $verified
+ * @property-read ?int $passwordChangedAt Absolute UTC epoch milliseconds; null when unknown
+ * @property-read ?string $providerName Last nonblank personal name supplied by the OAuth provider
+ * @property-read IdentityActions $actions
  */
 class Identity extends DbItem
 {
     /**
      * Magic getter for identity properties.
      *
-     * @param string $name Property name (id, userId, type, identifier, provider, verified)
+     * @param string $name Non-secret Identity field name or actions
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -45,6 +49,8 @@ class Identity extends DbItem
             ObjectIdentity::identifier => $this->_object->identifier,
             ObjectIdentity::provider => $this->_object->provider,
             ObjectIdentity::verified => $this->_object->verified,
+            ObjectIdentity::passwordChangedAt => $this->_object->passwordChangedAt,
+            ObjectIdentity::providerName => $this->_object->providerName,
             default => parent::__get($name),
         };
     }

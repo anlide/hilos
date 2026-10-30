@@ -4,21 +4,74 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Identity;
+use Hilos\Database\View\Item\Identity as ViewIdentity;
 use PHPUnit\Framework\TestCase;
+use TypeError;
 
 /**
- * Unit tests for the identity layer's secret encapsulation (HIL-370, area 1e):
- * the password hash never leaves the identity layer. The object surface exposes
- * only the non-secret fields — the `secret` column is not a readable property and
- * cannot be written through the setter. The hash is reached only through the
- * layer's own verify/rehash primitives (targeted queries). The complementary
- * assertion that toArray() carries no `secret` key on a hydrated identity lives in
- * MainPageRegisterTest, where a persisted identity is available.
+ * The password hash stays outside the object/view surface and serialization.
+ * Nullable metadata crosses those boundaries with its declared scalar types.
  */
 final class IdentitySecretExposureTest extends TestCase
 {
+    public function testNullableMetadataRoundtripsWithoutExposingTheSecret(): void
+    {
+        $entity = EntityIdentity::fromRow([
+            'id' => 7,
+            'user_id' => 42,
+            'type' => IdentityType::PASSWORD,
+            'identifier' => 'reader@example.test',
+            'provider' => null,
+            'verified' => 1,
+            'password_changed_at' => null,
+            'provider_name' => null,
+            'secret' => 'db-only-hash',
+        ]);
+        $identity = Identity::fromEntity($entity);
+        $view = new ViewIdentity($identity);
+
+        $this->assertSame([
+            'id' => 7,
+            'userId' => 42,
+            'type' => IdentityType::PASSWORD,
+            'identifier' => 'reader@example.test',
+            'provider' => null,
+            'verified' => true,
+            'passwordChangedAt' => null,
+            'providerName' => null,
+        ], $identity->toArray());
+        $this->assertNull($view->passwordChangedAt);
+        $this->assertNull($view->providerName);
+        $this->assertArrayNotHasKey('secret', $entity->toArray());
+
+        $identity->passwordChangedAt = 1792742400123;
+        $identity->providerName = 'Reader Name';
+
+        $this->assertSame(1792742400123, $entity->password_changed_at);
+        $this->assertSame(1792742400123, $view->passwordChangedAt);
+        $this->assertSame('Reader Name', $view->providerName);
+        $this->assertSame(1792742400123, $identity->toArray()['passwordChangedAt']);
+        $this->assertSame('Reader Name', $identity->toArray()['providerName']);
+        $this->assertArrayNotHasKey('secret', $identity->toArray());
+
+        $identity->passwordChangedAt = null;
+        $identity->providerName = null;
+        $this->assertNull($view->passwordChangedAt);
+        $this->assertNull($view->providerName);
+    }
+
+    public function testPasswordMomentDoesNotAcceptASqlDate(): void
+    {
+        $identity = Identity::create();
+
+        $this->expectException(TypeError::class);
+        $identity->passwordChangedAt = '2026-10-23 06:50:22';
+    }
+
     /**
      * The secret hash is not a readable property on the object surface.
      *

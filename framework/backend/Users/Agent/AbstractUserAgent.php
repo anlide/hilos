@@ -76,6 +76,7 @@ use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
@@ -147,9 +148,9 @@ use Throwable;
  * from {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
  * accepts the person's pick (HIL-1427). The agent writes and always answers - a refusal included,
  * because the coordinator continues only on the answer and something is waiting on it - and the
- * coordinator does what follows the write. One frame is not an ask: the last usable zone a browser
- * of the person named, which the sessions library reports and nothing waits on (HIL-1582), is
- * written without an answer, and its refusal goes to this agent's log. Creating a way in, an
+ * coordinator does what follows the write. Background reports of the last usable browser zone
+ * and an OAuth identity's provider name are written without an answer; their refusals go to this
+ * agent's log. Creating a way in, an
  * enrolment, a set of backup codes or a removal stays with the libraries that create it. When the
  * person is erased, or folded into someone else, the agent stops itself.
  */
@@ -189,6 +190,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE => [
             AgentSignalConfigKey::INDEX_FIELD => UserLastBrowserTimeZoneWriteSignalData::userId,
             AgentSignalConfigKey::DTO => UserLastBrowserTimeZoneWriteSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserIdentityProviderNameWriteSignalData::userId,
+            AgentSignalConfigKey::DTO => UserIdentityProviderNameWriteSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => [
             AgentSignalConfigKey::INDEX_FIELD => UserPasswordRehashSignalData::userId,
@@ -505,6 +510,11 @@ abstract class AbstractUserAgent extends AbstractAgent
 
             case HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE:
                 $this->handleLastBrowserTimeZoneWrite($data->data, $name);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE:
+                $this->handleIdentityProviderNameWrite($data->data, $name);
 
                 return;
 
@@ -1137,12 +1147,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * the trust of every other browser of the person (HIL-1407).
      *
      * A browser trusted to skip the second factor was trusted on the strength of the old password,
-     * so the new one ends that trust everywhere but in the browser that set it. The two writes are
-     * not one transaction - taking the trust away commits on its own, and the framework does not
-     * nest transactions - so the order carries the guarantee: the trust goes FIRST and the hash
-     * SECOND. A failure of either half refuses the password as not changed, and there is no moment
-     * at which the password is new while the other browsers still pass without a code. Not final,
-     * for the reason {@see self::renamePerson()} gives.
+     * so the new one ends that trust everywhere but in the browser that set it. Taking the trust
+     * away commits first in its own transaction; the hash and its change moment then commit together
+     * in a separate transaction. The framework does not nest them. A failure of either phase refuses
+     * the password as not changed, and the password is never new while the other browsers still pass
+     * without a code. Not final, for the reason {@see self::renamePerson()} gives.
      *
      * @param int $identityId Password row to write
      * @param string $passwordHash `password_hash()` value to store
@@ -1151,12 +1160,20 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws LogicException When the identities collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
      * @throws DatabaseException When the row cannot be loaded, or the secret cannot be written
-     * @throws HilosException On database or truth-source failure while taking the trust away or writing the row
+     * @throws HilosException On database, truth-source or transaction failure while taking the trust away or writing the row
      */
     protected function writeNewPassword(int $identityId, string $passwordHash, int $keepSessionId): void
     {
         Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $keepSessionId);
-        $this->writePasswordHash($identityId, $passwordHash);
+        Database::transactionStart();
+        try {
+            $this->writePasswordHash($identityId, $passwordHash);
+            Hilos::$db->identities[$identityId]->actions->recordPasswordChange();
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
     }
 
     /**
@@ -1648,6 +1665,47 @@ abstract class AbstractUserAgent extends AbstractAgent
             $this->logAgentError("Last browser time zone for #{$this->userId} refused by wiring: {$wiring->getMessage()}");
         } catch (Throwable $e) {
             $this->logAgentError("Last browser time zone for #{$this->userId} not written: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Keeps provider metadata on the captured row only; a stale id never resolves to a replacement.
+     *
+     * A changed name rides the incoming receipt or opens an autonomous agent receipt. A refusal is
+     * logged here and cannot change the completed sign-in. Blank and repeated names write nothing.
+     *
+     * @param UserIdentityProviderNameWriteSignalData $report Captured identity and provider fact
+     * @param string $name Frame name, also the autonomous journal action
+     * @throws AgentException When the frame names another person
+     */
+    private function handleIdentityProviderNameWrite(UserIdentityProviderNameWriteSignalData $report, string $name): void
+    {
+        $this->refuseAnotherPerson($report->userId, $name);
+        try {
+            AddressablePerson::require($this->userId);
+            if (!isset(Hilos::$db->identities[$report->identityId])
+                || Hilos::$db->identities[$report->identityId]->userId !== $this->userId
+                || Hilos::$db->identities[$report->identityId]->type !== IdentityType::OAUTH) {
+                throw new ValidationException('The OAuth sign-in method no longer belongs to this person.');
+            }
+
+            $providerName = trim($report->providerName);
+            if ($providerName === '' || $providerName === Hilos::$db->identities[$report->identityId]->providerName) {
+                return;
+            }
+
+            if (JournalReceiptScope::currentId() === null) {
+                JournalReceiptScope::run(
+                    JournalReceiptData::agent($name, $this->getId()),
+                    fn () => Hilos::$db->identities[$report->identityId]->actions->rememberProviderName($providerName),
+                );
+            } else {
+                Hilos::$db->identities[$report->identityId]->actions->rememberProviderName($providerName);
+            }
+        } catch (WiringRefusal $wiring) {
+            $this->logAgentError("OAuth provider name for #{$this->userId} refused by wiring: {$wiring->getMessage()}");
+        } catch (Throwable $e) {
+            $this->logAgentError("OAuth provider name for #{$this->userId} not written: {$e->getMessage()}");
         }
     }
 

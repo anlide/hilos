@@ -1,3 +1,4 @@
+import { parsePhoneNumberFromString } from 'libphonenumber-js/min'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { uniquePhone, waitForSmsCode } from './standSms.mjs'
@@ -34,6 +35,58 @@ it('fails when the text carries no code', async () => {
 
 it('coins a number of a plus, a one and twelve digits', () => {
   expect(uniquePhone()).toMatch(/^\+1\d{12}$/)
+})
+
+it.each([
+  { random: 0, phone: '+1123456789000' },
+  { random: 0.678, phone: '+1123456789678' },
+  { random: 1 - Number.EPSILON, phone: '+1123456789999' },
+])(
+  'preserves the default clock and random suffix for $random',
+  ({ random, phone }) => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_790_123_456_789)
+    vi.spyOn(Math, 'random').mockReturnValue(random)
+
+    expect(uniquePhone()).toBe(phone)
+  },
+)
+
+it.each([
+  0, 12_345, 99_999, 100_000, 600_000, 623_456, 699_999, 999_999, 1_000_000,
+])(
+  'coins a GB mobile with 4–6 international groups at clock suffix %i',
+  (clockSuffix) => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_790_000_000_000 + clockSuffix)
+    const random = vi.spyOn(Math, 'random')
+
+    for (const spread of [0, 0.678, 1 - Number.EPSILON]) {
+      random.mockReturnValue(spread)
+      const phone = uniquePhone('GB')
+      expect(phone).toMatch(/^\+44\d{10}$/)
+      const parsed = parsePhoneNumberFromString(phone)
+      expect(parsed?.country).toBe('GB')
+      expect(parsed?.number).toBe(phone)
+      expect(parsed?.nationalNumber).toHaveLength(10)
+      expect(parsed?.getType()).toBe('MOBILE')
+      const formatted = parsed?.formatInternational()
+      expect(formatted).toMatch(/^\+44 \d{4} \d{6}$/)
+      expect(formatted?.replaceAll(' ', '')).toBe(phone)
+    }
+  },
+)
+
+it('separates GB callers by both the millisecond clock and random suffix', () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_790_000_099_999)
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+  const phones = new Set([uniquePhone('GB')])
+  random.mockReturnValue(0.001)
+  phones.add(uniquePhone('GB'))
+  random.mockReturnValue(1 - Number.EPSILON)
+  phones.add(uniquePhone('GB'))
+  clock.mockReturnValue(1_790_000_100_000)
+  phones.add(uniquePhone('GB'))
+
+  expect(phones.size).toBe(4)
 })
 
 /**

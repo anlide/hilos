@@ -8,6 +8,7 @@ import {
 } from '../auth/authFlow.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { formatMoment } from '../format/moment.js'
+import { formatPhoneNumber } from '../format/phoneNumber.js'
 import { type AuthMethodEntry } from '../session/sessionScope.js'
 import {
   SIGNAL_PROFILE_PASSWORD_UPDATED,
@@ -21,6 +22,8 @@ export interface HilosProfileSignInIdentitySource {
   readonly provider: string | null
   readonly identifier: string
   readonly verified: boolean
+  readonly passwordChangedAt?: number | null
+  readonly providerName?: string | null
 }
 
 /** Public device information joined to a passkey identity. */
@@ -37,6 +40,8 @@ export interface HilosProfileSignInMethod {
   readonly provider: string | null
   readonly identifier: string
   readonly verified: boolean
+  readonly passwordChangedAt: number | null
+  readonly providerName: string | null
   readonly deviceName: string | null
   readonly addedAt: number | null
   readonly canUnlink: boolean
@@ -63,6 +68,8 @@ export function resolveHilosProfileSignInMethods(
       provider: identity.provider,
       identifier: identity.identifier,
       verified: identity.verified,
+      passwordChangedAt: identity.passwordChangedAt ?? null,
+      providerName: identity.providerName ?? null,
       deviceName: credential?.label ?? null,
       addedAt: credential?.createdAt ?? null,
       canUnlink: identities.length > 1,
@@ -202,15 +209,25 @@ export function hilosProfileSignInTitle(
 }
 
 /**
- * The public identifier, or a passkey's enrollment date in the reader's zone.
+ * The method's public caption, with absolute moments in the reader's zone.
  *
  * @param method The projected method.
  */
 export function hilosProfileSignInSubtitle(
   method: HilosProfileSignInMethod,
 ): string {
-  if (method.type === SMS_METHOD_KEY && method.verified)
-    return `${method.identifier} · verified`
+  if (method.type === PASSWORD_METHOD_KEY) {
+    const changedAt =
+      method.passwordChangedAt === null
+        ? null
+        : formatMoment(method.passwordChangedAt)
+    return changedAt ? `Set · last changed ${changedAt}` : 'Set'
+  }
+  if (method.type === 'oauth') return method.providerName?.trim() || 'Linked'
+  if (method.type === SMS_METHOD_KEY) {
+    const phoneNumber = formatPhoneNumber(method.identifier)
+    return method.verified ? `${phoneNumber} · verified` : phoneNumber
+  }
   if (method.type !== 'passkey') return method.identifier
   const addedAt =
     method.addedAt === null

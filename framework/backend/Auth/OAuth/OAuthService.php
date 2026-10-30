@@ -94,11 +94,13 @@ final class OAuthService
      * @param string $providerKey Provider key the pending link belongs to
      * @param string $subject Provider-immutable account id to link
      * @param string $email Colliding address — non-empty and already normalized by the provider
+     * @param ?string $providerName Personal name reported by the provider
      * @return string Signed link token
+     * @throws JsonException When the provider name cannot be encoded
      */
-    public function issueLinkToken(string $providerKey, string $subject, string $email): string
+    public function issueLinkToken(string $providerKey, string $subject, string $email, ?string $providerName = null): string
     {
-        return $this->linkTokenSigner->issue($providerKey, $subject, $email, $this->linkTokenTtlSeconds);
+        return $this->linkTokenSigner->issue($providerKey, $subject, $email, $this->linkTokenTtlSeconds, $providerName);
     }
 
     /**
@@ -116,8 +118,9 @@ final class OAuthService
      * @param string $providerKey Provider key
      * @param string $subject Provider-immutable account id
      * @param ?string $email Provider-reported address
-     * @param string $displayName Provider-reported name
+     * @param string $displayName Project name for a new account
      * @param string $sessionToken Browser session token
+     * @param ?string $providerName Personal name reported by the provider
      * @return string Signed first sign-in token
      * @throws JsonException When provider facts cannot be encoded
      */
@@ -127,6 +130,7 @@ final class OAuthService
         ?string $email,
         string $displayName,
         string $sessionToken,
+        ?string $providerName = null,
     ): string {
         return $this->accountTokenSigner->issue(
             $providerKey,
@@ -135,6 +139,7 @@ final class OAuthService
             $displayName,
             $sessionToken,
             $this->accountTokenTtlSeconds,
+            $providerName,
         );
     }
 

@@ -71,6 +71,8 @@ final class HilosProfileIdentitiesBrowserListTest extends TestCase
                 Identity::identifier,
                 Identity::provider,
                 Identity::verified,
+                Identity::passwordChangedAt,
+                Identity::providerName,
             ],
             $this->identitiesItem()[BrowserListFieldKey::FIELDS],
         );

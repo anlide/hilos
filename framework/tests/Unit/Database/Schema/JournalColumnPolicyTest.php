@@ -58,6 +58,21 @@ final class JournalColumnPolicyTest extends TestCase
         $this->assertSame(JournalColumnMode::NOISE, $placements['updated_at']->mode);
     }
 
+    public function testIdentityMetadataKeepsTheMomentAndHidesThePersonalName(): void
+    {
+        $schema = self::schema(Identity::_table, [
+            'id' => 'int', 'secret' => 'varchar', 'updated_at' => 'datetime',
+            'password_changed_at' => 'bigint', 'provider_name' => 'text',
+        ]);
+        $pii = self::registry(Identity::_table, Identity::_pii, Identity::_piiNotPersonal);
+
+        $placements = JournalColumnPolicy::forTable(Identity::class, $schema, $pii);
+
+        $this->assertSame(JournalColumnMode::VALUE, $placements['password_changed_at']->mode);
+        $this->assertSame(JournalColumnMode::PERSONAL, $placements['provider_name']->mode);
+        $this->assertSame(JournalColumnMode::SECRET, $placements['secret']->mode);
+    }
+
     public function testPurgedTableKeepsOnlyKeySecretAndNoiseExceptions(): void
     {
         $schema = self::schema(SecondFactor::_table, [

@@ -27,12 +27,21 @@ const SMS_MAIL_DOMAIN = 'sms.stand'
  * millisecond clock plus three random digits keeps two workers of the same run
  * apart as well as two runs.
  *
+ * The optional GB fixture uses the ten-digit 71xxxxxxxx mobile range, whose
+ * international groups are 4–6. Its five clock digits wrap after 100 seconds;
+ * three random digits offer 1,000 alternatives per millisecond. Repeated clock
+ * and random suffixes produce the same fixture.
+ *
+ * @param {'GB'} [country] A country-specific mobile fixture instead of the default number.
  * @returns {string} A canonical E.164 number.
  */
-export function uniquePhone() {
+export function uniquePhone(country) {
   const spread = Math.floor(Math.random() * 1000)
     .toString()
     .padStart(3, '0')
+
+  if (country === 'GB')
+    return `+4471${Date.now().toString().slice(-5)}${spread}`
 
   return `+1${Date.now().toString().slice(-9)}${spread}`
 }

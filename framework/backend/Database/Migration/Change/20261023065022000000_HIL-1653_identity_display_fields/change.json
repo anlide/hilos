@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "id": "20261023065022000000_HIL-1653_identity_display_fields",
+    "parts": [
+        {
+            "unit": "identity",
+            "up": "add_identity_display_fields.sql",
+            "down": "add_identity_display_fields_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "740ed81a870e700d1f7b1ad2b7d127696cb9a24d4df967df83bc4b5efc3cc95c",
+            "afterStubDownSha256": "ae26767a5e05d5e4cd4f72841dd95a73c3f42f7c0a78eaae3cb593bc33874436"
+        }
+    ]
+}

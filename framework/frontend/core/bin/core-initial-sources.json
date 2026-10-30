@@ -231,6 +231,10 @@
     "sourceSha256": "bf2b1c064c19d4c582e3832d0dcc5d33412cb21d4c9acb284d4c68fb932b5627",
     "outputSha256": "e7e7b145ce71acd677b322d183302008ab96def090b97237b8053f16cf4be857"
   },
+  "src/format/phoneNumber.ts": {
+    "sourceSha256": "889c9104e8dd4ca7a297886cba35a0e415600fa3d1c9caac04d1d01a5fd9bca9",
+    "outputSha256": "1fcfd587544b33af240f4f34636abe6bdba22ea2ce6826de37d6276e74072180"
+  },
   "src/layout.ts": {
     "sourceSha256": "c0e5ad3f50e35047f5b0e6dba747796b4068cebbe9d33c23e3f39f2e42651d5a",
     "outputSha256": "1626b2fe379570f12accccbc7d43906b3b62ee6ea51689fb49c93ef441798fbf"
@@ -364,8 +368,8 @@
     "outputSha256": "61b1bab94abc899dcb76e377d98d3e4aa24d358de13e52b173e0ed6bc1d6b372"
   },
   "src/profile/profileIdentities.ts": {
-    "sourceSha256": "f22cf2f4e6c52aa252b318365ca554865e69f0ecaa0f262171eeed70a3e1ae31",
-    "outputSha256": "7919185ced4da45f5c5ee3f6cc0ba47f9736cfe34d36421dfd71b265a2aa02cb"
+    "sourceSha256": "41b81c627d6facbcd5cd3b4f02838708d52f711349e1151ba8cc8c3603068cc0",
+    "outputSha256": "e28b37a2e0f7f41cd619652703d2af192a3e4e526f3afbbf25f46c69c80c313d"
   },
   "src/profile/profileNameState.ts": {
     "sourceSha256": "2967664f3f1913c77337a7264a79621d3612a4c9650a25b798fbb541ff75d8aa",
@@ -392,8 +396,8 @@
     "outputSha256": "f56e8e58b2340dda19fc3e53a3db118bfe47b7b5a2f54d3c39a9773d420bd647"
   },
   "src/profile/profileSignInMethods.ts": {
-    "sourceSha256": "04a0fe1f5a0b5f5b0da9a94e98994df3caa58f33a00de628f29241a6aa519b23",
-    "outputSha256": "b36bd14121d45fb8e98ae3bd1fcd80f275d584d55e578660bb9f351116d16ff9"
+    "sourceSha256": "84f6e5e0b9c8f360afa6365057312f2057c35695f13e10110bfdac3e9edbe903",
+    "outputSha256": "a062ea38e8906699288330672272d32098b805dd6772c4778b970a73609f2785"
   },
   "src/profile/secondFactor.ts": {
     "sourceSha256": "735c333e251cb929fa502e4e3946e74fdd064b6b324eac843e100146817d590f",

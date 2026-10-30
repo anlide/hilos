@@ -686,6 +686,7 @@ export {
   type ProfileNameSnapshot,
   type ProfileRenameFrameLog,
 } from './profileRename.js'
+export { expectProfilePasswordCaption } from './profileIdentities.js'
 
 export {
   COMMUNICATIONS_FRAME_PATH,

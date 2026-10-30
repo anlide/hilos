@@ -4,6 +4,7 @@
 import {
   readBoolean,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../state/fieldReaders.js'
@@ -29,6 +30,8 @@ const ProfileIdentityRowKey = {
   provider: 'provider',
   identifier: 'identifier',
   verified: 'verified',
+  passwordChangedAt: 'passwordChangedAt',
+  providerName: 'providerName',
 } as const
 
 const ProfilePasskeyRowKey = {
@@ -72,6 +75,14 @@ export function createHilosProfileSignInMethods(
                     ProfileIdentityRowKey.identifier,
                   ),
                   verified: readBoolean(fields, ProfileIdentityRowKey.verified),
+                  passwordChangedAt: readNumberOrNull(
+                    fields,
+                    ProfileIdentityRowKey.passwordChangedAt,
+                  ),
+                  providerName: readStringOrNull(
+                    fields,
+                    ProfileIdentityRowKey.providerName,
+                  ),
                 },
               ]
         }),

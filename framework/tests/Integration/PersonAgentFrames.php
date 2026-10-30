@@ -34,6 +34,7 @@ use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
@@ -87,7 +88,7 @@ trait PersonAgentFrames
      * @param int $userId Person whose agent is asked for
      * @return AbstractUserAgent The person's agent, holding the claims its worker would lay
      */
-    private function personAgent(int $userId): AbstractUserAgent
+    protected function personAgent(int $userId): AbstractUserAgent
     {
         if (!isset($this->personAgents[$userId])) {
             $agent = $this->newPersonAgent((string)$userId);
@@ -106,7 +107,7 @@ trait PersonAgentFrames
      * @param callable(AbstractUserAgent): T $step Step to run as the agent
      * @return T Whatever the step returns
      */
-    private function asPerson(int $userId, callable $step): mixed
+    protected function asPerson(int $userId, callable $step): mixed
     {
         $agent = $this->personAgent($userId);
 
@@ -131,6 +132,7 @@ trait PersonAgentFrames
             $ask instanceof UserThemePickWriteSignalData,
             $ask instanceof UserTimeZoneWriteSignalData,
             $ask instanceof UserLastBrowserTimeZoneWriteSignalData,
+            $ask instanceof UserIdentityProviderNameWriteSignalData,
             $ask instanceof UserPasswordRehashSignalData,
             $ask instanceof UserAddressVerifySignalData,
             $ask instanceof UserPasskeyUseSignalData,

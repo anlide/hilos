@@ -34,6 +34,8 @@ use Hilos\Database\SqlParamCollection;
  * @property string $identifier
  * @property ?string $provider
  * @property bool $verified
+ * @property ?int $passwordChangedAt Absolute UTC epoch milliseconds; null when unknown
+ * @property ?string $providerName Last nonblank personal name supplied by the OAuth provider
  */
 class Identity extends Object_
 {
@@ -45,6 +47,8 @@ class Identity extends Object_
     public const string identifier = 'identifier';
     public const string provider = 'provider';
     public const string verified = 'verified';
+    public const string passwordChangedAt = 'passwordChangedAt';
+    public const string providerName = 'providerName';
 
     /**
      * Fixed bcrypt hash used only to equalize login response time on an unknown
@@ -55,7 +59,7 @@ class Identity extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, userId, type, identifier, provider, verified)
+     * @param string $property Non-secret Identity field name
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known Identity field
      */
@@ -68,6 +72,8 @@ class Identity extends Object_
             self::identifier => $this->entity->identifier,
             self::provider => $this->entity->provider,
             self::verified => $this->entity->verified,
+            self::passwordChangedAt => $this->entity->password_changed_at,
+            self::providerName => $this->entity->provider_name,
             default => parent::__get($property),
         };
     }
@@ -79,8 +85,8 @@ class Identity extends Object_
      * identity layer's write paths - the creation, {@see setPasswordHash()} and
      * {@see clearPassword()}.
      *
-     * @param string $property Property name (userId, type, identifier, provider, verified)
-     * @param mixed $value Value to set
+     * @param string $property Writable non-secret Identity field name
+     * @param mixed $value Value to set; metadata requires its declared nullable type
      * @throws DatabaseException When the property cannot be set on an Identity
      */
     public function __set(string $property, mixed $value): void
@@ -91,6 +97,8 @@ class Identity extends Object_
             self::identifier => $this->entity->identifier = (string)$value,
             self::provider => $this->entity->provider = is_scalar($value) ? (string)$value : null,
             self::verified => $this->entity->verified = (bool)$value,
+            self::passwordChangedAt => $this->entity->password_changed_at = $value,
+            self::providerName => $this->entity->provider_name = $value,
             default => parent::__set($property, $value),
         };
     }
@@ -272,7 +280,7 @@ class Identity extends Object_
     /**
      * Converts identity to associative array (never includes the secret).
      *
-     * @return array<string, mixed> Identity data (id, userId, type, identifier, provider, verified)
+     * @return array<string, mixed> Non-secret Identity data, including nullable metadata
      */
     public function toArray(): array
     {
@@ -283,6 +291,8 @@ class Identity extends Object_
             self::identifier => $this->entity->identifier,
             self::provider => $this->entity->provider,
             self::verified => $this->entity->verified,
+            self::passwordChangedAt => $this->entity->password_changed_at,
+            self::providerName => $this->entity->provider_name,
         ];
     }
 

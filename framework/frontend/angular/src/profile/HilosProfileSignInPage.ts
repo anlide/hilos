@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core'
 import {
+  computedSignal,
   createHilosProfileAddSignInFlow,
   createHilosProfilePasswordChangeFlow,
   createHilosProfileSignInMethods,
@@ -144,7 +145,7 @@ let signInSequence = 0
                     : 'identity-identifier'
                 "
               >
-                {{ subtitle(method) }}
+                {{ subtitles().get(method.key) }}
               </div>
               @if (!method.canUnlink) {
                 <div
@@ -599,6 +600,21 @@ export class HilosProfileSignInPage {
   private readonly methodsSignal = computed(() =>
     createHilosProfileSignInMethods(this.context().scopes),
   )
+  private readonly subtitlesSignal = computed(() => {
+    const methods = this.methodsSignal()
+    return computedSignal(
+      () =>
+        new Map(
+          methods
+            .get()
+            .map(
+              (method) =>
+                [method.key, hilosProfileSignInSubtitle(method)] as const,
+            ),
+        ),
+    )
+  })
+  protected readonly subtitles = signal<ReadonlyMap<string, string>>(new Map())
   private readonly offered = signal<readonly AuthMethodEntry[]>([])
   protected readonly passkeySupported = isPasskeySupported()
   /** What the account can still add: the chooser's buttons and the warning's. */
@@ -626,7 +642,6 @@ export class HilosProfileSignInPage {
   protected readonly sendProgressRowClass = SEND_PROGRESS_ROW_CLASS
   protected readonly sendProgressDetailsClass = SEND_PROGRESS_DETAILS_CLASS
   protected readonly sendAgainLabel = SEND_AGAIN_LABEL
-  protected readonly subtitle = hilosProfileSignInSubtitle
   protected readonly authMethodIcon = hilosAuthMethodIcon
   protected readonly profileSignInIcon = hilosProfileSignInIcon
   protected readonly unlinkKey = signal<string | null>(null)
@@ -781,6 +796,13 @@ export class HilosProfileSignInPage {
       const methods = this.methodsSignal()
       this.methods.set(methods.get())
       onCleanup(subscribeSignal(methods, (value) => this.methods.set(value)))
+    })
+    effect((onCleanup) => {
+      const subtitles = this.subtitlesSignal()
+      this.subtitles.set(subtitles.get())
+      onCleanup(
+        subscribeSignal(subtitles, (value) => this.subtitles.set(value)),
+      )
     })
     effect(() => {
       if (this.unlinkKey() !== null && !this.unlinkMethod())

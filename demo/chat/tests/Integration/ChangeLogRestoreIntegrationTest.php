@@ -183,8 +183,8 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
     /** A production archive predating retirement passes preflight and migrates before anonymization. */
     public function testFullProductionRestoreRetiresHistoricalModerationTable(): void
     {
-        $this->assertSame(110, Migration::getCurrentIndex());
-        $this->assertSame(1, Migration::migrateDown(109));
+        $this->assertSame(111, Migration::getCurrentIndex());
+        $this->assertSame(2, Migration::migrateDown(109));
         Schema::reset();
         Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
             ['message_rule', 'Historical non-personal moderation rule']);
@@ -213,14 +213,14 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                 file_get_contents($this->storeRoot . '/unpacked/db-1.sql'));
         }
 
-        $this->assertSame(1, Migration::migrateUp());
+        $this->assertSame(2, Migration::migrateUp());
         Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Written after historical archive', $userId]);
         $decision = RestoreEnvGuard::decide(AppEnv::fromString($archive->env), AppEnv::TEST, false)->decision;
         $this->assertSame(RestoreEnvDecision::REQUIRE_ANONYMIZATION, $decision);
         new BackupRestorer()->restore(self::ARCHIVE_ID, BackupScope::FULL, $decision);
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
-        $this->assertSame(110, Migration::getCurrentIndex());
+        $this->assertSame(111, Migration::getCurrentIndex());
         $this->assertArrayNotHasKey('moderator_prompt_piece', LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX));
         $this->assertSame([], Database::sql('SELECT `key` FROM `hilos_setting` WHERE `key` IN (?, ?, ?, ?)', [
             'chat_moderation_model', 'chat_moderation_url', 'chat_moderation_provider', 'chat_moderation_timeout_sec',

@@ -198,14 +198,32 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
         Database::sqlRun('UPDATE `hilos_identity` SET `secret` = ? WHERE `id` = ?', ['hash-two', $identityId]);
         $identityLogs = self::tableLogs('hilos_identity');
         $this->assertSame(['create'], array_column($identityLogs, 'mutation_type'));
+
+        Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ?, `provider_name` = ? WHERE `id` = ?',
+            [1792742400123, 'Private Provider Name', $identityId]);
+        $identityLogs = self::tableLogs('hilos_identity');
+        $this->assertSame(['create', 'update'], array_column($identityLogs, 'mutation_type'));
+        $metadataChanges = self::changes((int)$identityLogs[1]['id']);
+        $this->assertSame(['password_changed_at', 'provider_name'], array_keys($metadataChanges));
+        $this->assertSame('inline', $metadataChanges['password_changed_at']['kind']);
+        $this->assertNull($metadataChanges['password_changed_at']['old_value']);
+        $this->assertSame('1792742400123', $metadataChanges['password_changed_at']['new_value']);
+        $this->assertSame('fact', $metadataChanges['provider_name']['kind']);
+        $this->assertNull($metadataChanges['provider_name']['old_value']);
+        $this->assertNull($metadataChanges['provider_name']['new_value']);
+
         Database::sqlRun('DELETE FROM `hilos_identity` WHERE `id` = ?', [$identityId]);
         $identityLogs = self::tableLogs('hilos_identity');
-        $this->assertSame(['create', 'delete'], array_column($identityLogs, 'mutation_type'));
-        $identityChanges = self::changes((int)$identityLogs[1]['id']);
+        $this->assertSame(['create', 'update', 'delete'], array_column($identityLogs, 'mutation_type'));
+        $identityChanges = self::changes((int)$identityLogs[2]['id']);
         $this->assertArrayNotHasKey('secret', $identityChanges);
         $this->assertSame('1', (string)$identityChanges['provider']['old_present']);
         $this->assertSame('0', (string)$identityChanges['provider']['new_present']);
         $this->assertNull($identityChanges['provider']['old_value']);
+        $this->assertSame('1792742400123', $identityChanges['password_changed_at']['old_value']);
+        $this->assertSame('fact', $identityChanges['provider_name']['kind']);
+        $this->assertNull($identityChanges['provider_name']['old_value']);
+        $this->assertNull($identityChanges['provider_name']['new_value']);
 
         Database::sql('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
             ['journal.fixture', 'string', 'before']);

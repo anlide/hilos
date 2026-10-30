@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
+import { applyServerTime } from '../../src/session/serverClock.js'
 import {
   describeHilosProfileSignInMethods,
   hilosProfileAddableWays,
@@ -27,7 +28,11 @@ const key = {
   verified: true,
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  applyServerTime(Date.now())
+})
 
 describe('profile sign-in projection', () => {
   it('joins by identity id and disables removal only for the last method', () => {
@@ -48,8 +53,8 @@ describe('profile sign-in projection', () => {
     ).toBe(true)
   })
   it.each([
-    { verified: true, subtitle: '+15551234567 · verified' },
-    { verified: false, subtitle: '+15551234567' },
+    { verified: true, subtitle: '+1 555 123 4567 · verified' },
+    { verified: false, subtitle: '+1 555 123 4567' },
   ])(
     'formats a phone subtitle with verified=$verified',
     ({ verified, subtitle }) => {
@@ -58,10 +63,11 @@ describe('profile sign-in projection', () => {
         [],
       )
       expect(method.verified).toBe(verified)
+      expect(method.identifier).toBe('+15551234567')
       expect(hilosProfileSignInSubtitle(method)).toBe(subtitle)
     },
   )
-  it.each(['password', 'magic_link', 'oauth'])(
+  it.each(['magic_link', 'custom'])(
     'keeps the identifier subtitle for a verified %s method',
     (type) => {
       const [method] = resolveHilosProfileSignInMethods(
@@ -69,6 +75,84 @@ describe('profile sign-in projection', () => {
         [],
       )
       expect(hilosProfileSignInSubtitle(method)).toBe(password.identifier)
+    },
+  )
+  it('normalizes metadata from old callers to required nullable fields', () => {
+    const [method] = resolveHilosProfileSignInMethods([password], [])
+    expect(method.passwordChangedAt).toBeNull()
+    expect(method.providerName).toBeNull()
+    expect(hilosProfileSignInSubtitle(method)).toBe('Set')
+    expect(hilosProfilePasswordState([method])).toEqual({
+      hasPassword: true,
+      verifiedEmail: password.identifier,
+    })
+  })
+  it('shows the password change moment without exposing or replacing the email', () => {
+    vi.spyOn(hilosTimeZone, 'get').mockReturnValue('Europe/Warsaw')
+    applyServerTime(Date.now() + 300000)
+    const [method] = resolveHilosProfileSignInMethods(
+      [{ ...password, passwordChangedAt: 1767227400000 }],
+      [],
+    )
+    expect(method.passwordChangedAt).toBe(1767227400000)
+    expect(hilosProfileSignInSubtitle(method)).toBe(
+      'Set · last changed Jan 1, 2026, 1:30:00 AM',
+    )
+    expect(hilosProfilePasswordState([method]).verifiedEmail).toBe(
+      password.identifier,
+    )
+  })
+  it.each([null, NaN, Infinity, -Infinity, 8640000000000001])(
+    'uses Set for an absent or invalid password moment %s',
+    (passwordChangedAt) => {
+      const [method] = resolveHilosProfileSignInMethods(
+        [{ ...password, passwordChangedAt }],
+        [],
+      )
+      expect(hilosProfileSignInSubtitle(method)).toBe('Set')
+    },
+  )
+  it('uses Set when the moment formatter is unavailable or returns empty text', () => {
+    const [method] = resolveHilosProfileSignInMethods(
+      [{ ...password, passwordChangedAt: 1767227400000 }],
+      [],
+    )
+    const formatter = new Intl.DateTimeFormat()
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function () {
+      return { ...formatter, format: () => '' } as Intl.DateTimeFormat
+    })
+    expect(hilosProfileSignInSubtitle(method)).toBe('Set')
+    vi.stubGlobal('Intl', undefined)
+    expect(hilosProfileSignInSubtitle(method)).toBe('Set')
+  })
+  it.each([
+    ['Octocat', 'Octocat'],
+    ['  Octocat  ', 'Octocat'],
+    ['', 'Linked'],
+    [' \t\n', 'Linked'],
+    [null, 'Linked'],
+    [undefined, 'Linked'],
+  ])(
+    'uses provider name %s or the linked fallback',
+    (providerName, expected) => {
+      const [method] = resolveHilosProfileSignInMethods(
+        [
+          {
+            ...password,
+            type: 'oauth',
+            provider: 'oauth:github',
+            identifier: 'github:subject-123',
+            providerName,
+          },
+        ],
+        [],
+      )
+      expect(method.providerName).toBe(providerName ?? null)
+      expect(hilosProfileSignInSubtitle(method)).toBe(expected)
+      expect(hilosProfileSignInTitle(method, offered)).toBe('GitHub')
+      expect(describeHilosProfileSignInMethods([method], offered)).toBe(
+        'GitHub',
+      )
     },
   )
   it('formats enrollment across midnight and falls back for an absent or invalid moment', () => {

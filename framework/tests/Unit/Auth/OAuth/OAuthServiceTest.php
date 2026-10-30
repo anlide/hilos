@@ -67,14 +67,16 @@ final class OAuthServiceTest extends TestCase
             OAuthProviderPreset::GITHUB->value,
             'subject-123',
             'user@example.test',
-            'Provider Name',
+            'Project Person',
             self::SESSION,
+            '李 | Provider Name',
         );
 
         $data = $service->verifyAccountToken($token, self::SESSION);
         self::assertNotNull($data);
         self::assertSame('subject-123', $data->subject);
-        self::assertSame('Provider Name', $data->displayName);
+        self::assertSame('Project Person', $data->displayName);
+        self::assertSame('李 | Provider Name', $data->providerName);
         self::assertNull($service->verifyAccountToken($token, 'other-session'));
     }
 
@@ -168,13 +170,14 @@ final class OAuthServiceTest extends TestCase
     {
         $service = $this->service();
 
-        $token = $service->issueLinkToken(OAuthProviderPreset::GITHUB->value, '4242', 'user@example.com');
+        $token = $service->issueLinkToken(OAuthProviderPreset::GITHUB->value, '4242', 'user@example.com', '李 | Provider Name');
 
         $data = $service->verifyLinkToken($token);
         self::assertNotNull($data);
         self::assertSame(OAuthProviderPreset::GITHUB->value, $data->provider);
         self::assertSame('4242', $data->subject);
         self::assertSame('user@example.com', $data->email);
+        self::assertSame('李 | Provider Name', $data->providerName);
     }
 
     /**

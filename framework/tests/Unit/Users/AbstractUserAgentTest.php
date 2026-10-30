@@ -4,13 +4,26 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Users;
 
+use ArrayObject;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -22,7 +35,12 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Entity\Item\UserMerge;
+use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Collection\Identities;
+use Hilos\Database\View\Item\Identity;
+use Hilos\Hilos;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
@@ -34,6 +52,7 @@ use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
@@ -270,6 +289,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => UserThemePickWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => UserTimeZoneWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE => UserLastBrowserTimeZoneWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE => UserIdentityProviderNameWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => UserPasswordRehashSignalData::class,
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => UserAddressVerifySignalData::class,
             HilosSignalConstants::HILOS_USER_PASSKEY_USE => UserPasskeyUseSignalData::class,
@@ -315,6 +335,103 @@ final class AbstractUserAgentTest extends TestCase
         );
 
         self::assertTrue($agent->shouldStop());
+    }
+
+    /**
+     * @param string $state Owner, identity or write state at delivery
+     * @param string $reported Name supplied by the exchange
+     * @param bool $writes Whether the item action must run
+     * @param bool $logs Whether the background refusal must be logged
+     */
+    #[DataProvider('providerNameDeliveries')]
+    public function testProviderNameReportsRespectTheCapturedIdentity(string $state, string $reported, bool $writes, bool $logs): void
+    {
+        $previousDb = Hilos::$db;
+        $actions = $this->createMock(IdentityActions::class);
+        $write = $actions->expects($writes ? self::once() : self::never())->method('rememberProviderName');
+        if ($writes) {
+            $write->with('New name');
+        }
+        if ($state === 'write failure') {
+            $write->willThrowException(new ValidationException('Metadata write refused'));
+        }
+        $fields = [
+            'userId' => $state === 'foreign' ? 43 : 42,
+            'type' => $state === 'password' ? IdentityType::PASSWORD : IdentityType::OAUTH,
+            'providerName' => 'Known name',
+            'actions' => $actions,
+        ];
+        $row = $this->createMock(Identity::class);
+        $row->method('__get')->willReturnCallback(static fn (string $key): mixed => $fields[$key]);
+        $rows = new ArrayObject($state === 'missing' ? [] : [$state === 'recreated' ? 92 : 91 => $row]);
+        $identities = $this->createMock(Identities::class);
+        $identities->method('offsetExists')->willReturnCallback(static fn (mixed $key): bool => $rows->offsetExists($key));
+        $identities->method('offsetGet')->willReturnCallback(static fn (mixed $key): mixed => $rows[$key]);
+        $identities->expects(self::never())->method('findByIdentity');
+        $db = $this->getMockBuilder(HilosDbContext::class)->onlyMethods(['__get'])->getMock();
+        $collections = [
+            HilosDbContext::users => new ArrayObject($state === 'erased' ? [] : [42 => (object)[]]),
+            HilosDbContext::userMerges => new ArrayObject($state === 'merged' ? [42 => (object)[]] : []),
+            HilosDbContext::identities => $identities,
+        ];
+        $db->method('__get')->willReturnCallback(static fn (string $key): mixed => $collections[$key]);
+        Hilos::$db = $db;
+        $agent = $this->getMockBuilder(AbstractUserAgent::class)->setConstructorArgs(['42'])
+            ->onlyMethods(['logAgentError', 'sendToAgent'])->getMock();
+        $agent->expects($logs ? self::once() : self::never())->method('logAgentError');
+        $agent->expects(self::never())->method('sendToAgent');
+        try {
+            $agent->onSignalAgent(
+                new AgentSignalData(new UserIdentityProviderNameWriteSignalData(42, 91, $reported)),
+                'users-library',
+                HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE,
+            );
+            self::assertSame('Known name', $row->providerName);
+            if ($state === 'recreated') {
+                self::assertSame($row, $rows[92], 'A replacement at the former provider:subject is untouched');
+            }
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+    }
+
+    /** @return iterable<string, array{string, string, bool, bool}> Captured-row and metadata outcomes */
+    public static function providerNameDeliveries(): iterable
+    {
+        yield 'changed' => ['present', ' New name ', true, false];
+        yield 'repeated' => ['present', ' Known name ', false, false];
+        yield 'blank' => ['present', " \t\n", false, false];
+        yield 'empty' => ['present', '', false, false];
+        foreach (['foreign', 'password', 'missing', 'recreated', 'erased', 'merged'] as $state) {
+            yield $state => [$state, 'New name', false, true];
+        }
+        yield 'write failure' => ['write failure', 'New name', true, true];
+    }
+
+    public function testProviderNameReportCannotRetargetAnotherPersonsAgent(): void
+    {
+        $this->expectException(AgentException::class);
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new UserIdentityProviderNameWriteSignalData(43, 91, 'Name')),
+            'users-library',
+            HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE,
+        );
+    }
+
+    public function testProviderNameRouteHydratesThePayloadAndKeepsItsReceipt(): void
+    {
+        $router = $this->getMockBuilder(SignalRouter::class)->onlyMethods(['hilosClass'])->getMock();
+        $router->method('hilosClass')->willReturn(TestUserAgentHilos::class);
+        $payload = new AgentSignalData(new SignalData(['userId' => 42, 'identityId' => 91, 'providerName' => 'Name']), 701);
+        self::assertEquals([new AgentDestination(HilosAgentType::HILOS_USER, '42')], $router->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE), $payload,
+        )));
+        $hydrated = $router->createAgentSignalPayloadDTO(HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE, $payload);
+        self::assertInstanceOf(UserIdentityProviderNameWriteSignalData::class, $hydrated->data);
+        self::assertSame($payload->data->toArray(), $hydrated->data->toArray());
+        self::assertSame(701, $hydrated->receiptId);
+        self::assertEquals($hydrated, AgentSignalData::fromArray($hydrated->toArray()));
     }
 
     public function testAMergeRowForThePersonAsksTheAgentToStop(): void
@@ -425,4 +542,16 @@ final class TestUserAgent extends AbstractUserAgent
 
 final class TestUserAgentDaemon extends AbstractUserAgentDaemon
 {
+}
+
+/** The same indexed owner used by every project, for the direct route and payload parser. */
+abstract class TestUserAgentHilos extends Hilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_USER => [
+            AgentRegistryKey::WORKER => TestUserAgent::class,
+            AgentRegistryKey::DAEMON => TestUserAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
 }

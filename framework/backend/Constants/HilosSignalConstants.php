@@ -143,6 +143,7 @@ use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
@@ -772,6 +773,13 @@ final class HilosSignalConstants
      * background write that nobody waits on, so no answer comes back.
      */
     public const string HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE = 'hilos_user_last_browser_time_zone_write';
+
+    /**
+     * Users library → the person's agent: remember the name reported for the captured OAuth identity.
+     *
+     * Carried by {@see UserIdentityProviderNameWriteSignalData}; a background report without an answer.
+     */
+    public const string HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE = 'hilos_user_identity_provider_name_write';
 
     /**
      * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).

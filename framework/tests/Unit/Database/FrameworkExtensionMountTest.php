@@ -5,13 +5,19 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Database;
 
 use Hilos\Database\Actions\Collection\SettingsActions;
+use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
+use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
+use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
@@ -49,6 +55,8 @@ use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
+use Hilos\Database\View\Item\Identity;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMemberObjects;
 use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMembers;
@@ -163,6 +171,34 @@ final class FrameworkExtensionMountTest extends TestCase
 
         $this->assertSame(self::FRAMEWORK_VIEWS, $mounted);
         $this->assertCount(count(self::FRAMEWORK_VIEWS), $context->getObjectCollectionClasses());
+        $this->assertSame(IdentityActions::class, $context->getDbItemCollection(HilosDbContext::identities)->getItemActionsClass());
+    }
+
+    public function testIdentityItemActionsSurviveAWholeProjectExtension(): void
+    {
+        $context = new DeclaringDbContext([
+            HilosDbContext::identities => new FrameworkExtension(
+                ExtendedIdentityViews::class,
+                itemActions: ExtendedIdentityActions::class,
+            ),
+        ]);
+        $context->configure();
+        $previousDb = Hilos::$db;
+        Hilos::$db = $context;
+        try {
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+
+        /** @var ExtendedIdentityViews $view */
+        $view = $context->getDbItemCollection(HilosDbContext::identities);
+        $identity = $view->wrap(ExtendedIdentityObject::create());
+
+        $this->assertInstanceOf(ExtendedIdentityItem::class, $identity);
+        $this->assertInstanceOf(ExtendedIdentityActions::class, $identity->actions);
+        $this->assertInstanceOf(IdentityActions::class, $identity->actions);
+        $this->assertSame(Objects::LAZY_STRATEGY_KEY, $context->mountedObjectCollection(HilosDbContext::identities)->getLazyStrategy());
     }
 
     /**
@@ -318,4 +354,49 @@ final class OverwritingDbContext extends HilosDbContext
  */
 final class IdentitiesOfTheTest extends DbCollectionIdentities
 {
+}
+
+/** The project's complete identity chain keeps the framework's fields and actions. */
+final class ExtendedIdentityEntity extends EntityIdentity
+{
+}
+
+final class ExtendedIdentityEntities extends EntityIdentities
+{
+    public const string ENTITY_CLASS = ExtendedIdentityEntity::class;
+}
+
+final class ExtendedIdentityObject extends ObjectIdentity
+{
+    public const string ENTITY_CLASS = ExtendedIdentityEntity::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedIdentityObjects::class;
+}
+
+final class ExtendedIdentityObjects extends ObjectIdentities
+{
+    public const string OBJECT_CLASS = ExtendedIdentityObject::class;
+    public const string ENTITY_COLLECTION_CLASS = ExtendedIdentityEntities::class;
+}
+
+final class ExtendedIdentityItem extends Identity
+{
+}
+
+final class ExtendedIdentityActions extends IdentityActions
+{
+}
+
+final class ExtendedIdentityViews extends DbCollectionIdentities
+{
+    public const string DB_ITEM_CLASS = ExtendedIdentityItem::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedIdentityObjects::class;
+
+    /**
+     * @param ExtendedIdentityObject $object Unpersisted test row; no database read is needed
+     * @return Identity Item built by the real collection factory with its mounted actions
+     */
+    public function wrap(ExtendedIdentityObject $object): Identity
+    {
+        return $this->createDbItem($object);
+    }
 }

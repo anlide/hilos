@@ -24,6 +24,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -34,6 +35,7 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Profile sign-in methods: first password, code-proven additions and unlink (HIL-1137, HIL-300).
@@ -83,12 +85,20 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
         $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
+        $before = TimeHelper::nowMs();
         $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
 
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, self::EMAIL);
         self::assertSame(self::USER_ID, $identity?->userId);
         self::assertTrue($identity->verified);
         self::assertTrue($identity->verifyPassword(self::NEW_PASSWORD));
+        self::assertGreaterThanOrEqual($before, $identity->passwordChangedAt);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), $identity->passwordChangedAt);
+        self::assertSame(
+            $identity->passwordChangedAt,
+            (int)Database::sql('SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$identity->id])
+                ->rows()[0]['password_changed_at'],
+        );
         self::assertSame(
             [
                 [self::ACCEPT_KEY, ProfilePasswordUpdatedSignalData::MODE_ADDED],

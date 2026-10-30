@@ -132,9 +132,11 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         self::assertSame($rules, Database::sql('SELECT * FROM `hilos_moderation_rule` ORDER BY `id`')->rows());
         self::assertSame($settings, self::preservedSettingRows());
         $this->assertHistoryPreserved($history);
+        self::assertSame($this->latestMigrationIndex - self::MIGRATION_INDEX, Migration::migrateUp($this->latestMigrationIndex));
+        self::assertSame($this->latestMigrationIndex, Migration::getCurrentIndex());
         JournalTriggerInstaller::apply();
 
-        self::assertSame(1, Migration::migrateDown(self::BEFORE_RETIREMENT));
+        self::assertSame($this->latestMigrationIndex - self::BEFORE_RETIREMENT, Migration::migrateDown(self::BEFORE_RETIREMENT));
         $this->assertEmptyLegacyStructure();
         $this->assertNullableLegacySettings();
         self::assertSame([], self::legacyTriggerNames());
@@ -143,6 +145,8 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         self::assertSame($rules, Database::sql('SELECT * FROM `hilos_moderation_rule` ORDER BY `id`')->rows());
         self::assertSame($settings, self::preservedSettingRows());
         $this->assertHistoryPreserved($history);
+        self::assertSame($this->latestMigrationIndex - self::MIGRATION_INDEX, Migration::migrateUp($this->latestMigrationIndex));
+        self::assertSame($this->latestMigrationIndex, Migration::getCurrentIndex());
         JournalTriggerInstaller::apply();
     }
 

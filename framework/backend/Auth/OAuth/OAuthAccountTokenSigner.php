@@ -17,6 +17,7 @@ final class OAuthAccountTokenSigner
     private const string FIELD_SUBJECT = 'subject';
     private const string FIELD_EMAIL = 'email';
     private const string FIELD_NAME = 'name';
+    private const string FIELD_PROVIDER_NAME = 'providerName';
     private const string FIELD_SESSION = 'session';
     private const string FIELD_EXPIRES = 'expires';
 
@@ -29,9 +30,10 @@ final class OAuthAccountTokenSigner
      * @param string $provider Provider key
      * @param string $subject Provider-immutable account id
      * @param ?string $email Provider-reported address
-     * @param string $displayName Provider-reported display name
+     * @param string $displayName Project name for a new account
      * @param string $sessionToken Current browser session token
      * @param int $ttlSeconds Lifetime in seconds
+     * @param ?string $providerName Personal name reported by the provider
      * @return string Signed account capability
      * @throws JsonException When provider facts cannot be encoded
      */
@@ -42,6 +44,7 @@ final class OAuthAccountTokenSigner
         string $displayName,
         string $sessionToken,
         int $ttlSeconds,
+        ?string $providerName = null,
     ): string {
         $payload = json_encode([
             self::FIELD_TAG => self::DOMAIN_TAG,
@@ -49,6 +52,7 @@ final class OAuthAccountTokenSigner
             self::FIELD_SUBJECT => $subject,
             self::FIELD_EMAIL => $email,
             self::FIELD_NAME => $displayName,
+            self::FIELD_PROVIDER_NAME => $providerName,
             self::FIELD_SESSION => ProtectedModeRuntime::hashSessionToken($sessionToken),
             self::FIELD_EXPIRES => time() + $ttlSeconds,
         ], JSON_THROW_ON_ERROR);
@@ -87,6 +91,7 @@ final class OAuthAccountTokenSigner
             || !array_key_exists(self::FIELD_EMAIL, $fields)
             || ($fields[self::FIELD_EMAIL] !== null && !is_string($fields[self::FIELD_EMAIL]))
             || !is_string($fields[self::FIELD_NAME] ?? null) || $fields[self::FIELD_NAME] === ''
+            || (isset($fields[self::FIELD_PROVIDER_NAME]) && !is_string($fields[self::FIELD_PROVIDER_NAME]))
             || !is_string($fields[self::FIELD_SESSION] ?? null)
             || !hash_equals(ProtectedModeRuntime::hashSessionToken($sessionToken), $fields[self::FIELD_SESSION])
             || !is_int($fields[self::FIELD_EXPIRES] ?? null)
@@ -100,6 +105,7 @@ final class OAuthAccountTokenSigner
             $fields[self::FIELD_SUBJECT],
             $fields[self::FIELD_EMAIL],
             $fields[self::FIELD_NAME],
+            $fields[self::FIELD_PROVIDER_NAME] ?? null,
         );
     }
 

@@ -41,9 +41,13 @@ use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * A person's ways in and passkeys are edited by that person's agent, and created by the libraries
@@ -82,6 +86,8 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
     private const string PUBLIC_KEY_PEM = "-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n";
 
     private const int SIGN_COUNT = 5;
+
+    private const int PASSWORD_CHANGED_AT = 1700000000123;
 
     private SignInEditsTestUsersLibrary $users;
 
@@ -168,6 +174,7 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
     {
         $userId = self::seedPerson();
 
+        $before = TimeHelper::nowMs();
         $this->inLibrary(static fn () => Hilos::$db->identities->createPasswordIdentity(
             $userId,
             self::EMAIL,
@@ -181,6 +188,7 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
             self::waysInOf($userId),
         );
         self::assertTrue(Hilos::$db->identities->findPasswordByUser($userId)?->verifyPassword(self::PASSWORD));
+        self::assertGreaterThanOrEqual($before, Hilos::$db->identities->findPasswordByUser($userId)?->passwordChangedAt);
         self::assertSame([self::SIGN_COUNT, null], self::useOf($credential));
     }
 
@@ -225,6 +233,7 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         $userId = self::seedPerson();
         $passwordId = self::seedPassword($userId, self::EMAIL);
 
+        $before = TimeHelper::nowMs();
         $answer = $this->carry(HilosSignalConstants::HILOS_USER_PASSWORD_RESET, new UserPasswordResetSignalData(
             userId: $userId,
             identityId: $passwordId,
@@ -241,7 +250,52 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         self::assertInstanceOf(UserPasswordResetDoneSignalData::class, $answer);
         self::assertNull($answer->error);
         self::assertTrue(Hilos::$db->identities->findPasswordByUser($userId)?->verifyPassword(self::NEW_PASSWORD));
+        $storedMoment = (int)Database::sql('SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$passwordId])
+            ->rows()[0]['password_changed_at'];
+        self::assertGreaterThan(self::PASSWORD_CHANGED_AT, $storedMoment);
+        self::assertGreaterThanOrEqual($before, $storedMoment);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), $storedMoment);
+        self::assertSame($storedMoment, Hilos::$db->identities[$passwordId]->passwordChangedAt);
         self::assertSame([SecurityNotificationType::PASSWORD_RESET], $this->announcedTypes($userId));
+    }
+
+    /** @return iterable<string, array{?int}> Known and legacy password moments */
+    public static function rehashMoments(): iterable
+    {
+        yield 'known' => [self::PASSWORD_CHANGED_AT];
+        yield 'legacy' => [null];
+    }
+
+    /**
+     * @param ?int $moment Original password moment, including a legacy unknown
+     */
+    #[DataProvider('rehashMoments')]
+    public function testRehashChangesOnlyTheHashAndPreservesThePasswordMoment(?int $moment): void
+    {
+        $userId = self::seedPerson();
+        $passwordId = self::seedPassword($userId, self::EMAIL);
+        Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ? WHERE `id` = ?', [$moment, $passwordId]);
+        Hilos::$db->forgetLoadedDataForTest();
+        $newHash = ObjectIdentity::hashPassword(self::PASSWORD);
+
+        $answer = $this->carry(HilosSignalConstants::HILOS_USER_PASSWORD_REHASH, new UserPasswordRehashSignalData(
+            $userId,
+            $passwordId,
+            $newHash,
+            HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE,
+            self::ACCEPT_KEY,
+            'rehash',
+            HilosSignalConstants::HILOS_LOGIN,
+            null,
+        ));
+
+        self::assertInstanceOf(UserPasswordRehashDoneSignalData::class, $answer);
+        self::assertNull($answer->error);
+        $row = Database::sql('SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$passwordId])->rows()[0];
+        self::assertSame($newHash, $row['secret']);
+        self::assertSame($moment, $row['password_changed_at'] === null ? null : (int)$row['password_changed_at']);
+        self::assertSame($moment, Hilos::$db->identities[$passwordId]->passwordChangedAt);
+        self::assertSame([], $this->announcedTypes($userId));
     }
 
     /**
@@ -265,6 +319,11 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
         self::assertInstanceOf(UserAddressVerifyDoneSignalData::class, $answer);
         self::assertNull($answer->error);
         self::assertSame([[IdentityType::PASSWORD, self::EMAIL, true]], self::waysInOf($userId));
+        self::assertSame(self::PASSWORD_CHANGED_AT, Hilos::$db->identities[$passwordId]->passwordChangedAt);
+        self::assertSame(self::PASSWORD_CHANGED_AT, (int)Database::sql(
+            'SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+            [$passwordId],
+        )->rows()[0]['password_changed_at']);
     }
 
     /**
@@ -362,13 +421,18 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
     {
         $userId = self::seedPerson();
         $strangerId = self::seedPerson();
-        self::seedPassword($userId, self::EMAIL);
+        $passwordId = self::seedPassword($userId, self::EMAIL);
         self::seedPassword($strangerId, self::TAKEN_EMAIL);
 
         $moved = $this->carry(HilosSignalConstants::HILOS_USER_EMAIL_CHANGE, self::emailChange($userId, self::EMAIL, self::NEW_EMAIL));
         self::assertInstanceOf(UserEmailChangeDoneSignalData::class, $moved);
         self::assertNull($moved->error);
         self::assertSame([[IdentityType::PASSWORD, self::NEW_EMAIL, true]], self::waysInOf($userId));
+        self::assertSame(self::PASSWORD_CHANGED_AT, Hilos::$db->identities[$passwordId]->passwordChangedAt);
+        self::assertSame(self::PASSWORD_CHANGED_AT, (int)Database::sql(
+            'SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+            [$passwordId],
+        )->rows()[0]['password_changed_at']);
 
         $refused = $this->carry(
             HilosSignalConstants::HILOS_USER_EMAIL_CHANGE,
@@ -568,6 +632,9 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
     {
         $id = Hilos::$db->identities->createPasswordIdentity($userId, $email, self::PASSWORD)->id;
         self::assertNotNull($id);
+
+        Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ? WHERE `id` = ?', [self::PASSWORD_CHANGED_AT, $id]);
+        Hilos::$db->forgetLoadedDataForTest();
 
         return $id;
     }

@@ -24,6 +24,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Object\Item\Identity;
 use Hilos\Database\Object\Item\PasskeyCredential;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
@@ -50,7 +51,7 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
 
         try {
             $userId = (int) Hilos::$db->users->actions->createWithName('Profile owner')->id;
-            $oauth = Hilos::$db->identities->createOauthIdentity($userId, 'github', 'subject-' . $userId);
+            $oauth = Hilos::$db->identities->createOauthIdentity($userId, 'github', 'subject-' . $userId, 'Provider account');
             $sms = Hilos::$db->identities->createSmsIdentity($userId, '+1000000' . $userId);
             Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
 
@@ -72,14 +73,24 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
                 );
                 $this->assertNotNull($snapshot);
 
+                $identityRows = $this->identitiesOfSnapshotItem($snapshot);
                 $this->assertSame(
                     [(int) $oauth->id, (int) $sms->id],
                     array_map(
                         static fn (array $identity): int => (int) $identity[Identity::id],
-                        $this->identitiesOfSnapshotItem($snapshot),
+                        $identityRows,
                     ),
                     $page,
                 );
+                foreach ($identityRows as $identityRow) {
+                    $this->assertArrayHasKey(Identity::passwordChangedAt, $identityRow);
+                    $this->assertArrayHasKey(Identity::providerName, $identityRow);
+                    $this->assertArrayNotHasKey(EntityIdentity::secret, $identityRow);
+                }
+                $this->assertSame('Provider account', $identityRows[0][Identity::providerName]);
+                $this->assertNull($identityRows[0][Identity::passwordChangedAt]);
+                $this->assertNull($identityRows[1][Identity::providerName]);
+                $this->assertNull($identityRows[1][Identity::passwordChangedAt]);
             }
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -100,6 +111,16 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
         try {
             $userId = (int)Hilos::$db->users->actions->createWithName('Passkey clock owner')->id;
             $identity = Hilos::$db->identities->createPasskeyIdentity($userId, 'clock-credential-' . $userId);
+            $passwordIdentity = Hilos::$db->identities->createPasswordIdentityWithHash(
+                $userId,
+                'clock-password-' . $userId . '@example.test',
+                Identity::hashPassword('fixture-password-' . $userId),
+            );
+            $oauthIdentity = Hilos::$db->identities->createOauthIdentity(
+                $userId,
+                'github',
+                'profile-subject-' . $userId,
+            );
             $credential = Hilos::$db->passkeyCredentials->createFromRegistration(
                 (int)$identity->id,
                 $userId,
@@ -129,8 +150,20 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
                     PasskeyCredential::createdAt => 1767227400000,
                 ],
             ], $rows);
-            foreach ($this->identitiesOfSnapshotItem($snapshot) as $row) {
-                self::assertArrayNotHasKey('secret', $row);
+            $identityRows = $this->identitiesOfSnapshotItem($snapshot);
+            $identityRowsById = array_column($identityRows, null, Identity::id);
+            $passwordRow = $identityRowsById[(int)$passwordIdentity->id];
+            $oauthRow = $identityRowsById[(int)$oauthIdentity->id];
+            self::assertArrayHasKey(Identity::passwordChangedAt, $passwordRow);
+            self::assertIsInt($passwordRow[Identity::passwordChangedAt]);
+            self::assertSame($passwordIdentity->passwordChangedAt, $passwordRow[Identity::passwordChangedAt]);
+            self::assertNull($passwordRow[Identity::providerName]);
+            self::assertNull($oauthRow[Identity::passwordChangedAt]);
+            self::assertNull($oauthRow[Identity::providerName]);
+            foreach ($identityRows as $row) {
+                self::assertArrayHasKey(Identity::passwordChangedAt, $row);
+                self::assertArrayHasKey(Identity::providerName, $row);
+                self::assertArrayNotHasKey(EntityIdentity::secret, $row);
             }
             $this->drainSignals();
 
@@ -158,6 +191,45 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
                     [PagePayload::slots][PollsDbContext::passkeyCredentials];
             }
             self::assertSame([array_replace($rows[0], [PasskeyCredential::createdAt => 1767313800000])], $liveRows);
+
+            $oauthIdentity->actions->rememberProviderName('Updated provider account');
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof DbSyncUpdatedSignalData
+                    && $signal->data->collectionKey === PollsDbContext::identities
+                ) {
+                    Hilos::$browser?->record(SourceChange::dbUpdated(
+                        $signal->data->collectionKey,
+                        $signal->data->idString,
+                        $signal->data->row,
+                        previous: $signal->data->previous,
+                    ));
+                }
+            }
+            Hilos::$browser?->flushToSignalRouter();
+            $liveIdentityRows = null;
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE) {
+                    continue;
+                }
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+                $liveIdentityRows = $signal->data->data->payload->lists[HilosProfileIdentitiesBrowserList::LIST]
+                    [PagePayload::items][0][PagePayload::slots][PollsDbContext::identities];
+            }
+            self::assertNotNull($liveIdentityRows);
+            $liveIdentityRowsById = array_column($liveIdentityRows, null, Identity::id);
+            self::assertArrayHasKey(Identity::providerName, $liveIdentityRowsById[(int)$oauthIdentity->id]);
+            self::assertSame(
+                'Updated provider account',
+                $liveIdentityRowsById[(int)$oauthIdentity->id][Identity::providerName],
+            );
+            self::assertIsInt($liveIdentityRowsById[(int)$passwordIdentity->id][Identity::passwordChangedAt]);
+            self::assertNull($liveIdentityRowsById[(int)$oauthIdentity->id][Identity::passwordChangedAt]);
+            foreach ($liveIdentityRows as $row) {
+                self::assertArrayHasKey(Identity::passwordChangedAt, $row);
+                self::assertArrayHasKey(Identity::providerName, $row);
+                self::assertArrayNotHasKey(EntityIdentity::secret, $row);
+            }
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$sr = null;

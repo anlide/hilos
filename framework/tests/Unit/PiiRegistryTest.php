@@ -190,6 +190,7 @@ final class PiiRegistryTest extends TestCase
             [
                 Identity::identifier => AnonymizationStrategy::FAKE_EMAIL,
                 Identity::secret => AnonymizationStrategy::NULLIFY,
+                Identity::provider_name => AnonymizationStrategy::NULLIFY,
             ],
             $registry->strategiesFor(0, Identity::_table),
         );

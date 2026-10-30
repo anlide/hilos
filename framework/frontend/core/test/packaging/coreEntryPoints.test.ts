@@ -899,9 +899,15 @@ function runtimeClosure(entry: string): string[] {
         expect(specifier.endsWith('.js')).toBe(true)
         visit(resolve(dirname(file), specifier.replace(/\.js$/, '.ts')))
       } else {
-        expect(['@vue/reactivity', 'qrcode-generator', 'zod']).toContain(
-          specifier,
-        )
+        expect([
+          '@vue/reactivity',
+          'libphonenumber-js/min',
+          'qrcode-generator',
+          'zod',
+        ]).toContain(specifier)
+        if (specifier === 'libphonenumber-js/min') {
+          expect(relative(sourceRoot, file)).toBe('format/phoneNumber.ts')
+        }
       }
     }
   }
@@ -2107,6 +2113,9 @@ describe('core public entries', () => {
     'dom/tableFocusReturn.ts',
     'license/licenseDependencies.ts',
     'format/moment.ts',
+    'format/phoneNumber.ts',
+    'profile/profileIdentities.ts',
+    'profile/profileSignInMethods.ts',
     'timeZone/timeZoneState.ts',
     'timeZone/timeZonePicker.ts',
     'subscription/PageSubscription.ts',

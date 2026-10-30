@@ -100,6 +100,8 @@ final class HilosProfileIdentitiesBrowserList
                     Identity::identifier,
                     Identity::provider,
                     Identity::verified,
+                    Identity::passwordChangedAt,
+                    Identity::providerName,
                 ],
             ],
             [

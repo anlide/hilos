@@ -150,6 +150,7 @@ use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -1081,6 +1082,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSKEY_USE => HilosAgentType::HILOS_USER,
@@ -1344,6 +1346,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE]);
         $this->assertSame('userId',
             Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE]);
+        $this->assertSame(UserIdentityProviderNameWriteSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE]);
+        $this->assertSame('userId',
+            Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE]);
         $this->assertSame(UserTimeZoneWriteDoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE]);
     }

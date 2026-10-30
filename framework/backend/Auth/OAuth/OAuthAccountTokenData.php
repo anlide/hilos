@@ -11,13 +11,15 @@ final readonly class OAuthAccountTokenData
      * @param string $provider Provider key
      * @param string $subject Provider-immutable account id
      * @param ?string $email Provider-reported address, when supplied
-     * @param string $displayName Name reported by the provider
+     * @param string $displayName Project name for a new account
+     * @param ?string $providerName Personal name reported by the provider
      */
     public function __construct(
         public string $provider,
         public string $subject,
         public ?string $email,
         public string $displayName,
+        public ?string $providerName = null,
     ) {
     }
 }

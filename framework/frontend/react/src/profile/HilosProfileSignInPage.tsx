@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
+  computedSignal,
   createHilosProfileAddSignInFlow,
   createHilosProfilePasswordChangeFlow,
   createHilosProfileSignInMethods,
@@ -81,6 +82,22 @@ export function HilosProfileSignInPage({
     [context.scopes],
   )
   const methods = useSignal(methodsSignal)
+  const subtitlesSignal = useMemo(
+    () =>
+      computedSignal(
+        () =>
+          new Map(
+            methodsSignal
+              .get()
+              .map(
+                (method) =>
+                  [method.key, hilosProfileSignInSubtitle(method)] as const,
+              ),
+          ),
+      ),
+    [methodsSignal],
+  )
+  const subtitles = useSignal(subtitlesSignal)
   const offeredSignal = useMemo(
     () => sessionAuthMethods(context.scopes),
     [context.scopes],
@@ -357,7 +374,7 @@ export function HilosProfileSignInPage({
                     : 'identity-identifier'
                 }
               >
-                {hilosProfileSignInSubtitle(method)}
+                {subtitles.get(method.key)}
               </div>
               {!method.canUnlink ? (
                 <div

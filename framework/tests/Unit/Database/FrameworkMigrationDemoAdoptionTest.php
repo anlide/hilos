@@ -181,6 +181,22 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('status_incident')->downPath)),
                 $source->afterStubDownSha256);
             $origins[] = $change;
+            $identityIndices = [111, 69, 69, 55, 55, 55];
+            $base = $project->root . '/' . sprintf('%03d', $identityIndices[$index])
+                . '_framework_change_fb4f29fffa5ab99796ae4ab21bdc0abb8a1bf2cef68400e163599ac3328dfb62';
+            $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['identity'], $change->units);
+            self::assertCount(1, $change->parts);
+            self::assertSame('20261023065022000000_HIL-1653_identity_display_fields/identity', $change->parts[0]->key());
+            $source = $catalog->part($change->parts[0]->changeId, 'identity');
+            self::assertFalse($source->introducesUnit);
+            self::assertSame([], $source->requires);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('identity')->upPath)),
+                $source->afterStubUpSha256);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('identity')->downPath)),
+                $source->afterStubDownSha256);
+            $origins[] = $change;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

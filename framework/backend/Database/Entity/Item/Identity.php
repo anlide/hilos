@@ -39,6 +39,8 @@ class Identity extends Entity
     public const string secret = 'secret';
     public const string provider = 'provider';
     public const string verified = 'verified';
+    public const string password_changed_at = 'password_changed_at';
+    public const string provider_name = 'provider_name';
     /** DB-only stamps written by the database itself; named here so the PII verdict can name them. */
     public const string created_at = 'created_at';
     public const string updated_at = 'updated_at';
@@ -57,6 +59,8 @@ class Identity extends Entity
         self::identifier,
         self::provider,
         self::verified,
+        self::password_changed_at,
+        self::provider_name,
     ];
 
     public const array _types = [
@@ -66,6 +70,8 @@ class Identity extends Entity
         self::identifier => PhpType::STRING->value,
         self::provider => PhpType::STRING->value,
         self::verified => PhpType::BOOLEAN->value,
+        self::password_changed_at => PhpType::INTEGER->value,
+        self::provider_name => PhpType::TEXT->value,
     ];
 
     public const array _foreign = [
@@ -87,6 +93,7 @@ class Identity extends Entity
     public const array _pii = [
         self::identifier => AnonymizationStrategy::FAKE_EMAIL,
         self::secret => AnonymizationStrategy::NULLIFY,
+        self::provider_name => AnonymizationStrategy::NULLIFY,
     ];
 
     // `provider` is the name of an OAuth vendor and names nobody.
@@ -96,6 +103,7 @@ class Identity extends Entity
         self::type,
         self::provider,
         self::verified,
+        self::password_changed_at,
         self::created_at,
         self::updated_at,
     ];
@@ -106,4 +114,6 @@ class Identity extends Entity
     public string $identifier;
     public ?string $provider = null;
     public bool $verified = false;
+    public ?int $password_changed_at = null;
+    public ?string $provider_name = null;
 }

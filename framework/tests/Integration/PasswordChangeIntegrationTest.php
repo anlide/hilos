@@ -29,12 +29,21 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -48,6 +57,8 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Users\Agent\AbstractUserAgent;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Existing-password change through the users library, including proof order and all-address recovery invalidation.
@@ -67,6 +78,21 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
 
     /** How much later than the first a newer code of the same address dies. */
     private const int NEWER_CODE_LATER_BY_SECONDS = 60;
+
+    private const int PASSWORD_CHANGED_AT = 1700000000123;
+
+    private PasswordChangeTestPerson $passwordWriter;
+
+    /**
+     * Keeps the real writer and counts calls through the project's protected hash hook.
+     *
+     * @param string $userId Person addressed by the frame
+     * @return AbstractUserAgent Claimed later by the shared frame harness
+     */
+    protected function newPersonAgent(string $userId): AbstractUserAgent
+    {
+        return $this->passwordWriter = new PasswordChangeTestPerson($userId);
+    }
 
     /**
      * Restores the framework facade after a case selecting the phone channel.
@@ -317,12 +343,31 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->seedCode(VerificationType::PASSWORD_RESET, self::SECOND_EMAIL, self::USER_ID, self::CODE);
         $this->seedCode(VerificationType::PASSWORD_RESET, self::FOREIGN_EMAIL, self::OTHER_USER_ID, self::CODE);
         $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::EMAIL, self::USER_ID, self::CODE);
+        $reaction = new PasswordChangeStampReaction();
+        SourceChangeBus::subscribe($reaction);
+        $before = TimeHelper::nowMs();
         $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
             new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, true),
         );
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::NEW_PASSWORD));
         self::assertFalse(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
+        $password = Hilos::$db->identities->findPasswordByUser(self::USER_ID);
+        self::assertNotNull($password);
+        self::assertGreaterThan(self::PASSWORD_CHANGED_AT, $password->passwordChangedAt);
+        self::assertGreaterThanOrEqual($before, $password->passwordChangedAt);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), $password->passwordChangedAt);
+        self::assertSame(
+            $password->passwordChangedAt,
+            (int)Database::sql('SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$password->id])
+                ->rows()[0]['password_changed_at'],
+        );
+        self::assertSame(1, $this->passwordWriter->hashWrites);
+        self::assertCount(1, $reaction->seen);
+        self::assertSame($password->passwordChangedAt, $reaction->seen[0]->row['password_changed_at']);
+        self::assertSame([false], $reaction->transactionsOpen);
+        self::assertTrue(password_verify(self::NEW_PASSWORD, $reaction->storedRows[0]['secret']));
+        self::assertSame($password->passwordChangedAt, (int)$reaction->storedRows[0]['password_changed_at']);
         self::assertNull($this->verifications()->findActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS));
         foreach ([self::EMAIL, self::SECOND_EMAIL] as $email) {
             self::assertNull($this->verifications()->findActive(VerificationType::PASSWORD_RESET, $email, self::MAX_ATTEMPTS));
@@ -332,6 +377,79 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->assertChangeFrames(signOutOthers: true);
         self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_PASSWORD), 'The finished flow leaves no record');
         $this->refuseSave(self::PASSWORD);
+    }
+
+    /** @return iterable<string, array{bool}> Failure on either side of the real metadata write */
+    public static function stampFailures(): iterable
+    {
+        yield 'before stamp' => [false];
+        yield 'after stamp' => [true];
+    }
+
+    /**
+     * Hash and moment roll back together; neither the source bus nor the browser hears the attempted change.
+     *
+     * @param bool $afterWrite Whether the stamp reaches MariaDB before the injected failure
+     */
+    #[DataProvider('stampFailures')]
+    public function testStampFailureRollsBackTheHashAndPublishesNoLiveUpdate(bool $afterWrite): void
+    {
+        $this->prepareChange(withCode: true);
+        $currentSessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
+        $otherSessionId = (int)Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN)?->id;
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until);
+        $password = Hilos::$db->identities->findPasswordByUser(self::USER_ID);
+        self::assertNotNull($password);
+        $password->setActionsClass(PasswordChangeFailingStampActions::class);
+        $stamp = $password->actions;
+        self::assertInstanceOf(PasswordChangeFailingStampActions::class, $stamp);
+        $stamp->afterWrite = $afterWrite;
+        $stamp->failure = new DatabaseException('Fixture password stamp failure');
+        $before = Database::sql('SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$password->id])->rows();
+        $this->drainSignals();
+        $reaction = new PasswordChangeStampReaction();
+        SourceChangeBus::subscribe($reaction);
+
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD, new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, false));
+
+        self::assertSame($before, Database::sql(
+            'SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+            [$password->id],
+        )->rows());
+        self::assertSame(self::PASSWORD_CHANGED_AT, $password->passwordChangedAt);
+        self::assertSame(self::PASSWORD_CHANGED_AT, Hilos::$db->identities[$password->id]->passwordChangedAt);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, self::USER_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, self::USER_ID, 30));
+        self::assertSame(1, $this->passwordWriter->hashWrites);
+        self::assertTrue(password_verify(self::NEW_PASSWORD, $stamp->attemptedRow['secret']));
+        if ($afterWrite) {
+            self::assertGreaterThan(self::PASSWORD_CHANGED_AT, (int)$stamp->attemptedRow['password_changed_at']);
+        }
+        self::assertSame([], $reaction->seen);
+        foreach ($this->drainSignals() as $signal) {
+            self::assertNotSame(HilosSignalConstants::PROFILE_PASSWORD_UPDATED, $signal->signalName->getName());
+            if ($signal->data instanceof DbSyncUpdatedSignalData) {
+                self::assertNotSame(HilosDbContext::identities, $signal->data->collectionKey);
+            }
+        }
+        self::assertFalse(Database::hasOpenTransactions());
+
+        // The protected writer itself must preserve the exact failure, before a routed reply converts it.
+        Hilos::$db->identities[$password->id]->setActionsClass(PasswordChangeFailingStampActions::class);
+        $nextStamp = Hilos::$db->identities[$password->id]->actions;
+        self::assertInstanceOf(PasswordChangeFailingStampActions::class, $nextStamp);
+        $nextStamp->failure = $stamp->failure;
+        try {
+            ExecutionContext::run(new ExecutionFrame(agentId: $this->passwordWriter->getId()), fn () => $this->passwordWriter->changePassword(
+                (int)$password->id,
+                Hilos::$db->identities->hashPassword(self::NEW_PASSWORD),
+            ));
+            self::fail('The stamp failure must reach the protected writer caller');
+        } catch (HilosException $failure) {
+            self::assertSame($stamp->failure, $failure);
+        }
     }
 
     /**
@@ -460,6 +578,8 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     private function seedPassword(): void
     {
         Hilos::$db->identities->createPasswordIdentity(self::USER_ID, self::EMAIL, self::PASSWORD)->markVerified();
+        Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ? WHERE `user_id` = ?', [self::PASSWORD_CHANGED_AT, self::USER_ID]);
+        Hilos::$db->forgetLoadedDataForTest();
     }
 
     /**
@@ -545,6 +665,82 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
                 : [],
             $ends,
         );
+    }
+}
+
+/** Test project hook delegates to the framework primitive so a bypass is observable. */
+final class PasswordChangeTestPerson extends AbstractUserAgent
+{
+    public int $hashWrites = 0;
+
+    /**
+     * @param int $identityId Password row
+     * @param string $passwordHash New hash
+     */
+    protected function writePasswordHash(int $identityId, string $passwordHash): void
+    {
+        $this->hashWrites++;
+        parent::writePasswordHash($identityId, $passwordHash);
+    }
+
+    /**
+     * @param int $identityId Password row
+     * @param string $passwordHash New hash
+     */
+    public function changePassword(int $identityId, string $passwordHash): void
+    {
+        $this->writeNewPassword($identityId, $passwordHash, 0);
+    }
+}
+
+/** Fails on the metadata action, with the hash already written by the real primitive. */
+final class PasswordChangeFailingStampActions extends IdentityActions
+{
+    public bool $afterWrite = false;
+    public DatabaseException $failure;
+    /** @var array<string, mixed> Values reached inside the password transaction */
+    public array $attemptedRow = [];
+
+    /** Writes the real stamp when requested, then refuses the attempted password change. */
+    public function recordPasswordChange(): void
+    {
+        if ($this->afterWrite) {
+            parent::recordPasswordChange();
+        }
+        $this->attemptedRow = Database::sql(
+            'SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+            [$this->object->id],
+        )->rows()[0];
+        throw $this->failure;
+    }
+}
+
+/** Records reactions that a rolled-back password change must never publish. */
+final class PasswordChangeStampReaction implements SourceChangeSubscriberInterface
+{
+    /** @var list<SourceChange> Identity announcements */
+    public array $seen = [];
+
+    /** @var list<bool> Whether each announcement left while an application transaction was open */
+    public array $transactionsOpen = [];
+
+    /** @var list<array<string, mixed>> Persisted password values at each released announcement */
+    public array $storedRows = [];
+
+    /**
+     * @param SourceChange $change Source fact
+     * @param SourceChangeProvenance $provenance Origin of the fact
+     */
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        if ($change->sourceKey === HilosDbContext::identities) {
+            $this->seen[] = $change;
+            $this->transactionsOpen[] = Database::hasOpenTransactions();
+            $this->storedRows[] = Database::sql(
+                'SELECT `secret`, `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+                [(int)$change->sourceId],
+            )->rows()[0];
+        }
     }
 }
 

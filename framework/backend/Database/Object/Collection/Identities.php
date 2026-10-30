@@ -31,6 +31,7 @@ use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -204,6 +205,7 @@ class Identities extends Objects
         $identity->type = IdentityType::PASSWORD;
         $identity->identifier = $identifier;
         $identity->verified = $verified;
+        $identity->passwordChangedAt = TimeHelper::nowMs();
         $identity->sync();
 
         $id = $identity->id;
@@ -289,6 +291,7 @@ class Identities extends Objects
      * @param int $userId Owning user id
      * @param string $provider Provider key, e.g. 'oauth:github'
      * @param string $subject Provider-immutable account subject id
+     * @param ?string $providerName Provider-reported name; blank input is stored as null
      * @return ObjectIdentity The created identity object
      * @throws EmptyValueException When provider or subject is empty
      * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
@@ -296,8 +299,12 @@ class Identities extends Objects
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function createOauthIdentity(int $userId, string $provider, string $subject): ObjectIdentity
-    {
+    public function createOauthIdentity(
+        int $userId,
+        string $provider,
+        string $subject,
+        ?string $providerName = null,
+    ): ObjectIdentity {
         if ($provider === '' || $subject === '') {
             throw new EmptyValueException('Identity provider and subject are required');
         }
@@ -313,6 +320,8 @@ class Identities extends Objects
         $identity->type = IdentityType::OAUTH;
         $identity->identifier = $identifier;
         $identity->provider = $provider;
+        $providerName = $providerName === null ? null : trim($providerName);
+        $identity->providerName = $providerName === '' ? null : $providerName;
         $identity->verified = true;
         $identity->sync();
 
@@ -712,6 +721,7 @@ class Identities extends Objects
         if ($deleteReason === null) {
             $identity->clearPassword();
             $identity->type = IdentityType::MAGIC_LINK;
+            $identity->passwordChangedAt = null;
             $identity->sync();
 
             return;

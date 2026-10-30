@@ -22,14 +22,15 @@ import {
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
   expectPageReady,
+  expectProfilePasswordCaption,
+  watchDeliveryFrames,
+  waitDeliveryBoundary,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 import {
   uniquePhone,
   waitForSmsCode,
 } from '../../../../../framework/frontend/scripts/standSms.mjs'
-
-// spec-owner: demo — polls' Angular profile mounts the shared name edit flow.
 
 // The profile root (HIL-1169): the avatar in the header leads to /profile over
 // the live socket. The Name row exposes Change through the shared rename flow.
@@ -269,7 +270,12 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
 test('links a GitHub account to the current profile (HIL-401)', async ({
   page,
 }) => {
-  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+  const providerName = 'profile-metadata-github-login'
+  const account = await declareOAuthAccount('github', {
+    email: uniqueEmail(),
+    login: providerName,
+    name: 'A different provider display name',
+  })
 
   let fullLoads = 0
   page.on('load', () => {
@@ -302,6 +308,15 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
     0,
   )
   await expect(page.getByTestId('auth-oauth-wait')).toHaveCount(0)
+  const github = page.getByTestId('profile-identity-item').filter({
+    has: page
+      .getByTestId('identity-type')
+      .and(page.getByText('GitHub', { exact: true })),
+  })
+  await expect(github).toHaveCount(1)
+  await expect(github.getByTestId('identity-identifier')).toHaveText(
+    providerName,
+  )
 
   expect(new URL(page.url()).pathname).toBe('/profile/sign-in')
   expect(fullLoads).toBe(loadsBeforeLink)
@@ -496,27 +511,87 @@ test('saves the new password from another tab of the same session (HIL-1182)', a
   context,
 }) => {
   const tabA = await context.newPage()
-  const { email } = await createTestUser(expect, tabA)
-  await gotoPage(expect, tabA, '/profile/sign-in')
-  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
-  await clickSubmit(expect, tabA.getByTestId('profile-password-change'))
-  await confirmStepUp(tabA, 'profile-password-step-up-confirm')
-  await clickSubmit(expect, tabA.getByTestId('profile-password-send-code'))
-  const code = await waitForMailCode(email, 'Confirm changing your password')
-  await typeInto(tabA.getByTestId('profile-password-code'), code)
-  await clickSubmit(expect, tabA.getByTestId('profile-password-confirm-code'))
-  await expect(tabA.getByTestId('profile-password-new')).toBeVisible()
-
   const tabB = await context.newPage()
-  await gotoPage(expect, tabB, '/profile/sign-in')
-  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-  await clickSubmit(expect, tabB.getByTestId('profile-password-change'))
-  await expect(tabB.getByTestId('profile-password-new')).toBeVisible()
-  await typeInto(tabB.getByTestId('profile-password-new'), 'a-fresh-passphrase')
-  await clickSubmit(expect, tabB.getByTestId('profile-password-save'))
+  const logs = [watchDeliveryFrames(tabA), watchDeliveryFrames(tabB)]
+  const subscribes = [tabA, tabB].map((tab) =>
+    countSentFrames(tab, 'page_subscribe'),
+  )
+  let fullLoads = 0
+  for (const tab of [tabA, tabB]) {
+    tab.on('load', () => {
+      fullLoads += 1
+    })
+  }
+  try {
+    const { email } = await createTestUser(expect, tabA)
+    await gotoPage(expect, tabA, '/profile/sign-in')
+    await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+    const beforeA = await expectProfilePasswordCaption(expect, tabA, logs[0]!)
+    await clickSubmit(expect, tabA.getByTestId('profile-password-change'))
+    await confirmStepUp(tabA, 'profile-password-step-up-confirm')
+    await clickSubmit(expect, tabA.getByTestId('profile-password-send-code'))
+    const code = await waitForMailCode(email, 'Confirm changing your password')
+    await typeInto(tabA.getByTestId('profile-password-code'), code)
+    await clickSubmit(expect, tabA.getByTestId('profile-password-confirm-code'))
+    await expect(tabA.getByTestId('profile-password-new')).toBeVisible()
 
-  await expect(tabB.getByTestId('profile-password-outcome')).toBeVisible()
-  await expect(tabA.getByTestId('profile-password-modal')).toHaveCount(0)
+    await gotoPage(expect, tabB, '/profile/sign-in')
+    await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+    const beforeB = await expectProfilePasswordCaption(expect, tabB, logs[1]!)
+    expect(beforeB.changedAt).toBe(beforeA.changedAt)
+    expect(beforeB.caption).toBe(beforeA.caption)
+    await clickSubmit(expect, tabB.getByTestId('profile-password-change'))
+    await expect(tabB.getByTestId('profile-password-new')).toBeVisible()
+    await typeInto(
+      tabB.getByTestId('profile-password-new'),
+      'a-fresh-passphrase',
+    )
+
+    // A server stamp predates its observed packet. Crossing its remaining
+    // second on the monotonic clock guarantees a visibly different caption.
+    await waitDeliveryBoundary(
+      beforeA.packet.at + 1000 - (beforeA.changedAt % 1000),
+    )
+    const loadsBeforeSave = fullLoads
+    const subscriptionsBeforeSave = subscribes.map((count) => count())
+    const socketsBeforeSave = logs.map((log) => log.sockets())
+    await clickSubmit(expect, tabB.getByTestId('profile-password-save'))
+
+    await expect(tabB.getByTestId('profile-password-outcome')).toBeVisible()
+    await expect(tabA.getByTestId('profile-password-modal')).toHaveCount(0)
+    const afterA = await expectProfilePasswordCaption(
+      expect,
+      tabA,
+      logs[0]!,
+      beforeA.changedAt,
+    )
+    const afterB = await expectProfilePasswordCaption(
+      expect,
+      tabB,
+      logs[1]!,
+      beforeB.changedAt,
+    )
+    expect(afterA.identity.id).toBe(beforeA.identity.id)
+    expect(afterB.identity.id).toBe(beforeB.identity.id)
+    expect(afterA.caption).not.toBe(beforeA.caption)
+    expect(afterB.caption).not.toBe(beforeB.caption)
+    expect(afterB.changedAt).toBe(afterA.changedAt)
+    expect(afterB.caption).toBe(afterA.caption)
+    await expect(tabB.getByTestId('profile-password-outcome')).toBeVisible()
+    expect(fullLoads).toBe(loadsBeforeSave)
+    expect(subscribes.map((count) => count())).toEqual(subscriptionsBeforeSave)
+    expect(logs.map((log) => log.sockets())).toEqual(socketsBeforeSave)
+    await expect(tabA).toHaveURL(/\/profile\/sign-in$/)
+    await expect(tabB).toHaveURL(/\/profile\/sign-in$/)
+  } finally {
+    for (const [index, log] of logs.entries()) {
+      await test.info().attach(`password-list-tab-${index}`, {
+        body: JSON.stringify(log, null, 2),
+        contentType: 'application/json',
+      })
+      log.stop()
+    }
+  }
 })
 
 test('adds a phone from another tab of the same session (HIL-1184)', async ({
@@ -529,7 +604,9 @@ test('adds a phone from another tab of the same session (HIL-1184)', async ({
   await clickSubmit(expect, tabA.getByTestId('profile-sign-in-add'))
   await confirmStepUp(tabA, 'profile-sign-in-add-step-up-confirm')
   await clickSubmit(expect, tabA.getByTestId('profile-sign-in-choose-phone'))
-  const phone = uniquePhone()
+  const phone = uniquePhone('GB')
+  // UK mobiles have a four-digit group followed by six national digits.
+  const subtitle = `+44 ${phone.slice(3, 7)} ${phone.slice(7)} · verified`
   await typeInto(tabA.getByTestId('profile-add-sms-phone'), phone)
   await clickSubmit(expect, tabA.getByTestId('profile-add-sms-request'))
   await expect(tabA.getByTestId('profile-add-sms-code')).toBeVisible()
@@ -548,12 +625,17 @@ test('adds a phone from another tab of the same session (HIL-1184)', async ({
   await clickSubmit(expect, tabB.getByTestId('profile-add-sms-confirm'))
   await expect(tabB.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(tabA.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
-  await expect(
-    tabA.getByTestId('profile-identity-item').filter({ hasText: phone }),
-  ).toHaveCount(1)
-  await expect(
-    tabB.getByTestId('profile-identity-item').filter({ hasText: phone }),
-  ).toHaveCount(1)
+  for (const tab of [tabA, tabB]) {
+    const identity = tab.getByTestId('profile-identity-item').filter({
+      has: tab
+        .getByTestId('identity-type')
+        .and(tab.getByText('Phone', { exact: true })),
+    })
+    await expect(identity).toHaveCount(1)
+    await expect(identity.getByTestId('identity-identifier')).toHaveText(
+      subtitle,
+    )
+  }
 })
 
 test('ends one other browser session from the sessions page', async ({

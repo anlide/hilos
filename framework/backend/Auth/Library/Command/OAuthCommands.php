@@ -33,13 +33,16 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use JsonException;
 use Random\RandomException;
+use Throwable;
 
 /**
  * Signing in through a provider, and the account that ends up behind it (HIL-281, HIL-622).
@@ -216,7 +219,7 @@ final class OAuthCommands extends AbstractLibraryCommands
         }
 
         try {
-            Hilos::$db->identities->createOauthIdentity($acting->userId, $link->provider, $link->subject);
+            Hilos::$db->identities->createOauthIdentity($acting->userId, $link->provider, $link->subject, $link->providerName);
         } catch (DuplicateValueException) {
             throw new ValidationException(AuthMessages::INVALID_LINK);
         }
@@ -239,7 +242,7 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @throws InvalidArgumentException When a frame this completion sends cannot be named or queued
      * @throws ValidationException When the project has no OAuth wiring to mint a token with
      * @throws HilosException When the identity lookup fails
-     * @throws JsonException When provider facts cannot be encoded in the consent token
+     * @throws JsonException When provider facts cannot be encoded in the consent or link token
      */
     public function completeLogin(OAuthLoginReadySignalData $data): void
     {
@@ -250,6 +253,7 @@ final class OAuthCommands extends AbstractLibraryCommands
             $data->provider . ':' . $data->subject,
         );
         if ($identity !== null && $identity->userId !== null) {
+            $this->reportProviderName($identity, $data->providerName);
             $this->library->grantSession($acting, $identity->userId, tripKeyHash: $data->tripKeyHash);
 
             return;
@@ -293,6 +297,7 @@ final class OAuthCommands extends AbstractLibraryCommands
         $identifier = $pass->provider . ':' . $pass->subject;
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, $identifier);
         if ($identity !== null && $identity->userId !== null) {
+            $this->reportProviderName($identity, $pass->providerName);
             $this->library->grantSession($acting, $identity->userId);
 
             return null;
@@ -319,7 +324,7 @@ final class OAuthCommands extends AbstractLibraryCommands
                 $pass->displayName,
                 $dto->themePick,
                 function (int $userId) use ($pass, $acceptKey): void {
-                    Hilos::$db->identities->createOauthIdentity($userId, $pass->provider, $pass->subject);
+                    Hilos::$db->identities->createOauthIdentity($userId, $pass->provider, $pass->subject, $pass->providerName);
                     if ($pass->email !== null) {
                         try {
                             Hilos::$db->identities->createMagicLinkIdentity($userId, $pass->email);
@@ -339,10 +344,33 @@ final class OAuthCommands extends AbstractLibraryCommands
             if ($winner === null || $winner->userId === null) {
                 throw $e;
             }
+            $this->reportProviderName($winner, $pass->providerName);
             $this->library->grantSession($acting, $winner->userId);
         }
 
         return null;
+    }
+
+    /**
+     * Reports the last provider name without turning metadata queue failure into a refused sign-in.
+     *
+     * @param Identity $identity Persisted row captured by this exchange's account resolution
+     * @param ?string $providerName Personal name reported by the provider, if supplied
+     */
+    private function reportProviderName(Identity $identity, ?string $providerName): void
+    {
+        if ($providerName === null || trim($providerName) === '') {
+            return;
+        }
+
+        try {
+            $this->library->sendToAgent(
+                HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE,
+                new UserIdentityProviderNameWriteSignalData($identity->userId, $identity->id, $providerName),
+            );
+        } catch (Throwable $e) {
+            Logger::logAgentError($this->library->getId(), 'OAuth provider name report not queued: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -358,6 +386,7 @@ final class OAuthCommands extends AbstractLibraryCommands
             $email,
             $data->displayName,
             $data->sessionToken,
+            $data->providerName,
         );
         $this->library->sendToAgent(
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,
@@ -388,10 +417,11 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @throws ValidationException When the project has no OAuth wiring to mint the token with
      * @throws InvalidArgumentException When the ending frame cannot be named or queued
      * @throws HilosException When the provider registry cannot be built
+     * @throws JsonException When the provider name cannot be encoded in the link token
      */
     private function requireReauthToLink(OAuthLoginReadySignalData $data, string $email): void
     {
-        $linkToken = $this->oauthService()->issueLinkToken($data->provider, $data->subject, $email);
+        $linkToken = $this->oauthService()->issueLinkToken($data->provider, $data->subject, $email, $data->providerName);
 
         $this->library->sendToAgent(
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,

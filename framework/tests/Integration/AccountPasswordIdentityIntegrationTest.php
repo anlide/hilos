@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -25,7 +26,9 @@ use Hilos\Database\SqlParamCollection;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * One password per account, and what a merge does with two of them (HIL-692, HIL-713).
@@ -59,6 +62,10 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
 
     /** Precomputed so a case that seeds several rows does not pay bcrypt for each. */
     private const string SEED_HASH = '$2y$04$T9nQ3nfKGN1BFq0dPO3vQ.6ZUJqQF/2sPq6xCEkQwvPqZ6.9dJ0Aq';
+
+    private const int SURVIVOR_PASSWORD_CHANGED_AT = 1700000000123;
+
+    private const int LOSER_PASSWORD_CHANGED_AT = 1710000000456;
 
     private ?DbContext $previousDb = null;
 
@@ -108,6 +115,90 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         self::runStubs(down: true);
 
         parent::tearDown();
+    }
+
+    /** Both plaintext creation and the hash-seed entrance persist a moment at birth. */
+    public function testPasswordCreationPersistsItsMomentBeforeAnnouncingTheRow(): void
+    {
+        foreach ([false, true] as $prehashed) {
+            $before = TimeHelper::nowMs();
+            $identity = $prehashed
+                ? $this->identities()->createPasswordIdentityWithHash($this->nextUserId(), $this->uniqueEmail(), self::SEED_HASH)
+                : $this->identities()->createPasswordIdentity($this->nextUserId(), $this->uniqueEmail(), self::PASSWORD);
+
+            self::assertGreaterThanOrEqual($before, $identity->passwordChangedAt);
+            self::assertLessThanOrEqual(TimeHelper::nowMs(), $identity->passwordChangedAt);
+            self::assertSame(
+                $identity->passwordChangedAt,
+                (int)Database::sql('SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$identity->id])
+                    ->rows()[0]['password_changed_at'],
+            );
+
+            $created = [];
+            while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($frame->data instanceof DbSyncCreatedSignalData && $frame->data->collectionKey === HilosDbContext::identities) {
+                    $created[] = $frame->data;
+                }
+            }
+            self::assertCount(1, $created);
+            self::assertSame($identity->passwordChangedAt, $created[0]->row[EntityIdentity::password_changed_at]);
+        }
+    }
+
+    /** An old row without evidence of when its password was set stays unknown on read and verification. */
+    public function testLegacyPasswordMomentStaysNull(): void
+    {
+        $id = $this->seedPasswordRow($this->nextUserId(), $this->uniqueEmail());
+        Database::sqlRun('UPDATE `hilos_identity` SET `verified` = 0 WHERE `id` = ?', [$id]);
+
+        self::assertNull(Hilos::$db->identities[$id]->passwordChangedAt);
+        Hilos::$db->identities[$id]->markVerified();
+        self::assertNull(Hilos::$db->identities[$id]->passwordChangedAt);
+        self::assertNull(Database::sql('SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?', [$id])
+            ->rows()[0]['password_changed_at']);
+    }
+
+    /** @return iterable<string, array{PasswordFate, ?int}> Merge choice and the selected password's moment */
+    public static function passwordMomentsAfterMerge(): iterable
+    {
+        yield 'survivor' => [PasswordFate::SURVIVOR, self::SURVIVOR_PASSWORD_CHANGED_AT];
+        yield 'loser' => [PasswordFate::LOSER, self::LOSER_PASSWORD_CHANGED_AT];
+        yield 'neither' => [PasswordFate::NONE, null];
+    }
+
+    /**
+     * @param PasswordFate $fate Which password remains
+     * @param ?int $expectedMoment Moment of the selected password, or none when both are demoted
+     */
+    #[DataProvider('passwordMomentsAfterMerge')]
+    public function testMergeKeepsTheSelectedMomentAndClearsEveryDemotedMoment(PasswordFate $fate, ?int $expectedMoment): void
+    {
+        $survivorId = $this->nextUserId();
+        $loserId = $this->nextUserId();
+        foreach ([$survivorId => self::SURVIVOR_PASSWORD_CHANGED_AT, $loserId => self::LOSER_PASSWORD_CHANGED_AT] as $userId => $moment) {
+            $password = $this->identities()->createPasswordIdentityWithHash($userId, $this->uniqueEmail(), self::SEED_HASH, verified: true);
+            $password->passwordChangedAt = $moment;
+            $password->sync();
+        }
+
+        $this->identities()->rePointToUser($loserId, $survivorId, $fate);
+
+        $rows = Database::sql('SELECT `id`, `user_id`, `type`, `password_changed_at` FROM `hilos_identity` ORDER BY `id`')->rows();
+        self::assertCount(2, $rows);
+        $passwordCount = 0;
+        foreach ($rows as $row) {
+            self::assertSame($survivorId, (int)$row['user_id']);
+            $moment = $row['password_changed_at'] === null ? null : (int)$row['password_changed_at'];
+            if ($row['type'] === IdentityType::PASSWORD) {
+                $passwordCount++;
+                self::assertSame($expectedMoment, $moment);
+            } else {
+                self::assertSame(IdentityType::MAGIC_LINK, $row['type']);
+                self::assertNull($moment);
+            }
+            self::assertSame($moment, Hilos::$db->identities[(int)$row['id']]->passwordChangedAt);
+        }
+        self::assertSame($expectedMoment === null ? 0 : 1, $passwordCount);
     }
 
     /**
@@ -316,11 +407,18 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $survivorId = $this->nextUserId();
         $loserId = $this->nextUserId();
         $loserEmail = $this->uniqueEmail();
-        $this->identities()->createPasswordIdentity($loserId, $loserEmail, self::OTHER_PASSWORD);
+        $password = $this->identities()->createPasswordIdentity($loserId, $loserEmail, self::OTHER_PASSWORD);
+        $password->passwordChangedAt = self::LOSER_PASSWORD_CHANGED_AT;
+        $password->sync();
 
         $this->identities()->rePointToUser($loserId, $survivorId, null);
 
         self::assertSame($loserEmail, $this->identities()->findPasswordByUser($survivorId)?->identifier);
+        self::assertSame(self::LOSER_PASSWORD_CHANGED_AT, $this->identities()->findPasswordByUser($survivorId)?->passwordChangedAt);
+        self::assertSame(self::LOSER_PASSWORD_CHANGED_AT, (int)Database::sql(
+            'SELECT `password_changed_at` FROM `hilos_identity` WHERE `id` = ?',
+            [$password->id],
+        )->rows()[0]['password_changed_at']);
     }
 
     /**

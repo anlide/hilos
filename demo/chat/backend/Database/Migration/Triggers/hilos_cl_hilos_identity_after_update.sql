@@ -1,4 +1,4 @@
--- valid from migration #85
+-- valid from migration #110
 CREATE TRIGGER `hilos_cl_hilos_identity_after_update` AFTER UPDATE ON `hilos_identity`
 FOR EACH ROW BEGIN
     DECLARE v_created_at DATETIME(6);
@@ -41,6 +41,16 @@ FOR EACH ROW BEGIN
         INSERT INTO {{change_log_database}}.`hilos_change_log_change`
             (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
             VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`verified` AS CHAR), NULL);
+        INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'password_changed_at');
+        SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'password_changed_at';
+        INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+            (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+            VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`password_changed_at` AS CHAR), NULL);
+        INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'provider_name');
+        SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'provider_name';
+        INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+            (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+            VALUES (v_created_at, v_log_id, v_field_id, 'fact', 1, 0, NULL, NULL);
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'created_at');
         SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'created_at';
         INSERT INTO {{change_log_database}}.`hilos_change_log_change`
@@ -53,7 +63,7 @@ FOR EACH ROW BEGIN
             (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)
             VALUES (v_created_at, @hilos_receipt, v_table_id, v_record_key, UNHEX(SHA2(v_record_key, 256)), 'create');
         SET v_log_id = LAST_INSERT_ID();
-    ELSEIF NOT (OLD.`user_id` <=> NEW.`user_id`) OR NOT (BINARY OLD.`type` <=> BINARY NEW.`type`) OR NOT (BINARY OLD.`identifier` <=> BINARY NEW.`identifier`) OR NOT (BINARY OLD.`provider` <=> BINARY NEW.`provider`) OR NOT (OLD.`verified` <=> NEW.`verified`) OR NOT (OLD.`created_at` <=> NEW.`created_at`) THEN
+    ELSEIF NOT (OLD.`user_id` <=> NEW.`user_id`) OR NOT (BINARY OLD.`type` <=> BINARY NEW.`type`) OR NOT (BINARY OLD.`identifier` <=> BINARY NEW.`identifier`) OR NOT (BINARY OLD.`provider` <=> BINARY NEW.`provider`) OR NOT (OLD.`verified` <=> NEW.`verified`) OR NOT (OLD.`password_changed_at` <=> NEW.`password_changed_at`) OR NOT (BINARY OLD.`provider_name` <=> BINARY NEW.`provider_name`) OR NOT (OLD.`created_at` <=> NEW.`created_at`) THEN
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_table` (`name`) VALUES ('hilos_identity');
         SELECT `id` INTO v_table_id FROM {{change_log_database}}.`hilos_change_log_table` WHERE `name` = 'hilos_identity';
         SET v_record_key = JSON_ARRAY(NEW.`id`);
@@ -95,6 +105,20 @@ FOR EACH ROW BEGIN
             INSERT INTO {{change_log_database}}.`hilos_change_log_change`
                 (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
                 VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 1, CAST(OLD.`verified` AS CHAR), CAST(NEW.`verified` AS CHAR));
+        END IF;
+        IF NOT (OLD.`password_changed_at` <=> NEW.`password_changed_at`) THEN
+            INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'password_changed_at');
+            SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'password_changed_at';
+            INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+                (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+                VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 1, CAST(OLD.`password_changed_at` AS CHAR), CAST(NEW.`password_changed_at` AS CHAR));
+        END IF;
+        IF NOT (BINARY OLD.`provider_name` <=> BINARY NEW.`provider_name`) THEN
+            INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'provider_name');
+            SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'provider_name';
+            INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+                (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+                VALUES (v_created_at, v_log_id, v_field_id, 'fact', 1, 1, NULL, NULL);
         END IF;
         IF NOT (OLD.`created_at` <=> NEW.`created_at`) THEN
             INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'created_at');
