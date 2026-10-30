@@ -14,7 +14,6 @@ services:
       MYSQL_USER: ${DB_USERNAME:-hilos}
       MYSQL_PASSWORD: ${DB_PASSWORD:-hilos_pass}
       TZ: UTC
-      MARIADB_MYSQL_LOCALHOST_USER: "1"
     volumes:
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
@@ -25,11 +24,12 @@ services:
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
-    # Asked as the unix user mysql over the socket: the image's own healthcheck user gets a
-    # random password that its option file misreads when it starts and ends with a double
-    # quote, and that stand never turns healthy (about one boot in 8000).
+    # --connect alone: it waits for the TCP listener the init-time server never opens and
+    # does not test the login, so neither the image's random healthcheck password (misread
+    # when it starts and ends with a double quote) nor the age of the data directory can
+    # keep this service unhealthy.
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--su-mysql", "--no-defaults", "--connect", "--innodb_initialized"]
+      test: ["CMD", "healthcheck.sh", "--connect"]
       interval: 2s
       timeout: 5s
       retries: 30
