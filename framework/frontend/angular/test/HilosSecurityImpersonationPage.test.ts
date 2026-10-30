@@ -497,17 +497,46 @@ describe('HilosSecurityImpersonationPage scope modal', () => {
     const { context, answer } = seededContext()
     const fixture = openScope(context)
     choose(fixture, 'view')
+    const field = scopeRadio(fixture, 'view')
+    const modal = el(fixture, 'modal')!
     saveButton(fixture).click()
     fixture.detectChanges()
+
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+    expect(field.matches(':disabled')).toBe(true)
+    expect(scopeRadio(fixture, 'view')).toBe(field)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
 
     answer('fail', 'The scope must be view or act')
     await settle(fixture)
 
-    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(el(fixture, 'modal')).toBe(modal)
     expect(el(fixture, 'hilos-action-error')?.textContent).toContain(
       'The scope must be view or act',
     )
-    expect(scopeRadio(fixture, 'view').checked).toBe(true)
+    expect(scopeRadio(fixture, 'view')).toBe(field)
+    expect(field.checked).toBe(true)
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    answer('success', 'Impersonation setting saved.')
+    await settle(fixture)
+    expect(el(fixture, 'modal')).toBeNull()
   })
 
   it('takes a change made elsewhere into a pristine modal and says so', () => {

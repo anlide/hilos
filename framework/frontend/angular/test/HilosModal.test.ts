@@ -150,9 +150,20 @@ class FootersHost {}
       [closeOnEsc]="closeOnEsc()"
       [closeOnBackdrop]="closeOnBackdrop()"
       [busy]="busy()"
+      [initialFocus]="initialFocus()"
+      [copyText]="copyText()"
       (cancel)="cancels.set(cancels() + 1)"
     >
-      <input data-autofocus data-id="field" />
+      <form data-id="draft-form">
+        <input data-autofocus data-id="field" />
+        <select data-id="choice">
+          <option value="a">A</option>
+          <option value="b">B</option>
+        </select>
+        <textarea data-id="notes"></textarea>
+        <button type="button" data-id="body-button">Choose</button>
+        <input data-id="independent-field" [disabled]="disabled()" />
+      </form>
       <ng-template #modalActions let-requestClose="requestClose">
         <button type="button" data-id="footer-cancel" (click)="requestClose()">
           Cancel
@@ -160,6 +171,9 @@ class FootersHost {}
         <button type="button" data-id="footer-save">Save</button>
       </ng-template>
     </hilos-modal>
+    @if (upperPresent()) {
+      <hilos-modal [open]="true" title="Details" initialFocus="dialog" />
+    }
   `,
 })
 class BusyHost {
@@ -168,7 +182,68 @@ class BusyHost {
   readonly closeOnEsc = signal(true)
   readonly closeOnBackdrop = signal(true)
   readonly busy = signal(false)
+  readonly disabled = signal(false)
+  readonly initialFocus = signal<'' | 'dialog' | 'inner'>('')
+  readonly copyText = signal('')
   readonly cancels = signal(0)
+  readonly upperPresent = signal(false)
+}
+
+/** A custom body owns permanent field groups, keeping its sender outside them. */
+@Component({
+  selector: 'test-modal-custom-body',
+  imports: [HilosLayout, HilosModal, LoadingButton],
+  template: `
+    <hilos-layout [connection]="connection()">
+      <hilos-modal [open]="true" [busy]="busy()" title="Edit">
+        <ng-template #modalBody let-busy="busy">
+          <form
+            data-id="custom-form"
+            (submit)="send($event)"
+            (click)="clicked()"
+          >
+            <fieldset [disabled]="busy" data-id="custom-fields">
+              <input data-autofocus data-id="custom-field" />
+              <select data-id="custom-choice">
+                <option value="a">A</option>
+                <option value="b">B</option>
+              </select>
+            </fieldset>
+            <fieldset [disabled]="busy" data-id="custom-notes-group">
+              <textarea data-id="custom-notes"></textarea>
+              <button type="button" data-id="custom-action">Choose</button>
+            </fieldset>
+            <button
+              hilosLoadingButton
+              type="submit"
+              data-id="custom-send"
+              [loading]="busy"
+              [disabled]="disabled()"
+              (click)="senderClicked()"
+            >
+              Save
+            </button>
+          </form>
+        </ng-template>
+      </hilos-modal>
+    </hilos-layout>
+  `,
+})
+class CustomBodyHost {
+  readonly connection = signal(modalFeed().connection)
+  readonly busy = signal(false)
+  readonly disabled = signal(false)
+  readonly clicked = vi.fn()
+  readonly senderClicked = vi.fn()
+  readonly sent = vi.fn()
+
+  /** Send once, including when a second submit precedes the next render. */
+  send(event: Event): void {
+    event.preventDefault()
+    if (this.busy()) return
+    this.busy.set(true)
+    this.sent()
+  }
 }
 
 /**
@@ -632,10 +707,11 @@ describe('HilosModal', () => {
     expect(host.open()).toBe(true)
   })
 
-  it('leaves the disabled close button out of the Tab cycle', () => {
+  it('leaves the disabled close button and busy body out of the Tab cycle', () => {
     const { setBusy } = mountBusyHost()
     const field = byId('field') as HTMLElement
     const save = byId('footer-save') as HTMLElement
+    const cancel = byId('footer-cancel') as HTMLElement
 
     save.focus()
     press(save, 'Tab')
@@ -644,10 +720,17 @@ describe('HilosModal', () => {
     setBusy(true)
     save.focus()
     press(save, 'Tab')
-    expect(document.activeElement).toBe(field)
+    expect(document.activeElement).toBe(cancel)
 
-    press(field, 'Tab', true)
+    press(cancel, 'Tab', true)
     expect(document.activeElement).toBe(save)
+
+    setBusy(false)
+    closeButton()?.focus()
+    press(closeButton()!, 'Tab', true)
+    expect(document.activeElement).toBe(save)
+    field.focus()
+    expect(document.activeElement).toBe(field)
   })
 
   it('closes when the parent sets it closed while busy, releasing scroll and focus', () => {
@@ -667,6 +750,401 @@ describe('HilosModal', () => {
     expect(document.body.classList.contains('modal-open')).toBe(false)
     expect(document.activeElement).toBe(opener)
     opener.remove()
+  })
+})
+
+describe('HilosModal busy body', () => {
+  const realClipboard = navigator.clipboard
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: realClipboard,
+    })
+  })
+
+  it('disables the same default fields and form without losing their draft or independent disabled', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    const form = modalElement('draft-form')
+    const fieldset = form.parentElement as HTMLFieldSetElement
+    const field = modalElement('field') as HTMLInputElement
+    const choice = modalElement('choice') as HTMLSelectElement
+    const notes = modalElement('notes') as HTMLTextAreaElement
+    const button = modalElement('body-button') as HTMLButtonElement
+    const independent = modalElement('independent-field') as HTMLInputElement
+    const fields = [field, choice, notes, button]
+    host.disabled.set(true)
+    fixture.detectChanges()
+    expect(fieldset.tagName).toBe('FIELDSET')
+    expect(fieldset.disabled).toBe(false)
+    expect(fields.map((element) => element.matches(':disabled'))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ])
+    field.value = 'unfinished name'
+    field.setSelectionRange(2, 8)
+    choice.value = 'b'
+    notes.value = 'unfinished notes'
+
+    for (const busy of [true, false]) {
+      setBusy(busy)
+      expect(modalElement('draft-form')).toBe(form)
+      expect(form.parentElement).toBe(fieldset)
+      expect(fieldset.disabled).toBe(busy)
+      expect(fields.map((element) => element.matches(':disabled'))).toEqual([
+        busy,
+        busy,
+        busy,
+        busy,
+      ])
+      expect(modalElement('field')).toBe(field)
+      expect(modalElement('choice')).toBe(choice)
+      expect(modalElement('notes')).toBe(notes)
+      expect(modalElement('body-button')).toBe(button)
+      expect(field.value).toBe('unfinished name')
+      expect([field.selectionStart, field.selectionEnd]).toEqual([2, 8])
+      expect(choice.value).toBe('b')
+      expect(notes.value).toBe('unfinished notes')
+      expect(independent.disabled).toBe(true)
+      expect(independent.matches(':disabled')).toBe(true)
+      expect(modalElement('footer-save').matches(':disabled')).toBe(false)
+      expect(field.closest('[inert], [aria-hidden="true"]')).toBeNull()
+    }
+    host.disabled.set(false)
+    fixture.detectChanges()
+    expect(independent.matches(':disabled')).toBe(false)
+  })
+
+  it('opens busy on the dialog, skipping the disabled mark until the reply', () => {
+    const fixture = TestBed.createComponent(BusyHost)
+    fixture.componentInstance.busy.set(true)
+    fixture.detectChanges()
+    const dialog = modalElement('modal')
+    const field = modalElement('field')
+    expect(field.matches(':disabled')).toBe(true)
+    expect(document.activeElement).toBe(dialog)
+    fixture.componentInstance.busy.set(false)
+    fixture.detectChanges()
+    expect(field.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('disables Copy and checks live busy before the rendered button catches up', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const fixture = TestBed.createComponent(HilosModal)
+    fixture.componentRef.setInput('open', true)
+    fixture.componentRef.setInput('copyText', 'technical details')
+    fixture.detectChanges()
+    const copy = modalElement('modal-copy') as HTMLButtonElement
+    expect(copy.disabled).toBe(false)
+
+    fixture.componentRef.setInput('busy', true)
+    copy.click()
+    expect(writeText).not.toHaveBeenCalled()
+    fixture.detectChanges()
+    expect(copy.disabled).toBe(true)
+    copy.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(writeText).not.toHaveBeenCalled()
+
+    fixture.componentRef.setInput('busy', false)
+    fixture.detectChanges()
+    expect(modalElement('modal-copy')).toBe(copy)
+    expect(copy.disabled).toBe(false)
+    expect(writeText).not.toHaveBeenCalled()
+    copy.click()
+    await fixture.whenStable()
+    fixture.detectChanges()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('technical details')
+    expect(copy.textContent?.trim()).toBe('Copied')
+  })
+
+  it.each(['dialog', 'body', 'none'] as const)(
+    'restores initial focus from %s only after busy clears and fields are enabled',
+    (from) => {
+      const { fixture, setBusy } = mountBusyHost()
+      const field = modalElement('field')
+      const dialog = modalElement('modal')
+      const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+      setBusy(true)
+      expect(refocus).not.toHaveBeenCalled()
+      dialog.focus()
+      if (from !== 'dialog') dialog.blur()
+      const active =
+        from === 'none'
+          ? vi.spyOn(document, 'activeElement', 'get').mockReturnValue(null)
+          : undefined
+
+      setBusy(false)
+      active?.mockRestore()
+      expect(field.matches(':disabled')).toBe(false)
+      expect(document.activeElement).toBe(field)
+      expect(refocus).toHaveBeenCalledExactlyOnceWith(dialog, 'marked')
+      refocus.mockClear()
+      dialog.focus()
+      fixture.detectChanges()
+      expect(refocus).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(dialog)
+    },
+  )
+
+  it.each(['dialog', 'inner'] as const)(
+    'honors the %s initial focus placement after busy',
+    (placement) => {
+      const { host, setBusy } = mountBusyHost()
+      host.initialFocus.set(placement)
+      setBusy(true)
+      const dialog = modalElement('modal')
+      dialog.focus()
+      setBusy(false)
+      expect(document.activeElement).toBe(
+        placement === 'dialog' ? dialog : modalElement('field'),
+      )
+    },
+  )
+
+  it('keeps another control or a higher dialog focused when busy clears', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    const dialog = modalElement('modal')
+    setBusy(true)
+    const save = modalElement('footer-save')
+    save.focus()
+    setBusy(false)
+    expect(document.activeElement).toBe(save)
+
+    setBusy(true)
+    host.upperPresent.set(true)
+    fixture.detectChanges()
+    const upperDialog = document.querySelector('[aria-label="Details"]')
+    expect(dialog.isConnected).toBe(true)
+    expect(document.activeElement).toBe(upperDialog)
+    setBusy(false)
+    expect(document.activeElement).toBe(upperDialog)
+    expect(modalElement('modal')).toBe(dialog)
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0', '1'])
+  })
+
+  it('does not refocus an idle modal or an open confirm when unrelated state changes', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    const dialog = modalElement('modal')
+    dialog.focus()
+    const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+    host.disabled.set(true)
+    fixture.detectChanges()
+    expect(document.activeElement).toBe(dialog)
+    expect(refocus).not.toHaveBeenCalled()
+
+    host.confirmOnClose.set(true)
+    fixture.detectChanges()
+    closeButton()?.click()
+    fixture.detectChanges()
+    const confirm = modalElement('modal-confirm')
+    setBusy(true)
+    refocus.mockClear()
+    setBusy(false)
+    expect(modalElement('modal-confirm')).toBe(confirm)
+    expect(document.activeElement).toBe(confirm)
+    expect(refocus).not.toHaveBeenCalled()
+
+    setBusy(true)
+    confirm.blur()
+    expect(document.activeElement).toBe(document.body)
+    setBusy(false)
+    expect(document.activeElement).toBe(document.body)
+    expect(refocus).not.toHaveBeenCalled()
+  })
+
+  it('does not restore focus after close, detachment, destruction or a renewed busy', () => {
+    const { fixture, host, setBusy } = mountBusyHost()
+    const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+    setBusy(true)
+    modalElement('modal').focus()
+    host.busy.set(false)
+    host.busy.set(true)
+    fixture.detectChanges()
+    expect(refocus).not.toHaveBeenCalled()
+    const root = modalElement('modal')
+    root.remove()
+    setBusy(false)
+    expect(refocus).not.toHaveBeenCalled()
+    fixture.destroy()
+
+    const next = mountBusyHost()
+    next.setBusy(true)
+    refocus.mockClear()
+    next.host.open.set(false)
+    next.setBusy(false)
+    expect(refocus).not.toHaveBeenCalled()
+    expect(byId('modal')).toBeNull()
+    next.host.open.set(true)
+    next.setBusy(true)
+    refocus.mockClear()
+    next.host.busy.set(false)
+    next.fixture.destroy()
+    TestBed.tick()
+    expect(refocus).not.toHaveBeenCalled()
+    expect(document.body.classList.contains('modal-open')).toBe(false)
+  })
+})
+
+describe('HilosModal custom busy body', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule()
+    vi.useRealTimers()
+  })
+
+  it('projects busy into persistent groups while its sender locks immediately and spins at 300 ms', () => {
+    vi.useFakeTimers()
+    const fixture = TestBed.createComponent(CustomBodyHost)
+    const host = fixture.componentInstance
+    fixture.detectChanges()
+    const form = modalElement('custom-form') as HTMLFormElement
+    const field = modalElement('custom-field') as HTMLInputElement
+    const choice = modalElement('custom-choice') as HTMLSelectElement
+    const notes = modalElement('custom-notes') as HTMLTextAreaElement
+    const action = modalElement('custom-action')
+    const groups = [
+      modalElement('custom-fields'),
+      modalElement('custom-notes-group'),
+    ]
+    const sender = modalElement('custom-send') as HTMLButtonElement
+    const fields = [field, choice, notes, action]
+    expect(form.parentElement?.tagName).toBe('DIV')
+    expect(groups.every((group) => !group.contains(sender))).toBe(true)
+    field.value = 'custom draft'
+    choice.value = 'b'
+    notes.value = 'custom notes'
+    sender.focus()
+    sender.click()
+    // A second submit before the render is held by the form's immediate guard.
+    form.requestSubmit(sender)
+    expect(host.sent).toHaveBeenCalledTimes(1)
+    fixture.detectChanges()
+
+    for (const elapsed of [0, 299, 1]) {
+      vi.advanceTimersByTime(elapsed)
+      fixture.detectChanges()
+      expect(fields.every((element) => element.matches(':disabled'))).toBe(true)
+      expect(sender.matches(':disabled')).toBe(false)
+      expect(sender.disabled).toBe(false)
+      expect(sender.getAttribute('aria-busy')).toBe('true')
+      expect(sender.getAttribute('aria-disabled')).toBe('true')
+      expect(document.activeElement).toBe(sender)
+      const spinning = elapsed === 1
+      expect(sender.querySelector('[role="status"]') !== null).toBe(spinning)
+      expect(sender.firstElementChild?.classList.contains('invisible')).toBe(
+        spinning,
+      )
+      expect(sender.classList.contains('disabled')).toBe(spinning)
+      const repeat = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+      })
+      sender.dispatchEvent(repeat)
+      expect(repeat.defaultPrevented).toBe(true)
+      expect(host.senderClicked).toHaveBeenCalledTimes(1)
+      expect(host.clicked).toHaveBeenCalledTimes(1)
+      expect(host.sent).toHaveBeenCalledTimes(1)
+    }
+
+    host.busy.set(false)
+    fixture.detectChanges()
+    expect(modalElement('custom-form')).toBe(form)
+    expect(modalElement('custom-fields')).toBe(groups[0])
+    expect(modalElement('custom-notes-group')).toBe(groups[1])
+    expect(modalElement('custom-field')).toBe(field)
+    expect(modalElement('custom-choice')).toBe(choice)
+    expect(modalElement('custom-notes')).toBe(notes)
+    expect(modalElement('custom-send')).toBe(sender)
+    expect(field.value).toBe('custom draft')
+    expect(choice.value).toBe('b')
+    expect(notes.value).toBe('custom notes')
+    expect(fields.some((element) => element.matches(':disabled'))).toBe(false)
+    expect(sender.querySelector('[role="status"]')).toBeNull()
+    expect(sender.getAttribute('aria-busy')).toBeNull()
+    expect(document.activeElement).toBe(sender)
+
+    host.disabled.set(true)
+    fixture.detectChanges()
+    expect(sender.matches(':disabled')).toBe(true)
+    sender.click()
+    expect(host.sent).toHaveBeenCalledTimes(1)
+    host.busy.set(true)
+    fixture.detectChanges()
+    host.busy.set(false)
+    fixture.detectChanges()
+    expect(sender.matches(':disabled')).toBe(true)
+    host.disabled.set(false)
+    fixture.detectChanges()
+    sender.click()
+    expect(host.sent).toHaveBeenCalledTimes(2)
+  })
+
+  it('never flashes a spinner on a fast reply and refocuses a custom field from the dialog', () => {
+    vi.useFakeTimers()
+    const fixture = TestBed.createComponent(CustomBodyHost)
+    const host = fixture.componentInstance
+    fixture.detectChanges()
+    const field = modalElement('custom-field')
+    const sender = modalElement('custom-send')
+    sender.focus()
+    sender.click()
+    fixture.detectChanges()
+    vi.advanceTimersByTime(299)
+    fixture.detectChanges()
+    modalElement('modal').focus()
+    host.busy.set(false)
+    fixture.detectChanges()
+    vi.advanceTimersByTime(1)
+    fixture.detectChanges()
+    expect(sender.querySelector('[role="status"]')).toBeNull()
+    expect(field.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('keeps custom groups and their sender under the independent connection lock', async () => {
+    const feed = modalFeed()
+    const fixture = TestBed.createComponent(CustomBodyHost)
+    const host = fixture.componentInstance
+    host.connection.set(feed.connection)
+    const settle = async () => {
+      fixture.detectChanges()
+      await fixture.whenStable()
+      fixture.detectChanges()
+    }
+    await settle()
+    const sender = modalElement('custom-send') as HTMLButtonElement
+    const field = modalElement('custom-field') as HTMLInputElement
+    const scope = modalElement('modal-interaction-scope')
+    field.value = 'stay here'
+    host.busy.set(true)
+    await settle()
+    expect(sender.matches(':disabled')).toBe(false)
+    feed.push('disconnected')
+    await settle()
+    expect(modalElement('modal-interaction-scope')).toBe(scope)
+    expect(sender.matches(':disabled')).toBe(true)
+    host.busy.set(false)
+    await settle()
+    expect(field.matches(':disabled')).toBe(true)
+    expect(sender.matches(':disabled')).toBe(true)
+    sender.click()
+    expect(host.sent).not.toHaveBeenCalled()
+    feed.push('connected')
+    await settle()
+    expect(modalElement('custom-send')).toBe(sender)
+    expect(modalElement('custom-field')).toBe(field)
+    expect(field.value).toBe('stay here')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(sender.matches(':disabled')).toBe(false)
+    sender.click()
+    expect(host.sent).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TestBed } from '@angular/core/testing'
+import { createSignal, type HilosRouter } from '@hilos/core'
 import {
   RECONSENT_NOW,
   reconsentContent,
   reconsentPreview,
 } from '../../core/test/legal/reconsentFixture.js'
 import { HilosLegalReconsent } from '../src/legal/HilosLegalReconsent.js'
+import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 afterEach(() => {
   TestBed.resetTestingModule()
@@ -127,6 +129,176 @@ describe('Angular "the terms have changed" screen (HIL-500)', () => {
     expect(retried).toBe(1)
   })
 
+  it.each([
+    { kind: 'changes', buttons: ['full-text', 'compare', 'refuse', 'later'] },
+    { kind: 'text', buttons: ['back', 'refuse', 'later'] },
+    { kind: 'compare', buttons: ['back', 'refuse', 'later'] },
+    { kind: 'refuse', buttons: ['back', 'close'] },
+    { kind: 'failed', buttons: ['retry', 'later'] },
+  ])(
+    'holds the $kind view and its outputs until window busy clears',
+    async ({ kind, buttons }) => {
+      const { fixture, one } = await draw({
+        variant: 'window',
+        content: kind === 'failed' ? null : reconsentContent('remind'),
+        view: { kind: kind === 'failed' ? 'changes' : kind, document: 'terms' },
+        error: 'The terms changed. Review them again.',
+        person: PERSON,
+      })
+      const shown = vi.fn()
+      const later = vi.fn()
+      const retry = vi.fn()
+      fixture.componentInstance.show.subscribe(shown)
+      fixture.componentInstance.later.subscribe(later)
+      fixture.componentInstance.retry.subscribe(retry)
+      const nodes = buttons.map((id) => one(`legal-reconsent-${id}`)!)
+      const error = one('legal-reconsent-error')!
+      const content = one('legal-reconsent')!.querySelector('fieldset')!
+      const text = content.textContent
+
+      // The input is already live while the native disabled bindings still lag.
+      fixture.componentRef.setInput('busy', true)
+      for (const node of [...nodes, one('legal-reconsent-not-you')!]) {
+        node.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      }
+      fixture.detectChanges()
+      for (const node of [...nodes, one('legal-reconsent-not-you')!]) {
+        expect(node.matches(':disabled')).toBe(true)
+        node.click()
+      }
+      expect(shown).not.toHaveBeenCalled()
+      expect(later).not.toHaveBeenCalled()
+      expect(retry).not.toHaveBeenCalled()
+      expect(content.textContent).toBe(text)
+      expect(one('legal-reconsent-error')).toBe(error)
+      expect(error.textContent).toContain(
+        'The terms changed. Review them again.',
+      )
+
+      fixture.componentRef.setInput('busy', false)
+      fixture.detectChanges()
+      for (const [index, id] of buttons.entries()) {
+        expect(one(`legal-reconsent-${id}`)).toBe(nodes[index])
+        expect(nodes[index]!.matches(':disabled')).toBe(false)
+        nodes[index]!.click()
+      }
+      expect(
+        shown.mock.calls.length +
+          later.mock.calls.length +
+          retry.mock.calls.length,
+      ).toBe(buttons.length)
+      if (kind === 'failed') {
+        expect(one('legal-reconsent-refuse')!.matches(':disabled')).toBe(true)
+        expect(one('legal-reconsent-accept')!.matches(':disabled')).toBe(true)
+      }
+    },
+  )
+
+  it.each(['data', 'delete'])(
+    'guards the refusal %s link before navigation, including modified and auxiliary clicks',
+    async (link) => {
+      const navigate = vi.fn()
+      TestBed.configureTestingModule({
+        providers: [
+          {
+            provide: HILOS_ROUTER,
+            useValue: {
+              currentPath: createSignal('/'),
+              navigate,
+            } as unknown as HilosRouter,
+          },
+        ],
+      })
+      const { fixture, one } = await draw({
+        variant: 'window',
+        content: reconsentContent('remind'),
+        view: { kind: 'refuse' },
+      })
+      const later = vi.fn()
+      fixture.componentInstance.later.subscribe(later)
+      const anchor = one(`legal-reconsent-${link}-link`)!
+      const refusal = one('legal-reconsent-refuse-step')!
+      fixture.componentRef.setInput('busy', true)
+      for (const init of [
+        {},
+        { ctrlKey: true },
+        { metaKey: true },
+        { shiftKey: true },
+        { button: 1 },
+      ]) {
+        const event = new MouseEvent(init.button === 1 ? 'auxclick' : 'click', {
+          ...init,
+          bubbles: true,
+          cancelable: true,
+        })
+        anchor.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+      }
+      expect(navigate).not.toHaveBeenCalled()
+      expect(later).not.toHaveBeenCalled()
+      fixture.detectChanges()
+      expect(anchor.getAttribute('aria-disabled')).toBe('true')
+      expect(anchor.getAttribute('tabindex')).toBe('-1')
+      expect(one('legal-reconsent-refuse-step')).toBe(refusal)
+      expect(refusal.textContent).toContain(
+        'Nothing changes: this reminder will keep coming back.',
+      )
+      fixture.componentRef.setInput('busy', false)
+      fixture.detectChanges()
+      expect(one(`legal-reconsent-${link}-link`)).toBe(anchor)
+      expect(anchor.hasAttribute('aria-disabled')).toBe(false)
+      expect(anchor.hasAttribute('tabindex')).toBe(false)
+      expect(navigate).not.toHaveBeenCalled()
+      expect(later).not.toHaveBeenCalled()
+      anchor.click()
+      expect(navigate).toHaveBeenCalledOnce()
+      expect(later).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each(['frozen', 'preview'])(
+    'keeps %s navigation available while busy and preserves independent prohibitions',
+    async (variant) => {
+      const { fixture, one } = await draw({
+        variant,
+        content:
+          variant === 'preview'
+            ? reconsentPreview('window')
+            : reconsentContent(),
+        view: { kind: 'changes' },
+        person: PERSON,
+        deletionScheduled: true,
+        busy: true,
+      })
+      const shown = vi.fn()
+      fixture.componentInstance.show.subscribe(shown)
+      const fullText = one('legal-reconsent-full-text')!
+      expect(fullText.matches(':disabled')).toBe(false)
+      fullText.click()
+      expect(shown).toHaveBeenCalledWith({ kind: 'text', document: 'terms' })
+      if (variant === 'frozen') {
+        expect(
+          one('legal-reconsent-data-link')!.hasAttribute('aria-disabled'),
+        ).toBe(false)
+        expect(one('legal-reconsent-sign-out')!.matches(':disabled')).toBe(
+          false,
+        )
+        expect(one('legal-reconsent-keep-account')!.matches(':disabled')).toBe(
+          false,
+        )
+      } else {
+        for (const id of ['refuse', 'later', 'accept']) {
+          expect(one(`legal-reconsent-${id}`)!.matches(':disabled')).toBe(true)
+        }
+        fixture.componentRef.setInput('busy', false)
+        fixture.detectChanges()
+        for (const id of ['refuse', 'later', 'accept']) {
+          expect(one(`legal-reconsent-${id}`)!.matches(':disabled')).toBe(true)
+        }
+      }
+    },
+  )
+
   it('blocks Accept by its own acceptance at once and keeps its look until the spinner, while reading the text turns it off (HIL-1768)', async () => {
     vi.useFakeTimers()
     const { fixture, one } = await draw({
@@ -134,24 +306,42 @@ describe('Angular "the terms have changed" screen (HIL-500)', () => {
       content: reconsentContent(),
       view: { kind: 'changes' },
       now: RECONSENT_NOW,
-      busy: true,
+      busy: false,
     })
     let accepted = 0
     fixture.componentInstance.accept.subscribe(() => accepted++)
     const accept = one('legal-reconsent-accept') as HTMLButtonElement
     const spinner = (): Element | null =>
       accept.querySelector('[data-id="loading-button-spinner"]')
+    accept.focus()
+    const content = one('legal-reconsent-document')!
+    fixture.componentRef.setInput('busy', true)
+    fixture.detectChanges()
     expect(accept.getAttribute('aria-busy')).toBe('true')
     expect(accept.getAttribute('aria-disabled')).toBe('true')
     expect(accept.disabled).toBe(false)
+    expect(accept.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(accept)
     expect(accept.classList.contains('disabled')).toBe(false)
     expect(spinner()).toBeNull()
     accept.click()
     expect(accepted).toBe(0)
 
-    vi.advanceTimersByTime(300)
+    vi.advanceTimersByTime(299)
+    fixture.detectChanges()
+    expect(spinner()).toBeNull()
+    expect(accept.matches(':disabled')).toBe(false)
+    expect(accept.classList.contains('disabled')).toBe(false)
+    expect(document.activeElement).toBe(accept)
+    expect(one('legal-reconsent-document')).toBe(content)
+    vi.advanceTimersByTime(1)
     fixture.detectChanges()
     expect(spinner()).not.toBeNull()
+    expect(
+      accept.querySelectorAll('[data-id="loading-button-spinner"]'),
+    ).toHaveLength(1)
+    expect(accept.matches(':disabled')).toBe(false)
+    expect(document.activeElement).toBe(accept)
     expect(accept.classList.contains('disabled')).toBe(true)
 
     fixture.componentRef.setInput('busy', false)

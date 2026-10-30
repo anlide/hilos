@@ -157,6 +157,7 @@ let inputSequence = 0
         [open]="opened()"
         (openChange)="$event ? undefined : editor().close()"
         [title]="title()"
+        [busy]="saving()"
         (cancel)="editor().close()"
       >
         <hilos-action-error
@@ -180,7 +181,7 @@ let inputSequence = 0
                 data-id="legal-setting-input"
                 data-autofocus
                 (change)="setValue($event)"
-                [disabled]="action.busy()"
+                [disabled]="saving()"
               >
                 @for (
                   option of copy[setting.rowKey]?.values ?? [];
@@ -213,7 +214,7 @@ let inputSequence = 0
               <button
                 type="button"
                 class="btn btn-secondary"
-                [disabled]="action.busy()"
+                [disabled]="saving()"
                 data-id="legal-setting-cancel"
                 (click)="requestClose()"
               >
@@ -271,6 +272,7 @@ export class HilosLegalSettingsPage {
   protected readonly noticeText = signal('')
   protected readonly saveAvailable = signal(false)
   protected readonly saveLabel = signal('Save')
+  protected readonly saving = signal(false)
   protected readonly title = computed(() => {
     const row = this.row()
     return row ? (this.copy[row.rowKey]?.label ?? row.rowKey) : 'Edit setting'
@@ -288,6 +290,7 @@ export class HilosLegalSettingsPage {
         mirrorHilosSignal(editor.noticeText, this.noticeText),
         mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
         mirrorHilosSignal(editor.saveLabel, this.saveLabel),
+        mirrorHilosSignal(editor.saving, this.saving),
       ]
       table.start()
       editor.start()

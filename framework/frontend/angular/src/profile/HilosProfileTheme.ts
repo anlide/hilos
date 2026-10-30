@@ -53,71 +53,79 @@ function available(): boolean {
       [title]="copy.menu"
       initialFocus="dialog"
       (openChange)="open.set($event)"
+      [busy]="busy()"
     >
-      <div data-id="profile-theme-modal">
-        <hilos-action-error
-          [action]="action"
-          detailsTitle="Couldn't change theme"
-        />
-        <div class="list-group">
-          @for (row of positions; track row.value) {
-            <button
-              type="button"
-              class="list-group-item list-group-item-action d-flex align-items-center gap-2 position-relative"
-              [class.active]="row.value === choice()?.position"
-              [attr.aria-current]="
-                row.value === choice()?.position ? 'true' : null
-              "
-              [disabled]="busy()"
-              [attr.aria-busy]="
-                busy() && submitted() === row.value ? true : null
-              "
-              [attr.data-id]="'profile-theme-option-' + row.value"
-              (click)="choose(row.value)"
-            >
-              <i class="bi" [class]="row.icon" aria-hidden="true"></i>
-              <span class="flex-grow-1">{{ row.label }}</span>
-              @if (row.value === choice()?.position && choice()?.isDefault) {
-                <span
-                  class="badge rounded-pill bg-body-tertiary text-body-emphasis border"
-                  >{{ copy.default }}</span
+      <ng-template #modalBody let-modalBusy="busy">
+        <div data-id="profile-theme-modal">
+          <fieldset class="m-0 p-0 border-0" [disabled]="modalBusy">
+            <hilos-action-error
+              [action]="action"
+              detailsTitle="Couldn't change theme"
+            />
+            <div class="list-group">
+              @for (row of positions; track row.value) {
+                <button
+                  type="button"
+                  class="list-group-item list-group-item-action d-flex align-items-center gap-2 position-relative"
+                  [class.active]="row.value === choice()?.position"
+                  [attr.aria-current]="
+                    row.value === choice()?.position ? 'true' : null
+                  "
+                  [disabled]="busy()"
+                  [attr.aria-busy]="
+                    busy() && submitted() === row.value ? true : null
+                  "
+                  [attr.data-id]="'profile-theme-option-' + row.value"
+                  (click)="choose(row.value)"
                 >
+                  <i class="bi" [class]="row.icon" aria-hidden="true"></i>
+                  <span class="flex-grow-1">{{ row.label }}</span>
+                  @if (
+                    row.value === choice()?.position && choice()?.isDefault
+                  ) {
+                    <span
+                      class="badge rounded-pill bg-body-tertiary text-body-emphasis border"
+                      >{{ copy.default }}</span
+                    >
+                  }
+                  <i
+                    class="bi bi-check2"
+                    [class.invisible]="
+                      row.value !== choice()?.position ||
+                      (loading() && submitted() === row.value)
+                    "
+                    aria-hidden="true"
+                  ></i>
+                  @if (loading() && submitted() === row.value) {
+                    <span
+                      class="position-absolute top-50 end-0 translate-middle-y me-3 spinner-border spinner-border-sm"
+                      role="status"
+                      data-id="profile-theme-loading"
+                      ><span class="visually-hidden">Loading…</span></span
+                    >
+                  }
+                </button>
               }
-              <i
-                class="bi bi-check2"
-                [class.invisible]="
-                  row.value !== choice()?.position ||
-                  (loading() && submitted() === row.value)
-                "
-                aria-hidden="true"
-              ></i>
-              @if (loading() && submitted() === row.value) {
-                <span
-                  class="position-absolute top-50 end-0 translate-middle-y me-3 spinner-border spinner-border-sm"
-                  role="status"
-                  data-id="profile-theme-loading"
-                  ><span class="visually-hidden">Loading…</span></span
-                >
-              }
-            </button>
-          }
+            </div>
+          </fieldset>
+          <hr />
+          <button
+            hilosLoadingButton
+            class="btn-outline-secondary w-100"
+            [loading]="busy() && submitted() === null"
+            [disabled]="busy() && submitted() !== null"
+            data-id="profile-theme-default"
+            (click)="choose(null)"
+          >
+            {{ copy.siteDefault }}
+          </button>
         </div>
-        <hr />
-        <button
-          hilosLoadingButton
-          class="btn-outline-secondary w-100"
-          [loading]="busy() && submitted() === null"
-          [disabled]="busy() && submitted() !== null"
-          data-id="profile-theme-default"
-          (click)="choose(null)"
-        >
-          {{ copy.siteDefault }}
-        </button>
-      </div>
+      </ng-template>
       <ng-template #modalActions let-requestClose="requestClose">
         <button
           type="button"
           class="btn btn-outline-secondary"
+          [disabled]="busy()"
           data-id="profile-theme-close"
           (click)="requestClose()"
         >

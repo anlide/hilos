@@ -659,6 +659,84 @@ describe('HilosAppearancePage Save in flight', () => {
     expect(h.sent).toHaveLength(2)
   })
 
+  it('keeps switching fields locked by session saving after the action settles', async () => {
+    const h = harness()
+    openSwitching(h)
+    click(switchingInput())
+    const field = switchingInput()
+    const modal = byId('modal')!
+    click(switchingSave())
+
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = byId('appearance-switching-cancel') as HTMLButtonElement
+    expect(field.matches(':disabled')).toBe(true)
+    expect(switchingInput()).toBe(field)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    update()
+    expect(byId('modal')).toBe(modal)
+    expect(byId('modal-confirm')).toBeNull()
+
+    h.answer('fail', 'The setting could not be saved.')
+    await Promise.resolve()
+    update()
+    expect(switchingSave().getAttribute('aria-busy')).toBeNull()
+    expect(field.matches(':disabled')).toBe(true)
+    await settle()
+    expect(byId('modal')).toBe(modal)
+    expect(switchingInput()).toBe(field)
+    expect(field.checked).toBe(false)
+    expect(field.matches(':disabled')).toBe(false)
+    expect(byId('modal-confirm')).toBeNull()
+
+    click(switchingSave())
+    h.answer('success', 'Theme switching saved.')
+    await settle()
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('locks the default-theme radios during save and keeps them after refusal', async () => {
+    const h = harness()
+    openDefaultTheme(h)
+    click(themeRadio('dark'))
+    const field = themeRadio('dark')
+    const modal = byId('modal')!
+    click(themeSave())
+
+    const close = byId('modal-close') as HTMLButtonElement
+    const cancel = byId('appearance-default-theme-cancel') as HTMLButtonElement
+    expect(field.matches(':disabled')).toBe(true)
+    expect(themeRadio('dark')).toBe(field)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    update()
+    expect(byId('modal')).toBe(modal)
+    expect(byId('modal-confirm')).toBeNull()
+
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(byId('modal')).toBe(modal)
+    expect(themeRadio('dark')).toBe(field)
+    expect(field.checked).toBe(true)
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(byId('modal-confirm')).toBeNull()
+
+    click(themeSave())
+    h.answer('success', 'Default theme saved.')
+    await settle()
+    expect(byId('modal')).toBeNull()
+  })
+
   it('turns Save off at once for a draft with nothing to save', () => {
     const h = harness()
     openSwitching(h)

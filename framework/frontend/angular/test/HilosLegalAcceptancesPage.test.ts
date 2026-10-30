@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { HilosLegalAcceptancesPage } from '../src/admin/legal/HilosLegalAcceptancesPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import {
+  ActionError,
+  bindAdminAccess,
   createSignal,
   formatMoment,
   HIDDEN_VALUE,
@@ -21,6 +23,7 @@ import {
 
 const ACCEPTED_AT = Date.parse('2026-09-27T00:30:00.000Z')
 let timeZoneBinding: TimeZoneTestBinding | null = null
+let adminAccessRelease: (() => void) | null = null
 
 /** The live window is real; only its transport is replaced, and the rows arrive by `push`. */
 function harness() {
@@ -134,6 +137,8 @@ async function mountOver(
 }
 
 afterEach(() => {
+  adminAccessRelease?.()
+  adminAccessRelease = null
   if (timeZoneBinding !== null) {
     timeZoneBinding.receive(null)
     timeZoneBinding.release()
@@ -219,16 +224,44 @@ const ready = {
   records: 12,
 } as const satisfies HilosLegalAcceptancesExportNode
 
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(reason: unknown): void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+
+  return { promise, resolve, reject }
+}
+
 /**
  * Mount the page with its export: the section it opens with, the frames after
  * it, and a confirmation step the server skips.
  *
  * @param initial The export the page answer carries, if any.
  */
-async function mountExport(initial?: HilosLegalAcceptancesExportNode) {
+async function mountExport(
+  initial?: HilosLegalAcceptancesExportNode,
+  options: {
+    readonly stepUp?: 'skip' | 'ask'
+    readonly holdFirstConfirmation?: boolean
+    readonly viewMode?: boolean
+  } = {},
+) {
   const frames: Array<(signal: ProjectSignal) => void> = []
   const sent: Array<{ name: string; data: unknown }> = []
+  const confirmation = deferred<{ reply: unknown }>()
+  let confirmations = 0
   const scopes = new ScopeManager()
+  if (options.viewMode === true) {
+    scopes.session.data.set('adminViewMode', true)
+    adminAccessRelease = bindAdminAccess(scopes)
+  }
   const page = scopes.openPage(HilosPages.LEGAL_ACCEPTANCES)
   if (initial !== undefined) page.data.set('legalAcceptancesExport', initial)
   const context = {
@@ -248,13 +281,29 @@ async function mountExport(initial?: HilosLegalAcceptancesExportNode) {
     actions: {
       dispatch(name: string, data: unknown) {
         sent.push({ name, data })
+        if (name === 'hilos_step_up_start') {
+          return {
+            done: Promise.resolve({
+              reply:
+                options.stepUp === 'ask'
+                  ? {
+                      required: true,
+                      purpose: 'export acceptance records',
+                      method: 'password',
+                    }
+                  : { required: false, purpose: 'export acceptance records' },
+            }),
+          }
+        }
+        if (
+          name === 'hilos_step_up_confirm' &&
+          options.holdFirstConfirmation &&
+          confirmations++ === 0
+        ) {
+          return { done: confirmation.promise }
+        }
         return {
-          done: Promise.resolve({
-            reply:
-              name === 'hilos_step_up_start'
-                ? { required: false, purpose: 'export acceptance records' }
-                : {},
-          }),
+          done: Promise.resolve({ reply: {} }),
         }
       },
     },
@@ -276,6 +325,15 @@ async function mountExport(initial?: HilosLegalAcceptancesExportNode) {
     find,
     fixture,
     button: () => find('legal-acceptances-export') as HTMLButtonElement,
+    refuseConfirmation() {
+      confirmation.reject(
+        new ActionError(
+          'hilos_step_up_confirm',
+          'fail',
+          'The password was refused',
+        ),
+      )
+    },
     emit(node: HilosLegalAcceptancesExportNode | null) {
       for (const listener of frames)
         listener({
@@ -341,5 +399,99 @@ describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
       revisionId: null,
       search: null,
     })
+  })
+
+  it('holds step-up fields and the window until the confirmation reply, then retries a refusal', async () => {
+    const w = await mountExport(undefined, {
+      stepUp: 'ask',
+      holdFirstConfirmation: true,
+    })
+
+    w.button().click()
+    await w.fixture.whenStable()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    w.fixture.detectChanges()
+
+    const modal = w.find('modal')!
+    const password = w.find('step-up-password') as HTMLInputElement
+    password.value = 'correct horse battery staple'
+    password.dispatchEvent(new Event('input', { bubbles: true }))
+    w.fixture.detectChanges()
+    const close = w.find('modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+    const confirm = w.find(
+      'legal-acceptances-export-confirm',
+    ) as HTMLButtonElement
+
+    confirm.click()
+    w.fixture.detectChanges()
+
+    expect(w.button().getAttribute('aria-busy')).toBe('true')
+    expect(w.button().disabled).toBe(false)
+    expect(password.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    expect(confirm.disabled).toBe(false)
+    close.click()
+    cancel.click()
+    confirm.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    w.fixture.detectChanges()
+    expect(w.find('modal')).toBe(modal)
+    expect(w.find('step-up-password')).toBe(password)
+    expect(password.value).toBe('correct horse battery staple')
+    expect(w.sent.map((entry) => entry.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+    ])
+
+    w.refuseConfirmation()
+    await w.fixture.whenStable()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    w.fixture.detectChanges()
+
+    expect(w.find('modal')).toBe(modal)
+    expect(w.find('step-up-password')).toBe(password)
+    expect(password.value).toBe('correct horse battery staple')
+    expect(password.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(w.find('step-up-error')?.textContent).toContain(
+      'The password was refused',
+    )
+    expect(w.sent.map((entry) => entry.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+    ])
+
+    confirm.click()
+    await w.fixture.whenStable()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    w.fixture.detectChanges()
+
+    expect(w.find('modal')).toBeNull()
+    expect(w.sent.map((entry) => entry.name)).toEqual([
+      'hilos_step_up_start',
+      'hilos_step_up_confirm',
+      'hilos_step_up_confirm',
+      'legal_acceptances_export',
+    ])
+  })
+
+  it('keeps Export unavailable in the admin view mode', async () => {
+    const w = await mountExport(undefined, { viewMode: true })
+
+    expect(w.button().disabled).toBe(true)
+    w.button().click()
+    await w.fixture.whenStable()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    w.fixture.detectChanges()
+
+    expect(w.button().disabled).toBe(true)
+    expect(w.find('modal')).toBeNull()
+    expect(w.sent).toEqual([])
   })
 })

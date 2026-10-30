@@ -435,6 +435,7 @@ function focusWindow(body: HTMLElement | undefined): void {
         [open]="editing()"
         (openChange)="onEditOpenChange($event)"
         [confirmOnClose]="dirty()"
+        [busy]="loading()"
       >
         <h5
           hilosConflictHeader

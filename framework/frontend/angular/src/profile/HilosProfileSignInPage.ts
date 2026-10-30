@@ -245,131 +245,56 @@ let signInSequence = 0
         [title]="addTitle()"
         initialFocus="dialog"
         [confirmOnClose]="addDirty()"
+        [busy]="busy() || stepUpBusy()"
       >
-        <div #addBody data-id="profile-sign-in-add-modal">
-          <div
-            class="visually-hidden"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            data-id="profile-sign-in-add-live"
-          >
-            {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
-          </div>
-          <div class="hilos-stack">
-            <div class="invisible" aria-hidden="true" inert>
-              <div [class]="sendProgressRowClass">
-                <i
-                  class="bi bi-hourglass-split flex-shrink-0"
-                  aria-hidden="true"
-                ></i>
-                <span class="flex-grow-1 text-truncate">&nbsp;</span>
-                <span [class]="sendProgressDetailsClass"
-                  ><i class="bi bi-info-circle" aria-hidden="true"></i
-                ></span>
-              </div>
-              <div class="mb-3">
-                <span class="btn btn-link btn-sm p-0">{{
-                  sendAgainLabel
-                }}</span>
-              </div>
-              @for (
-                label of ['Code', 'New password', 'Confirm new password'];
-                track label
-              ) {
-                <div class="mb-3">
-                  <div class="form-label">{{ label }}</div>
-                  <div class="form-control">&nbsp;</div>
-                </div>
-              }
-              <div class="form-text">{{ copy.passwordHint }}</div>
-            </div>
+        <ng-template #modalBody let-modalBusy="busy">
+          <div #addBody data-id="profile-sign-in-add-modal">
             <div
-              class="invisible d-flex flex-column gap-2"
-              aria-hidden="true"
-              inert
+              class="visually-hidden"
+              role="alert"
+              aria-live="assertive"
+              aria-atomic="true"
+              data-id="profile-sign-in-add-live"
             >
-              @for (way of ways(); track wayKey(way)) {
-                @if (way.kind === 'password') {
-                  <span class="btn btn-outline-secondary"
-                    ><span class="d-flex align-items-center gap-3 text-start"
-                      ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                      ><span
-                        ><span class="d-block fw-semibold small">Password</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.passwordDescription
-                        }}</span></span
-                      ></span
-                    ></span
-                  >
-                } @else if (way.kind === 'phone') {
-                  <span class="btn btn-outline-secondary"
-                    ><span class="d-flex align-items-center gap-3 text-start"
-                      ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                      ><span
-                        ><span class="d-block fw-semibold small">Phone</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.phoneDescription
-                        }}</span></span
-                      ></span
-                    ></span
-                  >
-                } @else if (way.kind === 'provider') {
-                  <span class="btn btn-outline-secondary"
-                    ><span class="d-flex align-items-center gap-3 text-start"
-                      ><i
-                        [class]="authMethodIcon(way.key)"
-                        class="fs-5"
-                        aria-hidden="true"
-                      ></i
-                      ><span
-                        ><span class="d-block fw-semibold small">{{
-                          way.label
-                        }}</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.providerDescription
-                        }}</span></span
-                      ></span
-                    ></span
-                  >
-                } @else {
-                  <span class="btn btn-outline-secondary"
-                    ><span class="d-flex align-items-center gap-3 text-start"
-                      ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                      ><span
-                        ><span class="d-block fw-semibold small">Passkey</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.passkeyDescription
-                        }}</span></span
-                      ></span
-                    ></span
-                  >
-                }
-              }
+              {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
             </div>
-            @if (step() === 'step-up') {
-              <form
-                [id]="baseId + '-step-up'"
-                class="align-self-start"
-                data-id="profile-sign-in-add-step-up"
-                (submit)="$event.preventDefault(); flow().confirmStepUp()"
+            <div class="hilos-stack">
+              <div class="invisible" aria-hidden="true" inert>
+                <div [class]="sendProgressRowClass">
+                  <i
+                    class="bi bi-hourglass-split flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="flex-grow-1 text-truncate">&nbsp;</span>
+                  <span [class]="sendProgressDetailsClass"
+                    ><i class="bi bi-info-circle" aria-hidden="true"></i
+                  ></span>
+                </div>
+                <div class="mb-3">
+                  <span class="btn btn-link btn-sm p-0">{{
+                    sendAgainLabel
+                  }}</span>
+                </div>
+                @for (
+                  label of ['Code', 'New password', 'Confirm new password'];
+                  track label
+                ) {
+                  <div class="mb-3">
+                    <div class="form-label">{{ label }}</div>
+                    <div class="form-control">&nbsp;</div>
+                  </div>
+                }
+                <div class="form-text">{{ copy.passwordHint }}</div>
+              </div>
+              <div
+                class="invisible d-flex flex-column gap-2"
+                aria-hidden="true"
+                inert
               >
-                <hilos-step-up-step [controller]="flow().stepUp" />
-              </form>
-            } @else if (step() === 'refused') {
-              <div class="align-self-start"></div>
-            } @else if (step() === 'choose') {
-              <div class="d-flex flex-column gap-2 align-self-start">
                 @for (way of ways(); track wayKey(way)) {
                   @if (way.kind === 'password') {
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary"
-                      [disabled]="busy()"
-                      data-id="profile-sign-in-choose-password"
-                      (click)="flow().choosePassword()"
-                    >
-                      <span class="d-flex align-items-center gap-3 text-start"
+                    <span class="btn btn-outline-secondary"
+                      ><span class="d-flex align-items-center gap-3 text-start"
                         ><i class="bi bi-lock fs-5" aria-hidden="true"></i
                         ><span
                           ><span class="d-block fw-semibold small"
@@ -378,17 +303,11 @@ let signInSequence = 0
                             copy.passwordDescription
                           }}</span></span
                         ></span
-                      >
-                    </button>
-                  } @else if (way.kind === 'phone') {
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary"
-                      [disabled]="busy()"
-                      data-id="profile-sign-in-choose-phone"
-                      (click)="flow().choosePhone()"
+                      ></span
                     >
-                      <span class="d-flex align-items-center gap-3 text-start"
+                  } @else if (way.kind === 'phone') {
+                    <span class="btn btn-outline-secondary"
+                      ><span class="d-flex align-items-center gap-3 text-start"
                         ><i class="bi bi-phone fs-5" aria-hidden="true"></i
                         ><span
                           ><span class="d-block fw-semibold small">Phone</span
@@ -396,18 +315,11 @@ let signInSequence = 0
                             copy.phoneDescription
                           }}</span></span
                         ></span
-                      >
-                    </button>
-                  } @else if (way.kind === 'provider') {
-                    <button
-                      hilosLoadingButton
-                      class="btn btn-outline-secondary"
-                      [loading]="busy() && pendingProvider() === way.key"
-                      [disabled]="busy() && pendingProvider() !== way.key"
-                      [attr.data-id]="'profile-oauth-link-' + way.key"
-                      (click)="flow().chooseProvider(way.key)"
+                      ></span
                     >
-                      <span class="d-flex align-items-center gap-3 text-start"
+                  } @else if (way.kind === 'provider') {
+                    <span class="btn btn-outline-secondary"
+                      ><span class="d-flex align-items-center gap-3 text-start"
                         ><i
                           [class]="authMethodIcon(way.key)"
                           class="fs-5"
@@ -421,18 +333,11 @@ let signInSequence = 0
                             copy.providerDescription
                           }}</span></span
                         ></span
-                      >
-                    </button>
-                  } @else {
-                    <button
-                      hilosLoadingButton
-                      class="btn btn-outline-secondary"
-                      [loading]="busy() && pendingProvider() === null"
-                      [disabled]="busy() && pendingProvider() !== null"
-                      data-id="profile-passkey-add"
-                      (click)="flow().choosePasskey()"
+                      ></span
                     >
-                      <span class="d-flex align-items-center gap-3 text-start"
+                  } @else {
+                    <span class="btn btn-outline-secondary"
+                      ><span class="d-flex align-items-center gap-3 text-start"
                         ><i
                           class="bi bi-fingerprint fs-5"
                           aria-hidden="true"
@@ -443,75 +348,204 @@ let signInSequence = 0
                             copy.passkeyDescription
                           }}</span></span
                         ></span
-                      >
-                    </button>
+                      ></span
+                    >
                   }
                 }
               </div>
-            } @else {
-              <form
-                [id]="baseId + '-add'"
-                class="align-self-start"
-                (submit)="$event.preventDefault(); submitAdd()"
-              >
-                @for (field of fields(); track field.key; let first = $first) {
-                  <div class="mb-3">
-                    @if (field.key === 'code') {
-                      <hilos-send-progress
-                        [progress]="sendProgress()"
-                        [to]="
-                          step() === 'phone-code' ? sentPhone() : sentEmail()
-                        "
-                        [resendAt]="resendAt()"
-                        [busy]="busy()"
-                        [dataId]="
-                          step() === 'phone-code'
-                            ? 'profile-add-sms-send'
-                            : 'profile-add-password-send'
-                        "
-                        (sendAgain)="sendAgainAdd()"
-                      />
+              @if (step() === 'step-up') {
+                <form
+                  [id]="baseId + '-step-up'"
+                  class="align-self-start"
+                  data-id="profile-sign-in-add-step-up"
+                  (submit)="$event.preventDefault(); flow().confirmStepUp()"
+                >
+                  <fieldset class="m-0 p-0 border-0" [disabled]="modalBusy">
+                    <hilos-step-up-step [controller]="flow().stepUp" />
+                  </fieldset>
+                </form>
+              } @else if (step() === 'refused') {
+                <div class="align-self-start"></div>
+              } @else if (step() === 'choose') {
+                <div class="d-flex flex-column gap-2 align-self-start">
+                  @for (way of ways(); track wayKey(way)) {
+                    @if (way.kind === 'password') {
+                      <fieldset
+                        class="m-0 p-0 border-0 d-grid"
+                        [disabled]="modalBusy"
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary"
+                          data-id="profile-sign-in-choose-password"
+                          (click)="flow().choosePassword()"
+                        >
+                          <span
+                            class="d-flex align-items-center gap-3 text-start"
+                            ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                            ><span
+                              ><span class="d-block fw-semibold small"
+                                >Password</span
+                              ><span
+                                class="d-block small text-body-secondary"
+                                >{{ copy.passwordDescription }}</span
+                              ></span
+                            ></span
+                          >
+                        </button>
+                      </fieldset>
+                    } @else if (way.kind === 'phone') {
+                      <fieldset
+                        class="m-0 p-0 border-0 d-grid"
+                        [disabled]="modalBusy"
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary"
+                          data-id="profile-sign-in-choose-phone"
+                          (click)="flow().choosePhone()"
+                        >
+                          <span
+                            class="d-flex align-items-center gap-3 text-start"
+                            ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                            ><span
+                              ><span class="d-block fw-semibold small"
+                                >Phone</span
+                              ><span
+                                class="d-block small text-body-secondary"
+                                >{{ copy.phoneDescription }}</span
+                              ></span
+                            ></span
+                          >
+                        </button>
+                      </fieldset>
+                    } @else if (way.kind === 'provider') {
+                      <button
+                        hilosLoadingButton
+                        class="btn btn-outline-secondary"
+                        [loading]="busy() && pendingProvider() === way.key"
+                        [disabled]="busy() && pendingProvider() !== way.key"
+                        [attr.data-id]="'profile-oauth-link-' + way.key"
+                        (click)="flow().chooseProvider(way.key)"
+                      >
+                        <span class="d-flex align-items-center gap-3 text-start"
+                          ><i
+                            [class]="authMethodIcon(way.key)"
+                            class="fs-5"
+                            aria-hidden="true"
+                          ></i
+                          ><span
+                            ><span class="d-block fw-semibold small">{{
+                              way.label
+                            }}</span
+                            ><span class="d-block small text-body-secondary">{{
+                              copy.providerDescription
+                            }}</span></span
+                          ></span
+                        >
+                      </button>
+                    } @else {
+                      <button
+                        hilosLoadingButton
+                        class="btn btn-outline-secondary"
+                        [loading]="busy() && pendingProvider() === null"
+                        [disabled]="busy() && pendingProvider() !== null"
+                        data-id="profile-passkey-add"
+                        (click)="flow().choosePasskey()"
+                      >
+                        <span class="d-flex align-items-center gap-3 text-start"
+                          ><i
+                            class="bi bi-fingerprint fs-5"
+                            aria-hidden="true"
+                          ></i
+                          ><span
+                            ><span class="d-block fw-semibold small"
+                              >Passkey</span
+                            ><span class="d-block small text-body-secondary">{{
+                              copy.passkeyDescription
+                            }}</span></span
+                          ></span
+                        >
+                      </button>
                     }
-                    <label
-                      [attr.for]="baseId + '-add-' + field.key"
-                      class="form-label"
-                      >{{ field.label }}</label
-                    >
-                    <input
-                      [id]="baseId + '-add-' + field.key"
-                      [value]="draft()[field.key]"
-                      (input)="setDraftField(field.key, valueOf($event))"
-                      [type]="field.type"
-                      [attr.autocomplete]="field.autocomplete"
-                      class="form-control"
-                      [attr.data-id]="field.dataId"
-                      [attr.aria-describedby]="
-                        field.type === 'password'
-                          ? baseId + '-add-password-hint'
-                          : null
-                      "
-                      [attr.data-autofocus]="first ? '' : null"
-                    />
-                  </div>
-                }
-                @if (step() === 'password-new' || step() === 'password-code') {
-                  <div
-                    [id]="baseId + '-add-password-hint'"
-                    class="form-text"
-                    data-id="profile-add-password-hint"
-                  >
-                    {{ copy.passwordHint }}
-                  </div>
-                }
-              </form>
-            }
+                  }
+                </div>
+              } @else {
+                <form
+                  [id]="baseId + '-add'"
+                  class="align-self-start"
+                  (submit)="$event.preventDefault(); submitAdd()"
+                >
+                  <fieldset class="m-0 p-0 border-0" [disabled]="modalBusy">
+                    @for (
+                      field of fields();
+                      track field.key;
+                      let first = $first
+                    ) {
+                      <div class="mb-3">
+                        @if (field.key === 'code') {
+                          <hilos-send-progress
+                            [progress]="sendProgress()"
+                            [to]="
+                              step() === 'phone-code'
+                                ? sentPhone()
+                                : sentEmail()
+                            "
+                            [resendAt]="resendAt()"
+                            [busy]="busy()"
+                            [dataId]="
+                              step() === 'phone-code'
+                                ? 'profile-add-sms-send'
+                                : 'profile-add-password-send'
+                            "
+                            (sendAgain)="sendAgainAdd()"
+                          />
+                        }
+                        <label
+                          [attr.for]="baseId + '-add-' + field.key"
+                          class="form-label"
+                          >{{ field.label }}</label
+                        >
+                        <input
+                          [id]="baseId + '-add-' + field.key"
+                          [value]="draft()[field.key]"
+                          (input)="setDraftField(field.key, valueOf($event))"
+                          [type]="field.type"
+                          [attr.autocomplete]="field.autocomplete"
+                          class="form-control"
+                          [attr.data-id]="field.dataId"
+                          [attr.aria-describedby]="
+                            field.type === 'password'
+                              ? baseId + '-add-password-hint'
+                              : null
+                          "
+                          [attr.data-autofocus]="first ? '' : null"
+                        />
+                      </div>
+                    }
+                    @if (
+                      step() === 'password-new' || step() === 'password-code'
+                    ) {
+                      <div
+                        [id]="baseId + '-add-password-hint'"
+                        class="form-text"
+                        data-id="profile-add-password-hint"
+                      >
+                        {{ copy.passwordHint }}
+                      </div>
+                    }
+                  </fieldset>
+                </form>
+              }
+            </div>
+            <hilos-form-error [message]="refusal()" [dataId]="errorId()" />
           </div>
-          <hilos-form-error [message]="refusal()" [dataId]="errorId()" />
-        </div>
+        </ng-template>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
             class="btn btn-secondary"
+            [disabled]="busy() || stepUpBusy()"
             data-id="profile-sign-in-add-cancel"
             (click)="requestClose()"
           >
@@ -532,7 +566,7 @@ let signInSequence = 0
             <button
               type="button"
               class="btn btn-outline-secondary"
-              [disabled]="busy()"
+              [disabled]="busy() || stepUpBusy()"
               data-id="profile-sign-in-add-back"
               (click)="flow().back()"
             >

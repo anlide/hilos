@@ -464,6 +464,55 @@ describe('HilosSecurityOauthPage return-address modal', () => {
     expect(sent).toHaveLength(0)
     expect(el(fixture, 'modal')).toBeNull()
   })
+
+  it('holds the edit and its draft through a refusal, then closes on success', async () => {
+    const world = seededContext('https://a.example/cb')
+    const fixture = openModal(world.context)
+    typeDraft(fixture, 'https://mine.example/cb')
+    const field = valueInput(fixture)
+    const modal = el(fixture, 'modal')!
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+    expect(world.sent).toHaveLength(1)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(valueInput(fixture)).toBe(field)
+    expect(field.value).toBe('https://mine.example/cb')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    world.answer('fail')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(valueInput(fixture)).toBe(field)
+    expect(field.value).toBe('https://mine.example/cb')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(world.sent).toHaveLength(2)
+    world.answer('success')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBeNull()
+  })
 })
 
 describe('HilosSecurityOauthPage return-address reset dialog', () => {

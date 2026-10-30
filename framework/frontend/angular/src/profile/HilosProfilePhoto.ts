@@ -62,6 +62,7 @@ function mirror<T>(
     <hilos-modal
       [open]="step() !== 'closed'"
       (openChange)="onOpenChange($event)"
+      [busy]="busy() || checking()"
       [title]="copy.title"
       initialFocus="dialog"
     >
@@ -73,6 +74,7 @@ function mirror<T>(
         accept="image/jpeg,image/png,image/webp"
         data-id="profile-photo-input"
         (change)="picked($event)"
+        [disabled]="busy() || checking()"
       />
       @if (step() === 'pick') {
         <div class="text-center">
@@ -100,6 +102,7 @@ function mirror<T>(
                 type="button"
                 class="btn btn-link btn-sm p-0 align-baseline"
                 data-id="profile-photo-choose"
+                [disabled]="busy() || checking()"
                 (click)="choose()"
               >
                 {{ copy.choose }}
@@ -117,7 +120,8 @@ function mirror<T>(
             class="hilos-photo-crop rounded-circle mx-auto d-block"
             role="img"
             [attr.aria-label]="copy.position"
-            tabindex="0"
+            [attr.aria-disabled]="busy() || checking() ? 'true' : null"
+            [attr.tabindex]="busy() || checking() ? -1 : 0"
             data-id="profile-photo-preview"
             (pointerdown)="startDrag($event)"
             (pointermove)="drag($event)"
@@ -191,7 +195,7 @@ function mirror<T>(
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm"
-              [disabled]="busy()"
+              [disabled]="busy() || checking()"
               data-id="profile-photo-upload-another"
               (click)="choose()"
             >
@@ -200,7 +204,7 @@ function mirror<T>(
             <button
               type="button"
               class="btn btn-outline-danger btn-sm"
-              [disabled]="busy()"
+              [disabled]="busy() || checking()"
               data-id="profile-photo-remove"
               (click)="flow().remove()"
             >
@@ -222,6 +226,7 @@ function mirror<T>(
           type="button"
           class="btn btn-outline-secondary"
           data-id="profile-photo-cancel"
+          [disabled]="busy() || checking()"
           (click)="requestClose()"
         >
           {{ copy.cancel }}
@@ -288,9 +293,11 @@ export class HilosProfilePhoto {
     if (!open) this.flow().close()
   }
   protected choose(): void {
+    if (this.busy() || this.checking()) return
     this.inputFile()?.nativeElement.click()
   }
   protected picked(event: Event): void {
+    if (this.busy() || this.checking()) return
     const input = event.target as HTMLInputElement
     const file = input.files?.[0]
     if (file) void this.flow().pick(file)
@@ -298,19 +305,23 @@ export class HilosProfilePhoto {
   }
   protected dropped(event: DragEvent): void {
     event.preventDefault()
+    if (this.busy() || this.checking()) return
     const file = event.dataTransfer?.files[0]
     if (file) void this.flow().pick(file)
   }
   protected onZoom(event: Event): void {
+    if (this.busy() || this.checking()) return
     this.flow().setZoom(Number((event.target as HTMLInputElement).value))
   }
   protected startDrag(event: PointerEvent): void {
+    if (this.busy() || this.checking()) return
     this.dragging = { id: event.pointerId, x: event.clientX, y: event.clientY }
     ;(event.currentTarget as HTMLCanvasElement).setPointerCapture(
       event.pointerId,
     )
   }
   protected drag(event: PointerEvent): void {
+    if (this.busy() || this.checking()) return
     const previous = this.dragging
     if (!previous || previous.id !== event.pointerId) return
     const side = this.canvas()?.nativeElement.getBoundingClientRect().width ?? 0
@@ -326,6 +337,7 @@ export class HilosProfilePhoto {
     this.dragging = null
   }
   protected arrow(event: KeyboardEvent): void {
+    if (this.busy() || this.checking()) return
     const motion = ARROW_MOVE[event.key]
     const side = this.canvas()?.nativeElement.getBoundingClientRect().width ?? 0
     if (!motion || side <= 0) return

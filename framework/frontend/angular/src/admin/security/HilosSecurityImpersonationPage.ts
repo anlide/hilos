@@ -139,6 +139,7 @@ import {
         [open]="editOpen()"
         (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="live().dirty"
+        [busy]="editSaving()"
         [aria-label]="editTitle()"
       >
         <h5
@@ -202,7 +203,7 @@ import {
               <button
                 type="button"
                 class="btn btn-secondary"
-                [disabled]="edit.busy()"
+                [disabled]="editSaving()"
                 (click)="requestClose()"
               >
                 Cancel
@@ -273,6 +274,7 @@ export class HilosSecurityImpersonationPage {
   protected readonly editNoticeText = signal('')
   protected readonly editSaveLabel = signal('Save')
   protected readonly saveAvailable = signal(false)
+  protected readonly editSaving = signal(false)
   protected readonly edit = createHilosTrackedAction()
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
@@ -301,6 +303,7 @@ export class HilosSecurityImpersonationPage {
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
         mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
+        mirrorHilosSignal(editor.saving, this.editSaving),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

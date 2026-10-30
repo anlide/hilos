@@ -3,6 +3,8 @@ import {
   ActionError,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
   bindProfileFlows,
+  cancelOAuthTrip,
+  createConnectionInteractionState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
   PROFILE_UNLINK_IDENTITY_ACTION,
@@ -18,6 +20,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
+import { HILOS_CONNECTION_INTERACTION } from '../src/hilosConnectionInteraction.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 /** The server's answer to the add-a-way-in confirmation start. */
@@ -894,6 +897,469 @@ describe('profile sign-in page locks a pressed button at once and the others by 
     save.click()
     fixture.detectChanges()
     expect(sends()).toHaveLength(1)
+    fixture.destroy()
+  })
+})
+
+/** Try each close gesture while the add dialog must stay on its current step. */
+function tryClosingAdd(
+  fixture: ComponentFixture<unknown>,
+  node: (id: string) => HTMLElement,
+): void {
+  for (const close of [
+    () => node('modal-close').click(),
+    () => node('profile-sign-in-add-cancel').click(),
+    () =>
+      node('modal').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      ),
+    () => node('modal').click(),
+  ]) {
+    close()
+    fixture.detectChanges()
+    expect(node('profile-sign-in-add-modal')).not.toBeNull()
+    expect(node('modal-confirm')).toBeNull()
+    expect(node('modal-close').matches(':disabled')).toBe(true)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(true)
+  }
+}
+
+describe('profile sign-in add modal busy body', () => {
+  afterEach(() => {
+    cancelOAuthTrip()
+    vi.clearAllTimers()
+    vi.restoreAllMocks()
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it.each([
+    {
+      way: 'provider',
+      pressedId: 'profile-oauth-link-oauth:github',
+      otherId: 'profile-passkey-add',
+      action: 'hilos_link_oauth_start',
+    },
+    {
+      way: 'passkey',
+      pressedId: 'profile-passkey-add',
+      otherId: 'profile-oauth-link-oauth:github',
+      action: AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+    },
+  ])(
+    'holds the $way chooser and keeps its sending button focused through 0/299/300 ms',
+    async ({ pressedId, otherId, action }) => {
+      ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential =
+        class {}
+      Object.defineProperty(navigator, 'credentials', {
+        configurable: true,
+        value: { create: vi.fn(), get: vi.fn() },
+      })
+      vi.spyOn(window, 'open').mockReturnValue({
+        closed: false,
+        close: vi.fn(),
+        location: { replace: vi.fn() },
+      } as unknown as Window)
+      const { dispatch, fixture, node } = setup(NO_STEP, MAGIC_LINK, [
+        ...OFFERED,
+        { key: 'oauth:google', name: 'Google' },
+        { key: 'passkey', name: null },
+      ])
+      node('profile-sign-in-add').click()
+      await settle(fixture)
+      const pending = held()
+      dispatch.mockImplementationOnce(() => pending.answer)
+      const pressed = node(pressedId) as HTMLButtonElement
+      const others = [
+        otherId,
+        'profile-oauth-link-oauth:google',
+        'profile-sign-in-choose-password',
+        'profile-sign-in-choose-phone',
+      ].map((id) => node(id) as HTMLButtonElement)
+      const chooser = pressed.parentElement
+      const body = node('profile-sign-in-add-modal')
+      const live = node('profile-sign-in-add-live')
+      const room = node('profile-sign-in-add-error-slot')
+      const label = pressed.firstElementChild as HTMLElement
+      const content = label.innerHTML
+      const sends = () => dispatch.mock.calls.filter(([key]) => key === action)
+      pressed.focus()
+      vi.useFakeTimers()
+      pressed.click()
+      fixture.detectChanges()
+      expect(sends()).toHaveLength(1)
+      const sent = dispatch.mock.calls.length
+
+      for (const elapsed of [0, 299, 1]) {
+        wait(fixture, elapsed)
+        expect(node(pressedId)).toBe(pressed)
+        expect(pressed.parentElement).toBe(chooser)
+        expect(node('profile-sign-in-add-modal')).toBe(body)
+        expect(node('profile-sign-in-add-live')).toBe(live)
+        expect(node('profile-sign-in-add-error-slot')).toBe(room)
+        expect(document.activeElement).toBe(pressed)
+        expect(pressed.matches(':disabled')).toBe(false)
+        expect(pressed.getAttribute('aria-busy')).toBe('true')
+        expect(pressed.getAttribute('aria-disabled')).toBe('true')
+        expect(spinnerOf(pressed) !== null).toBe(elapsed === 1)
+        expect(
+          pressed.querySelectorAll('[data-id="loading-button-spinner"]'),
+        ).toHaveLength(elapsed === 1 ? 1 : 0)
+        expect(pressed.classList.contains('disabled')).toBe(elapsed === 1)
+        expect(pressed.firstElementChild).toBe(label)
+        expect(label.innerHTML).toBe(content)
+        expect(label.classList.contains('invisible')).toBe(elapsed === 1)
+        for (const other of others) {
+          expect(other.matches(':disabled')).toBe(true)
+          expect(other.hasAttribute('aria-busy')).toBe(false)
+          expect(spinnerOf(other)).toBeNull()
+          other.click()
+        }
+        pressed.click()
+        tryClosingAdd(fixture, node)
+        expect(dispatch).toHaveBeenCalledTimes(sent)
+      }
+      expect(body.querySelectorAll('[inert] [data-id]')).toHaveLength(0)
+      expect(body.closest('[inert], [aria-hidden="true"]')).toBeNull()
+      expect(live.getAttribute('role')).toBe('alert')
+
+      pending.reject(
+        new ActionError(action, 'fail', 'This way is unavailable.'),
+      )
+      await flush(fixture)
+      expect(node(pressedId)).toBe(pressed)
+      expect(document.activeElement).toBe(pressed)
+      expect(pressed.firstElementChild).toBe(label)
+      expect(label.innerHTML).toBe(content)
+      expect(label.classList.contains('invisible')).toBe(false)
+      expect(pressed.hasAttribute('aria-busy')).toBe(false)
+      for (const other of others) expect(other.matches(':disabled')).toBe(false)
+      expect(node('profile-sign-in-add-error').textContent).toContain(
+        'This way is unavailable.',
+      )
+      expect(node('profile-sign-in-add-live')).toBe(live)
+      expect(node('profile-sign-in-add-error-slot')).toBe(room)
+      expect(node('modal-confirm')).toBeNull()
+      expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(
+        false,
+      )
+      expect(dispatch).toHaveBeenCalledTimes(sent)
+
+      const retry = held()
+      dispatch.mockImplementationOnce(() => retry.answer)
+      pressed.click()
+      fixture.detectChanges()
+      expect(sends()).toHaveLength(2)
+      retry.reject(new ActionError(action, 'fail', 'Try another way.'))
+      await flush(fixture)
+      expect(node('profile-sign-in-add-error').textContent).toContain(
+        'Try another way.',
+      )
+      node('profile-sign-in-add-cancel').click()
+      fixture.detectChanges()
+      expect(node('profile-sign-in-add-modal')).toBeNull()
+      fixture.destroy()
+    },
+  )
+
+  it('keeps the password draft and nodes through refusal and closes on the successful retry signal', async () => {
+    const { dispatch, emit, fill, fixture, node } = setup(NO_STEP, MAGIC_LINK)
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    node('profile-sign-in-choose-password').click()
+    fixture.detectChanges()
+    const password = node('profile-add-password-new') as HTMLInputElement
+    const confirm = node('profile-add-password-confirm') as HTMLInputElement
+    const fields = password.closest('fieldset')
+    const save = node('profile-add-password-save') as HTMLButtonElement
+    const back = node('profile-sign-in-add-back') as HTMLButtonElement
+    const live = node('profile-sign-in-add-live')
+    const room = node('profile-add-password-error-slot')
+    fill('profile-add-password-new', 'new-secret')
+    fill('profile-add-password-confirm', 'new-secret')
+    expect(document.activeElement).toBe(password)
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    save.click()
+    fixture.detectChanges()
+    expect(password.matches(':disabled')).toBe(true)
+    expect(confirm.matches(':disabled')).toBe(true)
+    expect(save.matches(':disabled')).toBe(false)
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(back.matches(':disabled')).toBe(true)
+    save.click()
+    password.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    back.click()
+    tryClosingAdd(fixture, node)
+    const sends = () =>
+      dispatch.mock.calls.filter(([key]) => key === 'profile_set_password')
+    expect(sends()).toHaveLength(1)
+    pending.reject(
+      new ActionError(
+        'profile_set_password',
+        'fail',
+        'Choose another password.',
+      ),
+    )
+    await flush(fixture)
+    expect(node('profile-add-password-new')).toBe(password)
+    expect(node('profile-add-password-confirm')).toBe(confirm)
+    expect(password.closest('fieldset')).toBe(fields)
+    expect([password.value, confirm.value]).toEqual([
+      'new-secret',
+      'new-secret',
+    ])
+    expect(password.matches(':disabled')).toBe(false)
+    expect(confirm.matches(':disabled')).toBe(false)
+    expect(back.matches(':disabled')).toBe(false)
+    expect(node('modal-close').matches(':disabled')).toBe(false)
+    expect(node('profile-add-password-error').textContent).toContain(
+      'Choose another password.',
+    )
+    expect(node('profile-sign-in-add-live')).toBe(live)
+    expect(node('profile-add-password-error-slot')).toBe(room)
+    expect(node('modal-confirm')).toBeNull()
+    fill('profile-add-password-confirm', '')
+    expect(save.matches(':disabled')).toBe(true)
+    password.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    expect(sends()).toHaveLength(1)
+    fill('profile-add-password-confirm', 'new-secret')
+    save.click()
+    await flush(fixture)
+    expect(sends()).toHaveLength(2)
+    expect(node('profile-sign-in-add-modal')).not.toBeNull()
+    expect(password.matches(':disabled')).toBe(true)
+    emit('profile_password_updated', { mode: 'added' })
+    fixture.detectChanges()
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+    fixture.destroy()
+  })
+
+  it.each(CODE_WAYS)(
+    'holds the $way request and its code fields, keeping refused drafts retryable',
+    async ({ choose, address, value, submit, action, code }) => {
+      const { dispatch, emit, fill, fixture, node } = setup()
+      node('profile-sign-in-add').click()
+      await settle(fixture)
+      node(choose).click()
+      fixture.detectChanges()
+      const input = node(address) as HTMLInputElement
+      const fields = input.closest('fieldset')
+      fill(address, value)
+      const pending = held()
+      dispatch.mockImplementationOnce(() => pending.answer)
+      node(submit).click()
+      fixture.detectChanges()
+      expect(input.matches(':disabled')).toBe(true)
+      expect(node('profile-sign-in-add-back').matches(':disabled')).toBe(true)
+      input.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+      tryClosingAdd(fixture, node)
+      const sends = () => dispatch.mock.calls.filter(([key]) => key === action)
+      expect(sends()).toHaveLength(1)
+      pending.reject(
+        new ActionError(action, 'fail', 'This address cannot get codes.'),
+      )
+      await flush(fixture)
+      expect(node(address)).toBe(input)
+      expect(input.closest('fieldset')).toBe(fields)
+      expect(input.value).toBe(value)
+      expect(input.matches(':disabled')).toBe(false)
+      expect(node('profile-sign-in-add-back').matches(':disabled')).toBe(false)
+      expect(node('profile-sign-in-add-live').textContent).toContain(
+        'This address cannot get codes.',
+      )
+      node(submit).click()
+      await flush(fixture)
+      expect(sends()).toHaveLength(2)
+      const proof = node(code) as HTMLInputElement
+      const inputs = Array.from(proof.form!.querySelectorAll('input'))
+      fill(code, '123456')
+      const phone = action === 'profile_add_sms_request'
+      if (!phone) {
+        fill('profile-add-password-new', 'new-secret')
+        fill('profile-add-password-confirm', 'new-secret')
+      }
+      const drafts = inputs.map((field) => field.value)
+      const confirmation = held()
+      dispatch.mockImplementationOnce(() => confirmation.answer)
+      proof.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+      fixture.detectChanges()
+      for (const field of inputs) expect(field.matches(':disabled')).toBe(true)
+      tryClosingAdd(fixture, node)
+      confirmation.reject(
+        new ActionError(
+          phone ? 'profile_add_sms_confirm' : 'profile_add_password_confirm',
+          'fail',
+          'That code is not right.',
+        ),
+      )
+      await flush(fixture)
+      expect(Array.from(proof.form!.querySelectorAll('input'))).toEqual(inputs)
+      expect(inputs.map((field) => field.value)).toEqual(drafts)
+      for (const field of inputs) expect(field.matches(':disabled')).toBe(false)
+      proof.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+      await flush(fixture)
+      if (!phone) {
+        emit('profile_password_updated', { mode: 'added' })
+        fixture.detectChanges()
+      }
+      expect(node('profile-sign-in-add-modal')).toBeNull()
+      fixture.destroy()
+    },
+  )
+
+  it('holds step-up confirmation and preserves its refused proof for retry', async () => {
+    const { dispatch, fill, fixture, node } = setup(PASSWORD_STEP)
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    const proof = node('step-up-password') as HTMLInputElement
+    const fields = proof.closest('fieldset')
+    fill('step-up-password', 'secret')
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    proof.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    fixture.detectChanges()
+    expect(proof.matches(':disabled')).toBe(true)
+    expect(
+      node('profile-sign-in-add-step-up-confirm').matches(':disabled'),
+    ).toBe(false)
+    proof.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    node('profile-sign-in-add-step-up-confirm').click()
+    tryClosingAdd(fixture, node)
+    const confirms = () =>
+      dispatch.mock.calls.filter(([key]) => key === 'hilos_step_up_confirm')
+    expect(confirms()).toHaveLength(1)
+    pending.reject(
+      new ActionError(
+        'hilos_step_up_confirm',
+        'fail',
+        'That password is not right.',
+      ),
+    )
+    await flush(fixture)
+    expect(node('step-up-password')).toBe(proof)
+    expect(proof.closest('fieldset')).toBe(fields)
+    expect(proof.value).toBe('secret')
+    expect(proof.matches(':disabled')).toBe(false)
+    expect(node('step-up-error').textContent).toContain(
+      'That password is not right.',
+    )
+    expect(node('profile-sign-in-add-live').textContent?.trim()).toBe(
+      'That password is not right.',
+    )
+    expect(node('modal-confirm')).toBeNull()
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(false)
+    proof.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    await flush(fixture)
+    expect(confirms()).toHaveLength(2)
+    expect(node('profile-sign-in-choose-phone')).not.toBeNull()
+    node('profile-sign-in-add-cancel').click()
+    fixture.detectChanges()
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+    fixture.destroy()
+  })
+
+  it('holds the modal for a step-up resend independently of the main request and retains the cooldown', async () => {
+    const opening = {
+      required: true,
+      purpose: 'add a way to sign in',
+      method: 'email_code',
+      destination: 'a@example.test',
+      send: { sent: true, resendAt: Date.now() - 60_000, expiresAt: null },
+    }
+    const { dispatch, fixture, node } = setup(opening)
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    const code = node('step-up-code') as HTMLInputElement
+    const fields = code.closest('fieldset')
+    const resend = node('step-up-send-again') as HTMLButtonElement
+    expect(resend.matches(':disabled')).toBe(false)
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    resend.click()
+    fixture.detectChanges()
+    expect(code.matches(':disabled')).toBe(true)
+    resend.click()
+    code.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    tryClosingAdd(fixture, node)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    pending.resolve({
+      reply: {
+        ...opening,
+        send: { ...opening.send, resendAt: Date.now() + 60_000 },
+      },
+    })
+    await flush(fixture)
+    expect(node('step-up-code')).toBe(code)
+    expect(code.closest('fieldset')).toBe(fields)
+    expect(code.matches(':disabled')).toBe(false)
+    expect(resend.matches(':disabled')).toBe(true)
+    expect(node('profile-sign-in-add-cancel').matches(':disabled')).toBe(false)
+    expect(node('modal-close').matches(':disabled')).toBe(false)
+    expect(node('modal-confirm')).toBeNull()
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    fixture.destroy()
+  })
+
+  it('keeps custom fields and submitting buttons under the connection lock after busy clears', async () => {
+    const connection = (state: string) =>
+      ({ state, on: () => () => {} }) as unknown as HilosConnection
+    const interaction = createConnectionInteractionState(
+      connection('connected'),
+    )
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HILOS_CONNECTION_INTERACTION,
+          useValue: createSignal(interaction),
+        },
+      ],
+    })
+    const { dispatch, fill, fixture, node } = setup()
+    fixture.componentRef.onDestroy(() => interaction.dispose())
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    node('profile-sign-in-choose-phone').click()
+    fixture.detectChanges()
+    const phone = node('profile-add-sms-phone') as HTMLInputElement
+    const fields = phone.closest('fieldset')
+    const send = node('profile-add-sms-request')
+    fill('profile-add-sms-phone', '+15551234567')
+    const pending = held()
+    dispatch.mockImplementationOnce(() => pending.answer)
+    send.click()
+    fixture.detectChanges()
+    expect(send.matches(':disabled')).toBe(false)
+    interaction.setConnection(connection('reconnecting'))
+    fixture.detectChanges()
+    expect(send.matches(':disabled')).toBe(true)
+    pending.reject(
+      new ActionError(
+        'profile_add_sms_request',
+        'fail',
+        'Try this number again.',
+      ),
+    )
+    await flush(fixture)
+    expect(node('profile-add-sms-phone')).toBe(phone)
+    expect(phone.closest('fieldset')).toBe(fields)
+    expect(phone.value).toBe('+15551234567')
+    expect(phone.matches(':disabled')).toBe(true)
+    expect(send.matches(':disabled')).toBe(true)
+    expect(send.hasAttribute('aria-busy')).toBe(false)
+    tryClosingAdd(fixture, node)
+    interaction.setConnection(connection('connected'))
+    fixture.detectChanges()
+    expect(phone.matches(':disabled')).toBe(false)
+    expect(send.matches(':disabled')).toBe(false)
+    expect(node('profile-sign-in-add-modal')).not.toBeNull()
+    expect(node('modal-confirm')).toBeNull()
+    expect(
+      dispatch.mock.calls.filter(([key]) => key === 'profile_add_sms_request'),
+    ).toHaveLength(1)
+    expect(node('profile-add-sms-error').textContent).toContain(
+      'Try this number again.',
+    )
     fixture.destroy()
   })
 })

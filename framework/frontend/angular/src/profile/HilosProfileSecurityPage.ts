@@ -322,6 +322,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
         [open]="enrollOpen()"
         (openChange)="closeEnroll($event)"
         [title]="enrollTitle()"
+        [busy]="enrollAction.busy() || enrollStepUpBusy()"
         [confirmOnClose]="enrollStep() === 'codes' && !issuedSaved()"
         confirmTitle="Close before saving the codes?"
         confirmMessage="You have not marked these codes as saved. You can still show them later with a code from your app."
@@ -434,7 +435,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
           <button
             type="button"
             class="btn btn-secondary"
-            [disabled]="enrollAction.busy()"
+            [disabled]="enrollAction.busy() || enrollStepUpBusy()"
             (click)="requestClose()"
           >
             {{ enrollStep() === 'more' ? 'Not now' : 'Cancel' }}
@@ -459,6 +460,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
         (openChange)="codesOpen.set($event)"
         title="Backup codes"
         initialFocus="inner"
+        [busy]="codesAction.busy()"
         [confirmOnClose]="codesStep() === 'new' && !renewedSaved()"
         confirmTitle="Close before saving the codes?"
         confirmMessage="You have not marked the new codes as saved, and the old ones no longer work. You can still show them later with a code from your app."
@@ -542,6 +544,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
         (openChange)="removeOpen.set($event)"
         [title]="removeTitle()"
         initialFocus="inner"
+        [busy]="removeAction.busy()"
       >
         <hilos-action-error
           [action]="removeAction"
@@ -589,6 +592,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
         [open]="waitOpen()"
         (openChange)="waitOpen.set($event)"
         title="Wait before removal"
+        [busy]="waitAction.busy()"
       >
         <hilos-action-error
           [action]="waitAction"
@@ -643,6 +647,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
         (openChange)="resetOpen.set($event)"
         title="Request removal"
         initialFocus="dialog"
+        [busy]="resetAction.busy()"
       >
         <hilos-action-error
           [action]="resetAction"

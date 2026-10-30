@@ -157,6 +157,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [open]="editOpen()"
         (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="editDirty()"
+        [busy]="editSaving()"
       >
         <div
           modalHeader
@@ -299,7 +300,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
                 type="button"
                 class="btn btn-secondary"
                 data-id="hilos-settings-edit-cancel"
-                [disabled]="edit.busy()"
+                [disabled]="editSaving()"
                 (click)="requestClose()"
               >
                 Cancel
@@ -476,6 +477,7 @@ export class HilosSettingsPage {
   protected readonly editNoticeText = signal('')
   protected readonly editSaveLabel = signal('Save')
   protected readonly saveAvailable = signal(false)
+  protected readonly editSaving = signal(false)
   protected readonly edit = createHilosTrackedAction()
   // The live row the open delete or reset dialog is about: the row the table
   // holds in focus, which the server follows wherever it goes; undefined once the
@@ -555,6 +557,7 @@ export class HilosSettingsPage {
         mirrorHilosSignal(editor.noticeText, this.editNoticeText),
         mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
         mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
+        mirrorHilosSignal(editor.saving, this.editSaving),
       ]
       onCleanup(() => {
         for (const stop of off) stop()

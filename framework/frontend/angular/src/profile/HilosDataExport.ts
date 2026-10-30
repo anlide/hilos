@@ -113,6 +113,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
         (openChange)="onOpenChange($event)"
         [title]="stepUpCopy.title"
         initialFocus="inner"
+        [busy]="busy() || stepUpBusy()"
       >
         <div class="visually-hidden" role="alert" aria-live="assertive">
           {{ stepRefusal() ?? refusal() }}
@@ -132,6 +133,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="busy() || stepUpBusy()"
             (click)="requestClose()"
           >
             {{ stepUpCopy.cancel }}
@@ -163,6 +165,7 @@ export class HilosDataExport {
   protected readonly node = signal<DataExportNode | null>(null)
   private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly busy = signal(false)
+  protected readonly stepUpBusy = signal(false)
   protected readonly refusal = signal<string | null>(null)
   protected readonly stepRefusal = signal<string | null>(null)
   protected readonly open = signal(false)
@@ -188,12 +191,16 @@ export class HilosDataExport {
       const flow = this.flow()
       this.node.set(store.state.get())
       this.busy.set(flow.busy.get())
+      this.stepUpBusy.set(flow.stepUp.busy.get())
       this.open.set(flow.open.get())
       this.refusal.set(flow.refusal.get())
       this.stepRefusal.set(flow.stepUp.refusal.get())
       const off = [
         subscribeSignal(store.state, (value) => this.node.set(value)),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
+        subscribeSignal(flow.stepUp.busy, (value) =>
+          this.stepUpBusy.set(value),
+        ),
         subscribeSignal(flow.open, (value) => this.open.set(value)),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
         subscribeSignal(flow.stepUp.refusal, (value) =>

@@ -6,6 +6,15 @@
 // template is declared or a `copyText` is given: a dialog with neither gets no
 // footer element — neither buttons nor the bordered strip — and there is no
 // default footer to opt out of.
+// Busy locks the default body through a permanent fieldset, preserving its
+// fields and draft. An optional `<ng-template #modalBody let-busy="busy">`
+// replaces that fieldset inside the same body: its owner disables field groups
+// with busy and keeps its submitting LoadingButton outside them, so the button
+// keeps its look and focus until its spinner. The footer stays outside the
+// busy fieldset; its owner disables Cancel and other actions, the modal disables
+// Copy.
+// Once busy clears, the existing trap restores initial focus only from the
+// dialog itself or the document body, leaving another focus choice alone.
 // The shell connection lock is independent of busy: permanent fieldsets cover
 // the whole dialog and its confirm layer, including custom content. Core binds
 // the real roots without restarting the focus trap or scroll lock.
@@ -99,6 +108,12 @@ export interface ModalActionsContext {
   requestClose: () => void
 }
 
+/** The context a custom `#modalBody` template receives. */
+export interface ModalBodyContext {
+  /** Disable field groups while keeping their submitting LoadingButton outside. */
+  readonly busy: boolean
+}
+
 /** The edit-in-modal dialog with built-in discard-confirmation. */
 @Component({
   selector: 'hilos-modal',
@@ -160,7 +175,18 @@ export interface ModalActionsContext {
                 (click)="modal.requestClose()"
               ></button>
             </div>
-            <div class="modal-body"><ng-content /></div>
+            <div class="modal-body">
+              @if (body(); as tpl) {
+                <ng-container
+                  [ngTemplateOutlet]="tpl"
+                  [ngTemplateOutletContext]="{ busy: busy() }"
+                />
+              } @else {
+                <fieldset class="m-0 p-0 border-0" [disabled]="busy()">
+                  <ng-content />
+                </fieldset>
+              }
+            </div>
             @if (actions() || showCopy()) {
               <div class="modal-footer hilos-button-row">
                 <!-- Copy comes first in the markup so the main action stands on
@@ -170,6 +196,7 @@ export interface ModalActionsContext {
                     type="button"
                     class="btn btn-outline-secondary"
                     data-id="modal-copy"
+                    [disabled]="busy()"
                     (click)="copy()"
                   >
                     <i class="bi bi-clipboard me-1" aria-hidden="true"></i>
@@ -294,7 +321,11 @@ export class HilosModal {
    * `modalActions` template receives closes the dialog or raises the confirm
    * step. Outranks `closeOnEsc` and `closeOnBackdrop`; a gesture refused while
    * busy is not replayed once it clears. The parent setting `open` to false
-   * still closes the dialog. Defaults to false.
+   * still closes the dialog. A permanent fieldset disables the default body;
+   * a custom `#modalBody` receives busy to disable its own groups, leaving its
+   * submitting LoadingButton outside them. Copy is disabled; the owner guards
+   * other footer actions. Once idle, initial focus returns only from the dialog
+   * or document body, with no confirm showing. Defaults to false.
    */
   readonly busy = input(false)
   /** Raise a confirm step before closing — set it when the draft is dirty. */
@@ -355,6 +386,9 @@ export class HilosModal {
   protected readonly showCopy = computed(
     () => this.copyText() !== '' && isClipboardAvailable(),
   )
+  /** Replaces the default busy fieldset; the template owns its field groups. */
+  protected readonly body =
+    contentChild<TemplateRef<ModalBodyContext>>('modalBody')
   protected readonly actions =
     contentChild<TemplateRef<ModalActionsContext>>('modalActions')
   protected readonly requestClose = (): void => {
@@ -421,6 +455,20 @@ export class HilosModal {
         )
       }
     })
+    // Only this adapter instance needs the previous busy value. Render first:
+    // the current step and its disabled fieldsets must be applied before focus.
+    let wasBusy = false
+    afterRenderEffect(() => {
+      const busy = this.busy()
+      const becameIdle = wasBusy && !busy
+      wasBusy = busy
+      if (!becameIdle || !this.open() || this.confirmVisible()) return
+      const root = this.dialog()?.nativeElement
+      if (!root?.isConnected || this.busy()) return
+      const { activeElement: active, body } = root.ownerDocument
+      if (active && active !== root && active !== body) return
+      this.trap.refocus(root, trapPlacement(this.initialFocus()))
+    })
     // Confirm step enters its own modal layer while visible, and releases it on
     // hide or close.
     effect((onCleanup) => {
@@ -435,6 +483,7 @@ export class HilosModal {
   }
 
   protected async copy(): Promise<void> {
+    if (this.busy()) return
     this.copied.set(await copyToClipboard(this.copyText()))
   }
 

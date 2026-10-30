@@ -566,24 +566,27 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           [open]="reconsentOpen() && !underMaintenance()"
           [aria-label]="reconsentCopy.heading"
           initialFocus="dialog"
+          [busy]="reconsentBusy()"
           (openChange)="$event ? undefined : onReconsentLater()"
         >
-          <div data-id="legal-reconsent-modal">
-            <hilos-legal-reconsent
-              variant="window"
-              [content]="reconsentContent()"
-              [view]="reconsentView()"
-              [loading]="reconsentLoading()"
-              [error]="reconsentError()"
-              [busy]="reconsentBusy()"
-              [person]="reconsentPerson()"
-              [now]="reconsentNow()"
-              (accept)="onReconsentAccept()"
-              (later)="onReconsentLater()"
-              (retry)="onReconsentRetry()"
-              (show)="reconsent.show($event)"
-            />
-          </div>
+          <ng-template #modalBody>
+            <div data-id="legal-reconsent-modal">
+              <hilos-legal-reconsent
+                variant="window"
+                [content]="reconsentContent()"
+                [view]="reconsentView()"
+                [loading]="reconsentLoading()"
+                [error]="reconsentError()"
+                [busy]="reconsentBusy()"
+                [person]="reconsentPerson()"
+                [now]="reconsentNow()"
+                (accept)="onReconsentAccept()"
+                (later)="onReconsentLater()"
+                (retry)="onReconsentRetry()"
+                (show)="reconsent.show($event)"
+              />
+            </div>
+          </ng-template>
         </hilos-modal>
       </div>
     }

@@ -17,9 +17,10 @@ import {
 } from '@hilos/core'
 
 /** The live window is real; only its transport and the rejected action are replaced. */
-function harness() {
+function harness(deferred = false) {
   const listeners: Array<(frame: never) => void> = []
   const calls: Array<{ action: string; payload: unknown }> = []
+  let answerAction: ((outcome: 'success' | 'fail') => void) | undefined
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.LEGAL_SETTINGS)
   const context = {
@@ -38,16 +39,33 @@ function harness() {
     actions: {
       dispatch(action: string, payload: unknown) {
         calls.push({ action, payload })
+        const done = deferred
+          ? new Promise<unknown>((resolve, reject) => {
+              answerAction = (outcome) => {
+                if (outcome === 'success') {
+                  resolve({})
+                } else {
+                  reject(
+                    new ActionError(
+                      'legal_setting_set',
+                      'fail',
+                      'Server refused this choice',
+                    ),
+                  )
+                }
+              }
+            })
+          : Promise.reject(
+              new ActionError(
+                'legal_setting_set',
+                'fail',
+                'Server refused this choice',
+              ),
+            )
         return {
           requestId: '1',
           loading: createSignal(false),
-          done: Promise.reject(
-            new ActionError(
-              'legal_setting_set',
-              'fail',
-              'Server refused this choice',
-            ),
-          ),
+          done,
         }
       },
     },
@@ -65,6 +83,9 @@ function harness() {
     context,
     router,
     calls,
+    answer(outcome: 'success' | 'fail') {
+      answerAction?.(outcome)
+    },
     push(value: unknown) {
       for (const listener of listeners)
         listener({
@@ -163,6 +184,63 @@ describe('legal setting Angular modal', () => {
       root.querySelector('[data-id="hilos-action-error"]')?.textContent,
     ).toContain('Server refused this choice')
     fixture.destroy()
+  })
+
+  it('locks the legal edit through saving, preserves a refusal and closes on success', async () => {
+    const h = harness(true)
+    const page = await mountPage(h)
+    h.push('checkbox')
+    page.fixture.detectChanges()
+    page.edit().click()
+    page.fixture.detectChanges()
+    const field = page.input()!
+    field.value = 'line'
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    page.fixture.detectChanges()
+    const modal = page.root.querySelector<HTMLElement>('[data-id="modal"]')!
+
+    page.save().click()
+    page.fixture.detectChanges()
+
+    const close = page.root.querySelector(
+      '[data-id="modal-close"]',
+    ) as HTMLButtonElement
+    const cancel = page.cancel()
+    expect(h.calls).toHaveLength(1)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(page.input()).toBe(field)
+    expect(field.value).toBe('line')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    page.fixture.detectChanges()
+    expect(page.root.querySelector('[data-id="modal"]')).toBe(modal)
+    expect(page.root.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    h.answer('fail')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await page.fixture.whenStable()
+    page.fixture.detectChanges()
+    expect(page.root.querySelector('[data-id="modal"]')).toBe(modal)
+    expect(page.input()).toBe(field)
+    expect(field.value).toBe('line')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(page.root.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    page.save().click()
+    page.fixture.detectChanges()
+    expect(h.calls).toHaveLength(2)
+    h.answer('success')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await page.fixture.whenStable()
+    page.fixture.detectChanges()
+    expect(page.root.querySelector('[data-id="modal"]')).toBeNull()
+    page.fixture.destroy()
   })
 })
 

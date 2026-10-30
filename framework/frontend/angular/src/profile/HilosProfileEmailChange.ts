@@ -64,6 +64,7 @@ function mirror<T>(
       (openChange)="onOpenChange($event)"
       [title]="title()"
       [confirmOnClose]="asksBeforeClosing()"
+      [busy]="busy() || stepUpBusy()"
       initialFocus="inner"
     >
       <!-- This dialog's own voice; one region for all the steps, since only
@@ -227,6 +228,7 @@ function mirror<T>(
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="busy() || stepUpBusy()"
             data-id="profile-email-cancel"
             (click)="requestClose()"
           >
@@ -248,6 +250,7 @@ function mirror<T>(
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="busy() || stepUpBusy()"
             data-id="profile-email-cancel"
             (click)="requestClose()"
           >
@@ -307,6 +310,7 @@ function mirror<T>(
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="busy() || stepUpBusy()"
             data-id="profile-email-again"
             (click)="flow().again()"
           >
@@ -315,6 +319,7 @@ function mirror<T>(
           <button
             type="button"
             class="btn btn-primary"
+            [disabled]="busy() || stepUpBusy()"
             data-autofocus
             data-id="profile-email-done"
             (click)="requestClose()"
@@ -337,6 +342,7 @@ export class HilosProfileEmailChange {
   protected readonly newCode = signal('')
   protected readonly now = signal('')
   protected readonly busy = signal(false)
+  protected readonly stepUpBusy = signal(false)
   protected readonly refusal = signal<string | null>(null)
   protected readonly sendProgress = signal<CodeSendProgress | null>(null)
   protected readonly resendAt = signal<number | null>(null)
@@ -372,6 +378,7 @@ export class HilosProfileEmailChange {
         mirror(flow.newCode, this.newCode),
         mirror(flow.now, this.now),
         mirror(flow.busy, this.busy),
+        mirror(flow.stepUp.busy, this.stepUpBusy),
         mirror(flow.refusal, this.refusal),
         mirror(flow.sendProgress, this.sendProgress),
         mirror(flow.resendAt, this.resendAt),

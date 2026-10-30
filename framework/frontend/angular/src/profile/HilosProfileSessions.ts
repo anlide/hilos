@@ -166,6 +166,7 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
         (openChange)="$event ? null : endingSessionId.set(null)"
         [title]="endTitle()"
         initialFocus="dialog"
+        [busy]="endAction.busy()"
       >
         <p>
           Tabs of this session lose the account at once: where an account is
@@ -204,6 +205,7 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
         (openChange)="$event ? null : endOthersOpen.set(false)"
         title="Sign out everywhere else"
         initialFocus="dialog"
+        [busy]="endOthersAction.busy()"
       >
         <p>
           Other sessions that will end:

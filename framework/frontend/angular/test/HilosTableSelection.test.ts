@@ -58,6 +58,21 @@ function refused(): ActionHandle<HilosTableBulkAccepted> {
   }
 }
 
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(reason: unknown): void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+
+  return { promise, resolve, reject }
+}
+
 /**
  * One declared operation that records what it was asked to run over.
  *
@@ -253,6 +268,89 @@ describe('HilosTableSelection', () => {
 
     expect(byId(fixture, 'modal')).not.toBeNull()
     expect(fixture.nativeElement.textContent).toContain('The node is frozen')
+  })
+
+  it('locks through the reply, retries a refusal, and leaves later progress to the table', async () => {
+    const asked: HilosTableSelectionTarget[] = []
+    const reply = deferred<{ reply: HilosTableBulkAccepted }>()
+    let runs = 0
+    const controller = makeController([
+      deleteAction(asked, () => {
+        runs += 1
+
+        return runs === 1
+          ? {
+              requestId: 'req-1',
+              loading: createSignal(false),
+              done: reply.promise,
+            }
+          : accepted('run-2')
+      }),
+    ])
+    controller.selectRow('a', true)
+    const fixture = mountPanel(controller)
+
+    click(fixture, 'hilos-table-bulk-delete')
+    const modal = byId(fixture, 'modal') as HTMLElement
+    const message = modal.querySelector('p') as HTMLParagraphElement
+    const originalMessage = message.textContent
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+
+    await press(fixture, 'hilos-table-bulk-confirm')
+
+    const close = byId(fixture, 'modal-close') as HTMLButtonElement
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(byId(fixture, 'modal')).toBe(modal)
+
+    reply.reject(
+      new ActionError('backups_delete', 'fail', 'The node is frozen'),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+
+    expect(byId(fixture, 'modal')).toBe(modal)
+    expect(modal.querySelector('p')).toBe(message)
+    expect(message.textContent).toBe(originalMessage)
+    expect(fixture.nativeElement.textContent).toContain('The node is frozen')
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(runs).toBe(1)
+
+    await press(fixture, 'hilos-table-bulk-confirm')
+
+    expect(asked).toHaveLength(2)
+    expect(byId(fixture, 'modal')).toBeNull()
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'run-2',
+      current: 1,
+      total: 4,
+    })
+    fixture.detectChanges()
+    expect(byId(fixture, 'modal')).toBeNull()
+    expect(
+      (byId(fixture, 'hilos-table-bulk-delete') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'run-2',
+      current: 4,
+      total: 4,
+      ended: true,
+    })
+    fixture.detectChanges()
+    expect(
+      (byId(fixture, 'hilos-table-bulk-delete') as HTMLButtonElement).disabled,
+    ).toBe(false)
   })
 
   it('heads the refusal details with what the refused operation failed to do', async () => {

@@ -519,6 +519,55 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(sent).toHaveLength(0)
     expect(el(fixture, 'modal')).toBeNull()
   })
+
+  it('locks the setting modal through a refused save and closes after a successful retry', async () => {
+    const world = seededContext()
+    const fixture = openModal(world.context, TRUST_DAYS)
+    typeDraft(fixture, '31')
+    const field = valueInput(fixture)
+    const modal = el(fixture, 'modal')!
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+    expect(world.sent).toHaveLength(1)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(valueInput(fixture)).toBe(field)
+    expect(field.value).toBe('31')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    world.answer('fail')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(valueInput(fixture)).toBe(field)
+    expect(field.value).toBe('31')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(world.sent).toHaveLength(2)
+    world.answer('success')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBeNull()
+  })
 })
 
 describe('HilosSecurity2faPage', () => {
@@ -680,6 +729,152 @@ describe('HilosSecurity2faPage switches', () => {
 })
 
 describe('HilosSecurity2faPage turning the factor off', () => {
+  it('holds the step-up form and close paths until a refusal lets it retry', async () => {
+    const world = seededContext()
+    const fixture = mountPage(world.context)
+    await openDisable(fixture, world, true)
+
+    const modal = el(fixture, 'modal')!
+    const password = el(fixture, 'step-up-password') as HTMLInputElement
+    password.value = 'secret'
+    password.dispatchEvent(new Event('input'))
+    const confirm = el(
+      fixture,
+      'hilos-2fa-disable-step-up-confirm',
+    ) as HTMLButtonElement
+    confirm.click()
+    fixture.detectChanges()
+
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = el(fixture, 'hilos-2fa-disable-cancel') as HTMLButtonElement
+    expect(world.sent).toHaveLength(2)
+    expect(world.sent[1]).toMatchObject({
+      action: 'hilos_step_up_confirm',
+      payload: { operation: 'disable_second_factor', password: 'secret' },
+    })
+    expect(password.matches(':disabled')).toBe(true)
+    expect(el(fixture, 'step-up-password')).toBe(password)
+    expect(password.value).toBe('secret')
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.matches(':disabled')).toBe(false)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    close.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    cancel.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    modal.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    modal.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    confirm.click()
+    password.form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    fixture.detectChanges()
+
+    expect(world.sent).toHaveLength(2)
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    world.answer('fail')
+    await settle(fixture)
+
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+    expect(el(fixture, 'step-up-password')).toBe(password)
+    expect(password.value).toBe('secret')
+    expect(password.matches(':disabled')).toBe(false)
+    expect(confirm.getAttribute('aria-busy')).toBeNull()
+    expect(el(fixture, 'step-up-error')?.textContent).toContain(
+      'The setting refused the write.',
+    )
+
+    confirm.click()
+    fixture.detectChanges()
+    expect(world.sent).toHaveLength(3)
+    expect(world.sent[2]?.action).toBe('hilos_step_up_confirm')
+    world.answer('success')
+    await settle(fixture)
+
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal')?.textContent).toContain('Turn two-factor off')
+    expect(el(fixture, 'hilos-2fa-disable-consequences')).not.toBeNull()
+    expect(cancel.disabled).toBe(false)
+    cancel.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-2fa-disable-window')).toBeNull()
+  })
+
+  it('holds the consequences and close paths while disabling, then unlocks a refused retry', async () => {
+    const world = seededContext()
+    const fixture = mountPage(world.context)
+    await openDisable(fixture, world, false)
+
+    const modal = el(fixture, 'modal')!
+    const consequences = el(fixture, 'hilos-2fa-disable-consequences')!
+    const consequencesText = consequences.textContent
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = el(fixture, 'hilos-2fa-disable-cancel') as HTMLButtonElement
+    const confirm = el(
+      fixture,
+      'hilos-2fa-disable-confirm',
+    ) as HTMLButtonElement
+    confirm.click()
+    fixture.detectChanges()
+
+    expect(world.sent).toHaveLength(2)
+    expect(world.sent[1]).toMatchObject({
+      action: 'security_2fa_switch_set',
+      payload: { key: ENABLED, enabled: false },
+    })
+    expect(el(fixture, 'hilos-2fa-disable-consequences')).toBe(consequences)
+    expect(consequences.textContent).toBe(consequencesText)
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.matches(':disabled')).toBe(false)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    close.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    cancel.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    modal.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    modal.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    confirm.click()
+    fixture.detectChanges()
+
+    expect(world.sent).toHaveLength(2)
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'hilos-2fa-disable-consequences')).toBe(consequences)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    world.answer('fail')
+    await settle(fixture)
+
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'hilos-2fa-disable-consequences')).toBe(consequences)
+    expect(consequences.textContent).toBe(consequencesText)
+    expect(el(fixture, 'hilos-2fa-disable-refusal')?.textContent).toContain(
+      'The setting refused the write.',
+    )
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(confirm.getAttribute('aria-busy')).toBeNull()
+
+    confirm.click()
+    fixture.detectChanges()
+    expect(world.sent).toHaveLength(3)
+    expect(world.sent[2]).toMatchObject({
+      action: 'security_2fa_switch_set',
+      payload: { key: ENABLED, enabled: false },
+    })
+    world.answer('success')
+    await settle(fixture)
+    expect(el(fixture, 'hilos-2fa-disable-window')).toBeNull()
+  })
+
   it("opens the window instead of moving the switch: Confirm it's you, then what it does and Turn off", async () => {
     const world = seededContext()
     const fixture = mountPage(world.context)

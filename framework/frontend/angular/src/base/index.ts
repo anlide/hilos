@@ -78,7 +78,11 @@ export { HilosAccountDeletion } from '../profile/HilosAccountDeletion.js'
 export { HilosProfileSecurityPage } from '../profile/HilosProfileSecurityPage.js'
 export { HilosProfileSessions } from '../profile/HilosProfileSessions.js'
 export { HilosProfileDevices } from '../profile/HilosProfileDevices.js'
-export { HilosModal, type ModalActionsContext } from '../HilosModal.js'
+export {
+  HilosModal,
+  type ModalActionsContext,
+  type ModalBodyContext,
+} from '../HilosModal.js'
 export { HilosLongText } from '../HilosLongText.js'
 export { HilosActionError } from '../HilosActionError.js'
 export { HilosActionReason } from '../HilosActionReason.js'

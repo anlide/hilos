@@ -18,6 +18,9 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
+  ElementRef,
+  inject,
   input,
   output,
 } from '@angular/core'
@@ -67,251 +70,258 @@ let nextHeadingId = 0
       [attr.data-variant]="variant()"
       [attr.aria-labelledby]="headingId"
     >
-      @if (variant() !== 'preview' && person(); as who) {
-        <div
-          class="d-flex flex-wrap align-items-center gap-2 border rounded px-3 py-2 mb-3 small"
-          data-id="legal-reconsent-person"
-        >
-          <i
-            class="bi bi-person-circle text-body-secondary"
-            aria-hidden="true"
-          ></i>
-          <div class="lh-sm text-break">
-            <div class="fw-semibold">{{ who.name }}</div>
-            @if (address(); as addr) {
-              <div
-                class="text-body-secondary small"
-                data-id="legal-reconsent-address"
-              >
-                {{ addr }}
-              </div>
-            }
-          </div>
-          @if (!who.impersonated) {
-            <button
-              hilosLoadingButton
-              class="btn-link btn-sm p-0 ms-auto"
-              data-id="legal-reconsent-not-you"
-              [loading]="signOutAction.busy()"
-              (click)="onSignOut()"
-            >
-              {{ copy.notYou }}
-            </button>
-          }
-        </div>
-      }
-      <h2 [id]="headingId" class="h5 mb-3" data-id="legal-reconsent-heading">
-        {{ variant() === 'frozen' ? copy.frozenHeading : copy.heading }}
-      </h2>
-      <div class="visually-hidden" role="status" aria-live="polite">
-        {{ error() ?? (loading() ? 'Loading terms…' : '') }}
-      </div>
-      @if (loading()) {
-        <div
-          class="placeholder-glow mb-3"
-          data-id="legal-reconsent-loading"
-          aria-busy="true"
-        >
-          <span class="placeholder col-12" aria-hidden="true"></span>
-          <span class="placeholder col-9" aria-hidden="true"></span>
-          <span class="placeholder col-10" aria-hidden="true"></span>
-        </div>
-      }
-      @if (firstRevision()) {
-        <p
-          class="text-body-secondary mb-0"
-          data-id="legal-reconsent-preview-first"
-        >
-          {{ copy.previewFirst }}
-        </p>
-      } @else if (content() !== null && view().kind === 'changes') {
-        @for (row of rows(); track row.section.document) {
-          <section
-            class="mb-3"
-            data-id="legal-reconsent-document"
-            [attr.data-document]="row.section.document"
+      <fieldset class="border-0 m-0 p-0" [disabled]="held()">
+        @if (variant() !== 'preview' && person(); as who) {
+          <div
+            class="d-flex flex-wrap align-items-center gap-2 border rounded px-3 py-2 mb-3 small"
+            data-id="legal-reconsent-person"
           >
-            <h3 class="h6 mb-2">{{ label(row.section.document) }}</h3>
-            @if (row.plate; as plate) {
-              <div
-                class="d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small"
-                [class]="
-                  'bg-' +
-                  plate.tone +
-                  '-subtle text-' +
-                  plate.tone +
-                  '-emphasis'
-                "
-                data-id="legal-reconsent-badge"
-                [attr.data-tone]="plate.tone"
-              >
-                <i [class]="'bi ' + plate.icon" aria-hidden="true"></i>
-                <strong>{{ plate.text }}</strong>
-                @if (plate.detail !== null) {
-                  <span>{{ plate.detail }}</span>
-                }
-              </div>
-            }
-            <p class="small text-body-secondary mb-2">{{ row.accepted }}</p>
-            <ul class="list-unstyled mb-2">
-              @for (change of row.changes; track change.clauseKey) {
-                <li
-                  class="d-flex gap-2 py-2 border-bottom text-break"
-                  data-id="legal-reconsent-change"
-                  [attr.data-clause]="change.clauseKey"
+            <i
+              class="bi bi-person-circle text-body-secondary"
+              aria-hidden="true"
+            ></i>
+            <div class="lh-sm text-break">
+              <div class="fw-semibold">{{ who.name }}</div>
+              @if (address(); as addr) {
+                <div
+                  class="text-body-secondary small"
+                  data-id="legal-reconsent-address"
                 >
-                  <i
-                    [class]="'bi text-body-secondary mt-1 ' + change.icon"
-                    aria-hidden="true"
-                  ></i>
-                  <div class="flex-grow-1">
-                    <div class="small fw-semibold">
-                      {{ change.statement }}
-                      <span
-                        class="badge bg-body-tertiary text-body-emphasis border ms-1"
-                        data-id="legal-reconsent-change-kind"
-                        >{{ change.kind }}</span
-                      >
-                    </div>
-                    @if (change.before !== null) {
-                      <div class="small text-body-secondary">
-                        {{ change.before }}
-                      </div>
-                    }
-                  </div>
-                </li>
-              }
-            </ul>
-            <div class="small">
-              <button
-                type="button"
-                class="btn btn-link btn-sm p-0"
-                data-id="legal-reconsent-full-text"
-                [attr.data-document]="row.section.document"
-                (click)="
-                  show.emit({ kind: 'text', document: row.section.document })
-                "
-              >
-                {{ copy.fullText }}
-              </button>
-              @if (row.section.held !== null) {
-                ·
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm p-0"
-                  data-id="legal-reconsent-compare"
-                  [attr.data-document]="row.section.document"
-                  (click)="
-                    show.emit({
-                      kind: 'compare',
-                      document: row.section.document,
-                    })
-                  "
-                >
-                  {{ copy.compare }}
-                </button>
+                  {{ addr }}
+                </div>
               }
             </div>
-          </section>
-        }
-        @if (variant() === 'frozen') {
-          <section
-            class="border rounded px-3 py-2 mb-3"
-            data-id="legal-reconsent-exits"
-          >
-            <h3 class="h6">{{ copy.freezeKeeps }}</h3>
-            <div class="d-flex flex-wrap gap-2">
-              <a
-                [hilosLink]="dataHref"
-                class="btn btn-sm btn-outline-secondary"
-                data-id="legal-reconsent-data-link"
-                ><i class="bi bi-download me-1" aria-hidden="true"></i
-                >{{ copy.dataLink }}</a
-              >
-              @if (deletionScheduled() && !impersonated()) {
-                <button
-                  hilosLoadingButton
-                  class="btn-sm btn-outline-secondary"
-                  data-id="legal-reconsent-keep-account"
-                  [loading]="keepAction.busy()"
-                  (click)="onKeepAccount()"
-                >
-                  {{ copy.keepAccount }}
-                </button>
-              }
+            @if (!who.impersonated) {
               <button
                 hilosLoadingButton
-                class="btn-sm btn-outline-secondary"
-                data-id="legal-reconsent-sign-out"
+                class="btn-link btn-sm p-0 ms-auto"
+                data-id="legal-reconsent-not-you"
                 [loading]="signOutAction.busy()"
                 (click)="onSignOut()"
               >
-                {{ copy.signOut }}
+                {{ copy.notYou }}
               </button>
-            </div>
-          </section>
-        }
-        @if (variant() === 'frozen' && impersonated() && person(); as who) {
-          <p
-            class="small text-body-secondary"
-            data-id="legal-reconsent-impersonated"
-          >
-            {{ copy.onlyPerson.replace('{name}', who.name) }}
-          </p>
-        }
-      } @else if (viewed() !== null && view().kind === 'text') {
-        <div>
-          <h3 class="h6">{{ label(viewed()!.document) }}</h3>
-          <hilos-legal-revision-text [clauses]="viewedClauses()" />
-        </div>
-      } @else if (viewed() !== null && view().kind === 'compare') {
-        <div>
-          <h3 class="h6">{{ label(viewed()!.document) }}</h3>
-          <hilos-legal-changes
-            [changes]="viewedChanges()"
-            [fromLabel]="viewed()!.held?.revisionId ?? ''"
-            [toLabel]="viewed()!.current.revisionId"
-          />
-        </div>
-      } @else if (content() !== null && view().kind === 'refuse') {
-        <div data-id="legal-reconsent-refuse-step">
-          <p>{{ refusal() }}</p>
-          <div class="d-flex flex-wrap gap-3 small mb-3">
-            <a
-              [hilosLink]="dataHref"
-              data-id="legal-reconsent-data-link"
-              (click)="later.emit()"
-              >{{ copy.dataLink }}</a
-            >
-            <a
-              [hilosLink]="profileHref"
-              class="link-danger"
-              data-id="legal-reconsent-delete-link"
-              (click)="later.emit()"
-              >{{ copy.deleteLink }}</a
-            >
+            }
           </div>
+        }
+        <h2 [id]="headingId" class="h5 mb-3" data-id="legal-reconsent-heading">
+          {{ variant() === 'frozen' ? copy.frozenHeading : copy.heading }}
+        </h2>
+        <div class="visually-hidden" role="status" aria-live="polite">
+          {{ error() ?? (loading() ? 'Loading terms…' : '') }}
         </div>
-      }
-      @if (viewed() !== null) {
-        <button
-          type="button"
-          class="btn btn-link btn-sm px-0 mb-3"
-          data-id="legal-reconsent-back"
-          (click)="show.emit({ kind: 'changes' })"
-        >
-          {{ copy.backToChanges }}
-        </button>
-      }
-      <hilos-form-error [message]="error()" dataId="legal-reconsent-error" />
+        @if (loading()) {
+          <div
+            class="placeholder-glow mb-3"
+            data-id="legal-reconsent-loading"
+            aria-busy="true"
+          >
+            <span class="placeholder col-12" aria-hidden="true"></span>
+            <span class="placeholder col-9" aria-hidden="true"></span>
+            <span class="placeholder col-10" aria-hidden="true"></span>
+          </div>
+        }
+        @if (firstRevision()) {
+          <p
+            class="text-body-secondary mb-0"
+            data-id="legal-reconsent-preview-first"
+          >
+            {{ copy.previewFirst }}
+          </p>
+        } @else if (content() !== null && view().kind === 'changes') {
+          @for (row of rows(); track row.section.document) {
+            <section
+              class="mb-3"
+              data-id="legal-reconsent-document"
+              [attr.data-document]="row.section.document"
+            >
+              <h3 class="h6 mb-2">{{ label(row.section.document) }}</h3>
+              @if (row.plate; as plate) {
+                <div
+                  class="d-flex flex-wrap align-items-center gap-2 rounded px-3 py-2 mb-2 small"
+                  [class]="
+                    'bg-' +
+                    plate.tone +
+                    '-subtle text-' +
+                    plate.tone +
+                    '-emphasis'
+                  "
+                  data-id="legal-reconsent-badge"
+                  [attr.data-tone]="plate.tone"
+                >
+                  <i [class]="'bi ' + plate.icon" aria-hidden="true"></i>
+                  <strong>{{ plate.text }}</strong>
+                  @if (plate.detail !== null) {
+                    <span>{{ plate.detail }}</span>
+                  }
+                </div>
+              }
+              <p class="small text-body-secondary mb-2">{{ row.accepted }}</p>
+              <ul class="list-unstyled mb-2">
+                @for (change of row.changes; track change.clauseKey) {
+                  <li
+                    class="d-flex gap-2 py-2 border-bottom text-break"
+                    data-id="legal-reconsent-change"
+                    [attr.data-clause]="change.clauseKey"
+                  >
+                    <i
+                      [class]="'bi text-body-secondary mt-1 ' + change.icon"
+                      aria-hidden="true"
+                    ></i>
+                    <div class="flex-grow-1">
+                      <div class="small fw-semibold">
+                        {{ change.statement }}
+                        <span
+                          class="badge bg-body-tertiary text-body-emphasis border ms-1"
+                          data-id="legal-reconsent-change-kind"
+                          >{{ change.kind }}</span
+                        >
+                      </div>
+                      @if (change.before !== null) {
+                        <div class="small text-body-secondary">
+                          {{ change.before }}
+                        </div>
+                      }
+                    </div>
+                  </li>
+                }
+              </ul>
+              <div class="small">
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm p-0"
+                  data-id="legal-reconsent-full-text"
+                  [attr.data-document]="row.section.document"
+                  (click)="
+                    onShow({ kind: 'text', document: row.section.document })
+                  "
+                >
+                  {{ copy.fullText }}
+                </button>
+                @if (row.section.held !== null) {
+                  ·
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm p-0"
+                    data-id="legal-reconsent-compare"
+                    [attr.data-document]="row.section.document"
+                    (click)="
+                      onShow({
+                        kind: 'compare',
+                        document: row.section.document,
+                      })
+                    "
+                  >
+                    {{ copy.compare }}
+                  </button>
+                }
+              </div>
+            </section>
+          }
+          @if (variant() === 'frozen') {
+            <section
+              class="border rounded px-3 py-2 mb-3"
+              data-id="legal-reconsent-exits"
+            >
+              <h3 class="h6">{{ copy.freezeKeeps }}</h3>
+              <div class="d-flex flex-wrap gap-2">
+                <a
+                  [hilosLink]="dataHref"
+                  class="btn btn-sm btn-outline-secondary"
+                  data-id="legal-reconsent-data-link"
+                  ><i class="bi bi-download me-1" aria-hidden="true"></i
+                  >{{ copy.dataLink }}</a
+                >
+                @if (deletionScheduled() && !impersonated()) {
+                  <button
+                    hilosLoadingButton
+                    class="btn-sm btn-outline-secondary"
+                    data-id="legal-reconsent-keep-account"
+                    [loading]="keepAction.busy()"
+                    (click)="onKeepAccount()"
+                  >
+                    {{ copy.keepAccount }}
+                  </button>
+                }
+                <button
+                  hilosLoadingButton
+                  class="btn-sm btn-outline-secondary"
+                  data-id="legal-reconsent-sign-out"
+                  [loading]="signOutAction.busy()"
+                  (click)="onSignOut()"
+                >
+                  {{ copy.signOut }}
+                </button>
+              </div>
+            </section>
+          }
+          @if (variant() === 'frozen' && impersonated() && person(); as who) {
+            <p
+              class="small text-body-secondary"
+              data-id="legal-reconsent-impersonated"
+            >
+              {{ copy.onlyPerson.replace('{name}', who.name) }}
+            </p>
+          }
+        } @else if (viewed() !== null && view().kind === 'text') {
+          <div>
+            <h3 class="h6">{{ label(viewed()!.document) }}</h3>
+            <hilos-legal-revision-text [clauses]="viewedClauses()" />
+          </div>
+        } @else if (viewed() !== null && view().kind === 'compare') {
+          <div>
+            <h3 class="h6">{{ label(viewed()!.document) }}</h3>
+            <hilos-legal-changes
+              [changes]="viewedChanges()"
+              [fromLabel]="viewed()!.held?.revisionId ?? ''"
+              [toLabel]="viewed()!.current.revisionId"
+            />
+          </div>
+        } @else if (content() !== null && view().kind === 'refuse') {
+          <div data-id="legal-reconsent-refuse-step">
+            <p>{{ refusal() }}</p>
+            <div class="d-flex flex-wrap gap-3 small mb-3">
+              <a
+                [hilosLink]="dataHref"
+                data-id="legal-reconsent-data-link"
+                [attr.aria-disabled]="held() ? 'true' : null"
+                [attr.tabindex]="held() ? -1 : null"
+                (click)="onLater()"
+                >{{ copy.dataLink }}</a
+              >
+              <a
+                [hilosLink]="profileHref"
+                class="link-danger"
+                data-id="legal-reconsent-delete-link"
+                [attr.aria-disabled]="held() ? 'true' : null"
+                [attr.tabindex]="held() ? -1 : null"
+                (click)="onLater()"
+                >{{ copy.deleteLink }}</a
+              >
+            </div>
+          </div>
+        }
+        @if (viewed() !== null) {
+          <button
+            type="button"
+            class="btn btn-link btn-sm px-0 mb-3"
+            data-id="legal-reconsent-back"
+            (click)="onShow({ kind: 'changes' })"
+          >
+            {{ copy.backToChanges }}
+          </button>
+        }
+        <hilos-form-error [message]="error()" dataId="legal-reconsent-error" />
+      </fieldset>
       @if (!firstRevision()) {
-        <div class="d-flex flex-wrap justify-content-end gap-2 mt-2">
+        <div class="d-flex flex-wrap justify-content-end gap-2">
           @if (error() !== null && content() === null) {
             <button
               type="button"
               class="btn btn-outline-primary"
               data-id="legal-reconsent-retry"
-              (click)="retry.emit()"
+              [disabled]="held()"
+              (click)="onRetry()"
             >
               {{ copy.retry }}
             </button>
@@ -321,7 +331,8 @@ let nextHeadingId = 0
               type="button"
               class="btn btn-outline-secondary"
               data-id="legal-reconsent-back"
-              (click)="show.emit({ kind: 'changes' })"
+              [disabled]="held()"
+              (click)="onShow({ kind: 'changes' })"
             >
               {{ copy.back }}
             </button>
@@ -329,7 +340,8 @@ let nextHeadingId = 0
               type="button"
               class="btn btn-secondary"
               data-id="legal-reconsent-close"
-              (click)="later.emit()"
+              [disabled]="held()"
+              (click)="onLater()"
             >
               {{ copy.close }}
             </button>
@@ -339,8 +351,10 @@ let nextHeadingId = 0
                 type="button"
                 class="btn btn-outline-danger"
                 data-id="legal-reconsent-refuse"
-                [disabled]="variant() === 'preview' || content() === null"
-                (click)="show.emit({ kind: 'refuse' })"
+                [disabled]="
+                  held() || variant() === 'preview' || content() === null
+                "
+                (click)="onShow({ kind: 'refuse' })"
               >
                 {{ copy.refuse }}
               </button>
@@ -348,8 +362,8 @@ let nextHeadingId = 0
                 type="button"
                 class="btn btn-outline-secondary"
                 data-id="legal-reconsent-later"
-                [disabled]="variant() === 'preview'"
-                (click)="later.emit()"
+                [disabled]="held() || variant() === 'preview'"
+                (click)="onLater()"
               >
                 {{ copy.later }}
               </button>
@@ -457,6 +471,9 @@ export class HilosLegalReconsent {
   protected readonly acceptOffered = computed(
     () => this.variant() !== 'frozen' || !this.impersonated(),
   )
+  protected readonly held = computed(
+    () => this.variant() === 'window' && this.busy(),
+  )
   // The acceptance in flight is not a reason here: busy is Accept's own loading,
   // which blocks it at once and keeps its look until the spinner comes.
   protected readonly acceptDisabled = computed(
@@ -470,9 +487,50 @@ export class HilosLegalReconsent {
     describeHilosLegalReconsentAddress(this.content()),
   )
 
+  constructor() {
+    const root = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
+    // HilosLink navigates at the target; stop links during capture, including
+    // new-tab gestures, before either navigation or the Later output runs.
+    const holdLinks = (event: MouseEvent): void => {
+      if (
+        !this.held() ||
+        !(event.target instanceof Element) ||
+        event.target.closest('a') === null
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    root.addEventListener('click', holdLinks, true)
+    root.addEventListener('auxclick', holdLinks, true)
+    inject(DestroyRef).onDestroy(() => {
+      root.removeEventListener('click', holdLinks, true)
+      root.removeEventListener('auxclick', holdLinks, true)
+    })
+  }
+
+  /** Change the view only while the window can be operated. */
+  protected onShow(view: HilosLegalReconsentView): void {
+    if (this.held()) return
+    this.show.emit(view)
+  }
+
+  /** Leave the screen only while the window can be operated. */
+  protected onLater(): void {
+    if (this.held()) return
+    this.later.emit()
+  }
+
+  /** Retry a failed read only while the window can be operated. */
+  protected onRetry(): void {
+    if (this.held()) return
+    this.retry.emit()
+  }
+
   /** Sign out through the tracked driver; a second press while busy is dropped. */
   protected onSignOut(): void {
-    if (this.signOutAction.busy()) return
+    if (this.held() || this.signOutAction.busy()) return
     void this.signOutAction.run(signOut())
   }
 

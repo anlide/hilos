@@ -508,6 +508,55 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     expect(focus).toEqual([CLIENT_ID_KEY, ''])
     expect(sent).toHaveLength(0)
   })
+
+  it('holds the field edit while saving and keeps a refused draft for retry', async () => {
+    const world = seededContext('Iv1.a')
+    const fixture = openModal(world.context, 'client_id')
+    typeDraft(fixture, 'Iv1.mine')
+    const field = valueInput(fixture)
+    const modal = el(fixture, 'modal')!
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = Array.from(
+      modal.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')!
+    expect(world.sent).toHaveLength(1)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(valueInput(fixture)).toBe(field)
+    expect(field.value).toBe('Iv1.mine')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    world.answer('fail')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(valueInput(fixture)).toBe(field)
+    expect(field.value).toBe('Iv1.mine')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(world.sent).toHaveLength(2)
+    world.answer('success')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBeNull()
+  })
 })
 
 describe('HilosSecurityOauthProviderPage secret modal', () => {

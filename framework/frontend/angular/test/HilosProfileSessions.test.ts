@@ -1,3 +1,4 @@
+import { By } from '@angular/platform-browser'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionError,
@@ -7,8 +8,10 @@ import {
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core'
+import { type ModalController } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'
+import { HilosModal } from '../src/HilosModal.js'
 import {
   bindTestTimeZone,
   type TimeZoneTestBinding,
@@ -31,6 +34,23 @@ afterEach(() => {
 async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
   await fixture.whenStable()
   fixture.detectChanges()
+}
+
+async function flush(fixture: ComponentFixture<unknown>): Promise<void> {
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+  fixture.detectChanges()
+}
+
+function held<T>(): {
+  promise: Promise<T>
+  reject: (reason: unknown) => void
+} {
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((_resolve, refuse) => {
+    reject = refuse
+  })
+
+  return { promise, reject }
 }
 
 function byId(id: string): HTMLElement {
@@ -123,6 +143,22 @@ function setup(
 async function open(fixture: ComponentFixture<unknown>): Promise<void> {
   byId('profile-sessions-end-others').click()
   await settle(fixture)
+}
+
+function attemptClose(
+  fixture: ComponentFixture<unknown>,
+  cancel: HTMLButtonElement,
+): void {
+  byId('modal-close').click()
+  cancel.click()
+  byId('modal').dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  byId('modal').click()
+  const modal = fixture.debugElement.query(By.directive(HilosModal))
+    .componentInstance as unknown as { modal: ModalController }
+  modal.modal.requestClose()
+  fixture.detectChanges()
 }
 
 describe('HilosProfileSessions (Angular)', () => {
@@ -300,6 +336,72 @@ describe('HilosProfileSessions (Angular)', () => {
       document.querySelector('[data-id="profile-sessions-end-others-confirm"]'),
     ).toBeNull()
   })
+
+  it.each(['one session', 'other sessions'] as const)(
+    'holds the %s dialog through the action, refusal, and retry',
+    async (scope) => {
+      const response = held<unknown>()
+      let next = () => response.promise
+      const { endOtherSessions, endSession, fixture } = setup(
+        [makeSession(1, { current: true }), makeSession(2)],
+        () => next(),
+        () => next(),
+      )
+      const isSingle = scope === 'one session'
+      if (isSingle) byId('profile-session-revoke').click()
+      else await open(fixture)
+      await settle(fixture)
+
+      const dialog = byId('modal')
+      const cancel = dialog.querySelector<HTMLButtonElement>(
+        '.modal-footer .btn-secondary',
+      )!
+      const body = dialog.querySelector('.modal-body > fieldset')!
+      const confirmId = isSingle
+        ? 'profile-session-end-confirm'
+        : 'profile-sessions-end-others-confirm'
+      const confirm = byId(confirmId) as HTMLButtonElement
+      confirm.click()
+      await flush(fixture)
+
+      expect(body.matches(':disabled')).toBe(true)
+      expect(cancel.matches(':disabled')).toBe(true)
+      expect(byId('modal-close').matches(':disabled')).toBe(true)
+      expect(confirm.getAttribute('aria-busy')).toBe('true')
+      attemptClose(fixture, cancel)
+      expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+      expect(byId('modal')).toBe(dialog)
+      confirm.click()
+      await flush(fixture)
+      expect(isSingle ? endSession : endOtherSessions).toHaveBeenCalledTimes(1)
+
+      const message = isSingle ? 'Session is still busy' : 'Try again later'
+      response.reject(
+        new ActionError(
+          isSingle ? 'hilos_sessions_end' : 'hilos_sessions_end_others',
+          'fail',
+          message,
+        ),
+      )
+      await settle(fixture)
+
+      expect(byId('modal')).toBe(dialog)
+      expect(dialog.querySelector('.modal-body > fieldset')).toBe(body)
+      expect(body.matches(':disabled')).toBe(false)
+      expect(cancel.matches(':disabled')).toBe(false)
+      expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+      const errorId = isSingle
+        ? 'profile-session-end-error'
+        : 'profile-sessions-end-others-error'
+      expect(byId(errorId).textContent).toContain(message)
+
+      next = () => Promise.resolve({ reply: null })
+      byId(confirmId).click()
+      await settle(fixture)
+      expect(isSingle ? endSession : endOtherSessions).toHaveBeenCalledTimes(2)
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    },
+  )
 
   it('keeps End other sessions modal open and displays refusal on action failure with permanent live region', async () => {
     let rejectAction = true

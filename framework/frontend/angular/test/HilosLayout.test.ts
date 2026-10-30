@@ -94,6 +94,7 @@ import {
 } from '../src/hilosConnectionInteraction.js'
 import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { reconsentContent } from '../../core/test/legal/reconsentFixture.js'
 
 /**
  * The five values the shell reads off a connection, and nothing else: it takes
@@ -340,12 +341,14 @@ class ReplyingSource implements ActionLifecycleSource {
   succeed(
     requestId: string | undefined,
     action = IMPERSONATION_ACTION_STOP,
+    reply?: unknown,
   ): void {
     for (const listener of this.success) {
       listener({
         kind: 'actionSuccess',
         action,
         requestId,
+        reply,
         envelope: { type: 'action_success', data: {} },
       } as ActionSuccessSignal)
     }
@@ -1542,6 +1545,175 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
     unbind?.()
     unbind = undefined
     vi.useRealTimers()
+  })
+
+  /** Open the real shell window with its content response held by the test. */
+  async function openWindow() {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(null))
+    const fixture = mountShell()
+    const feed = shellFeed()
+    fixture.componentRef.setInput('connection', feed.connection)
+    session.handshake(reconsentHandshake(inWindow))
+    const settle = async (): Promise<void> => {
+      fixture.detectChanges()
+      await fixture.whenStable()
+      fixture.detectChanges()
+    }
+    await settle()
+    return { session, fixture, feed, settle }
+  }
+
+  it('allows Later while reading the terms, without treating loading as modal busy', async () => {
+    const { session, fixture, settle } = await openWindow()
+    expect(session.source.sent.at(-1)?.action).toBe('hilos_legal_reconsent')
+    expect(find('legal-reconsent-loading')).not.toBeNull()
+    expect(find('legal-reconsent-accept')!.matches(':disabled')).toBe(true)
+    expect(find('modal-close')!.matches(':disabled')).toBe(false)
+    expect(find('legal-reconsent-later')!.matches(':disabled')).toBe(false)
+    find('legal-reconsent-later')!.click()
+    await settle()
+    expect(windowShown()).toBe(false)
+    fixture.destroy()
+  })
+
+  it('holds the window through acceptance, unlocks a refusal without replaying a gesture, then closes on success', async () => {
+    const { session, fixture, settle } = await openWindow()
+    const read = session.source.sent.at(-1)!
+    session.source.succeed(read.requestId, read.action, reconsentContent())
+    await settle()
+    vi.useFakeTimers()
+    const modal = find('modal')!
+    const content = find('legal-reconsent-document')!
+    const error = find('legal-reconsent')!.querySelector('hilos-form-error')!
+    const fullText = find('legal-reconsent-full-text')!
+    const compare = find('legal-reconsent-compare')!
+    const later = find('legal-reconsent-later')!
+    const refuse = find('legal-reconsent-refuse')!
+    const accept = find('legal-reconsent-accept')!
+    const close = find('modal-close')!
+    const calls = session.source.sent.length
+    accept.focus()
+    accept.click()
+    fixture.detectChanges()
+    const request = session.source.sent.at(-1)!
+    expect(request.action).toBe('hilos_legal_accept')
+    expect(session.source.sent).toHaveLength(calls + 1)
+    const probe = (): void => {
+      expect(find('modal')).toBe(modal)
+      expect(find('legal-reconsent-document')).toBe(content)
+      expect(find('legal-reconsent')!.querySelector('hilos-form-error')).toBe(
+        error,
+      )
+      expect(accept.matches(':disabled')).toBe(false)
+      expect(accept.getAttribute('aria-busy')).toBe('true')
+      expect(document.activeElement).toBe(accept)
+      for (const control of [fullText, compare, later, refuse, close]) {
+        expect(control.matches(':disabled')).toBe(true)
+        control.click()
+      }
+      accept.click()
+      modal.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      modal.click()
+      fixture.detectChanges()
+      expect(find('modal-confirm')).toBeNull()
+      expect(find('legal-reconsent-document')).toBe(content)
+      expect(find('legal-reconsent-refuse-step')).toBeNull()
+      expect(session.source.sent).toHaveLength(calls + 1)
+    }
+    probe()
+    expect(
+      accept.querySelector('[data-id="loading-button-spinner"]'),
+    ).toBeNull()
+    vi.advanceTimersByTime(299)
+    fixture.detectChanges()
+    probe()
+    expect(
+      accept.querySelector('[data-id="loading-button-spinner"]'),
+    ).toBeNull()
+    vi.advanceTimersByTime(1)
+    fixture.detectChanges()
+    probe()
+    expect(
+      accept.querySelectorAll('[data-id="loading-button-spinner"]'),
+    ).toHaveLength(1)
+    vi.useRealTimers()
+
+    session.source.refuse(
+      request.requestId,
+      'The terms changed. Review them again.',
+      request.action,
+    )
+    await settle()
+    const reread = session.source.sent.at(-1)!
+    expect(reread.action).toBe('hilos_legal_reconsent')
+    expect(find('modal')).toBe(modal)
+    expect(find('legal-reconsent')!.querySelector('hilos-form-error')).toBe(
+      error,
+    )
+    expect(error.textContent).toContain('The terms changed. Review them again.')
+    session.source.succeed(reread.requestId, reread.action, reconsentContent())
+    await settle()
+    expect(find('modal')).toBe(modal)
+    await expect
+      .poll(() => {
+        fixture.detectChanges()
+        return find('legal-reconsent-later')!.matches(':disabled')
+      })
+      .toBe(false)
+    expect(find('legal-reconsent-refuse')!.matches(':disabled')).toBe(false)
+    expect(find('modal-close')!.matches(':disabled')).toBe(false)
+    expect(find('legal-reconsent-accept')!.matches(':disabled')).toBe(false)
+    expect(session.source.sent).toHaveLength(calls + 2)
+    expect(find('legal-reconsent-document')).not.toBeNull()
+    find('legal-reconsent-accept')!.click()
+    fixture.detectChanges()
+    const next = session.source.sent.at(-1)!
+    expect(session.source.sent).toHaveLength(calls + 3)
+    session.source.succeed(next.requestId, next.action)
+    await settle()
+    expect(windowShown()).toBe(false)
+    expect(find('modal-confirm')).toBeNull()
+    fixture.destroy()
+  })
+
+  it('keeps the selected text mounted and subjects the custom Accept to the independent connection lock', async () => {
+    const { session, fixture, feed, settle } = await openWindow()
+    const read = session.source.sent.at(-1)!
+    session.source.succeed(read.requestId, read.action, reconsentContent())
+    await settle()
+    find('legal-reconsent-full-text')!.click()
+    await settle()
+    const text = find('legal-revision-text')!
+    expect(text).not.toBeNull()
+    const back = find('legal-reconsent-back')!
+    const accept = find('legal-reconsent-accept')!
+    accept.click()
+    fixture.detectChanges()
+    const request = session.source.sent.at(-1)!
+    expect(back.matches(':disabled')).toBe(true)
+    back.click()
+    expect(find('legal-revision-text')).toBe(text)
+    feed.push({ state: 'disconnected' }, 'state')
+    await settle()
+    expect(find('legal-revision-text')).toBe(text)
+    expect(find('legal-reconsent-accept')).toBe(accept)
+    expect(accept.matches(':disabled')).toBe(true)
+    const sent = session.source.sent.length
+    accept.click()
+    expect(session.source.sent).toHaveLength(sent)
+    // The owner can still close a blocked modal when its successful reply lands.
+    session.source.succeed(request.requestId, request.action)
+    await settle()
+    expect(windowShown()).toBe(false)
+    fixture.destroy()
   })
 
   it('draws the yellow document icon after the user region with the days left', () => {

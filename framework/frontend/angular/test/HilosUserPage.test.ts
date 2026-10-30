@@ -678,9 +678,24 @@ describe('HilosUserPage rename modal', () => {
     const { context, renameElsewhere, sent } = userContext()
     const fixture = openModal(context)
     typeDraft(fixture, 'Mine')
+    const field = nameInput(fixture)
+    const modal = el(fixture, 'modal')!
     saveButton(fixture).click()
     fixture.detectChanges()
     expect(sent.at(-1)?.data).toEqual({ id: 1, name: 'Mine' })
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = el(fixture, 'hilos-user-cancel') as HTMLButtonElement
+    expect(field.matches(':disabled')).toBe(true)
+    expect(nameInput(fixture)).toBe(field)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
 
     renameElsewhere('Theirs')
     fixture.detectChanges()
@@ -704,12 +719,33 @@ describe('HilosUserPage rename modal', () => {
     const { context, renameElsewhere, failRename } = userContext()
     const fixture = openModal(context)
     typeDraft(fixture, 'Mine')
+    const field = nameInput(fixture)
+    const modal = el(fixture, 'modal')!
     saveButton(fixture).click()
     fixture.detectChanges()
+    const close = el(fixture, 'modal-close') as HTMLButtonElement
+    const cancel = el(fixture, 'hilos-user-cancel') as HTMLButtonElement
+    expect(field.matches(':disabled')).toBe(true)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
 
     failRename()
     fixture.detectChanges()
     expect(saveButton(fixture).disabled).toBe(false)
+    expect(el(fixture, 'modal')).toBe(modal)
+    expect(nameInput(fixture)).toBe(field)
+    expect(field.value).toBe('Mine')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(el(fixture, 'modal-confirm')).toBeNull()
 
     renameElsewhere('Mine')
     fixture.detectChanges()

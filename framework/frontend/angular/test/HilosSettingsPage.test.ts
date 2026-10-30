@@ -819,6 +819,54 @@ describe('HilosSettingsPage typed editor', () => {
     expect(field().type).toBe('text')
   })
 
+  it('holds the modal on session saving after its tracked action settles', async () => {
+    vi.useFakeTimers()
+    const view = open()
+    const field = view.field()
+    view.type('2')
+    view.submit()
+
+    const modal = el(view.root, 'modal')!
+    const close = el(view.root, 'modal-close') as HTMLButtonElement
+    const cancel = el(
+      view.root,
+      'hilos-settings-edit-cancel',
+    ) as HTMLButtonElement
+    const save = el(view.root, 'hilos-settings-edit-save') as HTMLButtonElement
+    expect(view.sent).toHaveLength(1)
+    expect(field.matches(':disabled')).toBe(true)
+    expect(view.field()).toBe(field)
+    expect(field.value).toBe('2')
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    close.click()
+    cancel.click()
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    modal.click()
+    view.fixture.detectChanges()
+    expect(el(view.root, 'modal')).toBe(modal)
+    expect(el(view.root, 'modal-confirm')).toBeNull()
+
+    view.answer('fail')
+    await Promise.resolve()
+    view.fixture.detectChanges()
+    expect(save.getAttribute('aria-busy')).toBeNull()
+    expect(field.matches(':disabled')).toBe(true)
+    await Promise.resolve()
+    view.fixture.detectChanges()
+
+    expect(el(view.root, 'modal')).toBe(modal)
+    expect(view.field()).toBe(field)
+    expect(field.value).toBe('2')
+    expect(field.matches(':disabled')).toBe(false)
+    expect(el(view.root, 'modal-confirm')).toBeNull()
+
+    view.submit()
+    await view.reply('success')
+    expect(el(view.root, 'modal')).toBeNull()
+  })
+
   it.each(['string', 'integer', 'float'])(
     'keeps the same %s input, notice and zero draft through custom off/on',
     async (type) => {

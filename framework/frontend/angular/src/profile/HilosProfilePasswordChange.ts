@@ -48,6 +48,7 @@ let passwordChangeSequence = 0
       [title]="title()"
       initialFocus="inner"
       [confirmOnClose]="asksBeforeClosing()"
+      [busy]="busy() || stepUpBusy()"
     >
       <div
         class="visually-hidden"
@@ -255,6 +256,7 @@ let passwordChangeSequence = 0
           <button
             type="button"
             class="btn btn-primary"
+            [disabled]="busy() || stepUpBusy()"
             data-id="profile-password-done"
             (click)="requestClose()"
           >
@@ -264,6 +266,7 @@ let passwordChangeSequence = 0
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="busy() || stepUpBusy()"
             data-id="profile-password-cancel"
             (click)="requestClose()"
           >
@@ -340,6 +343,7 @@ export class HilosProfilePasswordChange {
   protected readonly signOutOthers = signal(true)
   protected readonly signedOutOthers = signal(true)
   protected readonly busy = signal(false)
+  protected readonly stepUpBusy = signal(false)
   protected readonly refusal = signal<string | null>(null)
   protected readonly sendProgress = signal<CodeSendProgress | null>(null)
   protected readonly resendAt = signal<number | null>(null)
@@ -376,6 +380,7 @@ export class HilosProfilePasswordChange {
       this.signOutOthers.set(flow.signOutOthers.get())
       this.signedOutOthers.set(flow.signedOutOthers.get())
       this.busy.set(flow.busy.get())
+      this.stepUpBusy.set(flow.stepUp.busy.get())
       this.refusal.set(flow.refusal.get())
       this.sendProgress.set(flow.sendProgress.get())
       this.resendAt.set(flow.resendAt.get())
@@ -395,6 +400,9 @@ export class HilosProfilePasswordChange {
           this.signedOutOthers.set(value),
         ),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
+        subscribeSignal(flow.stepUp.busy, (value) =>
+          this.stepUpBusy.set(value),
+        ),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
         subscribeSignal(flow.sendProgress, (value) =>
           this.sendProgress.set(value),

@@ -113,6 +113,7 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
       [(open)]="confirmOpen"
       [title]="confirmAction()?.label ?? ''"
       initialFocus="dialog"
+      [busy]="bulkTracked.busy()"
     >
       <hilos-action-error
         [action]="bulkTracked"

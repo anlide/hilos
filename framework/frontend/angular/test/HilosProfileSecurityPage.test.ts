@@ -9,16 +9,20 @@
 // Turned off by the administrator (HIL-1303), the page is one plate, beside a
 // removal that stands, and an open window closes when it turns off.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { By } from '@angular/platform-browser'
 import {
+  ActionError,
   createSignal,
   ScopeManager,
   type HilosSecondFactorContext,
   type ProjectSignal,
 } from '@hilos/core'
+import { type ModalController } from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSecurityPage } from '../src/profile/HilosProfileSecurityPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { HilosModal } from '../src/HilosModal.js'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -151,13 +155,36 @@ function wait(fixture: ComponentFixture<unknown>, ms: number): void {
 }
 
 /** A reply the test holds out until it settles it. */
-function held(): { reply: Promise<unknown>; settle: (reply: unknown) => void } {
+function held(): {
+  reply: Promise<unknown>
+  reject: (reason: unknown) => void
+  settle: (reply: unknown) => void
+} {
   let settle!: (reply: unknown) => void
-  const reply = new Promise<unknown>((resolve) => {
+  let reject!: (reason: unknown) => void
+  const reply = new Promise<unknown>((resolve, refuse) => {
     settle = resolve
+    reject = refuse
   })
 
-  return { reply, settle }
+  return { reply, reject, settle }
+}
+
+function attemptClose(
+  fixture: ComponentFixture<unknown>,
+  node: (id: string) => HTMLElement | null,
+  cancel: HTMLElement,
+): void {
+  node('modal-close')!.click()
+  cancel.click()
+  node('modal')!.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+  node('modal')!.click()
+  const modal = fixture.debugElement.query(By.directive(HilosModal))
+    .componentInstance as unknown as { modal: ModalController }
+  modal.modal.requestClose()
+  fixture.detectChanges()
 }
 
 /**
@@ -521,4 +548,299 @@ it('closes an open window when it turns off, and is the whole page again when it
   push(SECTION_ON)
   expect(node('hilos-2fa-turned-off')).toBeNull()
   expect(node('profile-2fa-apps')).not.toBeNull()
+})
+
+it('locks enrollment during separate step-up and the primary request, preserving the label after refusal', async () => {
+  const stepUp = held()
+  const enrollment = held()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    hilos_step_up_start: {
+      required: true,
+      purpose: 'add an authenticator app',
+      method: 'password',
+    },
+    hilos_step_up_confirm: stepUp.reply,
+    profile_second_factor_enroll_start: enrollment.reply,
+  }
+  const { dispatch, fill, fixture, node } = setup(replies)
+  node('profile-2fa-add')!.click()
+  await settle(fixture)
+  fill('step-up-password', 'secret')
+  const stepUpField = node('step-up-password') as HTMLInputElement
+  const stepUpCancel = node('modal')!.querySelector(
+    '.modal-footer .btn-secondary',
+  ) as HTMLButtonElement
+  const form = node('profile-2fa-enroll')!
+
+  submitEnrolment(node)
+  await flush(fixture)
+
+  expect(stepUpField.matches(':disabled')).toBe(true)
+  expect(stepUpField.value).toBe('secret')
+  expect(stepUpCancel.matches(':disabled')).toBe(true)
+  expect(node('modal-close')!.matches(':disabled')).toBe(true)
+  expect(
+    dispatch.mock.calls.some(
+      ([action]) => action === 'profile_second_factor_enroll_start',
+    ),
+  ).toBe(false)
+  attemptClose(fixture, node, stepUpCancel)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('modal')).not.toBeNull()
+
+  stepUp.settle(undefined)
+  await flush(fixture)
+  await settle(fixture)
+  expect(node('profile-2fa-enroll')).toBe(form)
+  const label = node('profile-2fa-enroll-label') as HTMLInputElement
+  fill('profile-2fa-enroll-label', 'Work phone')
+  const cancel = node('modal')!.querySelector(
+    '.modal-footer .btn-secondary',
+  ) as HTMLButtonElement
+
+  submitEnrolment(node)
+  await flush(fixture)
+  expect(label.matches(':disabled')).toBe(true)
+  expect(label.value).toBe('Work phone')
+  expect(node('profile-2fa-enroll')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(true)
+  attemptClose(fixture, node, cancel)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('modal')).not.toBeNull()
+
+  enrollment.reject(
+    new ActionError(
+      'profile_second_factor_enroll_start',
+      'fail',
+      'Enrollment was refused',
+    ),
+  )
+  await flush(fixture)
+  await settle(fixture)
+  expect(label.matches(':disabled')).toBe(false)
+  expect(label.value).toBe('Work phone')
+  expect(node('profile-2fa-enroll')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(false)
+  expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+    'Enrollment was refused',
+  )
+  expect(node('modal')).not.toBeNull()
+  expect(node('modal-confirm')).toBeNull()
+
+  replies.profile_second_factor_enroll_start =
+    REPLIES.profile_second_factor_enroll_start
+  submitEnrolment(node)
+  await settle(fixture)
+  expect(node('profile-2fa-enroll-secret')?.textContent).toContain(
+    'JBSWY3DPEHPK3PXP',
+  )
+  expect(node('modal')).not.toBeNull()
+  fixture.destroy()
+})
+
+it('locks the backup-codes proof while showing codes, preserves it on refusal, and retries', async () => {
+  const answer = held()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_codes_show: answer.reply,
+  }
+  const { fill, fixture, node } = setup(replies, SECTION_ON)
+  node('profile-2fa-codes-show')!.click()
+  await settle(fixture)
+  fill('profile-2fa-proof', '654321')
+  const form = node('profile-2fa-codes')!
+  const proof = node('profile-2fa-proof') as HTMLInputElement
+  const cancel = node('modal')!.querySelector(
+    '.modal-footer .btn-secondary',
+  ) as HTMLButtonElement
+  form.dispatchEvent(new Event('submit', { cancelable: true }))
+  await flush(fixture)
+
+  expect(proof.matches(':disabled')).toBe(true)
+  expect(proof.value).toBe('654321')
+  expect(node('profile-2fa-codes')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(true)
+  attemptClose(fixture, node, cancel)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('modal')).not.toBeNull()
+
+  answer.reject(
+    new ActionError(
+      'profile_second_factor_codes_show',
+      'fail',
+      'The codes could not be shown',
+    ),
+  )
+  await flush(fixture)
+  await settle(fixture)
+  expect(proof.matches(':disabled')).toBe(false)
+  expect(proof.value).toBe('654321')
+  expect(node('profile-2fa-codes')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(false)
+  expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+    'The codes could not be shown',
+  )
+  expect(node('modal')).not.toBeNull()
+  expect(node('modal-confirm')).toBeNull()
+
+  replies.profile_second_factor_codes_show = {
+    codes: [{ code: '1111-2222', used: false }],
+  }
+  node('profile-2fa-codes-submit')!.click()
+  await settle(fixture)
+  expect(node('profile-2fa-codes-list')).not.toBeNull()
+  expect(node('modal')).not.toBeNull()
+  fixture.destroy()
+})
+
+it('locks app removal while pending, preserves its proof after refusal, and closes on retry success', async () => {
+  const answer = held()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_remove: answer.reply,
+  }
+  const { fill, fixture, node } = setup(replies, SECTION_ON)
+  node('profile-2fa-remove-1')!.click()
+  await settle(fixture)
+  fill('profile-2fa-proof', '654321')
+  const form = node('profile-2fa-remove')!
+  const proof = node('profile-2fa-proof') as HTMLInputElement
+  const cancel = node('modal')!.querySelector(
+    '.modal-footer .btn-secondary',
+  ) as HTMLButtonElement
+  node('profile-2fa-remove-submit')!.click()
+  await flush(fixture)
+
+  expect(proof.matches(':disabled')).toBe(true)
+  expect(proof.value).toBe('654321')
+  expect(node('profile-2fa-remove')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(true)
+  attemptClose(fixture, node, cancel)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('modal')).not.toBeNull()
+
+  answer.reject(
+    new ActionError(
+      'profile_second_factor_remove',
+      'fail',
+      'The app could not be removed',
+    ),
+  )
+  await flush(fixture)
+  await settle(fixture)
+  expect(proof.matches(':disabled')).toBe(false)
+  expect(proof.value).toBe('654321')
+  expect(node('profile-2fa-remove')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(false)
+  expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+    'The app could not be removed',
+  )
+  expect(node('modal')).not.toBeNull()
+  expect(node('modal-confirm')).toBeNull()
+
+  replies.profile_second_factor_remove = {}
+  node('profile-2fa-remove-submit')!.click()
+  await settle(fixture)
+  expect(node('modal')).toBeNull()
+  fixture.destroy()
+})
+
+it('locks the removal-wait draft while pending, preserves it on refusal, and closes on retry success', async () => {
+  const answer = held()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_reset_wait_set: answer.reply,
+  }
+  const { fill, fixture, node } = setup(replies, SECTION_ON)
+  node('profile-2fa-wait-edit')!.click()
+  await settle(fixture)
+  fill('profile-2fa-wait-days', '10')
+  const form = node('profile-2fa-wait-form')!
+  const days = node('profile-2fa-wait-days') as HTMLInputElement
+  const cancel = node('modal')!.querySelector(
+    '.modal-footer .btn-secondary',
+  ) as HTMLButtonElement
+  node('profile-2fa-wait-save')!.click()
+  await flush(fixture)
+
+  expect(days.matches(':disabled')).toBe(true)
+  expect(days.value).toBe('10')
+  expect(node('profile-2fa-wait-form')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(true)
+  attemptClose(fixture, node, cancel)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('modal')).not.toBeNull()
+
+  answer.reject(
+    new ActionError(
+      'profile_second_factor_reset_wait_set',
+      'fail',
+      'The wait could not be changed',
+    ),
+  )
+  await flush(fixture)
+  await settle(fixture)
+  expect(days.matches(':disabled')).toBe(false)
+  expect(days.value).toBe('10')
+  expect(node('profile-2fa-wait-form')).toBe(form)
+  expect(cancel.matches(':disabled')).toBe(false)
+  expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+    'The wait could not be changed',
+  )
+  expect(node('modal')).not.toBeNull()
+  expect(node('modal-confirm')).toBeNull()
+
+  replies.profile_second_factor_reset_wait_set = {}
+  node('profile-2fa-wait-save')!.click()
+  await settle(fixture)
+  expect(node('modal')).toBeNull()
+  fixture.destroy()
+})
+
+it('locks the removal request through refusal and retry without replaying a close gesture', async () => {
+  const answer = held()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    profile_second_factor_reset_request: answer.reply,
+  }
+  const { fixture, node } = setup(replies, SECTION_ON)
+  node('profile-2fa-reset-request')!.click()
+  await settle(fixture)
+  const cancel = node('modal')!.querySelector(
+    '.modal-footer .btn-secondary',
+  ) as HTMLButtonElement
+  const body = node('modal')!.querySelector('.modal-body > fieldset')!
+  node('profile-2fa-reset-submit')!.click()
+  await flush(fixture)
+
+  expect(body.matches(':disabled')).toBe(true)
+  expect(cancel.matches(':disabled')).toBe(true)
+  expect(node('modal-close')!.matches(':disabled')).toBe(true)
+  attemptClose(fixture, node, cancel)
+  expect(node('modal-confirm')).toBeNull()
+  expect(node('modal')).not.toBeNull()
+
+  answer.reject(
+    new ActionError(
+      'profile_second_factor_reset_request',
+      'fail',
+      'The removal could not be requested',
+    ),
+  )
+  await flush(fixture)
+  await settle(fixture)
+  expect(body.matches(':disabled')).toBe(false)
+  expect(cancel.matches(':disabled')).toBe(false)
+  expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+    'The removal could not be requested',
+  )
+  expect(node('modal')).not.toBeNull()
+  expect(node('modal-confirm')).toBeNull()
+
+  replies.profile_second_factor_reset_request = {}
+  node('profile-2fa-reset-submit')!.click()
+  await settle(fixture)
+  expect(node('modal')).toBeNull()
+  fixture.destroy()
 })

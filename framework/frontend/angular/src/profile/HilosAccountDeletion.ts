@@ -108,6 +108,7 @@ import { hilosSignal } from '../hilosSignal.js'
       <hilos-modal
         [open]="open()"
         (openChange)="onOpenChange($event)"
+        [busy]="busy()"
         [title]="step() === 'in-progress' ? copy.progressTitle : copy.title"
         initialFocus="inner"
       >
@@ -174,11 +175,19 @@ import { hilosSignal } from '../hilosSignal.js'
               <p class="small text-body-secondary mb-0">
                 {{ copy.explainChangeMind }}
               </p>
-              <p class="small mb-0 mt-2" data-id="account-deletion-data-link">
+              <p
+                #dataLink
+                class="small mb-0 mt-2"
+                data-id="account-deletion-data-link"
+              >
                 {{ exportCopy.deleteHint }}
-                <a [hilosLink]="dataPath" (click)="flow().close()">{{
-                  exportCopy.deleteLink
-                }}</a>
+                <a
+                  [hilosLink]="dataPath"
+                  [attr.aria-disabled]="busy() ? 'true' : null"
+                  [attr.tabindex]="busy() ? -1 : null"
+                  (click)="flow().close()"
+                  >{{ exportCopy.deleteLink }}</a
+                >
               </p>
             } @else {
               <form (submit)="$event.preventDefault(); flow().start()">
@@ -222,6 +231,7 @@ import { hilosSignal } from '../hilosSignal.js'
               type="button"
               class="btn btn-outline-secondary"
               data-id="account-deletion-close"
+              [disabled]="busy()"
               (click)="requestClose()"
             >
               {{ copy.close }}
@@ -240,6 +250,7 @@ import { hilosSignal } from '../hilosSignal.js'
               type="button"
               class="btn btn-outline-secondary"
               data-id="account-deletion-cancel"
+              [disabled]="busy()"
               (click)="requestClose()"
             >
               {{ copy.cancel }}
@@ -310,6 +321,7 @@ export class HilosAccountDeletion {
   private readonly timeZone = hilosSignal(hilosTimeZone)
   private readonly now = signal(Date.now())
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
+  private readonly dataLink = viewChild<ElementRef<HTMLElement>>('dataLink')
 
   protected readonly deletion = computed(() => this.state()?.deletion ?? null)
   protected readonly open = computed(
@@ -376,6 +388,21 @@ export class HilosAccountDeletion {
         ACCOUNT_DELETION_TICK_MS,
       )
       onCleanup(() => clearInterval(tick))
+    })
+    afterRenderEffect((onCleanup) => {
+      const container = this.dataLink()?.nativeElement
+      if (!container) return
+      const guard = (event: Event): void => {
+        if (!this.busy()) return
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+      container.addEventListener('click', guard, true)
+      container.addEventListener('auxclick', guard, true)
+      onCleanup(() => {
+        container.removeEventListener('click', guard, true)
+        container.removeEventListener('auxclick', guard, true)
+      })
     })
     // The step the window moves to takes the focus - the code field on step 2 -
     // since the window stays and only its content changes.

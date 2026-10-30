@@ -168,6 +168,7 @@ import {
         (openChange)="onOpenChange($event)"
         [title]="stepUpCopy.title"
         initialFocus="inner"
+        [busy]="busy()"
       >
         <div class="visually-hidden" role="alert" aria-live="assertive">
           {{ stepRefusal() ?? refusal() }}
@@ -187,6 +188,7 @@ import {
           <button
             type="button"
             class="btn btn-outline-secondary"
+            [disabled]="busy()"
             (click)="requestClose()"
           >
             {{ stepUpCopy.cancel }}
