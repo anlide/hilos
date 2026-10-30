@@ -11,6 +11,7 @@ services:
       MYSQL_USER: ${DB_USERNAME:-hilos}
       MYSQL_PASSWORD: ${DB_PASSWORD:-hilos_pass}
       TZ: UTC
+      MARIADB_MYSQL_LOCALHOST_USER: "1"
     volumes:
       - ${HILOS_CLUSTER_DB_DATA_DIR:-/dev/shm/hilos-online-testing-cluster-mysql-data${HILOS_STAND_SUFFIX:-}}:/var/lib/mysql
       - ../../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
@@ -19,8 +20,11 @@ services:
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
+    # Asked as the unix user mysql over the socket: the image's own healthcheck user gets a
+    # random password that its option file misreads when it starts and ends with a double
+    # quote, and that stand never turns healthy (about one boot in 8000).
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "healthcheck.sh", "--su-mysql", "--no-defaults", "--connect", "--innodb_initialized"]
       interval: 2s
       timeout: 5s
       retries: 30
