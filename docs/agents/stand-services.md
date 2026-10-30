@@ -16,7 +16,7 @@ The [framework moderator](architecture/moderation.md) uses this same local
 model resident for both `hilos.moderation.text` and `hilos.moderation.image`
 on the chat stand, through the ordinary router and client; the spec dictates
 the answer.
-Tasks wires those roles on its stand. (not in the code yet — HIL-1636)
+Tasks wires those roles on its stand.
 Polls wires those roles on its stand. (not in the code yet — HIL-1637)
 This reuses `/model`; it does not introduce a moderator stub or a new container.
 The external-provider emulator is separate HIL-263 work, not a resident this
@@ -382,7 +382,7 @@ Both framework moderation profiles resolve to
 `https://stand-gateway:18000/model` on the chat stand, each through its own
 role key: `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` in the
 chat test stack's compose file.
-Tasks uses that same address for both roles. (not in the code yet — HIL-1636)
+Tasks uses that same address for both roles.
 Polls uses that same address for both roles. (not in the code yet — HIL-1637)
 
 The certificate is fixed and lives in the repository
@@ -567,7 +567,7 @@ and name it before writing.
    `HILOS_MODERATION_IMAGE_URL`, which the chat stack sets to
    `https://stand-gateway:18000/model`. Do not set the global `LLM_LOCAL_URL` to
    move only moderation: the bot and context analyzer also fall back to it.
-   Tasks wires both roles. (not in the code yet — HIL-1636)
+   Tasks wires both roles.
    Polls wires both roles. (not in the code yet — HIL-1637)
    An address the environment gives one role reaches that role's agent only if the
    project's settings layer, finding its own URL setting empty, falls back to the

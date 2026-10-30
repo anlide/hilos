@@ -316,6 +316,29 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Status\StatusAgent;
 use Hilos\Status\StatusSettingsCatalog;
+use Demo\Tasks\Pages\Hilos\Moderation\ModerationPage;
+use Demo\Tasks\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\Tasks\Pages\Hilos\Moderation\ModerationKindRulesPage;
+use Hilos\Database\Entity\Item\ModerationRule;
+use Hilos\Moderation\DTO\ModerationRuleAddSignalData;
+use Hilos\Moderation\DTO\ModerationRuleDeleteSignalData;
+use Hilos\Moderation\DTO\ModerationRuleUpdateSignalData;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Moderation\ModerationInput;
+use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Pages\Moderation\AbstractHilosModerationPage;
+use Hilos\Pages\Moderation\AbstractHilosModerationKindPage;
+use Hilos\Pages\Moderation\AbstractHilosModerationKindRulesPage;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleUpdateActionDTO;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 
 /**
  * Guards the project-level tasks topology registry.
@@ -359,6 +382,128 @@ final class TasksTopologyRegistryTest extends TestCase
                 Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
             );
         }
+    }
+
+    /** Moderation uses one placed framework rules writer and one placed moderator for the cluster. */
+    public function testModerationUsesFrameworkSingletonsSettingsAndSchemaUnit(): void
+    {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::MODERATION));
+        foreach ([
+            HilosAgentType::HILOS_MODERATION_RULES_LIBRARY => [ModerationRulesLibraryAgent::class, ModerationRulesLibraryAgentDaemon::class],
+            HilosAgentType::HILOS_MODERATOR => [ModerationAgent::class, ModerationAgentDaemon::class],
+        ] as $type => [$worker, $daemon]) {
+            $entry = Hilos::AGENTS[$type];
+            self::assertSame([
+                AgentRegistryKey::WORKER => $worker,
+                AgentRegistryKey::DAEMON => $daemon,
+                AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            ], $entry);
+            self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+            self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+            self::assertFalse(AgentRegistry::requiresIndex($entry));
+            self::assertTrue((new $daemon())->requiresMonopolisticProcess());
+        }
+        self::assertSame([HilosDbContext::moderationRules => TruthSourceOperation::ALL], ModerationRulesLibraryAgent::OWNS_DB);
+        $catalog = TasksSettingsCatalog::getCatalog();
+        foreach (ModerationSettingsCatalog::getCatalog() as $key => $entry) {
+            self::assertSame($entry, $catalog[$key]);
+        }
+        $units = [];
+        foreach ((new FrameworkSchemaCatalog())->selectedUnits(Hilos::class) as $unit) {
+            if ($unit->key === 'moderation_rule') {
+                $units[$unit->key] = [$unit->tables, $unit->dependencies, $unit->connection];
+            }
+        }
+        self::assertSame(['moderation_rule' => [['hilos_moderation_rule'], [], 0]], $units);
+        self::assertTrue(ModerationRule::_journaled);
+        self::assertSame([], ModerationRule::_pii);
+        self::assertSame(['id', 'kind', 'rule'], ModerationRule::_piiNotPersonal);
+    }
+
+    /** Tasks publishes exactly the framework name and photo kinds, in directory order. */
+    public function testModerationKeepsTheFrameworkKindDirectory(): void
+    {
+        self::assertSame(ModerationKindDirectory::class, Hilos::moderationKindDirectoryClass());
+        $kinds = Hilos::moderationKinds();
+        self::assertSame([ModerationKindKey::PROFILE_NAME, ModerationKindKey::PROFILE_PHOTO], array_keys($kinds));
+        self::assertEquals(ModerationKindDirectory::all(true), $kinds);
+        self::assertSame(ModerationInput::TEXT, $kinds[ModerationKindKey::PROFILE_NAME]->input);
+        self::assertSame(ModerationInput::IMAGE, $kinds[ModerationKindKey::PROFILE_PHOTO]->input);
+        foreach ($kinds as $kind) {
+            self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $kind->verdictTo);
+        }
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_MODERATION_VERDICT, Hilos::getAgentSignalRoutes());
+    }
+
+    /** The three inherited admin pages share the index owner and use only the framework tables. */
+    public function testModerationPagesAndTablesAreBoundToTheIndex(): void
+    {
+        foreach ([
+            ModerationPage::class => [AbstractHilosModerationPage::class, HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION],
+            ModerationKindPage::class => [AbstractHilosModerationKindPage::class, HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND],
+            ModerationKindRulesPage::class => [
+                AbstractHilosModerationKindRulesPage::class, HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
+            ],
+        ] as $page => [$base, $signal]) {
+            self::assertTrue(is_subclass_of($page, $base));
+            self::assertTrue((new ReflectionClass($page))->isFinal());
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[$page::PAGE]);
+            self::assertSame(PageAccessLevel::ADMIN, $page::ACCESS_LEVEL);
+            self::assertSame(PageReach::ROUTE, $page::REACH);
+            self::assertSame([BrowserConfigKey::SIGNAL => $signal], $page::BROWSER);
+        }
+        self::assertSame(HilosModerationKindsTable::TABLE, TasksTableContext::hilosModerationKinds);
+        self::assertSame(HilosModerationRulesTable::TABLE, TasksTableContext::hilosModerationRules);
+        self::assertSame(HilosModerationKindsTable::class, Hilos::TABLES[TasksTableContext::hilosModerationKinds]);
+        self::assertSame(HilosModerationRulesTable::class, Hilos::TABLES[TasksTableContext::hilosModerationRules]);
+        self::assertSame([TasksTableContext::hilosModerationKinds => []], Hilos::PAGE_TABLES[ModerationPage::PAGE]);
+        self::assertSame([TasksTableContext::hilosModerationKinds => []], Hilos::PAGE_TABLES[ModerationKindPage::PAGE]);
+        self::assertSame([
+            TasksTableContext::hilosModerationKinds => [],
+            TasksTableContext::hilosModerationRules => [],
+        ], Hilos::PAGE_TABLES[ModerationKindRulesPage::PAGE]);
+        self::assertSame([], ModerationPage::ACTIONS);
+        self::assertSame([], ModerationKindPage::ACTIONS);
+    }
+
+    /** Browser writes keep the page gates; typed internal asks reach only the rules library. */
+    public function testModerationRuleActionsAndHandoverRoutesAreInherited(): void
+    {
+        $actions = [
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE => HilosModerationRuleUpdateActionDTO::class,
+        ];
+        self::assertSame($actions, ModerationKindRulesPage::ACTIONS);
+        self::assertSame([], ModerationKindRulesPage::READING_ACTIONS);
+        foreach ($actions as $action => $dto) {
+            self::assertSame(ModerationKindRulesPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+            self::assertArrayNotHasKey($action, ModerationRulesLibraryAgent::AGENT_ACTIONS);
+            self::assertNotContains($action, ModerationRulesLibraryAgent::AUTH_ACTIONS);
+        }
+        $signals = [
+            HilosSignalConstants::MODERATION_RULE_ADD => ModerationRuleAddSignalData::class,
+            HilosSignalConstants::MODERATION_RULE_DELETE => ModerationRuleDeleteSignalData::class,
+            HilosSignalConstants::MODERATION_RULE_UPDATE => ModerationRuleUpdateSignalData::class,
+        ];
+        self::assertSame($signals, ModerationRulesLibraryAgent::AGENT_SIGNALS);
+        foreach ($signals as $signal => $dto) {
+            self::assertSame(HilosAgentType::HILOS_MODERATION_RULES_LIBRARY, Hilos::getAgentSignalRoutes()[$signal]);
+            self::assertSame($dto, Hilos::getAgentSignalDtoRoutes()[$signal]);
+            self::assertArrayNotHasKey($signal, Hilos::getActionAgentRoutes());
+        }
+        self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ]], ModerationKindRulesPage::SIGNALS);
+        self::assertSame(ModerationKindRulesPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
     }
 
     public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
@@ -701,7 +846,7 @@ final class TasksTopologyRegistryTest extends TestCase
             $daemonClass = AgentRegistry::daemonClass(Hilos::AGENTS[$type]);
             self::assertTrue((new $daemonClass())->requiresMonopolisticProcess());
         }
-        self::assertFalse(Hilos::hasFeature(HilosFeature::MODERATION));
+        self::assertTrue(Hilos::hasFeature(HilosFeature::MODERATION));
     }
 
     /** The framework supplies the public photo target and its display variant without project duplicates. */
@@ -1158,6 +1303,9 @@ final class TasksTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_ADD => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_DELETE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_UPDATE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
                 // Sign-in's own frames (HIL-623). The users library waits for the throttle
                 // verdict and for the provider exchange it handed off; the four delivery
                 // agents and the two node-scoped auth agents answer on their own names.
@@ -1317,6 +1465,7 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosFeature::UPLOADS,
             HilosFeature::IMAGES,
             HilosFeature::PROFILE_PHOTO,
+            HilosFeature::MODERATION,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -1528,6 +1677,8 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
             TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
             TasksTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
+            TasksTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+            TasksTableContext::hilosModerationRules => HilosModerationRulesTable::class,
             HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
             HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
             HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
@@ -1544,6 +1695,9 @@ final class TasksTopologyRegistryTest extends TestCase
 
         $this->assertSame(
             [
+                ModerationPage::PAGE,
+                ModerationKindPage::PAGE,
+                ModerationKindRulesPage::PAGE,
                 TermsHistoryPage::PAGE,
                 PrivacyHistoryPage::PAGE,
                 BrowserSessionPage::PAGE,

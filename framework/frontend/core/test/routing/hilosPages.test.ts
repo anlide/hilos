@@ -290,9 +290,8 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
     expect(resolveHilosPath(page)).toBe(path)
     expect(router.match(path)).toEqual({ page, params: {}, admin: true })
-    for (const layer of ['react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
-    }
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(page)).toBe(false)
     expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
     expect(router.match(`${path}/profile_name`)).toEqual({
       page: HilosPages.MODERATION_KIND,
@@ -366,6 +365,9 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(
       router.match('/hilos/moderation/profile_name/rules/extra').page,
     ).toBeNull()
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
   })
 
   it('addresses Circle without params under Maintenance with the PHP key', () => {

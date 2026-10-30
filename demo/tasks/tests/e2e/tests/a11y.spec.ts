@@ -1,7 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { test, expect, type Page } from '@playwright/test'
 
 import {
   clickSubmit,
+  cleanupFixtures,
+  type TestCleanup,
+  countSentFrames,
+  deleteModerationOwnRules,
+  dismissToasts,
   enterIdentifierAndPassword,
   logout,
   openSignIn,
@@ -22,8 +28,10 @@ import {
   expectStandaloneWebsockets,
   watchDaemonWebsocketsFrames,
   expectLanguagePageHead,
+  expectModerationKindTabs,
   expectPasswordVisibility,
   openProfileTimeZone,
+  ROWS,
   shownByTestId,
   watchClientDocument,
   DAEMON_ROOT_PATH,
@@ -693,4 +701,318 @@ test.describe('Daemon section accessibility', () => {
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
     })
   }
+})
+
+test.describe('Moderation accessibility', () => {
+  const kind = 'hilos_profile_name'
+  const rulesPath = `/hilos/moderation/${kind}/rules`
+  const moderationTest = test.extend<{
+    cleanup: TestCleanup
+    ownedRule: string
+  }>({
+    cleanup: cleanupFixtures,
+    ownedRule: async ({ page, cleanup }, use) => {
+      // Reserve cleanup before the UI creates this scenario's only rule.
+      const rule = `Allow ordinary names. Accessible policy ${randomUUID()}.`
+      cleanup.defer(async () => {
+        await gotoPage(expect, page, rulesPath)
+        await dismissToasts(page)
+        await deleteModerationOwnRules(expect, page, [rule])
+      })
+      await grantAdminToSelf(expect, page)
+      await use(rule)
+    },
+  })
+
+  moderationTest(
+    'names pages and keeps keyboard dialogs safe for administrators and viewers',
+    async ({ page, browser, ownedRule, cleanup }) => {
+      const table = page.getByTestId('hilos-moderation-rules-table')
+      const row = table.locator(ROWS).filter({
+        has: page.getByText(ownedRule, { exact: true }),
+      })
+      const dialog = page.getByTestId('modal')
+      const add = table.getByTestId('hilos-table-main-action')
+      const edit = row.getByTestId(/^hilos-moderation-rule-edit-open-/)
+      const remove = row.getByTestId(/^hilos-moderation-rule-delete-open-/)
+
+      await moderationTest.step(
+        'Section and kind pages expose named tables and keyboard navigation',
+        async () => {
+          await gotoPage(expect, page, '/hilos/moderation')
+          const heading = page.getByRole('heading', { level: 1 })
+          await expect(heading).toHaveCount(1)
+          await expect(heading).toHaveAccessibleName('Moderation')
+          await expect(page).toHaveTitle('Moderation · Hilos Tasks')
+          const kinds = page.getByTestId('hilos-moderation-kinds-table')
+          await expect(kinds.getByRole('table')).toHaveAccessibleName(
+            'Moderation',
+          )
+          const search = kinds.getByTestId('hilos-table-search')
+          await expect(search).toHaveRole('searchbox')
+          await expect(search).toHaveAccessibleName('Search kinds…')
+          const open = shownByTestId(kinds, `hilos-moderation-open-${kind}`)
+          await expect(open).toHaveRole('link')
+          await expect(open).toHaveAccessibleName('Open Profile name')
+          await open.focus()
+          await open.press('Enter')
+          await expectPageReady(expect, page)
+          await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
+          await expect(heading).toHaveCount(1)
+          await expect(heading).toHaveAccessibleName('Profile name')
+          await expectModerationKindTabs(expect, page, kind, 'overview')
+
+          const rules = page.getByTestId(
+            'hilos-page-tab-hilos_moderation_kind_rules',
+          )
+          await rules.focus()
+          await rules.press('Enter')
+          await expectPageReady(expect, page)
+          await expect(page).toHaveURL(rulesPath)
+          await expect(heading).toHaveCount(1)
+          await expect(heading).toHaveAccessibleName('Profile name')
+          await expectModerationKindTabs(expect, page, kind, 'rules')
+          await expect(table.getByRole('table')).toHaveAccessibleName(
+            'Profile name',
+          )
+          await expect(table.getByTestId('hilos-table-search')).toHaveRole(
+            'searchbox',
+          )
+          await expect(
+            table.getByTestId('hilos-table-search'),
+          ).toHaveAccessibleName('Search rules…')
+
+          const overview = page.getByTestId(
+            'hilos-page-tab-hilos_moderation_kind',
+          )
+          await overview.focus()
+          await overview.press('Enter')
+          await expectPageReady(expect, page)
+          await expectModerationKindTabs(expect, page, kind, 'overview')
+          await rules.focus()
+          await rules.press('Enter')
+          await expectPageReady(expect, page)
+          await expectModerationKindTabs(expect, page, kind, 'rules')
+        },
+      )
+
+      await moderationTest.step(
+        'Add names its field, traps focus and preserves a draft when discard is canceled',
+        async () => {
+          await expect(add).toHaveRole('button')
+          await expect(add).toHaveAccessibleName('Add rule')
+          await add.focus()
+          await add.press('Enter')
+          await expect(dialog).toHaveRole('dialog')
+          await expect(dialog).toHaveAttribute('aria-modal', 'true')
+          await expect(dialog).toHaveAccessibleName('Add rule · Profile name')
+          const field = page.getByTestId('hilos-moderation-rule-add-rule')
+          await expect(field).toHaveRole('textbox')
+          await expect(field).toHaveAccessibleName('Rule')
+          await expect(field).toBeFocused()
+          await expect(field).toHaveValue('')
+          await field.press('Escape')
+          await expect(dialog).toBeHidden()
+          await expect(add).toBeFocused()
+
+          await add.press('Enter')
+          await expect(field).toBeFocused()
+          await typeInto(field, ownedRule)
+          const save = page.getByTestId('hilos-moderation-rule-add-submit')
+          const close = dialog.getByTestId('modal-close')
+          await expect(close).toHaveAccessibleName('Close')
+          await expect(save).toHaveAccessibleName('Save')
+          await expect(save).toBeEnabled()
+          await close.focus()
+          await close.press('Shift+Tab')
+          await expect(save).toBeFocused()
+          await save.press('Tab')
+          await expect(close).toBeFocused()
+          await close.press('Escape')
+          const confirmation = page.getByTestId('modal-confirm')
+          await expect(confirmation).toHaveRole('alertdialog')
+          await expect(confirmation).toHaveAccessibleName('Discard changes?')
+          await expect(confirmation).toBeFocused()
+          const keepEditing = page.getByTestId('modal-confirm-cancel')
+          await expect(keepEditing).toHaveAccessibleName('Keep editing')
+          await keepEditing.focus()
+          await keepEditing.press('Enter')
+          await expect(confirmation).toBeHidden()
+          await expect(field).toBeFocused()
+          await expect(field).toHaveValue(ownedRule)
+          // This one save prepares the owned row for Edit and Delete inspection.
+          await clickSubmit(expect, save)
+          await expect(dialog).toBeHidden()
+          await expect(add).toBeFocused()
+          await expect(row).toBeVisible()
+          await dismissToasts(page)
+        },
+      )
+
+      await moderationTest.step(
+        'Edit and Delete return focus after Escape and explicit keyboard close',
+        async () => {
+          await expect(edit).toHaveAccessibleName('Edit rule')
+          await edit.focus()
+          await edit.press('Enter')
+          await expect(dialog).toHaveRole('dialog')
+          await expect(dialog).toHaveAttribute('aria-modal', 'true')
+          await expect(dialog).toHaveAccessibleName('Edit rule · Profile name')
+          const field = page.getByTestId('hilos-moderation-rule-edit-rule')
+          await expect(field).toHaveRole('textbox')
+          await expect(field).toHaveAccessibleName('Rule')
+          await expect(field).toBeFocused()
+          await expect(field).toHaveValue(ownedRule)
+          await field.press('Escape')
+          await expect(dialog).toBeHidden()
+          await expect(edit).toBeFocused()
+
+          await edit.press('Enter')
+          await expect(field).toBeFocused()
+          await typeInto(field, 'Local draft to discard')
+          const close = dialog.getByTestId('modal-close')
+          await expect(close).toHaveAccessibleName('Close')
+          await close.focus()
+          await close.press('Enter')
+          const confirmation = page.getByTestId('modal-confirm')
+          await expect(confirmation).toHaveRole('alertdialog')
+          await expect(confirmation).toHaveAccessibleName('Discard changes?')
+          await expect(confirmation).toBeFocused()
+          const discard = page.getByTestId('modal-confirm-discard')
+          await expect(discard).toHaveAccessibleName('Discard')
+          await discard.focus()
+          await discard.press('Enter')
+          await expect(confirmation).toBeHidden()
+          await expect(dialog).toBeHidden()
+          await expect(edit).toBeFocused()
+
+          await expect(remove).toHaveAccessibleName('Delete rule')
+          await remove.focus()
+          await remove.press('Enter')
+          await expect(dialog).toHaveRole('dialog')
+          await expect(dialog).toHaveAttribute('aria-modal', 'true')
+          await expect(dialog).toHaveAccessibleName('Delete rule')
+          await expect(dialog).toBeFocused()
+          await expect(
+            page.getByTestId('hilos-moderation-rule-delete-rule'),
+          ).toHaveText(ownedRule)
+          await dialog.press('Escape')
+          await expect(dialog).toBeHidden()
+          await expect(remove).toBeFocused()
+          await remove.press('Enter')
+          await expect(dialog).toBeFocused()
+          await close.focus()
+          await close.press('Enter')
+          await expect(dialog).toBeHidden()
+          await expect(remove).toBeFocused()
+          await expect(row).toBeVisible()
+        },
+      )
+
+      await moderationTest.step(
+        'A viewer can read and draft named dialogs while keyboard navigation skips every submit',
+        async () => {
+          const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+          const context = await browser.newContext({
+            baseURL,
+            ignoreHTTPSErrors,
+          })
+          cleanup.defer(() => context.close())
+          cleanup.defer(() => setAdminViewMode(false))
+          await setAdminViewMode(true)
+          const viewer = await context.newPage()
+          const writes = ['add', 'update', 'delete'].map((action) =>
+            countSentFrames(viewer, `hilos_moderation_rule_${action}`),
+          )
+          await gotoPage(expect, viewer, rulesPath)
+          await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
+          const viewerTable = viewer.getByTestId('hilos-moderation-rules-table')
+          const viewerRow = viewerTable.locator(ROWS).filter({
+            has: viewer.getByText(ownedRule, { exact: true }),
+          })
+          for (const action of ['add', 'edit', 'delete'] as const) {
+            const opener =
+              action === 'add'
+                ? viewerTable.getByTestId('hilos-table-main-action')
+                : viewerRow.getByTestId(
+                    new RegExp(`^hilos-moderation-rule-${action}-open-`),
+                  )
+            const label = {
+              add: 'Add rule',
+              edit: 'Edit rule',
+              delete: 'Delete rule',
+            }[action]
+            await expect(opener).toHaveAccessibleName(label)
+            await opener.focus()
+            await opener.press('Enter')
+            const viewerDialog = viewer.getByTestId('modal')
+            await expect(viewerDialog).toHaveRole('dialog')
+            await expect(viewerDialog).toHaveAttribute('aria-modal', 'true')
+            await expect(viewerDialog).toHaveAccessibleName(
+              action === 'delete' ? label : `${label} · Profile name`,
+            )
+            if (action === 'delete') {
+              await expect(viewerDialog).toBeFocused()
+              await expect(
+                viewer.getByTestId('hilos-moderation-rule-delete-rule'),
+              ).toHaveText(ownedRule)
+              await viewerDialog.press('Enter')
+            } else {
+              const field = viewer.getByTestId(
+                `hilos-moderation-rule-${action}-rule`,
+              )
+              await expect(field).toHaveAccessibleName('Rule')
+              await expect(field).toBeFocused()
+              await expect(field).toBeEditable()
+              await expect(field).toHaveValue(action === 'add' ? '' : ownedRule)
+              await typeInto(field, 'Viewer draft only')
+              await field.press('Enter')
+              await expect(field).toHaveValue('Viewer draft only\n')
+            }
+            const submit = viewer.getByTestId(
+              `hilos-moderation-rule-${action}-${action === 'delete' ? 'confirm' : 'submit'}`,
+            )
+            await expect(submit).toHaveRole('button')
+            await expect(submit).toHaveAccessibleName(
+              action === 'delete' ? 'Delete' : 'Save',
+            )
+            await expect(submit).toBeDisabled()
+            await expect(submit).toHaveAccessibleDescription(
+              'View mode · You can look around, but not change anything.',
+            )
+            const cancel = viewer.getByTestId(
+              `hilos-moderation-rule-${action}-cancel`,
+            )
+            const close = viewerDialog.getByTestId('modal-close')
+            await expect(cancel).toHaveAccessibleName('Cancel')
+            await expect(close).toHaveAccessibleName('Close')
+            await cancel.focus()
+            await cancel.press('Tab')
+            await expect(close).toBeFocused()
+            await close.press('Shift+Tab')
+            await expect(cancel).toBeFocused()
+            await cancel.press('Enter')
+            if (action !== 'delete') {
+              const confirmation = viewer.getByTestId('modal-confirm')
+              await expect(confirmation).toHaveRole('alertdialog')
+              await expect(confirmation).toHaveAccessibleName(
+                'Discard changes?',
+              )
+              await expect(confirmation).toBeFocused()
+              const discard = viewer.getByTestId('modal-confirm-discard')
+              await discard.focus()
+              await discard.press('Enter')
+              await expect(confirmation).toBeHidden()
+            }
+            await expect(viewerDialog).toBeHidden()
+            await expect(opener).toBeFocused()
+            expect(writes.map((sent) => sent())).toEqual([0, 0, 0])
+          }
+          await gotoPage(expect, page, rulesPath)
+          await expect(row).toBeVisible()
+          expect(writes.map((sent) => sent())).toEqual([0, 0, 0])
+        },
+      )
+    },
+  )
 })

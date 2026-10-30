@@ -31,6 +31,8 @@ use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
@@ -119,6 +121,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
  * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
+ * @property-read HilosModerationKindsTable $hilosModerationKinds
+ * @property-read HilosModerationRulesTable $hilosModerationRules
  */
 final class TasksTableContext extends TableContext
 {
@@ -175,6 +179,8 @@ final class TasksTableContext extends TableContext
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
     public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
+    public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
+    public const string hilosModerationRules = HilosModerationRulesTable::TABLE;
 
     /**
      * Registers tasks table definitions from the project topology registry.

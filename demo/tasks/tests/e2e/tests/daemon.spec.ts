@@ -801,6 +801,11 @@ test.describe('restarting an agent', () => {
     await grantAdminToSelf(expect, page)
     const worker = await readRestartWorker(expect, page)
     await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await typeInto(page.getByTestId('hilos-table-search'), RESTART_AGENT)
+    await expect(
+      shownByTestId(page, `hilos-table-row-${RESTART_AGENT}`),
+    ).toBeVisible()
+    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
     const observer = await context.newPage()
     const newcomer = await context.newPage()
     try {
@@ -810,6 +815,11 @@ test.describe('restarting an agent', () => {
         '/hilos/daemon/standalone/agents',
         PAGE_READY,
       )
+      await typeInto(observer.getByTestId('hilos-table-search'), RESTART_AGENT)
+      await expect(
+        shownByTestId(observer, `hilos-table-row-${RESTART_AGENT}`),
+      ).toBeVisible()
+      await expect(observer.getByTestId('hilos-table-loading')).toHaveCount(0)
       const button = shownByTestId(
         page,
         `hilos-daemon-agent-restart-${RESTART_AGENT}`,
@@ -847,6 +857,14 @@ test.describe('restarting an agent', () => {
           '/hilos/daemon/standalone/agents',
           PAGE_READY,
         )
+        await typeInto(
+          newcomer.getByTestId('hilos-table-search'),
+          RESTART_AGENT,
+        )
+        await expect(
+          shownByTestId(newcomer, `hilos-table-row-${RESTART_AGENT}`),
+        ).toBeVisible()
+        await expect(newcomer.getByTestId('hilos-table-loading')).toHaveCount(0)
         await expect(shownByTestId(newcomer, mark)).toHaveText('Restarting')
         await expect(
           shownByTestId(

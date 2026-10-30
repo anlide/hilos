@@ -76,11 +76,10 @@ every non-key, non-secret, non-noisy column is journaled only as a fact.
 
 In a demo, journal what a person changes by a decision, not the stream.
 All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals six tables:
-the five framework tables above and its own `bot`. Binance-btc-tracker,
-ecommerce-shop, tasks, online-testing
-and polls each journal the four framework tables other than
-`hilos_moderation_rule`, which none of them has until it declares `MODERATION`;
-this activation adds no subject tables.
+the five framework tables above and its own `bot`. Tasks journals all five
+framework tables after declaring `MODERATION`. Binance-btc-tracker,
+ecommerce-shop, online-testing and polls each journal the other four framework
+tables; none has `hilos_moderation_rule` until it declares `MODERATION`.
 Messages, events, attachments, guests and rename histories stay outside the
 journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
@@ -792,7 +791,8 @@ headers, alone. It does not install SQL in the database.
 
 All six demos configure the journal connection and use `DockerApplication`'s
 same startup sequence before starting a daemon, worker or socket. Chat commits
-21 generated triggers for its seven journaled tables; every other demo commits
+21 generated triggers for its seven journaled tables. Tasks commits 15 generated
+triggers for its five framework tables; each of the four remaining demos commits
 12 for its four framework tables. Generation runs through the existing test
 CLI after migrations, and a repeat leaves matching files untouched.
 

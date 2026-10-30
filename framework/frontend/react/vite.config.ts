@@ -20,6 +20,7 @@ const entry = {
   'admin/logs': './src/admin/logs/index.ts',
   'admin/maintenance': './src/admin/maintenance/index.ts',
   'admin/mcp-skills': './src/admin/mcpSkills/index.ts',
+  'admin/moderation': './src/admin/moderation/index.ts',
   'admin/roles': './src/admin/roles/index.ts',
   'admin/security': './src/admin/security/index.ts',
   'admin/settings': './src/admin/settings/index.ts',

@@ -16,6 +16,13 @@ import {
 
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
+import {
+  dictateModelAnswer,
+  forgetModelKey,
+  modelKey,
+  readModelRequests,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
+import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 
 // spec-owner: demo — tasks' React profile mounts the shared name edit flow.
 
@@ -85,7 +92,10 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
 })
 
-test('renames the profile name without moderation', async ({ page }) => {
+test('publishes a profile name only after the model approves it', async ({
+  page,
+}) => {
+  const key = modelKey()
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
   try {
@@ -98,9 +108,38 @@ test('renames the profile name without moderation', async ({ page }) => {
 
     await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
-    const newName = `${user.name} Updated`
+    const newName = `Updated ${key}`
     await typeInto(page.getByTestId('profile-name-input'), newName)
+    await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+    // Keep the provider answer pending while checking the published identity.
+    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 3000 })
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+
+    const checking = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      {
+        name: newName,
+        phase: 'checking',
+      },
+    )
+    await expect
+      .poll(() => readModelRequests(key))
+      .toEqual([{ ordinal: 1, key, imageHashes: [] }])
+    await expect(
+      page
+        .getByTestId('modal')
+        .getByRole('status')
+        .filter({ hasText: 'Checking your name…' }),
+    ).toHaveText('Checking your name…')
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    await expect(page.getByTestId('profile-identity-name')).toHaveText(
+      user.name,
+    )
+    await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
+      user.name,
+    )
 
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
@@ -120,6 +159,9 @@ test('renames the profile name without moderation', async ({ page }) => {
       })
     await expect(page.getByTestId('profile-name')).toHaveText(newName)
     await expect(page.getByTestId('profile-identity-name')).toHaveText(newName)
+    await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
+      newName,
+    )
 
     const attempt = wire.snapshots.filter(
       ({ state }) => state.change?.name === newName,
@@ -130,16 +172,24 @@ test('renames the profile name without moderation', async ({ page }) => {
     expect([
       ...new Set(attempt.map(({ state }) => state.change?.requestId)),
     ]).toEqual([requestId])
-    expect(attempt.map(({ state }) => state.change?.phase)).not.toContain(
+    expect(requestId).toBe(checking.state.change!.requestId)
+    expect(attempt.map(({ state }) => state.change?.phase)).toContain(
       'checking',
     )
     expect(attempt.at(-1)?.state.change?.phase).toBe('done')
+    expect(await readModelRequests(key)).toEqual([
+      { ordinal: 1, key, imageHashes: [] },
+    ])
   } finally {
-    await test.info().attach('profile-name-wire', {
-      body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
-      contentType: 'application/json',
-    })
     wire.stop()
+    try {
+      await test.info().attach('profile-name-wire', {
+        body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
+        contentType: 'application/json',
+      })
+    } finally {
+      await forgetModelKey(key)
+    }
   }
 })
 

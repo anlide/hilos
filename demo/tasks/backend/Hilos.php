@@ -99,6 +99,9 @@ use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceCirclePage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceNodesPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
+use Demo\Tasks\Pages\Hilos\Moderation\ModerationPage;
+use Demo\Tasks\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\Tasks\Pages\Hilos\Moderation\ModerationKindRulesPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusComponentsPage;
 use Demo\Tasks\Pages\Hilos\Status\StatusSubscribersPage;
@@ -185,6 +188,10 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
@@ -196,6 +203,8 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
@@ -293,6 +302,7 @@ final class Hilos extends HilosFacade
         HilosFeature::UPLOADS,
         HilosFeature::IMAGES,
         HilosFeature::PROFILE_PHOTO,
+        HilosFeature::MODERATION,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -382,6 +392,9 @@ final class Hilos extends HilosFacade
         StatusSubscribersPage::PAGE => StatusSubscribersPage::class,
         StatusWorksPage::PAGE => StatusWorksPage::class,
         StatusHistoryPage::PAGE => StatusHistoryPage::class,
+        ModerationPage::PAGE => ModerationPage::class,
+        ModerationKindPage::PAGE => ModerationKindPage::class,
+        ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
     ];
 
     public const array GROUPS = [
@@ -435,6 +448,16 @@ final class Hilos extends HilosFacade
         I18nLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => I18nLibraryAgent::class,
             AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ModerationRulesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ModerationAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         UserAgent::AGENT_TYPE => [
@@ -594,6 +617,8 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         TasksTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
+        TasksTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+        TasksTableContext::hilosModerationRules => HilosModerationRulesTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
         HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
@@ -648,6 +673,16 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ModerationPage::PAGE => [
+            TasksTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindPage::PAGE => [
+            TasksTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindRulesPage::PAGE => [
+            TasksTableContext::hilosModerationKinds => [],
+            TasksTableContext::hilosModerationRules => [],
+        ],
         TermsHistoryPage::PAGE => [
             TasksTableContext::hilosTermsHistory => [],
         ],

@@ -186,30 +186,23 @@ describe('hilosUnbuiltPages', () => {
     )
   })
 
-  it('keeps React and Angular Moderation views unbuilt while Vue is built by this sheet', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION]).toEqual([
-      'react',
-      'angular',
-    ])
+  it('serves the Moderation root in Vue and React while Angular remains unbuilt', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION]).toEqual(['angular'])
     expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION)).toBe(true)
   })
 
-  it('serves kind Overview only in Vue', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION_KIND]).toEqual([
-      'react',
-      'angular',
-    ])
+  it('serves kind Overview and Rules in Vue and React while Angular remains unbuilt', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION_KIND]).toEqual(['angular'])
     expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION_KIND)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION_KIND)).toBe(
-      true,
+      false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION_KIND)).toBe(
       true,
     )
     expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION_KIND_RULES]).toEqual([
-      'react',
       'angular',
     ])
     expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION_KIND_RULES)).toBe(
@@ -217,7 +210,7 @@ describe('hilosUnbuiltPages', () => {
     )
     expect(
       hilosUnbuiltPages('react').has(HilosPages.MODERATION_KIND_RULES),
-    ).toBe(true)
+    ).toBe(false)
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.MODERATION_KIND_RULES),
     ).toBe(true)

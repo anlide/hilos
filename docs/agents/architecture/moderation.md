@@ -621,11 +621,14 @@ factories; the base context stays sufficient for the root and Overview. Chat
 passes its existing `actions` singleton through `hilosModerationContext`. The
 Add and Edit APIs are exported from the lazy core moderation section, and Vue's
 `HilosModerationKindRulesPage` from the lazy Vue moderation section; the edit
-modal has no separate public Vue export. These APIs are not added to
-compatibility root or base exports. The Vue kind Overview continues to receive
-the project's base context through Chat's lazy `ModerationKind.vue` wrapper.
-The Rules view receives the extended context through Chat's lazy `Rules.vue`
-wrapper.
+modal has no separate public Vue export. The core Add/Edit APIs and the Vue
+page remain out of compatibility-root and base exports. React's lazy
+`/admin/moderation` section exports three page components and their `Props`
+types; its Add, Edit and Delete forms remain internal to the Rules page. React's
+compatibility root exports only `HilosModerationPage` from moderation. The Vue
+kind Overview continues to receive the project's base context through Chat's
+lazy `ModerationKind.vue` wrapper. The Rules view receives the extended context
+through Chat's lazy `Rules.vue` wrapper.
 
 Delete is available from the Rules row action and opens one confirmation dialog
 for the selected rule. The dialog keeps the displayed rule text as its
@@ -646,7 +649,9 @@ Apply [admin-features.md](admin-features.md) and
 viewer may look but may not mutate. Edit and Delete remain responsible for
 that behavior on their own surfaces.
 
-Mount the React SDK section in tasks. (not in the code yet — HIL-1636)
+Tasks mounts the React section's root, kind Overview and Rules pages through
+three lazy wrappers. The section presents the framework's Profile name and
+Profile photo kinds; Add, Edit and Delete remain internal to its Rules page.
 Mount the Angular SDK section in polls. (not in the code yet — HIL-1637)
 Profile photos in tasks are separate work. (not in the code yet — HIL-1644)
 Profile photos in polls are separate work. (not in the code yet — HIL-1645)
@@ -668,13 +673,13 @@ There is no verdict journal and no per-kind on/off switch in this design.
 queue and its signals, the moderator, its profiles and settings, the profile
 photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), and Chat as a
 consumer (HIL-1627). Also built are the kinds/rules browser tables registered
-by Chat (HIL-1628), and the section pages with Vue Rules Add, Edit and Delete
-flows and their focused e2e coverage.
+by Chat (HIL-1628), the Vue Rules Add, Edit and Delete flows with focused e2e
+coverage, and the React/tasks mount with three lazy pages and internal Rules
+forms.
 
-**Not built yet:** React/tasks and Angular/polls SDK mounts (HIL-1636/HIL-1637);
-the broader moderation e2e coverage and cluster
-coverage (HIL-1638/HIL-1639); enabling profile photos in tasks/polls
-(HIL-1644/HIL-1645).
+**Not built yet:** the Angular/polls SDK mount (HIL-1637); broader moderation
+e2e coverage and cluster coverage (HIL-1638/HIL-1639); enabling profile photos
+in tasks/polls (HIL-1644/HIL-1645).
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

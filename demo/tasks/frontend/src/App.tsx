@@ -201,6 +201,17 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.MAINTENANCE]: lazyPage(() =>
     import('./views/Hilos/Maintenance/Maintenance.js').then((m) => m.default),
   ),
+  // The framework Moderation section: its SDK pages own the tables and rule
+  // flows; the project binds its connection, page scopes and action lifecycle.
+  [HilosPages.MODERATION]: lazyPage(() =>
+    import('./views/Hilos/Moderation/Moderation.js').then((m) => m.default),
+  ),
+  [HilosPages.MODERATION_KIND]: lazyPage(() =>
+    import('./views/Hilos/Moderation/ModerationKind.js').then((m) => m.default),
+  ),
+  [HilosPages.MODERATION_KIND_RULES]: lazyPage(() =>
+    import('./views/Hilos/Moderation/Rules/Rules.js').then((m) => m.default),
+  ),
   [HilosPages.COMMUNICATIONS]: lazyPage(() =>
     import('./views/Hilos/Communications/Communications.js').then(
       (m) => m.default,

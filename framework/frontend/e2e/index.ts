@@ -20,6 +20,7 @@
 // of @playwright/test anywhere under e2e/, so `npm run lint` goes red before
 // any demo runner does.
 
+export { cleanupFixtures, type TestCleanup } from './cleanupFixtures.js'
 export {
   fitsInScrollport,
   liesAbove,
@@ -528,6 +529,7 @@ export {
 } from './security.js'
 
 export {
+  deleteModerationOwnRules,
   expectModerationKindHead,
   expectModerationKindTabs,
   expectModerationOwnRules,

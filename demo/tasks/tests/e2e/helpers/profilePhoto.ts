@@ -1,8 +1,30 @@
-import type { Page } from '@playwright/test'
+import type { Expect, Page } from '@playwright/test'
 import {
+  PASSWORD,
+  clickSubmit,
+  createTestUser,
   drawPhotoFixture,
+  gotoPage,
   samplePhotoPixels,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/standModel.mjs'
+
+/** Prepare Tasks' photo subject with a real approved rename carrying its model key. */
+export async function nameForPhoto(expect: Expect, page: Page, key: string) {
+  const user = await createTestUser(expect, page)
+  await gotoPage(expect, page, '/profile')
+  const name = `Photo ${key}`
+  await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+  await clickSubmit(expect, page.getByTestId('profile-edit'))
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
+  await typeInto(page.getByTestId('profile-name-input'), name)
+  await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+  await expect(page.getByTestId('modal')).toBeHidden()
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
+  return { ...user, name }
+}
 
 /** Keep Tasks' three JPEG bands, replacement PNG bands and explicit encoding quality. */
 export async function picture(

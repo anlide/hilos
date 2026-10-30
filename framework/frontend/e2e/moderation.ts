@@ -4,7 +4,57 @@ import {
   deliveryObject as object,
   type DeliveryFrameLog,
 } from './deliveryFrames.js'
+import { clickSubmit } from './input.js'
 import { ROWS, shownByTestId } from './table.js'
+
+/** Delete only reserved exact texts from the currently open Rules table. */
+export async function deleteModerationOwnRules(
+  expect: Expect,
+  page: Page,
+  rules: readonly string[],
+): Promise<void> {
+  const table = page.getByTestId('hilos-moderation-rules-table')
+  await expect(table).toBeVisible()
+  for (const text of rules) {
+    // Read the complete DOM text: Playwright's string text matchers normalize
+    // whitespace, and the visible table text may be clipped by its height cap.
+    const matches = await table
+      .locator(ROWS)
+      .evaluateAll(
+        (rows, reserved) =>
+          rows
+            .filter(
+              (row) =>
+                row.querySelector('.hilos-table-text[id]')?.textContent ===
+                reserved,
+            )
+            .map((row) => row.getAttribute('data-id')!),
+        text,
+      )
+    if (matches.length === 0) continue
+    expect(matches, 'The reserved raw rule must identify one row').toHaveLength(
+      1,
+    )
+    const row = table.getByTestId(matches[0])
+    await clickSubmit(
+      expect,
+      row.getByTestId(/^hilos-moderation-rule-delete-open-/),
+    )
+    await expect(
+      page.getByTestId('hilos-moderation-rule-delete-rule'),
+    ).toBeVisible()
+    expect(
+      await page.getByTestId('hilos-moderation-rule-delete-rule').textContent(),
+    ).toBe(text)
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-moderation-rule-delete-confirm'),
+    )
+    await expect(page.getByTestId('modal')).toBeHidden()
+    // A removed row may retain its data-free departure placeholder.
+    await expect(row.locator('.hilos-table-text[id]')).toHaveCount(0)
+  }
+}
 
 /** The two addressed pages share the kind's identity and link navigation. */
 export async function expectModerationKindTabs(

@@ -215,6 +215,8 @@ services:
       - OAUTH_GOOGLE_CLIENT_ID=stand-google-client
       - OAUTH_GOOGLE_CLIENT_SECRET=stand-google-secret
       - OAUTH_REDIRECT_URI=https://tasks-nginx-test/auth/callback
+      - HILOS_MODERATION_TEXT_URL=https://stand-gateway:18000/model
+      - HILOS_MODERATION_IMAGE_URL=https://stand-gateway:18000/model
       # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
       # daemon verifies it the way it verifies a provider in production: the trust comes
       # from the environment, not from a switch in the client. OpenSSL reads this file

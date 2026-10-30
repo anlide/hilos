@@ -829,7 +829,12 @@ stay with their marked leaves:
    Its Add dialog follows.
    Its Rules view mounts the Edit dialog.
    Its Delete dialog follows.
-   React/tasks receives the section. (not in the code yet — HIL-1636)
+   React/tasks mounts the root, kind Overview and Rules pages through three
+   lazy wrappers, using the framework's Profile name and Profile photo kinds;
+   Add, Edit and Delete remain internal to the Rules page. The public
+   `@hilos/react/admin/moderation` entry exports those three pages and their
+   `Props` types, while the compatibility root exports only
+   `HilosModerationPage` from moderation.
    Angular/polls receives the section. (not in the code yet — HIL-1637)
 
 The name window's framework wiring and `Checking your name…` line are separate

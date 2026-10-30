@@ -63,8 +63,29 @@ const typeSource = `
   import { HilosProfileHead, type HilosProfileHeadProps } from '@hilos/react/base'
   import { HilosProfileHead as RootHead, type HilosProfileHeadProps as RootProps } from '@hilos/react'
   import type { HilosProfileHeadStore, HilosProfilePageContext } from '@hilos/core/base'
+  import {
+    HilosModerationPage,
+    HilosModerationKindPage,
+    HilosModerationKindRulesPage,
+    type HilosModerationPageProps,
+    type HilosModerationKindPageProps,
+    type HilosModerationKindRulesPageProps,
+  } from '@hilos/react/admin/moderation'
+  import type { HilosModerationContext, HilosModerationRulesContext } from '@hilos/core/admin/moderation'
+  // @ts-expect-error Moderation Props belong only to the section entry.
+  import type { HilosModerationPageProps as RootModerationProps } from '@hilos/react'
+  // @ts-expect-error Overview Props belong only to the section entry.
+  import type { HilosModerationKindPageProps as RootKindProps } from '@hilos/react'
+  // @ts-expect-error Rules Props belong only to the section entry.
+  import type { HilosModerationKindRulesPageProps as RootRulesProps } from '@hilos/react'
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
+  const moderationContextType: Same<HilosModerationPageProps['context'], HilosModerationContext> = true
+  const kindContextType: Same<HilosModerationKindPageProps['context'], HilosModerationContext> = true
+  const rulesContextType: Same<HilosModerationKindRulesPageProps['context'], HilosModerationRulesContext> = true
+  const moderationProps: Same<Parameters<typeof HilosModerationPage>[0], HilosModerationPageProps> = true
+  const kindProps: Same<Parameters<typeof HilosModerationKindPage>[0], HilosModerationKindPageProps> = true
+  const rulesProps: Same<Parameters<typeof HilosModerationKindRulesPage>[0], HilosModerationKindRulesPageProps> = true
   const contextType: Same<HilosProfileHeadProps['context'], HilosProfilePageContext> = true
   const storeType: Same<HilosProfileHeadProps['store'], HilosProfileHeadStore | undefined> = true
   const componentProps: Same<Parameters<typeof HilosProfileHead>[0], HilosProfileHeadProps> = true
@@ -84,6 +105,12 @@ const typeSource = `
   void owned
   void borrowed
   void missingContext
+  void moderationContextType
+  void kindContextType
+  void rulesContextType
+  void moderationProps
+  void kindProps
+  void rulesProps
 `
 const typeOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -172,6 +199,8 @@ try {
             import * as base from '@hilos/react/base'
             import { hilosAdminViews } from '@hilos/react/admin-views'
             import { HilosSettingsPage } from '@hilos/react/admin/settings'
+            import * as moderation from '@hilos/react/admin/moderation'
+            import { HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage } from '@hilos/react/admin/moderation'
             import * as coreRoot from '@hilos/core'
             import * as coreBase from '@hilos/core/base'
             import * as coreSettings from '@hilos/core/admin/settings'
@@ -227,6 +256,18 @@ try {
               )
               .join(' && ')}
             export const samePage = root.HilosSettingsPage === HilosSettingsPage
+            export const sameModerationPage = root.HilosModerationPage !== undefined && root.HilosModerationPage === HilosModerationPage
+            export const moderationBoundary = typeof HilosModerationKindPage === 'function'
+              && typeof HilosModerationKindRulesPage === 'function'
+              && Object.keys(moderation).sort().join(',') === 'HilosModerationKindPage,HilosModerationKindRulesPage,HilosModerationPage'
+              && !('HilosModerationKindPage' in root)
+              && !('HilosModerationKindRulesPage' in root)
+              && !('HilosModerationPage' in base)
+              && !('HilosModerationKindPage' in base)
+              && !('HilosModerationKindRulesPage' in base)
+              && !('HilosModerationRuleAdd' in root)
+              && !('HilosModerationRuleEdit' in root)
+              && !('HilosModerationRuleDelete' in root)
             export const sameHistory = root.HilosLegalHistoryPage !== undefined && root.HilosLegalHistoryPage === base.HilosLegalHistoryPage
             export const descriptors = Object.values(hilosAdminViews()).every(
               view => view.kind === 'lazy-page' && typeof view.load === 'function',
@@ -254,6 +295,8 @@ try {
   assert.equal(consumer.sameCoreSection, true)
   assert.equal(consumer.sameTokens, true)
   assert.equal(consumer.samePage, true)
+  assert.equal(consumer.sameModerationPage, true)
+  assert.equal(consumer.moderationBoundary, true)
   assert.equal(consumer.sameHistory, true)
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
