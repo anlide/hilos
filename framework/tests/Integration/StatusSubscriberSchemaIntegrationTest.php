@@ -27,7 +27,11 @@ final class StatusSubscriberSchemaIntegrationTest extends FrameworkIntegrationTe
     protected function tearDown(): void
     {
         try {
-            Database::sqlRun('DROP TABLE IF EXISTS `hilos_status_subscriber`; DROP TABLE IF EXISTS `hilos_auth_block`;');
+            // One statement per call: a batch whose later results are still unread when the case closes
+            // its link keeps running on the server and can drop the table the next case just created.
+            foreach (['hilos_status_subscriber', 'hilos_auth_block'] as $table) {
+                Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
+            }
         } finally {
             parent::tearDown();
         }

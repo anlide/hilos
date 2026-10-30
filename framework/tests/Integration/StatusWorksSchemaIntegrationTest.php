@@ -67,8 +67,11 @@ final class StatusWorksSchemaIntegrationTest extends FrameworkIntegrationTestCas
             self::assertSame([], Database::sql("SHOW TABLES LIKE 'hilos_status_work%'")->rows());
             self::assertSame([], Database::sql("SHOW TABLES LIKE 'hilos_status_maintenance_period'")->rows());
         } finally {
-            Database::sqlRun('DROP TABLE IF EXISTS `hilos_status_maintenance_period`; '
-                . 'DROP TABLE IF EXISTS `hilos_status_work_component`; DROP TABLE IF EXISTS `hilos_status_work`');
+            // One statement per call: a batch whose later results are still unread when the case closes
+            // its link keeps running on the server and can drop the table the next data set just created.
+            foreach (['hilos_status_maintenance_period', 'hilos_status_work_component', 'hilos_status_work'] as $table) {
+                Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
+            }
         }
     }
 }

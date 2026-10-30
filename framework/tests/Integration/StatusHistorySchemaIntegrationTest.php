@@ -25,8 +25,11 @@ final class StatusHistorySchemaIntegrationTest extends FrameworkIntegrationTestC
     protected function tearDown(): void
     {
         try {
-            Database::sqlRun('DROP TABLE IF EXISTS `hilos_status_incident`; '
-                . 'DROP TABLE IF EXISTS `hilos_status_maintenance_period`; DROP TABLE IF EXISTS `hilos_status_work`');
+            // One statement per call: a batch whose later results are still unread when the case closes
+            // its link keeps running on the server and can drop the table the next case just created.
+            foreach (['hilos_status_incident', 'hilos_status_maintenance_period', 'hilos_status_work'] as $table) {
+                Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
+            }
         } finally {
             Schema::reset();
             parent::tearDown();
