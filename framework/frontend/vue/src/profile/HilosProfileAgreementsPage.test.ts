@@ -2,6 +2,8 @@ import { type ActionLifecycle } from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { agreement, legalContext } from '../../../core/test/legal/fixtures.js'
+import { profileSectionFixture } from '../../../core/test/profile/profileSectionFixture.js'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfileAgreementsPage from './HilosProfileAgreementsPage.vue'
 
 afterEach(() => {
@@ -27,7 +29,14 @@ it('shows no acceptance honestly and opens the current text without a request', 
   const view = mount(HilosProfileAgreementsPage, {
     attachTo: document.body,
     props: { context: world.context },
-    global: { stubs: { HilosPageHeading: true } },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: profileSectionFixture(
+          world.context.scopes,
+          'hilos_profile_agreements',
+        ),
+      },
+    },
   })
   await flushPromises()
   expect(view.get('[data-id="legal-agreement-state"]').text()).toContain(
@@ -54,7 +63,14 @@ it('retains coverage after editorial changes and opens the supplied comparison',
   const view = mount(HilosProfileAgreementsPage, {
     attachTo: document.body,
     props: { context: world.context },
-    global: { stubs: { HilosPageHeading: true } },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: profileSectionFixture(
+          world.context.scopes,
+          'hilos_profile_agreements',
+        ),
+      },
+    },
   })
   await flushPromises()
   expect(view.get('[data-id="legal-agreement-notice"]').text()).toContain(

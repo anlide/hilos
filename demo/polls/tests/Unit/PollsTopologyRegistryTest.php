@@ -243,6 +243,8 @@ use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
+use Demo\Polls\Pages\Hilos\ProfileSecurityPage;
+use Demo\Polls\Pages\Hilos\ProfileDataPage;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use Demo\Polls\Agents\Hilos\DemoHilosChangeLogAgent;
@@ -313,6 +315,30 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class PollsTopologyRegistryTest extends TestCase
 {
+    /** Every served profile section binds the common personal identity source once. */
+    public function testEveryProfileSectionBindsTheIdentityList(): void
+    {
+        self::assertSame(
+            HilosProfileIdentitiesBrowserList::class,
+            Hilos::BROWSER_LISTS[HilosProfileIdentitiesBrowserList::LIST],
+        );
+        foreach ([
+            ProfilePage::class,
+            ProfileSignInPage::class,
+            ProfileSessionsPage::class,
+            ProfileSecurityPage::class,
+            ProfileAgreementsPage::class,
+            ProfileAgreementsHistoryPage::class,
+            ProfileDataPage::class,
+        ] as $page) {
+            self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
+            self::assertSame(
+                HilosProfileIdentitiesBrowserList::BINDING,
+                Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
+            );
+        }
+    }
+
     public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
     {
         self::assertSame(TermsHistoryPage::class, Hilos::PAGES[TermsHistoryPage::PAGE]);
@@ -1640,14 +1666,7 @@ final class PollsTopologyRegistryTest extends TestCase
         }
 
         $this->assertSame(
-            [
-                HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
-                ProfileSessionsBrowserList::LIST => [
-                    BrowserParamKey::PARAMS => [
-                        BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
-                    ],
-                ],
-            ],
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
             Hilos::PAGE_LISTS[ProfilePage::PAGE],
         );
         $this->assertSame(
@@ -1658,6 +1677,7 @@ final class PollsTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [
+                HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
                 ProfileSessionsBrowserList::LIST => [
                     BrowserParamKey::PARAMS => [
                         BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,

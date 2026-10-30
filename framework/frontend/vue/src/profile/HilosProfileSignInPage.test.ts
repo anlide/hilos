@@ -17,6 +17,8 @@ import {
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
+import { profileSectionFixture } from '../../../core/test/profile/profileSectionFixture.js'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfileSignInPage from './HilosProfileSignInPage.vue'
 
 let releaseTimeZone: (() => void) | undefined
@@ -213,7 +215,14 @@ function setup(
   const wrapper = mount(HilosProfileSignInPage, {
     props: { context },
     attachTo: document.body,
-    global: { stubs: { HilosPageHeading: true } },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: profileSectionFixture(
+          scopes,
+          'hilos_profile_sign_in',
+        ),
+      },
+    },
   })
   return {
     wrapper,

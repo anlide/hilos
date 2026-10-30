@@ -8,10 +8,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\PageAccessLevel;
-use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
@@ -35,12 +32,9 @@ use Hilos\Pages\Legal\DTO\LegalRevisionTextReplyDTO;
 use Hilos\Pages\Legal\DTO\LegalRevisionChangesReplyDTO;
 
 /** Authenticated personal legal revision history (HIL-498). */
-abstract class AbstractHilosProfileAgreementsHistoryPage extends AbstractPage
+abstract class AbstractHilosProfileAgreementsHistoryPage extends AbstractHilosProfileSectionPage
 {
     public const string PAGE = HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY;
-    public const PageReach REACH = PageReach::ROUTE;
-    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
-
     /** An exit of a freeze (HIL-945): the history of the agreements, read before accepting the new terms. */
     public const bool OPEN_WHILE_FROZEN = true;
 
@@ -48,7 +42,7 @@ abstract class AbstractHilosProfileAgreementsHistoryPage extends AbstractPage
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_AGREEMENTS_HISTORY,
     ];
 
-    public const array READS_DB = [HilosDbContext::legalAcceptances];
+    public const array READS_DB = [...parent::READS_DB, HilosDbContext::legalAcceptances];
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT => LegalRevisionTextActionDTO::class,
@@ -98,7 +92,7 @@ abstract class AbstractHilosProfileAgreementsHistoryPage extends AbstractPage
      * @return ?PagePayload Personal state and the page's legal section
      * @throws HilosException When the catalog, text or acceptance read fails
      */
-    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    protected function buildProfilePagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
         if ($userId === null) {
@@ -116,7 +110,7 @@ abstract class AbstractHilosProfileAgreementsHistoryPage extends AbstractPage
      * @param PageRouteParams $params Route parameters, unused
      * @throws InvalidArgumentException When the group join cannot be named
      */
-    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    protected function onProfileSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
         $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
         if ($userId !== null) {

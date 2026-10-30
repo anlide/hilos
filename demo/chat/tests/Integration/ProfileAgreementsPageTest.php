@@ -95,11 +95,14 @@ final class ProfileAgreementsPageTest extends IntegrationTestCase
         self::assertSame($pageClass::PAGE, $answers[0][PageResponseSignalData::page]);
         $sections = $answers[0][PageResponseSignalData::payload][PagePayload::data];
         if ($pageClass === ProfilePage::class) {
-            // The root has browser lists of its own, and they ride the same answer as its legal section and its heading.
+            // Overview keeps the common identity list and no longer projects legal summaries.
             $lists = $answers[0][PageResponseSignalData::payload][PagePayload::lists] ?? [];
             self::assertArrayHasKey(HilosProfileIdentitiesBrowserList::LIST, $lists);
-            self::assertArrayHasKey(ChatBrowserList::PROFILE_SESSIONS, $lists);
-            self::assertArrayHasKey(PageCatalogConstants::WIRE_PAGE_LABEL, $sections);
+            self::assertArrayNotHasKey(ChatBrowserList::PROFILE_SESSIONS, $lists);
+            self::assertArrayHasKey(PageCatalogConstants::WIRE_PAGE_HEAD_OWNER, $sections);
+            self::assertArrayNotHasKey(LegalAgreementsProjector::SECTION, $sections);
+            self::assertNull(Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, LegalAgreementsGroup::forUser($this->userId)));
+            return;
         }
         self::assertSame(['none', 'none'], array_column($sections[LegalAgreementsProjector::SECTION]['documents'], 'standing'));
         self::assertSame('2026-10-01', $sections[LegalAgreementsProjector::SECTION]['documents'][0]['current']['revisionId']);

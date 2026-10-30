@@ -8,10 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\PageAccessLevel;
-use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\DataExport\DataExportGroup;
 use Hilos\DataExport\DataExportStateProjector;
@@ -25,14 +22,9 @@ use Hilos\HilosException;
  * Ordering belongs to the export agent, not this page. Under impersonation the payload
  * describes the represented person's copy; step-up and download enforce their own refusals.
  */
-abstract class AbstractHilosProfileDataPage extends AbstractPage
+abstract class AbstractHilosProfileDataPage extends AbstractHilosProfileSectionPage
 {
     public const string PAGE = HilosPageConstants::HILOS_PROFILE_DATA;
-
-    public const PageReach REACH = PageReach::ROUTE;
-
-    /** Signed-in-only surface; see {@see AbstractHilosProfilePage} for why this must stay explicit. */
-    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
 
     /** An exit of a freeze (HIL-945): a frozen person still takes a copy of their own data. */
     public const bool OPEN_WHILE_FROZEN = true;
@@ -42,7 +34,7 @@ abstract class AbstractHilosProfileDataPage extends AbstractPage
     ];
 
     /** @var list<string> The export agent's queue, read for this person's initial state. */
-    public const array READS_DB = [HilosDbContext::dataExports];
+    public const array READS_DB = [...parent::READS_DB, HilosDbContext::dataExports];
 
     /**
      * @param string $acceptKey Subscribing connection
@@ -50,7 +42,7 @@ abstract class AbstractHilosProfileDataPage extends AbstractPage
      * @return ?PagePayload Current copy, including absence, or null without a signed-in person
      * @throws HilosException When the person's copy cannot be read
      */
-    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    protected function buildProfilePagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
         if ($userId === null) {
@@ -69,7 +61,7 @@ abstract class AbstractHilosProfileDataPage extends AbstractPage
      * @param PageRouteParams $params Route params (unused)
      * @throws InvalidArgumentException When the join announcement cannot be named
      */
-    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    protected function onProfileSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
         $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
         if ($userId === null) {

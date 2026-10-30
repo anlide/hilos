@@ -83,11 +83,6 @@ export const profileSessions = computedSignal(() =>
   ),
 )
 
-/** Number shown beside the profile's Sessions section link. */
-export const profileSessionCount = computedSignal(
-  () => profileSessions.get().length,
-)
-
 /** Number of sessions the bulk action can currently end. */
 export const endableProfileSessions = computedSignal(() =>
   endableProfileSessionCount(profileSessions.get()),
@@ -110,11 +105,6 @@ export const profileDevices = computedSignal(() =>
     ),
     hilosPushSubscription.endpointHash.get(),
   ),
-)
-
-/** Number shown beside the profile's Devices section link. */
-export const profileDeviceCount = computedSignal(
-  () => profileDevices.get().filter((device) => !device.expired).length,
 )
 
 /** Enabled push channel and its public key, or null when push is unavailable. */

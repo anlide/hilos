@@ -3427,7 +3427,7 @@ final class TopologyValidator
         $owner = PageCatalogResolver::rowOwnerOf($page, $provider);
         $path = self::SECTION_PAGE_CATALOG . "[{$page}]";
         if (($entry[PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD] ?? false) && $owner !== $page) {
-            $errors[] = "{$path}[" . PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD . '] may be true only on an admin row owner';
+            $errors[] = "{$path}[" . PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD . '] may be true only on a row owner';
         }
 
         if ($owner !== null && $owner !== $page

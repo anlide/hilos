@@ -554,6 +554,52 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   (HIL-1300); it is hidden from screen readers with the rest of the circle.
   `HilosProfilePhoto` in each view package draws the change-photo modal over
   `createHilosProfilePhotoFlow` from core (HIL-1205);
+- **Profile head state** — `@hilos/core/base` and the compatibility root export
+  `createHilosProfileHeadStore(context, name?)` and
+  `HilosProfileHeadStore`. `HilosProfilePageContext` carries the connection,
+  scopes and tracked actions. The store exposes readonly signals for the
+  current name, photo, photo feature flag, verified email, passkey-only state,
+  hidden sections and page identity. It reads the name from the session by
+  default, while the profile Overview passes its existing `binding.name`; the
+  photo also follows session state. The current page's identity and eligible
+  tabs come from its answer, and verified email and passkey-only status follow
+  the existing `profileIdentities` list. The store owns the second-factor
+  listener and the profile name binding through restartable `start()` and
+  `dispose()` methods. `createHilosProfileRootStore()` exposes this same store
+  as `root.head`; its lifecycle owns that store, so a root view borrowing it
+  does not start a second listener. The Overview keeps its Account, name,
+  verified email, Theme, Time zone and deletion controls, while Sections and
+  summary listeners are gone. Its legacy session/device count inputs remain
+  optional and unused, `root.summaries` remains an empty readonly map, and the
+  section icon/id exports remain available for compatibility;
+- **`HilosProfileHead`** — the shared profile presentation exported from
+  `@hilos/vue/base`, `@hilos/react/base` and `@hilos/angular/base`, plus each
+  package's compatibility root. It adds no package entrypoint or eager admin
+  import. Every kit requires `context: HilosProfilePageContext` and accepts an
+  optional borrowed `HilosProfileHeadStore`; without a store, the component
+  creates and owns the store lifecycle, and with the Overview's store it leaves
+  that lifecycle to the root. Vue calls `claimNameBinding()` when it selects a
+  borrowed, already-started store. For the same context and scopes, this lets
+  that store reclaim its live name after the optional `store` becomes undefined
+  and the component uses its own store, including a project-provided name signal
+  that changed in the meantime. Vue does not start or dispose the borrowed
+  store, and the caller needs no extra lifecycle call or remount for this
+  handoff. React also exports `HilosProfileHeadProps`.
+  The component mounts the existing `HilosPageHead` as an entity with the
+  `Profile pages` row: the live name is the single `h1`, an `lg` avatar opens
+  the existing `HilosProfilePhoto` flow when photo changes are enabled, and the
+  description shows the passkey-only warning or verified address. The existing
+  `h1` uses `titleDataId="profile-identity-name"`. Each mount owns its photo
+  flow; React creates a fresh flow on every StrictMode effect setup so cleanup
+  can dispose the prior one safely. The Notifications page takes the broader
+  page context, including actions needed by the shared head, while the core
+  `HilosProfileNotificationsContext` and
+  `startHilosNotificationPreferences()` remain connection-and-scopes APIs.
+  Its stable hooks are `profile-identity`, `profile-identity-name`,
+  `profile-identity-email`, `profile-photo-open`, and
+  `profile-sign-in-passkey-only-line`. Project wrappers pass their existing
+  actions. The project extension is covered by the test-only
+  `project_profile_example` at `/profile/example`, not by a demo product route;
 - **`HilosHiddenMark`** and **`HilosHideable`** — the one mark of a value the
   server keeps from a viewer of the admin view mode, and the wrapper that draws
   a hideable value through its slot (a render function in React, a projected

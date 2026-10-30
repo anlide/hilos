@@ -10,6 +10,8 @@ import {
   current,
   legalContext,
 } from '../../../core/test/legal/fixtures.js'
+import { profileSectionFixture } from '../../../core/test/profile/profileSectionFixture.js'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfileAgreementsHistoryPage from './HilosProfileAgreementsHistoryPage.vue'
 
 afterEach(() => {
@@ -25,11 +27,20 @@ it('orders history newest first, marks current and accepted, and loads compariso
       resolve = done
     }),
   }))
-  const world = legalContext({ dispatch } as unknown as ActionLifecycle)
+  const world = legalContext({ dispatch } as unknown as ActionLifecycle, {
+    page: 'hilos_profile_agreements_history',
+  })
   const view = mount(HilosProfileAgreementsHistoryPage, {
     attachTo: document.body,
     props: { context: world.context },
-    global: { stubs: { HilosPageHeading: true } },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: profileSectionFixture(
+          world.context.scopes,
+          'hilos_profile_agreements_history',
+        ),
+      },
+    },
   })
   await flushPromises()
   expect(dispatch).not.toHaveBeenCalled()
@@ -66,15 +77,27 @@ it('orders history newest first, marks current and accepted, and loads compariso
 })
 
 it('keeps the server refusal inside the open dialog', async () => {
-  const world = legalContext({
-    dispatch: () => ({
-      done: Promise.reject(new ActionError('read', 'fail', 'No such revision')),
-    }),
-  } as unknown as ActionLifecycle)
+  const world = legalContext(
+    {
+      dispatch: () => ({
+        done: Promise.reject(
+          new ActionError('read', 'fail', 'No such revision'),
+        ),
+      }),
+    } as unknown as ActionLifecycle,
+    { page: 'hilos_profile_agreements_history' },
+  )
   const view = mount(HilosProfileAgreementsHistoryPage, {
     attachTo: document.body,
     props: { context: world.context },
-    global: { stubs: { HilosPageHeading: true } },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: profileSectionFixture(
+          world.context.scopes,
+          'hilos_profile_agreements_history',
+        ),
+      },
+    },
   })
   await flushPromises()
   await view.findAll('[data-id="legal-history-open"]')[0]!.trigger('click')

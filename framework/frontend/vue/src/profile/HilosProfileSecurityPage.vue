@@ -48,7 +48,7 @@ import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosBackupCodes from '../HilosBackupCodes.vue'
 import HilosModal from '../HilosModal.vue'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import HilosQrCode from '../HilosQrCode.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
@@ -487,7 +487,7 @@ watch(view, (current) => {
 
 <template>
   <section data-id="profile-security" class="mx-auto py-3">
-    <HilosPageHeading />
+    <HilosProfileHead :context="context" />
 
     <div v-if="state === null" class="text-body-secondary" role="status">
       Loading…

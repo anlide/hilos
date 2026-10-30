@@ -656,6 +656,10 @@ export {
   type HilosProfileRootStore,
 } from '../profile/profileRoot.js'
 export {
+  createHilosProfileHeadStore,
+  type HilosProfileHeadStore,
+} from '../profile/profileHead.js'
+export {
   createHilosProfileRename,
   createHilosProfileRenameFlow,
   HILOS_PROFILE_RENAME_COPY,

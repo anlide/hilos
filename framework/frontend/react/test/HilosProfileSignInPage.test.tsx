@@ -18,9 +18,9 @@ import {
   type HilosAuthContext,
   type HilosConnection,
   type HilosProfileSignInMethod,
-  type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
+import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { HilosConnectionInteractionContext } from '../src/hilosConnectionInteraction.js'
@@ -335,14 +335,7 @@ function setup(
   emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
   context.scopes.session.data.set('authMethods', offered)
   setMethods(context.scopes, methods)
-  const router = {
-    pageIdentity: createSignal(undefined),
-    currentRoute: createSignal({
-      page: 'hilos_profile_sign_in',
-      params: {},
-      admin: false,
-    }),
-  } as unknown as HilosRouter
+  const router = profileSectionFixture(context.scopes, 'hilos_profile_sign_in')
   const page = (
     <StrictMode>
       <HilosConnectionInteractionContext.Provider value={interaction}>

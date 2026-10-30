@@ -1,35 +1,25 @@
-<!-- The profile root (HIL-1169): the person's own line, the Account rows (Name, Email, Time zone, Theme), a row per catalog section with its live summary, and the danger zone. -->
+<!-- The profile root (HIL-1169): the person's own line, the Account rows (Name, Email, Time zone, Theme), the shared profile head and the danger zone. -->
 <script setup lang="ts">
 import {
   computedSignal,
   createHilosProfileEmailChangeFlow,
-  createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   createHilosTimeZonePicker,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
-  hilosChildLinks,
   hilosImpersonation,
   hilosSignedIn,
-  HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
-  HILOS_PROFILE_PHOTO_COPY as PHOTO_COPY,
-  hilosProfileSectionIcon,
-  hilosProfileSectionId,
   type HilosProfileBinding,
   type HilosProfilePageContext,
 } from '@hilos/core/base'
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
-import HilosAvatar from '../HilosAvatar.vue'
-import HilosLink from '../HilosLink.vue'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import { onMounted, onUnmounted, ref } from 'vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import LoadingButton from '../LoadingButton.vue'
-import { hilosRouterKey } from '../hilosRouterKey.js'
 import { useSignal } from '../useSignal.js'
 import HilosAccountDeletion from './HilosAccountDeletion.vue'
 import HilosProfileEmailChange from './HilosProfileEmailChange.vue'
 import HilosProfileRename from './HilosProfileRename.vue'
-import HilosProfilePhoto from './HilosProfilePhoto.vue'
 import HilosProfileTheme from './HilosProfileTheme.vue'
 import HilosProfileTimeZone from './HilosProfileTimeZone.vue'
 
@@ -37,28 +27,10 @@ const props = defineProps<{
   context: HilosProfilePageContext
   binding: HilosProfileBinding
 }>()
-const router = inject(hilosRouterKey)
-if (!router)
-  throw new Error('HilosProfilePage requires a provided Hilos router.')
-const identity = useSignal(router.pageIdentity)
-const route = useSignal(router.currentRoute)
 const root = createHilosProfileRootStore(props.context, props.binding)
-const hiddenSections = useSignal(root.hiddenSections)
-// A section the root hides has no row: two-step verification turned off by the
-// administrator, with nothing of the person's own standing (HIL-1303).
-const sections = computed(() =>
-  hilosChildLinks(
-    identity.value?.children ?? [],
-    route.value.params,
-    router.resolvePath,
-  ).filter((section) => !hiddenSections.value.includes(section.page)),
-)
+root.start()
 const signedIn = useSignal(root.signedIn)
-const photoEnabled = useSignal(root.photoEnabled)
-const photo = useSignal(root.photo)
-const summaries = useSignal(root.summaries)
 const verifiedEmail = useSignal(root.verifiedEmail)
-const passkeyOnly = useSignal(root.passkeyOnly)
 const theme = useSignal(root.theme)
 const timeZone = useSignal(root.timeZone)
 const impersonation = useSignal(hilosImpersonation)
@@ -80,18 +52,13 @@ const renameOpening = useSignal(
   computedSignal(() => rename?.stepUp.busy.get() ?? false),
 )
 const email = createHilosProfileEmailChangeFlow(props.context)
-const photoFlow = createHilosProfilePhotoFlow(props.context, root.photo)
 const emailOpening = useSignal(email.busy)
 
-onMounted(() => {
-  root.start()
-  rename?.start()
-})
+onMounted(() => rename?.start())
 onUnmounted(() => {
   rename?.dispose()
   root.dispose()
   email.dispose()
-  photoFlow.dispose()
   timeZonePicker.dispose()
 })
 
@@ -104,40 +71,7 @@ function openTimeZone(): void {
 
 <template>
   <section v-if="signedIn" data-id="profile-view">
-    <HilosPageHeading />
-    <div
-      v-if="name"
-      class="d-flex align-items-center gap-3 mt-3"
-      data-id="profile-identity"
-    >
-      <button
-        v-if="photoEnabled"
-        type="button"
-        data-id="profile-photo-open"
-        class="btn p-0 border-0 bg-transparent position-relative"
-        :title="PHOTO_COPY.open"
-        :aria-label="PHOTO_COPY.open"
-        @click="photoFlow.open()"
-      >
-        <HilosAvatar :name="name" :photo="photo" size="lg" />
-        <span
-          class="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
-          aria-hidden="true"
-          ><i class="bi bi-camera"></i
-        ></span>
-      </button>
-      <HilosAvatar v-else :name="name" :photo="photo" size="lg" />
-      <div class="flex-grow-1 text-break">
-        <div class="h5 mb-0" data-id="profile-identity-name">{{ name }}</div>
-        <div
-          v-if="verifiedEmail"
-          class="small text-body-secondary"
-          data-id="profile-identity-email"
-        >
-          {{ verifiedEmail }}
-        </div>
-      </div>
-    </div>
+    <HilosProfileHead v-if="name" :context="context" :store="root.head" />
     <h2 class="h6 text-uppercase text-body-secondary mt-4 mb-2">
       {{ COPY.account }}
     </h2>
@@ -236,52 +170,8 @@ function openTimeZone(): void {
     <p v-else class="text-body-secondary" data-id="profile-loading">
       {{ COPY.loading }}
     </p>
-    <section class="mt-4" aria-labelledby="profile-sections-heading">
-      <h2
-        id="profile-sections-heading"
-        class="h6 text-uppercase text-body-secondary mb-2"
-      >
-        {{ COPY.sections }}
-      </h2>
-      <div
-        v-for="section in sections"
-        :key="section.page"
-        class="d-flex align-items-center gap-3 py-3 border-bottom"
-        data-id="profile-section"
-      >
-        <i
-          class="bi fs-5 text-body-secondary"
-          :class="hilosProfileSectionIcon(section.page)"
-          aria-hidden="true"
-        ></i>
-        <div class="flex-grow-1 text-break">
-          <div class="fw-semibold small">{{ section.label }}</div>
-          <div
-            class="small text-body-secondary"
-            :data-id="`${hilosProfileSectionId(section.page)}-summary`"
-          >
-            {{ summaries[section.page] ?? '' }}
-          </div>
-          <div
-            v-if="section.page === HilosPages.PROFILE_SIGN_IN && passkeyOnly"
-            class="small text-warning-emphasis"
-            data-id="profile-sign-in-passkey-only-line"
-          >
-            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i
-            >{{ COPY.passkeyOnly }}
-          </div>
-        </div>
-        <HilosLink
-          :to="section.to"
-          class="btn btn-sm btn-outline-secondary"
-          :data-id="`${hilosProfileSectionId(section.page)}-open`"
-          >{{ COPY.open }}</HilosLink
-        >
-      </div>
-    </section>
     <HilosAccountDeletion :context="context" />
     <HilosProfileRename v-if="rename" :flow="rename" />
-    <HilosProfilePhoto v-if="photoEnabled" :flow="photoFlow" />
     <HilosProfileEmailChange :flow="email" />
     <HilosProfileTheme v-model="themeOpen" />
     <HilosProfileTimeZone v-model="timeZoneOpen" :picker="timeZonePicker" />

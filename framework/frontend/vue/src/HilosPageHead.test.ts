@@ -205,6 +205,83 @@ describe('HilosPageHead', () => {
     expect(block.text()).not.toContain('What is still untranslated.')
   })
 
+  it('replaces the title hook on the same h1 through renames and restores its default', async () => {
+    const head = mountHead({
+      identity: ENTITY,
+      page: 'demo_entity_names',
+      params: ENTITY_PARAMS,
+      kind: 'entity',
+      headingId: 'entity-heading',
+      titleDataId: 'custom-title',
+    })
+    const heading = head.get('h1').element
+
+    expect(head.findAll('h1')).toHaveLength(1)
+    expect(head.get('[data-id="custom-title"]').element).toBe(heading)
+    expect(heading.id).toBe('entity-heading')
+    expect(heading.textContent?.trim()).toBe('United States')
+    expect(head.find('[data-id="hilos-page-head-title"]').exists()).toBe(false)
+
+    await head.setProps({
+      identity: {
+        ...ENTITY,
+        pageHeadOwner: { ...ENTITY.pageHeadOwner!, label: 'Renamed entity' },
+      },
+    })
+    expect(head.get('[data-id="custom-title"]').element).toBe(heading)
+    expect(heading.textContent?.trim()).toBe('Renamed entity')
+
+    for (const titleDataId of ['replacement-title', '', undefined]) {
+      await head.setProps({ titleDataId })
+
+      expect(head.findAll('h1')).toHaveLength(1)
+      expect(head.get('h1').element).toBe(heading)
+      expect(heading.id).toBe('entity-heading')
+      expect(heading.getAttribute('data-id')).toBe(
+        titleDataId ?? 'hilos-page-head-title',
+      )
+      expect(heading.textContent?.trim()).toBe('Renamed entity')
+      expect(head.find('[data-id="custom-title"]').exists()).toBe(false)
+    }
+  })
+
+  it.each([
+    { state: 'before the answer', identity: undefined },
+    {
+      state: 'without an owner',
+      identity: {
+        label: ENTITY.label,
+        lead: ENTITY.lead,
+        breadcrumb: ENTITY.breadcrumb,
+        children: [],
+      },
+    },
+  ])(
+    'keeps the custom title hook out of the skeleton $state',
+    async ({ identity }) => {
+      const head = mountHead({ identity, titleDataId: 'custom-title' })
+
+      expect(head.findAll('h1')).toHaveLength(0)
+      expect(head.find('[data-id="custom-title"]').exists()).toBe(false)
+      expect(head.find('[data-id="hilos-page-head-title"]').exists()).toBe(
+        false,
+      )
+      expect(
+        head
+          .get('[data-id="hilos-page-head-skeleton"]')
+          .attributes('aria-hidden'),
+      ).toBe('true')
+
+      await head.setProps({ identity: ENTITY })
+
+      expect(head.findAll('h1')).toHaveLength(1)
+      expect(head.get('[data-id="custom-title"]').element.tagName).toBe('H1')
+      expect(head.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(
+        false,
+      )
+    },
+  )
+
   it('gives the h1 an id of its own when the caller hands none', () => {
     const head = mountHead()
 

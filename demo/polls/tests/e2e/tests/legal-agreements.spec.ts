@@ -8,12 +8,12 @@ import {
 test('reads personal agreements and compares published revisions', async ({
   page,
 }) => {
-  await createTestUser(expect, page)
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
-    'Terms and privacy accepted',
+  await clickSubmit(
+    expect,
+    page.getByTestId('hilos-page-tab-hilos_profile_agreements'),
   )
-  await clickSubmit(expect, page.getByTestId('profile-agreements-open'))
   await expect(page.getByTestId('profile-agreements-view')).toBeVisible()
   await expect(page.getByTestId('legal-agreement-row')).toHaveCount(2)
   const terms = page.locator(
@@ -36,15 +36,13 @@ test('reads personal agreements and compares published revisions', async ({
   await expect(
     page.getByTestId('profile-agreements-history-view'),
   ).toBeVisible()
-  await expect(page.getByTestId('hilos-breadcrumb-hilos_profile')).toHaveText(
-    'Profile',
-  )
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
   await expect(
-    page.getByTestId('hilos-breadcrumb-hilos_profile_agreements'),
-  ).toHaveText('Agreements')
-  await expect(page.getByTestId('hilos-page-title')).toHaveText(
-    'Revision history',
-  )
+    page.getByTestId('hilos-page-tab-hilos_profile_agreements_history'),
+  ).toHaveAttribute('aria-current', 'page')
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_profile_agreements'),
+  ).not.toHaveAttribute('aria-current', 'page')
   const history = page.locator(
     '[data-id="legal-history-document"][data-document="terms"]',
   )

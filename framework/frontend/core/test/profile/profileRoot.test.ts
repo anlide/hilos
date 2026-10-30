@@ -1,12 +1,11 @@
 // Covers the profile root's state (HIL-1169): the row icons and ids, the
-// summary of each section from the page's answer and browser lists, the
+// shared head and removal of summary sources, the
 // verified address the Email row shows, the Theme row line (HIL-1434), and the
 // Security row once two-step verification is turned off for everyone
 // (HIL-1303).
 import { describe, expect, it, vi } from 'vitest'
 import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
-import { describeHilosNotificationChannels } from '../../src/notifications/notificationPreferences.js'
 import { HILOS_PROFILE_IDENTITIES_LIST } from '../../src/profile/profileIdentities.js'
 import {
   type HandshakeSignal,
@@ -209,25 +208,56 @@ describe('profile root rows', () => {
 })
 
 describe('profile root store', () => {
-  it('summarizes the framework sections from the answer and leaves the project ones out without lists', () => {
-    const store = rootStore(answeredScopes(), nameOnly())
+  it('shares one head and never reads removed summaries or compatibility counts', () => {
+    const scopes = answeredScopes()
+    const page = scopes.page()!
+    page.data.set('pageLabel', 'Profile')
+    page.data.set('pageHeadOwner', {
+      page: HilosPages.PROFILE,
+      label: 'Profile',
+      lead: '',
+    })
+    page.data.set('pageTabs', [{ page: HilosPages.PROFILE, label: 'Overview' }])
+    const name = createSignal('Ann')
+    const readCount = vi.fn(() => 2)
+    const connection = fakeConnection()
+    const store = createHilosProfileRootStore(
+      {
+        scopes,
+        connection: connection as unknown as HilosConnection,
+        actions: {} as ActionLifecycle,
+      },
+      {
+        name,
+        rename: null,
+        sessionCount: { get: readCount },
+        deviceCount: { get: readCount },
+      },
+    )
+    const empty = store.summaries.get()
     store.start()
-
-    const summaries = store.summaries.get()
-    expect(summaries[HilosPages.PROFILE_SECURITY]).toBe(
-      'Two-step verification is off',
-    )
-    expect(summaries[HilosPages.PROFILE_NOTIFICATIONS]).toBe(
-      describeHilosNotificationChannels([
-        { channel: 'email', label: 'Email', allowed: true, hasAddress: true },
-      ]),
-    )
-    expect(summaries[HilosPages.PROFILE_DATA]).toBeDefined()
-    expect(summaries[HilosPages.PROFILE_AGREEMENTS]).toBeDefined()
-    expect(summaries[HilosPages.PROFILE_SIGN_IN]).toBe('No ways to sign in')
-    expect(summaries).not.toHaveProperty(HilosPages.PROFILE_SESSIONS)
-    expect(summaries).not.toHaveProperty(HilosPages.PROFILE_DEVICES)
-    expect(store.verifiedEmail.get()).toBeNull()
+    store.start()
+    expect(connection.listenerCount()).toBe(1)
+    expect(store.head.identity.get()?.pageHeadOwner?.label).toBe('Ann')
+    expect(store.photo).toBe(store.head.photo)
+    expect(store.photoEnabled).toBe(store.head.photoEnabled)
+    expect(store.verifiedEmail).toBe(store.head.verifiedEmail)
+    expect(store.passkeyOnly).toBe(store.head.passkeyOnly)
+    expect(store.hiddenSections).toBe(store.head.hiddenSections)
+    expect(empty).toEqual({})
+    page.data.set('notificationPreferences', { channels: [] })
+    page.data.set('legalAgreements', { documents: [] })
+    page.data.set('dataExport', { status: 'ready' })
+    expect(store.summaries.get()).toBe(empty)
+    expect(readCount).not.toHaveBeenCalled()
+    name.set('Beth')
+    expect(store.head.identity.get()?.pageHeadOwner?.label).toBe('Beth')
+    store.dispose()
+    expect(connection.listenerCount()).toBe(0)
+    expect(store.head.identity.get()?.pageHeadOwner?.label).toBe('Profile')
+    store.start()
+    expect(connection.listenerCount()).toBe(1)
+    expect(store.head.identity.get()?.pageHeadOwner?.label).toBe('Beth')
     store.dispose()
   })
 
@@ -239,7 +269,7 @@ describe('profile root store', () => {
     expect(store.signedIn.get()).toBe(false)
   })
 
-  it('says two-step verification is on once an authenticator is there', () => {
+  it('keeps Security available once an authenticator is there', () => {
     const store = rootStore(
       answeredScopes([
         { id: 7, label: 'Phone', createdAt: 1, lastUsedAt: null },
@@ -247,14 +277,11 @@ describe('profile root store', () => {
       nameOnly(),
     )
     store.start()
-
-    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
-      'Two-step verification is on',
-    )
+    expect(store.hiddenSections.get()).toEqual([])
     store.dispose()
   })
 
-  it('says the administrator turned two-step verification off, and keeps the row for a person with an app', () => {
+  it('keeps Security for a person with an app when the administrator turns it off', () => {
     const store = rootStore(
       answeredScopes(
         [{ id: 7, label: 'Phone', createdAt: 1, lastUsedAt: null }],
@@ -264,9 +291,6 @@ describe('profile root store', () => {
     )
     store.start()
 
-    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
-      'Turned off by your administrator',
-    )
     expect(store.hiddenSections.get()).toStrictEqual([])
     store.dispose()
   })
@@ -300,9 +324,6 @@ describe('profile root store', () => {
     const unanswered = rootStore(scopes, nameOnly())
     unanswered.start()
     expect(unanswered.hiddenSections.get()).toStrictEqual([])
-    expect(unanswered.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
-      'Two-step verification is off',
-    )
     unanswered.dispose()
 
     const on = rootStore(answeredScopes(), nameOnly())
@@ -328,22 +349,16 @@ describe('profile root store', () => {
     }
 
     connection.emit(SIGNAL_SECOND_FACTOR_POLICY, policy)
-    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
-      'Turned off by your administrator',
-    )
     expect(store.hiddenSections.get()).toStrictEqual([
       HilosPages.PROFILE_SECURITY,
     ])
 
     connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...policy, enabled: true })
-    expect(store.summaries.get()[HilosPages.PROFILE_SECURITY]).toBe(
-      'Two-step verification is off',
-    )
     expect(store.hiddenSections.get()).toStrictEqual([])
     store.dispose()
   })
 
-  it('summarizes the framework list and project lists live', () => {
+  it('follows the common identity list while legacy counts have no projection', () => {
     const scopes = answeredScopes()
     setWaysIn(scopes, [password, key])
     const sessions = createSignal(1)
@@ -355,23 +370,12 @@ describe('profile root store', () => {
     })
     store.start()
 
-    expect(store.summaries.get()[HilosPages.PROFILE_SIGN_IN]).toBe(
-      'Password, 1 passkey',
-    )
-    expect(store.summaries.get()[HilosPages.PROFILE_SESSIONS]).toBe(
-      '1 active sign-in',
-    )
-    expect(store.summaries.get()[HilosPages.PROFILE_DEVICES]).toBe(
-      '2 subscribed to push',
-    )
     expect(store.verifiedEmail.get()).toBe('a@example.test')
+    expect(store.hiddenSections.get()).toEqual([])
+    expect(store.summaries.get()).toEqual({})
 
     sessions.set(3)
     setWaysIn(scopes, [key])
-    expect(store.summaries.get()[HilosPages.PROFILE_SESSIONS]).toBe(
-      '3 active sign-ins',
-    )
-    expect(store.summaries.get()[HilosPages.PROFILE_SIGN_IN]).toBe('1 passkey')
     expect(store.verifiedEmail.get()).toBeNull()
     store.dispose()
   })

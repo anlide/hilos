@@ -25,6 +25,8 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 
+import { profileSectionFixture } from '../../../core/test/profile/profileSectionFixture.js'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfileSecurityPage from './HilosProfileSecurityPage.vue'
 
 // The modals teleport to <body>, so assertions query the document.
@@ -115,10 +117,18 @@ function pageWorld(
     },
   } as unknown as ActionLifecycle
 
+  const scopes = new ScopeManager()
   const wrapper = mount(HilosProfileSecurityPage, {
     attachTo: document.body,
-    global: { stubs: { HilosPageHeading: true } },
-    props: { context: { connection, scopes: new ScopeManager(), actions } },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: profileSectionFixture(
+          scopes,
+          'hilos_profile_security',
+        ),
+      },
+    },
+    props: { context: { connection, scopes, actions } },
   })
   const push = (next: object): void => {
     for (const listener of listeners) {

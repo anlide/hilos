@@ -14,7 +14,7 @@ import {
 } from '@hilos/core/base'
 import HilosLink from '../HilosLink.vue'
 import HilosModal from '../HilosModal.vue'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import HilosLegalChanges from '../legal/HilosLegalChanges.vue'
 import HilosLegalRevisionText from '../legal/HilosLegalRevisionText.vue'
 import { useSignal } from '../useSignal.js'
@@ -76,7 +76,7 @@ function openChanges(agreement: HilosLegalAgreement): void {
 
 <template>
   <div data-id="profile-agreements-view">
-    <HilosPageHeading />
+    <HilosProfileHead :context="context" />
     <template v-if="state && texts">
       <p class="small text-body-secondary">
         These are the revisions you accepted. The current text may have changed

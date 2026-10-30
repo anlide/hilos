@@ -10,16 +10,16 @@ import {
   HILOS_DATA_EXPORT_COPY,
   type HilosDataExportContext,
 } from '@hilos/core/base'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosDataExport } from './HilosDataExport.js'
 
 /** The profile's personal-copy section, over the shared export flow. */
 @Component({
   selector: 'hilos-profile-data-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosPageHeading, HilosDataExport],
+  imports: [HilosProfileHead, HilosDataExport],
   template: `<section data-id="profile-data-view">
-    <hilos-page-heading />
+    <hilos-profile-head [context]="context()" />
     @if (copy(); as current) {
       <hilos-data-export
         [store]="current.store"

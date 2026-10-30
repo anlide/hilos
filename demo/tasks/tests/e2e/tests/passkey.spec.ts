@@ -256,45 +256,64 @@ test('creates a passkey account without an address from the empty field and sign
 
 test('warns a passkey-only account on the profile and adds a password from the warning', async ({
   page,
+  context,
 }) => {
   await addVirtualAuthenticator(page)
   await gotoPage(expect, page, '/profile')
   await createAccountWithPasskey(expect, page)
   await continueFromDone(expect, page)
 
-  // The overview says it under the row, without opening the section (HIL-1166).
+  // The shared head warns before the sign-in section is opened.
   await expect(
     page.getByTestId('profile-sign-in-passkey-only-line'),
   ).toBeVisible()
 
-  await gotoPage(expect, page, '/profile/sign-in')
-  const warning = page.getByTestId('profile-sign-in-passkey-only')
-  await expect(warning).toBeVisible()
-  await expect(
-    warning.getByTestId('profile-sign-in-passkey-only-password'),
-  ).toBeVisible()
-  await expect(
-    warning.getByRole('button', { name: 'Passkey', exact: true }),
-  ).toHaveCount(0)
+  const receiving = await context.newPage()
+  try {
+    await gotoPage(expect, receiving, '/profile/data')
+    await expect(
+      receiving.getByTestId('profile-sign-in-passkey-only-line'),
+    ).toBeVisible()
+    let reloads = 0
+    receiving.on('load', () => {
+      reloads += 1
+    })
+    await gotoPage(expect, page, '/profile/sign-in')
+    const warning = page.getByTestId('profile-sign-in-passkey-only')
+    await expect(warning).toBeVisible()
+    await expect(
+      warning.getByTestId('profile-sign-in-passkey-only-password'),
+    ).toBeVisible()
+    await expect(
+      warning.getByRole('button', { name: 'Passkey', exact: true }),
+    ).toHaveCount(0)
 
-  // The button opens the window on the password itself; the confirmation first
-  // is answered by the same device key the account lives on.
-  await clickSubmit(
-    expect,
-    warning.getByTestId('profile-sign-in-passkey-only-password'),
-  )
-  await clickSubmit(
-    expect,
-    page.getByTestId('profile-sign-in-add-step-up-confirm'),
-  )
-  await expect(page.getByTestId('profile-sign-in-choose-password')).toHaveCount(
-    0,
-  )
-  await addPasswordFromAddressStep(expect, page, uniqueEmail())
+    // The button opens the window on the password itself; the confirmation first
+    // is answered by the same device key the account lives on.
+    await clickSubmit(
+      expect,
+      warning.getByTestId('profile-sign-in-passkey-only-password'),
+    )
+    await clickSubmit(
+      expect,
+      page.getByTestId('profile-sign-in-add-step-up-confirm'),
+    )
+    await expect(
+      page.getByTestId('profile-sign-in-choose-password'),
+    ).toHaveCount(0)
+    await addPasswordFromAddressStep(expect, page, uniqueEmail())
 
-  // The new way arrives in the live list and takes the warning with it.
-  await expect(page.getByTestId('profile-password-change')).toBeVisible()
-  await expect(warning).toHaveCount(0)
+    // The new way arrives in the live list and takes the warning with it.
+    await expect(page.getByTestId('profile-password-change')).toBeVisible()
+    await expect(warning).toHaveCount(0)
+    await expect(
+      receiving.getByTestId('profile-sign-in-passkey-only-line'),
+    ).toHaveCount(0)
+    await expect(receiving.getByTestId('profile-identity-email')).toBeVisible()
+    expect(reloads).toBe(0)
+  } finally {
+    await receiving.close()
+  }
 })
 
 test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {

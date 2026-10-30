@@ -1,33 +1,9 @@
-// The profile root (HIL-1169): the page every project mounts at /profile. The
-// framework draws it — the person's own line, the Account rows (Name, Email,
-// Theme), a row per section of the catalog with its live summary, the danger zone —
-// and the project hands it only what the framework cannot know: the person's name,
-// its own rename if it has one, and its session and device summary lists. The
-// framework's identities list supplies the account's ways in.
-//
-// The summaries of the framework's own sections come from the answer of the
-// page (notifications, two-step verification, agreements, the data copy) and
-// stay live through their stores; a summary whose list the project did not hand
-// over is empty. A section with nothing to show the person has no row at all:
-// two-step verification turned off by the administrator, for a person with no
-// app and no removal standing (HIL-1303).
+// The profile Overview owns Account and deletion; its shared head owns identity
+// and catalog navigation on every profile page.
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
-import {
-  createHilosLegalAgreementsStore,
-  describeHilosLegalAgreements,
-} from '../legal/legalAgreements.js'
-import {
-  describeHilosNotificationChannels,
-  hilosNotificationPreferences,
-  startHilosNotificationPreferences,
-} from '../notifications/notificationPreferences.js'
 import { HilosPages } from '../routing/hilosPages.js'
-import {
-  sessionAuthMethods,
-  sessionUserId,
-  sessionUserPhoto,
-} from '../session/sessionScope.js'
+import { sessionUserId } from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { THEME_COPY, THEME_POSITIONS } from '../theme/themeChoice.js'
@@ -38,18 +14,10 @@ import {
   hilosTimeZone,
 } from '../timeZone/timeZoneState.js'
 import {
-  createHilosDataExportStore,
-  describeHilosDataExport,
-  profileDataExportNode,
-} from './dataExport.js'
-import { createHilosProfileSignInMethods } from './profileIdentities.js'
-import {
-  describeHilosProfileSignInMethods,
-  hilosProfilePasswordState,
-  isHilosProfilePasskeyOnly,
-} from './profileSignInMethods.js'
+  createHilosProfileHeadStore,
+  type HilosProfileHeadStore,
+} from './profileHead.js'
 import { type HilosProfileRename } from './profileRename.js'
-import { createHilosSecondFactorStore } from './secondFactor.js'
 
 /** The connection, scopes and actions the profile root and its windows run over. */
 export interface HilosProfilePageContext {
@@ -67,10 +35,10 @@ export interface HilosProfileBinding {
   readonly name: ReadonlySignal<string>
   /** The project's own rename, or null — Name then shows without Change. */
   readonly rename: HilosProfileRename | null
-  /** How many sign-ins are active, or null for an empty summary. */
-  readonly sessionCount: ReadonlySignal<number> | null
-  /** How many devices take push, or null for an empty summary. */
-  readonly deviceCount: ReadonlySignal<number> | null
+  /** Retained for compatibility; Overview no longer reads session counts. */
+  readonly sessionCount?: ReadonlySignal<number> | null
+  /** Retained for compatibility; Overview no longer reads device counts. */
+  readonly deviceCount?: ReadonlySignal<number> | null
 }
 
 /** The profile root's words, as the chat profile had them. */
@@ -92,12 +60,6 @@ export const HILOS_PROFILE_ROOT_COPY = {
 
 /** The prefix every profile section's page key carries. */
 const SECTION_PAGE_PREFIX = 'hilos_profile_'
-
-/** No section hidden — one value, so a recomputation that hides none is no change. */
-const NO_HIDDEN_SECTIONS: readonly string[] = []
-
-/** Two-step verification hidden — one value, for the same reason. */
-const SECURITY_HIDDEN: readonly string[] = [HilosPages.PROFILE_SECURITY]
 
 /**
  * The icon of a section row; a project's own section under the profile gets a folder.
@@ -134,8 +96,10 @@ export function hilosProfileSectionId(page: string): string {
   return `profile-${page.replace(SECTION_PAGE_PREFIX, '').replaceAll('_', '-')}`
 }
 
-/** The profile root's live state: who is signed in, the rows' summaries and the verified address. */
+/** The profile Overview's account facts and its caller-owned shared head. */
 export interface HilosProfileRootStore {
+  /** The shared head borrowed by the view; this root owns its lifetime. */
+  readonly head: HilosProfileHeadStore
   /**
    * Whether a person is signed in; without one the page draws only its
    * placeholder, until the shell's sign-in surface takes its place.
@@ -145,10 +109,10 @@ export interface HilosProfileRootStore {
   readonly photoEnabled: ReadonlySignal<boolean>
   /** Current published photo URL from the session identity, or null. */
   readonly photo: ReadonlySignal<string | null>
-  /** Summary per section page key; a key absent here has none. */
+  /** Stable empty map retained for compatibility; no summary sources are read. */
   readonly summaries: ReadonlySignal<Readonly<Record<string, string>>>
   /**
-   * The page keys of the sections the root draws no row for, live: two-step
+   * The page keys omitted from the shared navigation, live: two-step
    * verification once the administrator turned it off, while the person has
    * no app and no removal standing (HIL-1303).
    */
@@ -157,7 +121,7 @@ export interface HilosProfileRootStore {
   readonly verifiedEmail: ReadonlySignal<string | null>
   /**
    * Whether device keys are the account's only way in (HIL-1166) — the warning
-   * line under the sign-in row; false while the list is empty.
+   * line under the name; false while the list is empty.
    */
   readonly passkeyOnly: ReadonlySignal<boolean>
   /**
@@ -177,7 +141,7 @@ export interface HilosProfileRootStore {
 }
 
 /**
- * Create the profile root's state over the framework's section stores and the project's binding.
+ * Create the profile Overview's account projection and one shared head.
  * The ways in come from the framework browser list in the page scope.
  *
  * @param context The page's connection, scopes and actions.
@@ -187,72 +151,19 @@ export function createHilosProfileRootStore(
   context: HilosProfilePageContext,
   binding: HilosProfileBinding,
 ): HilosProfileRootStore {
-  const secondFactor = createHilosSecondFactorStore(context)
-  const agreements = createHilosLegalAgreementsStore(context)
-  const dataExport = createHilosDataExportStore(
-    context.connection,
-    profileDataExportNode(context.scopes),
-  )
-  const offered = sessionAuthMethods(context.scopes)
-  const methods = createHilosProfileSignInMethods(context.scopes)
+  const head = createHilosProfileHeadStore(context, binding.name)
   const userId = sessionUserId(context.scopes)
-  const photo = sessionUserPhoto(context.scopes)
-  const photoEnabledField = context.scopes.pageDataSignal('profilePhoto')
-  let stopPreferences: (() => void) | null = null
-  let stopAgreements: (() => void) | null = null
-
-  const summaries = computedSignal(() => {
-    const sessions = binding.sessionCount?.get()
-    const devices = binding.deviceCount?.get()
-    const security = secondFactor.state.get()
-    const summary: Record<string, string> = {
-      [HilosPages.PROFILE_NOTIFICATIONS]: describeHilosNotificationChannels(
-        hilosNotificationPreferences.channels.get(),
-      ),
-      [HilosPages.PROFILE_AGREEMENTS]: describeHilosLegalAgreements(
-        agreements.state.get(),
-      ),
-      [HilosPages.PROFILE_DATA]: describeHilosDataExport(
-        dataExport.state.get(),
-      ),
-      [HilosPages.PROFILE_SECURITY]:
-        security?.enabled === false
-          ? 'Turned off by your administrator'
-          : `Two-step verification is ${
-              security?.authenticators.length ? 'on' : 'off'
-            }`,
-    }
-    summary[HilosPages.PROFILE_SIGN_IN] = describeHilosProfileSignInMethods(
-      methods.get(),
-      offered.get(),
-    )
-    if (sessions !== undefined)
-      summary[HilosPages.PROFILE_SESSIONS] =
-        sessions === 1 ? '1 active sign-in' : `${sessions} active sign-ins`
-    if (devices !== undefined)
-      summary[HilosPages.PROFILE_DEVICES] = `${devices} subscribed to push`
-    return summary
-  })
+  const summaries = computedSignal<Readonly<Record<string, string>>>(() => ({}))
 
   return {
+    head,
     signedIn: computedSignal(() => userId.get() !== null),
-    photoEnabled: computedSignal(() => photoEnabledField.get() === true),
-    photo,
+    photoEnabled: head.photoEnabled,
+    photo: head.photo,
     summaries,
-    hiddenSections: computedSignal(() => {
-      const security = secondFactor.state.get()
-
-      return security !== null &&
-        !security.enabled &&
-        security.authenticators.length === 0 &&
-        security.reset === null
-        ? SECURITY_HIDDEN
-        : NO_HIDDEN_SECTIONS
-    }),
-    verifiedEmail: computedSignal(
-      () => hilosProfilePasswordState(methods.get()).verifiedEmail,
-    ),
-    passkeyOnly: computedSignal(() => isHilosProfilePasskeyOnly(methods.get())),
+    hiddenSections: head.hiddenSections,
+    verifiedEmail: head.verifiedEmail,
+    passkeyOnly: head.passkeyOnly,
     theme: computedSignal(() => {
       const choice = hilosThemeChoice.get()
       if (choice === null) {
@@ -274,18 +185,10 @@ export function createHilosProfileRootStore(
         : `${browser ?? effective} · ${HILOS_PROFILE_ROOT_COPY.automatic}`
     }),
     start() {
-      stopPreferences ??= startHilosNotificationPreferences(context)
-      secondFactor.start()
-      stopAgreements ??= agreements.start()
-      dataExport.start()
+      head.start()
     },
     dispose() {
-      stopPreferences?.()
-      stopPreferences = null
-      secondFactor.dispose()
-      stopAgreements?.()
-      stopAgreements = null
-      dataExport.dispose()
+      head.dispose()
     },
   }
 }

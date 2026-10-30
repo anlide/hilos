@@ -1,4 +1,5 @@
 import {
+  ActionLifecycle,
   createSignal,
   ScopeManager,
   hilosNotificationPreferences,
@@ -8,7 +9,13 @@ import {
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { hilosRouterKey } from '../hilosRouterKey.js'
+import { profileSectionFixture } from '../../../core/test/profile/profileSectionFixture.js'
 import HilosProfileNotificationsPage from './HilosProfileNotificationsPage.vue'
+
+const actions = new ActionLifecycle({
+  sendAction: () => true,
+  on: () => () => {},
+})
 
 describe('profile notifications page', () => {
   it('renders channels from the subscription and releases them on unmount', async () => {
@@ -28,8 +35,15 @@ describe('profile notifications page', () => {
       })
     const connection = { on: () => () => {} } as unknown as HilosConnection
     const wrapper = mount(HilosProfileNotificationsPage, {
-      props: { context: { connection, scopes } },
-      global: { stubs: { HilosPageHeading: true } },
+      props: { context: { connection, scopes, actions } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: {
+            ...profileSectionFixture(scopes, 'hilos_profile_notifications'),
+            resolvePath: () => undefined,
+          },
+        },
+      },
     })
     await flushPromises()
     expect(wrapper.get('h2').text()).toBe('Delivery channels')
@@ -59,16 +73,16 @@ describe('profile notifications page', () => {
     })
     const connection = { on: () => () => {} } as unknown as HilosConnection
     const router = {
+      ...profileSectionFixture(scopes, 'hilos_profile_notifications'),
       currentPath: createSignal('/profile/notifications'),
       resolvePath: (key: string) =>
         key === 'hilos_profile_sign_in' ? '/profile/sign-in' : undefined,
       navigate: () => {},
     } as unknown as HilosRouter
     const linked = mount(HilosProfileNotificationsPage, {
-      props: { context: { connection, scopes } },
+      props: { context: { connection, scopes, actions } },
       global: {
         provide: { [hilosRouterKey as symbol]: router },
-        stubs: { HilosPageHeading: true },
       },
     })
     await flushPromises()
@@ -80,8 +94,15 @@ describe('profile notifications page', () => {
     linked.unmount()
 
     const plain = mount(HilosProfileNotificationsPage, {
-      props: { context: { connection, scopes } },
-      global: { stubs: { HilosPageHeading: true } },
+      props: { context: { connection, scopes, actions } },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: {
+            ...profileSectionFixture(scopes, 'hilos_profile_notifications'),
+            resolvePath: () => undefined,
+          },
+        },
+      },
     })
     await flushPromises()
     expect(

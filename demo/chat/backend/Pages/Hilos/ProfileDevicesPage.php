@@ -24,6 +24,7 @@ final class ProfileDevicesPage extends AbstractHilosProfileDevicesPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
     public const array READS_DB = [
+        ...parent::READS_DB,
         ChatDbContext::identities,
         ChatDbContext::notificationPreferences,
         ChatDbContext::pushSubscriptions,
@@ -37,7 +38,7 @@ final class ProfileDevicesPage extends AbstractHilosProfileDevicesPage
      * @return ?PagePayload Notification-section payload, or null outside a signed-in session
      * @throws DatabaseException When a preference or address lookup query fails
      */
-    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    protected function buildProfilePagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
             return null;

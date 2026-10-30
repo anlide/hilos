@@ -14,5 +14,5 @@ use Hilos\Pages\AbstractHilosProfileSessionsPage;
 final class ProfileSessionsPage extends AbstractHilosProfileSessionsPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::POLLS;
-    public const array READS_DB = [PollsDbContext::sessions];
+    public const array READS_DB = [...parent::READS_DB, PollsDbContext::sessions];
 }

@@ -198,6 +198,10 @@ export {
   type HilosProfilePageProps,
 } from '../profile/HilosProfilePage.js'
 export {
+  HilosProfileHead,
+  type HilosProfileHeadProps,
+} from '../profile/HilosProfileHead.js'
+export {
   HilosProfileRename,
   type HilosProfileRenameProps,
 } from '../profile/HilosProfileRename.js'

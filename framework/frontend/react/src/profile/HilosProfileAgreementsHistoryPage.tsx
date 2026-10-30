@@ -12,7 +12,7 @@ import {
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 import { useSignal } from '../useSignal.js'
@@ -53,7 +53,7 @@ export function HilosProfileAgreementsHistoryPage({
     : ''
   return (
     <div data-id="profile-agreements-history-view">
-      <HilosPageHeading />
+      <HilosProfileHead context={context} />
       {state ? (
         <>
           {history.length === 0 && (

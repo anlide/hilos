@@ -47,6 +47,7 @@ export {
 export { default as HilosAdminPage } from '../HilosAdminPage.vue'
 export { default as HilosPageHead } from '../HilosPageHead.vue'
 export { default as HilosPageHeading } from '../HilosPageHeading.vue'
+export { default as HilosProfileHead } from '../profile/HilosProfileHead.vue'
 export { default as HilosProfilePage } from '../profile/HilosProfilePage.vue'
 export { default as HilosProfileRename } from '../profile/HilosProfileRename.vue'
 export { default as HilosProfilePhoto } from '../profile/HilosProfilePhoto.vue'

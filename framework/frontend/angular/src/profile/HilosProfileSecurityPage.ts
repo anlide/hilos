@@ -55,7 +55,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosModal } from '../HilosModal.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
@@ -115,7 +115,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
     HilosActionError,
     HilosBackupCodes,
     HilosModal,
-    HilosPageHeading,
+    HilosProfileHead,
     HilosQrCode,
     HilosStepUpStep,
     LoadingButton,
@@ -148,7 +148,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
     </ng-template>
 
     <section data-id="profile-security" class="mx-auto py-3">
-      <hilos-page-heading />
+      <hilos-profile-head [context]="context()" />
 
       @if (state(); as section) {
         @if (view() === 'turnedOff') {

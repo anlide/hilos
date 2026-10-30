@@ -24,7 +24,7 @@ use Hilos\DataExport\DataExportGroup;
 use Hilos\DataExport\DataExportStateProjector;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
-/** The data section and profile carry the person's own copy and join its live group. */
+/** Only the Data section carries the person's own copy and joins its live group. */
 final class ProfileDataPageTest extends IntegrationTestCase
 {
     private const string ACCEPT_KEY = 'profile-data-test';
@@ -65,8 +65,8 @@ final class ProfileDataPageTest extends IntegrationTestCase
         }
     }
 
-    /** Both pages expose only the current person's request, including its initial absence. */
-    public function testBothPagesCarryAbsenceThenOwnCopyAndJoinTheGroup(): void
+    /** Data exposes only the current person's request; Overview has no export source. */
+    public function testOnlyDataCarriesAbsenceThenOwnCopyAndJoinsTheGroup(): void
     {
         $userId = (int)Hilos::$db->users->actions->createWithName('Data copy owner')->id;
         $this->userIds[] = $userId;
@@ -77,6 +77,11 @@ final class ProfileDataPageTest extends IntegrationTestCase
 
         foreach ([ProfileDataPage::class, ProfilePage::class] as $pageClass) {
             $payload = $this->subscribe($pageClass);
+            if ($pageClass === ProfilePage::class) {
+                self::assertArrayNotHasKey(DataExportStateProjector::SECTION, $payload[PagePayload::data]);
+                self::assertNull(Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, DataExportGroup::NAME));
+                continue;
+            }
             self::assertArrayHasKey(DataExportStateProjector::SECTION, $payload[PagePayload::data]);
             self::assertNull($payload[PagePayload::data][DataExportStateProjector::SECTION]);
             self::assertSame(
@@ -88,6 +93,11 @@ final class ProfileDataPageTest extends IntegrationTestCase
         $export = Hilos::$db->dataExports->actions->order($userId, '2026-09-27 10:00:00');
         $export->actions->finishReady('own.zip', 123, '2026-09-27 10:01:00', '2026-10-04 10:01:00');
         foreach ([ProfileDataPage::class, ProfilePage::class] as $pageClass) {
+            if ($pageClass === ProfilePage::class) {
+                self::assertArrayNotHasKey(DataExportStateProjector::SECTION, $this->subscribe($pageClass)[PagePayload::data]);
+                self::assertNull(Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, DataExportGroup::NAME));
+                continue;
+            }
             self::assertSame(
                 DataExportStateProjector::nodeFor($export),
                 $this->subscribe($pageClass)[PagePayload::data][DataExportStateProjector::SECTION],

@@ -37,7 +37,7 @@ import HilosActionError from '../HilosActionError.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
 import HilosSendProgress from '../HilosSendProgress.vue'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
@@ -347,7 +347,7 @@ onUnmounted(() => {
 
 <template>
   <section data-id="profile-sign-in-view">
-    <HilosPageHeading />
+    <HilosProfileHead :context="context" />
     <div
       v-if="passkeyOnly"
       class="alert alert-warning d-flex gap-2"

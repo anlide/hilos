@@ -7,6 +7,12 @@ namespace Demo\Polls\Tests\Integration;
 use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Hilos;
 use Demo\Polls\Pages\Hilos\ProfilePage;
+use Demo\Polls\Pages\Hilos\ProfileDataPage;
+use Demo\Polls\Pages\Hilos\ProfileAgreementsHistoryPage;
+use Demo\Polls\Pages\Hilos\ProfileAgreementsPage;
+use Demo\Polls\Pages\Hilos\ProfileSecurityPage;
+use Demo\Polls\Pages\Hilos\ProfileSessionsPage;
+use Demo\Polls\Pages\Hilos\ProfileSignInPage;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Constants\SignalTypeConstants;
@@ -48,22 +54,33 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
             $sms = Hilos::$db->identities->createSmsIdentity($userId, '+1000000' . $userId);
             Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
 
-            // The worker has not fetched either identity by key.
-            Hilos::$db->getObjectCollection(PollsDbContext::identities)?->clearInMemory();
-            $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
+            foreach ([
                 ProfilePage::PAGE,
-                self::ACCEPT_KEY,
-                new PageRouteParams([]),
-            );
-            $this->assertNotNull($snapshot);
+                ProfileSignInPage::PAGE,
+                ProfileSessionsPage::PAGE,
+                ProfileSecurityPage::PAGE,
+                ProfileAgreementsPage::PAGE,
+                ProfileAgreementsHistoryPage::PAGE,
+                ProfileDataPage::PAGE,
+            ] as $page) {
+                // The worker has not fetched either identity by key.
+                Hilos::$db->getObjectCollection(PollsDbContext::identities)?->clearInMemory();
+                $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
+                    $page,
+                    self::ACCEPT_KEY,
+                    new PageRouteParams([]),
+                );
+                $this->assertNotNull($snapshot);
 
-            $this->assertSame(
-                [(int) $oauth->id, (int) $sms->id],
-                array_map(
-                    static fn (array $identity): int => (int) $identity[Identity::id],
-                    $this->identitiesOfSnapshotItem($snapshot),
-                ),
-            );
+                $this->assertSame(
+                    [(int) $oauth->id, (int) $sms->id],
+                    array_map(
+                        static fn (array $identity): int => (int) $identity[Identity::id],
+                        $this->identitiesOfSnapshotItem($snapshot),
+                    ),
+                    $page,
+                );
+            }
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$sr = null;

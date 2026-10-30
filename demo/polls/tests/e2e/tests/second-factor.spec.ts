@@ -20,6 +20,11 @@ import {
   gotoPage,
   PAGE_READY,
   createTestAdmin,
+  watchSocketFrames,
+  countSentFrames,
+  deliveryObject,
+  nextClientPaint,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   nextTotpCode,
@@ -181,7 +186,7 @@ const ENABLED_SWITCH = 'hilos-2fa-switch-auth.second_factor.enabled'
 
 /**
  * Turn the second factor off on the administration page: the switch opens its
- * window, the window asks the administrator's password, then Turn off.
+ * window, the window asks for a password unless already confirmed, then Turn off.
  *
  * @param page An administrator's page whose account holds a password.
  */
@@ -191,12 +196,17 @@ async function turnSecondFactorOff(page: Page): Promise<void> {
   await expect(on).toBeChecked()
   await clickSubmit(expect, on)
   await expect(page.getByTestId('hilos-2fa-disable-window')).toBeVisible()
-  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(
-    expect,
-    page.getByTestId('hilos-2fa-disable-step-up-confirm'),
-  )
-  await clickSubmit(expect, page.getByTestId('hilos-2fa-disable-confirm'))
+  const password = page.getByTestId('step-up-password')
+  const confirm = page.getByTestId('hilos-2fa-disable-confirm')
+  await expect(password.or(confirm)).toBeVisible()
+  if (await password.isVisible()) {
+    await typeInto(password, PASSWORD)
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-2fa-disable-step-up-confirm'),
+    )
+  }
+  await clickSubmit(expect, confirm)
   await expect(page.getByTestId('hilos-2fa-disable-window')).toHaveCount(0)
   await expect(shownByTestId(page, ENABLED_SWITCH)).not.toBeChecked()
 }
@@ -213,6 +223,94 @@ async function turnSecondFactorOn(page: Page): Promise<void> {
 }
 
 test.describe('turned off for everyone', () => {
+  test('updates Security navigation on a cold agreements page when policy changes', async ({
+    page,
+    browser,
+  }) => {
+    const member = await freshPage(browser)
+    const frames: SocketFrame[] = []
+    const wire = watchSocketFrames(member, (frame) => frames.push(frame))
+    const subscribes = countSentFrames(member, 'page_subscribe')
+    try {
+      const user = await createTestUser(expect, member)
+      await gotoPage(expect, member, '/profile/agreements')
+      await expect(member.getByRole('heading', { level: 1 })).toHaveText(
+        user.name,
+      )
+      const subscribed = subscribes()
+      const sockets = wire.sockets()
+      const security = member.getByTestId(
+        'hilos-page-tab-hilos_profile_security',
+      )
+      await expect(security).toBeVisible()
+      let reloads = 0
+      member.on('load', () => {
+        reloads += 1
+      })
+      await createTestAdmin(expect, page)
+      try {
+        await turnSecondFactorOff(page)
+        await expect(security).toHaveCount(0)
+        await expect(member).toHaveURL(/\/profile\/agreements$/)
+        await expect(member.getByTestId('legal-agreement-row')).toHaveCount(2)
+        await turnSecondFactorOn(page)
+        await expect(security).toBeVisible()
+        expect(reloads).toBe(0)
+
+        await test.step('keeps Security after personal enrollment in another tab', async () => {
+          const beforeEnrollment = frames.length
+          const enrollment = await member.context().newPage()
+          await gotoPage(expect, enrollment, '/profile/security')
+          await connectFirstApp(enrollment, PASSWORD)
+          // Only a new personal group frame can replace the empty snapshot;
+          // the global policy carries no authenticator list.
+          await expect
+            .poll(
+              () =>
+                frames
+                  .slice(beforeEnrollment)
+                  .map(({ wire: frame }) => deliveryObject(frame))
+                  .filter(({ type }) => type === 'hilos_second_factor_state')
+                  .at(-1)?.data,
+            )
+            .toMatchObject({
+              enabled: true,
+              authenticators: [{ id: expect.any(Number), label: 'Work phone' }],
+              backupCodesLeft: 10,
+              reset: null,
+            })
+
+          const beforePolicyOff = frames.length
+          await turnSecondFactorOff(page)
+          await expect
+            .poll(
+              () =>
+                frames
+                  .slice(beforePolicyOff)
+                  .map(({ wire: frame }) => deliveryObject(frame))
+                  .filter(({ type }) => type === 'hilos_second_factor_policy')
+                  .at(-1)?.data,
+            )
+            .toMatchObject({ enabled: false })
+          await nextClientPaint(member)
+          await expect(security).toBeVisible()
+          await expect(member).toHaveURL(/\/profile\/agreements$/)
+          await expect(member.getByTestId('legal-agreement-row')).toHaveCount(2)
+          expect(subscribes()).toBe(subscribed)
+          expect(wire.sockets()).toBe(sockets)
+          expect(reloads).toBe(0)
+        })
+      } finally {
+        await gotoPage(expect, page, '/hilos/security/2fa')
+        if (!(await shownByTestId(page, ENABLED_SWITCH).isChecked()))
+          await turnSecondFactorOn(page)
+      }
+    } finally {
+      wire.stop()
+      await member.context().close()
+    }
+  })
+
   test('lets a person with an app in without the code, says so in the profile, and asks again once it is back on', async ({
     page,
     browser,

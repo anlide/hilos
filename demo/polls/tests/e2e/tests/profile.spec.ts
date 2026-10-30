@@ -36,7 +36,7 @@ import {
 // The framework list supplies the confirmed Email row. The rows are the
 // sections of the catalog this demo serves, in catalog order — Ways to sign in,
 // Active sign-ins, Security, Agreements, then Your data — and each opens its
-// page, whose "Profile" crumb now leads back.
+// page, whose Overview tab leads back.
 
 /** Confirm a password-backed operation inside the open profile dialog. */
 async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
@@ -69,27 +69,34 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByTestId('profile-photo-open')).toBeVisible()
 
   const sections = ['sign-in', 'sessions', 'security', 'agreements', 'data']
-  await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
-  expect(
-    await page
-      .getByTestId('profile-section')
-      .getByTestId(/^profile-[a-z-]+-open$/)
-      .evaluateAll((links) =>
-        links.map((link) => link.getAttribute('data-id')),
-      ),
-  ).toEqual(sections.map((section) => `profile-${section}-open`))
   for (const section of sections) {
-    await clickSubmit(expect, page.getByTestId(`profile-${section}-open`))
-    await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
     await clickSubmit(
       expect,
-      page.getByTestId('hilos-breadcrumb-hilos_profile'),
+      page.getByTestId(
+        `hilos-page-tab-hilos_profile_${section.replaceAll('-', '_')}`,
+      ),
     )
+    await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
     await expect(page.getByTestId('profile-name')).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/profile')
   }
   expect(fullLoads).toBe(loadsAfterSignIn)
+  await gotoPage(expect, page, '/profile/data')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
+  await page.reload()
+  await expectPageReady(expect, page)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  await expect(page.getByTestId('profile-identity-email')).toHaveText(email)
+  await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
+  await page.goBack()
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(/\/profile\/data$/)
+  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
 })
 
 test('renames the profile name without moderation', async ({ page }) => {
@@ -703,15 +710,14 @@ test('ends sessions of closed browsers without a reload (HIL-1180)', async ({
   }
 })
 
-test('updates the sign-in summary when another tab adds a device key', async ({
+test('updates the sign-in methods when another tab adds a device key', async ({
   page,
   context,
 }) => {
   await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(
-    'Password',
-  )
+  await gotoPage(expect, page, '/profile/sign-in')
+  await expect(page.getByTestId('profile-password-change')).toBeVisible()
+  await expect(page.getByTestId('profile-identity-item')).toHaveCount(1)
   let reloads = 0
   page.on('load', () => {
     reloads += 1
@@ -724,9 +730,8 @@ test('updates the sign-in summary when another tab adds a device key', async ({
   await clickSubmit(expect, other.getByTestId('profile-passkey-add'))
   await expect(other.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(other.getByTestId('identity-passkey-added')).toHaveCount(1)
-  await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(
-    'Password, 1 passkey',
-  )
+  await expect(page.getByTestId('profile-identity-item')).toHaveCount(2)
+  await expect(page.getByTestId('identity-passkey-added')).toHaveCount(1)
   expect(reloads).toBe(0)
   await other.close()
 })

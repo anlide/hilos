@@ -58,7 +58,7 @@ test('holds page and modal interaction until the real reconnect', async ({
     const view = page.getByTestId('profile-sign-in-view')
     const identities = page.getByTestId('profile-identities-list')
     const add = page.getByTestId('profile-sign-in-add')
-    const actionLink = page.getByTestId('hilos-breadcrumb-hilos_profile')
+    const actionLink = page.getByTestId('hilos-page-tab-hilos_profile')
     const mainControls = { actionLink }
     const originalIdentities = await identities.innerText()
     const originalUrl = page.url()

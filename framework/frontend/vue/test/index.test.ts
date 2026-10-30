@@ -5,6 +5,7 @@ import {
   HilosLayout,
   HilosLink,
   HilosPageHead,
+  HilosProfileHead,
   HilosSkeleton,
   HilosSwitch,
   HilosTableText,
@@ -26,6 +27,7 @@ it('exports the @hilos/vue public surface', () => {
   expect(HilosLayout).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('object')
   expect(HilosPageHead).toBeTypeOf('object')
+  expect(HilosProfileHead).toBeTypeOf('object')
   expect(HilosView).toBeTypeOf('object')
   expect(HilosSkeleton).toBeTypeOf('object')
   expect(HilosSwitch).toBeTypeOf('object')
@@ -34,6 +36,10 @@ it('exports the @hilos/vue public surface', () => {
 
 it('exports the shared page head once, from the base entry the root re-exports', () => {
   expect(base.HilosPageHead).toBe(HilosPageHead)
+})
+
+it('exports the profile head once, from the base entry the root re-exports', () => {
+  expect(base.HilosProfileHead).toBe(HilosProfileHead)
 })
 
 it('keeps admin Status identity and exports the public page under its own root alias', () => {

@@ -16,10 +16,10 @@ import {
   ActionError,
   createSignal,
   ScopeManager,
-  type HilosRouter,
   type HilosSecondFactorContext,
   type ProjectSignal,
 } from '@hilos/core'
+import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSecurityPage } from '../src/profile/HilosProfileSecurityPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
@@ -92,14 +92,7 @@ function setup(
     },
     scopes: new ScopeManager(),
   } as unknown as HilosSecondFactorContext
-  const router = {
-    pageIdentity: createSignal(undefined),
-    currentRoute: createSignal({
-      page: 'hilos_profile_security',
-      params: {},
-      admin: false,
-    }),
-  } as unknown as HilosRouter
+  const router = profileSectionFixture(context.scopes, 'hilos_profile_security')
   render(
     <StrictMode>
       <HilosRouterContext.Provider value={router}>

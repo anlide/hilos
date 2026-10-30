@@ -266,6 +266,9 @@ use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
+use Demo\Tasks\Pages\Hilos\ProfilePage;
+use Demo\Tasks\Pages\Hilos\ProfileSecurityPage;
+use Demo\Tasks\Pages\Hilos\ProfileDataPage;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use Demo\Tasks\Agents\Hilos\DemoHilosChangeLogAgent;
@@ -312,6 +315,27 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class TasksTopologyRegistryTest extends TestCase
 {
+    /** Every served profile section binds the common personal identity source once. */
+    public function testEveryProfileSectionBindsTheIdentityList(): void
+    {
+        self::assertSame(
+            HilosProfileIdentitiesBrowserList::class,
+            Hilos::BROWSER_LISTS[HilosProfileIdentitiesBrowserList::LIST],
+        );
+        foreach ([
+            ProfilePage::class,
+            ProfileSignInPage::class,
+            ProfileSecurityPage::class,
+            ProfileDataPage::class,
+        ] as $page) {
+            self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
+            self::assertSame(
+                HilosProfileIdentitiesBrowserList::BINDING,
+                Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
+            );
+        }
+    }
+
     public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
     {
         self::assertSame(TermsHistoryPage::class, Hilos::PAGES[TermsHistoryPage::PAGE]);

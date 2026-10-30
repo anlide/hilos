@@ -98,7 +98,7 @@ final class PageCatalogResolver
 
     /**
      * @param string $page Page key
-     * @return ?string Nearest entity or top-level admin section; null outside the admin branch or on the dashboard
+     * @return ?string Nearest entity, profile root or top-level admin section; null outside these branches or on the dashboard
      */
     public static function rowOwner(string $page): ?string
     {
@@ -110,7 +110,7 @@ final class PageCatalogResolver
      *
      * @param string $page Page key
      * @param class-string<PageCatalogProviderInterface> $provider Page catalog provider class
-     * @return ?string Row owner, or null outside the admin branch, on the dashboard or for an unknown page
+     * @return ?string Row owner, or null outside the admin/profile branches, on the dashboard or for an unknown page
      */
     public static function rowOwnerOf(string $page, string $provider): ?string
     {
@@ -125,6 +125,10 @@ final class PageCatalogResolver
             $entry = $catalog[$key];
             if ($entity === null && ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false)) {
                 $entity = $key;
+            }
+
+            if ($key === HilosPageConstants::HILOS_PROFILE) {
+                return $entity ?? $key;
             }
 
             $parent = $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null;
@@ -251,6 +255,7 @@ final class PageCatalogResolver
 
     /**
      * An absent or inapplicable candidate removes its whole branch; entities begin another row.
+     * An unserved profile root keeps its children eligible without contributing an Overview tab.
      *
      * @param string $page Candidate page key
      * @param PageRouteParams $ownerParams Current subscription params containing the owner's coordinates
@@ -260,23 +265,24 @@ final class PageCatalogResolver
      */
     private static function pageTabs(string $page, PageRouteParams $ownerParams, bool $owner = false): array
     {
-        if (!Hilos::$sr->servesPage($page)) {
+        $pageClass = Hilos::appClass()::PAGES[$page] ?? null;
+        $served = Hilos::$sr->servesPage($page) && $pageClass !== null;
+        if (!$served && (!$owner || $page !== HilosPageConstants::HILOS_PROFILE)) {
             return [];
         }
 
-        $pageClass = Hilos::appClass()::PAGES[$page] ?? null;
-        if ($pageClass === null || !$pageClass::isTabApplicable($ownerParams)) {
+        if ($served && !$pageClass::isTabApplicable($ownerParams)) {
             return [];
         }
 
         $catalog = self::catalog();
-        $tabs = [[
+        $tabs = $served ? [[
             PageCatalogConstants::WIRE_TAB_PAGE => $page,
             PageCatalogConstants::WIRE_TAB_LABEL => $owner
                 ? HilosPageCatalog::OVERVIEW_LABEL
                 : ($catalog[$page][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]
                     ?? $catalog[$page][PageCatalogConstants::CATALOG_ENTRY_LABEL]),
-        ]];
+        ]] : [];
         foreach ($catalog as $key => $entry) {
             if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) !== $page
                 || ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false)) {

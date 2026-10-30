@@ -9,23 +9,14 @@ use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\PageAccessLevel;
-use Hilos\Core\Page\PageReach;
-use Hilos\Core\Page\PageRouteParams;
-use Hilos\Database\Context\HilosDbContext;
-use Hilos\Hilos;
-use Hilos\HilosException;
 
 /**
  * AbstractHilosProfileSecurityPage - the profile's security page: the second factor (HIL-494).
  *
  * The framework owns the page's identity - key, route `/profile/security`, subscription signal
  * - so every project that signs people in exposes the same section; the concrete subclass
- * binds the agent that serves it. Like the profile it extends AbstractPage directly and is
- * signed-in only, for the reason {@see AbstractHilosProfilePage} gives.
+ * binds the agent that serves it. The common profile base supplies authenticated access,
+ * the shared snapshot and the second-factor membership.
  *
  * It is a READING surface. The subscription answers with the whole section of the person
  * behind the connection ({@see SecondFactorStateProjector}); every submit of the section - the
@@ -37,70 +28,11 @@ use Hilos\HilosException;
  * The account deletion's danger zone is not here: it sits at the bottom of the profile root,
  * whose page answers with its state ({@see AbstractHilosProfilePage}, HIL-1169).
  */
-abstract class AbstractHilosProfileSecurityPage extends AbstractPage
+abstract class AbstractHilosProfileSecurityPage extends AbstractHilosProfileSectionPage
 {
     public const string PAGE = HilosPageConstants::HILOS_PROFILE_SECURITY;
-
-    public const PageReach REACH = PageReach::ROUTE;
-
-    /** Signed-in-only surface; see {@see AbstractHilosProfilePage} for why this must stay explicit. */
-    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
-
-    /** Page-data section slot carrying the second-factor section. */
-    public const string SECOND_FACTOR_SECTION = 'secondFactor';
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_SECURITY,
     ];
-
-    /**
-     * @var list<string> The four tables the section is read from; all of them are the users
-     *     library's, written by its commands and by its removal sweep.
-     */
-    public const array READS_DB = [
-        HilosDbContext::secondFactors,
-        HilosDbContext::secondFactorBackupCodes,
-        HilosDbContext::secondFactorResets,
-        HilosDbContext::secondFactorSettings,
-    ];
-
-    /**
-     * Answers the subscription with the section of the person behind the connection.
-     *
-     * @param string $acceptKey WebSocket accept key of the subscribing connection
-     * @param PageRouteParams $params Route params (unused; the page has none)
-     * @return ?PagePayload The section, or null outside a signed-in session
-     * @throws HilosException When a lookup or a setting read fails
-     */
-    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
-    {
-        $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
-        if ($userId === null) {
-            return null;
-        }
-
-        return new PagePayload(data: [
-            self::SECOND_FACTOR_SECTION => SecondFactorStateProjector::stateFor($userId)->toArray(),
-        ]);
-    }
-
-    /**
-     * Puts the connection on the person's second-factor group once the subscription is answered.
-     *
-     * The same two writes a group's own join makes: the membership in this worker's mirror, and
-     * the word to the master, which keeps the fan-out list every process sends through.
-     *
-     * @param string $acceptKey WebSocket accept key of the subscribing connection
-     * @param PageRouteParams $params Route params (unused)
-     * @throws InvalidArgumentException When the join announcement cannot be named
-     */
-    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
-    {
-        $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
-        if ($userId === null) {
-            return;
-        }
-
-        SecondFactorGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
-    }
 }

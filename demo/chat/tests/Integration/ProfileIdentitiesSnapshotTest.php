@@ -7,6 +7,13 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfileDataPage;
+use Demo\Chat\Pages\Hilos\ProfileAgreementsHistoryPage;
+use Demo\Chat\Pages\Hilos\ProfileAgreementsPage;
+use Demo\Chat\Pages\Hilos\ProfileSecurityPage;
+use Demo\Chat\Pages\Hilos\ProfileDevicesPage;
+use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
+use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
 use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -50,7 +57,17 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
             // What a worker the rows never passed through holds, which is what the profile met.
             Hilos::$db->getObjectCollection(ChatDbContext::identities)?->clearInMemory();
 
-            foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
+            foreach ([
+                ProfilePage::PAGE,
+                ProfileSignInPage::PAGE,
+                ProfileNotificationsPage::PAGE,
+                ProfileSessionsPage::PAGE,
+                ProfileDevicesPage::PAGE,
+                ProfileSecurityPage::PAGE,
+                ProfileAgreementsPage::PAGE,
+                ProfileAgreementsHistoryPage::PAGE,
+                ProfileDataPage::PAGE,
+            ] as $page) {
                 Hilos::$db->getObjectCollection(ChatDbContext::identities)?->clearInMemory();
                 $snapshot = Hilos::$browser?->buildSubscribeSnapshot($page, self::ACCEPT_KEY, new PageRouteParams([]));
                 $this->assertNotNull($snapshot);

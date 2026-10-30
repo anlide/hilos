@@ -169,6 +169,7 @@ export {
 } from './adminGrant.js'
 export { armViewerSubmit, expectViewerRestartRefused } from './adminViewMode.js'
 export {
+  expectProfileHeadAccessibility,
   selectPhoto,
   openAndSelectPhoto,
   drawPhotoFixture,

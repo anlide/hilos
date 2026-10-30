@@ -1,5 +1,6 @@
 import type { Expect, Page } from '@playwright/test'
 import { clickSubmit } from './input.js'
+import { expectPageReady } from './page.js'
 
 /** A colored rectangle in a demo's photo fixture. */
 export interface PhotoFixtureRectangle {
@@ -118,4 +119,43 @@ export async function samplePhotoPixels(
     },
     { data: Array.from(bytes), points },
   )
+}
+
+/** Check the assembled profile head, keyboard navigation and photo focus return. */
+export async function expectProfileHeadAccessibility(
+  expect: Expect,
+  page: Page,
+  name: string,
+): Promise<void> {
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  const navigation = page.getByRole('navigation', {
+    name: 'Profile pages',
+    exact: true,
+  })
+  await expect(navigation).toBeVisible()
+  await expect(
+    navigation.getByRole('link', { name: 'Overview', exact: true }),
+  ).toHaveAttribute('aria-current', 'page')
+  const data = page.getByTestId('hilos-page-tab-hilos_profile_data')
+  await data.focus()
+  await page.keyboard.press('Enter')
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(/\/profile\/data$/)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  await expect(data).toHaveAttribute('aria-current', 'page')
+  const photo = page.getByTestId('profile-photo-open')
+  await expect(photo).toHaveAccessibleName('Change your photo')
+  await photo.focus()
+  await page.keyboard.press('Enter')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(photo).toBeFocused()
+  const overview = page.getByTestId('hilos-page-tab-hilos_profile')
+  await overview.focus()
+  await page.keyboard.press('Enter')
+  await expectPageReady(expect, page)
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
 }

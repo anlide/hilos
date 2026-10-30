@@ -22,16 +22,12 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\PageAccessLevel;
-use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Random\RandomException;
 
 /**
@@ -48,20 +44,13 @@ use Random\RandomException;
  * Starting a link is the first step of the add-a-way-in operation (HIL-1138): the gate is asked
  * here, before the URL is minted, and the users library asks it again on the return.
  */
-abstract class AbstractHilosProfileSignInPage extends AbstractPage
+abstract class AbstractHilosProfileSignInPage extends AbstractHilosProfileSectionPage
 {
     public const string PAGE = HilosPageConstants::HILOS_PROFILE_SIGN_IN;
-
-    public const PageReach REACH = PageReach::ROUTE;
-
-    /** Required here because AbstractPage grants public access by default. */
-    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_SIGN_IN,
     ];
-
-    public const array REQUIRED_LISTS = [HilosProfileIdentitiesBrowserList::class];
 
     /**
      * The profile's own submit: starting a provider link, which writes nothing (HIL-1137).
@@ -80,10 +69,10 @@ abstract class AbstractHilosProfileSignInPage extends AbstractPage
      * its parent's rather than adding to it.
      */
     public const array READS_DB = [
+        ...parent::READS_DB,
         HilosDbContext::sessions,
         HilosDbContext::stepUps,
         HilosDbContext::identities,
-        HilosDbContext::secondFactors,
         HilosDbContext::passkeyCredentials,
     ];
 

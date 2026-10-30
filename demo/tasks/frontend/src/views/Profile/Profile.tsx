@@ -21,8 +21,6 @@ const context: HilosProfilePageContext = { connection, scopes, actions }
 const binding: HilosProfileBinding = {
   name: currentUserName,
   rename: createHilosProfileRename(connection, actionErrors),
-  sessionCount: null,
-  deviceCount: null,
 }
 
 export default function Profile() {

@@ -33,7 +33,7 @@ import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosSendProgress } from '../HilosSendProgress.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
@@ -288,7 +288,7 @@ export function HilosProfileSignInPage({
 
   return (
     <section data-id="profile-sign-in-view">
-      <HilosPageHeading />
+      <HilosProfileHead context={context} />
       {passkeyOnly ? (
         <div
           className="alert alert-warning d-flex gap-2"

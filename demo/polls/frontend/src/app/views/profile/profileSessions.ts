@@ -75,11 +75,6 @@ export const profileSessions = computedSignal(() =>
   ),
 )
 
-/** Number shown beside the profile's Sessions section link. */
-export const profileSessionCount = computedSignal(
-  () => profileSessions.get().length,
-)
-
 /** Number of sessions the bulk action can currently end. */
 export const endableProfileSessions = computedSignal(() =>
   endableProfileSessionCount(profileSessions.get()),

@@ -54,6 +54,8 @@ const props = withDefaults(
     resolvePath: HilosPathResolver
     /** The id the h1 carries, from the caller; a local one when omitted. */
     headingId?: string
+    /** Replaces the h1's data-id; omitted or undefined keeps hilos-page-head-title. */
+    titleDataId?: string
     /** Extra presentation classes on the owner's one h1. */
     titleClass?: string
     /** A section head or an entity block: the defaults and the skeleton's tile. */
@@ -68,6 +70,7 @@ const props = withDefaults(
   {
     identity: undefined,
     headingId: undefined,
+    titleDataId: 'hilos-page-head-title',
     titleClass: undefined,
     kind: 'section',
     breadcrumbLabel: 'Breadcrumb',
@@ -190,7 +193,7 @@ watch(row, (container, _previous, onCleanup) => {
                 :id="titleId"
                 class="h4 mb-0 text-break"
                 :class="titleClass"
-                data-id="hilos-page-head-title"
+                :data-id="titleDataId"
               >
                 {{ owner.label }}
               </h1>

@@ -115,6 +115,7 @@ function bindTheme(
   releaseTheme?.()
   const connection = fakeConnection()
   const scopes = new ScopeManager()
+  answerProfile(scopes)
   bindSessionScope(connection as unknown as HilosConnection, scopes)
   releaseTheme = bindThemeState(
     connection as unknown as HilosConnection,
@@ -125,6 +126,28 @@ function bindTheme(
   connection.emit('hilos_theme_settings', settings)
 
   return connection
+}
+
+/** The common profile identity shipped beside the Account body. */
+function answerProfile(scopes: ScopeManager): void {
+  const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
+  page.data.set('pageLabel', 'Profile')
+  page.data.set('pageHeadOwner', {
+    page: HilosPages.PROFILE,
+    label: 'Profile',
+    lead: '',
+  })
+  page.data.set('pageBreadcrumb', [
+    { page: HilosPages.PROFILE, label: 'Profile' },
+  ])
+  page.data.set('pageChildren', [])
+  page.data.set('pageTabs', [
+    { page: HilosPages.PROFILE, label: 'Overview' },
+    { page: HilosPages.PROFILE_SIGN_IN, label: 'Ways to sign in' },
+    { page: HilosPages.PROFILE_SESSIONS, label: 'Sessions' },
+    { page: HilosPages.PROFILE_SECURITY, label: 'Security' },
+    { page: HilosPages.PROFILE_DATA, label: 'Your data' },
+  ])
 }
 
 /** A router on the profile root whose sections all have an address. */
@@ -201,6 +224,7 @@ function setup(
   initialMethods?: readonly HilosProfileSignInMethod[],
 ) {
   const scopes = new ScopeManager()
+  answerProfile(scopes)
   if (signedIn) scopes.session.data.set('currentUser', { type: 'user', id: 1 })
   if (initialMethods) setMethods(scopes, initialMethods)
   const context = {
@@ -240,7 +264,7 @@ function setup(
 it('offers the photo button only after the profile page enables photos', () => {
   const { fixture, node, scopes } = setup(nameOnly())
   expect(node('profile-photo-open')).toBeNull()
-  scopes.openPage(HilosPages.PROFILE).data.set('profilePhoto', true)
+  scopes.page()!.data.set('profilePhoto', true)
   fixture.detectChanges()
   expect(node('profile-photo-open')?.getAttribute('aria-label')).toBe(
     'Change your photo',
@@ -340,22 +364,22 @@ async function dismissStandardName(
 }
 
 it('shows the name without Change and the sections in catalog order when the project hands no rename', () => {
-  const { node, root } = setup(nameOnly())
+  const { node } = setup(nameOnly())
 
   expect(node('profile-identity-name')?.textContent?.trim()).toBe('Ann Lee')
   expect(node('profile-edit')).toBeNull()
   expect(node('profile-email')).toBeNull()
+  expect(document.querySelectorAll('h1')).toHaveLength(1)
+  expect(node('hilos-page-tabs')?.getAttribute('aria-label')).toBe(
+    'Profile pages',
+  )
   expect(
-    [...root.querySelectorAll('[data-id="profile-section"] .fw-semibold')].map(
-      (label) => label.textContent,
-    ),
-  ).toEqual(['Security', 'Your data'])
-  expect(node('profile-security-summary')?.textContent?.trim()).toBe(
-    'Two-step verification is off',
-  )
-  expect(node('profile-data-open')?.getAttribute('href')).toBe(
-    `/${HilosPages.PROFILE_DATA}`,
-  )
+    node('hilos-page-tab-hilos_profile')?.getAttribute('aria-current'),
+  ).toBe('page')
+  expect(node('profile-section')).toBeNull()
+  expect(
+    node('hilos-page-tab-hilos_profile_security')?.getAttribute('href'),
+  ).toBe(`/${HilosPages.PROFILE_SECURITY}`)
 })
 
 it("offers Change for the project's rename and the Email row for a verified address", () => {
@@ -394,8 +418,8 @@ it("offers Change for the project's rename and the Email row for a verified addr
   expect(node('profile-email-change')).not.toBeNull()
 })
 
-it('draws no Security row while two-step verification is turned off with nothing of the person standing, live', () => {
-  const { fixture, node, root, scopes } = setup(nameOnly())
+it('hides Security navigation while two-step verification is turned off with nothing of the person standing, live', () => {
+  const { fixture, node, scopes } = setup(nameOnly())
   const section = {
     enabled: false,
     authenticators: [],
@@ -412,23 +436,14 @@ it('draws no Security row while two-step verification is turned off with nothing
     },
     reset: null,
   }
-  scopes.openPage(HilosPages.PROFILE).data.set('secondFactor', section)
+  scopes.page()!.data.set('secondFactor', section)
   fixture.detectChanges()
 
-  expect(
-    [...root.querySelectorAll('[data-id="profile-section"] .fw-semibold')].map(
-      (label) => label.textContent,
-    ),
-  ).toEqual(['Your data'])
-  expect(node('profile-security-open')).toBeNull()
+  expect(node('hilos-page-tab-hilos_profile_security')).toBeNull()
 
-  scopes
-    .openPage(HilosPages.PROFILE)
-    .data.set('secondFactor', { ...section, enabled: true })
+  scopes.page()!.data.set('secondFactor', { ...section, enabled: true })
   fixture.detectChanges()
-  expect(node('profile-security-summary')?.textContent?.trim()).toBe(
-    'Two-step verification is off',
-  )
+  expect(node('hilos-page-tab-hilos_profile_security')).not.toBeNull()
 })
 
 it('draws only the placeholder while nobody is signed in', () => {
@@ -438,7 +453,7 @@ it('draws only the placeholder while nobody is signed in', () => {
   expect(node('profile-view')).toBeNull()
 })
 
-it('warns under the sign-in row while device keys are the only way in, live', () => {
+it('warns under the name while device keys are the only way in, live', () => {
   const methods = resolveHilosProfileSignInMethods(
     [
       {
@@ -500,6 +515,7 @@ function accountRows(): HTMLElement[] {
 function accountThemePage() {
   const connection = fakeConnection()
   const scopes = new ScopeManager()
+  answerProfile(scopes)
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
     done: Promise.resolve(
@@ -1038,7 +1054,7 @@ describe('the account Time zone row', () => {
     )
     expect(row.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
     expect(value.textContent?.trim()).toBe('Europe/Warsaw · automatic')
-    const page = scopes.openPage(HilosPages.PROFILE)
+    const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
     ingest(page, {
       lists: {
         profileTimeZones: {
@@ -1171,7 +1187,7 @@ describe('the account Time zone row', () => {
     const readAutomatic = vi.spyOn(first.automatic, 'get')
     expect(readFirst).not.toHaveBeenCalled()
     click('profile-theme-change')
-    const page = context.scopes.openPage(HilosPages.PROFILE)
+    const page = context.scopes.page()!
     ingest(page, {
       lists: {
         profileTimeZones: {

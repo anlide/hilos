@@ -58,6 +58,9 @@ assert.ok(!modules(base).includes('src/index.ts'))
 // closure, not in an admin section or in the compatibility root.
 assert.ok(modules(base).some((id) => id.startsWith('src/HilosPageHead.vue')))
 assert.ok(modules(base).some((id) => id.startsWith('src/HilosTableText.vue')))
+assert.ok(
+  modules(base).some((id) => id.startsWith('src/profile/HilosProfileHead.vue')),
+)
 const textTypes = await readFile(
   join(packageDir, 'dist/HilosTableText.vue.d.ts'),
   'utf8',
@@ -73,11 +76,11 @@ assert.deepEqual(
 // alias and no fixture written into the repository.
 const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
 const typeSource = `
-  import { HilosTableText } from '@hilos/vue/base'
+  import { HilosProfileHead, HilosTableText } from '@hilos/vue/base'
   import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal, HilosStatusSubscribersPage, HilosStatusRemoveSubscriberModal, HilosStatusWorksPage, HilosStatusWorkModal, HilosStatusCancelWorkModal } from '@hilos/vue/admin/status'
   import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
-  import { HilosPublicStatusPage } from '@hilos/vue'
-  import type { ActionLifecycle, HilosConnection } from '@hilos/core/base'
+  import { HilosProfileHead as RootProfileHead, HilosPublicStatusPage } from '@hilos/vue'
+  import type { ActionLifecycle, HilosConnection, HilosProfileHeadStore, HilosProfilePageContext } from '@hilos/core/base'
   import { HilosModerationPage, HilosModerationKindRulesPage } from '@hilos/vue/admin/moderation'
   import type { HilosStatusContext, HilosStatusIncidentController, HilosStatusSubscribersContext, HilosStatusSubscriberController, HilosStatusWorksContext, HilosStatusWorksState, HilosStatusWorkCreate, HilosStatusWorkEdit, HilosStatusWorkCancel } from '@hilos/core/admin/status'
   import type { HilosModerationContext, HilosModerationRulesContext } from '@hilos/core/admin/moderation'
@@ -96,6 +99,22 @@ const typeSource = `
   type PublicProps = InstanceType<typeof PublicStatusPage>['$props']
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
+  type ProfileHeadProps = InstanceType<typeof HilosProfileHead>['$props']
+  const profileContext: Same<ProfileHeadProps['context'], HilosProfilePageContext> = true
+  const profileStore: Same<ProfileHeadProps['store'], HilosProfileHeadStore | undefined> = true
+  const profileRoot: Same<typeof HilosProfileHead, typeof RootProfileHead> = true
+  declare const context: HilosProfilePageContext
+  declare const store: HilosProfileHeadStore
+  const ownedHead: ProfileHeadProps = { context }
+  const borrowedHead: ProfileHeadProps = { context, store }
+  // @ts-expect-error A profile head requires the page context.
+  const missingProfileContext: ProfileHeadProps = {}
+  void profileContext
+  void profileStore
+  void profileRoot
+  void ownedHead
+  void borrowedHead
+  void missingProfileContext
   const rulesContext: Same<RulesProps['context'], HilosModerationRulesContext> = true
   void rulesContext
   const exactValue: Same<Props['value'], Hideable<string>> = true
@@ -328,6 +347,8 @@ try {
               !(HilosPages.PUBLIC_STATUS in hilosAdminViews())
             export const samePageHead =
               root.HilosPageHead !== undefined && root.HilosPageHead === base.HilosPageHead
+            export const sameProfileHead =
+              root.HilosProfileHead !== undefined && root.HilosProfileHead === base.HilosProfileHead
             export const sameTableText =
               root.HilosTableText !== undefined && root.HilosTableText === base.HilosTableText
             export const privateText = ${[
@@ -379,6 +400,7 @@ try {
   assert.equal(consumer.sameHistory, true)
   assert.equal(consumer.samePublicStatus, true)
   assert.equal(consumer.samePageHead, true)
+  assert.equal(consumer.sameProfileHead, true)
   assert.equal(consumer.sameTableText, true)
   assert.equal(consumer.privateText, true)
   assert.equal(consumer.descriptors, true)

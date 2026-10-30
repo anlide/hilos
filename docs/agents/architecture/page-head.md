@@ -729,11 +729,15 @@ names no concrete page. Its props are `identity`, `page` (the rendered page
 key: the tab with that key is current, a child of a tab included), `params`,
 `resolvePath`, `headingId`, `kind` (`section` by default, or `entity`),
 `breadcrumbLabel` (`Breadcrumb` by default), `tabsLabel` (`Page sections` by
-default) and `action`. The slots `visual`, `meta`, `badges` and `description`
-fill the block only; the title is not a slot. The optional `skeleton-visual`
-slot replaces only the picture in the existing `aria-hidden` skeleton; without
-it, the picture remains round for a section and square for an entity, and the
-two bars remain. The one `h1` shows
+default), `titleDataId?: string` and `action`. An omitted or `undefined`
+`titleDataId` keeps `data-id="hilos-page-head-title"` on the existing `h1`;
+a string replaces that hook on the same heading, including an empty string.
+It changes no DOM id, heading text or accessible-name relationship, and adds
+no wrapper or second heading. The skeleton has no `h1` or title hook.
+The slots `visual`, `meta`, `badges` and `description` fill the block only; the
+title is not a slot. The optional `skeleton-visual` slot replaces only the
+picture in the existing `aria-hidden` skeleton; without it, the picture remains
+round for a section and square for an entity, and the two bars remain. The one `h1` shows
 `pageHeadOwner.label` and carries `headingId`, or a local id when none is
 given, for a section head and an entity block alike. A section defaults
 `visual` to its catalog icon in a circle and `description` to its lead; an
@@ -747,12 +751,14 @@ buttons.
 React's `HilosPageHead`, exported from `@hilos/react/base` and the root, draws
 the same head from the same identity and takes the same props — `identity`,
 `page`, `params`, `resolvePath`, `headingId`, `kind`, `breadcrumbLabel`,
-`tabsLabel` and `action` — with the same defaults; `identity` is optional, as
-the answer may not have arrived. The block's content comes as `ReactNode`
-props `visual`, `meta`, `badges` and `description` in place of slots: omitted
-(`undefined`) keeps a section's icon and lead, and `null` turns that default
-off; an entity has no default to keep. Without a valid `pageHeadOwner` the
-head draws only its `aria-hidden` skeleton. Its optional
+`tabsLabel`, `titleDataId?: string` and `action` — with the same defaults.
+`titleDataId` replaces only the existing `h1`'s `data-id`; omitted or
+`undefined` keeps `hilos-page-head-title`, with no title hook on the skeleton.
+`identity` is optional, as the answer may not have arrived. The block's content
+comes as `ReactNode` props `visual`, `meta`, `badges` and `description` in place
+of slots: omitted (`undefined`) keeps a section's icon and lead, and `null`
+turns that default off; an entity has no default to keep. Without a valid
+`pageHeadOwner` the head draws only its `aria-hidden` skeleton. Its optional
 `skeletonVisual?: ReactNode` prop replaces only the picture in that skeleton;
 omitting it keeps the kind's default picture and the two bars. The row is
 centered by `useLayoutEffect`; a `ResizeObserver` on the row's list attaches
@@ -764,9 +770,12 @@ Angular's `HilosPageHead` is the standalone `hilos-page-head` component with
 `OnPush` change detection, exported from `@hilos/angular/base` and the root. It
 draws the same head from the same identity and takes the same inputs —
 `identity`, `page`, `params`, `resolvePath`, `headingId`, `kind`,
-`breadcrumbLabel`, `tabsLabel` and `action` — with the same defaults; `identity`
-is optional, as the answer may not have arrived. The block's content comes as
-inputs `visual`, `meta`, `badges` and `description`, each a
+`breadcrumbLabel`, `tabsLabel`, `titleDataId` and `action` — with the same
+defaults. The optional string input `titleDataId` binds `data-id` on the
+existing template `h1`; omitted or `undefined` keeps `hilos-page-head-title`,
+with no title hook on the skeleton. `identity` is optional, as the answer may
+not have arrived. The block's content comes as inputs `visual`, `meta`,
+`badges` and `description`, each a
 `TemplateRef<unknown> | undefined` drawn through `NgTemplateOutlet`: omitted
 keeps a section's icon and lead, a template given in its place replaces the
 default, and an entity has no default to keep. Without a valid `pageHeadOwner`
@@ -826,10 +835,12 @@ the admin view mode are provided as `providers` of the shell around either
 head, and `headKind` before the answer picks the head's skeleton instead of the
 legacy one, as in Vue.
 
-The head's `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
+The head's default `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
 `hilos-page-head-title`, `hilos-page-head-action`, `hilos-page-head-skeleton`,
 `hilos-page-tabs` and `hilos-page-tab-<page>`, beside the breadcrumb's
-`hilos-breadcrumb` and `hilos-breadcrumb-<page>`. The country block adds
+`hilos-breadcrumb` and `hilos-breadcrumb-<page>`. In all three kits, opting in
+with `titleDataId` replaces only `hilos-page-head-title` on the existing `h1`;
+the heading does not carry both hooks. The country block adds
 `country-head-tile`, `country-head-code`, `country-head-own` and
 `country-head-description`. The React and Angular heads and countries draw the
 same `data-id`s. Each kit reads them in the same country specs of its demo —
@@ -847,6 +858,89 @@ exports, catalog and wire keys, constants, component props/slots and `data-id`
 values belong to the owning code leaves' interviews. Implementing a gated
 contract still follows [agents.md](../../../agents.md).
 
+### Profile owner and row
+
+The framework catalog declares `hilos_profile` as an entity owner with
+`pageHead=true`, breadcrumb `Profile`, and no Dashboard parent. It is the only
+outside-admin root the shared resolver treats as a row owner; `TopologyValidator`
+uses that same `rowOwnerOf()` boundary, so another outside-admin root cannot
+opt into a head. The profile row follows the merged catalog depth first:
+Overview, Ways to sign in, Notifications, Sessions, Devices, Security,
+Agreements, Revision history, Your data. Revision history is a non-entity
+descendant of Agreements and stays in the same row; a nested entity starts its
+own row. The backend includes only pages the project serves and that apply to
+the current owner's route params; the clients also drop tabs without a route.
+`AbstractPage::withPageIdentity()` adds the profile owner, breadcrumb and row to
+that page's existing `page_response`. Direct project children follow the
+framework entries in merged catalog order.
+When a project serves Notifications without the Profile root, the reply still
+names Profile as owner, omits the unavailable Overview tab, and hides the row
+because Notifications is the only link.
+
+### Profile subscription and head API
+
+Every framework profile page extends
+`AbstractHilosProfileSectionPage`. Its final `buildPagePayload()` resolves the
+authenticated acting user and combines the common `profilePhoto` feature flag
+and `secondFactor` snapshot with the page's `buildProfilePagePayload()`
+contribution through `PagePayload::over()`. The required
+`HilosProfileIdentitiesBrowserList` supplies `profileIdentities` in that same
+initial `page_response`. Its final `onSubscribeAfterResponse()` joins the
+existing `SecondFactorGroup` before calling the protected
+`onProfileSubscribeAfterResponse()` hook, so project overrides keep the common
+snapshot and membership. The Security page does not build a second copy of the
+second-factor state. These hooks add no action request, signal, DTO, or response
+envelope.
+
+The Overview keeps its own account-deletion state, `AccountDeletionGroup`, and
+`HilosProfileTimeZones` list. Its body retains Account, the name and verified
+email rows, Theme, Time zone, and the deletion danger zone. Sessions, devices,
+notifications, agreements, and data export keep their own lists, payloads and
+actions. The Overview no longer builds Sections or summary listeners, reads
+session/device counts or summary lists, or joins notification, agreement, and
+export sources for summaries.
+
+`@hilos/core/base` and `@hilos/core` export
+`createHilosProfileHeadStore(context, name?)` and `HilosProfileHeadStore` from
+one implementation. The required `HilosProfilePageContext` carries the
+connection, scopes, and tracked actions. The store's readonly signals expose
+the session name, photo and feature flag, verified email, passkey-only state,
+hidden sections, and current page identity. Its default name is
+`sessionUserName(scopes)`; the Overview passes the project's `binding.name`.
+The store binds that name to `HilosPages.PROFILE`, owns the existing
+second-factor listener, and has restartable `start()` / `dispose()` lifecycle.
+`claimNameBinding(): void` rebinds the live name while the store is started; it
+changes only that binding, leaves its disposer with the same store, and does not
+restart the second-factor listener. It is a no-op before `start()` and after
+`dispose()`, which releases the current binding. `start()` and `dispose()` remain
+restartable and idempotent. Like `bindPageInstanceName`, the binding is
+latest-producer-wins and does not automatically restore an earlier name.
+Identity is absent until the current page answer arrives, and its tabs filter
+the Security page only while second-factor verification is disabled with no
+authenticator or pending reset.
+
+Each SDK exports `HilosProfileHead` from its `/base` entry and compatibility
+root; React also exports `HilosProfileHeadProps`. The component requires
+`context: HilosProfilePageContext` and accepts an optional borrowed
+`HilosProfileHeadStore`. Without a store it creates and owns the store's
+lifecycle; with the Overview's store it leaves that lifecycle to the root. Each
+mount owns its existing profile-photo flow, and React creates a fresh flow for
+each StrictMode effect setup. The component presents the existing
+`HilosPageHead` as an entity: the name is its only `h1`, the `lg` avatar opens
+the existing `HilosProfilePhoto` flow when enabled, and the description shows
+the passkey-only warning or verified email. It uses the server's current page
+identity and the exact current page key for the `Profile pages` row, then lets
+the router omit pages without a client route. The existing heading hook is
+`titleDataId="profile-identity-name"`.
+
+`HilosProfileNotificationsPage` also receives the actions in its required page
+context for the shared head. The standalone core
+`HilosProfileNotificationsContext` and
+`startHilosNotificationPreferences()` remain connection-and-scopes APIs. The
+project extension is exercised with the test-only
+`project_profile_example` page at `/profile/example`; it is not a product route
+or a new business section.
+
 ## Not In This Phase
 
 HIL-1598 changes documentation only. HIL-1599 through HIL-1605 own the product
@@ -856,8 +950,9 @@ React and Angular's User redraws are also separate work.
 The local public-page presentation through `HilosStaticPage` is implemented
 across the three kits; it does not add server catalog adoption. The Terms and
 Privacy history pages are separate ordinary public routes.
-Profile and other project-page redraws, including their server adoption, remain
-Phase 2. The public Terms and Privacy history page keys, route declarations and
+The Profile owner and its served pages now use the shared head in Vue, React,
+and Angular. Other project-page redraws, including their server adoption,
+remain Phase 2. The public Terms and Privacy history page keys, route declarations and
 history views are implemented. Those routes do not expand the footer
 prerender set. LICENSE content remains HIL-1610; dependencies remain HIL-1611.
 Mockup examples do not activate those changes. Own deletion and redirect

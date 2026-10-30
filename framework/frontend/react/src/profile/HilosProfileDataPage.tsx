@@ -4,7 +4,7 @@ import {
   HILOS_DATA_EXPORT_COPY,
   type HilosDataExportContext,
 } from '@hilos/core/base'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosDataExport } from './HilosDataExport.js'
 
 /** The profile's personal-copy section, over the shared export flow. */
@@ -27,7 +27,7 @@ export function HilosProfileDataPage({
   }, [context])
   return (
     <section data-id="profile-data-view">
-      <HilosPageHeading />
+      <HilosProfileHead context={context} />
       {copy ? (
         <HilosDataExport
           store={copy.store}

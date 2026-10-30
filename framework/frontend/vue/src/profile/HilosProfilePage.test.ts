@@ -1,7 +1,6 @@
 // Covers the profile root's view (HIL-1169): Name with Change only when the
-// project handed its rename, Email only with a verified address, a row per
-// catalog section in the catalog's order with its summary — but for a section
-// the root hides (HIL-1303) — the placeholder while the name is not known yet,
+// project handed its rename, Email only with a verified address, the shared
+// catalog navigation and live Security visibility, the name placeholder,
 // the Time zone row (HIL-1585), and the Theme row (HIL-1434).
 import {
   ActionLifecycle,
@@ -157,6 +156,28 @@ const IDENTITY: HilosPageIdentity = {
   ],
 }
 
+/** The common profile identity shipped beside the Account body. */
+function answerProfile(scopes: ScopeManager): void {
+  const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
+  page.data.set('pageLabel', 'Profile')
+  page.data.set('pageHeadOwner', {
+    page: HilosPages.PROFILE,
+    label: 'Profile',
+    lead: '',
+  })
+  page.data.set('pageBreadcrumb', [
+    { page: HilosPages.PROFILE, label: 'Profile' },
+  ])
+  page.data.set('pageChildren', [])
+  page.data.set('pageTabs', [
+    { page: HilosPages.PROFILE, label: 'Overview' },
+    { page: HilosPages.PROFILE_SIGN_IN, label: 'Ways to sign in' },
+    { page: HilosPages.PROFILE_SESSIONS, label: 'Sessions' },
+    { page: HilosPages.PROFILE_SECURITY, label: 'Security' },
+    { page: HilosPages.PROFILE_DATA, label: 'Your data' },
+  ])
+}
+
 /** A router on the profile root whose every section has an address. */
 function router(): HilosRouter {
   return {
@@ -207,6 +228,7 @@ function nameOnly(name = 'Ann Lee'): HilosProfileBinding {
 function signedInScopes(): ScopeManager {
   const scopes = new ScopeManager()
   scopes.session.data.set('currentUser', { type: 'user', id: 1 })
+  answerProfile(scopes)
   return scopes
 }
 
@@ -255,12 +277,13 @@ function mountPage(
     actions: {} as ActionLifecycle,
   },
 ) {
+  answerProfile(scopes)
   releaseTimeZone ??= bindTimeZoneState(context.connection)
   return mount(HilosProfilePage, {
     attachTo: document.body,
     global: {
       provide: { [hilosRouterKey as symbol]: router() },
-      stubs: { HilosPageHeading: true, HilosAccountDeletion: true },
+      stubs: { HilosAccountDeletion: true },
     },
     props: {
       context,
@@ -324,7 +347,7 @@ describe('HilosProfilePage', () => {
       mountPage(nameOnly()).find('[data-id="profile-photo-open"]').exists(),
     ).toBe(false)
     const scopes = signedInScopes()
-    scopes.openPage(HilosPages.PROFILE).data.set('profilePhoto', true)
+    scopes.page()!.data.set('profilePhoto', true)
     const wrapper = mountPage(nameOnly(), scopes)
     expect(
       wrapper.find('[data-id="profile-photo-open"]').attributes('aria-label'),
@@ -374,35 +397,30 @@ describe('HilosProfilePage', () => {
     expect(wrapper.find('[data-id="profile-email-change"]').exists()).toBe(true)
   })
 
-  it('draws a row per catalog section in its order with the summaries it knows', () => {
-    const wrapper = mountPage({
-      ...nameOnly(),
-      sessionCount: createSignal(2),
-    })
-
-    const rows = wrapper.findAll('[data-id="profile-section"]')
-    expect(rows.map((row) => row.text())).toEqual([
-      expect.stringContaining('Ways to sign in'),
-      expect.stringContaining('Sessions'),
-      expect.stringContaining('Security'),
+  it('draws the catalog navigation and one named heading without section summaries', () => {
+    const wrapper = mountPage({ ...nameOnly(), sessionCount: createSignal(2) })
+    expect(wrapper.findAll('h1').map((heading) => heading.text())).toEqual([
+      'Ann Lee',
     ])
-    expect(wrapper.find('[data-id="profile-sign-in-summary"]').text()).toBe(
-      'No ways to sign in',
-    )
-    expect(wrapper.find('[data-id="profile-sessions-summary"]').text()).toBe(
-      '2 active sign-ins',
-    )
-    expect(wrapper.find('[data-id="profile-security-summary"]').text()).toBe(
-      'Two-step verification is off',
-    )
     expect(
-      wrapper.find('[data-id="profile-security-open"]').attributes('href'),
+      wrapper.find('[data-id="hilos-page-tabs"]').attributes('aria-label'),
+    ).toBe('Profile pages')
+    expect(wrapper.findAll('[data-id="profile-section"]')).toHaveLength(0)
+    expect(
+      wrapper
+        .find('[data-id="hilos-page-tab-hilos_profile"]')
+        .attributes('aria-current'),
+    ).toBe('page')
+    expect(
+      wrapper
+        .find('[data-id="hilos-page-tab-hilos_profile_security"]')
+        .attributes('href'),
     ).toBe(`/${HilosPages.PROFILE_SECURITY}`)
   })
 
-  it('draws no Security row while two-step verification is turned off with nothing of the person standing, live', async () => {
+  it('hides Security navigation while two-step verification is turned off with nothing of the person standing, live', async () => {
     const scopes = signedInScopes()
-    const page = scopes.openPage(HilosPages.PROFILE)
+    const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
     const section = {
       enabled: false,
       authenticators: [],
@@ -424,20 +442,18 @@ describe('HilosProfilePage', () => {
     await nextTick()
 
     expect(
-      wrapper.findAll('[data-id="profile-section"]').map((row) => row.text()),
-    ).toEqual([
-      expect.stringContaining('Ways to sign in'),
-      expect.stringContaining('Sessions'),
-    ])
-    expect(wrapper.find('[data-id="profile-security-open"]').exists()).toBe(
-      false,
-    )
+      wrapper
+        .find('[data-id="hilos-page-tab-hilos_profile_security"]')
+        .exists(),
+    ).toBe(false)
 
     page.data.set('secondFactor', { ...section, enabled: true })
     await nextTick()
-    expect(wrapper.find('[data-id="profile-security-summary"]').text()).toBe(
-      'Two-step verification is off',
-    )
+    expect(
+      wrapper
+        .find('[data-id="hilos-page-tab-hilos_profile_security"]')
+        .exists(),
+    ).toBe(true)
   })
 
   it('draws only the placeholder while nobody is signed in', () => {
@@ -455,7 +471,7 @@ describe('HilosProfilePage', () => {
     expect(wrapper.find('[data-id="profile-detail"]').exists()).toBe(false)
   })
 
-  it('warns under the sign-in row while device keys are the only way in, live', async () => {
+  it('warns under the name while device keys are the only way in, live', async () => {
     const methods = createSignal(
       resolveHilosProfileSignInMethods(
         [
@@ -815,7 +831,7 @@ describe('HilosProfilePage', () => {
     )
     expect(choice).not.toBeNull()
     choice?.click()
-    const page = scopes.openPage(HilosPages.PROFILE)
+    const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
     ingest(page, {
       lists: {
         profileTimeZones: {

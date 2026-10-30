@@ -1301,20 +1301,33 @@ final class TopologyValidatorTest extends TestCase
     }
 
     /**
-     * Adoption cannot create an owner on a tab or outside the admin branch, even on an entity.
+     * Adoption cannot create an owner on a tab or outside the admin/profile branches, even on an entity.
      */
-    public function testPageCatalogHeadCanBeEnabledOnlyOnAnAdminRowOwner(): void
+    public function testPageCatalogHeadCanBeEnabledOnlyOnARowOwner(): void
     {
         $this->assertPageCatalogErrors(TopologyPageCatalogHeadPlacementHilos::class, [
-            'PAGE_CATALOG[' . HilosPageConstants::HILOS_DASHBOARD . '][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[' . HilosPageConstants::HILOS_PROFILE . '][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[' . HilosPageConstants::HILOS_PROFILE_SIGN_IN . '][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[outside_entity][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[outside_child][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[ordinary_tab][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[ordinary_nested_tab][pageHead] may be true only on an admin row owner',
-            'PAGE_CATALOG[adopted_tab][pageHead] may be true only on an admin row owner',
+            'PAGE_CATALOG[' . HilosPageConstants::HILOS_DASHBOARD . '][pageHead] may be true only on a row owner',
+            'PAGE_CATALOG[' . HilosPageConstants::HILOS_PROFILE_SIGN_IN . '][pageHead] may be true only on a row owner',
+            'PAGE_CATALOG[outside_entity][pageHead] may be true only on a row owner',
+            'PAGE_CATALOG[outside_child][pageHead] may be true only on a row owner',
+            'PAGE_CATALOG[ordinary_tab][pageHead] may be true only on a row owner',
+            'PAGE_CATALOG[ordinary_nested_tab][pageHead] may be true only on a row owner',
+            'PAGE_CATALOG[adopted_tab][pageHead] may be true only on a row owner',
         ]);
+    }
+
+    /** A profile owner and its entity descendants are valid without registering a profile root page. */
+    public function testProfileHeadOwnersPassWithoutRuntimeOrRegisteredPages(): void
+    {
+        HilosFacade::$db = null;
+        HilosFacade::$rt = null;
+        HilosFacade::$sr = null;
+
+        self::assertSame([], TopologyProfilePageHeadHilos::PAGES);
+        TopologyProfilePageHeadHilos::validateTopology();
+        self::assertNull(HilosFacade::$db);
+        self::assertNull(HilosFacade::$rt);
+        self::assertNull(HilosFacade::$sr);
     }
 
     /**
@@ -1326,6 +1339,9 @@ final class TopologyValidatorTest extends TestCase
             'PAGE_CATALOG[empty_tab][breadcrumb] must be non-empty for a tab of page head owner enabled_section',
             'PAGE_CATALOG[empty_grandchild][breadcrumb] must be non-empty for a tab of page head owner enabled_section',
             'PAGE_CATALOG[empty_entity_tab][breadcrumb] must be non-empty for a tab of page head owner enabled_entity',
+            'PAGE_CATALOG[empty_profile_tab][breadcrumb] must be non-empty for a tab of page head owner hilos_profile',
+            'PAGE_CATALOG[empty_profile_grandchild][breadcrumb] must be non-empty for a tab of page head owner hilos_profile',
+            'PAGE_CATALOG[empty_profile_entity_tab][breadcrumb] must be non-empty for a tab of page head owner profile_entity',
         ]);
     }
 
@@ -5770,6 +5786,61 @@ final class TopologyPageCatalogHeadBlankTabsCatalog extends TopologyPageCatalogH
             PageCatalogConstants::CATALOG_ENTRY_PARENT => 'enabled_entity',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
         ],
+        HilosPageConstants::HILOS_PROFILE => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => null,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'empty_profile_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'empty_profile_grandchild' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'empty_profile_tab',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'profile_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'empty_profile_tab',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'empty_profile_entity_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'profile_entity',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+    ];
+}
+
+/** Valid profile owners, project extension and a disabled nested entity boundary. */
+final class TopologyProfilePageHeadCatalog extends TopologyPageCatalogHeadCatalog
+{
+    protected const array ENTRIES = [
+        HilosPageConstants::HILOS_PROFILE => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => null,
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Profile',
+        ],
+        'project_profile_example' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Project section',
+        ],
+        'profile_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'project_profile_example',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ],
+        'profile_entity_tab' => [PageCatalogConstants::CATALOG_ENTRY_PARENT => 'profile_entity'],
+        'profile_disabled_entity' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'profile_entity_tab',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => false,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
+        'profile_disabled_entity_tab' => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => 'profile_disabled_entity',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => '',
+        ],
     ];
 }
 
@@ -5874,6 +5945,11 @@ final class TopologyPageCatalogHeadBlankTabsHilos extends TopologyPageCatalogHea
 final class TopologyPageCatalogHeadValidHilos extends TopologyPageCatalogHeadHilos
 {
     protected const string PAGE_CATALOG = TopologyPageCatalogHeadValidCatalog::class;
+}
+
+final class TopologyProfilePageHeadHilos extends TopologyPageCatalogHeadHilos
+{
+    protected const string PAGE_CATALOG = TopologyProfilePageHeadCatalog::class;
 }
 
 final class TopologyPageCatalogHeadMalformedHilos extends TopologyPageCatalogHeadHilos

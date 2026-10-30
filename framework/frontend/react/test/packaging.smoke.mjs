@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import ts from 'typescript'
 import { build } from 'vite'
 import { sdkEvidence } from '../../core/bin/initial-bundle-sdk.mjs'
 
@@ -54,6 +55,65 @@ assert.ok(!modules(base).includes('src/index.ts'))
 assert.ok(modules(base).includes('src/HilosPageHead.tsx'))
 // So is the live instance name hook the page modules bind their name through.
 assert.ok(modules(base).includes('src/usePageInstanceName.ts'))
+assert.ok(modules(base).includes('src/profile/HilosProfileHead.tsx'))
+
+// Check installed declarations without source aliases or a file in the tree.
+const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
+const typeSource = `
+  import { HilosProfileHead, type HilosProfileHeadProps } from '@hilos/react/base'
+  import { HilosProfileHead as RootHead, type HilosProfileHeadProps as RootProps } from '@hilos/react'
+  import type { HilosProfileHeadStore, HilosProfilePageContext } from '@hilos/core/base'
+  type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
+    (<T>() => T extends B ? 1 : 2) ? true : false
+  const contextType: Same<HilosProfileHeadProps['context'], HilosProfilePageContext> = true
+  const storeType: Same<HilosProfileHeadProps['store'], HilosProfileHeadStore | undefined> = true
+  const componentProps: Same<Parameters<typeof HilosProfileHead>[0], HilosProfileHeadProps> = true
+  const rootProps: Same<HilosProfileHeadProps, RootProps> = true
+  const rootComponent: Same<typeof HilosProfileHead, typeof RootHead> = true
+  declare const context: HilosProfilePageContext
+  declare const store: HilosProfileHeadStore
+  const owned: HilosProfileHeadProps = { context }
+  const borrowed: HilosProfileHeadProps = { context, store }
+  // @ts-expect-error A profile head requires the page context.
+  const missingContext: HilosProfileHeadProps = {}
+  void contextType
+  void storeType
+  void componentProps
+  void rootProps
+  void rootComponent
+  void owned
+  void borrowed
+  void missingContext
+`
+const typeOptions = {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  jsx: ts.JsxEmit.ReactJSX,
+  strict: true,
+  noEmit: true,
+  // Match the SDK's tsconfig.base.json; the consumer fixture is still checked.
+  skipLibCheck: true,
+  types: ['vite/client'],
+}
+const typeHost = ts.createCompilerHost(typeOptions)
+const readSource = typeHost.getSourceFile.bind(typeHost)
+typeHost.getSourceFile = (path, languageVersion, onError, shouldCreateNew) =>
+  path === typeFixture
+    ? ts.createSourceFile(path, typeSource, languageVersion, true)
+    : readSource(path, languageVersion, onError, shouldCreateNew)
+const diagnostics = ts.getPreEmitDiagnostics(
+  ts.createProgram([typeFixture], typeOptions, typeHost),
+)
+assert.equal(
+  diagnostics.length,
+  0,
+  ts.formatDiagnostics(diagnostics, {
+    getCanonicalFileName: (path) => path,
+    getCurrentDirectory: () => packageDir,
+    getNewLine: () => '\n',
+  }),
+)
 const metadata = closure('admin-views.js')
 assert.deepEqual(modules(metadata), ['src/admin/hilosAdminViews.ts'])
 assert.ok(graph['admin-views.js'].dynamicImports.length > 0)
@@ -159,6 +219,7 @@ try {
               'HILOS_VIEW_LAYER',
               'HilosPageHead',
               'usePageInstanceName',
+              'HilosProfileHead',
             ]
               .map(
                 (key) =>

@@ -112,6 +112,7 @@ export type { HilosDropdownOption } from '../hilosDropdownOption.js'
 export type { HilosTableColumn } from '@hilos/core/base'
 
 export { HilosPageHeading } from '../HilosPageHeading.js'
+export { HilosProfileHead } from '../profile/HilosProfileHead.js'
 export { HilosProfilePage } from '../profile/HilosProfilePage.js'
 export { HilosProfileRename } from '../profile/HilosProfileRename.js'
 export { HilosProfilePhoto } from '../profile/HilosProfilePhoto.js'

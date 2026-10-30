@@ -3,59 +3,44 @@ import {
   Component,
   computed,
   effect,
-  inject,
   input,
   signal,
   untracked,
 } from '@angular/core'
 import {
   createHilosProfileEmailChangeFlow,
-  createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   createHilosTimeZonePicker,
-  hilosChildLinks,
-  HilosPages,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PROFILE_ROOT_COPY,
-  HILOS_PROFILE_PHOTO_COPY,
   hilosImpersonation,
   hilosSignedIn,
-  hilosProfileSectionIcon,
-  hilosProfileSectionId,
   subscribeSignal,
   type HilosProfileBinding,
   type HilosProfilePageContext,
 } from '@hilos/core/base'
-import { HilosAvatar } from '../HilosAvatar.js'
-import { HilosLink } from '../HilosLink.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { LoadingButton } from '../LoadingButton.js'
-import { HILOS_ROUTER } from '../hilosRouterToken.js'
 import { hilosSignal } from '../hilosSignal.js'
 import { HilosAccountDeletion } from './HilosAccountDeletion.js'
 import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
-import { HilosProfilePhoto } from './HilosProfilePhoto.js'
 import { HilosProfileTheme } from './HilosProfileTheme.js'
 import { HilosProfileTimeZone } from './HilosProfileTimeZone.js'
 
 /**
  * The profile root (HIL-1169): the person's own line, the Account rows (Name,
- * Email, Time zone, Theme), a row per catalog section with its live summary, and the
- * danger zone.
+ * Email, Time zone, Theme), the shared profile head and the danger zone.
  */
 @Component({
   selector: 'hilos-profile-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAccountDeletion,
-    HilosAvatar,
-    HilosLink,
-    HilosPageHeading,
+    HilosProfileHead,
     HilosProfileEmailChange,
     HilosProfileRename,
-    HilosProfilePhoto,
     HilosProfileTheme,
     HilosProfileTimeZone,
     LoadingButton,
@@ -63,45 +48,8 @@ import { HilosProfileTimeZone } from './HilosProfileTimeZone.js'
   template: `
     @if (signedIn()) {
       <section data-id="profile-view">
-        <hilos-page-heading />
         @if (name()) {
-          <div
-            class="d-flex align-items-center gap-3 mt-3"
-            data-id="profile-identity"
-          >
-            @if (photoEnabled()) {
-              <button
-                type="button"
-                data-id="profile-photo-open"
-                class="btn p-0 border-0 bg-transparent position-relative"
-                [title]="photoCopy.open"
-                [attr.aria-label]="photoCopy.open"
-                (click)="photoFlow().open()"
-              >
-                <hilos-avatar [name]="name()" [photo]="photo()" size="lg" />
-                <span
-                  class="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
-                  aria-hidden="true"
-                  ><i class="bi bi-camera"></i
-                ></span>
-              </button>
-            } @else {
-              <hilos-avatar [name]="name()" [photo]="photo()" size="lg" />
-            }
-            <div class="flex-grow-1 text-break">
-              <div class="h5 mb-0" data-id="profile-identity-name">
-                {{ name() }}
-              </div>
-              @if (verifiedEmail(); as address) {
-                <div
-                  class="small text-body-secondary"
-                  data-id="profile-identity-email"
-                >
-                  {{ address }}
-                </div>
-              }
-            </div>
-          </div>
+          <hilos-profile-head [context]="context()" [store]="root().head" />
         }
         <h2 class="h6 text-uppercase text-body-secondary mt-4 mb-2">
           {{ copy.account }}
@@ -218,59 +166,9 @@ import { HilosProfileTimeZone } from './HilosProfileTimeZone.js'
             {{ copy.loading }}
           </p>
         }
-        <section class="mt-4" aria-labelledby="profile-sections-heading">
-          <h2
-            id="profile-sections-heading"
-            class="h6 text-uppercase text-body-secondary mb-2"
-          >
-            {{ copy.sections }}
-          </h2>
-          @for (section of sections(); track section.page) {
-            <div
-              class="d-flex align-items-center gap-3 py-3 border-bottom"
-              data-id="profile-section"
-            >
-              <i
-                class="bi fs-5 text-body-secondary"
-                [class]="sectionIcon(section.page)"
-                aria-hidden="true"
-              ></i>
-              <div class="flex-grow-1 text-break">
-                <div class="fw-semibold small">{{ section.label }}</div>
-                <div
-                  class="small text-body-secondary"
-                  [attr.data-id]="sectionId(section.page) + '-summary'"
-                >
-                  {{ summaries()[section.page] }}
-                </div>
-                @if (section.page === signInPage && passkeyOnly()) {
-                  <div
-                    class="small text-warning-emphasis"
-                    data-id="profile-sign-in-passkey-only-line"
-                  >
-                    <i
-                      class="bi bi-exclamation-triangle me-1"
-                      aria-hidden="true"
-                    ></i
-                    >{{ copy.passkeyOnly }}
-                  </div>
-                }
-              </div>
-              <a
-                [hilosLink]="section.to"
-                class="btn btn-sm btn-outline-secondary"
-                [attr.data-id]="sectionId(section.page) + '-open'"
-                >{{ copy.open }}</a
-              >
-            </div>
-          }
-        </section>
         <hilos-account-deletion [context]="context()" />
         @if (rename(); as flow) {
           <hilos-profile-rename [flow]="flow" />
-        }
-        @if (photoEnabled()) {
-          <hilos-profile-photo [flow]="photoFlow()" />
         }
         <hilos-profile-email-change [flow]="email()" />
         <hilos-profile-theme [(open)]="themeOpen" />
@@ -292,23 +190,10 @@ import { HilosProfileTimeZone } from './HilosProfileTimeZone.js'
 export class HilosProfilePage {
   /** The project's connection, scopes and action lifecycle. */
   readonly context = input.required<HilosProfilePageContext>()
-  /** What only the project knows: the name, its rename, its lists. */
+  /** What only the project knows: the name and its rename. */
   readonly binding = input.required<HilosProfileBinding>()
   protected readonly copy = HILOS_PROFILE_ROOT_COPY
-  protected readonly photoCopy = HILOS_PROFILE_PHOTO_COPY
-  private readonly router = inject(HILOS_ROUTER)
-  private readonly identity = hilosSignal(this.router.pageIdentity)
-  private readonly route = hilosSignal(this.router.currentRoute)
-  // A section the root hides has no row: two-step verification turned off by
-  // the administrator, with nothing of the person's own standing (HIL-1303).
-  protected readonly sections = computed(() =>
-    hilosChildLinks(
-      this.identity()?.children ?? [],
-      this.route().params,
-      this.router.resolvePath,
-    ).filter((section) => !this.hiddenSections().includes(section.page)),
-  )
-  private readonly root = computed(() =>
+  protected readonly root = computed(() =>
     createHilosProfileRootStore(this.context(), this.binding()),
   )
   protected readonly rename = computed(() => {
@@ -328,28 +213,17 @@ export class HilosProfilePage {
   protected readonly timeZonePicker = computed(() =>
     createHilosTimeZonePicker(this.context()),
   )
-  protected readonly photoFlow = computed(() =>
-    createHilosProfilePhotoFlow(this.context(), this.root().photo),
-  )
   protected readonly signedIn = signal(false)
-  protected readonly photoEnabled = signal(false)
-  protected readonly photo = signal<string | null>(null)
   protected readonly name = signal('')
-  protected readonly summaries = signal<Readonly<Record<string, string>>>({})
-  private readonly hiddenSections = signal<readonly string[]>([])
   protected readonly verifiedEmail = signal<string | null>(null)
-  protected readonly passkeyOnly = signal(false)
   protected readonly theme = signal<string | null>(null)
   protected readonly timeZone = signal('')
   protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly stripTextId = HILOS_IMPERSONATION_STRIP_TEXT_ID
   protected readonly themeOpen = signal(false)
   protected readonly timeZoneOpen = signal(false)
-  protected readonly signInPage = HilosPages.PROFILE_SIGN_IN
   protected readonly renameOpening = signal(false)
   protected readonly emailOpening = signal(false)
-  protected readonly sectionIcon = hilosProfileSectionIcon
-  protected readonly sectionId = hilosProfileSectionId
 
   constructor() {
     // Take the sections once the inputs are bound; let them go on destroy.
@@ -363,29 +237,13 @@ export class HilosProfilePage {
         this.renameOpening.set(rename.stepUp.busy.get())
       }
       this.signedIn.set(root.signedIn.get())
-      this.photoEnabled.set(root.photoEnabled.get())
-      this.photo.set(root.photo.get())
-      this.summaries.set(root.summaries.get())
-      this.hiddenSections.set(root.hiddenSections.get())
       this.verifiedEmail.set(root.verifiedEmail.get())
-      this.passkeyOnly.set(root.passkeyOnly.get())
       this.theme.set(root.theme.get())
       this.timeZone.set(root.timeZone.get())
       const off = [
         subscribeSignal(root.signedIn, (value) => this.signedIn.set(value)),
-        subscribeSignal(root.photoEnabled, (value) =>
-          this.photoEnabled.set(value),
-        ),
-        subscribeSignal(root.photo, (value) => this.photo.set(value)),
-        subscribeSignal(root.summaries, (value) => this.summaries.set(value)),
-        subscribeSignal(root.hiddenSections, (value) =>
-          this.hiddenSections.set(value),
-        ),
         subscribeSignal(root.verifiedEmail, (value) =>
           this.verifiedEmail.set(value),
-        ),
-        subscribeSignal(root.passkeyOnly, (value) =>
-          this.passkeyOnly.set(value),
         ),
         subscribeSignal(root.theme, (value) => this.theme.set(value)),
         subscribeSignal(root.timeZone, (value) => this.timeZone.set(value)),
@@ -432,10 +290,6 @@ export class HilosProfilePage {
         off()
         flow.dispose()
       })
-    })
-    effect((onCleanup) => {
-      const flow = this.photoFlow()
-      onCleanup(() => flow.dispose())
     })
   }
 

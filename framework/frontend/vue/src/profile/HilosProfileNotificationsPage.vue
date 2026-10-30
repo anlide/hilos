@@ -2,15 +2,15 @@
 import {
   hilosNotificationAddressSection,
   startHilosNotificationPreferences,
-  type HilosProfileNotificationsContext,
+  type HilosProfilePageContext,
 } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 import HilosNotificationPreferences from '../HilosNotificationPreferences.vue'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import { hilosRouterKey } from '../hilosRouterKey.js'
 import { useSignal } from '../useSignal.js'
 
-const props = defineProps<{ context: HilosProfileNotificationsContext }>()
+const props = defineProps<{ context: HilosProfilePageContext }>()
 const router = inject(hilosRouterKey, null)
 const addressSection = useSignal(
   hilosNotificationAddressSection(props.context.scopes),
@@ -29,7 +29,7 @@ onUnmounted(() => stop?.())
 
 <template>
   <section data-id="profile-notifications-view">
-    <HilosPageHeading />
+    <HilosProfileHead :context="context" />
     <HilosNotificationPreferences
       :connection="context.connection"
       :address-section="addressSection"

@@ -2,10 +2,10 @@ import { useContext, useEffect, useMemo } from 'react'
 import {
   hilosNotificationAddressSection,
   startHilosNotificationPreferences,
-  type HilosProfileNotificationsContext,
+  type HilosProfilePageContext,
 } from '@hilos/core/base'
 import { HilosNotificationPreferences } from '../HilosNotificationPreferences.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosRouterContext } from '../hilosRouterContext.js'
 import { useSignal } from '../useSignal.js'
 
@@ -13,7 +13,7 @@ import { useSignal } from '../useSignal.js'
 export function HilosProfileNotificationsPage({
   context,
 }: {
-  context: HilosProfileNotificationsContext
+  context: HilosProfilePageContext
 }) {
   useEffect(() => startHilosNotificationPreferences(context), [context])
   const router = useContext(HilosRouterContext)
@@ -27,7 +27,7 @@ export function HilosProfileNotificationsPage({
     : undefined
   return (
     <section data-id="profile-notifications-view">
-      <HilosPageHeading />
+      <HilosProfileHead context={context} />
       <HilosNotificationPreferences
         connection={context.connection}
         addressSection={addressSection}

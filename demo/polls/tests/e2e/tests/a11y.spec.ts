@@ -33,6 +33,7 @@ import {
   expectPageReady,
   gotoPage,
   grantAdminToSelf,
+  expectProfileHeadAccessibility,
   watchProfileRenameStatus,
   expectProfileTimeZone,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -521,6 +522,7 @@ test('the profile name dialog exposes accessible focus and dirty-close behavior'
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
+  await expectProfileHeadAccessibility(expect, page, user.name)
   const opener = page.getByTestId('profile-edit')
   await clickSubmit(expect, opener)
   await expect(page.getByTestId('modal')).toHaveAccessibleName(

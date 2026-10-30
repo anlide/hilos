@@ -23,8 +23,7 @@ import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.
 // the live socket. The Name row exposes Change through the shared rename flow.
 // The framework list supplies the confirmed Email row. The rows are the
 // sections of the catalog this demo serves, in catalog order — Ways to sign in,
-// Security, then Your data — and each opens its page, whose "Profile" crumb now
-// leads back.
+// Security and Your data — each opens its own page, with Overview leading back.
 
 /** Confirm a password-backed operation inside the open profile dialog. */
 async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
@@ -56,32 +55,34 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByTestId('profile-email')).toContainText(email)
 
   const sections = ['sign-in', 'security', 'data']
-  await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
-  // The photo modal sits beside the three profile section controls.
-  expect(
-    await page
-      .getByTestId(/^profile-[a-z-]+-open$/)
-      .evaluateAll((links) =>
-        links.map((link) => link.getAttribute('data-id')),
-      ),
-  ).toEqual([
-    'profile-photo-open',
-    'profile-sign-in-open',
-    'profile-security-open',
-    'profile-data-open',
-  ])
   for (const section of sections) {
-    await clickSubmit(expect, page.getByTestId(`profile-${section}-open`))
-    await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
     await clickSubmit(
       expect,
-      page.getByTestId('hilos-breadcrumb-hilos_profile'),
+      page.getByTestId(
+        `hilos-page-tab-hilos_profile_${section.replaceAll('-', '_')}`,
+      ),
     )
+    await expect(page).toHaveURL(new RegExp(`/profile/${section}$`))
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
     await expect(page.getByTestId('profile-name')).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/profile')
   }
   expect(fullLoads).toBe(loadsAfterSignIn)
+  await gotoPage(expect, page, '/profile/data')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
+  await page.reload()
+  await expectPageReady(expect, page)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  await expect(page.getByTestId('profile-identity-email')).toHaveText(email)
+  await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
+  await page.goBack()
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(/\/profile\/data$/)
+  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
 })
 
 test('renames the profile name without moderation', async ({ page }) => {

@@ -47,6 +47,7 @@ import {
   countSentFrames,
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
+  expectProfileHeadAccessibility,
   watchProfileRenameStatus,
   STATUS_PATH,
   STATUS_WORKS_PATH,
@@ -565,6 +566,7 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
   try {
     const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
+    await expectProfileHeadAccessibility(expect, page, user.name)
     const opener = page.getByTestId('profile-edit')
     const dialog = page.getByRole('dialog')
     await clickSubmit(expect, opener)
@@ -644,21 +646,17 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
 test('the profile session and device pages expose one named surface', async ({
   page,
 }) => {
-  await createTestUser(expect, page)
+  const user = await createTestUser(expect, page)
 
   await gotoPage(expect, page, '/profile/sessions')
-  await expect(page.getByTestId('profile-sessions-heading')).toHaveText(
-    'Sessions',
-  )
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
   await expect(page.getByTestId('profile-sessions')).toHaveAttribute(
     'aria-label',
     'Sessions',
   )
 
   await gotoPage(expect, page, '/profile/devices')
-  await expect(page.getByTestId('profile-devices-heading')).toHaveText(
-    'Devices',
-  )
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
   await expect(page.getByTestId('profile-devices')).toHaveAttribute(
     'aria-label',
     'Devices',

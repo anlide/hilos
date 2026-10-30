@@ -1767,6 +1767,182 @@ final class PageCatalogResolverTest extends TestCase
         self::assertSame([['page' => HilosPageConstants::HILOS_USERS, 'label' => 'Overview']], $head->pageTabs);
     }
 
+    public function testProfileTabsShareTheOwnerHeadInDepthFirstCatalogOrder(): void
+    {
+        ProfilePageHeadTestHilos::initBrowser();
+        $params = new PageRouteParams([]);
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE, $params);
+
+        self::assertNotNull($head);
+        self::assertSame([
+            'pageHeadOwner' => [
+                'page' => HilosPageConstants::HILOS_PROFILE,
+                'label' => 'Profile',
+                'lead' => 'Your account and everything that belongs to it.',
+            ],
+            'pageBreadcrumb' => [['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Profile']],
+            'pageTabs' => [
+                ['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_SIGN_IN, 'label' => 'Ways to sign in'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS, 'label' => 'Notifications'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_SESSIONS, 'label' => 'Sessions'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_DEVICES, 'label' => 'Devices'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_SECURITY, 'label' => 'Security'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_AGREEMENTS, 'label' => 'Agreements'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY, 'label' => 'Revision history'],
+                ['page' => HilosPageConstants::HILOS_PROFILE_DATA, 'label' => 'Your data'],
+                ['page' => ProfilePageHeadTestCatalog::EXAMPLE, 'label' => 'Project section'],
+            ],
+            'pageChildren' => [],
+        ], $head->toArray());
+        foreach ($head->pageTabs as $tab) {
+            self::assertSame(HilosPageConstants::HILOS_PROFILE, PageCatalogResolver::rowOwner($tab['page']));
+            self::assertSame($head->toArray(), PageCatalogResolver::head($tab['page'], $params)?->toArray());
+            self::assertSame($head->pageBreadcrumb, PageCatalogResolver::breadcrumb($tab['page']));
+        }
+        self::assertSame(
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+            PageCatalogResolver::catalog()[HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY]
+                [PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        );
+        self::assertSame([
+            'label' => 'Project profile example',
+            'lead' => 'A project profile fixture.',
+        ], PageCatalogResolver::identity(ProfilePageHeadTestCatalog::EXAMPLE));
+    }
+
+    public function testProfileEntityStartsItsOwnHeadAndIsExcludedFromTheProfileRow(): void
+    {
+        ProfilePageHeadTestHilos::initBrowser();
+        $head = PageCatalogResolver::head(ProfilePageHeadTestCatalog::ENTITY_CHILD, new PageRouteParams([]));
+
+        self::assertNotNull($head);
+        self::assertSame(ProfilePageHeadTestCatalog::ENTITY, PageCatalogResolver::rowOwner(ProfilePageHeadTestCatalog::ENTITY_CHILD));
+        self::assertSame([
+            'page' => ProfilePageHeadTestCatalog::ENTITY,
+            'label' => 'Project entity',
+            'lead' => 'A nested profile entity.',
+        ], $head->pageHeadOwner);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Profile'],
+            ['page' => ProfilePageHeadTestCatalog::EXAMPLE, 'label' => 'Project section'],
+            ['page' => ProfilePageHeadTestCatalog::ENTITY, 'label' => 'Entity'],
+        ], $head->pageBreadcrumb);
+        self::assertSame([
+            ['page' => ProfilePageHeadTestCatalog::ENTITY, 'label' => 'Overview'],
+            ['page' => ProfilePageHeadTestCatalog::ENTITY_CHILD, 'label' => 'Details'],
+        ], $head->pageTabs);
+        self::assertSame(
+            $head->toArray(),
+            PageCatalogResolver::head(ProfilePageHeadTestCatalog::ENTITY, new PageRouteParams([]))?->toArray(),
+        );
+    }
+
+    public function testNotificationsKeepsTheProfileIdentityWithoutAServedOrRegisteredRoot(): void
+    {
+        foreach ([ProfileNotificationsOnlyHeadTestHilos::class, ProfileUnservedRootHeadTestHilos::class] as $facade) {
+            $facade::initBrowser();
+            Hilos::$sr = $this->createStub(SignalRouter::class);
+            Hilos::$sr->method('servesPage')->willReturnCallback(
+                static fn (string $page): bool => $page === HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS,
+            );
+
+            self::assertFalse(Hilos::$sr->servesPage(HilosPageConstants::HILOS_PROFILE));
+            self::assertSame([
+                'pageHeadOwner' => [
+                    'page' => HilosPageConstants::HILOS_PROFILE,
+                    'label' => 'Profile',
+                    'lead' => 'Your account and everything that belongs to it.',
+                ],
+                'pageBreadcrumb' => [['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Profile']],
+                'pageTabs' => [['page' => HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS, 'label' => 'Notifications']],
+                'pageChildren' => [],
+            ], PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS, new PageRouteParams([]))?->toArray());
+        }
+    }
+
+    public function testMissingProfileTabPrunesItsServedDescendants(): void
+    {
+        ProfilePageHeadTestHilos::initBrowser();
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(
+            static fn (string $page): bool => $page !== HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+        );
+
+        $head = PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY, new PageRouteParams([]));
+        self::assertNotNull($head);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_SIGN_IN, 'label' => 'Ways to sign in'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS, 'label' => 'Notifications'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_SESSIONS, 'label' => 'Sessions'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_DEVICES, 'label' => 'Devices'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_SECURITY, 'label' => 'Security'],
+            ['page' => HilosPageConstants::HILOS_PROFILE_DATA, 'label' => 'Your data'],
+            ['page' => ProfilePageHeadTestCatalog::EXAMPLE, 'label' => 'Project section'],
+        ], $head->pageTabs);
+    }
+
+    public function testInapplicableProfileTabPrunesItsDescendantsForEachSubscription(): void
+    {
+        ProfileConditionalHeadTestHilos::initBrowser();
+        $enabled = PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE, new PageRouteParams(['variant' => 'enabled']));
+        $disabled = PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE, new PageRouteParams(['variant' => 'disabled']));
+
+        self::assertNotNull($enabled);
+        self::assertNotNull($disabled);
+        self::assertSame([
+            HilosPageConstants::HILOS_PROFILE,
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN,
+            HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS,
+            HilosPageConstants::HILOS_PROFILE_SESSIONS,
+            HilosPageConstants::HILOS_PROFILE_DEVICES,
+            HilosPageConstants::HILOS_PROFILE_SECURITY,
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY,
+            HilosPageConstants::HILOS_PROFILE_DATA,
+            ProfilePageHeadTestCatalog::EXAMPLE,
+        ], array_column($enabled->pageTabs, 'page'));
+        self::assertSame([
+            HilosPageConstants::HILOS_PROFILE,
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN,
+            HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS,
+            HilosPageConstants::HILOS_PROFILE_SESSIONS,
+            HilosPageConstants::HILOS_PROFILE_DEVICES,
+            HilosPageConstants::HILOS_PROFILE_SECURITY,
+            HilosPageConstants::HILOS_PROFILE_DATA,
+            ProfilePageHeadTestCatalog::EXAMPLE,
+        ], array_column($disabled->pageTabs, 'page'));
+        self::assertSame($enabled->pageBreadcrumb, $disabled->pageBreadcrumb);
+    }
+
+    public function testFrameworkProfileAdoptsTheSharedOwnerWithoutADashboardParent(): void
+    {
+        ProfilePageHeadTestHilos::initBrowser();
+        self::assertSame(HilosPageConstants::HILOS_PROFILE, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_PROFILE));
+        self::assertSame(
+            HilosPageConstants::HILOS_PROFILE,
+            PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY),
+        );
+        self::assertSame(
+            PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE, new PageRouteParams([]))?->toArray(),
+            PageCatalogResolver::head(HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY, new PageRouteParams([]))?->toArray(),
+        );
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Profile'],
+        ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY));
+        self::assertSame([
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN,
+            HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS,
+            HilosPageConstants::HILOS_PROFILE_SESSIONS,
+            HilosPageConstants::HILOS_PROFILE_DEVICES,
+            HilosPageConstants::HILOS_PROFILE_SECURITY,
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+            HilosPageConstants::HILOS_PROFILE_DATA,
+            ProfilePageHeadTestCatalog::EXAMPLE,
+        ], array_column(PageCatalogResolver::children(HilosPageConstants::HILOS_PROFILE), 'page'));
+    }
+
     public function testDisabledNestedEntityStopsAdoptionAndKeepsItsLegacyChain(): void
     {
         PageHeadTestHilos::initBrowser();
@@ -1795,14 +1971,13 @@ final class PageCatalogResolverTest extends TestCase
     public function testUnknownExternalDashboardAndDisabledOwnersHaveNoHead(): void
     {
         PageHeadTestHilos::initBrowser();
-        foreach (['unknown', HilosPageConstants::HILOS_DASHBOARD, HilosPageConstants::HILOS_PROFILE_SIGN_IN] as $page) {
+        foreach (['unknown', HilosPageConstants::HILOS_DASHBOARD, PageHeadTestCatalog::OUTSIDE_ENTITY] as $page) {
             self::assertNull(PageCatalogResolver::rowOwner($page));
             self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
         }
         self::assertSame([], PageCatalogResolver::breadcrumb('unknown'));
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_PROFILE, 'label' => 'Profile'],
-            ['page' => HilosPageConstants::HILOS_PROFILE_SIGN_IN, 'label' => 'Ways to sign in'],
         ], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_PROFILE_SIGN_IN));
 
         PageCatalogResolverTestHilos::initBrowser();
@@ -2384,6 +2559,7 @@ final class PageHeadTestCatalog implements PageCatalogProviderInterface
     public const string MISSING_CHILD = 'i18n_missing_child';
     public const string UNSERVED = 'i18n_unserved';
     public const string UNSERVED_CHILD = 'i18n_unserved_child';
+    public const string OUTSIDE_ENTITY = 'outside_entity';
 
     /**
      * @return array<string, array{
@@ -2412,9 +2588,12 @@ final class PageHeadTestCatalog implements PageCatalogProviderInterface
             self::MISSING_CHILD => self::entry('Missing child', self::MISSING),
             self::UNSERVED => self::entry('Unserved', HilosPageConstants::HILOS_I18N),
             self::UNSERVED_CHILD => self::entry('Unserved child', self::UNSERVED),
-            HilosPageConstants::HILOS_PROFILE_SIGN_IN => self::entry(
-                'Ways to sign in', HilosPageConstants::HILOS_PROFILE, breadcrumb: 'Ignored', entity: true, pageHead: true,
-            ),
+            self::OUTSIDE_ENTITY => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Outside entity',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'An entity outside the supported branches.',
+                PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            ],
         ];
     }
 
@@ -2684,6 +2863,61 @@ final class MaintenanceNodesHeadTestPage extends AbstractHilosMaintenanceNodesPa
 {
 }
 
+/** The real profile catalog extended only with test project pages and an entity boundary. */
+final class ProfilePageHeadTestCatalog implements PageCatalogProviderInterface
+{
+    public const string EXAMPLE = 'project_profile_example';
+    public const string ENTITY = 'project_profile_entity';
+    public const string ENTITY_CHILD = 'project_profile_entity_details';
+
+    /**
+     * @return array<string, array<string, mixed>> Profile metadata and a project extension with an entity boundary
+     */
+    public static function pages(): array
+    {
+        $pages = array_intersect_key(HilosPageCatalog::CATALOG, array_flip([
+            HilosPageConstants::HILOS_PROFILE,
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN,
+            HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS,
+            HilosPageConstants::HILOS_PROFILE_SESSIONS,
+            HilosPageConstants::HILOS_PROFILE_DEVICES,
+            HilosPageConstants::HILOS_PROFILE_SECURITY,
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY,
+            HilosPageConstants::HILOS_PROFILE_DATA,
+        ]));
+
+        return $pages + [
+            self::EXAMPLE => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Project profile example',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A project profile fixture.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Project section',
+            ],
+            self::ENTITY => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Project entity',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A nested profile entity.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => self::EXAMPLE,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Entity',
+                PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            ],
+            self::ENTITY_CHILD => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Entity details',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A tab of the nested entity.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => self::ENTITY,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Details',
+            ],
+        ];
+    }
+
+    /** @return list<array{title: string, description: string, items: list<string>}> No dashboard sections */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
+}
+
 /** All Legal pages served with the default, unadopted framework catalog. */
 abstract class LegacyLegalPageHeadTestHilos extends Hilos
 {
@@ -2737,4 +2971,46 @@ final class LegalPageHeadTestCatalog implements PageCatalogProviderInterface
     {
         return [];
     }
+}
+
+/** Registers the test profile pages without changing any product facade. */
+abstract class ProfilePageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_PROFILE => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_SIGN_IN => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_SESSIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_DEVICES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_SECURITY => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_AGREEMENTS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_PROFILE_DATA => PageHeadTestPage::class,
+        ProfilePageHeadTestCatalog::EXAMPLE => PageHeadTestPage::class,
+        ProfilePageHeadTestCatalog::ENTITY => PageHeadTestPage::class,
+        ProfilePageHeadTestCatalog::ENTITY_CHILD => PageHeadTestPage::class,
+    ];
+
+    protected const string PAGE_CATALOG = ProfilePageHeadTestCatalog::class;
+}
+
+abstract class ProfileConditionalHeadTestHilos extends ProfilePageHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_PROFILE_AGREEMENTS => PageHeadTestConditionalTab::class,
+    ];
+}
+
+abstract class ProfileNotificationsOnlyHeadTestHilos extends ProfilePageHeadTestHilos
+{
+    public const array PAGES = [HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS => PageHeadTestPage::class];
+}
+
+abstract class ProfileUnservedRootHeadTestHilos extends ProfileNotificationsOnlyHeadTestHilos
+{
+    public const array PAGES = [
+        ...parent::PAGES,
+        HilosPageConstants::HILOS_PROFILE => PageHeadTestUnservedTab::class,
+    ];
 }

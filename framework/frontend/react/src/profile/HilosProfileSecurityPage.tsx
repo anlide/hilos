@@ -40,7 +40,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosModal } from '../HilosModal.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
@@ -478,7 +478,7 @@ export function HilosProfileSecurityPage({
 
   return (
     <section data-id="profile-security" className="mx-auto py-3">
-      <HilosPageHeading />
+      <HilosProfileHead context={context} />
 
       {state === null ? (
         <div className="text-body-secondary" role="status">

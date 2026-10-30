@@ -5,7 +5,7 @@ import {
   HILOS_DATA_EXPORT_COPY,
   type HilosDataExportContext,
 } from '@hilos/core/base'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import HilosDataExport from './HilosDataExport.vue'
 
 const props = defineProps<{ context: HilosDataExportContext }>()
@@ -24,7 +24,7 @@ onUnmounted(() => {
 
 <template>
   <section data-id="profile-data-view">
-    <HilosPageHeading />
+    <HilosProfileHead :context="context" />
     <HilosDataExport
       v-if="copy"
       :store="copy.store"

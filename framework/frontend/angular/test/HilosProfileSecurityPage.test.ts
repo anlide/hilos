@@ -12,11 +12,11 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   createSignal,
   ScopeManager,
-  type HilosRouter,
   type HilosSecondFactorContext,
   type ProjectSignal,
 } from '@hilos/core'
 import { afterEach, expect, it, vi } from 'vitest'
+import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSecurityPage } from '../src/profile/HilosProfileSecurityPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -88,14 +88,7 @@ function setup(
     },
     scopes: new ScopeManager(),
   } as unknown as HilosSecondFactorContext
-  const router = {
-    pageIdentity: createSignal(undefined),
-    currentRoute: createSignal({
-      page: 'hilos_profile_security',
-      params: {},
-      admin: false,
-    }),
-  } as unknown as HilosRouter
+  const router = profileSectionFixture(context.scopes, 'hilos_profile_security')
   TestBed.configureTestingModule({
     providers: [{ provide: HILOS_ROUTER, useValue: router }],
   })

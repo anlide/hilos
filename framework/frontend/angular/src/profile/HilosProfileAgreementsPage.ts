@@ -23,7 +23,7 @@ import {
 } from '@hilos/core/base'
 import { HilosLink } from '../HilosLink.js'
 import { HilosModal } from '../HilosModal.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 
@@ -34,13 +34,13 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
   imports: [
     HilosLink,
     HilosModal,
-    HilosPageHeading,
+    HilosProfileHead,
     HilosLegalChanges,
     HilosLegalRevisionText,
   ],
   template: `
     <div data-id="profile-agreements-view">
-      <hilos-page-heading />
+      <hilos-profile-head [context]="context()" />
       @if (state() && texts()) {
         <p class="small text-body-secondary">
           These are the revisions you accepted. The current text may have

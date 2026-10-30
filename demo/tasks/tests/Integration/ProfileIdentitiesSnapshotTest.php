@@ -7,6 +7,8 @@ namespace Demo\Tasks\Tests\Integration;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Pages\Hilos\ProfilePage;
+use Demo\Tasks\Pages\Hilos\ProfileDataPage;
+use Demo\Tasks\Pages\Hilos\ProfileSecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfileSignInPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -44,7 +46,12 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
             // The worker has not fetched either identity by key.
             Hilos::$db->getObjectCollection(TasksDbContext::identities)?->clearInMemory();
 
-            foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
+            foreach ([
+                ProfilePage::PAGE,
+                ProfileSignInPage::PAGE,
+                ProfileSecurityPage::PAGE,
+                ProfileDataPage::PAGE,
+            ] as $page) {
                 Hilos::$db->getObjectCollection(TasksDbContext::identities)?->clearInMemory();
                 $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
                     $page,

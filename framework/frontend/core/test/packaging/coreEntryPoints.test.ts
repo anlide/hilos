@@ -56,6 +56,7 @@ import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
 import * as profileRenameMemory from '../../src/profile/profileRenameMemory.js'
 import * as legalHistory from '../../src/legal/legalHistory.js'
+import * as profileHead from '../../src/profile/profileHead.js'
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url))
 const sourceRoot = join(packageRoot, 'src')
@@ -179,6 +180,9 @@ const accessLossTypes = ['AccessLossReason']
 /** The profile picker is one shared base/root implementation and type owner. */
 const timeZonePickerValues = ['createHilosTimeZonePicker']
 const timeZonePickerTypes = ['HilosTimeZonePicker', 'HilosTimeZonePickerRow']
+/** The staged profile head has one factory and type owner in root and base. */
+const profileHeadValues = ['createHilosProfileHeadStore']
+const profileHeadTypes = ['HilosProfileHeadStore']
 /** The held name snapshot has one eager owner, shared by root and base. */
 const profileNameStateValues = [
   'bindProfileNameState',
@@ -821,6 +825,7 @@ const expectedValues = [
   ...momentValues,
   ...accessLossValues,
   ...timeZonePickerValues,
+  ...profileHeadValues,
   ...profileNameStateValues,
   ...profileRenameMemoryValues,
   ...tableTextValues,
@@ -1269,6 +1274,7 @@ describe('core public entries', () => {
       ...momentValues,
       ...accessLossValues,
       ...timeZonePickerValues,
+      ...profileHeadValues,
       ...profileNameStateValues,
       ...profileRenameMemoryValues,
       ...tableTextValues,
@@ -1295,6 +1301,11 @@ describe('core public entries', () => {
     expect(base.createHilosTimeZonePicker).toBe(
       timeZonePicker.createHilosTimeZonePicker,
     )
+    expect(base.createHilosProfileHeadStore).toBe(
+      profileHead.createHilosProfileHeadStore,
+    )
+    expectTypeOf<base.HilosProfileHeadStore>().toEqualTypeOf<profileHead.HilosProfileHeadStore>()
+    expectTypeOf<core.HilosProfileHeadStore>().toEqualTypeOf<profileHead.HilosProfileHeadStore>()
     for (const name of profileNameStateValues) {
       const owner: Record<string, unknown> = profileNameState
       expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
@@ -1534,6 +1545,7 @@ describe('core public entries', () => {
         ...momentTypes,
         ...accessLossTypes,
         ...timeZonePickerTypes,
+        ...profileHeadTypes,
         ...profileNameStateTypes,
         ...profileRenameMemoryTypes,
         ...rowEditTypes,
@@ -1559,6 +1571,8 @@ describe('core public entries', () => {
       ...accessLossValues,
       ...timeZonePickerTypes,
       ...timeZonePickerValues,
+      ...profileHeadTypes,
+      ...profileHeadValues,
       ...profileNameStateTypes,
       ...profileNameStateValues,
       ...profileRenameMemoryTypes,
@@ -1590,6 +1604,10 @@ describe('core public entries', () => {
     const pickerExports = exportsOf('timeZone/timeZonePicker.ts')
     for (const name of [...timeZonePickerValues, ...timeZonePickerTypes]) {
       expect(root.get(name), name).toBe(pickerExports.get(name))
+    }
+    const profileHeadExports = exportsOf('profile/profileHead.ts')
+    for (const name of [...profileHeadValues, ...profileHeadTypes]) {
+      expect(root.get(name), name).toBe(profileHeadExports.get(name))
     }
     const nameStateExports = exportsOf('profile/profileNameState.ts')
     for (const name of [...profileNameStateValues, ...profileNameStateTypes]) {
@@ -1963,6 +1981,7 @@ describe('core public entries', () => {
     expect(closure).toContain('connection/restoreProgress.ts')
     expect(closure).toContain('format/moment.ts')
     expect(closure).toContain('timeZone/timeZonePicker.ts')
+    expect(closure).toContain('profile/profileHead.ts')
     expect(closure).toContain('profile/profileNameState.ts')
     expect(runtimeClosure('protocol/profileNameStateSignal.ts')).toEqual([
       'protocol/profileNameStateSignal.ts',
@@ -2037,6 +2056,8 @@ describe('core public entries', () => {
     'base/index.ts',
     'bootstrap/bootHilos.ts',
     'conflict/rowEditSession.ts',
+    'profile/profileHead.ts',
+    'profile/profileRoot.ts',
     'profile/profileNameState.ts',
     'profile/profileRename.ts',
     'auth/stepUp.ts',

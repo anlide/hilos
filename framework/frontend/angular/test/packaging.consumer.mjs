@@ -21,8 +21,10 @@ try {
     import { hilosAdminViews } from '@hilos/angular/admin-views'
     import { HilosAnalyticsPage } from '@hilos/angular/admin/analytics'
     import { HilosSettingsPage } from '@hilos/angular/admin/settings'
+    import { HilosDashboardPage } from '@hilos/angular/admin/dashboard'
     import { Component, Injector, runInInjectionContext } from '@angular/core'
     import {
+      HilosProfileHead,
       HilosTableCell,
       HilosTableText,
       HilosViewportTable,
@@ -30,6 +32,8 @@ try {
     import {
       TableViewportController,
       type Hideable,
+      type HilosProfileHeadStore,
+      type HilosProfilePageContext,
       type HilosTableColumn,
       type HilosTableFrame,
     } from '@hilos/core/base'
@@ -67,6 +71,24 @@ try {
         sendViewport: () => undefined,
         frame: tableTextFrame,
       })
+    }
+    type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
+      (<T>() => T extends B ? 1 : 2) ? true : false
+    const sameHead: Same<typeof root.HilosProfileHead, typeof HilosProfileHead> = true
+    const headContext: Same<ReturnType<HilosProfileHead['context']>, HilosProfilePageContext> = true
+    const headStore: Same<ReturnType<HilosProfileHead['store']>, HilosProfileHeadStore | undefined> = true
+    @Component({
+      selector: 'hilos-profile-head-consumer',
+      standalone: true,
+      imports: [HilosProfileHead],
+      template: \`
+        <hilos-profile-head [context]="context" />
+        <hilos-profile-head [context]="context" [store]="store" />
+      \`,
+    })
+    class HilosProfileHeadConsumer {
+      readonly context!: HilosProfilePageContext
+      readonly store!: HilosProfileHeadStore
     }
     const sameCore = ${[
       'HilosConnection',
@@ -112,23 +134,30 @@ try {
       'HilosAdminPage',
       'HilosModal',
       'HilosPageHead',
+      'HilosProfileHead',
     ]
       .map((name) => `root.${name} === base.${name}`)
       .join(' && ')} && root.HilosTableText !== undefined &&
       root.HilosTableText === base.HilosTableText
     const samePages = root.HilosSettingsPage === HilosSettingsPage &&
-      root.HilosAnalyticsPage === HilosAnalyticsPage
+      root.HilosAnalyticsPage === HilosAnalyticsPage &&
+      root.HilosDashboardPage === HilosDashboardPage
+    const router = {
+      resolvePath: () => '/same',
+      pageIdentity: coreBase.createSignal(undefined),
+      dashboardSections: coreBase.createSignal(undefined),
+    }
     const environment = Injector.create({ providers: [
-      { provide: root.HILOS_ROUTER, useValue: { resolvePath: () => '/same' } },
+      { provide: root.HILOS_ROUTER, useValue: router },
     ] })
     const injected = runInInjectionContext(environment, () =>
-      new HilosAnalyticsPage() instanceof root.HilosAnalyticsPage)
+      new HilosDashboardPage() instanceof root.HilosDashboardPage)
     environment.destroy()
     const defaults = Object.values(hilosAdminViews())
     const loaded = Promise.all(defaults.map(view => {
       if (typeof view === 'function') throw new Error('Eager default')
       return view.load()
-    })).then((pages: unknown[]) => pages.length === 31 && pages.every(page => typeof page === 'function'))
+    })).then((pages: unknown[]) => pages.length === 30 && pages.every(page => typeof page === 'function'))
     Object.assign(globalThis, { hilosAngularIdentity: {
       sameCore,
       sameCoreSection,
@@ -137,6 +166,8 @@ try {
       injected,
       loaded,
       tableTextHost: HilosTableTextConsumer,
+      profileHeadHost: HilosProfileHeadConsumer,
+      headTypes: sameHead && headContext && headStore,
     } })
   `,
   )
@@ -228,6 +259,13 @@ try {
   )
   assert.equal(result.tableTextHost.ɵcmp.standalone, true)
   assert.equal(typeof result.tableTextHost.ɵcmp.template, 'function')
+  assert.ok(
+    result.profileHeadHost.ɵcmp,
+    'AOT profile head host must remain emitted',
+  )
+  assert.equal(result.profileHeadHost.ɵcmp.standalone, true)
+  assert.equal(typeof result.profileHeadHost.ɵcmp.template, 'function')
+  assert.equal(result.headTypes, true)
   assert.equal(await result.loaded, true)
   delete globalThis.hilosAngularIdentity
   if (process.argv[3])

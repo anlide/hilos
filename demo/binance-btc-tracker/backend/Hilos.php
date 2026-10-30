@@ -198,6 +198,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Status\StatusAgent;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 
 /**
  * Hilos - Main app facade for data access.
@@ -528,6 +529,10 @@ class Hilos extends HilosFacade
         HilosStatusHistoryTable::TABLE => HilosStatusHistoryTable::class,
     ];
 
+    public const array BROWSER_LISTS = [
+        HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
+    ];
+
     public const array BROWSER_TABLES = [
         HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
     ];
@@ -535,6 +540,12 @@ class Hilos extends HilosFacade
     public const array BROWSER_DATA = [
         LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
         CountryCardBrowserData::DATA => CountryCardBrowserData::class,
+    ];
+
+    public const array PAGE_LISTS = [
+        ProfileNotificationsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
     ];
 
     public const array PAGE_DATA = [

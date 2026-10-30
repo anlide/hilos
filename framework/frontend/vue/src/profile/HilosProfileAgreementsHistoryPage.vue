@@ -14,7 +14,7 @@ import {
 } from '@hilos/core/base'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
-import HilosPageHeading from '../HilosPageHeading.vue'
+import HilosProfileHead from './HilosProfileHead.vue'
 import HilosLegalChanges from '../legal/HilosLegalChanges.vue'
 import HilosLegalRevisionText from '../legal/HilosLegalRevisionText.vue'
 import { useSignal } from '../useSignal.js'
@@ -63,7 +63,7 @@ function current(document: HilosLegalDocumentKey): string | undefined {
 
 <template>
   <div data-id="profile-agreements-history-view">
-    <HilosPageHeading />
+    <HilosProfileHead :context="context" />
     <template v-if="state">
       <p v-if="history.length === 0" class="text-body-secondary">
         This project publishes no legal documents

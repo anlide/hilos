@@ -1,10 +1,10 @@
 // Covers the React profile root (HIL-1169): Name with Change only for the
-// project's rename, Email only with a verified address, a row per catalog
-// section with its summary — but for a section the root hides (HIL-1303) — a
-// name window that still closes on the name it
+// project's rename, Email only with a verified address, live catalog tabs,
+// and a name window that still closes on the name it
 // sent after StrictMode ran its effects twice, and the Theme row with its
 // window (HIL-1440).
-import { StrictMode } from 'react'
+import { StrictMode, useLayoutEffect, type ReactNode } from 'react'
+import { createRoot } from 'react-dom/client'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -111,6 +111,7 @@ function bindTheme(
   releaseTheme?.()
   const connection = fakeConnection()
   const scopes = new ScopeManager()
+  answerProfile(scopes)
   bindSessionScope(connection as unknown as HilosConnection, scopes)
   releaseTheme = bindThemeState(
     connection as unknown as HilosConnection,
@@ -121,6 +122,28 @@ function bindTheme(
   connection.emit('hilos_theme_settings', settings)
 
   return connection
+}
+
+/** The common profile identity shipped beside the Account body. */
+function answerProfile(scopes: ScopeManager): void {
+  const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
+  page.data.set('pageLabel', 'Profile')
+  page.data.set('pageHeadOwner', {
+    page: HilosPages.PROFILE,
+    label: 'Profile',
+    lead: '',
+  })
+  page.data.set('pageBreadcrumb', [
+    { page: HilosPages.PROFILE, label: 'Profile' },
+  ])
+  page.data.set('pageChildren', [])
+  page.data.set('pageTabs', [
+    { page: HilosPages.PROFILE, label: 'Overview' },
+    { page: HilosPages.PROFILE_SIGN_IN, label: 'Ways to sign in' },
+    { page: HilosPages.PROFILE_SESSIONS, label: 'Sessions' },
+    { page: HilosPages.PROFILE_SECURITY, label: 'Security' },
+    { page: HilosPages.PROFILE_DATA, label: 'Your data' },
+  ])
 }
 
 /** A router on the profile root whose sections all have an address. */
@@ -191,6 +214,7 @@ function setup(
     ),
   }))
   const scopes = new ScopeManager()
+  answerProfile(scopes)
   if (signedIn) scopes.session.data.set('currentUser', { type: 'user', id: 1 })
   if (initialMethods) setMethods(scopes, initialMethods)
   const context = {
@@ -214,13 +238,66 @@ function setup(
   }
 }
 
-it('offers the photo button only after the profile page enables photos', () => {
+it('opens the enabled photo window after StrictMode replay and returns focus on close', () => {
   const { node, scopes } = setup(nameOnly())
   expect(node('profile-photo-open')).toBeNull()
-  act(() => scopes.openPage(HilosPages.PROFILE).data.set('profilePhoto', true))
+  act(() => scopes.page()!.data.set('profilePhoto', true))
   expect(node('profile-photo-open')?.getAttribute('aria-label')).toBe(
     'Change your photo',
   )
+  const opener = node('profile-photo-open')!
+  opener.focus()
+  fireEvent.click(opener)
+  const dialog = document.querySelector('[role="dialog"]')
+  expect(dialog?.getAttribute('aria-modal')).toBe('true')
+  expect(document.activeElement).toBe(dialog)
+  fireEvent.click(node('profile-photo-cancel')!)
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(document.activeElement).toBe(opener)
+})
+
+it('shows the borrowed root name before the first paint without passive subscriptions', async () => {
+  const tab = profileRenameTab()
+  renameDisposers.push(tab.dispose)
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const environment = globalThis as typeof globalThis & {
+    IS_REACT_ACT_ENVIRONMENT?: boolean
+  }
+  const previous = environment.IS_REACT_ACT_ENVIRONMENT
+  let painted = () => {}
+  const firstPaint = new Promise<void>((resolve) => {
+    painted = resolve
+  })
+  let name: string | null | undefined
+  function Frame({ children }: { children: ReactNode }) {
+    useLayoutEffect(() => {
+      queueMicrotask(() => {
+        name = container.querySelector('h1')?.textContent
+        painted()
+      })
+    }, [])
+    return children
+  }
+  environment.IS_REACT_ACT_ENVIRONMENT = false
+  try {
+    root.render(
+      <StrictMode>
+        <Frame>
+          <HilosRouterContext.Provider value={router}>
+            <HilosProfilePage context={tab.context} binding={tab.binding} />
+          </HilosRouterContext.Provider>
+        </Frame>
+      </StrictMode>,
+    )
+    await firstPaint
+  } finally {
+    environment.IS_REACT_ACT_ENVIRONMENT = previous
+    act(() => root.unmount())
+    container.remove()
+  }
+  expect(name).toBe('Ann')
 })
 
 function nameOnly(): HilosProfileBinding {
@@ -238,23 +315,20 @@ it('shows the name without Change and no Email row when the project hands neithe
   expect(node('profile-identity-name')?.textContent).toBe('Ann Lee')
   expect(node('profile-edit')).toBeNull()
   expect(node('profile-email')).toBeNull()
+  expect(document.querySelectorAll('h1')).toHaveLength(1)
+  expect(node('hilos-page-tabs')?.getAttribute('aria-label')).toBe(
+    'Profile pages',
+  )
   expect(
-    [...document.querySelectorAll('[data-id="profile-section"]')].map(
-      (row) => row.querySelector('.fw-semibold')?.textContent,
-    ),
-  ).toEqual(['Ways to sign in', 'Security'])
-  expect(node('profile-sign-in-summary')?.textContent).toBe(
-    'No ways to sign in',
-  )
-  expect(node('profile-security-summary')?.textContent).toBe(
-    'Two-step verification is off',
-  )
-  expect(node('profile-security-open')?.getAttribute('href')).toBe(
-    `/${HilosPages.PROFILE_SECURITY}`,
-  )
+    node('hilos-page-tab-hilos_profile')?.getAttribute('aria-current'),
+  ).toBe('page')
+  expect(node('profile-section')).toBeNull()
+  expect(
+    node('hilos-page-tab-hilos_profile_security')?.getAttribute('href'),
+  ).toBe(`/${HilosPages.PROFILE_SECURITY}`)
 })
 
-it('shows the Email row for a verified address and the ways-in summary', () => {
+it('shows the Email row for a verified address and the shared head address', () => {
   const { node } = setup(
     nameOnly(),
     true,
@@ -274,7 +348,6 @@ it('shows the Email row for a verified address and the ways-in summary', () => {
 
   expect(node('profile-email')?.textContent).toBe('ann@example.test · verified')
   expect(node('profile-identity-email')?.textContent).toBe('ann@example.test')
-  expect(node('profile-sign-in-summary')?.textContent).toBe('Password')
 })
 
 it('opens the name window under StrictMode and closes it on the name it sent', async () => {
@@ -319,7 +392,7 @@ it('draws only the placeholder while nobody is signed in', () => {
   expect(node('profile-view')).toBeNull()
 })
 
-it('draws no Security row while two-step verification is turned off with nothing of the person standing, live', () => {
+it('hides Security navigation while two-step verification is turned off with nothing of the person standing, live', () => {
   const { node, scopes } = setup(nameOnly())
   const section = {
     enabled: false,
@@ -337,28 +410,17 @@ it('draws no Security row while two-step verification is turned off with nothing
     },
     reset: null,
   }
-  act(() =>
-    scopes.openPage(HilosPages.PROFILE).data.set('secondFactor', section),
-  )
+  act(() => scopes.page()!.data.set('secondFactor', section))
 
-  expect(
-    [...document.querySelectorAll('[data-id="profile-section"]')].map(
-      (row) => row.querySelector('.fw-semibold')?.textContent,
-    ),
-  ).toEqual(['Ways to sign in'])
-  expect(node('profile-security-open')).toBeNull()
+  expect(node('hilos-page-tab-hilos_profile_security')).toBeNull()
 
   act(() =>
-    scopes
-      .openPage(HilosPages.PROFILE)
-      .data.set('secondFactor', { ...section, enabled: true }),
+    scopes.page()!.data.set('secondFactor', { ...section, enabled: true }),
   )
-  expect(node('profile-security-summary')?.textContent).toBe(
-    'Two-step verification is off',
-  )
+  expect(node('hilos-page-tab-hilos_profile_security')).not.toBeNull()
 })
 
-it('warns under the sign-in row while device keys are the only way in, live', () => {
+it('warns under the name while device keys are the only way in, live', () => {
   const methods = resolveHilosProfileSignInMethods(
     [
       {
@@ -420,6 +482,7 @@ function accountRows(): HTMLElement[] {
 function accountThemePage() {
   const connection = fakeConnection()
   const scopes = new ScopeManager()
+  answerProfile(scopes)
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
     done: Promise.resolve(
@@ -679,7 +742,7 @@ it('keeps the effect-owned time zone picker live after StrictMode replay', async
   })
   const { scopes, signIn, timeZoneCalls } = accountThemePage()
   act(() =>
-    ingest(scopes.openPage(HilosPages.PROFILE), {
+    ingest(scopes.page() ?? scopes.openPage(HilosPages.PROFILE), {
       lists: {
         profileTimeZones: {
           cleared: true,

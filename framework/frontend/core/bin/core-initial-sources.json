@@ -92,8 +92,8 @@
     "outputSha256": "0ba08342c48f9f6398a879320b2c5d70ef51bda56be225919a77e4cabf599633"
   },
   "src/base/index.ts": {
-    "sourceSha256": "59d8f74da1a37902610038e5685697c70935acbc767cdbea2ad35c9c71052a44",
-    "outputSha256": "ae885074b1ae8309bc8d48f13e2028ab2b216a7649ed484b92c68de2e7f84cb0"
+    "sourceSha256": "acf03d4bbf037de04abef746a4d4c97b365c62e9d6a8b3a9de9cd207c013eefc",
+    "outputSha256": "f9c86faadd66e3e10046a312ee1cc7fd8b4df6037adfcf53c7a64b3aa5c3a0e0"
   },
   "src/bootstrap/bootHilos.ts": {
     "sourceSha256": "812f2e14ea7c7f7bd550aed89cc945d74858a4961c6d7f506c017094099b0edc",
@@ -355,6 +355,10 @@
     "sourceSha256": "e5fa9177b1a82afa2156cfddd6847582d4093d34d3d4b0ee6e0c884d2de86b79",
     "outputSha256": "fb0b6ecdad8c00808772387b52cf02accd43be62a33b637194e1b2e162b3e05a"
   },
+  "src/profile/profileHead.ts": {
+    "sourceSha256": "3616a0bb6e5df96b99405f2766eca8951eaaaece41bb12ad3fc99d0b183c1b5b",
+    "outputSha256": "61b1bab94abc899dcb76e377d98d3e4aa24d358de13e52b173e0ed6bc1d6b372"
+  },
   "src/profile/profileIdentities.ts": {
     "sourceSha256": "f22cf2f4e6c52aa252b318365ca554865e69f0ecaa0f262171eeed70a3e1ae31",
     "outputSha256": "7919185ced4da45f5c5ee3f6cc0ba47f9736cfe34d36421dfd71b265a2aa02cb"
@@ -376,8 +380,8 @@
     "outputSha256": "05c95e1e6f65ece04040918e87d3b1b1bcec47342122074868f8aab5ab3d920a"
   },
   "src/profile/profileRoot.ts": {
-    "sourceSha256": "3464c035da3f9cca3385885727801006e62d7e0f044241b88e97721991b3b7a4",
-    "outputSha256": "c96edda62b2e0c7658be0dc5104bb568919eeca54db78c8edfcab95600a0c5f3"
+    "sourceSha256": "7395bab0c53107b4b61de878d80036318a2cd88a74efd8f83064c95c42395999",
+    "outputSha256": "89ab1de77a354722caf6ea5c45c0560d1ac38c2fd07f0b83b85e5e7904d23a8e"
   },
   "src/profile/profileSessions.ts": {
     "sourceSha256": "34eb7fee24e58ee50d5715662835fb8bb1ae712144f51fde2ac8b102ea059a2f",

@@ -34,6 +34,7 @@ import {
   HilosModal,
   HilosOAuthCallbackPage,
   HilosPageHead,
+  HilosProfileHead,
   HilosProfileTheme,
   HilosSettingsPage,
   HilosSkeleton,
@@ -80,6 +81,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(ErrorPage).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
   expect(HilosThemeMenu).toBeTypeOf('function')
+  expect(HilosProfileHead).toBeTypeOf('function')
   expect(HilosProfileTheme).toBeTypeOf('function')
   expect(HilosMaintenance).toBeTypeOf('function')
   expect(LoadingButton).toBeTypeOf('function')
@@ -146,6 +148,10 @@ it('exports the three Analytics context pages and leaves them out of the default
 
 it('exports the shared page head once, from the base entry the root re-exports', () => {
   expect(base.HilosPageHead).toBe(HilosPageHead)
+})
+
+it('exports the shared profile head once, from the base entry the root re-exports', () => {
+  expect(base.HilosProfileHead).toBe(HilosProfileHead)
 })
 
 it('exports table text once without exposing its mount internals', () => {

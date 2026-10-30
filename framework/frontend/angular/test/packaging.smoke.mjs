@@ -35,6 +35,7 @@ const base = await loadEntry('@hilos/angular/base')
 const { hilosAdminViews } = await loadEntry('@hilos/angular/admin-views')
 const { HilosAnalyticsPage } = await loadEntry('@hilos/angular/admin/analytics')
 const { HilosSettingsPage } = await loadEntry('@hilos/angular/admin/settings')
+const { HilosDashboardPage } = await loadEntry('@hilos/angular/admin/dashboard')
 assert.notEqual(base.HilosTableText, undefined, 'HilosTableText')
 assert.equal(typeof base.HilosTableText, 'function', 'HilosTableText component')
 assert.equal(
@@ -242,7 +243,7 @@ assert.equal(
   1,
   'Table text and its internal mount modules must share one APF compilation owner',
 )
-assert.equal(graph.get(metadataName).dynamicImports.length, 31)
+assert.equal(graph.get(metadataName).dynamicImports.length, 30)
 for (const [name, value] of Object.entries(base)) {
   assert.equal(root[name], value, `Root/base identity: ${name}`)
 }
@@ -252,16 +253,26 @@ assert.notEqual(base.HilosPageHead, undefined, 'HilosPageHead')
 assert.notEqual(base.HilosLegalHistoryPage, undefined, 'HilosLegalHistoryPage')
 assert.equal(root.HilosLegalHistoryPage, base.HilosLegalHistoryPage)
 assert.ok(modules(closure(baseName)).includes('src/HilosPageHead.ts'))
+assert.equal(typeof base.HilosProfileHead, 'function', 'HilosProfileHead')
+assert.equal(root.HilosProfileHead, base.HilosProfileHead)
+assert.ok(base.HilosProfileHead.ɵcmp.inputs.context)
+assert.ok(base.HilosProfileHead.ɵcmp.inputs.store)
+assert.ok(modules(baseChunks).includes('src/profile/HilosProfileHead.ts'))
 assert.equal(root.HilosSettingsPage, HilosSettingsPage)
 assert.equal(root.HilosAnalyticsPage, HilosAnalyticsPage)
-const router = { resolvePath: () => '/same-router' }
+assert.equal(root.HilosDashboardPage, HilosDashboardPage)
+const router = {
+  resolvePath: () => '/same-router',
+  pageIdentity: coreBase.createSignal(undefined),
+  dashboardSections: coreBase.createSignal(undefined),
+}
 const injector = Injector.create({
   providers: [{ provide: root.HILOS_ROUTER, useValue: router }],
 })
 try {
-  const page = runInInjectionContext(injector, () => new HilosAnalyticsPage())
+  const page = runInInjectionContext(injector, () => new HilosDashboardPage())
   assert.equal(
-    page.usersPath,
+    page.resolvePath('test'),
     '/same-router',
     'Section reads the root-provided base token',
   )
@@ -269,7 +280,7 @@ try {
   injector.destroy()
 }
 const views = Object.values(hilosAdminViews())
-assert.equal(views.length, 31)
+assert.equal(views.length, 30)
 assert.ok(views.every((view) => view.kind === 'lazy-page'))
 for (const view of views) {
   const component = await view.load()

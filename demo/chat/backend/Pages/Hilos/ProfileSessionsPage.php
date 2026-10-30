@@ -17,5 +17,5 @@ use Hilos\Pages\AbstractHilosProfileSessionsPage;
 final class ProfileSessionsPage extends AbstractHilosProfileSessionsPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
-    public const array READS_DB = [ChatDbContext::sessions];
+    public const array READS_DB = [...parent::READS_DB, ChatDbContext::sessions];
 }

@@ -60,6 +60,29 @@ final class HilosPageCatalogTest extends TestCase
         ], $children);
     }
 
+    public function testProfileIsAnAdoptedEntityWithExplicitChildCaptions(): void
+    {
+        $profile = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_PROFILE];
+        self::assertTrue($profile[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
+        self::assertTrue($profile[PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD]);
+        self::assertSame('Profile', $profile[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PARENT, $profile);
+        foreach ([
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN => 'Ways to sign in',
+            HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS => 'Notifications',
+            HilosPageConstants::HILOS_PROFILE_SESSIONS => 'Sessions',
+            HilosPageConstants::HILOS_PROFILE_DEVICES => 'Devices',
+            HilosPageConstants::HILOS_PROFILE_SECURITY => 'Security',
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS => 'Agreements',
+            HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY => 'Revision history',
+            HilosPageConstants::HILOS_PROFILE_DATA => 'Your data',
+        ] as $page => $caption) {
+            self::assertSame($caption, HilosPageCatalog::CATALOG[$page][PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+        }
+        self::assertSame(HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY][PageCatalogConstants::CATALOG_ENTRY_PARENT]);
+    }
+
     public function testEveryKeyNamesADeclaredPage(): void
     {
         // Which page keys are declared, asked of the declaration itself: PHP has no plain reader
@@ -475,6 +498,7 @@ final class HilosPageCatalogTest extends TestCase
         }
 
         self::assertSame([
+            HilosPageConstants::HILOS_PROFILE,
             HilosPageConstants::HILOS_MODERATION,
             HilosPageConstants::HILOS_MODERATION_KIND,
             HilosPageConstants::HILOS_I18N,
@@ -488,6 +512,7 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_ANALYTICS,
         ], $adopted);
         self::assertSame([
+            HilosPageConstants::HILOS_PROFILE,
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LEGAL_DOCUMENT,
             HilosPageConstants::HILOS_LEGAL_REVISION,

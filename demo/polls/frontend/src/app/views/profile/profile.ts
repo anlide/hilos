@@ -1,8 +1,7 @@
 // The profile root (HilosPages.PROFILE, /profile, HIL-1169): a thin project
 // binding of the framework HilosProfilePage to this app's connection, scopes and
 // action lifecycle. The page, its rows and its windows are the framework's; this
-// app hands it the session's name, standard rename binding and session count —
-// the framework list supplies ways in; this app keeps no devices summary list.
+// app hands it the session's name and standard rename binding.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import {
   createHilosProfileRename,
@@ -17,7 +16,6 @@ import {
   connection,
 } from '../../bootstrap/connection.js'
 import { currentUserName, scopes } from '../../bootstrap/session.js'
-import { profileSessionCount } from './profileSessions.js'
 
 @Component({
   selector: 'app-profile',
@@ -34,7 +32,5 @@ export class Profile {
   protected readonly binding: HilosProfileBinding = {
     name: currentUserName,
     rename: createHilosProfileRename(connection, actionErrors),
-    sessionCount: profileSessionCount,
-    deviceCount: null,
   }
 }

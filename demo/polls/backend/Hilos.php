@@ -611,21 +611,29 @@ final class Hilos extends HilosFacade
     public const array PAGE_LISTS = [
         ProfilePage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
-            ProfileSessionsBrowserList::LIST => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
-                ],
-            ],
         ],
         ProfileSignInPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         ProfileSessionsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
             ProfileSessionsBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
                 ],
             ],
+        ],
+        ProfileSecurityPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileAgreementsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileAgreementsHistoryPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
     ];
 

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import {
-  HilosPageHeading,
+  HilosProfileHead,
   HilosProfileDevices,
   useSignal,
 } from '@hilos/vue/base'
 
-import { connection } from '../../bootstrap/connection.js'
+import { actions, connection } from '../../bootstrap/connection.js'
 import { startHilosNotificationPreferences } from '@hilos/core/base'
 import { scopes } from '../../bootstrap/session.js'
 import {
@@ -27,11 +27,13 @@ onMounted(() => {
 onUnmounted(() => {
   stopPreferences?.()
 })
+
+const context = { connection, scopes, actions }
 </script>
 
 <template>
   <section>
-    <HilosPageHeading data-id="profile-devices-heading" />
+    <HilosProfileHead :context="context" />
     <HilosProfileDevices
       :devices="devices"
       :actions="profileDeviceActions"

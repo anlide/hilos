@@ -23,7 +23,7 @@ import {
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
 import { hilosSignal } from '../hilosSignal.js'
@@ -39,13 +39,13 @@ type LegalHistory = ReturnType<
   imports: [
     HilosFormError,
     HilosModal,
-    HilosPageHeading,
+    HilosProfileHead,
     HilosLegalChanges,
     HilosLegalRevisionText,
   ],
   template: `
     <div data-id="profile-agreements-history-view">
-      <hilos-page-heading />
+      <hilos-profile-head [context]="context()" />
       @if (state()) {
         @if (history().length === 0) {
           <p class="text-body-secondary">

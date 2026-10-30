@@ -42,7 +42,6 @@ use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Legal\LegalAgreementsProjector;
-use Hilos\Legal\LegalStandingResolver;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 use Hilos\Pages\AbstractHilosProfileSecurityPage;
@@ -364,7 +363,7 @@ final class ProfileSessionsListTest extends IntegrationTestCase
         );
     }
 
-    public function testProfilePageCarriesTheDeletionAndDataSections(): void
+    public function testProfilePageKeepsDeletionWithoutSectionSummaries(): void
     {
         [$userId] = $this->createUserWithTwoSessions();
         Hilos::$sr = new SignalRouter();
@@ -381,22 +380,15 @@ final class ProfileSessionsListTest extends IntegrationTestCase
             AccountDeletionStateProjector::stateFor($userId)->toArray(),
             $payload[PagePayload::data][AccountDeletionStateProjector::SECTION],
         );
+        self::assertArrayNotHasKey(LegalAgreementsProjector::SECTION, $payload[PagePayload::data]);
+        self::assertArrayNotHasKey(DataExportStateProjector::SECTION, $payload[PagePayload::data]);
+        self::assertArrayNotHasKey(AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION, $payload[PagePayload::data]);
         self::assertSame(
-            LegalAgreementsProjector::stateFor($userId, LegalStandingResolver::today())->toArray(),
-            $payload[PagePayload::data][LegalAgreementsProjector::SECTION],
-        );
-        self::assertArrayHasKey(DataExportStateProjector::SECTION, $payload[PagePayload::data]);
-        self::assertSame(
-            DataExportStateProjector::nodeFor(Hilos::$db->dataExports->ofUser($userId)),
-            $payload[PagePayload::data][DataExportStateProjector::SECTION],
-        );
-        foreach ([
             AccountDeletionGroup::forUser($userId),
-            LegalAgreementsGroup::forUser($userId),
-            DataExportGroup::forUser($userId),
-        ] as $group) {
-            self::assertSame($group, Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, $group));
-        }
+            Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, AccountDeletionGroup::forUser($userId)),
+        );
+        self::assertNull(Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, LegalAgreementsGroup::forUser($userId)));
+        self::assertNull(Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, DataExportGroup::forUser($userId)));
     }
 
     /**

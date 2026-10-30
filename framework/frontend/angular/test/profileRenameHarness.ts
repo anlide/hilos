@@ -6,6 +6,7 @@ import {
   createHilosConnection,
   createHilosProfileRename,
   PROFILE_NAME_SET_ACTION,
+  HilosPages,
   sessionUserName,
   ScopeManager,
   type HilosProfileNameChange,
@@ -82,6 +83,14 @@ export function profileRenameTab(
     webSocketFactory: () => socket,
   })
   const scopes = new ScopeManager()
+  const page = scopes.openPage(HilosPages.PROFILE)
+  page.data.set('pageLabel', 'Profile')
+  page.data.set('pageHeadOwner', {
+    page: HilosPages.PROFILE,
+    label: 'Profile',
+    lead: '',
+  })
+  page.data.set('pageTabs', [{ page: HilosPages.PROFILE, label: 'Overview' }])
   bindSessionScope(bundle.connection, scopes)
   const stopName = bindProfileNameState(bundle.connection, scopes)
   const name = sessionUserName(scopes)

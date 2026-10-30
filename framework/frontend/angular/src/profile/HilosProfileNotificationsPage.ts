@@ -12,19 +12,19 @@ import {
   startHilosNotificationPreferences,
   subscribeSignal,
   type HilosPageCrumb,
-  type HilosProfileNotificationsContext,
+  type HilosProfilePageContext,
 } from '@hilos/core/base'
 import { HilosNotificationPreferences } from '../HilosNotificationPreferences.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { HILOS_ROUTER } from '../hilosRouterToken.js'
 
 /** The notification channels section of the profile. */
 @Component({
   selector: 'hilos-profile-notifications-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosNotificationPreferences, HilosPageHeading],
+  imports: [HilosNotificationPreferences, HilosProfileHead],
   template: `<section data-id="profile-notifications-view">
-    <hilos-page-heading />
+    <hilos-profile-head [context]="context()" />
     <hilos-notification-preferences
       [connection]="context().connection"
       [addressSection]="addressSection()"
@@ -33,7 +33,7 @@ import { HILOS_ROUTER } from '../hilosRouterToken.js'
   </section>`,
 })
 export class HilosProfileNotificationsPage {
-  readonly context = input.required<HilosProfileNotificationsContext>()
+  readonly context = input.required<HilosProfilePageContext>()
   private readonly router = inject(HILOS_ROUTER, { optional: true })
   protected readonly addressSection = signal<HilosPageCrumb | null>(null)
   protected readonly addressTo = computed(() => {

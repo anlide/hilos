@@ -68,9 +68,11 @@ test('reads the current documents before registration and records both accepted 
   await submitRegistrationCode(expect, page, await readRegisterCode(email))
   await submitFirstPassword(expect, page, PASSWORD)
   await continueFromDone(expect, page)
-  await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
-    'Terms and privacy accepted',
-  )
+  await gotoPage(expect, page, '/profile/agreements')
+  await expect(page.getByTestId('legal-agreement-state')).toHaveText([
+    /^\s*Revision of .+ · accepted .+\s*$/,
+    /^\s*Revision of .+ · accepted .+\s*$/,
+  ])
 })
 
 test('previews the same complete consent body from a legal document', async ({
@@ -111,10 +113,11 @@ test('creates a new provider account only after consent and records both agreeme
 
   await acceptTermsAsNewAccount(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
-  await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
-    'Terms and privacy accepted',
-  )
-  await clickSubmit(expect, page.getByTestId('profile-agreements-open'))
+  await gotoPage(expect, page, '/profile/agreements')
+  await expect(page.getByTestId('legal-agreement-state')).toHaveText([
+    /^\s*Revision of .+ · accepted .+\s*$/,
+    /^\s*Revision of .+ · accepted .+\s*$/,
+  ])
   const terms = page.locator(
     '[data-id="legal-agreement-row"][data-document="terms"]',
   )

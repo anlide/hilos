@@ -14,13 +14,14 @@ test('Your data prepares a copy across tabs, downloads it and announces readines
 }) => {
   await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('profile-data-summary')).toHaveText(
-    'No copy yet',
+  await clickSubmit(
+    expect,
+    page.getByTestId('hilos-page-tab-hilos_profile_data'),
   )
-  await clickSubmit(expect, page.getByTestId('profile-data-open'))
   await expect(page.getByTestId('profile-data-view')).toBeVisible()
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  await expect(page.getByTestId('hilos-breadcrumb-hilos_profile')).toBeVisible()
+  await expect(page.getByTestId('hilos-page-tab-hilos_profile')).toBeVisible()
+  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
   const other = await context.newPage()
   try {
     await gotoPage(expect, other, '/profile/data')
@@ -42,10 +43,8 @@ test('Your data prepares a copy across tabs, downloads it and announces readines
     await expect(page.getByTestId('hilos-notification-menu')).toContainText(
       'Your copy of your data is ready',
     )
-    await gotoPage(expect, page, '/profile')
-    await expect(page.getByTestId('profile-data-summary')).toContainText(
-      'Copy ready until',
-    )
+    await gotoPage(expect, page, '/profile/data')
+    await expect(page.getByTestId('data-export-ready')).toBeVisible()
   } finally {
     await other.close()
   }

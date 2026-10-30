@@ -48,7 +48,7 @@ import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosSendProgress } from '../HilosSendProgress.js'
-import { HilosPageHeading } from '../HilosPageHeading.js'
+import { HilosProfileHead } from './HilosProfileHead.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
 
@@ -72,13 +72,13 @@ let signInSequence = 0
     HilosFormError,
     HilosModal,
     HilosSendProgress,
-    HilosPageHeading,
+    HilosProfileHead,
     HilosStepUpStep,
     LoadingButton,
   ],
   template: `
     <section data-id="profile-sign-in-view">
-      <hilos-page-heading />
+      <hilos-profile-head [context]="context()" />
       @if (passkeyOnly()) {
         <div
           class="alert alert-warning d-flex gap-2"

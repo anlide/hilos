@@ -51,40 +51,50 @@ final class HilosPageCatalog
         HilosPageConstants::HILOS_PROFILE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Profile',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Your account and everything that belongs to it.',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Profile',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_PROFILE_SIGN_IN => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Ways to sign in',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Ways to sign in',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Password, phone, providers and device keys — every way into this account.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
         HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Notifications',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Notifications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Which channels reach you.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
         HilosPageConstants::HILOS_PROFILE_SESSIONS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Sessions',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Sessions',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where you are signed in. End one sign-in or all others at once.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
         HilosPageConstants::HILOS_PROFILE_DEVICES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Devices',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Devices',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where push notifications are delivered. Not the same as sessions.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
         HilosPageConstants::HILOS_PROFILE_SECURITY => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Security',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Security',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Two-step verification, and what happens if you lose it.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
 
         HilosPageConstants::HILOS_PROFILE_AGREEMENTS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Agreements',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Agreements',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What you accepted, and when.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
         HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revision history',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Revision history',
             PageCatalogConstants::CATALOG_ENTRY_LEAD =>
                 'Every revision of the terms and the privacy policy, including those before you registered.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
@@ -92,6 +102,7 @@ final class HilosPageCatalog
 
         HilosPageConstants::HILOS_PROFILE_DATA => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Your data',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Your data',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Download a copy of what your account holds.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
