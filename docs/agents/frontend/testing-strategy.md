@@ -995,8 +995,7 @@ the account-isolation boundary; cached settings alone do not prove delivery.
 
 ### The Analytics section — names and checks
 
-`analytics.ts` owns `ANALYTICS_WRITER_TIMEOUT_MS`,
-`ANALYTICS_SIGN_UP_LAST_ACTION`, the frame observer `watchAnalyticsFrames`
+`analytics.ts` owns `ANALYTICS_WRITER_TIMEOUT_MS`, the frame observer `watchAnalyticsFrames`
 (called before the page signs in), the row reader `readAnalyticsActionRows` (the
 no-value sign reads as a null page name, as the frames carry it) and the cell
 locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` checks the way
@@ -1020,14 +1019,29 @@ snapshots fail instead of becoming zero counts.
 The `expectAnalytics…`,
 `expectNoAnalytics…` and `expectOtherAnalyticsSession` checks cover the person
 page and the session page. `expectAnalyticsActionsOnPage` checks that every
-action row shown for the session stands on the same named page; registration
-expects `main` for every row. Every check takes the spec's `expect` first, then
-its `Page`. A spec waits for the journal writer by polling
-`readAnalyticsBrowserSession(sendCommand, userId)` until the last registration
-action of both tabs — the person's and the administrator's — has landed, then
-follows the person's admin card into Analytics. The three kits' browser-session
-specs use the shared checks and command transport; Chat composes its message
-sign-in entry.
+action row shown for the session stands on the same named page; the real
+sign-ins on the main page expect `main` for every row. Every check takes the
+spec's `expect` first, then its `Page`.
+
+For ordinary People/session preconditions, `createTestUser` creates a verified
+fixture account through `test:user:create` and binds the already connected
+browser session through `test:session:bind`, without an auth flow.
+`createTestAdmin` uses that preparation and grants admin; `grantAdminToSelf`
+uses `admin:create` for the current browser session. These setup helpers do
+not perform a real UI sign-in or promise its action journal.
+The three kits' `analytics-browser-session.spec.ts` carriers instead create
+both the person and administrator accounts with `seedTestUser`, then perform
+real `openSignIn` / `login` on the main page. Chat uses its `message-signin`
+entry; the other carriers use the standard sign-in entry.
+
+`waitAnalyticsBrowserSession(expect, sendCommand, userId, expectedAction?)`
+waits for the journal writer and returns
+`{ browserSessionId: number | null, actionNames: readonly string[] }`.
+It waits for a non-null session and, only when `expectedAction` is supplied,
+for that action in `actionNames`. The session-action specs wait for
+`AUTH_ACTION_LOGIN` (`'hilos_login'`) for both actors before following the
+person's admin card into Analytics. Ordinary People/session preconditions
+can use the same waiter without `expectedAction`.
 
 Tasks' React `analytics.spec.ts` uses the shared Overview helper with the
 `'react'` kit, keeps the snapshot oracle and carries People-to-Person navigation,
@@ -1050,7 +1064,11 @@ checks a fresh follower view against the original leader and term.
 fresh daemon logs for all live Analytics agents, clearing stopped agents, dead
 workers and earlier daemon lives. Missing or incomplete journals fail the proof.
 It first addresses the reader through the existing read-only browser-session
-probe, since that agent starts on demand; no account or session is seeded.
+probe, since that agent starts on demand; this probe creates no account or
+session. The live cluster scenario creates fixture accounts for the person
+and administrator through `seedTestUser` / `test:user:create`, performs real
+UI sign-ins on the selected nodes and waits for both actors' `hilos_login`
+with `waitAnalyticsBrowserSession`.
 The latter three checks take the spec's `expect` first. Common readiness uses
 `probeStatic`, `probeWebSocketUpgrade` and `waitUntilReady`; demo wrappers keep
 their own setup order. Scenario order, navigation and context cleanup stay in

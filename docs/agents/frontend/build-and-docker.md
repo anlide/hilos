@@ -106,9 +106,9 @@ through `*.hilos`, not by rebinding the ports.
 ## One build for e2e, staging, and prod
 
 A single `vite build` produces the artifact that e2e, staging, and prod all run:
-you **test what you ship**. e2e drives that artifact against a booted daemon
-([testing-strategy.md](testing-strategy.md)), which is also why e2e needs a deterministic backend
-reset per test.
+you **test what you ship**. e2e drives that artifact against a booted daemon.
+For backend test state, follow
+[Backend state — clean runs and test-owned preconditions](testing-strategy.md#backend-state--clean-runs-and-test-owned-preconditions).
 
 ## Windows-Docker dev server (the HMR spike)
 

@@ -379,9 +379,10 @@ Topic documents are referenced by filename; several are still being authored.
 - **e2e interacts via stable element ids only.** Every interactive element
   carries an id; never text- or position-based selectors. See
   [testing-strategy.md](testing-strategy.md).
-- **Backend test state resets fully per test.** Reset the database and daemon
-  per test; never transaction-rollback, never data-namespacing. See
-  [testing-strategy.md](testing-strategy.md).
+- **Backend test state.** Follow
+  [Backend state — clean runs and test-owned preconditions](testing-strategy.md#backend-state--clean-runs-and-test-owned-preconditions).
+  Do not wrap a live-daemon test in a rollback transaction: the daemon runs in
+  a separate process and cannot see another connection's uncommitted writes.
 
 ## J. Explicit non-goals
 
