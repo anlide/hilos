@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createHilosLegalAcceptancesTable,
+  createHilosLegalDocumentsTable,
   createHilosLegalRevisionsTable,
   createHilosLegalRevisionAcceptanceSummary,
   hilosLegalDocumentLabel,
@@ -10,6 +11,7 @@ import {
   legalAdminDocumentSchema,
   legalAdminRevisionSchema,
   LEGAL_ACCEPTANCES_SIGNAL,
+  HilosLegalTableKey,
   resolveHilosLegalAcceptanceRow,
   resolveHilosLegalDocumentRow,
   resolveHilosLegalRevisionRow,
@@ -20,7 +22,8 @@ import {
 import { type HilosLegalContext } from '../../../src/legal/legalAgreements.js'
 import { type TableViewportDescriptor } from '../../../src/connection/HilosConnection.js'
 import { formatMoment } from '../../../src/format/moment.js'
-import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
+import { HIDDEN_VALUE, type Hideable } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { bindTimeZoneState } from '../../../src/timeZone/timeZoneState.js'
@@ -120,6 +123,10 @@ function harness(early?: HilosLegalAcceptanceFilters) {
       for (const listener of listeners.get('projectSignal') ?? [])
         listener({ type: LEGAL_ACCEPTANCES_SIGNAL, data } as never)
     },
+    project(frame: unknown) {
+      for (const listener of listeners.get('projectSignal') ?? [])
+        listener(frame as never)
+    },
     listenerCount: () =>
       [...listeners.values()].reduce((count, group) => count + group.size, 0),
   }
@@ -139,6 +146,8 @@ describe('legal administration rows and sections', () => {
         rowKey: 'terms',
         slots: {
           document: {
+            documentLabel: 'Terms of use',
+            publishedOn: '2026-09-27',
             declared: true,
             revision,
             covered: 4,
@@ -149,11 +158,38 @@ describe('legal administration rows and sections', () => {
       }),
     ).toEqual({
       rowKey: 'terms',
+      documentLabel: 'Terms of use',
+      publishedOn: '2026-09-27',
       declared: true,
       revision,
       covered: 4,
       window: 2,
       lapsed: 1,
+    })
+    expect(
+      resolveHilosLegalDocumentRow({
+        rowKey: 'retired',
+        slots: {
+          document: {
+            documentLabel: 'retired',
+            publishedOn: null,
+            declared: false,
+            revision: null,
+            covered: 0,
+            window: 0,
+            lapsed: 0,
+          },
+        },
+      }),
+    ).toEqual({
+      rowKey: 'retired',
+      documentLabel: 'retired',
+      publishedOn: null,
+      declared: false,
+      revision: null,
+      covered: 0,
+      window: 0,
+      lapsed: 0,
     })
     expect(
       resolveHilosLegalRevisionRow({
@@ -471,6 +507,124 @@ describe('legal administration rows and sections', () => {
 })
 
 describe('legal table controllers', () => {
+  it('keeps the documents table on the legacy root page by default', () => {
+    const h = harness()
+    const table = createHilosLegalDocumentsTable(h.context)
+    table.start()
+    table.controller.refresh()
+
+    expect(h.sent.at(-1)).toMatchObject({
+      page: HilosPages.LEGAL,
+      table: HilosLegalTableKey.documents,
+    })
+
+    expect(table.controller.frame.columns.get().map(({ key }) => key)).toEqual([
+      'rowKey',
+      'revision',
+      'covered',
+      'window',
+      'lapsed',
+      'actions',
+    ])
+    table.dispose()
+  })
+
+  it('declares the Documents search, sortable scalar keys, rendered reads and live policy header', () => {
+    const h = harness()
+    const policy = createSignal<Hideable<string> | undefined>('freeze')
+    const table = createHilosLegalDocumentsTable(
+      h.context,
+      HilosPages.LEGAL_DOCUMENTS,
+      policy,
+    )
+    const frame = table.controller.frame
+    expect(frame.searchPlaceholder.get()).toBe('Document or key')
+    expect(
+      frame.columns
+        .get()
+        .map(({ key, sortable, reads }) => ({ key, sortable, reads })),
+    ).toEqual([
+      { key: 'documentLabel', sortable: true, reads: ['rowKey', 'declared'] },
+      { key: 'publishedOn', sortable: true, reads: ['revision', 'declared'] },
+      { key: 'covered', sortable: true, reads: undefined },
+      { key: 'window', sortable: true, reads: undefined },
+      { key: 'lapsed', sortable: true, reads: ['rowKey'] },
+      { key: 'actions', sortable: undefined, reads: ['rowKey'] },
+    ])
+    for (const [value, label] of [
+      ['freeze', 'Frozen'],
+      ['remind', 'Past deadline'],
+      [HIDDEN_VALUE, 'Past deadline'],
+    ] as const) {
+      policy.set(value)
+      expect(
+        frame.columns.get().find(({ key }) => key === 'lapsed')?.label,
+      ).toBe(label)
+    }
+    table.dispose()
+  })
+
+  it('takes the opening window and sort from the page response without asking for a viewport', () => {
+    const h = harness()
+    h.context.scopes.openPage(HilosPages.LEGAL_DOCUMENTS)
+    const table = createHilosLegalDocumentsTable(
+      h.context,
+      HilosPages.LEGAL_DOCUMENTS,
+    )
+    table.start()
+    expect(h.sent).toEqual([])
+    expect(table.controller.order.get()).toBeUndefined()
+    h.project({
+      type: 'page_response',
+      data: {
+        page: 'hilos_legal_documents',
+        payload: {
+          windows: {
+            hilosLegalDocuments: {
+              rows: [
+                {
+                  rowKey: 'terms',
+                  slots: {
+                    document: {
+                      documentLabel: 'Server name',
+                      publishedOn: '2026-09-27',
+                      declared: true,
+                      revision,
+                      covered: 4,
+                      window: 2,
+                      lapsed: 1,
+                    },
+                  },
+                },
+              ],
+              totalCount: 1,
+              totalExact: true,
+              firstAnchor: null,
+              lastAnchor: null,
+              limit: 25,
+              sort: [{ field: 'publishedOn', direction: 'desc' }],
+            },
+          },
+        },
+      },
+    })
+    expect(table.controller.rows.get()[0]?.row?.documentLabel).toBe(
+      'Server name',
+    )
+    expect(table.controller.order.get()).toEqual([
+      { field: 'publishedOn', direction: 'desc' },
+    ])
+    expect(h.sent).toEqual([])
+    table.controller.setSort('covered')
+    expect(h.sent.at(-1)).toMatchObject({
+      page: 'hilos_legal_documents',
+      table: 'hilosLegalDocuments',
+      descriptor: { sort: [{ field: 'covered', direction: 'asc' }] },
+    })
+    table.dispose()
+    expect(h.listenerCount()).toBe(0)
+  })
+
   it('shows zero after the last historical acceptance disappears and distinguishes a refused read', () => {
     const h = harness()
     const revisionId = createSignal('gone')

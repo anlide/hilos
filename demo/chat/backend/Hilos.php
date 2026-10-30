@@ -8,6 +8,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
@@ -482,6 +483,7 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityStepUpPage::PAGE => SecurityStepUpPage::class,
         LegalPage::PAGE => LegalPage::class,
+        LegalDocumentsPage::PAGE => LegalDocumentsPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
@@ -979,8 +981,11 @@ final class Hilos extends HilosFacade
             ChatTableContext::hilosSecurityImpersonation => [],
         ],
         LegalPage::PAGE => [
-            ChatTableContext::hilosLegalDocuments => [],
             ChatTableContext::hilosLegalChecks => [],
+            ChatTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentsPage::PAGE => [
+            ChatTableContext::hilosLegalDocuments => [],
             ChatTableContext::hilosLegalSettings => [],
         ],
         LegalDocumentPage::PAGE => [

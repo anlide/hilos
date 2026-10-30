@@ -70,6 +70,57 @@ final class PageCatalogResolverTest extends TestCase
         parent::tearDown();
     }
 
+    public function testLegalOptInHasFourTabsAndKeepsDocumentAndRevisionAsSeparateOwners(): void
+    {
+        ChatLegalPageHeadTestHilos::initBrowser();
+        foreach ([HilosPageConstants::HILOS_LEGAL, HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
+            HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, HilosPageConstants::HILOS_LEGAL_SETTINGS] as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertNotNull($head);
+            self::assertSame([
+                'page' => HilosPageConstants::HILOS_LEGAL,
+                'label' => 'Legal',
+                'lead' => 'What the project declares, and who accepted it.',
+                'icon' => 'bi-file-earmark-check',
+            ], $head->pageHeadOwner);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Legal'],
+            ], $head->pageBreadcrumb);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENTS, 'label' => 'Documents'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
+            ], $head->pageTabs);
+        }
+        foreach ([HilosPageConstants::HILOS_LEGAL_DOCUMENT, HilosPageConstants::HILOS_LEGAL_REVISION] as $page) {
+            self::assertSame($page, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
+        }
+
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(static fn (string $page): bool => $page !== HilosPageConstants::HILOS_LEGAL_DOCUMENTS);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
+        ], PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL, new PageRouteParams([]))->pageTabs);
+    }
+
+    public function testLegalFrameworkAndExistingProvidersKeepTheirLegacyHead(): void
+    {
+        foreach ([LegacyLegalPageHeadTestHilos::class, TasksLegalPageHeadTestHilos::class,
+            PollsLegalPageHeadTestHilos::class] as $facade) {
+            $facade::initBrowser();
+            foreach ([HilosPageConstants::HILOS_LEGAL, HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
+                HilosPageConstants::HILOS_LEGAL_DOCUMENT, HilosPageConstants::HILOS_LEGAL_REVISION,
+                HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, HilosPageConstants::HILOS_LEGAL_SETTINGS] as $page) {
+                self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])), $facade . ': ' . $page);
+            }
+        }
+    }
+
     public function testChangeLogTabsFollowCatalogOrderAndStopAtTheTrackedTableEntity(): void
     {
         ChangeLogHeadHilos::initBrowser();
@@ -2487,4 +2538,59 @@ abstract class MaintenanceNodesHeadTestHilos extends MaintenancePageHeadTestHilo
 
 final class MaintenanceNodesHeadTestPage extends AbstractHilosMaintenanceNodesPage
 {
+}
+
+/** All Legal pages served with the default, unadopted framework catalog. */
+abstract class LegacyLegalPageHeadTestHilos extends Hilos
+{
+    public const array PAGES = [
+        HilosPageConstants::HILOS_LEGAL => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENTS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_REVISION => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_SETTINGS => PageHeadTestPage::class,
+    ];
+}
+
+/** Future owner adoption exercised without enabling a project route or view. */
+abstract class LegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = LegalPageHeadTestCatalog::class;
+}
+
+/** Existing React provider remains unadopted. */
+abstract class TasksLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = TasksPageCatalog::class;
+}
+
+/** Existing Angular provider remains unadopted. */
+abstract class PollsLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = PollsPageCatalog::class;
+}
+
+/** Chat adopts the Legal section without adopting its nested entities. */
+abstract class ChatLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = ChatPageCatalog::class;
+}
+
+final class LegalPageHeadTestCatalog implements PageCatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Complete Legal owner entry with local adoption */
+    public static function pages(): array
+    {
+        return [HilosPageConstants::HILOS_LEGAL => array_replace(
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL],
+            [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+        )];
+    }
+
+    /** @return list<array{title: string, description: string, items: list<string>}> No additional dashboard groups */
+    public static function dashboardSections(): array
+    {
+        return [];
+    }
 }

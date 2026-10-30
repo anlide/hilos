@@ -11,6 +11,19 @@ use Hilos\Legal\Exception\UnknownStandardSetVersionException;
 final class LegalWire
 {
     /**
+     * @param string $document Declared or historical document key
+     * @return string Catalog label, or the historical key when unknown
+     */
+    public static function documentLabel(string $document): string
+    {
+        return match ($document) {
+            LegalDocument::TERMS->value => 'Terms of use',
+            LegalDocument::PRIVACY->value => 'Privacy policy',
+            default => $document,
+        };
+    }
+
+    /**
      * @param LegalRevision $revision Published declaration
      * @return array<string, mixed> Revision metadata
      */

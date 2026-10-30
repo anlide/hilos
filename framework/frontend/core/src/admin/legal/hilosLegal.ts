@@ -70,6 +70,8 @@ export const HilosLegalTableKey = {
 /** Payload keys shared by the legal table row shapes. */
 export const HilosLegalRowKey = {
   rowKey: 'rowKey',
+  documentLabel: 'documentLabel',
+  publishedOn: 'publishedOn',
   declared: 'declared',
   revision: 'revision',
   covered: 'covered',
@@ -230,6 +232,8 @@ export type HilosLegalAdminRevision = z.infer<typeof legalAdminRevisionSchema>
 
 export interface HilosLegalDocumentRow {
   readonly rowKey: string
+  readonly documentLabel: string
+  readonly publishedOn: string | null
   readonly declared: boolean
   readonly revision: HilosLegalRevision | null
   readonly covered: number
@@ -296,6 +300,8 @@ export function resolveHilosLegalDocumentRow(
   const slot = slotOf(row, 'document')
   return {
     rowKey: String(row.rowKey),
+    documentLabel: readString(slot, HilosLegalRowKey.documentLabel),
+    publishedOn: readStringOrNull(slot, HilosLegalRowKey.publishedOn),
     declared: readBoolean(slot, HilosLegalRowKey.declared),
     revision: revisionOf(slot),
     covered: readNumber(slot, HilosLegalRowKey.covered),
@@ -556,20 +562,67 @@ const ACCEPTANCE_COLUMNS: HilosTableColumnOf<HilosLegalAcceptanceRow>[] = [
   { key: HILOS_TABLE_ACTIONS_KEY, label: '', reads: [HilosLegalRowKey.userId] },
 ]
 
-/** Document tallies on the section root. */
+/**
+ * Document tallies on the dedicated page, with legacy root slots by default.
+ *
+ * @param context The page's shared connection and scopes.
+ * @param page The subscribing page, defaulting to the legacy root.
+ * @param refusal The live refusal policy, including its hidden viewer value.
+ */
 export function createHilosLegalDocumentsTable(
   context: HilosLegalContext,
+  page: string = HilosPages.LEGAL,
+  refusal?: ReadonlySignal<Hideable<string> | undefined>,
 ): HilosLegalTable<HilosLegalDocumentRow> {
+  const frame: HilosTableFrame =
+    page === HilosPages.LEGAL_DOCUMENTS
+      ? {
+          search: { placeholder: 'Document or key' },
+          columns: (): HilosTableColumnOf<HilosLegalDocumentRow>[] => [
+            {
+              key: HilosLegalRowKey.documentLabel,
+              label: 'Document',
+              sortable: true,
+              card: 'title',
+              reads: [HilosLegalRowKey.rowKey, HilosLegalRowKey.declared],
+            },
+            {
+              key: HilosLegalRowKey.publishedOn,
+              label: 'Revision',
+              sortable: true,
+              reads: [HilosLegalRowKey.revision, HilosLegalRowKey.declared],
+            },
+            { key: HilosLegalRowKey.covered, label: 'Covered', sortable: true },
+            {
+              key: HilosLegalRowKey.window,
+              label: 'In the window',
+              sortable: true,
+            },
+            {
+              key: HilosLegalRowKey.lapsed,
+              label: hilosLegalLapsedLabel(refusal?.get()),
+              sortable: true,
+              reads: [HilosLegalRowKey.rowKey],
+            },
+            {
+              key: HILOS_TABLE_ACTIONS_KEY,
+              label: '',
+              reads: [HilosLegalRowKey.rowKey],
+            },
+          ],
+          empty: { title: 'The project has not declared any documents.' },
+        }
+      : {
+          title: 'Documents',
+          columns: DOCUMENT_COLUMNS,
+          empty: { title: 'The project has not declared any documents.' },
+        }
   return tableFor(
     context,
-    HilosPages.LEGAL,
+    page,
     HilosLegalTableKey.documents,
     resolveHilosLegalDocumentRow,
-    {
-      title: 'Documents',
-      columns: DOCUMENT_COLUMNS,
-      empty: { title: 'The project has not declared any documents.' },
-    },
+    frame,
   )
 }
 

@@ -159,8 +159,8 @@ re-consent owns the subsequent gap. Registration publishes no personal
 agreement state because the new person has no profile subscribers yet.
 
 All three SDK shells use `HilosLegalConsent` for the live step and the admin
-preview on `/hilos/legal/{documentKey}`. They fold the standard across both
-documents and show the deviations with their standard statements. Full text
+preview on `/hilos/legal/document/{documentKey}`. They fold the standard across
+both documents and show the deviations with their standard statements. Full text
 comes from the same answer and opens inside the card. Each entry loads again;
 a reconnect refreshes the revisions while keeping the form choice of this
 visit. Replies from an abandoned step or closed preview are ignored. The
@@ -380,28 +380,47 @@ separate history routes.
 ## Admin section
 
 The `Legal` section under People is closed by `ADMIN`. Activate it by
-registering its five pages and tables and a project subclass of
-`AbstractHilosLegalAgent`, the `legal_export` directory
+registering the project's Legal pages and table bindings, providing a subclass
+of `AbstractHilosLegalAgent`, registering the `legal_export` directory
 (`FsContext::LEGAL_EXPORT`, `DirectoryScope::CLUSTER`) and the
-`hilos_legal_acceptance_export` table, and by listing the agent in the
-project's system bootstrap; there is no `HilosFeature` case for this section.
+`hilos_legal_acceptance_export` table, and listing the agent in the project's
+system bootstrap; there is no `HilosFeature` case for this section.
 The start refuses a project that registers the agent and no `legal_export`
 directory. The project also hands `/_hilos/legal-acceptances-export` to the
 daemon wherever its page is served: nginx in test and production (a
 `location =` for the address and the internal location over the
 `legal_export` volume), and the dev server's proxy on the local stand, as for
 `/_hilos/data-export` (`vite.config.ts` in chat and tasks, `proxy.conf.json` in
-polls). Chat, tasks and polls provide these bindings. The framework owns the
-pages, projections, settings rules and all three SDK views. The project supplies
-person names and name searches to `AbstractHilosLegalAcceptancesTable`.
+polls). Chat, tasks and polls provide these export bindings. The framework owns
+the pages, projections, settings rules and all three SDK views. The project
+supplies person names and name searches to `AbstractHilosLegalAcceptancesTable`.
+
+The shared route registry declares `hilos_legal_documents` at
+`/hilos/legal/documents` (`admin=true`, no params), `hilos_legal_document` at
+`/hilos/legal/document/{documentKey}` (`admin=true`, `documentKey: string`),
+and `hilos_legal_revision` at
+`/hilos/legal/document/{documentKey}/revision/{revisionId}` (`admin=true`,
+`documentKey: string`, `revisionId: string`). The former entity paths
+`/hilos/legal/{documentKey}` and
+`/hilos/legal/{documentKey}/{revisionId}` are unsupported and have no alias or
+redirect. The `documentKey` space remains open to historical keys, including
+`documents`, `acceptances`, and `settings` when explicitly prefixed; the static
+pages keep their own routes.
 
 | Route | Contents |
 |---|---|
-| `/hilos/legal` | Documents, coverage counts and four catalog checks |
-| `/hilos/legal/{documentKey}` | Adopted standard set, newer framework set, project deviations and revision history |
-| `/hilos/legal/{documentKey}/{revisionId}` | Exact text, predecessor comparison and acceptance count |
+| `/hilos/legal` | Overview, declared-document summary and four catalog checks |
+| `/hilos/legal/documents` | Searchable document coverage table |
+| `/hilos/legal/document/{documentKey}` | Adopted standard set, newer framework set, project deviations and revision history |
+| `/hilos/legal/document/{documentKey}/revision/{revisionId}` | Exact text, predecessor comparison and acceptance count |
 | `/hilos/legal/acceptances` | Immutable acceptance records, document/revision filters, person search and the export of what they show |
 | `/hilos/legal/settings` | The two legal settings, edited in modals |
+
+Chat currently connects six backend Legal pages: the root Overview, Documents,
+Document, Revision, Acceptances and Settings. The root binds Checks and
+Settings; Documents binds the Documents and Settings tables. On Documents the
+Settings rows supply only the refusal-policy label for lapsed counts, and no
+second settings table is drawn.
 
 The section writes no document or acceptance; the one thing it writes is an
 administrator's export of acceptance records ("Export of acceptances" below). Texts stay in code and a revision
@@ -415,8 +434,9 @@ history window. An already-open historical revision reports zero when its last
 record is erased, and distinguishes a refused count window from a loading one.
 
 A `LegalException` from the catalog becomes `legalCatalogRefusal` on the root,
-document and revision pages. Their declaration tables answer empty windows;
-the page shows the refusal. Acceptance history and settings remain usable.
+Documents, document and revision pages. Their declaration tables answer empty
+windows; the page shows the refusal. Acceptance history and settings remain
+usable.
 A project without a catalog has no declared documents and no checks to show.
 
 ### Counts and checks
@@ -448,6 +468,22 @@ and declared project deviations. A document with no deviations carries the
 reminder that consent will say there are no differences. A deviation pointing
 at a missing standard clause is a catalog refusal, not a fifth check.
 
+The root's first ordinary `page_response` carries the compact `legalOverview`:
+`documentCount` for declared documents, `documents` rows with separate `window`
+and `lapsed` counts, and `newerSetCount` for documents with a newer framework
+set. It contains no total of people across documents and does not
+depend on the Documents table's search or viewport. Recorded-only keys appear
+in the Documents table, not in this catalog-only summary. Settings, including
+values hidden in admin view mode, are not part of `legalOverview`.
+
+The standalone Documents table adds scalar `documentLabel` and nullable
+`publishedOn` fields. Search matches the label or document key. Its five
+single-field sort keys are label, publication date, covered, window and lapsed
+counts. The default is `publishedOn DESC`, with null dates last and the row key
+as the tie-breaker. A changed value in a shown row arrives live; a move or
+removal follows the ordinary Apply gate. The table includes keys with recorded
+acceptances even when they are no longer declared.
+
 The section runs on its own cluster singleton, `hilos_legal`, started with the
 node from the project's system bootstrap: an export's day must not wait for
 somebody to open the section, and an order left preparing by a restart is built
@@ -458,12 +494,18 @@ owns one DB collection: `legalAcceptanceExports`.
 
 `LegalAcceptanceChangeSubscriber` invalidates `LegalAdminAudience` on local and
 remote acceptance changes. That process-local audience shares histograms and
-projections across windows, coalesces changes until its next tick and resends
-subscribed aggregate windows. When `LegalStandingResolver::today()` changes,
-it folds the cached histograms again without SQL. An acceptance-only audience
-does not read the coverage histograms; a section with no viewers does no work.
-Settings rows use the ordinary source-change fan-out, including the root's
-refusal-policy label.
+projections across windows and coalesces changes until its next tick. On that
+tick, each root subscriber gets one guarded `resendPageWhole()` after coalesced
+acceptance changes or a date change, without a duplicate root window. Documents
+publishes its full set of row updates and removals through
+`publishTableMutations()` and `aggregateMutations()`, within the ordinary
+recovery, guard and masking path.
+When `LegalStandingResolver::today()` changes, the audience folds cached
+histograms again without SQL. An acceptance-only audience does not read the
+coverage histograms; a section with no viewers does no work. Settings rows use
+the ordinary source-change fan-out, including the root's refusal-policy label.
+Both pages reuse the existing histogram cache and browser-delivery APIs; neither
+adds its own SQL query, RT source or subsystem.
 
 ### Acceptance windows and filter vocabulary
 
@@ -599,6 +641,10 @@ pristine draft, and a refused write keeps the modal and draft with its inline
 error. Closing follows the tracked settings-owner reply; the table value
 follows the DB source. Preview controls are disabled illustrations, not a
 second registration flow.
+
+The Chat Vue Settings page presents the two setting rows above the existing
+modal editor. The shared setting previews remain in the React and Angular
+views.
 
 The consent-form value is consumed by registration. The refusal policy is
 consumed by access enforcement, which freezes a person past a deadline under

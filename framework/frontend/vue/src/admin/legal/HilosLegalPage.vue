@@ -1,49 +1,53 @@
 <script setup lang="ts">
 import {
   createHilosLegalChecksTable,
-  createHilosLegalDocumentsTable,
+  createHilosLegalOverview,
   createHilosLegalSettingsTable,
   describeHilosLegalCheck,
   hilosLegalLapsedHref,
   hilosLegalLapsedLabel,
   HilosLegalSettingKey,
+  HILOS_LEGAL_VALUE_COPY,
   LEGAL_CATALOG_REFUSAL_SECTION,
 } from '@hilos/core/admin/legal'
-import {
-  hilosLegalDocumentLabel,
-  HilosPages,
-  resolveHilosPath,
-  type HilosLegalContext,
-} from '@hilos/core/base'
+import { HilosPages, type HilosLegalContext } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosHideable from '../../HilosHideable.vue'
+import HilosSkeleton from '../../HilosSkeleton.vue'
+import HilosTableEmptyState from '../../HilosTableEmptyState.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{ context: HilosLegalContext }>()
-const documents = createHilosLegalDocumentsTable(props.context)
+const overview = useSignal(createHilosLegalOverview(props.context))
 const checks = createHilosLegalChecksTable(props.context)
 const settings = createHilosLegalSettingsTable(props.context, HilosPages.LEGAL)
 const refusal = useSignal(
   props.context.scopes.pageDataSignal(LEGAL_CATALOG_REFUSAL_SECTION),
 )
 const settingsRows = useSignal(settings.controller.rows)
-const documentRows = useSignal(documents.controller.rows)
-const lapsedLabel = computed(() =>
-  hilosLegalLapsedLabel(
+const settingsBody = useSignal(settings.controller.frame.body)
+const checksBody = useSignal(checks.controller.frame.body)
+const consent = computed(
+  () =>
+    settingsRows.value.find(
+      ({ row }) => row?.rowKey === HilosLegalSettingKey.consentForm,
+    )?.row,
+)
+const policy = computed(
+  () =>
     settingsRows.value.find(
       ({ row }) => row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
-    )?.row?.value,
-  ),
+    )?.row,
 )
+const lapsedLabel = computed(() => hilosLegalLapsedLabel(policy.value?.value))
 onMounted(() => {
-  documents.start()
   checks.start()
   settings.start()
 })
 onUnmounted(() => {
-  documents.dispose()
   checks.dispose()
   settings.dispose()
 })
@@ -66,69 +70,155 @@ onUnmounted(() => {
         and deviations belong to the project. Publishing a revision means
         deploying it. This section records what is declared and who accepted it.
       </div>
-      <HilosViewportTable :controller="documents.controller">
-        <template #cell-rowKey="{ row }">
-          <span
-            data-id="legal-document-row"
-            :data-document="row.rowKey"
-            class="fw-semibold"
-            >{{ hilosLegalDocumentLabel(row.rowKey) }}</span
+      <div
+        v-if="overview"
+        class="row row-cols-2 row-cols-lg-3 g-3 mb-3"
+        data-id="legal-overview"
+      >
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="legal-overview-documents"
           >
-          <span v-if="!row.declared" class="badge text-bg-warning ms-2"
-            >Not in code</span
-          >
-        </template>
-        <template #cell-revision="{ row }">
-          <template v-if="row.revision">
-            <div>
-              {{ row.revision.publishedOn }} · {{ row.revision.significance }}
+            <h2 class="small text-body-secondary fw-normal">Documents</h2>
+            <div class="fs-4 fw-semibold" data-id="legal-document-count">
+              {{ overview.documentCount }}
             </div>
             <div class="small text-body-secondary">
-              Effective from {{ row.revision.effectiveOn }}
+              {{
+                overview.documents
+                  .map(({ documentLabel }) => documentLabel)
+                  .join(' · ')
+              }}
             </div>
-          </template>
-          <span v-else class="text-body-secondary">Not in code</span>
-        </template>
-        <template #cell-covered="{ row }"
-          ><span data-id="legal-count-covered">{{
-            row.covered
-          }}</span></template
-        >
-        <template #cell-window="{ row }"
-          ><span data-id="legal-count-window">{{ row.window }}</span></template
-        >
-        <!-- The count of the people past the deadline opens them in the
-        people list (HIL-945); nobody to open, nothing to follow. -->
-        <template #cell-lapsed="{ row }"
-          ><HilosLink
-            v-if="row.lapsed > 0"
-            :to="hilosLegalLapsedHref(row.rowKey)"
-            data-id="legal-count-lapsed-link"
-            :data-document="row.rowKey"
-            ><span data-id="legal-count-lapsed">{{
-              row.lapsed
-            }}</span></HilosLink
-          ><span v-else data-id="legal-count-lapsed">{{ row.lapsed }}</span>
-          <span class="small text-body-secondary">{{
-            lapsedLabel
-          }}</span></template
-        >
-        <template #cell-actions="{ row }"
-          ><HilosLink
-            :to="
-              resolveHilosPath(HilosPages.LEGAL_DOCUMENT, {
-                documentKey: row.rowKey,
-              })
-            "
-            class="btn btn-sm btn-outline-secondary"
-            data-id="legal-document-open"
-            :data-document="row.rowKey"
-            >Open</HilosLink
-          ></template
-        >
-      </HilosViewportTable>
+          </section>
+        </div>
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="legal-overview-window"
+          >
+            <h2 class="small text-body-secondary fw-normal">
+              Waiting for acceptance
+            </h2>
+            <dl v-if="overview.documents.length" class="mb-0">
+              <div
+                v-for="document in overview.documents"
+                :key="document.document"
+                class="d-flex flex-wrap justify-content-between gap-2"
+                :data-document="document.document"
+              >
+                <dt class="small fw-normal">{{ document.documentLabel }}</dt>
+                <dd class="fw-semibold mb-0" data-id="legal-count-window">
+                  {{ document.window }}
+                </dd>
+              </div>
+            </dl>
+            <div v-else class="fs-4 fw-semibold" data-id="legal-count-window">
+              0
+            </div>
+          </section>
+        </div>
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="legal-overview-lapsed"
+          >
+            <h2 class="small text-body-secondary fw-normal">
+              {{ lapsedLabel }}
+            </h2>
+            <dl v-if="overview.documents.length" class="mb-0">
+              <div
+                v-for="document in overview.documents"
+                :key="document.document"
+                class="d-flex flex-wrap justify-content-between gap-2"
+                :data-document="document.document"
+              >
+                <dt class="small fw-normal">{{ document.documentLabel }}</dt>
+                <dd class="fw-semibold mb-0">
+                  <HilosLink
+                    v-if="document.lapsed > 0"
+                    :to="hilosLegalLapsedHref(document.document)"
+                    data-id="legal-count-lapsed-link"
+                    ><span data-id="legal-count-lapsed">{{
+                      document.lapsed
+                    }}</span></HilosLink
+                  >
+                  <span v-else data-id="legal-count-lapsed">{{
+                    document.lapsed
+                  }}</span>
+                </dd>
+              </div>
+            </dl>
+            <div v-else class="fs-4 fw-semibold" data-id="legal-count-lapsed">
+              0
+            </div>
+          </section>
+        </div>
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="legal-overview-newer-sets"
+          >
+            <h2 class="small text-body-secondary fw-normal">
+              New framework sets
+            </h2>
+            <div class="fs-4 fw-semibold" data-id="legal-newer-set-count">
+              {{ overview.newerSetCount }}
+            </div>
+            <div class="small text-body-secondary">
+              Documents with a newer framework set available.
+            </div>
+          </section>
+        </div>
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="legal-overview-consent"
+          >
+            <h2 class="small text-body-secondary fw-normal">Consent</h2>
+            <div v-if="consent" class="fs-4 fw-semibold">
+              <HilosHideable v-slot="{ value: shown }" :value="consent.value">{{
+                HILOS_LEGAL_VALUE_COPY[shown] ?? shown
+              }}</HilosHideable>
+            </div>
+            <HilosTableEmptyState
+              v-else-if="settingsBody === 'unavailable'"
+              :controller="settings.controller"
+              kind="unavailable"
+            />
+            <HilosSkeleton v-else />
+            <div class="small text-body-secondary">
+              How people agree at registration.
+            </div>
+          </section>
+        </div>
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="legal-overview-refusal"
+          >
+            <h2 class="small text-body-secondary fw-normal">Refusal</h2>
+            <div v-if="policy" class="fs-4 fw-semibold">
+              <HilosHideable v-slot="{ value: shown }" :value="policy.value">{{
+                HILOS_LEGAL_VALUE_COPY[shown] ?? shown
+              }}</HilosHideable>
+            </div>
+            <HilosTableEmptyState
+              v-else-if="settingsBody === 'unavailable'"
+              :controller="settings.controller"
+              kind="unavailable"
+            />
+            <HilosSkeleton v-else />
+            <div class="small text-body-secondary">
+              What happens after a deadline.
+            </div>
+          </section>
+        </div>
+      </div>
+      <HilosSkeleton v-else />
       <HilosViewportTable
-        v-if="documentRows.length"
+        v-if="checksBody !== 'empty'"
         :controller="checks.controller"
         class="mt-4"
       >
@@ -151,18 +241,6 @@ onUnmounted(() => {
           </div>
         </template>
       </HilosViewportTable>
-      <section class="mt-4 small text-body-secondary">
-        <h2 class="h6">What this section does not do</h2>
-        <p>
-          There is no text editor, publish button, or acceptance-window setting.
-          Those decisions are declared in the project's code.
-        </p>
-        <h2 class="h6">Why this is under Access &amp; identity</h2>
-        <p class="mb-0">
-          Agreement belongs to a person and an exact revision. Its deadline can
-          affect that person's access.
-        </p>
-      </section>
     </template>
   </HilosAdminPage>
 </template>

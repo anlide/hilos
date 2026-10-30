@@ -93,6 +93,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_USERS => true,
         HilosPageConstants::HILOS_USER => true,
         HilosPageConstants::HILOS_LEGAL => true,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENTS => true,
         HilosPageConstants::HILOS_LEGAL_DOCUMENT => true,
         HilosPageConstants::HILOS_LEGAL_REVISION => true,
         HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => true,

@@ -256,6 +256,11 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.LEGAL]: lazyPage(() =>
     import('./views/Hilos/Legal/Legal.vue').then((m) => m.default),
   ),
+  [HilosPages.LEGAL_DOCUMENTS]: lazyPage(() =>
+    import('./views/Hilos/Legal/Documents/Documents.vue').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalDocument.vue').then((m) => m.default),
   ),

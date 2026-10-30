@@ -10,6 +10,17 @@ import {
 } from '../../src/routing/hilosUnbuiltPages.js'
 
 describe('hilosUnbuiltPages', () => {
+  it('serves Legal Documents only in Vue until parity', () => {
+    expect(HILOS_UNBUILT_PAGES[HilosPages.LEGAL_DOCUMENTS]).toEqual([
+      'react',
+      'angular',
+    ])
+    for (const layer of ['vue', 'react', 'angular'] as const)
+      expect(hilosUnbuiltPages(layer).has(HilosPages.LEGAL_DOCUMENTS)).toBe(
+        layer !== 'vue',
+      )
+  })
+
   it('serves Status History in Vue and reserves React and Angular for parity', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_HISTORY]).toEqual([
       'react',

@@ -3257,6 +3257,7 @@ final class HilosSignalConstants
 
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENTS = 'subscription_page_hilos_legal_documents';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION = 'subscription_page_hilos_legal_revision';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES = 'subscription_page_hilos_legal_acceptances';

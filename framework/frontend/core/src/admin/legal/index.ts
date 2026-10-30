@@ -1,6 +1,13 @@
 // @hilos/core/admin/legal: lazy section APIs.
 
 export {
+  LEGAL_OVERVIEW_SECTION,
+  legalOverviewSchema,
+  createHilosLegalOverview,
+  type HilosLegalOverview,
+} from './hilosLegalOverview.js'
+
+export {
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
   LEGAL_REVISION_SECTION,

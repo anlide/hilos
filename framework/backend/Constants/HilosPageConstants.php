@@ -359,6 +359,7 @@ final class HilosPageConstants
 
     /** Legal administration pages. */
     public const string HILOS_LEGAL = 'hilos_legal';
+    public const string HILOS_LEGAL_DOCUMENTS = 'hilos_legal_documents';
     public const string HILOS_LEGAL_DOCUMENT = 'hilos_legal_document';
     public const string HILOS_LEGAL_REVISION = 'hilos_legal_revision';
     public const string HILOS_LEGAL_ACCEPTANCES = 'hilos_legal_acceptances';

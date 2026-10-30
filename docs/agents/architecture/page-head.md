@@ -56,6 +56,12 @@ belongs to HIL-1718 and HIL-1719.
 Settings uses the shared section head across Vue, React and Angular through the
 framework catalog's opt-in. Its only page is Overview, so the tab row stays
 hidden and no child cards are drawn.
+Legal is opted into the shared section head only by Chat's Vue provider. Its
+Overview / Documents / Acceptances / Settings pages share the Legal row.
+Document and Revision remain catalog entities (`entity: true`) without their
+own page-head adoption; Revision remains a child of Document. The framework
+catalog default, Tasks (React) and Polls (Angular) retain their existing
+composition pending parity.
 
 ## Core Rule And Ownership
 

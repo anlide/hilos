@@ -82,6 +82,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
@@ -947,20 +948,29 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(DemoHilosLegalAgentDaemon::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::DAEMON]);
         $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
         foreach ([
-            LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+            LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
+            LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
+            $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENTS, LegalDocumentsPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        $this->assertSame([], LegalDocumentsPage::ACTIONS);
+        $this->assertSame([], LegalDocumentsPage::SIGNALS);
+        $this->assertSame([], LegalDocumentsPage::READING_ACTIONS);
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame([
-            ChatTableContext::hilosLegalDocuments => [],
             ChatTableContext::hilosLegalChecks => [],
             ChatTableContext::hilosLegalSettings => [],
         ], Hilos::PAGE_TABLES[LegalPage::PAGE]);
+        $this->assertSame([
+            ChatTableContext::hilosLegalDocuments => [],
+            ChatTableContext::hilosLegalSettings => [],
+        ], Hilos::PAGE_TABLES[LegalDocumentsPage::PAGE]);
         $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
         $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
         $this->assertSame([ChatTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
@@ -1155,6 +1165,14 @@ final class ChatTopologyRegistryTest extends TestCase
             $pages[HilosPageConstants::HILOS_BACKUP],
         );
         self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Legal',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What the project declares, and who accepted it.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-check',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Legal',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], $pages[HilosPageConstants::HILOS_LEGAL]);
+        self::assertSame([
             HilosPageConstants::HILOS_USER,
             HilosPageConstants::HILOS_LOGS,
             HilosPageConstants::HILOS_CHANGE_LOG,
@@ -1167,6 +1185,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
             HilosPageConstants::HILOS_APPEARANCE,
             HilosPageConstants::HILOS_BACKUP,
+            HilosPageConstants::HILOS_LEGAL,
             PageConstants::ADMIN_BOTS,
         ], array_keys($pages));
         self::assertSame([

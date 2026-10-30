@@ -77,7 +77,7 @@ test('previews the same complete consent body from a legal document', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/legal/terms')
+  await gotoPage(expect, page, '/hilos/legal/document/terms')
   await clickSubmit(expect, page.getByTestId('legal-preview-consent'))
   const preview = page.getByTestId('legal-consent-preview')
   await expect(preview).toBeVisible()

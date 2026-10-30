@@ -13,6 +13,7 @@ import {
   ScopeManager,
   type HilosConnection,
   type HilosLegalContext,
+  type HilosPageIdentity,
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core/base'
@@ -21,10 +22,12 @@ import {
  * The live window is real; only its transport and the rejected action are replaced.
  *
  * @param hold Keep each reply in flight until the test settles or refuses it.
+ * @param initialRefusal Refuse the carrier in the first page response.
  */
-function harness(hold = false) {
-  const listeners: Array<(frame: never) => void> = []
+function harness(hold = false, initialRefusal = false) {
+  const listeners = new Map<string, Set<(frame: never) => void>>()
   const calls: Array<{ action: string; payload: unknown }> = []
+  const focus: string[] = []
   const held: Array<{ settle(): void; refuse(): void }> = []
   const refusal = () =>
     new ActionError('legal_setting_set', 'fail', 'Server refused this choice')
@@ -34,14 +37,31 @@ function harness(hold = false) {
     scopes,
     connection: {
       on(event: string, listener: (frame: never) => void) {
-        if (event === 'tableWindow') listeners.push(listener)
-        return () => {}
+        const group = listeners.get(event) ?? new Set()
+        listeners.set(event, group)
+        group.add(listener)
+        if (event === 'projectSignal' && initialRefusal)
+          listener({
+            type: 'page_response',
+            data: {
+              page: HilosPages.LEGAL_SETTINGS,
+              payload: {
+                data: {},
+                refusedWindows: {
+                  hilosLegalSettings: { errorCode: 'internal_error' },
+                },
+              },
+            },
+          } as never)
+        return () => group.delete(listener)
       },
       registerTableWindow() {},
       unregisterTableWindow() {},
       sendTableViewport() {},
       sendTableRendered() {},
-      sendTableRowFocus() {},
+      sendTableRowFocus(_page: string, _tableKey: string, rowKey: string) {
+        focus.push(rowKey)
+      },
     },
     actions: {
       dispatch(action: string, payload: unknown) {
@@ -67,16 +87,44 @@ function harness(hold = false) {
       params: {},
       admin: true,
     }),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal<HilosPageIdentity>({
+      label: 'Settings',
+      lead: '',
+      breadcrumb: [],
+      children: [],
+    }),
     resolvePath: () => undefined,
   } as unknown as HilosRouter
   return {
     context,
     router,
     calls,
+    focus,
     held,
-    push(value: unknown) {
-      for (const listener of listeners)
+    refuse() {
+      for (const listener of listeners.get('tableWindowRefused') ?? [])
+        listener({
+          type: 'table_window_refused',
+          data: {
+            page: HilosPages.LEGAL_SETTINGS,
+            tableKey: 'hilosLegalSettings',
+            errorCode: 'internal_error',
+          },
+        } as never)
+    },
+    push(
+      value: unknown,
+      {
+        refusal = 'freeze',
+        consentDefault = 'checkbox',
+        refusalDefault = 'freeze',
+      }: {
+        refusal?: unknown
+        consentDefault?: unknown
+        refusalDefault?: unknown
+      } = {},
+    ) {
+      for (const listener of listeners.get('tableWindow') ?? [])
         listener({
           data: {
             page: HilosPages.LEGAL_SETTINGS,
@@ -84,10 +132,16 @@ function harness(hold = false) {
             rows: [
               {
                 rowKey: 'legal.consent_form',
-                slots: { setting: { value, defaultValue: 'checkbox' } },
+                slots: { setting: { value, defaultValue: consentDefault } },
+              },
+              {
+                rowKey: 'legal.refusal_after_deadline',
+                slots: {
+                  setting: { value: refusal, defaultValue: refusalDefault },
+                },
               },
             ],
-            totalCount: 1,
+            totalCount: 2,
             totalExact: true,
             firstAnchor: null,
             lastAnchor: null,
@@ -109,6 +163,208 @@ function save(): HTMLButtonElement {
     '[data-id="legal-setting-save"]',
   ) as HTMLButtonElement
 }
+
+describe('legal setting Vue sections', () => {
+  it('names both settings sections and draws their live values, defaults and edit controls', async () => {
+    const h = harness()
+    const view = mount(HilosLegalSettingsPage, {
+      attachTo: document.body,
+      props: { context: h.context },
+      global: { provide: { [hilosRouterKey as symbol]: h.router } },
+    })
+    try {
+      h.push('line', { refusal: 'remind' })
+      await nextTick()
+
+      expect(view.findAll('h1')).toHaveLength(1)
+      expect(view.text()).toContain(
+        'Two settings control how consent is given and what happens after a deadline. Document texts and deadlines stay in code.',
+      )
+      const sections = new Map(
+        view
+          .findAll('section[aria-labelledby]')
+          .map((section) => [section.get('h2').text(), section]),
+      )
+      expect(sections.size).toBe(2)
+      for (const [key, title, hint, value, defaultValue] of [
+        [
+          'legal.consent_form',
+          'Consent at registration',
+          'How a person agrees when creating an account.',
+          'Line below the button',
+          'Checkbox',
+        ],
+        [
+          'legal.refusal_after_deadline',
+          'Refusal after the deadline',
+          'What happens when the acceptance window ends.',
+          'Keep reminding',
+          'Freeze access',
+        ],
+      ] as const) {
+        const section = sections.get(title)!
+        expect(section.attributes('aria-labelledby')).toBe(
+          section.get('h2').attributes('id'),
+        )
+        expect(section.text()).toContain(hint)
+        expect(
+          section.get(`[data-id="legal-setting-value-${key}"]`).text(),
+        ).toBe(value)
+        expect(section.get('dt').text()).toBe('Default:')
+        expect(section.get('dd').text()).toBe(defaultValue)
+        const edit = section.get<HTMLButtonElement>(
+          `[data-id="legal-setting-edit-${key}"]`,
+        )
+        expect(edit.element.tagName).toBe('BUTTON')
+        expect(edit.attributes('aria-label')).toBe(`Edit ${title}`)
+        expect(edit.element.disabled).toBe(false)
+      }
+      expect(view.find('[role="table"], table').exists()).toBe(false)
+      expect(view.find('[data-id^="legal-setting-preview-"]').exists()).toBe(
+        false,
+      )
+      expect(view.text()).not.toContain('Previews')
+      expect(view.text()).not.toContain('What is not a setting')
+      expect(view.find('input, select, textarea').exists()).toBe(false)
+
+      h.push('checkbox', {
+        refusal: 'freeze',
+        consentDefault: 'line',
+        refusalDefault: 'remind',
+      })
+      await nextTick()
+      expect(
+        view.get('[data-id="legal-setting-value-legal.consent_form"]').text(),
+      ).toBe('Checkbox')
+      expect(sections.get('Consent at registration')!.get('dd').text()).toBe(
+        'Line below the button',
+      )
+      expect(
+        view
+          .get('[data-id="legal-setting-value-legal.refusal_after_deadline"]')
+          .text(),
+      ).toBe('Freeze access')
+      expect(sections.get('Refusal after the deadline')!.get('dd').text()).toBe(
+        'Keep reminding',
+      )
+
+      const edit = view.get<HTMLButtonElement>(
+        '[data-id="legal-setting-edit-legal.refusal_after_deadline"]',
+      )
+      edit.element.focus()
+      await edit.trigger('click')
+      await flushPromises()
+      const modal = document.querySelector('[role="dialog"]')!
+      expect(modal.getAttribute('aria-modal')).toBe('true')
+      expect(modal.getAttribute('aria-label')).toBe(
+        'Refusal after the deadline',
+      )
+      expect(h.focus).toEqual(['legal.refusal_after_deadline'])
+      expect(input().value).toBe('freeze')
+      expect(
+        Array.from(input().options, (option) => option.textContent?.trim()),
+      ).toEqual(['Freeze access', 'Keep reminding'])
+      expect(document.activeElement).toBe(input())
+      document
+        .querySelector<HTMLButtonElement>('[data-id="legal-setting-cancel"]')!
+        .click()
+      await flushPromises()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(h.focus).toEqual(['legal.refusal_after_deadline', ''])
+      expect(document.activeElement).toBe(edit.element)
+    } finally {
+      view.unmount()
+    }
+  })
+
+  it.each([true, false])(
+    'shows a carrier refusal separately from mutation errors and restores the sections and editor (first response: %s)',
+    async (firstResponse) => {
+      const h = harness(false, firstResponse)
+      const view = mount(HilosLegalSettingsPage, {
+        attachTo: document.body,
+        props: { context: h.context },
+        global: { provide: { [hilosRouterKey as symbol]: h.router } },
+      })
+      try {
+        if (!firstResponse) {
+          h.push('checkbox')
+          await nextTick()
+          expect(view.findAll('section[aria-labelledby]')).toHaveLength(2)
+          h.refuse()
+        }
+        await nextTick()
+        const unavailable = view.get('[data-id="hilos-table-unavailable"]')
+        expect(unavailable.attributes('role')).toBe('status')
+        expect(
+          unavailable.get('[data-id="hilos-table-unavailable-title"]').text(),
+        ).toBe('List unavailable')
+        expect(view.findAll('section[aria-labelledby]')).toHaveLength(0)
+        expect(view.find('[role="table"], table').exists()).toBe(false)
+        expect(view.find('[data-id="hilos-skeleton"]').exists()).toBe(false)
+        expect(view.find('[data-id="hilos-hidden"]').exists()).toBe(false)
+        expect(view.findAll('h1').map((heading) => heading.text())).toEqual([
+          'Settings',
+        ])
+        expect(view.text()).toContain(
+          'Two settings control how consent is given',
+        )
+        expect(view.text()).not.toContain('Server refused this choice')
+        expect(document.querySelector('[role="dialog"]')).toBeNull()
+        expect(h.calls).toHaveLength(0)
+
+        h.push('line', { refusal: 'remind' })
+        await nextTick()
+        expect(view.find('[data-id="hilos-table-unavailable"]').exists()).toBe(
+          false,
+        )
+        expect(view.findAll('section[aria-labelledby]')).toHaveLength(2)
+        expect(
+          view.get('[data-id="legal-setting-value-legal.consent_form"]').text(),
+        ).toBe('Line below the button')
+        expect(
+          view
+            .get('[data-id="legal-setting-value-legal.refusal_after_deadline"]')
+            .text(),
+        ).toBe('Keep reminding')
+        expect(view.findAll('dd').map((value) => value.text())).toEqual([
+          'Checkbox',
+          'Freeze access',
+        ])
+        const edit = view.get<HTMLButtonElement>(
+          '[data-id="legal-setting-edit-legal.consent_form"]',
+        )
+        expect(edit.attributes('aria-label')).toBe(
+          'Edit Consent at registration',
+        )
+        edit.element.focus()
+        await edit.trigger('click')
+        await flushPromises()
+        expect(input().value).toBe('line')
+        expect(document.activeElement).toBe(input())
+        expect(save().disabled).toBe(true)
+        input().value = 'checkbox'
+        input().dispatchEvent(new Event('change', { bubbles: true }))
+        await nextTick()
+        expect(save().disabled).toBe(false)
+        save().click()
+        await flushPromises()
+        expect(h.calls).toEqual([
+          {
+            action: 'legal_setting_set',
+            payload: { key: 'legal.consent_form', value: 'checkbox' },
+          },
+        ])
+        expect(input().value).toBe('checkbox')
+        expect(
+          document.querySelector('[role="dialog"]')!.textContent,
+        ).toContain('Server refused this choice')
+      } finally {
+        view.unmount()
+      }
+    },
+  )
+})
 
 describe('legal setting Vue modal', () => {
   it('merges a pristine incoming value, locks an unchanged save and keeps a refused draft', async () => {
@@ -140,6 +396,9 @@ describe('legal setting Vue modal', () => {
       save().click()
       await flushPromises()
       await nextTick()
+      expect(
+        view.get('[data-id="legal-setting-value-legal.consent_form"]').text(),
+      ).toBe('Line below the button')
       expect(h.calls).toEqual([
         {
           action: 'legal_setting_set',
@@ -150,6 +409,132 @@ describe('legal setting Vue modal', () => {
       expect(
         document.querySelector('[data-id="hilos-action-error"]')?.textContent,
       ).toContain('Server refused this choice')
+    } finally {
+      view.unmount()
+    }
+  })
+
+  it.each(['conflict-accept-mine', 'conflict-accept-theirs'])(
+    'keeps the draft and blocks submission until %s resolves the conflict',
+    async (choice) => {
+      const h = harness()
+      const view = mount(HilosLegalSettingsPage, {
+        attachTo: document.body,
+        props: { context: h.context },
+        global: { provide: { [hilosRouterKey as symbol]: h.router } },
+      })
+      try {
+        // A previously saved value outside the current choices still supplies
+        // the baseline; the draft and incoming choice then differ from it.
+        h.push('legacy-consent')
+        await nextTick()
+        await view
+          .get('[data-id="legal-setting-edit-legal.consent_form"]')
+          .trigger('click')
+        input().value = 'checkbox'
+        input().dispatchEvent(new Event('change', { bubbles: true }))
+        await nextTick()
+        h.push('line')
+        await nextTick()
+        expect(input().value).toBe('checkbox')
+        expect(save().disabled).toBe(true)
+        expect(
+          document.querySelector('[data-id="legal-setting-notice"]')
+            ?.textContent,
+        ).toContain('Changed elsewhere to "Line below the button".')
+        input().form!.dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true }),
+        )
+        await flushPromises()
+        expect(h.calls).toEqual([])
+        expect(input().value).toBe('checkbox')
+
+        document
+          .querySelector<HTMLButtonElement>(`[data-id="${choice}"]`)!
+          .click()
+        await nextTick()
+        expect(
+          document.querySelector('[data-id="conflict-choices"]'),
+        ).toBeNull()
+        if (choice === 'conflict-accept-mine') {
+          expect(input().value).toBe('checkbox')
+          expect(save().disabled).toBe(false)
+          save().click()
+          await flushPromises()
+          expect(h.calls).toEqual([
+            {
+              action: 'legal_setting_set',
+              payload: { key: 'legal.consent_form', value: 'checkbox' },
+            },
+          ])
+          expect(input().value).toBe('checkbox')
+        } else {
+          expect(input().value).toBe('line')
+          expect(save().disabled).toBe(true)
+          input().form!.dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+          )
+          await flushPromises()
+          expect(h.calls).toEqual([])
+          expect(document.querySelector('[data-id="modal"]')).toBeNull()
+        }
+      } finally {
+        view.unmount()
+      }
+    },
+  )
+
+  it('uses the same save gate for form submission and waits for the owner reply', async () => {
+    const h = harness(true)
+    const view = mount(HilosLegalSettingsPage, {
+      attachTo: document.body,
+      props: { context: h.context },
+      global: { provide: { [hilosRouterKey as symbol]: h.router } },
+    })
+    try {
+      h.push('checkbox')
+      await nextTick()
+      const edit = view.get('[data-id="legal-setting-edit-legal.consent_form"]')
+      await edit.trigger('click')
+      input().form!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+      await flushPromises()
+      expect(h.calls).toEqual([])
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+
+      await edit.trigger('click')
+      input().value = 'line'
+      input().dispatchEvent(new Event('change', { bubbles: true }))
+      await nextTick()
+      const form = input().form!
+      form.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+      await nextTick()
+      form.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+      await nextTick()
+      expect(h.calls).toEqual([
+        {
+          action: 'legal_setting_set',
+          payload: { key: 'legal.consent_form', value: 'line' },
+        },
+      ])
+      expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+      expect(
+        view.get('[data-id="legal-setting-value-legal.consent_form"]').text(),
+      ).toBe('Checkbox')
+
+      h.held[0]!.settle()
+      await flushPromises()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      h.push('line')
+      await nextTick()
+      expect(
+        view.get('[data-id="legal-setting-value-legal.consent_form"]').text(),
+      ).toBe('Line below the button')
     } finally {
       view.unmount()
     }
@@ -234,11 +619,28 @@ describe('legal setting Vue modal with the value hidden (HIL-1260)', () => {
       global: { provide: { [hilosRouterKey as symbol]: h.router } },
       attachTo: document.body,
     })
-    h.push({ _hidden: true })
+    h.push(
+      { _hidden: true },
+      {
+        refusal: { _hidden: true },
+        consentDefault: { _hidden: true },
+        refusalDefault: { _hidden: true },
+      },
+    )
     await flushPromises()
 
     const cell = view.get('[data-id="legal-setting-value-legal.consent_form"]')
     expect(cell.find('[data-id="hilos-hidden"]').text()).toBe('Hidden')
+    for (const key of ['legal.consent_form', 'legal.refusal_after_deadline']) {
+      expect(view.get(`[data-id="legal-setting-value-${key}"]`).text()).toBe(
+        'Hidden',
+      )
+    }
+    for (const section of view.findAll('section[aria-labelledby]')) {
+      expect(section.get('dt').text()).toBe('Default:')
+      expect(section.get('dd').text()).toBe('Hidden')
+    }
+    expect(view.findAll('[data-id="hilos-hidden"]')).toHaveLength(4)
 
     await view
       .get('[data-id="legal-setting-edit-legal.consent_form"]')

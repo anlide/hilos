@@ -5,7 +5,6 @@ import {
   createHilosLegalSettingEdit,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
-  HILOS_LEGAL_SETTING_PREVIEWS,
 } from '@hilos/core/admin/legal'
 import {
   HilosPages,
@@ -14,18 +13,23 @@ import {
 } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, useId } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
-import HilosViewportTable from '../../HilosViewportTable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
+import HilosTableEmptyState from '../../HilosTableEmptyState.vue'
 import ConflictActions from '../../ConflictActions.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 const props = defineProps<{ context: HilosLegalContext }>()
 const table = createHilosLegalSettingsTable(props.context)
+const settingsRows = useSignal(table.controller.rows)
+const settingsBody = useSignal(table.controller.frame.body)
+const settings = computed(() =>
+  settingsRows.value.flatMap(({ row }) => (row ? [row] : [])),
+)
 const actions = createHilosLegalSettingsActions(props.context)
 const editor = createHilosLegalSettingEdit(table.controller, actions)
 const opened = useSignal(editor.opened)
@@ -78,96 +82,68 @@ function save(): void {
       Two settings control how consent is given and what happens after a
       deadline. Document texts and deadlines stay in code.
     </p>
-    <HilosViewportTable :controller="table.controller">
-      <template #cell-rowKey="{ row: setting }"
-        ><strong>{{
-          HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.label ?? setting.rowKey
-        }}</strong>
-        <div class="small text-body-secondary">
-          {{ HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.hint }}
-        </div></template
+    <HilosTableEmptyState
+      v-if="settingsBody === 'unavailable'"
+      :controller="table.controller"
+      kind="unavailable"
+    />
+    <section
+      v-for="setting in settings"
+      :key="setting.rowKey"
+      class="mt-4"
+      :aria-labelledby="`${inputId}-${setting.rowKey}`"
+    >
+      <h2
+        :id="`${inputId}-${setting.rowKey}`"
+        class="h6 text-uppercase text-body-secondary mb-2"
       >
-      <template #cell-value="{ row: setting }"
-        ><span :data-id="`legal-setting-value-${setting.rowKey}`"
-          ><HilosHideable v-slot="{ value: shown }" :value="setting.value">{{
-            HILOS_LEGAL_VALUE_COPY[shown] ?? shown
-          }}</HilosHideable></span
-        >
-        <div class="small text-body-secondary">
-          Default:
-          <HilosHideable
-            v-slot="{ value: shown }"
-            :value="setting.defaultValue"
-            >{{ HILOS_LEGAL_VALUE_COPY[shown] ?? shown }}</HilosHideable
-          >
-        </div></template
-      >
-      <template #cell-actions="{ row: setting }"
-        ><button
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          :data-id="`legal-setting-edit-${setting.rowKey}`"
-          @click="open(setting.rowKey)"
-        >
-          Edit
-        </button></template
-      >
-    </HilosViewportTable>
-    <section class="mt-4">
-      <h2 class="h5">Previews</h2>
-      <div class="row g-3">
-        <div
-          v-for="preview in HILOS_LEGAL_SETTING_PREVIEWS"
-          :key="preview.key"
-          class="col-md-6"
-        >
-          <div
-            class="border rounded p-3 h-100"
-            :data-id="`legal-setting-preview-${preview.key}`"
-          >
-            <h3 class="h6">{{ preview.title }}</h3>
-            <label
-              v-if="preview.key === 'checkbox'"
-              class="small d-flex align-items-start gap-2 mb-2"
-              ><input
-                type="checkbox"
-                class="form-check-input flex-shrink-0"
-                disabled
-              />{{ preview.text }}</label
-            >
-            <button
-              v-if="preview.key === 'checkbox' || preview.key === 'line'"
-              type="button"
-              class="btn btn-sm btn-primary w-100 mb-2"
-              disabled
-            >
-              Create account
-            </button>
-            <blockquote
-              v-if="preview.key !== 'checkbox'"
-              class="small"
-              :class="
-                preview.key === 'freeze'
-                  ? 'alert alert-info'
-                  : preview.key === 'remind'
-                    ? 'alert alert-warning'
-                    : ''
-              "
-            >
-              {{ preview.text }}
-            </blockquote>
-            <p class="small text-body-secondary mb-0">{{ preview.hint }}</p>
+        {{ HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.label ?? setting.rowKey }}
+      </h2>
+      <div class="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom">
+        <div class="flex-grow-1">
+          <div class="fw-semibold small">
+            {{
+              HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.label ?? setting.rowKey
+            }}
+          </div>
+          <div class="small text-body-secondary">
+            {{ HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.hint }}
           </div>
         </div>
+        <div class="d-flex align-items-center gap-3">
+          <div class="text-end small">
+            <div
+              class="fw-semibold"
+              :data-id="`legal-setting-value-${setting.rowKey}`"
+            >
+              <HilosHideable v-slot="{ value: shown }" :value="setting.value">{{
+                HILOS_LEGAL_VALUE_COPY[shown] ?? shown
+              }}</HilosHideable>
+            </div>
+            <dl
+              class="d-flex flex-wrap justify-content-end gap-1 text-body-secondary mb-0"
+            >
+              <dt class="fw-normal">Default:</dt>
+              <dd class="mb-0">
+                <HilosHideable
+                  v-slot="{ value: shown }"
+                  :value="setting.defaultValue"
+                  >{{ HILOS_LEGAL_VALUE_COPY[shown] ?? shown }}</HilosHideable
+                >
+              </dd>
+            </dl>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :data-id="`legal-setting-edit-${setting.rowKey}`"
+            :aria-label="`Edit ${HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.label ?? setting.rowKey}`"
+            @click="open(setting.rowKey)"
+          >
+            Edit
+          </button>
+        </div>
       </div>
-    </section>
-    <section class="mt-4 small text-body-secondary">
-      <h2 class="h6">What is not a setting</h2>
-      <p class="mb-0">
-        The acceptance window ends on the revision's effective date. There is no
-        global window length, switch to bypass consent, or editor for document
-        text.
-      </p>
     </section>
     <HilosModal
       v-model="modalOpen"

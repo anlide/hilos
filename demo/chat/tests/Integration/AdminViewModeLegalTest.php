@@ -8,6 +8,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
@@ -18,6 +19,7 @@ use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\AbstractPage;
@@ -32,8 +34,11 @@ use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Database;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalSettings;
+use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentPage;
 use Hilos\Pages\Legal\AbstractHilosLegalPage;
 use Hilos\Pages\Legal\AbstractHilosLegalRevisionPage;
@@ -150,7 +155,6 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
                 [],
                 $acceptKey,
                 [
-                    ChatTableContext::hilosLegalDocuments => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
                     ChatTableContext::hilosLegalChecks => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
                     ChatTableContext::hilosLegalSettings => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
                 ],
@@ -158,22 +162,19 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             $pageData = $this->pagePayload($frames)[PagePayload::data];
             self::assertNull($pageData[AbstractHilosLegalPage::CATALOG_REFUSAL]);
             self::assertFalse(HiddenValue::isMark($pageData[AbstractHilosLegalPage::CATALOG_REFUSAL]));
+            self::assertSame([
+                'documentCount' => 2,
+                'documents' => [
+                    ['document' => 'terms', 'documentLabel' => 'Terms of use', 'window' => 0, 'lapsed' => 0],
+                    ['document' => 'privacy', 'documentLabel' => 'Privacy policy', 'window' => 0, 'lapsed' => 0],
+                ],
+                'newerSetCount' => 0,
+            ], $pageData['legalOverview']);
 
-            $docRows = $this->window($frames, ChatTableContext::hilosLegalDocuments)[TableWindowSignalData::rows];
-            $termsRow = null;
-            foreach ($docRows as $row) {
-                if ($row[BrowserPageSignalData::rowKey] === self::TERMS_DOCUMENT) {
-                    $termsRow = $row;
-                    break;
-                }
-            }
-            self::assertNotNull($termsRow, "terms document row was not found for {$acceptKey}");
-            self::assertCount(1, $termsRow[PagePayload::slots]);
-            $docSlot = reset($termsRow[PagePayload::slots]);
-            foreach ($docSlot as $val) {
-                self::assertFalse(HiddenValue::isMark($val));
-            }
-            self::assertSame(1, $docSlot[HilosLegalDocumentTableRow::covered]);
+            self::assertSame(['hilosLegalChecks', 'hilosLegalSettings'], array_keys($this->pagePayload($frames)[PagePayload::windows]));
+            self::assertSame('hilos_legal', $pageData['pageHeadOwner']['page']);
+            self::assertSame(['hilos_legal', 'hilos_legal_documents', 'hilos_legal_acceptances', 'hilos_legal_settings'],
+                array_column($pageData['pageTabs'], 'page'));
 
             $checkRows = $this->window($frames, ChatTableContext::hilosLegalChecks)[TableWindowSignalData::rows];
             self::assertCount(4, $checkRows);
@@ -195,6 +196,77 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
                 self::assertIsString($settingSlot[HilosLegalSettingsTableRow::value]);
                 self::assertIsString($settingSlot[HilosLegalSettingsTableRow::defaultValue]);
             }
+        }
+    }
+
+    /** Documents uses the same viewer bridge and sends both cold windows in its one answer. */
+    public function testAViewerSeesDocumentsWithNonpersonalScalarFieldsAndThePolicyCarrier(): void
+    {
+        foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+            $frames = $this->subscribe(LegalDocumentsPage::class, [], $acceptKey);
+            self::assertCount(1, self::payloads($frames));
+            $payload = $this->pagePayload($frames);
+            self::assertNull($payload[PagePayload::data][AbstractHilosLegalPage::CATALOG_REFUSAL]);
+            self::assertArrayNotHasKey('legalOverview', $payload[PagePayload::data]);
+            self::assertSame(['hilosLegalDocuments', 'hilosLegalSettings'], array_keys($payload[PagePayload::windows]));
+            $window = $this->window($frames, ChatTableContext::hilosLegalDocuments);
+            self::assertSame([['field' => 'publishedOn', 'direction' => 'desc']], $window['sort']);
+            self::assertSame(['privacy', 'terms'], array_column($window['rows'], 'rowKey'));
+            $docRows = $this->window($frames, ChatTableContext::hilosLegalDocuments)[TableWindowSignalData::rows];
+            $termsRow = null;
+            foreach ($docRows as $row) {
+                if ($row[BrowserPageSignalData::rowKey] === self::TERMS_DOCUMENT) {
+                    $termsRow = $row;
+                    break;
+                }
+            }
+            self::assertNotNull($termsRow, "terms document row was not found for {$acceptKey}");
+            self::assertCount(1, $termsRow[PagePayload::slots]);
+            $docSlot = reset($termsRow[PagePayload::slots]);
+            foreach ($docSlot as $val) {
+                self::assertFalse(HiddenValue::isMark($val));
+            }
+            self::assertSame(1, $docSlot[HilosLegalDocumentTableRow::covered]);
+
+            foreach ($window['rows'] as $row) {
+                $document = reset($row[PagePayload::slots]);
+                self::assertIsString($document[HilosLegalDocumentTableRow::documentLabel]);
+                self::assertIsString($document[HilosLegalDocumentTableRow::publishedOn]);
+                foreach ($document as $value) {
+                    self::assertFalse(HiddenValue::isMark($value));
+                }
+            }
+            self::assertCount(2, $this->window($frames, ChatTableContext::hilosLegalSettings)['rows']);
+            $wire = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
+            self::assertStringNotContainsString(self::TEST_USER_NAME, $wire);
+            self::assertStringNotContainsString(self::TEST_USER_EMAIL, $wire);
+            self::assertStringNotContainsString('Frozen', $wire);
+            self::assertStringNotContainsString('Past deadline', $wire);
+        }
+    }
+
+    /** A catalog that closes the policy keeps its carrier hidden without publishing derived policy words. */
+    public function testDocumentsDoesNotRevealAHiddenPolicyThroughItsCarrierOrPageData(): void
+    {
+        $settings = Hilos::$setting;
+        Hilos::$setting = new SettingsAccessor(HiddenLegalPolicyCatalog::class);
+        try {
+            foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
+                $frames = $this->subscribe(LegalDocumentsPage::class, [], $acceptKey);
+                $settingsRows = $this->window($frames, ChatTableContext::hilosLegalSettings)['rows'];
+                $policyRows = array_values(array_filter($settingsRows, static fn (array $row): bool =>
+                    $row[BrowserPageSignalData::rowKey] === LegalSettings::REFUSAL_KEY));
+                self::assertCount(1, $policyRows);
+                $policy = reset($policyRows[0][PagePayload::slots]);
+                self::assertTrue(HiddenValue::isMark($policy[HilosLegalSettingsTableRow::value]));
+                self::assertTrue(HiddenValue::isMark($policy[HilosLegalSettingsTableRow::defaultValue]));
+                $wire = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
+                self::assertStringNotContainsString('freeze', $wire);
+                self::assertStringNotContainsString('Frozen', $wire);
+                self::assertStringNotContainsString('Past deadline', $wire);
+            }
+        } finally {
+            Hilos::$setting = $settings;
         }
     }
 
@@ -356,7 +428,7 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
     }
 
     /**
-     * An admin receives all five legal pages with real data and no hidden marks.
+     * An admin receives all six legal pages with real data and no hidden marks.
      *
      * @throws JsonException When JSON serialization fails
      */
@@ -364,10 +436,10 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
     {
         $frames = [
             ...$this->subscribe(LegalPage::class, [], self::ADMIN_KEY, [
-                ChatTableContext::hilosLegalDocuments => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
                 ChatTableContext::hilosLegalChecks => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
                 ChatTableContext::hilosLegalSettings => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
+            ...$this->subscribe(LegalDocumentsPage::class, [], self::ADMIN_KEY),
             ...$this->subscribe(
                 LegalDocumentPage::class,
                 [HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT],
@@ -518,6 +590,19 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             static fn(array $frame): array => $frame['data']->toArray(),
             array_filter($frames, static fn(array $frame): bool => $frame['name'] === SignalTypeConstants::PAGE_RESPONSE),
         ));
+    }
+}
+
+/** Legal policy fixture whose value stays closed to viewers. */
+final class HiddenLegalPolicyCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Legal settings with the policy visibility closed */
+    public static function getCatalog(): array
+    {
+        $catalog = LegalSettingsCatalog::getCatalog();
+        $catalog[LegalSettings::REFUSAL_KEY][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] = false;
+
+        return $catalog;
     }
 }
 

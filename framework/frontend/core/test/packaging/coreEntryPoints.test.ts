@@ -21,6 +21,7 @@ import * as letterFrameEdit from '../../src/admin/communications/hilosCommunicat
 import * as daemon from '../../src/admin/daemon/index.js'
 import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
+import * as legalOverview from '../../src/admin/legal/hilosLegalOverview.js'
 import * as logs from '../../src/admin/logs/index.js'
 import * as logNodes from '../../src/admin/logs/hilosLogNodes.js'
 import { logsOverviewThresholdPassed } from '../../src/admin/logs/hilosLogsOverview.js'
@@ -106,6 +107,13 @@ const i18nOverviewValues = [
   'i18nOverviewSchema',
 ]
 const i18nOverviewTypes = ['HilosI18nOverview', 'HilosI18nOverviewContext']
+/** The legal overview APIs belong only to their lazy section. */
+const legalOverviewValues = [
+  'LEGAL_OVERVIEW_SECTION',
+  'legalOverviewSchema',
+  'createHilosLegalOverview',
+]
+const legalOverviewTypes = ['HilosLegalOverview']
 /** The page head's tab links resolver, shared by the compatibility root and base. */
 const pageHeadValues = ['hilosTabLinks']
 /** Public navigation types past the snapshot, shared by root and base. */
@@ -1024,6 +1032,15 @@ describe('core public entries', () => {
             name,
           ).toBe(true)
         } else if (
+          entry === './admin/legal' &&
+          legalOverviewValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            legalOverview[name as keyof typeof legalOverview],
+          )
+        } else if (
           entry === './admin/communications' &&
           channelSummaryValues.includes(name)
         ) {
@@ -1215,6 +1232,7 @@ describe('core public entries', () => {
         ...analyticsPeriodValues,
         ...analyticsPeopleValues,
         ...analyticsSessionListValues,
+        ...legalOverviewValues,
         ...channelSummaryValues,
         ...letterFrameValues,
         ...letterFrameEditValues,
@@ -1616,6 +1634,8 @@ describe('core public entries', () => {
       ...analyticsSessionListValues,
       ...analyticsSessionListTypes,
     ]
+    const legalOverviewExports = exportsOf('admin/legal/hilosLegalOverview.ts')
+    const legalOverviewNames = [...legalOverviewValues, ...legalOverviewTypes]
     const names = new Set<string>()
     const summaryExports = exportsOf(
       'admin/communications/hilosCommunicationsChannel.ts',
@@ -1769,6 +1789,15 @@ describe('core public entries', () => {
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(sessionListExports.get(name))
         } else if (
+          entry === 'admin/legal/index.ts' &&
+          legalOverviewNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            legalOverviewExports.get(name),
+          )
+        } else if (
           entry === 'admin/communications/index.ts' &&
           sectionOnly.includes(name)
         ) {
@@ -1895,6 +1924,7 @@ describe('core public entries', () => {
         ...periodNames,
         ...peopleNames,
         ...sessionListNames,
+        ...legalOverviewNames,
         ...sectionOnly,
         ...frameNames,
         ...frameEditNames,

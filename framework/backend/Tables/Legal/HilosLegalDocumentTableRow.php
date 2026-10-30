@@ -16,6 +16,8 @@ final class HilosLegalDocumentTableRow extends AbstractTableRow
     public const string covered = 'covered';
     public const string window = 'window';
     public const string lapsed = 'lapsed';
+    public const string documentLabel = 'documentLabel';
+    public const string publishedOn = 'publishedOn';
 
     /**
      * @param string $rowKey Stable row identity
@@ -24,6 +26,8 @@ final class HilosLegalDocumentTableRow extends AbstractTableRow
      * @param int $covered Covered
      * @param int $window Window
      * @param int $lapsed Lapsed
+     * @param string $documentLabel Catalog label or historical document key
+     * @param ?string $publishedOn Current revision's calendar publication date, YYYY-MM-DD
      */
     public function __construct(
         public string $rowKey,
@@ -32,6 +36,8 @@ final class HilosLegalDocumentTableRow extends AbstractTableRow
         public int $covered,
         public int $window,
         public int $lapsed,
+        public string $documentLabel,
+        public ?string $publishedOn,
     ) {
     }
 
@@ -57,6 +63,8 @@ final class HilosLegalDocumentTableRow extends AbstractTableRow
             self::covered => $this->covered,
             self::window => $this->window,
             self::lapsed => $this->lapsed,
+            self::documentLabel => $this->documentLabel,
+            self::publishedOn => $this->publishedOn,
         ];
     }
 
@@ -74,6 +82,8 @@ final class HilosLegalDocumentTableRow extends AbstractTableRow
             covered: self::requireInt($data, self::covered),
             window: self::requireInt($data, self::window),
             lapsed: self::requireInt($data, self::lapsed),
+            documentLabel: self::requireString($data, self::documentLabel),
+            publishedOn: self::optionalString($data, self::publishedOn),
         );
     }
 }

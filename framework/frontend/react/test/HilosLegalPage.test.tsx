@@ -192,8 +192,22 @@ it('links the past-deadline count to the people it counts, only when there are a
           page: 'hilos_legal',
           tableKey: 'hilosLegalDocuments',
           rows: [
-            { rowKey: 'terms', covered: 1, window: 0, lapsed: 2 },
-            { rowKey: 'privacy', covered: 3, window: 0, lapsed: 0 },
+            {
+              rowKey: 'terms',
+              documentLabel: 'Terms of use',
+              publishedOn: '2026-09-27',
+              covered: 1,
+              window: 0,
+              lapsed: 2,
+            },
+            {
+              rowKey: 'privacy',
+              documentLabel: 'Privacy policy',
+              publishedOn: '2026-09-27',
+              covered: 3,
+              window: 0,
+              lapsed: 0,
+            },
           ].map(({ rowKey, ...counts }) => ({
             rowKey,
             slots: { document: { declared: true, revision, ...counts } },
@@ -270,6 +284,8 @@ it('says "Past deadline" beside the count while the refusal setting is hidden (H
               rowKey: 'terms',
               slots: {
                 document: {
+                  documentLabel: 'Terms of use',
+                  publishedOn: '2026-09-27',
                   declared: true,
                   revision,
                   covered: 1,

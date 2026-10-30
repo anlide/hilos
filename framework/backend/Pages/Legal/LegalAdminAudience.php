@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\Legal\Exception\LegalException;
@@ -23,7 +24,6 @@ use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalStandingResolver;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptanceFiltersSignalData;
 use Hilos\Legal\LegalTally;
-use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\HilosException;
@@ -174,18 +174,30 @@ final class LegalAdminAudience
         $refreshTallies = self::$stale || self::$deliveredDate !== $today;
         $hasTallies = array_intersect(self::$subscribers, [
             HilosPageConstants::HILOS_LEGAL,
+            HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
             HilosPageConstants::HILOS_LEGAL_DOCUMENT,
             HilosPageConstants::HILOS_LEGAL_REVISION,
         ]) !== [];
         if ($refreshTallies && $hasTallies) {
-            try {
-                self::tallies();
-            } catch (LegalException) {
-                // The page response carries the refusal; its catalog tables answer empty windows.
-            }
             foreach (self::$subscribers as $acceptKey => $page) {
+                if ($page === HilosPageConstants::HILOS_LEGAL) {
+                    Hilos::$browser?->resendPageWhole($page, $acceptKey);
+
+                    continue;
+                }
+                if ($page === HilosPageConstants::HILOS_LEGAL_DOCUMENTS) {
+                    Hilos::$browser?->publishTableMutations(
+                        $page,
+                        $acceptKey,
+                        HilosLegalDocumentsTable::TABLE,
+                        static fn (HilosLegalDocumentsTable $table, TableQueryDTO $query): array => $table->aggregateMutations(
+                            Hilos::$sr->getTableViewport($acceptKey, HilosLegalDocumentsTable::TABLE)?->rowIds() ?? [],
+                        ),
+                    );
+
+                    continue;
+                }
                 $tables = match ($page) {
-                    HilosPageConstants::HILOS_LEGAL => [HilosLegalDocumentsTable::TABLE, HilosLegalChecksTable::TABLE],
                     HilosPageConstants::HILOS_LEGAL_DOCUMENT,
                     HilosPageConstants::HILOS_LEGAL_REVISION => [HilosLegalRevisionsTable::TABLE],
                     default => [],

@@ -54,23 +54,27 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   // A lapsed count leads to the people past the deadline only when there are any (HIL-945).
   await expect(page.getByTestId('legal-count-lapsed-link')).toHaveCount(0)
   await expect(shownByTestId(page, 'legal-check-row')).toHaveCount(4)
-  await clickSubmit(
-    expect,
-    shownByTestId(page, 'legal-document-open').and(
-      page.locator('[data-document="terms"]'),
-    ),
+  const documentOpen = shownByTestId(page, 'legal-document-open').and(
+    page.locator('[data-document="terms"]'),
   )
+  await expect(documentOpen).toHaveAttribute(
+    'href',
+    '/hilos/legal/document/terms',
+  )
+  await clickSubmit(expect, documentOpen)
+  await expect(page).toHaveURL('/hilos/legal/document/terms')
   await expect(page.getByTestId('legal-set')).toContainText(
     'Hilos standard set 1',
   )
   await expect(page.getByTestId('legal-deviation-row')).toHaveCount(1)
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
-  await clickSubmit(
-    expect,
-    shownByTestId(page, 'legal-revision-open').and(
-      page.locator('[data-revision="2026-10-07"]'),
-    ),
+  const revisionPath = '/hilos/legal/document/terms/revision/2026-10-07'
+  const revisionOpen = shownByTestId(page, 'legal-revision-open').and(
+    page.locator('[data-revision="2026-10-07"]'),
   )
+  await expect(revisionOpen).toHaveAttribute('href', revisionPath)
+  await clickSubmit(expect, revisionOpen)
+  await expect(page).toHaveURL(revisionPath)
   await expect(page.getByTestId('legal-revision-text')).toBeVisible()
   await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(
@@ -79,7 +83,21 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
     /^\s*[1-9]\d* acceptances\s*$/,
   )
-  await gotoPage(expect, page, '/hilos/legal/terms')
+  await page.goBack()
+  await expect(page).toHaveURL('/hilos/legal/document/terms')
+  await expectPageReady(expect, page)
+  await expect(page.getByTestId('legal-set')).toBeVisible()
+  await test.step('Document and revision addresses support direct entry and F5', async () => {
+    await gotoPage(expect, page, revisionPath, PAGE_READY)
+    await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await gotoPage(expect, page, '/hilos/legal/document/terms', PAGE_READY)
+    await expect(page.getByTestId('legal-set')).toBeVisible()
+    await page.reload()
+    await expectPageReady(expect, page)
+  })
   await expect(page.getByTestId('legal-set')).toBeVisible()
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
   await gotoPage(expect, page, '/hilos/legal')
@@ -185,7 +203,7 @@ test("previews the re-consent screen through the previous revision's holder", as
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/legal/terms')
+  await gotoPage(expect, page, '/hilos/legal/document/terms')
   await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
   const preview = page.getByTestId('legal-reconsent-preview')
   await expect(preview).toBeVisible()
@@ -206,7 +224,7 @@ test("previews the re-consent screen through the previous revision's holder", as
   await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
   await expect(preview).toBeHidden()
 
-  await gotoPage(expect, page, '/hilos/legal/privacy')
+  await gotoPage(expect, page, '/hilos/legal/document/privacy')
   await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
   const privacyPreview = page.getByTestId('legal-reconsent-preview')
   await expect(privacyPreview.getByTestId('legal-reconsent-badge')).toHaveText(
@@ -279,8 +297,8 @@ test('unknown legal documents and revisions are not-found subscription refusals'
 }) => {
   await grantAdminToSelf(expect, page)
   for (const path of [
-    '/hilos/legal/missing-document',
-    '/hilos/legal/terms/missing-revision',
+    '/hilos/legal/document/missing-document',
+    '/hilos/legal/document/terms/revision/missing-revision',
   ]) {
     await gotoPage(expect, page, path, PAGE_REFUSED)
     await expect(page.getByTestId('page-error')).toHaveAttribute(

@@ -776,6 +776,98 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     },
   )
 
+  it('serves Documents at its own static address', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    expect(HilosPages.LEGAL_DOCUMENTS).toBe('hilos_legal_documents')
+    expect(HILOS_ROUTE_DECLARATIONS[HilosPages.LEGAL_DOCUMENTS]).toEqual({
+      path: '/hilos/legal/documents',
+      admin: true,
+    })
+    expect(router.path(HilosPages.LEGAL_DOCUMENTS, {})).toBe(
+      '/hilos/legal/documents',
+    )
+    expect(router.match('/hilos/legal/documents')).toEqual({
+      page: HilosPages.LEGAL_DOCUMENTS,
+      params: {},
+      admin: true,
+    })
+    expect(router.match('/hilos/legal/document/terms')).toEqual({
+      page: HilosPages.LEGAL_DOCUMENT,
+      params: { documentKey: 'terms' },
+      admin: true,
+    })
+    expect(
+      Object.keys(HILOS_ROUTE_DECLARATIONS).indexOf(HilosPages.LEGAL_DOCUMENTS),
+    ).toBeLessThan(
+      Object.keys(HILOS_ROUTE_DECLARATIONS).indexOf(HilosPages.LEGAL_DOCUMENT),
+    )
+  })
+
+  it.each([
+    [HilosPages.LEGAL_DOCUMENT, '/hilos/legal/document/{documentKey}'],
+    [
+      HilosPages.LEGAL_REVISION,
+      '/hilos/legal/document/{documentKey}/revision/{revisionId}',
+    ],
+  ])('declares the explicit Legal entity address for %s', (page, path) => {
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(HILOS_PAGE_ROUTES[page]).toBe(path)
+  })
+
+  it.each([
+    ['terms', 'terms'],
+    ['privacy', 'privacy'],
+    ['document', 'document'],
+    ['documents', 'documents'],
+    ['acceptances', 'acceptances'],
+    ['settings', 'settings'],
+    ['terms /?#%', 'terms%20%2F%3F%23%25'],
+    ['terms%2Fprivacy', 'terms%252Fprivacy'],
+    ['café', 'caf%C3%A9'],
+  ])('roundtrips document %s and its revisions', (documentKey, encodedKey) => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+    const params = { documentKey }
+    const path = `/hilos/legal/document/${encodedKey}`
+    expect(router.path(HilosPages.LEGAL_DOCUMENT, params)).toBe(path)
+    expect(resolveHilosPath(HilosPages.LEGAL_DOCUMENT, params)).toBe(path)
+    expect(router.match(path)).toEqual({
+      page: HilosPages.LEGAL_DOCUMENT,
+      params,
+      admin: true,
+    })
+
+    for (const [revisionId, encodedRevision] of [
+      ['2026-09-27', '2026-09-27'],
+      ['revision /?#%', 'revision%20%2F%3F%23%25'],
+      ['revision%2F1', 'revision%252F1'],
+    ] as const) {
+      const revisionParams = { documentKey, revisionId }
+      const revisionPath = `${path}/revision/${encodedRevision}`
+      expect(router.path(HilosPages.LEGAL_REVISION, revisionParams)).toBe(
+        revisionPath,
+      )
+      expect(resolveHilosPath(HilosPages.LEGAL_REVISION, revisionParams)).toBe(
+        revisionPath,
+      )
+      expect(router.match(revisionPath)).toEqual({
+        page: HilosPages.LEGAL_REVISION,
+        params: revisionParams,
+        admin: true,
+      })
+    }
+  })
+
+  it.each(['/hilos/legal/terms', '/hilos/legal/terms/2026-09-27'])(
+    'does not alias the former Legal entity address %s',
+    (path) => {
+      expect(createPageRouter(HILOS_ROUTE_DECLARATIONS).match(path)).toEqual({
+        page: null,
+        params: {},
+        admin: false,
+      })
+    },
+  )
+
   it('declares a route for every Hilos page key', () => {
     for (const key of Object.values(HilosPages)) {
       expect(HILOS_ROUTE_DECLARATIONS[key].path).toBeTypeOf('string')
@@ -840,19 +932,24 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
-  it('keeps the static legal pages ahead of document and revision routes', () => {
+  it('keeps Acceptances and Settings at their static Legal addresses', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
-    expect(router.match('/hilos/legal/terms/2026-09-27')).toEqual({
+    expect(
+      router.match('/hilos/legal/document/terms/revision/2026-09-27'),
+    ).toEqual({
       page: HilosPages.LEGAL_REVISION,
       params: { documentKey: 'terms', revisionId: '2026-09-27' },
       admin: true,
     })
-    expect(router.match('/hilos/legal/acceptances').page).toBe(
-      HilosPages.LEGAL_ACCEPTANCES,
-    )
-    expect(router.match('/hilos/legal/settings').page).toBe(
-      HilosPages.LEGAL_SETTINGS,
-    )
+    for (const [page, path] of [
+      [HilosPages.LEGAL_ACCEPTANCES, '/hilos/legal/acceptances'],
+      [HilosPages.LEGAL_SETTINGS, '/hilos/legal/settings'],
+    ] as const) {
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+      expect(router.path(page, {})).toBe(path)
+      expect(resolveHilosPath(page)).toBe(path)
+      expect(router.match(path)).toEqual({ page, params: {}, admin: true })
+    }
   })
 
   it('routes its own templated paths back to their page keys', () => {
