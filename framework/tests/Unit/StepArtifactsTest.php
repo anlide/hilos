@@ -103,7 +103,7 @@ final class StepArtifactsTest extends TestCase
         file_put_contents($source . '/s1/staging/worker.log', "staged journal\n");
         file_put_contents($root . '/' . $cwd . '/data/logs-test/daemon.log', 'unrelated stand');
 
-        $missing = copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot');
+        $missing = copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot', date('c', time() - 60));
 
         $this->assertSame([], $missing);
         $this->assertSame("master journal\n", file_get_contents($root . '/snapshot/nodes/m1/daemon.log'));
@@ -125,7 +125,7 @@ final class StepArtifactsTest extends TestCase
         $root = $this->fixtureDirectory();
         mkdir($root . '/' . $cwd . '/data/logs-test', 0o755, true);
         file_put_contents($root . '/' . $cwd . '/data/logs-test/daemon.log', 'unrelated stand');
-        $missing = copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot');
+        $missing = copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot', date('c', time() - 60));
 
         $this->assertSame(['nodes: missing ' . $root . '/' . $cwd . '/data/logs-cluster'], $missing);
         writeArtifactSnapshot($root . '/SNAPSHOT.txt', ['missing' => implode(ARTIFACT_VALUE_SEPARATOR, $missing)]);
@@ -151,7 +151,7 @@ final class StepArtifactsTest extends TestCase
 
         $this->assertSame(
             ['nodes: could not copy ' . $source . '/m1/daemon.log'],
-            copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot'),
+            copyStepLogs($root, $stepId, ['cwd' => $cwd], $root . '/snapshot', date('c', time() - 60)),
         );
         $this->assertSame('still readable', file_get_contents($root . '/snapshot/nodes/s1/daemon.log'));
     }
@@ -163,9 +163,26 @@ final class StepArtifactsTest extends TestCase
         mkdir($root . '/demo/chat/data/logs-test', 0o755, true);
         file_put_contents($root . '/demo/chat/data/logs-test/daemon.log', 'single node');
 
-        $this->assertSame([], copyStepLogs($root, 'chat-e2e', self::DEMO_STAND, $root . '/snapshot'));
+        $this->assertSame([], copyStepLogs($root, 'chat-e2e', self::DEMO_STAND, $root . '/snapshot', date('c', time() - 60)));
         $this->assertSame('single node', file_get_contents($root . '/snapshot/stand/daemon.log'));
         $this->assertDirectoryDoesNotExist($root . '/snapshot/nodes');
+    }
+
+    /**
+     * A stand log last changed before the step started is an earlier stand's, and its
+     * triage would otherwise quote that stand's error as this step's first clue.
+     */
+    public function testCopiesOnlyTheStandLogsTheStepWrote(): void
+    {
+        $root = $this->fixtureDirectory();
+        mkdir($root . '/demo/chat/data/logs-test', 0o755, true);
+        file_put_contents($root . '/demo/chat/data/logs-test/daemon.log', 'this step');
+        file_put_contents($root . '/demo/chat/data/logs-test/worker-regular-1.error.log', 'ERROR: an earlier stand');
+        touch($root . '/demo/chat/data/logs-test/worker-regular-1.error.log', time() - 3600);
+
+        $this->assertSame([], copyStepLogs($root, 'chat-e2e', self::DEMO_STAND, $root . '/snapshot', date('c', time() - 60)));
+        $this->assertSame('this step', file_get_contents($root . '/snapshot/stand/daemon.log'));
+        $this->assertFileDoesNotExist($root . '/snapshot/stand/worker-regular-1.error.log');
     }
 
     /** A step takes the Playwright output it wrote; what an earlier run left in the demo stays out. */
@@ -723,6 +740,44 @@ final class StepArtifactsTest extends TestCase
      * snapshot in: silence would be read as a clean bill of health, which is the one
      * thing a step with a triage file is not.
      */
+    /**
+     * Compose refusing to start a service over an unhealthy dependency ran no test, and
+     * says why only in the dependency's own log, so the triage carries the end of it.
+     */
+    public function testRecognisesADependencyThatFailedItsHealthCheck(): void
+    {
+        $refusal = "[Warning] Access denied for user 'healthcheck'@'localhost' (using password: YES)";
+        $matched = matchTriageSignatures($this->collected([
+            'stepLog' => "dependency failed to start: container chat-mysql-test-s3 is unhealthy\n",
+            'containers' => [[
+                'ID' => '82b5f07523f5',
+                'Name' => 'chat-mysql-test-s3',
+                'Service' => 'mysql-test',
+                'State' => 'running',
+                'Health' => 'unhealthy',
+            ]],
+            'dockerLogs' => ['mysql-test.log' => "ready for connections.\n" . $refusal . "\n"],
+        ]));
+
+        $this->assertCount(1, $matched);
+        $this->assertStringContainsString('chat-mysql-test-s3', $matched[0]);
+        $this->assertStringContainsString('no test ran', $matched[0]);
+        $this->assertStringContainsString($refusal, $matched[0]);
+        $this->assertStringContainsString('docker/logs/mysql-test.log', $matched[0]);
+    }
+
+    /** Without the dependency's log in the snapshot the triage still names it, and says where to ask instead. */
+    public function testNamesAnUnhealthyDependencyWhoseLogTheSnapshotLacks(): void
+    {
+        $matched = matchTriageSignatures($this->collected([
+            'stepLog' => "dependency failed to start: container chat-mysql-test-s3 is unhealthy\n",
+        ]));
+
+        $this->assertCount(1, $matched);
+        $this->assertStringContainsString('chat-mysql-test-s3', $matched[0]);
+        $this->assertStringContainsString('holds no log of', $matched[0]);
+    }
+
     public function testSaysSoAndWhereToLookWhenNoSignatureMatched(): void
     {
         $matched = matchTriageSignatures($this->collected([]));
@@ -759,6 +814,7 @@ final class StepArtifactsTest extends TestCase
             'stepLog' => '',
             'holds' => ['stand/daemon.log'],
             'containers' => [],
+            'dockerLogs' => [],
             ...$collected,
         ];
     }

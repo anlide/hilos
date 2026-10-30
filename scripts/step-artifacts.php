@@ -139,6 +139,16 @@ const FROZEN_STAND_SIGNATURE = 'Protected mode: this node came up still frozen f
 const STAND_NOT_READY_SIGNATURE = 'did not become ready within';
 
 /**
+ * What docker compose prints when it will not start a service because a container the
+ * service depends on fails its own health check. The step behind it ran no test at all,
+ * and the reason the check failed is in that container's log, not in the step's.
+ */
+const UNHEALTHY_DEPENDENCY_PATTERN = '/dependency failed to start: container (\S+) is unhealthy/';
+
+/** How much of an unhealthy dependency's log is lifted into the triage: its last refusals, not its boot. */
+const UNHEALTHY_DEPENDENCY_TAIL_LINES = 3;
+
+/**
  * What makes a worker's error log worth quoting. Both words, because the two halves
  * of the framework's own reporting use one each.
  *
@@ -304,7 +314,7 @@ function collectStepArtifacts(
     $status = runArtifactCommand('git-status', 'git status --short 2>&1', $root, ARTIFACT_COMMAND_TIMEOUT_SECONDS);
     $missing = [...$missing, ...$head['missing'], ...$status['missing']];
 
-    $missing = [...$missing, ...copyStepLogs($root, $id, $stand, $path)];
+    $missing = [...$missing, ...copyStepLogs($root, $id, $stand, $path, $finished['at'])];
     foreach (PLAYWRIGHT_OUTPUT_DIRS as $source => $target) {
         $missing = [...$missing, ...copyPlaywrightOutput($cwd . '/' . $source, $path . '/' . $target, $finished['at'])];
     }
@@ -488,10 +498,10 @@ function artifactSummarySection(array $byStep): string
  *
  * @param array{daemonLog: string, workerErrors: array<string, string>,
  *     workerLogs: array<int, string>, stepLog: string, holds: array<int, string>,
- *     containers: array<int, array<string, mixed>>} $collected What was gathered: the stand's
- *     daemon log, its workers' error logs by file name, the names of its workers' plain logs,
- *     the step's own captured output, which of the snapshot's places exist, and the rows
- *     `docker compose ps` returned.
+ *     containers: array<int, array<string, mixed>>, dockerLogs: array<string, string>} $collected
+ *     What was gathered: the stand's daemon log, its workers' error logs by file name, the names
+ *     of its workers' plain logs, the step's own captured output, which of the snapshot's places
+ *     exist, the rows `docker compose ps` returned, and the containers' logs by file name.
  * @return array<int, string> One paragraph per hypothesis, in the order to consider them.
  */
 function matchTriageSignatures(array $collected): array
@@ -506,6 +516,10 @@ function matchTriageSignatures(array $collected): array
     }
     if (str_contains($collected['stepLog'], STAND_NOT_READY_SIGNATURE)) {
         $matched[] = triageOfAStandThatWasWaitedFor($collected['containers']);
+    }
+    preg_match_all(UNHEALTHY_DEPENDENCY_PATTERN, $collected['stepLog'], $unhealthy);
+    foreach (array_unique($unhealthy[1]) as $container) {
+        $matched[] = triageOfAnUnhealthyDependency($container, $collected['containers'], $collected['dockerLogs']);
     }
     foreach ($collected['workerErrors'] as $file => $text) {
         $head = triageWorkerErrorHead($text);
@@ -563,6 +577,39 @@ function triageOfAStandThatWasWaitedFor(array $containers): string
         . STAND_NOT_READY_SIGNATURE . '") while every container docker held was running and healthy.'
         . "\n  Check: the tail of stand/daemon.log, and db/migration-status.txt — a schema behind the code"
         . ' is one way a node stands there and answers nothing.';
+}
+
+/**
+ * What to say about a stand docker compose would not raise because a container it
+ * depends on failed its own health check.
+ *
+ * The step's log names the container and nothing more, so the triage carries the end
+ * of that container's own log: a database refusing its health check says so there,
+ * one line every two seconds, and nowhere else.
+ *
+ * @param string $container The container's name, as compose printed it.
+ * @param array<int, array<string, mixed>> $containers What `docker compose ps` listed.
+ * @param array<string, string> $dockerLogs The snapshot's container logs, by file name.
+ * @return string
+ */
+function triageOfAnUnhealthyDependency(string $container, array $containers, array $dockerLogs): string
+{
+    $text = 'The stand never came up: docker compose would not start a service because ' . $container
+        . ', which it depends on, failed its own health check, so no test ran.';
+    foreach ($containers as $row) {
+        $fileName = ($row['Name'] ?? null) === $container ? containerLogFileName($containers, $row) : null;
+        if ($fileName !== null && isset($dockerLogs[$fileName])) {
+            $tail = array_slice(artifactLines($dockerLogs[$fileName]), -UNHEALTHY_DEPENDENCY_TAIL_LINES);
+
+            return $text . "\n  Its log ends with:\n"
+                . implode("\n", array_map(static fn(string $line): string => '    ' . $line, $tail))
+                . "\n  Check: docker/logs/" . $fileName . ' — why the check fails is in this log, not in the'
+                . " step's.";
+        }
+    }
+
+    return $text . "\n  Check: this snapshot holds no log of " . $container . '; its own `docker logs` is the'
+        . ' next place, while the stand is still up.';
 }
 
 /**
@@ -660,7 +707,7 @@ function unhealthyStandContainers(array $containers): array
  * @param array<int, array<string, mixed>> $containers What `docker compose ps` listed.
  * @return array{daemonLog: string, workerErrors: array<string, string>,
  *     workerLogs: array<int, string>, stepLog: string, holds: array<int, string>,
- *     containers: array<int, array<string, mixed>>}
+ *     containers: array<int, array<string, mixed>>, dockerLogs: array<string, string>}
  */
 function triageInput(string $path, string $stepLog, array $containers): array
 {
@@ -671,6 +718,10 @@ function triageInput(string $path, string $stepLog, array $containers): array
     }
     // `worker-*.log` matches an error log too, so the plain ones are what is left.
     $plain = array_diff(glob($path . '/stand/worker-*.log') ?: [], $errorFiles);
+    $dockerLogs = [];
+    foreach (glob($path . '/docker/logs/*.log') ?: [] as $file) {
+        $dockerLogs[basename($file)] = readArtifactFile($file);
+    }
 
     return [
         'daemonLog' => readArtifactFile($path . '/stand/daemon.log'),
@@ -682,6 +733,7 @@ function triageInput(string $path, string $stepLog, array $containers): array
             static fn(string $place): bool => file_exists($path . '/' . $place),
         )),
         'containers' => $containers,
+        'dockerLogs' => $dockerLogs,
     ];
 }
 
@@ -1197,12 +1249,13 @@ function runArtifactCommand(string $label, string $command, string $cwd, int $ti
  * @param string $id Step being collected.
  * @param array{cwd: string}|null $stand Resolved stand, if any.
  * @param string $path Step snapshot directory.
+ * @param string $startedAt When the step started, as the runner recorded it (`date('c')`).
  * @return array<int, string> Missing sources or failed copies.
  */
-function copyStepLogs(string $root, string $id, ?array $stand, string $path): array
+function copyStepLogs(string $root, string $id, ?array $stand, string $path, string $startedAt): array
 {
     if (!in_array($id, CLUSTER_BROWSER_STEPS, true)) {
-        return copyStandLogs($root, $stand, $path);
+        return copyStandLogs($root, $stand, $path, $startedAt);
     }
     if ($stand === null) {
         return ['nodes: cluster stand is unknown'];
@@ -1225,12 +1278,19 @@ function copyStepLogs(string $root, string $id, ?array $stand, string $path): ar
  * the same place; for log-streams, which runs from the repository root against the stand
  * of `demo/tasks`, they are not.
  *
+ * A log last changed before the step started belongs to an earlier life of the stand,
+ * and stays out, by the rule {@see copyPlaywrightOutput()} keeps. A step that failed
+ * before its stand cleared the directory left exactly such logs there, and its triage
+ * quoted a worker error an hour older than the step as the first thing to read.
+ *
  * @param string $root Repository root.
  * @param array{cwd: string}|null $stand The record of the stand the step named, or null.
  * @param string $path The step's snapshot directory.
+ * @param string $startedAt When the step started, as the runner recorded it (`date('c')`);
+ *     a moment that cannot be read takes every log, as before.
  * @return array<int, string> What could not be copied, with the reason.
  */
-function copyStandLogs(string $root, ?array $stand, string $path): array
+function copyStandLogs(string $root, ?array $stand, string $path, string $startedAt): array
 {
     if ($stand === null) {
         return [];
@@ -1249,8 +1309,15 @@ function copyStandLogs(string $root, ?array $stand, string $path): array
         $found = [...$found, ...(glob($source . '/' . $pattern) ?: [])];
     }
 
+    $since = strtotime($startedAt);
+    // The runner lives through the whole run, and a stand's log keeps its path from one step to the next.
+    clearstatcache();
     $missing = [];
     foreach (array_unique($found) as $file) {
+        $changed = filemtime($file);
+        if ($since !== false && $changed !== false && $changed < $since) {
+            continue;
+        }
         if (!is_readable($file) || !copy($file, $path . '/stand/' . basename($file))) {
             $missing[] = 'stand: could not copy ' . basename($file);
         }
