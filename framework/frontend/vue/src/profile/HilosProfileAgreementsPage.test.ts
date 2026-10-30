@@ -1,4 +1,4 @@
-import { type ActionLifecycle } from '@hilos/core/base'
+import { HilosPages, type ActionLifecycle } from '@hilos/core/base'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { agreement, legalContext } from '../../../core/test/legal/fixtures.js'
@@ -26,15 +26,25 @@ it('shows no acceptance honestly and opens the current text without a request', 
       },
     ],
   })
+  const router = profileSectionFixture(
+    world.context.scopes,
+    'hilos_profile_agreements',
+  )
+  const page = world.context.scopes.page()!
+  const tabs = page.data.signal('pageTabs').get()
+  page.data.set('pageTabs', [
+    ...(Array.isArray(tabs) ? tabs : []),
+    {
+      page: HilosPages.PROFILE_AGREEMENTS_HISTORY,
+      label: 'Revision history',
+    },
+  ])
   const view = mount(HilosProfileAgreementsPage, {
     attachTo: document.body,
     props: { context: world.context },
     global: {
       provide: {
-        [hilosRouterKey as symbol]: profileSectionFixture(
-          world.context.scopes,
-          'hilos_profile_agreements',
-        ),
+        [hilosRouterKey as symbol]: router,
       },
     },
   })
@@ -52,7 +62,11 @@ it('shows no acceptance honestly and opens the current text without a request', 
   expect(document.activeElement).toBe(body?.closest('[role="dialog"]'))
   expect(dispatch).not.toHaveBeenCalled()
   expect(
-    view.get('[data-id="profile-agreements-history-open"]').attributes('href'),
+    view
+      .get(
+        `[data-id="hilos-page-tab-${HilosPages.PROFILE_AGREEMENTS_HISTORY}"]`,
+      )
+      .attributes('href'),
   ).toBe('/profile/agreements/history')
 })
 

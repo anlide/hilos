@@ -84,21 +84,21 @@ export function HilosProfileAgreementsHistoryPage({
                   return (
                     <div
                       key={revision.revisionId}
-                      className="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom"
+                      className="d-flex align-items-center gap-3 py-3 border-bottom"
                       data-id="legal-history-revision"
                       data-revision={revision.revisionId}
                     >
                       <i
-                        className="bi bi-file-earmark-text fs-5 text-body-secondary"
+                        className="bi bi-file-earmark-text fs-5 text-body-secondary flex-shrink-0"
                         aria-hidden="true"
                       />
-                      <div className="flex-grow-1 text-break">
+                      <div className="flex-grow-1 min-w-0 text-break">
                         <div className="fw-semibold small">
                           {formatHilosLegalDate(revision.publishedOn)}
                           {agreement?.current.revisionId ===
                             revision.revisionId && (
                             <span
-                              className="badge text-bg-primary ms-1"
+                              className="badge text-bg-primary ms-1 text-wrap"
                               data-id="legal-history-current"
                             >
                               current
@@ -106,7 +106,7 @@ export function HilosProfileAgreementsHistoryPage({
                           )}
                           {accepted && (
                             <span
-                              className="badge text-bg-success ms-1"
+                              className="badge text-bg-success ms-1 text-wrap"
                               data-id="legal-history-accepted"
                             >
                               you accepted ·{' '}
@@ -120,10 +120,10 @@ export function HilosProfileAgreementsHistoryPage({
                           {describeHilosLegalRevision(revision)}
                         </div>
                       </div>
-                      <div className="d-flex gap-2">
+                      <div className="d-flex flex-column flex-sm-row flex-shrink-0 justify-content-end gap-1">
                         <button
                           type="button"
-                          className="btn btn-sm btn-outline-secondary"
+                          className="btn btn-sm btn-outline-secondary text-nowrap"
                           data-id="legal-history-open"
                           onClick={() =>
                             void reader.open(
@@ -137,7 +137,7 @@ export function HilosProfileAgreementsHistoryPage({
                         {revision.origin !== 'first' && (
                           <button
                             type="button"
-                            className="btn btn-sm btn-outline-secondary"
+                            className="btn btn-sm btn-outline-secondary text-nowrap"
                             data-id="legal-history-compare"
                             onClick={() =>
                               void reader.compare(

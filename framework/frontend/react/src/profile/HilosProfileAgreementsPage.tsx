@@ -4,14 +4,11 @@ import {
   describeHilosLegalAgreement,
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   type HilosLegalAgreement,
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
 } from '@hilos/core/base'
-import { HilosLink } from '../HilosLink.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
@@ -140,22 +137,6 @@ export function HilosProfileAgreementsPage({
               )}
             </div>
           ))}
-          <div className="d-flex align-items-center gap-3 py-3 border-bottom mt-3">
-            <i
-              className="bi bi-clock-history fs-5 text-body-secondary"
-              aria-hidden="true"
-            />
-            <div className="flex-grow-1">
-              <h2 className="h6 mb-0">Revision history</h2>
-            </div>
-            <HilosLink
-              to={HILOS_PAGE_ROUTES[HilosPages.PROFILE_AGREEMENTS_HISTORY]!}
-              className="btn btn-sm btn-outline-secondary"
-              data-id="profile-agreements-history-open"
-            >
-              Open
-            </HilosLink>
-          </div>
         </>
       ) : (
         <p className="text-body-secondary">Loading agreements…</p>

@@ -11,8 +11,6 @@ import {
   describeHilosLegalAgreement,
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   subscribeSignal,
   type HilosLegalAgreement,
   type HilosLegalAgreementsState,
@@ -21,7 +19,6 @@ import {
   type HilosLegalClause,
   type HilosLegalContext,
 } from '@hilos/core/base'
-import { HilosLink } from '../HilosLink.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
@@ -32,7 +29,6 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
   selector: 'hilos-profile-agreements-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    HilosLink,
     HilosModal,
     HilosProfileHead,
     HilosLegalChanges,
@@ -110,21 +106,6 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
             }
           </div>
         }
-        <div class="d-flex align-items-center gap-3 py-3 border-bottom mt-3">
-          <i
-            class="bi bi-clock-history fs-5 text-body-secondary"
-            aria-hidden="true"
-          ></i>
-          <div class="flex-grow-1">
-            <h2 class="h6 mb-0">Revision history</h2>
-          </div>
-          <a
-            [hilosLink]="historyPath"
-            class="btn btn-sm btn-outline-secondary"
-            data-id="profile-agreements-history-open"
-            >Open</a
-          >
-        </div>
       } @else {
         <p class="text-body-secondary">Loading agreements…</p>
       }
@@ -203,8 +184,6 @@ export class HilosProfileAgreementsPage {
     to: string
   } | null>(null)
   protected readonly documentLabel = hilosLegalDocumentLabel
-  protected readonly historyPath =
-    HILOS_PAGE_ROUTES[HilosPages.PROFILE_AGREEMENTS_HISTORY]!
 
   constructor() {
     effect((onCleanup) => {

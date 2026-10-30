@@ -81,20 +81,20 @@ function current(document: HilosLegalDocumentKey): string | undefined {
         <div
           v-for="revision in document.revisions.slice().reverse()"
           :key="revision.revisionId"
-          class="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom"
+          class="d-flex align-items-center gap-3 py-3 border-bottom"
           data-id="legal-history-revision"
           :data-revision="revision.revisionId"
         >
           <i
-            class="bi bi-file-earmark-text fs-5 text-body-secondary"
+            class="bi bi-file-earmark-text fs-5 text-body-secondary flex-shrink-0"
             aria-hidden="true"
           ></i>
-          <div class="flex-grow-1 text-break">
+          <div class="flex-grow-1 min-w-0 text-break">
             <div class="fw-semibold small">
               {{ formatHilosLegalDate(revision.publishedOn) }}
               <span
                 v-if="current(document.document) === revision.revisionId"
-                class="badge text-bg-primary ms-1"
+                class="badge text-bg-primary ms-1 text-wrap"
                 data-id="legal-history-current"
                 >current</span
               >
@@ -102,7 +102,7 @@ function current(document: HilosLegalDocumentKey): string | undefined {
                 v-if="
                   acceptedAt(document.document, revision.revisionId) !== null
                 "
-                class="badge text-bg-success ms-1"
+                class="badge text-bg-success ms-1 text-wrap"
                 data-id="legal-history-accepted"
                 >you accepted ·
                 {{
@@ -116,10 +116,12 @@ function current(document: HilosLegalDocumentKey): string | undefined {
               {{ describeHilosLegalRevision(revision) }}
             </div>
           </div>
-          <div class="d-flex gap-2">
+          <div
+            class="d-flex flex-column flex-sm-row flex-shrink-0 justify-content-end gap-1"
+          >
             <button
               type="button"
-              class="btn btn-sm btn-outline-secondary"
+              class="btn btn-sm btn-outline-secondary text-nowrap"
               data-id="legal-history-open"
               @click="reader.open(document.document, revision.revisionId)"
             >
@@ -128,7 +130,7 @@ function current(document: HilosLegalDocumentKey): string | undefined {
             <button
               v-if="revision.origin !== 'first'"
               type="button"
-              class="btn btn-sm btn-outline-secondary"
+              class="btn btn-sm btn-outline-secondary text-nowrap"
               data-id="legal-history-compare"
               @click="reader.compare(document.document, revision.revisionId)"
             >

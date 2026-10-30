@@ -66,20 +66,20 @@ type LegalHistory = ReturnType<
               track revision.revisionId
             ) {
               <div
-                class="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom"
+                class="d-flex align-items-center gap-3 py-3 border-bottom"
                 data-id="legal-history-revision"
                 [attr.data-revision]="revision.revisionId"
               >
                 <i
-                  class="bi bi-file-earmark-text fs-5 text-body-secondary"
+                  class="bi bi-file-earmark-text fs-5 text-body-secondary flex-shrink-0"
                   aria-hidden="true"
                 ></i>
-                <div class="flex-grow-1 text-break">
+                <div class="flex-grow-1 min-w-0 text-break">
                   <div class="fw-semibold small">
                     {{ date(revision.publishedOn) }}
                     @if (current(document.document) === revision.revisionId) {
                       <span
-                        class="badge text-bg-primary ms-1"
+                        class="badge text-bg-primary ms-1 text-wrap"
                         data-id="legal-history-current"
                         >current</span
                       >
@@ -89,7 +89,7 @@ type LegalHistory = ReturnType<
                       null
                     ) {
                       <span
-                        class="badge text-bg-success ms-1"
+                        class="badge text-bg-success ms-1 text-wrap"
                         data-id="legal-history-accepted"
                         >you accepted ·
                         {{
@@ -104,10 +104,12 @@ type LegalHistory = ReturnType<
                     {{ description(revision) }}
                   </div>
                 </div>
-                <div class="d-flex gap-2">
+                <div
+                  class="d-flex flex-column flex-sm-row flex-shrink-0 justify-content-end gap-1"
+                >
                   <button
                     type="button"
-                    class="btn btn-sm btn-outline-secondary"
+                    class="btn btn-sm btn-outline-secondary text-nowrap"
                     data-id="legal-history-open"
                     (click)="
                       reader().open(document.document, revision.revisionId)
@@ -118,7 +120,7 @@ type LegalHistory = ReturnType<
                   @if (revision.origin !== 'first') {
                     <button
                       type="button"
-                      class="btn btn-sm btn-outline-secondary"
+                      class="btn btn-sm btn-outline-secondary text-nowrap"
                       data-id="legal-history-compare"
                       (click)="
                         reader().compare(document.document, revision.revisionId)

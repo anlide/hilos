@@ -32,7 +32,10 @@ test('reads personal agreements and compares published revisions', async ({
   await clickSubmit(expect, page.getByTestId('legal-text-close'))
   await expect(text).toBeHidden()
 
-  await clickSubmit(expect, page.getByTestId('profile-agreements-history-open'))
+  await clickSubmit(
+    expect,
+    page.getByTestId('hilos-page-tab-hilos_profile_agreements_history'),
+  )
   await expect(
     page.getByTestId('profile-agreements-history-view'),
   ).toBeVisible()

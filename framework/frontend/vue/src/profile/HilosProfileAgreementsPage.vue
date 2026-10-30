@@ -5,14 +5,11 @@ import {
   describeHilosLegalAgreement,
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   type HilosLegalAgreement,
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
 } from '@hilos/core/base'
-import HilosLink from '../HilosLink.vue'
 import HilosModal from '../HilosModal.vue'
 import HilosProfileHead from './HilosProfileHead.vue'
 import HilosLegalChanges from '../legal/HilosLegalChanges.vue'
@@ -141,19 +138,6 @@ function openChanges(agreement: HilosLegalAgreement): void {
             What changed
           </button>
         </div>
-      </div>
-      <div class="d-flex align-items-center gap-3 py-3 border-bottom mt-3">
-        <i
-          class="bi bi-clock-history fs-5 text-body-secondary"
-          aria-hidden="true"
-        ></i>
-        <div class="flex-grow-1"><h2 class="h6 mb-0">Revision history</h2></div>
-        <HilosLink
-          :to="HILOS_PAGE_ROUTES[HilosPages.PROFILE_AGREEMENTS_HISTORY]"
-          class="btn btn-sm btn-outline-secondary"
-          data-id="profile-agreements-history-open"
-          >Open</HilosLink
-        >
       </div>
     </template>
     <p v-else class="text-body-secondary">Loading agreements…</p>
