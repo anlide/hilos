@@ -38,7 +38,20 @@ function makeController(
     totalExact = true,
     firstAnchor: TableAnchor | null = null,
     lastAnchor: TableAnchor | null = null,
-  ): void =>
+  ): void => {
+    if (!controller.loaded.get()) {
+      controller.ingestSubscriptionWindow(
+        rows,
+        totalCount,
+        totalExact,
+        firstAnchor,
+        lastAnchor,
+        pageSize,
+        undefined,
+        [],
+      )
+      return
+    }
     controller.ingestWindow(
       rows,
       totalCount,
@@ -47,6 +60,7 @@ function makeController(
       lastAnchor,
       pageSize,
     )
+  }
 
   return { controller, sent, open }
 }
@@ -156,13 +170,15 @@ describe('TableViewportController frame declaration', () => {
       sendRendered: (keys) => sentRendered.push(keys),
       frame: { columns: () => columns.get(), views },
     })
-    controller.ingestWindow(
+    controller.ingestSubscriptionWindow(
       [{ rowKey: 'a', slots: {} }],
       1,
       true,
       null,
       null,
       10,
+      undefined,
+      [],
     )
     const rendered = controller.descriptor()?.rendered
     expect(rendered).toEqual([
@@ -174,6 +190,8 @@ describe('TableViewportController frame declaration', () => {
       'hidden',
       'description',
     ])
+    expect(sentRendered).toEqual([rendered])
+    sentRendered.length = 0
     expect(controller.frame.columns.get()).toBe(initial)
     expect(controller.frame.card.get()).toEqual(hilosTableCard(initial))
     expect(controller.frame.card.get().title).toBe(initial[0])
@@ -239,7 +257,16 @@ describe('TableViewportController frame declaration', () => {
       },
     })
     const row = { rowKey: 'a', slots: {} }
-    controller.ingestWindow([row], 30, true, { id: 1 }, { id: 1 }, 10)
+    controller.ingestSubscriptionWindow(
+      [row],
+      30,
+      true,
+      { id: 1 },
+      { id: 1 },
+      10,
+      undefined,
+      [],
+    )
     controller.setSearch('camera')
     controller.setFilter('kind', 'full')
     controller.setOrder([{ field: 'name', direction: 'desc' }])
@@ -770,8 +797,22 @@ describe('TableViewportController frame facets', () => {
         ],
       },
     })
-    const open = (): void =>
+    const open = (): void => {
+      if (!controller.loaded.get()) {
+        controller.ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          10,
+          undefined,
+          [],
+        )
+        return
+      }
       controller.ingestWindow([], 0, true, null, null, 10)
+    }
 
     return { controller, declared, sent, open }
   }

@@ -89,9 +89,14 @@ describe('legal admin views', () => {
     },
   )
 
-  it('renders the adopted set and the reason for each deviation', () => {
+  it('keeps document lists off Overview and shows confirmed aggregate zeros', () => {
     const h = harness()
     h.scope.data.set('legalDocument', {
+      covered: 0,
+      window: 0,
+      lapsed: 0,
+      standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+      projectCatalogClass: 'Project\\Legal\\LegalCatalog',
       document: 'terms',
       declared: true,
       revision,
@@ -121,19 +126,22 @@ describe('legal admin views', () => {
       props: { context: h.context },
       global: h.global,
     })
-    expect(view.find('[data-id="legal-set"]').text()).toContain('1 clauses')
-    expect(view.find('[data-id="legal-deviation-row"]').text()).toContain(
-      'The project retains its messages.',
-    )
-    expect(view.find('[data-id="legal-deviation-row"]').text()).toContain(
-      'stricter',
-    )
+    expect(view.find('[data-id="legal-set"]').exists()).toBe(false)
+    expect(view.find('[data-id="legal-deviation-row"]').exists()).toBe(false)
+    expect(view.get('[data-id="legal-count-covered"]').text()).toBe('0')
+    expect(view.get('[data-id="legal-count-window"]').text()).toBe('0')
+    expect(view.get('[data-id="legal-count-lapsed"]').text()).toBe('0')
     view.unmount()
   })
 
   it('opens the shared consent preview with both documents and no registration action', async () => {
     const h = harness()
     h.scope.data.set('legalDocument', {
+      covered: 0,
+      window: 0,
+      lapsed: 0,
+      standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+      projectCatalogClass: 'Project\\Legal\\LegalCatalog',
       document: 'terms',
       declared: true,
       revision,
@@ -178,6 +186,11 @@ describe('legal admin views', () => {
   it('shows the server unpublished sentence as text in the consent preview', async () => {
     const h = harness()
     h.scope.data.set('legalDocument', {
+      covered: 0,
+      window: 0,
+      lapsed: 0,
+      standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+      projectCatalogClass: 'Project\\Legal\\LegalCatalog',
       document: 'terms',
       declared: true,
       revision,

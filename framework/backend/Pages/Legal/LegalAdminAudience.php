@@ -176,11 +176,12 @@ final class LegalAdminAudience
             HilosPageConstants::HILOS_LEGAL,
             HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
             HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+            HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS,
             HilosPageConstants::HILOS_LEGAL_REVISION,
         ]) !== [];
         if ($refreshTallies && $hasTallies) {
             foreach (self::$subscribers as $acceptKey => $page) {
-                if ($page === HilosPageConstants::HILOS_LEGAL) {
+                if ($page === HilosPageConstants::HILOS_LEGAL || $page === HilosPageConstants::HILOS_LEGAL_DOCUMENT) {
                     Hilos::$browser?->resendPageWhole($page, $acceptKey);
 
                     continue;
@@ -197,8 +198,20 @@ final class LegalAdminAudience
 
                     continue;
                 }
+                if ($page === HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS) {
+                    Hilos::$browser?->publishTableMutations(
+                        $page,
+                        $acceptKey,
+                        HilosLegalRevisionsTable::TABLE,
+                        static fn (HilosLegalRevisionsTable $table, TableQueryDTO $query): array => $table->aggregateMutations(
+                            $query,
+                            Hilos::$sr->getTableViewport($acceptKey, HilosLegalRevisionsTable::TABLE)?->rowIds() ?? [],
+                        ),
+                    );
+
+                    continue;
+                }
                 $tables = match ($page) {
-                    HilosPageConstants::HILOS_LEGAL_DOCUMENT,
                     HilosPageConstants::HILOS_LEGAL_REVISION => [HilosLegalRevisionsTable::TABLE],
                     default => [],
                 };

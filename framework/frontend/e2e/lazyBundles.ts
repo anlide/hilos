@@ -441,41 +441,128 @@ export function watchPageReplies(page: Page) {
  *
  * @param page A page about to open a fresh socket.
  * @param pageKey The existing subscription key whose real reply is held.
+ * @param options Access tests may arm later and deliver sessions ahead of the held reply.
  */
-export async function holdPageReply(page: Page, pageKey: string) {
-  let open = false
+export async function holdPageReply(
+  page: Page,
+  pageKey: string,
+  options: { initiallyArmed?: boolean; passSession?: boolean } = {},
+) {
+  let open = options.initiallyArmed === false
+  let disposed = false
+  let cycle = 1
   let observed!: () => void
-  const received = new Promise<void>((resolve) => {
-    observed = resolve
-  })
+  const observation = () =>
+    new Promise<void>((resolve) => {
+      observed = resolve
+    })
+  let received = observation()
   const buffered: { client: WebSocketRoute; message: string | Buffer }[] = []
   const replies: PageReply[] = []
+  const frames: SocketFrame[] = []
+  // Native socket observers can see the proxy's upstream connection. Record
+  // output separately; browser readiness proves its subsequent dispatch.
+  const forwarded: SocketFrame[] = []
+  const forwardingReaders = new Map<
+    WebSocketRoute,
+    ReturnType<typeof createSocketFrameReader>
+  >()
+  const forward = (client: WebSocketRoute, message: string | Buffer): void => {
+    const read = forwardingReaders.get(client)
+    if (!read) return
+    client.send(message)
+    forwarded.push(...read(message))
+  }
   let sockets = 0
   await page.routeWebSocket(isApplicationSocket, (client) => {
     const server = client.connectToServer()
     const read = createSocketFrameReader(++sockets)
-    let holding = false
+    forwardingReaders.set(client, createSocketFrameReader(sockets))
+    let holdingCycle = 0
+    client.onClose((code, reason) => {
+      forwardingReaders.delete(client)
+      for (let index = buffered.length - 1; index >= 0; index--)
+        if (buffered[index]!.client === client) buffered.splice(index, 1)
+      void server.close({ code, reason })
+    })
     server.onMessage((message) => {
-      const incoming = read(message).flatMap((frame) => {
+      const decoded = read(message)
+      frames.push(...decoded)
+      const incoming = decoded.flatMap((frame) => {
         const reply = pageReply(frame)
         return reply ? [reply] : []
       })
       replies.push(...incoming)
       if (
         !open &&
-        (holding || incoming.some((reply) => reply.page === pageKey))
+        (holdingCycle === cycle ||
+          incoming.some((reply) => reply.page === pageKey))
       ) {
-        holding = true
-        buffered.push({ client, message })
-        observed()
-      } else client.send(message)
+        holdingCycle = cycle
+        if (options.passSession && typeof message === 'string') {
+          // A session can share the physical batch with the page it invalidates.
+          // Partition only delivery timing: keep every original inner envelope,
+          // including action ACKs, and every outer metadata field on both parts.
+          const sessions = decoded.filter(
+            ({ wire }) =>
+              wire !== null &&
+              typeof wire === 'object' &&
+              'type' in wire &&
+              wire.type === 'handshake_response',
+          )
+          if (sessions.length > 0) {
+            const outer = object(JSON.parse(message))
+            const encode = (part: SocketFrame[]) =>
+              JSON.stringify(
+                outer.type === 'signal_batch'
+                  ? {
+                      ...outer,
+                      data: {
+                        ...object(outer.data),
+                        frames: part.map(({ wire }) => wire),
+                      },
+                    }
+                  : part[0]!.wire,
+              )
+            forward(client, encode(sessions))
+            const held = decoded.filter((frame) => !sessions.includes(frame))
+            if (held.length > 0)
+              buffered.push({ client, message: encode(held) })
+          } else if (message === 'pong') forward(client, message)
+          else buffered.push({ client, message })
+        } else buffered.push({ client, message })
+        if (incoming.some((reply) => reply.page === pageKey)) observed()
+      } else forward(client, message)
     })
   })
   const release = (): void => {
     open = true
-    for (const { client, message } of buffered.splice(0)) client.send(message)
+    for (const { client, message } of buffered.splice(0))
+      forward(client, message)
   }
-  return { received, replies, release, dispose: release }
+  return {
+    get received() {
+      return received
+    },
+    replies,
+    frames,
+    forwarded,
+    arm(): Promise<void> {
+      if (disposed || !open || buffered.length > 0)
+        throw new Error(
+          'Release the live page-reply hold before arming it again.',
+        )
+      cycle++
+      open = false
+      received = observation()
+      return received
+    },
+    release,
+    dispose(): void {
+      disposed = true
+      release()
+    },
+  }
 }
 
 export interface PagePresentationSnapshot {

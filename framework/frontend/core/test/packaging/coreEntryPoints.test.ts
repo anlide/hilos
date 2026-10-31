@@ -116,6 +116,18 @@ const legalOverviewValues = [
   'createHilosLegalOverview',
 ]
 const legalOverviewTypes = ['HilosLegalOverview']
+/** Document tab APIs shared by the compatibility root and lazy Legal entry. */
+const legalDocumentValues = [
+  'createHilosLegalDocument',
+  'createHilosLegalDocumentSetTable',
+  'createHilosLegalDocumentDeviationsTable',
+  'resolveHilosLegalDocumentSetRow',
+  'resolveHilosLegalDocumentDeviationRow',
+]
+const legalDocumentTypes = [
+  'HilosLegalDocumentSetRow',
+  'HilosLegalDocumentDeviationRow',
+]
 /** The page head's tab links resolver, shared by the compatibility root and base. */
 const pageHeadValues = ['hilosTabLinks']
 /** Public navigation types past the snapshot, shared by root and base. */
@@ -829,6 +841,7 @@ const expectedValues = [
   ...timeZoneValues,
   ...logViewerValues,
   ...i18nOverviewValues,
+  ...legalDocumentValues,
   ...pageHeadValues,
   ...licenseDependenciesValues,
   ...publicLegalValues,
@@ -1576,6 +1589,7 @@ describe('core public entries', () => {
         'HilosProfileDeviceKind',
         'HilosUsersTableOptions',
         ...i18nOverviewTypes,
+        ...legalDocumentTypes,
         ...pageHeadTypes,
         ...licenseDependenciesTypes,
         ...publicLegalTypes,

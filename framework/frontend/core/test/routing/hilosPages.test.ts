@@ -833,6 +833,15 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
 
   it.each([
     [HilosPages.LEGAL_DOCUMENT, '/hilos/legal/document/{documentKey}'],
+    [HilosPages.LEGAL_DOCUMENT_SET, '/hilos/legal/document/{documentKey}/set'],
+    [
+      HilosPages.LEGAL_DOCUMENT_DEVIATIONS,
+      '/hilos/legal/document/{documentKey}/deviations',
+    ],
+    [
+      HilosPages.LEGAL_DOCUMENT_REVISIONS,
+      '/hilos/legal/document/{documentKey}/revisions',
+    ],
     [
       HilosPages.LEGAL_REVISION,
       '/hilos/legal/document/{documentKey}/revision/{revisionId}',
@@ -863,6 +872,20 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params,
       admin: true,
     })
+
+    for (const [page, suffix] of [
+      [HilosPages.LEGAL_DOCUMENT_SET, 'set'],
+      [HilosPages.LEGAL_DOCUMENT_DEVIATIONS, 'deviations'],
+      [HilosPages.LEGAL_DOCUMENT_REVISIONS, 'revisions'],
+    ] as const) {
+      expect(router.path(page, params)).toBe(`${path}/${suffix}`)
+      expect(resolveHilosPath(page, params)).toBe(`${path}/${suffix}`)
+      expect(router.match(`${path}/${suffix}`)).toEqual({
+        page,
+        params,
+        admin: true,
+      })
+    }
 
     for (const [revisionId, encodedRevision] of [
       ['2026-09-27', '2026-09-27'],

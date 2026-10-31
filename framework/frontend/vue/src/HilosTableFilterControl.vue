@@ -30,6 +30,8 @@ const props = defineProps<{
    * name again.
    */
   placement: 'bar' | 'modal'
+  /** Whether the table is waiting for its first known window. */
+  disabled?: boolean
 }>()
 
 // Every handle of the modal's copy carries this at the end of the control's own
@@ -233,6 +235,7 @@ function onToggle(event: Event): void {
   <div v-if="view.filter.kind === 'select'" :data-id="dataId">
     <HilosDropdown
       :model-value="selectedIndex"
+      :disabled="disabled"
       :options="dropdownOptions"
       :menu-aria-label="view.filter.label"
       @update:model-value="onSelect"
@@ -252,7 +255,7 @@ function onToggle(event: Event): void {
           type="button"
           class="dropdown-item d-flex align-items-center justify-content-between gap-2"
           :class="{ active: selected }"
-          :disabled="option.disabled"
+          :disabled="disabled || option.disabled"
           role="option"
           :aria-selected="selected"
           :data-id="`hilos-dropdown-option-${option.value}`"
@@ -280,6 +283,7 @@ function onToggle(event: Event): void {
       type="button"
       class="btn btn-sm btn-outline-secondary"
       :aria-expanded="rangeOpen"
+      :disabled="disabled"
       :data-id="dataId"
       @click="rangeOpen = !rangeOpen"
       @keydown.esc.prevent="rangeOpen = false"
@@ -290,6 +294,7 @@ function onToggle(event: Event): void {
       <label :for="fromId" class="form-label small mb-1">From</label>
       <input
         :id="fromId"
+        :disabled="disabled"
         type="date"
         class="form-control form-control-sm mb-2"
         :value="bounds.from"
@@ -299,6 +304,7 @@ function onToggle(event: Event): void {
       <label :for="toId" class="form-label small mb-1">To</label>
       <input
         :id="toId"
+        :disabled="disabled"
         type="date"
         class="form-control form-control-sm mb-2"
         :value="bounds.to"
@@ -309,6 +315,7 @@ function onToggle(event: Event): void {
         type="button"
         class="btn btn-sm btn-outline-secondary w-100"
         :data-id="`${dataId}-clear`"
+        :disabled="disabled"
         @click="onClearRange"
       >
         Clear
@@ -322,6 +329,7 @@ function onToggle(event: Event): void {
   >
     <input
       :id="toggleId"
+      :disabled="disabled"
       class="form-check-input"
       type="checkbox"
       :checked="view.active"

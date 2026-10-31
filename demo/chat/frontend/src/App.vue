@@ -266,6 +266,21 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalDocument.vue').then((m) => m.default),
   ),
+  [HilosPages.LEGAL_DOCUMENT_SET]: lazyPage(() =>
+    import('./views/Hilos/Legal/DocumentSet/DocumentSet.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.LEGAL_DOCUMENT_DEVIATIONS]: lazyPage(() =>
+    import('./views/Hilos/Legal/DocumentDeviations/DocumentDeviations.vue').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.LEGAL_DOCUMENT_REVISIONS]: lazyPage(() =>
+    import('./views/Hilos/Legal/DocumentRevisions/DocumentRevisions.vue').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.LEGAL_REVISION]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalRevision.vue').then((m) => m.default),
   ),

@@ -566,6 +566,7 @@ export {
   PAGE_READY,
   PAGE_REFUSED,
   gotoPage,
+  navigateByHistory,
   expectPageReady,
   expectPageRefused,
   gotoAuthReturn,

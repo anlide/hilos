@@ -233,6 +233,7 @@ export interface BulkUntouchedContext {
                       type="button"
                       class="btn btn-link p-0 text-reset text-decoration-none d-inline-flex align-items-center gap-1"
                       [attr.data-id]="'hilos-table-sort-' + column.key"
+                      [disabled]="!controlsAvailable()"
                       (click)="controller().setSort(column.key)"
                     >
                       {{ column.label }}
@@ -1451,6 +1452,7 @@ export class HilosViewportTable<R> {
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches read this one
   // answer.
+  protected readonly controlsAvailable = signal(true)
   protected readonly body = signal<HilosTableBody>('loading')
   // Which worded state the tile draws. The four that carry words pass through as they
   // are; 'loading' never reaches the tile — the skeleton stands in its place — but the
@@ -1568,6 +1570,7 @@ export class HilosViewportTable<R> {
       const subscriptions = [
         bind(controller.rows, this.rows),
         bind(controller.order, this.order),
+        bind(controller.windowControlsAvailable, this.controlsAvailable),
         bind(controller.frame.body, this.body),
         bind(controller.frame.columns, this.frameColumns),
         bind(controller.frame.card, this.resolvedCard),

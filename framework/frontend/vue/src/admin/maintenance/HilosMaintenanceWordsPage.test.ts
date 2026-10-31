@@ -120,26 +120,27 @@ function seededContext(initial: WordsStub[] = []): {
     }
   }
 
-  const serveWindow = (nextRows: WordsStub[]): void => {
-    emit('projectSignal', {
-      type: 'page_response',
-      data: {
-        page: HilosPages.MAINTENANCE_WORDS,
-        payload: {
-          windows: {
-            [HILOS_MAINTENANCE_WORDS_TABLE]: {
-              rows: nextRows.map(wireRow),
-              totalCount: nextRows.length,
-              totalExact: true,
-              firstAnchor: null,
-              lastAnchor: null,
-              offset: 0,
-              limit: 10,
-            },
+  const pageWindow = (nextRows: WordsStub[]) => ({
+    type: 'page_response',
+    data: {
+      page: HilosPages.MAINTENANCE_WORDS,
+      payload: {
+        windows: {
+          [HILOS_MAINTENANCE_WORDS_TABLE]: {
+            rows: nextRows.map(wireRow),
+            totalCount: nextRows.length,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+            offset: 0,
+            limit: 10,
           },
         },
       },
-    })
+    },
+  })
+  const serveWindow = (nextRows: WordsStub[]): void => {
+    emit('projectSignal', pageWindow(nextRows))
   }
 
   const connection = {
@@ -151,6 +152,9 @@ function seededContext(initial: WordsStub[] = []): {
       const bucket = listeners.get(event) ?? new Set()
       listeners.set(event, bucket)
       bucket.add(listener)
+      if (event === 'projectSignal') {
+        listener(pageWindow(rows))
+      }
 
       return () => {
         bucket.delete(listener)
@@ -158,7 +162,6 @@ function seededContext(initial: WordsStub[] = []): {
     },
     registerTableWindow(tableKey: string): void {
       registered.add(tableKey)
-      serveWindow(rows)
     },
     unregisterTableWindow(tableKey: string): void {
       registered.delete(tableKey)

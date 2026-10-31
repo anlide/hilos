@@ -10,6 +10,8 @@ use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
@@ -102,6 +104,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosSecuritySignInMethodsTable $hilosSecuritySignInMethods
  * @property-read HilosSecurityTwoFactorTable $hilosSecurityTwoFactor
  * @property-read HilosLegalDocumentsTable $hilosLegalDocuments
+ * @property-read HilosLegalDocumentSetTable $hilosLegalDocumentSet
+ * @property-read HilosLegalDocumentDeviationsTable $hilosLegalDocumentDeviations
  * @property-read HilosLegalChecksTable $hilosLegalChecks
  * @property-read HilosLegalRevisionsTable $hilosLegalRevisions
  * @property-read HilosTermsHistoryTable $hilosTermsHistory
@@ -164,6 +168,8 @@ final class ChatTableContext extends TableContext
     public const string hilosSecuritySignInMethods = HilosSecuritySignInMethodsTable::TABLE;
     public const string hilosSecurityTwoFactor = HilosSecurityTwoFactorTable::TABLE;
     public const string hilosLegalDocuments = HilosLegalDocumentsTable::TABLE;
+    public const string hilosLegalDocumentSet = HilosLegalDocumentSetTable::TABLE;
+    public const string hilosLegalDocumentDeviations = HilosLegalDocumentDeviationsTable::TABLE;
     public const string hilosLegalChecks = HilosLegalChecksTable::TABLE;
     public const string hilosLegalRevisions = HilosLegalRevisionsTable::TABLE;
     public const string hilosTermsHistory = HilosTermsHistoryTable::TABLE;

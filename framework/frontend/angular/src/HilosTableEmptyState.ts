@@ -160,6 +160,9 @@ function filterTerm(view: HilosTableFilterView): string {
         >
           The rows of this list could not be fetched. The rest of the page still
           works.
+          @if (!controlsAvailable()) {
+            Table controls will be available when the list loads.
+          }
         </p>
       </div>
     } @else {
@@ -211,6 +214,7 @@ export class HilosTableEmptyState<R> {
     () => this.controller().frame.declaration,
   )
 
+  protected readonly controlsAvailable = signal(true)
   private readonly search = signal('')
   private readonly filters = signal<readonly HilosTableFilterView[]>([])
 
@@ -236,6 +240,15 @@ export class HilosTableEmptyState<R> {
     // The controller arrives via input (not at construction) and carries core
     // signals, so the search and the filters are mirrored once it is bound; the
     // cleanup drops the subscriptions if the controller is replaced.
+    effect((onCleanup) => {
+      const available = this.controller().windowControlsAvailable
+      this.controlsAvailable.set(available.get())
+      onCleanup(
+        subscribeSignal(available, (value) =>
+          this.controlsAvailable.set(value),
+        ),
+      )
+    })
     effect((onCleanup) => {
       const search = this.controller().search
       this.search.set(search.get())

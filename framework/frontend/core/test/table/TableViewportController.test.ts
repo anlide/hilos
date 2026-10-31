@@ -465,6 +465,321 @@ describe('TableViewportController', () => {
     expect(controller.descriptor()?.limit).toBe(25)
   })
 
+  it('consumes a subscription window whose backend already applies the route preset', () => {
+    const sent: TableViewportDescriptor[] = []
+    const declared: (readonly string[])[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: (keys) => declared.push(keys),
+      initialFilter: { document: 'terms' },
+      initialFilterInSubscription: true,
+      frame: {
+        columns: [{ key: 'publishedOn', label: 'Revision', sortable: true }],
+      },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'current', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+      [{ field: 'publishedOn', direction: 'desc' }],
+      [],
+    )
+
+    expect(controller.rows.get()[0]?.rowKey).toBe('current')
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(controller.descriptor()).toMatchObject({
+      filter: { document: 'terms' },
+      sort: [{ field: 'publishedOn', direction: 'desc' }],
+      limit: 10,
+    })
+    expect(declared).toEqual([['publishedOn']])
+    expect(sent).toEqual([])
+    controller.setSearch('old')
+    expect(sent.at(-1)?.filter).toEqual({ document: 'terms', search: 'old' })
+  })
+
+  it('keeps unknown subscription controls unchanged on every explicit request path', () => {
+    const sent: TableViewportDescriptor[] = []
+    const sendFacets = vi.fn()
+    const sendRendered = vi.fn()
+    const options = createSignal([{ value: 'up', label: 'Up' }])
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'position', label: 'Position', sortable: true },
+    ])
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendFacets,
+      sendRendered,
+      initialFilter: { document: 'terms' },
+      initialFilterInSubscription: true,
+      frame: {
+        columns: () => columns.get(),
+        filters: [
+          {
+            kind: 'select',
+            key: 'state',
+            label: 'State',
+            options: () => options.get(),
+          },
+        ],
+      },
+    })
+    try {
+      controller.ingestRefusal('internal_error')
+      controller.setSearch('no matching clause')
+      controller.setFilter('state', 'up')
+      controller.setFilters({ document: 'privacy', state: 'up' })
+      controller.setSort('position')
+      controller.setOrder([{ field: 'position', direction: 'desc' }])
+      controller.setPage(3)
+      controller.nextPage()
+      controller.prevPage()
+      controller.refresh()
+      controller.show()
+      options.set([{ value: 'down', label: 'Down' }])
+      columns.set([
+        { key: 'position', label: 'Position', sortable: true },
+        { key: 'statement', label: 'Statement' },
+      ])
+      expect(controller.filter.get()).toEqual({ document: 'terms' })
+      expect(controller.search.get()).toBe('')
+      expect(controller.order.get()).toBeUndefined()
+      expect(controller.frame.footer.get().page).toBe(0)
+      expect(controller.frame.body.get()).toBe('unavailable')
+      expect(controller.descriptor()).toBeNull()
+      expect(controller.descriptor(true)).toBeNull()
+      expect(controller.retainWindow()).toBeNull()
+      expect(sent).toEqual([])
+      expect(sendFacets).not.toHaveBeenCalled()
+      expect(sendRendered).not.toHaveBeenCalled()
+      controller.resetFilters()
+      controller.resetOrder()
+      expect(sent).toEqual([])
+
+      const rows = [{ rowKey: 'clause', slots: { position: 1 } }]
+      controller.ingestSubscriptionWindow(
+        rows,
+        101,
+        true,
+        null,
+        { rowKey: 'clause' },
+        37,
+        undefined,
+        [],
+        0,
+      )
+      expect(controller.rows.get().map(({ rowKey }) => rowKey)).toEqual([
+        'clause',
+      ])
+      expect(controller.descriptor()).toMatchObject({
+        filter: { document: 'terms' },
+        limit: 37,
+        sort: null,
+        pageIndex: null,
+      })
+      expect(sent).toEqual([])
+      expect(sendFacets).toHaveBeenCalledExactlyOnceWith({ state: ['down'] })
+      expect(sendRendered).toHaveBeenCalledExactlyOnceWith([
+        'position',
+        'statement',
+      ])
+      controller.setSearch('clause')
+      expect(sent.at(-1)).toMatchObject({
+        filter: { document: 'terms', search: 'clause' },
+        limit: 37,
+        sort: null,
+        requestId: expect.any(String),
+      })
+      controller.ingestRefusal('internal_error', sent.at(-1)?.requestId)
+      controller.setFilter('state', 'down')
+      controller.setSort('position')
+      controller.setPage(0)
+      controller.refresh()
+      expect(sent.at(-1)).toMatchObject({
+        filter: { document: 'terms', search: 'clause', state: 'down' },
+        limit: 37,
+        sort: [{ field: 'position', direction: 'asc' }],
+        pageIndex: 0,
+      })
+    } finally {
+      controller.dispose()
+    }
+  })
+
+  it.each([
+    {
+      name: 'sorted',
+      order: [{ field: 'position', direction: 'asc' }] as TableSortOrder,
+    },
+    { name: 'unsorted', order: undefined },
+  ])(
+    'learns the first $name subscription window after a refusal',
+    ({ order }) => {
+      const sent: TableViewportDescriptor[] = []
+      const rendered: (readonly string[])[] = []
+      const controller = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport: (descriptor) => sent.push(descriptor),
+        sendRendered: (keys) => rendered.push(keys),
+        initialFilter: { document: 'terms' },
+        initialFilterInSubscription: true,
+        frame: { columns: [{ key: 'position', label: 'Position' }] },
+      })
+      try {
+        controller.ingestRefusal('internal_error')
+        expect(controller.loaded.get()).toBe(true)
+        expect(controller.frame.body.get()).toBe('unavailable')
+        expect(controller.descriptor()).toBeNull()
+        expect(controller.descriptor(true)).toBeNull()
+        controller.resetWindowRequests()
+        controller.ingestRefusal('internal_error')
+        expect(controller.descriptor()).toBeNull()
+        expect(controller.descriptor(true)).toBeNull()
+
+        const rows = [
+          { rowKey: 'first', slots: { position: 1 } },
+          { rowKey: 'second', slots: { position: 2 } },
+        ]
+        controller.ingestSubscriptionWindow(
+          rows,
+          2,
+          true,
+          null,
+          null,
+          37,
+          order,
+          [],
+          0,
+        )
+        expect(controller.frame.body.get()).toBe('rows')
+        expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+          'first',
+          'second',
+        ])
+        expect(controller.order.get()).toEqual(order)
+        expect(controller.descriptor()).toEqual({
+          filter: { document: 'terms' },
+          sort: order ?? null,
+          limit: 37,
+          anchor: null,
+          anchorDirection: 'after',
+          pageIndex: null,
+          rendered: ['position'],
+        })
+        expect(controller.descriptor(true)).toEqual(controller.descriptor())
+        expect(rendered).toEqual([['position']])
+        expect(sent).toEqual([])
+        controller.ingestSubscriptionWindow(
+          rows,
+          2,
+          true,
+          null,
+          null,
+          37,
+          order,
+          [],
+          0,
+        )
+        expect(rendered).toEqual([['position']])
+        controller.setSort('position')
+        controller.resetOrder()
+        expect(sent.at(-1)?.sort).toEqual(order ?? null)
+      } finally {
+        controller.dispose()
+      }
+    },
+  )
+
+  it('does not infer an unsorted order from a first recovery snapshot without order metadata', () => {
+    const { controller, open } = makeController(37, [
+      { field: 'position', direction: 'asc' },
+    ])
+    try {
+      controller.ingestRefusal('internal_error')
+      controller.ingestWindow(
+        [{ rowKey: 'recovered', slots: {} }],
+        1,
+        true,
+        null,
+        null,
+        37,
+      )
+      expect(controller.frame.body.get()).toBe('rows')
+      expect(controller.rows.get()[0]?.rowKey).toBe('recovered')
+      expect(controller.pageSize.get()).toBe(37)
+      expect(controller.descriptor()).toBeNull()
+      expect(controller.descriptor(true)).toBeNull()
+      open([{ rowKey: 'recovered', slots: {} }], 1)
+      expect(controller.descriptor()).toMatchObject({
+        limit: 37,
+        sort: [{ field: 'position', direction: 'asc' }],
+      })
+    } finally {
+      controller.dispose()
+    }
+  })
+
+  it('keeps both known opening and held descriptors through a later refusal', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      initialFilter: { document: 'terms' },
+      initialFilterInSubscription: true,
+      frame: { columns: [] },
+    })
+    try {
+      controller.ingestSubscriptionWindow(
+        [{ rowKey: 'first', slots: {} }],
+        101,
+        true,
+        null,
+        null,
+        37,
+        [{ field: 'position', direction: 'asc' }],
+        [],
+        0,
+      )
+      controller.setSearch('retention')
+      controller.setSort('name')
+      controller.setPage(2)
+      controller.ingestWindow(
+        [{ rowKey: 'later', slots: {} }],
+        101,
+        true,
+        null,
+        null,
+        37,
+        74,
+      )
+      const held = controller.descriptor()
+      const opening = controller.descriptor(true)
+      expect(held).toMatchObject({
+        filter: { document: 'terms', search: 'retention' },
+        sort: [{ field: 'name', direction: 'asc' }],
+        limit: 37,
+        pageIndex: 2,
+      })
+      expect(opening).toMatchObject({
+        filter: { document: 'terms' },
+        sort: [{ field: 'position', direction: 'asc' }],
+        limit: 37,
+        anchor: null,
+        pageIndex: null,
+      })
+      controller.ingestRefusal('internal_error')
+      expect(controller.frame.body.get()).toBe('unavailable')
+      expect(controller.descriptor()).toEqual(held)
+      expect(controller.descriptor(true)).toEqual(opening)
+    } finally {
+      controller.dispose()
+    }
+  })
+
   it('a table opened with a preset asks for its own window rather than showing the page one', () => {
     const sent: TableViewportDescriptor[] = []
     const controller = new TableViewportController<TableRow>({
@@ -3874,13 +4189,15 @@ describe('TableViewportController retained presentation', () => {
         columns: () => columns.get(),
       },
     })
-    controller.ingestWindow(
+    controller.ingestSubscriptionWindow(
       ['a', 'b'].map((rowKey) => ({ rowKey, slots: {} })),
       2,
       true,
       null,
       null,
       10,
+      undefined,
+      [],
     )
     controller.expandRow('a', true)
     const { registration } = captureGeometry(controller, () => ({

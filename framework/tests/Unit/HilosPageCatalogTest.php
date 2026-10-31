@@ -37,7 +37,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 113;
+    private const int CATALOG_ENTRIES = 116;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -193,6 +193,33 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_SECURITY,
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_IMPERSONATION][PageCatalogConstants::CATALOG_ENTRY_PARENT],
         );
+    }
+
+    public function testDocumentOwnsItsThreeTabsBelowDocumentsWithoutGlobalHeadAdoption(): void
+    {
+        $document = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_DOCUMENT];
+        self::assertSame(HilosPageConstants::HILOS_LEGAL_DOCUMENTS, $document[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
+        self::assertSame('Document', $document[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
+        self::assertSame('bi-file-earmark-text', $document[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertTrue($document[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
+        self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $document);
+        $children = [];
+        foreach (HilosPageCatalog::CATALOG as $page => $entry) {
+            if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) !== HilosPageConstants::HILOS_LEGAL_DOCUMENT) {
+                continue;
+            }
+            if ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false) {
+                self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, $page);
+                continue;
+            }
+            $children[$page] = $entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB];
+            self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_ENTITY, $entry);
+        }
+        self::assertSame([
+            HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET => 'Standard set',
+            HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS => 'Deviations',
+            HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS => 'Revisions',
+        ], $children);
     }
 
     public function testTheTransferIsComplete(): void

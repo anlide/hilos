@@ -44,6 +44,7 @@ use Hilos\Legal\LegalTally;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Pages\Legal\AbstractHilosLegalPage;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentsPage;
+use Hilos\Pages\Legal\AbstractHilosLegalDocumentPage;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Legal\HilosLegalDocumentTableRow;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
@@ -52,6 +53,7 @@ use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\Exception\UnknownRevisionException;
 use ReflectionProperty;
+use ReflectionMethod;
 
 /** Histogram reuse, date folding and the source-change route to every subscribed window. */
 final class LegalAdminAudienceTest extends LegalAdminTestCase
@@ -94,6 +96,36 @@ final class LegalAdminAudienceTest extends LegalAdminTestCase
         self::assertSame(3, LegalAdminAudience::tallies()['terms']->lapsed);
         self::assertSame(0, LegalAdminAudience::tallies()['terms']->window);
         self::assertSame(0, $this->reads->reads);
+    }
+
+    /** Document counters reuse the audience after coalesced invalidation and date folding. */
+    public function testDocumentCountersFollowTheSharedTalliesWithoutExtraReads(): void
+    {
+        $page = new class ($this->createMock(PageAgentInterface::class)) extends AbstractHilosLegalDocumentPage {
+        };
+        $payload = new ReflectionMethod($page, 'buildPagePayload');
+        $params = new PageRouteParams(['documentKey' => 'terms']);
+        $yesterday = new DateTimeImmutable(LegalStandingResolver::today())->modify('-1 day')->format('Y-m-d');
+        new ReflectionProperty(LegalAdminAudience::class, 'cache')->setValue(null, [
+            'terms' => LegalTally::of('terms', $this->reads->held, $this->reads->accepted, $yesterday),
+        ]);
+        new ReflectionProperty(LegalAdminAudience::class, 'cacheDate')->setValue(null, $yesterday);
+        $document = $payload->invoke($page, 'document', $params)->data['legalDocument'];
+        self::assertSame([2, 0, 3], [$document['covered'], $document['window'], $document['lapsed']]);
+        self::assertSame(0, $this->reads->reads);
+        $this->reads->held['current']++;
+        $this->acceptanceChanges();
+        $document = $payload->invoke($page, 'document', $params)->data['legalDocument'];
+        self::assertSame([3, 0, 3], [$document['covered'], $document['window'], $document['lapsed']]);
+        self::assertSame(3, $this->reads->reads);
+        self::assertSame($document, $payload->invoke($page, 'document', $params)->data['legalDocument']);
+        self::assertSame(3, $this->reads->reads);
+
+        new ReflectionMethod($page, 'onSubscribeAfterResponse')->invoke($page, 'document', $params);
+        self::assertSame(['document' => HilosPageConstants::HILOS_LEGAL_DOCUMENT],
+            new ReflectionProperty(LegalAdminAudience::class, 'subscribers')->getValue());
+        $page->onUnsubscribe('document');
+        self::assertSame([], new ReflectionProperty(LegalAdminAudience::class, 'subscribers')->getValue());
     }
 
     public function testATickWithNoSubscribersDoesNotReadOrSend(): void
@@ -301,6 +333,82 @@ final class LegalAdminAudienceTest extends LegalAdminTestCase
         self::assertSame([2, 1, 0], array_column($after, 'covered'));
         self::assertSame($before[0], $after[0]);
         self::assertSame($before[1], $after[2]);
+    }
+
+    public function testCatalogOnlyTabsNeverAttemptCounterDrivenDelivery(): void
+    {
+        Hilos::$browser = $this->createMock(BrowserContext::class);
+        Hilos::$browser->expects(self::never())->method('sendTableWindow');
+        Hilos::$browser->expects(self::never())->method('publishTableMutations');
+        Hilos::$browser->expects(self::exactly(2))->method('resendPageWhole')
+            ->with(HilosPageConstants::HILOS_LEGAL_DOCUMENT, 'overview')
+            ->willReturnCallback(static function (): void { LegalAdminAudience::tallies(); });
+        LegalAdminAudience::addSubscriber('overview', HilosPageConstants::HILOS_LEGAL_DOCUMENT);
+        LegalAdminAudience::addSubscriber('set', HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET);
+        LegalAdminAudience::addSubscriber('deviations', HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS);
+        $agent = $this->createMock(PageAgentInterface::class);
+        LegalAdminAudience::onAgentTick($agent);
+        $this->acceptanceChanges();
+        LegalAdminAudience::onAgentTick($agent);
+        LegalAdminAudience::onAgentTick($agent);
+        self::assertSame(6, $this->reads->reads);
+        LegalAdminAudience::removeSubscriber('overview');
+        $this->acceptanceChanges();
+        LegalAdminAudience::onAgentTick($agent);
+        self::assertSame(6, $this->reads->reads);
+    }
+
+    /** Overview owns the counters; catalog-only tabs receive no counter-driven resend. */
+    public function testDocumentOverviewRefreshesOnceAndRechecksAccessWhileOtherTabsStayQuiet(): void
+    {
+        $agent = $this->delivery();
+        $page = HilosPageConstants::HILOS_LEGAL_DOCUMENT;
+        Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO('document', $page, ['documentKey' => 'terms']));
+        LegalAdminAudience::addSubscriber('document', $page);
+        LegalAdminAudience::addSubscriber('set', HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET);
+        LegalAdminAudience::addSubscriber('deviations', HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS);
+        LegalAdminAudience::onAgentTick($agent);
+        Hilos::$browser->flushToSignalRouter();
+        $frames = $this->frames();
+        self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($frames, 0));
+        self::assertSame(2, $frames[0][1]->payload->data['legalDocument']['covered']);
+        self::assertSame([], $frames[0][1]->payload->windows);
+        self::assertSame(4, $this->reads->reads);
+
+        $this->reads->held['current']++;
+        $this->acceptanceChanges();
+        LegalAdminAudience::onAgentTick($agent);
+        LegalAdminAudience::onAgentTick($agent);
+        Hilos::$browser->flushToSignalRouter();
+        $frames = $this->frames();
+        self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($frames, 0));
+        self::assertSame(3, $frames[0][1]->payload->data['legalDocument']['covered']);
+        self::assertSame(8, $this->reads->reads);
+        LegalAdminAudience::tallies();
+        self::assertSame(8, $this->reads->reads);
+
+        $yesterday = new DateTimeImmutable(LegalStandingResolver::today())->modify('-1 day')->format('Y-m-d');
+        new ReflectionProperty(LegalAdminAudience::class, 'cacheDate')->setValue(null, $yesterday);
+        new ReflectionProperty(LegalAdminAudience::class, 'deliveredDate')->setValue(null, $yesterday);
+        LegalAdminAudience::tallies();
+        LegalAdminAudience::onAgentTick($agent);
+        Hilos::$browser->flushToSignalRouter();
+        self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($this->frames(), 0));
+        self::assertSame(8, $this->reads->reads);
+
+        Hilos::$browser->admin = false;
+        $this->acceptanceChanges();
+        LegalAdminAudience::onAgentTick($agent);
+        Hilos::$browser->flushToSignalRouter();
+        $frames = $this->frames();
+        self::assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], array_column($frames, 0));
+        self::assertSame(403, $frames[0][1]->httpCode);
+        self::assertSame(8, $this->reads->reads);
+        LegalAdminAudience::removeSubscriber('document');
+        LegalAdminAudience::markStale();
+        LegalAdminAudience::onAgentTick($agent);
+        self::assertSame([], $this->frames());
+        self::assertSame(8, $this->reads->reads);
     }
 
     public function testWholeRootAndDocumentsShareAReadAndRootRechecksItsGuards(): void
@@ -710,6 +818,7 @@ abstract class LegalAudienceDeliveryHilos extends LegalAdminTestHilos
     public const array PAGES = [
         HilosPageConstants::HILOS_LEGAL => LegalAudienceRootPage::class,
         HilosPageConstants::HILOS_LEGAL_DOCUMENTS => LegalAudienceDocumentsPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT => LegalAudienceDocumentPage::class,
     ];
     public const array TABLES = [
         HilosLegalDocumentsTable::TABLE => HilosLegalDocumentsTable::class,
@@ -775,4 +884,9 @@ final class LegalAudienceDeliveryBrowser extends IdentityTestBrowser
     {
         return $this->admin;
     }
+}
+
+/** Real common document payload for guarded resends. */
+final class LegalAudienceDocumentPage extends AbstractHilosLegalDocumentPage
+{
 }

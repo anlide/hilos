@@ -75,6 +75,11 @@ describe('legal admin Angular pages', () => {
 it('opens both consent documents in a read-only Angular preview', async () => {
   const h = harness()
   h.scope.data.set('legalDocument', {
+    covered: 0,
+    window: 0,
+    lapsed: 0,
+    standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+    projectCatalogClass: 'Project\\Legal\\LegalCatalog',
     document: 'terms',
     declared: true,
     revision: {
@@ -135,6 +140,11 @@ it('opens both consent documents in a read-only Angular preview', async () => {
 it('shows the server unpublished sentence literally in the Angular consent preview', async () => {
   const h = harness()
   h.scope.data.set('legalDocument', {
+    covered: 0,
+    window: 0,
+    lapsed: 0,
+    standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+    projectCatalogClass: 'Project\\Legal\\LegalCatalog',
     document: 'terms',
     declared: true,
     revision: null,

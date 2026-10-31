@@ -120,25 +120,23 @@ function seededContext(initial: HilosMaintenanceNodeRow[] = []) {
       })
     }
   }
-  const serveWindow = (rows: HilosMaintenanceNodeRow[]): void => {
-    emit('projectSignal', {
-      page: HilosPages.MAINTENANCE_NODES,
-      payload: {
-        windows: {
-          hilosMaintenanceNodes: {
-            rows: rows.map(wireRow),
-            totalCount: rows.length,
-            totalExact: true,
-            firstAnchor: null,
-            lastAnchor: null,
-            rowsBefore: 0,
-            limit: 25,
-            sort: [{ field: 'nodeId', direction: 'asc' }],
-          },
+  const pageWindow = (rows: HilosMaintenanceNodeRow[]) => ({
+    page: HilosPages.MAINTENANCE_NODES,
+    payload: {
+      windows: {
+        hilosMaintenanceNodes: {
+          rows: rows.map(wireRow),
+          totalCount: rows.length,
+          totalExact: true,
+          firstAnchor: null,
+          lastAnchor: null,
+          rowsBefore: 0,
+          limit: 25,
+          sort: [{ field: 'nodeId', direction: 'asc' }],
         },
       },
-    })
-  }
+    },
+  })
   const connection = {
     projectTimeZone: 'UTC',
     on(
@@ -148,11 +146,13 @@ function seededContext(initial: HilosMaintenanceNodeRow[] = []) {
       const bucket = listeners.get(event) ?? new Set()
       listeners.set(event, bucket)
       bucket.add(listener)
+      if (event === 'projectSignal') {
+        listener({ type: 'page_response', data: pageWindow(initial) })
+      }
       return () => bucket.delete(listener)
     },
     registerTableWindow(tableKey: string): void {
       registered.add(tableKey)
-      serveWindow(initial)
     },
     unregisterTableWindow(tableKey: string): void {
       registered.delete(tableKey)

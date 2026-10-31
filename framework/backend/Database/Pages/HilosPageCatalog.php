@@ -156,8 +156,28 @@ final class HilosPageCatalog
         HilosPageConstants::HILOS_LEGAL_DOCUMENT => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Document',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The standard set, project deviations, and declared revisions.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL,
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Document',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-text',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+        ],
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Standard set',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The standard clauses adopted by this document.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Standard set',
+        ],
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Deviations',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Project differences from the adopted standard clauses.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Deviations',
+        ],
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revisions',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Declared and recorded revisions of this document.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Revisions',
         ],
         HilosPageConstants::HILOS_LEGAL_REVISION => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revision',

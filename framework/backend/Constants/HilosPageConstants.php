@@ -364,6 +364,9 @@ final class HilosPageConstants
     public const string HILOS_LEGAL = 'hilos_legal';
     public const string HILOS_LEGAL_DOCUMENTS = 'hilos_legal_documents';
     public const string HILOS_LEGAL_DOCUMENT = 'hilos_legal_document';
+    public const string HILOS_LEGAL_DOCUMENT_SET = 'hilos_legal_document_set';
+    public const string HILOS_LEGAL_DOCUMENT_DEVIATIONS = 'hilos_legal_document_deviations';
+    public const string HILOS_LEGAL_DOCUMENT_REVISIONS = 'hilos_legal_document_revisions';
     public const string HILOS_LEGAL_REVISION = 'hilos_legal_revision';
     public const string HILOS_LEGAL_ACCEPTANCES = 'hilos_legal_acceptances';
     public const string HILOS_LEGAL_SETTINGS = 'hilos_legal_settings';

@@ -131,6 +131,10 @@ export function bindTableViewport(
     sink.ingestFrozen(data.since)
   })
 
+  // Restore a replacement mount's controls before on(projectSignal) synchronously
+  // replays the held answer. Navigation has already discarded any continuation.
+  connection.registerTableWindow(address.tableKey, sink)
+
   // The sixth road into the same sink, and the one a cold entry arrives by: the page's own
   // answer carries the first window of every table it declares, so nothing is asked for it
   // and nothing waits a round trip for it (HIL-642). A frame for another page, or one whose
@@ -164,6 +168,7 @@ export function bindTableViewport(
           window.rowsBefore ?? null,
         )
       })
+      connection.clearTableWindowContinuation?.(address.tableKey, sink)
 
       return
     }
@@ -176,12 +181,8 @@ export function bindTableViewport(
       return
     }
     sink.ingestRefusal(refusal.errorCode)
+    connection.clearTableWindowContinuation?.(address.tableKey, sink)
   })
-
-  // The connection reports this window on its next page subscribe, so a tab coming back
-  // after a broken socket comes back to the window that was on the screen. It asks the
-  // controller at the moment the frame goes out rather than keeping a copy taken here.
-  connection.registerTableWindow(address.tableKey, sink)
 
   const unsubscribeDelta = connection.on('tableViewportDelta', (signal) => {
     const data = signal.data

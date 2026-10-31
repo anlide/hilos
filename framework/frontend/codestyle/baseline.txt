@@ -14,6 +14,8 @@ SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTableShell
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/HilosI18nPage.vue 5 # HIL-1727
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguageNameWindow.vue 1 # HIL-1730
 SHELL-PARITY framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguagePage.vue 11 # HIL-1730
+SHELL-PARITY framework/frontend/vue/src/admin/legal/HilosLegalDocumentPage.vue 2 # HIL-1855
+SHELL-PARITY framework/frontend/vue/src/admin/legal/HilosLegalDocumentPageShell.vue 3 # HIL-1855
 SHELL-PARITY framework/frontend/vue/src/admin/legal/HilosLegalPage.vue 9 # HIL-1853
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsPage.vue 3 # HIL-1719
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.vue 3 # HIL-1719

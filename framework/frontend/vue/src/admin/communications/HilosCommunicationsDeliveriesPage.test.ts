@@ -24,6 +24,7 @@ import type {
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportController,
   TableViewportDescriptor,
 } from '@hilos/core/base'
 import {
@@ -147,10 +148,11 @@ function seededContext(
   const rows = Array.isArray(deliveryOrRows)
     ? deliveryOrRows
     : [{ rowKey: '57', slots: { delivery: deliveryOrRows } }]
-  const serveWindow = (): void => {
+  const serveWindow = (requestId?: string): void => {
     const data = {
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
       tableKey: TABLE,
+      requestId,
       rows,
       totalCount: rows.length,
       totalExact: true,
@@ -168,9 +170,18 @@ function seededContext(
     projectTimeZone: 'UTC',
     registerTableWindow(
       _table: string,
-      source: Parameters<HilosConnection['registerTableWindow']>[1],
+      source: TableViewportController<unknown>,
     ): void {
-      serveWindow()
+      source.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        [],
+      )
       const descriptor = source.descriptor()
       if (descriptor) requests.push(descriptor)
     },
@@ -183,7 +194,7 @@ function seededContext(
     ): boolean {
       viewportCalls += 1
       requests.push(descriptor)
-      serveWindow()
+      serveWindow(descriptor.requestId)
 
       return true
     },

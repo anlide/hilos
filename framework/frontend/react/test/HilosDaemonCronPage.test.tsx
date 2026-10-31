@@ -13,6 +13,7 @@ import {
   type HilosRouter,
   type HilosDaemonNodeHeading,
   type PageRouteMatch,
+  type TableViewportController,
   type TableViewportDescriptor,
 } from '@hilos/core'
 import {
@@ -28,7 +29,10 @@ function transport(initialProjectTimeZone?: string) {
   let projectTimeZone = initialProjectTimeZone
   const listeners = new Map<string, Set<(payload: never) => void>>()
   const unregister = vi.fn()
-  const register = vi.fn<HilosConnection['registerTableWindow']>()
+  const register =
+    vi.fn<
+      (tableKey: string, source: TableViewportController<unknown>) => void
+    >()
   const focus = vi.fn()
   const sendViewport = vi.fn<HilosConnection['sendTableViewport']>(() => true)
   const connection = {
@@ -110,12 +114,39 @@ function harness(projectTimeZone?: string) {
     },
     window(rows: Record<string, unknown>[]) {
       act(() => {
+        if (source.register.mock.calls.at(-1)?.[1].descriptor() === null) {
+          for (const listener of source.listeners.get('projectSignal') ?? [])
+            listener({
+              type: 'page_response',
+              data: {
+                page: HilosPages.DAEMON_CRON,
+                payload: {
+                  windows: {
+                    hilosDaemonCron: {
+                      rows: [],
+                      totalCount: 0,
+                      totalExact: true,
+                      firstAnchor: null,
+                      lastAnchor: null,
+                      limit: 25,
+                      sort:
+                        source.sendViewport.mock.calls.at(-1)?.[2].sort ?? [],
+                    },
+                  },
+                },
+              },
+            } as never)
+        }
+        const sink = source.register.mock.calls.at(-1)?.[1]
+        const requestId = source.sendViewport.mock.calls.at(-1)?.[2].requestId
         for (const listener of source.listeners.get('tableWindow') ?? [])
           listener({
             data: {
               page: HilosPages.DAEMON_CRON,
               tableKey: 'hilosDaemonCron',
-              requestId: source.sendViewport.mock.calls.at(-1)?.[2].requestId,
+              requestId: sink?.acceptsWindowResponse?.(requestId)
+                ? requestId
+                : undefined,
               rows: rows.map((rule) => ({
                 rowKey: String(rule.rowKey),
                 slots: { rule },

@@ -20,6 +20,7 @@ use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevisionComparison;
 use Hilos\Legal\LegalWire;
 use Hilos\Pages\Legal\DTO\HilosLegalRevisionPageSubscribeParams;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 
 /**
  * ADMIN subscription carrying the requested legal declaration in the first page response.
@@ -33,13 +34,28 @@ abstract class AbstractHilosLegalRevisionPage extends AbstractHilosLegalPage
     ];
 
     /**
-     * @param string $acceptKey Subscribing connection, unused
+     * Discards a history window reported while leaving another document or revision scope.
+     *
+     * @param string $acceptKey Subscribing connection whose reported window is checked
      * @param PageRouteParams $params Raw route parameters
      * @throws MissingPageRouteParamException When a required key is missing
      */
     final protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
-        HilosLegalRevisionPageSubscribeParams::fromPageRouteParams($params);
+        $route = HilosLegalRevisionPageSubscribeParams::fromPageRouteParams($params);
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        $reported = Hilos::$sr->takeReportedTableWindows($acceptKey);
+        $revisions = $reported[HilosLegalRevisionsTable::TABLE] ?? null;
+        if ($revisions !== null && (
+            ($revisions->filter[HilosLegalRevisionsTable::FILTER_DOCUMENT] ?? null) !== $route->documentKey
+            || ($revisions->filter[HilosLegalRevisionsTable::FILTER_REVISION] ?? null) !== $route->revisionId
+        )) {
+            unset($reported[HilosLegalRevisionsTable::TABLE]);
+        }
+        Hilos::$sr->reportTableWindows($acceptKey, $reported);
     }
 
     /**

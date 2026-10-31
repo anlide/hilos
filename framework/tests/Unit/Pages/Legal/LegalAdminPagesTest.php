@@ -14,6 +14,9 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\AdminViewMode\WireField;
+use Hilos\Database\View\Collection\LegalAcceptances;
 use Hilos\Hilos;
 use Hilos\Legal\DTO\LegalOverviewData;
 use Hilos\Legal\DTO\LegalOverviewDocumentData;
@@ -28,6 +31,9 @@ use Hilos\Legal\StandardSet;
 use Hilos\Legal\StandardSetCatalog;
 use Hilos\Pages\Legal\AbstractHilosLegalAcceptancesPage;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentPage;
+use Hilos\Pages\Legal\AbstractHilosLegalDocumentSetPage;
+use Hilos\Pages\Legal\AbstractHilosLegalDocumentDeviationsPage;
+use Hilos\Pages\Legal\AbstractHilosLegalDocumentRevisionsPage;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentsPage;
 use Hilos\Pages\Legal\AbstractHilosLegalPage;
 use Hilos\Pages\Legal\AbstractHilosLegalRevisionPage;
@@ -37,6 +43,7 @@ use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -44,12 +51,26 @@ use ReflectionProperty;
 /** First-response contents, catalog refusal and validation at the read-only admin boundary. */
 final class LegalAdminPagesTest extends LegalAdminTestCase
 {
+    /** @return array<string, array{class-string<AbstractHilosLegalDocumentPage>}> All document pages */
+    public static function documentPages(): array
+    {
+        return [
+            'overview' => [LegalDocumentPageFixture::class],
+            'set' => [LegalDocumentSetPageFixture::class],
+            'deviations' => [LegalDocumentDeviationsPageFixture::class],
+            'revisions' => [LegalDocumentRevisionsPageFixture::class],
+        ];
+    }
+
     public function testEveryLegalPageRequiresAdmin(): void
     {
         foreach ([
             AbstractHilosLegalPage::class,
             AbstractHilosLegalDocumentsPage::class,
             AbstractHilosLegalDocumentPage::class,
+            AbstractHilosLegalDocumentSetPage::class,
+            AbstractHilosLegalDocumentDeviationsPage::class,
+            AbstractHilosLegalDocumentRevisionsPage::class,
             AbstractHilosLegalRevisionPage::class,
             AbstractHilosLegalAcceptancesPage::class,
             AbstractHilosLegalSettingsPage::class,
@@ -79,6 +100,32 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
         self::assertSame(['documents' => 'hilos_legal_documents'], new ReflectionProperty(LegalAdminAudience::class, 'subscribers')->getValue());
         $page->onUnsubscribe('documents');
         self::assertSame([], new ReflectionProperty(LegalAdminAudience::class, 'subscribers')->getValue());
+    }
+
+    /** All tabs reuse the exact declaration contract and own no mutation or extra first-render signal. */
+    public function testDocumentTabsShareTheParserPayloadAndReadonlyBoundary(): void
+    {
+        $expected = $this->payload(LegalDocumentPageFixture::class, ['documentKey' => 'terms'])->data;
+        foreach ([
+            LegalDocumentSetPageFixture::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_SET,
+            LegalDocumentDeviationsPageFixture::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_DEVIATIONS,
+            LegalDocumentRevisionsPageFixture::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_REVISIONS,
+        ] as $page => $signal) {
+            self::assertSame($expected, $this->payload($page, ['documentKey' => 'terms'])->data);
+            self::assertSame([BrowserConfigKey::SIGNAL => $signal], $page::BROWSER);
+            self::assertSame(PageReach::ROUTE, $page::REACH);
+            self::assertSame([], $page::ACTIONS);
+            self::assertSame([], $page::READING_ACTIONS);
+            self::assertSame([], $page::SIGNALS);
+            self::assertTrue(new HilosPageFactory($this->createMock(PageAgentInterface::class), Hilos::class)->hasPage($page::PAGE));
+            self::assertSame(AbstractHilosLegalDocumentPage::class, new ReflectionMethod($page, 'buildPagePayload')->getDeclaringClass()->name);
+            $instance = new $page($this->createMock(PageAgentInterface::class));
+            new ReflectionMethod($instance, 'onSubscribeAfterResponse')->invoke($instance, 'tab', new PageRouteParams(['documentKey' => 'terms']));
+            self::assertSame(['tab' => $page::PAGE], new ReflectionProperty(LegalAdminAudience::class, 'subscribers')->getValue());
+            $instance->onUnsubscribe('tab');
+        }
+        self::assertSame([], new ReflectionProperty(LegalAdminAudience::class, 'subscribers')->getValue());
+        self::assertSame(3, $this->reads->reads);
     }
 
     public function testRootPayloadCarriesTheSharedOverviewOnItsFirstRead(): void
@@ -237,6 +284,162 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
         self::assertCount(6, $document['set']['clauses']);
         self::assertSame([], $document['deviations']);
         self::assertNull($document['newerSet']);
+        self::assertSame([2, 0, 3], [$document['covered'], $document['window'], $document['lapsed']]);
+        self::assertSame(StandardSetCatalog::class, $document['standardSetCatalogClass']);
+        self::assertSame(LegalAdminTestCatalog::class, $document['projectCatalogClass']);
+        new HilosLegalDocumentsTable()->getFullSnapshot();
+        self::assertSame(3, $this->reads->reads);
+        self::assertSame([], AbstractHilosLegalDocumentPage::ACTIONS);
+        self::assertSame([], AbstractHilosLegalDocumentPage::READING_ACTIONS);
+        self::assertEquals(
+            WireField::notPersonal(),
+            new ReflectionMethod(LegalDocumentPageFixture::class, 'dataFields')->invoke(
+                new ReflectionClass(LegalDocumentPageFixture::class)->newInstanceWithoutConstructor(),
+            )['legalDocument'],
+        );
+    }
+
+    /** Zero coverage is successful catalog data, with the same declaration and sources. */
+    public function testDocumentResponsePreservesRealZeroCounters(): void
+    {
+        $this->reads->held = [];
+        $this->reads->accepted = [];
+        $this->reads->documents = [];
+        foreach ([LegalDocumentPageFixture::class, LegalDocumentSetPageFixture::class,
+            LegalDocumentDeviationsPageFixture::class, LegalDocumentRevisionsPageFixture::class] as $page) {
+            $payload = $this->payload($page, ['documentKey' => 'terms']);
+            self::assertNull($payload->data['legalCatalogRefusal']);
+            $document = $payload->data['legalDocument'];
+            self::assertTrue($document['declared']);
+            self::assertSame([0, 0, 0], [$document['covered'], $document['window'], $document['lapsed']]);
+            self::assertSame('current', $document['revision']['revisionId']);
+        }
+    }
+
+    /** @param class-string<AbstractHilosLegalDocumentPage> $pageClass Page serving an undeclared enum key */
+    #[DataProvider('documentPages')]
+    public function testAnUndeclaredEnumDocumentWithoutRecordsIsRefused(string $pageClass): void
+    {
+        $this->expectException(PageResourceNotFoundException::class);
+        $this->expectExceptionMessage('No such legal document');
+        $this->payload($pageClass, ['documentKey' => 'privacy']);
+    }
+
+    /** @param class-string<AbstractHilosLegalDocumentPage> $pageClass Page serving a recorded enum key outside the project catalog */
+    #[DataProvider('documentPages')]
+    public function testHistoricalEnumDocumentResponseHasNoInventedMetadata(string $pageClass): void
+    {
+        $acceptances = $this->createStub(LegalAcceptances::class);
+        $acceptances->method('documentsOnRecord')->willReturn(['privacy']);
+        $acceptances->method('acceptedCounts')->willReturnMap([['terms', []], ['privacy', ['old' => 7]]]);
+        Hilos::$db->legalAcceptances = $acceptances;
+
+        self::assertSame([
+            'legalCatalogRefusal' => null,
+            'legalDocument' => [
+                'document' => 'privacy', 'declared' => false, 'revision' => null, 'set' => null,
+                'newerSet' => null, 'deviations' => [], 'covered' => 0, 'window' => 0, 'lapsed' => 0,
+                'standardSetCatalogClass' => StandardSetCatalog::class, 'projectCatalogClass' => LegalAdminTestCatalog::class,
+            ],
+        ], $this->payload($pageClass, ['documentKey' => 'privacy'])->data);
+    }
+
+    /** @param class-string<AbstractHilosLegalDocumentPage> $pageClass Page whose catalog must refuse before deciding existence */
+    #[DataProvider('documentPages')]
+    public function testAnUnrecordedEnumDocumentPreservesCatalogRefusal(string $pageClass): void
+    {
+        LegalBrokenCatalogHilos::initBrowser();
+        self::assertSame([
+            'legalCatalogRefusal' => SignalConstants::ACTION_FAILED_REASON,
+            'legalDocument' => null,
+        ], $this->payload($pageClass, ['documentKey' => 'privacy'])->data);
+    }
+
+    /** A recorded key survives without a catalog, revision or invented standard set. */
+    public function testHistoricalDocumentResponseHasNullMetadataAndZeroCoverage(): void
+    {
+        Hilos::initBrowser();
+        $acceptances = $this->createStub(LegalAcceptances::class);
+        $acceptances->method('documentsOnRecord')->willReturn(['retired']);
+        $acceptances->method('acceptedCounts')->willReturn(['old' => 7]);
+        Hilos::$db->legalAcceptances = $acceptances;
+        foreach ([LegalDocumentPageFixture::class, LegalDocumentSetPageFixture::class,
+            LegalDocumentDeviationsPageFixture::class, LegalDocumentRevisionsPageFixture::class] as $page) {
+            $payload = $this->payload($page, ['documentKey' => 'retired']);
+            self::assertSame([
+                'legalCatalogRefusal' => null,
+                'legalDocument' => [
+                    'document' => 'retired', 'declared' => false, 'revision' => null, 'set' => null,
+                    'newerSet' => null, 'deviations' => [], 'covered' => 0, 'window' => 0, 'lapsed' => 0,
+                    'standardSetCatalogClass' => StandardSetCatalog::class, 'projectCatalogClass' => null,
+                ],
+            ], $payload->data);
+        }
+    }
+
+    /**
+     * Every document tab rejects foreign and exact-revision reports, while retaining its own search and address.
+     *
+     * @param class-string<AbstractHilosLegalDocumentPage> $pageClass Document page checking the reported scope
+     */
+    #[DataProvider('documentPages')]
+    public function testDocumentSubscriptionsKeepOnlyTheirOwnReportedListWindows(string $pageClass): void
+    {
+        $page = new $pageClass($this->createMock(PageAgentInterface::class));
+        $settings = new TableWindowDescriptorDTO(limit: 2);
+        foreach ([
+            [[], false],
+            [['document' => 'privacy'], false],
+            [['document' => 'terms', 'revision' => 'current'], false],
+            [['document' => 'terms', 'search' => 'retention'], true],
+        ] as [$filter, $retained]) {
+            $window = new TableWindowDescriptorDTO(filter: $filter, limit: 1, pageIndex: 2);
+            $windows = [
+                'hilosLegalDocumentSet' => $window,
+                'hilosLegalDocumentDeviations' => $window,
+                'hilosLegalRevisions' => $window,
+            ];
+            Hilos::$sr->reportTableWindows('document', ['hilosLegalSettings' => $settings, ...$windows]);
+            new ReflectionMethod($page, 'onSubscribeBeforeResponse')->invoke(
+                $page,
+                'document',
+                new PageRouteParams(['documentKey' => 'terms']),
+            );
+            self::assertSame(
+                ['hilosLegalSettings' => $settings, ...($retained ? $windows : [])],
+                Hilos::$sr->takeReportedTableWindows('document'),
+            );
+        }
+    }
+
+    /** Reconnect retains the exact window; a list or a different instance opens from its route. */
+    public function testRevisionSubscriptionKeepsOnlyItsOwnReportedWindow(): void
+    {
+        $page = new LegalRevisionPageFixture($this->createMock(PageAgentInterface::class));
+        $settings = new TableWindowDescriptorDTO(limit: 2);
+        foreach ([
+            [['document' => 'terms'], false],
+            [['document' => 'privacy', 'revision' => 'current'], false],
+            [['document' => 'terms', 'revision' => 'first'], false],
+            [['document' => 'terms', 'revision' => 'current'], true],
+        ] as [$filter, $retained]) {
+            $revision = new TableWindowDescriptorDTO(filter: $filter, limit: 1, pageIndex: 0);
+            Hilos::$sr->reportTableWindows('revision', [
+                'hilosLegalSettings' => $settings,
+                'hilosLegalRevisions' => $revision,
+            ]);
+            new ReflectionMethod($page, 'onSubscribeBeforeResponse')->invoke(
+                $page,
+                'revision',
+                new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'current']),
+            );
+            self::assertSame(
+                $retained
+                    ? ['hilosLegalSettings' => $settings, 'hilosLegalRevisions' => $revision]
+                    : ['hilosLegalSettings' => $settings],
+                Hilos::$sr->takeReportedTableWindows('revision'),
+            );
+        }
     }
 
     public function testRevisionResponseCarriesTextAndComparisonWithoutAFollowupAction(): void
@@ -280,7 +483,8 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
     {
         LegalBrokenCatalogHilos::initBrowser();
         foreach ([LegalRootPageFixture::class, LegalDocumentsPageFixture::class,
-            LegalDocumentPageFixture::class, LegalRevisionPageFixture::class] as $page) {
+            LegalDocumentPageFixture::class, LegalDocumentSetPageFixture::class, LegalDocumentDeviationsPageFixture::class,
+            LegalDocumentRevisionsPageFixture::class, LegalRevisionPageFixture::class] as $page) {
             $payload = $this->payload($page, ['documentKey' => 'terms', 'revisionId' => 'first']);
             self::assertSame(
                 SignalConstants::ACTION_FAILED_REASON,
@@ -292,6 +496,9 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
                 self::assertNull($payload->data['legalOverview']);
             } else {
                 self::assertArrayNotHasKey('legalOverview', $payload->data);
+            }
+            if (is_a($page, AbstractHilosLegalDocumentPage::class, true)) {
+                self::assertNull($payload->data['legalDocument']);
             }
         }
         foreach ([new HilosLegalDocumentsTable(), new HilosLegalChecksTable(), new HilosLegalRevisionsTable()] as $table) {
@@ -381,4 +588,19 @@ final class LegalOverviewTestCatalog implements LegalCatalogProviderInterface
 abstract class LegalOverviewTestHilos extends Hilos
 {
     protected const ?string LEGAL_CATALOG = LegalOverviewTestCatalog::class;
+}
+
+/** Concrete document tab for shared-payload checks. */
+final class LegalDocumentSetPageFixture extends AbstractHilosLegalDocumentSetPage
+{
+}
+
+/** Concrete document tab for shared-payload checks. */
+final class LegalDocumentDeviationsPageFixture extends AbstractHilosLegalDocumentDeviationsPage
+{
+}
+
+/** Concrete document tab for shared-payload checks. */
+final class LegalDocumentRevisionsPageFixture extends AbstractHilosLegalDocumentRevisionsPage
+{
 }

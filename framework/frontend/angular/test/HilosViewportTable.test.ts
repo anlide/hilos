@@ -422,6 +422,67 @@ function query(
 }
 
 describe('HilosViewportTable', () => {
+  it('keeps sorting unavailable until subscription metadata arrives', () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<Row>({
+      resolve: (row) => ({ name: String(row.slots.name) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+      initialFilterInSubscription: true,
+      frame: { title: 'List', columns: COLUMNS },
+    })
+    controller.ingestRefusal('internal_error')
+    const fixture = TestBed.createComponent(ViewportTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+    const sort = () =>
+      fixture.nativeElement.querySelector(
+        '[data-id="hilos-table-sort-name"]',
+      ) as HTMLButtonElement
+    try {
+      expect(sort().disabled).toBe(true)
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-id="hilos-table-unavailable-hint"]',
+        ).textContent,
+      ).toContain('Table controls will be available when the list loads.')
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'Alice' } }],
+        100,
+        true,
+        null,
+        null,
+        37,
+      )
+      fixture.detectChanges()
+      expect(sort().disabled).toBe(true)
+      expect(
+        fixture.nativeElement.querySelector('[data-id="hilos-table-next"]'),
+      ).toBeNull()
+      controller.ingestSubscriptionWindow(
+        [{ rowKey: 'a', slots: { name: 'Alice' } }],
+        100,
+        true,
+        null,
+        null,
+        37,
+        undefined,
+        [],
+      )
+      fixture.detectChanges()
+      expect(sort().disabled).toBe(false)
+      expect(sent).toEqual([])
+      sort().click()
+      fixture.detectChanges()
+      expect(sent.at(-1)).toMatchObject({
+        limit: 37,
+        sort: [{ field: 'name', direction: 'asc' }],
+      })
+    } finally {
+      fixture.destroy()
+      controller.dispose()
+    }
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })

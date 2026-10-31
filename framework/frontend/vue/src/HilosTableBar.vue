@@ -60,6 +60,7 @@ const tableView = useSignal(props.controller.frame.view)
 const resolvedPlaceholder = useSignal(props.controller.frame.searchPlaceholder)
 const searchPlaceholder = computed(() => resolvedPlaceholder.value ?? 'Search…')
 
+const controlsAvailable = useSignal(props.controller.windowControlsAvailable)
 const search = useSignal(props.controller.search)
 const filters = useSignal(props.controller.frame.filters)
 const activeFilterCount = useSignal(props.controller.frame.activeFilterCount)
@@ -212,6 +213,7 @@ function onSearchInput(event: Event): void {
             </span>
             <input
               type="search"
+              :disabled="!controlsAvailable"
               class="form-control"
               :placeholder="searchPlaceholder"
               :aria-label="searchPlaceholder"
@@ -226,6 +228,7 @@ function onSearchInput(event: Event): void {
               class="btn btn-outline-secondary"
               aria-label="Clear search"
               data-id="hilos-table-search-clear"
+              :disabled="!controlsAvailable"
               @click="controller.setSearch('')"
             >
               <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -244,6 +247,7 @@ function onSearchInput(event: Event): void {
               v-for="view in filters"
               :key="filterKey(view)"
               :view="view"
+              :disabled="!controlsAvailable"
               :controller="controller"
               placement="bar"
             />
@@ -260,6 +264,7 @@ function onSearchInput(event: Event): void {
               class="btn-close ms-1"
               aria-label="Reset filters"
               data-id="hilos-table-filter-reset"
+              :disabled="!controlsAvailable"
               @click="controller.resetFilters()"
             ></button>
           </span>
@@ -277,6 +282,7 @@ function onSearchInput(event: Event): void {
           >
             <HilosDropdown
               :model-value="activeOrderKey"
+              :disabled="!controlsAvailable"
               :options="orderOptions"
               :menu-aria-label="TABLE_ORDER_COPY.menu"
               @update:model-value="onOrder"
@@ -328,6 +334,7 @@ function onSearchInput(event: Event): void {
             type="button"
             class="btn btn-sm btn-outline-secondary d-md-none"
             data-id="hilos-table-filters-open"
+            :disabled="!controlsAvailable"
             @click="filtersOpen = true"
           >
             Filters
@@ -421,6 +428,7 @@ function onSearchInput(event: Event): void {
         </span>
         <input
           type="search"
+          :disabled="!controlsAvailable"
           class="form-control"
           :placeholder="searchPlaceholder"
           :aria-label="searchPlaceholder"
@@ -435,6 +443,7 @@ function onSearchInput(event: Event): void {
           class="btn btn-outline-secondary"
           aria-label="Clear search"
           data-id="hilos-table-search-clear"
+          :disabled="!controlsAvailable"
           @click="controller.setSearch('')"
         >
           <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -453,6 +462,7 @@ function onSearchInput(event: Event): void {
           v-for="view in filters"
           :key="filterKey(view)"
           :view="view"
+          :disabled="!controlsAvailable"
           :controller="controller"
           placement="bar"
         />
@@ -469,6 +479,7 @@ function onSearchInput(event: Event): void {
           class="btn-close ms-1"
           aria-label="Reset filters"
           data-id="hilos-table-filter-reset"
+          :disabled="!controlsAvailable"
           @click="controller.resetFilters()"
         ></button>
       </span>
@@ -486,6 +497,7 @@ function onSearchInput(event: Event): void {
       >
         <HilosDropdown
           :model-value="activeOrderKey"
+          :disabled="!controlsAvailable"
           :options="orderOptions"
           :menu-aria-label="TABLE_ORDER_COPY.menu"
           @update:model-value="onOrder"
@@ -537,6 +549,7 @@ function onSearchInput(event: Event): void {
         type="button"
         class="btn btn-sm btn-outline-secondary d-md-none"
         data-id="hilos-table-filters-open"
+        :disabled="!controlsAvailable"
         @click="filtersOpen = true"
       >
         Filters
@@ -619,6 +632,7 @@ function onSearchInput(event: Event): void {
           v-for="view in filters"
           :key="filterKey(view)"
           :view="view"
+          :disabled="!controlsAvailable"
           :controller="controller"
           placement="modal"
         />

@@ -140,6 +140,73 @@ test('public Dependencies exposes a named table and keyboard navigation', async 
   await expectLicenseDependenciesAccessibility(expect, page, 'Hilos Chat')
 })
 
+test('Legal document links open real clauses from the keyboard and name the table through one heading', async ({
+  page,
+}) => {
+  await createTestAdmin(expect, page)
+  await gotoPage(expect, page, '/hilos/legal/documents')
+  const open = shownByTestId(page, 'legal-document-open').and(
+    page.locator('[data-document="terms"]'),
+  )
+  await open.focus()
+  await expect(open).toBeFocused()
+  await open.press('Enter')
+  await expect(page).toHaveURL('/hilos/legal/document/terms')
+  await expectPageReady(expect, page)
+  await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+  await expect(page.getByTestId('legal-document-revision')).toContainText(
+    '2026-10-01',
+  )
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Terms')
+  const links = page.getByRole('navigation', {
+    name: 'Document pages',
+    exact: true,
+  })
+  const overview = links.getByTestId('hilos-page-tab-hilos_legal_document')
+  await expect(
+    links.getByRole('link').and(links.locator('[aria-current="page"]')),
+  ).toHaveCount(1)
+  await expect(overview).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  await overview.focus()
+  for (const [key, suffix, content] of [
+    ['hilos_legal_document_set', 'set', 'Content is kept for 12 months.'],
+    [
+      'hilos_legal_document_deviations',
+      'deviations',
+      'it is reset without notice',
+    ],
+  ]) {
+    await page.keyboard.press('Tab')
+    const link = links.getByTestId(`hilos-page-tab-${key}`)
+    await expect(link).toBeFocused()
+    await expect(link).toHaveRole('link')
+    await expect(link).toHaveAttribute(
+      'href',
+      `/hilos/legal/document/terms/${suffix}`,
+    )
+    await link.press('Enter')
+    await expect(page).toHaveURL(`/hilos/legal/document/terms/${suffix}`)
+    await expectPageReady(expect, page)
+    await expect(heading).toHaveCount(1)
+    await expect(heading).toHaveText('Terms')
+    await expect(link).toHaveAttribute('aria-current', 'page')
+    await expect(
+      links.getByRole('link').and(links.locator('[aria-current="page"]')),
+    ).toHaveCount(1)
+    await expect(page.getByRole('tablist')).toHaveCount(0)
+    const headingId = await heading.getAttribute('id')
+    expect(headingId).toBeTruthy()
+    const table = page.getByRole('table', { name: 'Terms', exact: true })
+    await expect(table).toHaveAttribute('aria-labelledby', headingId!)
+    await expect(table).toContainText(content!)
+    // The new page mounts a new link; resume ordinary Tab navigation from it.
+    await link.focus()
+  }
+})
+
 test('the viewport table has an accessible name and a labelled search', async ({
   page,
 }) => {

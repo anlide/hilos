@@ -35,6 +35,7 @@ const props = defineProps<{
 // table, so it is read once.
 const declaration = props.controller.frame.declaration
 
+const controlsAvailable = useSignal(props.controller.windowControlsAvailable)
 const search = useSignal(props.controller.search)
 const filters = useSignal(props.controller.frame.filters)
 
@@ -176,6 +177,9 @@ function pressMainAction(): void {
     >
       The rows of this list could not be fetched. The rest of the page still
       works.
+      <template v-if="!controlsAvailable">
+        Table controls will be available when the list loads.
+      </template>
     </p>
   </div>
 

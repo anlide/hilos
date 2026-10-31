@@ -7,8 +7,12 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
@@ -21,6 +25,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageResender;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
@@ -28,6 +36,8 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
@@ -44,10 +54,13 @@ use Hilos\Legal\Exception\UnknownRevisionException;
 use Hilos\Legal\Export\LegalAcceptancesExportProjector;
 use Hilos\Legal\Export\LegalAcceptancesExportState;
 use Hilos\Legal\LegalCatalogProviderInterface;
+use Hilos\Legal\LegalAcceptanceChangeSubscriber;
+use Hilos\Legal\StandardSetCatalog;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptanceFiltersSignalData;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionMethod;
@@ -119,13 +132,148 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertArrayNotHasKey('legalOverview', $document->payload->data);
         self::assertSame(1, $document->payload->data['legalDocument']['set']['version']);
         self::assertCount(4, $document->payload->data['legalDocument']['deviations']);
+        $common = $document->payload->data['legalDocument'];
+        self::assertSame([0, 0, 1], [$common['covered'], $common['window'], $common['lapsed']]);
+        self::assertSame(StandardSetCatalog::class, $common['standardSetCatalogClass']);
+        self::assertSame(LegalCatalog::class, $common['projectCatalogClass']);
+        self::assertSame(['hilosLegalSettings'], array_keys($document->payload->windows));
+        self::assertNull(Hilos::$sr->getTableViewport(self::ACCEPT_KEY, 'hilosLegalRevisions'));
         $revision = $this->response($this->subscribe(LegalRevisionPage::class, ['documentKey' => 'terms', 'revisionId' => '2026-09-27']));
         self::assertArrayNotHasKey('legalOverview', $revision->payload->data);
         self::assertCount(6, $revision->payload->data['legalRevision']['clauses']);
         self::assertCount(1, $revision->payload->data['legalRevision']['changes']);
+        self::assertSame(['document' => 'terms', 'revision' => '2026-09-27'],
+            Hilos::$sr->getTableViewport(self::ACCEPT_KEY, 'hilosLegalRevisions')->filter);
+        $exact = $revision->payload->windows['hilosLegalRevisions']['rows'];
+        self::assertCount(1, $exact);
+        self::assertSame('2026-09-27', $exact[0]['slots']['revision']['publishedOn']);
         $rows = Hilos::$table->hilosLegalRevisions->getPage(new TableQueryDTO(filter: ['document' => 'terms']))->rows;
         self::assertSame([0, 0, 1], array_column($rows, 'heldCount'));
         self::assertSame(2, (int) Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance')->firstRow()['total']);
+    }
+
+    /** A reused table key cannot carry another document's search, order or paging into the first response. */
+    public function testDocumentTransitionsRejectForeignReportedWindows(): void
+    {
+        foreach ([
+            [LegalDocumentSetPage::class, ChatTableContext::hilosLegalDocumentSet],
+            [LegalDocumentDeviationsPage::class, ChatTableContext::hilosLegalDocumentDeviations],
+            [LegalDocumentRevisionsPage::class, ChatTableContext::hilosLegalRevisions],
+        ] as [$page, $tableKey]) {
+            $this->subscribe($page, ['documentKey' => 'terms']);
+            $foreign = new TableWindowDescriptorDTO(
+                filter: ['document' => 'terms', TableConstants::FILTER_KEY_SEARCH => 'no matching legal row'],
+                sort: TableSortOrderDTO::of(new TableSortDTO('clauseKey', TableConstants::ORDER_DESC)),
+                limit: 1,
+                pageIndex: 3,
+            );
+            $response = $this->response($this->subscribe($page, ['documentKey' => 'privacy'], [$tableKey => $foreign]));
+            $viewport = Hilos::$sr->getTableViewport(self::ACCEPT_KEY, $tableKey);
+            self::assertSame('privacy', $response->payload->data['legalDocument']['document']);
+            self::assertSame(['document' => 'privacy'], $viewport->filter);
+            self::assertNull($viewport->pageIndex);
+            self::assertNull($viewport->anchor);
+            self::assertSame(25, $viewport->limit);
+            self::assertArrayHasKey($tableKey, $response->payload->windows);
+            self::assertArrayNotHasKey($tableKey, $response->payload->refusedWindows);
+            self::assertSame(0, $response->payload->windows[$tableKey]['rowsBefore']);
+        }
+    }
+
+    /** The shared revisions table returns the full list after exact detail and keeps an exact reconnect intact. */
+    public function testRevisionListAndExactTransitionsUseTheirOwnScope(): void
+    {
+        $params = ['documentKey' => 'terms', 'revisionId' => '2026-09-27'];
+        $own = new TableWindowDescriptorDTO(
+            filter: ['document' => 'terms', 'revision' => '2026-09-27', TableConstants::FILTER_KEY_SEARCH => '2026'],
+            sort: TableSortOrderDTO::of(new TableSortDTO('heldCount', TableConstants::ORDER_ASC)),
+            limit: 1,
+            pageIndex: 0,
+        );
+        $this->subscribe(LegalRevisionPage::class, $params);
+        $exact = $this->response($this->subscribe(LegalRevisionPage::class, $params, [ChatTableContext::hilosLegalRevisions => $own]));
+        $viewport = Hilos::$sr->getTableViewport(self::ACCEPT_KEY, ChatTableContext::hilosLegalRevisions);
+        self::assertSame($own->filter, $viewport->filter);
+        self::assertSame($own->sort, $viewport->sort);
+        self::assertSame(1, $viewport->limit);
+        self::assertSame(0, $viewport->pageIndex);
+        self::assertCount(1, $exact->payload->windows[ChatTableContext::hilosLegalRevisions]['rows']);
+
+        $list = $this->response($this->subscribe(LegalDocumentRevisionsPage::class, ['documentKey' => 'terms'], [
+            ChatTableContext::hilosLegalRevisions => $own,
+        ]));
+        self::assertSame(['document' => 'terms'], Hilos::$sr->getTableViewport(self::ACCEPT_KEY, ChatTableContext::hilosLegalRevisions)->filter);
+        self::assertSame(['2026-10-01', '2026-09-27', '2026-09-17'], array_column($list->payload->windows['hilosLegalRevisions']['rows'], 'rowKey'));
+        $exact = $this->response($this->subscribe(LegalRevisionPage::class, $params, [
+            ChatTableContext::hilosLegalRevisions => new TableWindowDescriptorDTO(filter: ['document' => 'terms']),
+        ]));
+        self::assertSame(['document' => 'terms', 'revision' => '2026-09-27'],
+            Hilos::$sr->getTableViewport(self::ACCEPT_KEY, ChatTableContext::hilosLegalRevisions)->filter);
+        self::assertSame(['2026-09-27'], array_column($exact->payload->windows['hilosLegalRevisions']['rows'], 'rowKey'));
+    }
+
+    /** Prepared aggregate mutations update values while position changes remain ordinary pending deltas. */
+    public function testRevisionAggregateMutationsUseTheOrdinaryViewportPath(): void
+    {
+        $this->record($this->userId, '2026-09-17');
+        $sort = TableSortOrderDTO::of(new TableSortDTO('heldCount', TableConstants::ORDER_DESC));
+        $this->subscribe(LegalDocumentRevisionsPage::class, ['documentKey' => 'terms'], [
+            ChatTableContext::hilosLegalRevisions => new TableWindowDescriptorDTO(sort: $sort, limit: 25, filter: ['document' => 'terms']),
+        ]);
+        $viewport = Hilos::$sr->getTableViewport(self::ACCEPT_KEY, ChatTableContext::hilosLegalRevisions);
+        self::assertSame(['2026-09-17', '2026-10-01', '2026-09-27'], $viewport->rowIds());
+        $anchors = [$viewport->firstAnchor(), $viewport->lastAnchor()];
+        $this->record($this->userId, '2026-10-01');
+        LegalAdminAudience::markStale();
+        LegalAdminAudience::onAgentTick(new DemoHilosLegalAgent());
+        Hilos::$browser->flushToSignalRouter();
+        $deltas = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotSame(SignalTypeConstants::TABLE_WINDOW, $signal->signalName->getName());
+            if ($signal->signalName->getName() === SignalTypeConstants::TABLE_VIEWPORT_DELTA) {
+                $deltas[(string) $signal->data->data->rowKey] = $signal->data->data;
+            }
+        }
+        self::assertArrayHasKey('2026-10-01', $deltas);
+        self::assertSame('row_moved', $deltas['2026-10-01']->kind);
+        self::assertFalse($deltas['2026-10-01']->own);
+        self::assertSame(1, $deltas['2026-10-01']->row['slots']['revision']['heldCount']);
+        self::assertSame(1, $deltas['2026-10-01']->row['slots']['revision']['acceptedCount']);
+        self::assertSame(0, $deltas['2026-09-17']->row['slots']['revision']['heldCount']);
+        self::assertSame(1, $deltas['2026-09-17']->row['slots']['revision']['acceptedCount']);
+        self::assertSame(['2026-09-17', '2026-10-01', '2026-09-27'], $viewport->rowIds());
+        self::assertSame($anchors, [$viewport->firstAnchor(), $viewport->lastAnchor()]);
+    }
+
+    /** Count values arrive as updates when the revision stays in the same publication order. */
+    public function testRevisionAggregateValuesUpdateWithoutPendingMovement(): void
+    {
+        $this->record($this->userId, '2026-10-01');
+        $response = $this->response($this->subscribe(LegalDocumentRevisionsPage::class, ['documentKey' => 'terms']));
+        self::assertSame(0, $response->payload->windows['hilosLegalRevisions']['rows'][1]['slots']['revision']['acceptedCount']);
+        $viewport = Hilos::$sr->getTableViewport(self::ACCEPT_KEY, ChatTableContext::hilosLegalRevisions);
+        self::assertSame(['2026-10-01', '2026-09-27', '2026-09-17'], $viewport->rowIds());
+        $anchors = array_map(static fn (?TableAnchorDTO $anchor): ?array => $anchor?->toArray(), $viewport->rowAnchors());
+        $this->record($this->userId, '2026-09-27');
+        LegalAdminAudience::markStale();
+        self::assertSame(1, LegalAdminAudience::tallies()['terms']->acceptedByRevision['2026-09-27']);
+        LegalAdminAudience::onAgentTick(new DemoHilosLegalAgent());
+        Hilos::$browser->flushToSignalRouter();
+        $deltas = [];
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $frames[] = $signal->signalName->getName();
+            if ($signal->signalName->getName() === SignalTypeConstants::TABLE_VIEWPORT_DELTA) {
+                $deltas[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $deltas, implode(', ', $frames));
+        self::assertSame('row_updated', $deltas[0]->kind);
+        self::assertSame('2026-09-27', $deltas[0]->rowKey);
+        self::assertSame(0, $deltas[0]->row['slots']['revision']['heldCount']);
+        self::assertSame(1, $deltas[0]->row['slots']['revision']['acceptedCount']);
+        self::assertSame(['2026-10-01', '2026-09-27', '2026-09-17'], $viewport->rowIds());
+        self::assertSame($anchors, array_map(static fn (?TableAnchorDTO $anchor): ?array => $anchor?->toArray(), $viewport->rowAnchors()));
     }
 
     /** Every section page carries its common owner, trail and row in its one answer. */
@@ -154,6 +302,35 @@ final class LegalAdminPagesTest extends IntegrationTestCase
                 ['page' => 'hilos_legal_documents', 'label' => 'Documents'],
                 ['page' => 'hilos_legal_acceptances', 'label' => 'Acceptances'],
                 ['page' => 'hilos_legal_settings', 'label' => 'Settings'],
+            ], $data['pageTabs']);
+            self::assertSame([], $data['pageChildren']);
+        }
+    }
+
+    /** Every document address adopts the complete Document head in the first response. */
+    public function testDocumentPagesCarryTheAdoptedHeadInTheirFirstResponse(): void
+    {
+        foreach ([LegalDocumentPage::class, LegalDocumentSetPage::class,
+            LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class] as $page) {
+            $response = $this->response($this->subscribe($page, ['documentKey' => 'terms']));
+            $data = $response->payload->data;
+            self::assertSame([
+                'page' => 'hilos_legal_document',
+                'label' => 'Document',
+                'lead' => 'The standard set, project deviations, and declared revisions.',
+                'icon' => 'bi-file-earmark-text',
+            ], $data['pageHeadOwner']);
+            self::assertSame([
+                ['page' => 'hilos', 'label' => 'Hilos'],
+                ['page' => 'hilos_legal', 'label' => 'Legal'],
+                ['page' => 'hilos_legal_documents', 'label' => 'Documents'],
+                ['page' => 'hilos_legal_document', 'label' => 'Document'],
+            ], $data['pageBreadcrumb']);
+            self::assertSame([
+                ['page' => 'hilos_legal_document', 'label' => 'Overview'],
+                ['page' => 'hilos_legal_document_set', 'label' => 'Standard set'],
+                ['page' => 'hilos_legal_document_deviations', 'label' => 'Deviations'],
+                ['page' => 'hilos_legal_document_revisions', 'label' => 'Revisions'],
             ], $data['pageTabs']);
             self::assertSame([], $data['pageChildren']);
         }
@@ -367,6 +544,87 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         ]], $this->exportSection());
     }
 
+    /** Cold tabs carry common data, identity and their route-scoped window in one response. */
+    public function testDocumentTabsNeedNoClientWindowOrFollowupRequest(): void
+    {
+        $overview = $this->response($this->subscribe(LegalDocumentPage::class, ['documentKey' => 'terms']));
+        foreach ([
+            LegalDocumentSetPage::class => [ChatTableContext::hilosLegalDocumentSet, 'clause', 6],
+            LegalDocumentDeviationsPage::class => [ChatTableContext::hilosLegalDocumentDeviations, 'deviation', 4],
+            LegalDocumentRevisionsPage::class => [ChatTableContext::hilosLegalRevisions, 'revision', 3],
+        ] as $page => [$table, $slot, $count]) {
+            $frames = $this->subscribe($page, ['documentKey' => 'terms']);
+            $response = $this->response($frames);
+            self::assertSame($page::PAGE, $response->pageKey);
+            self::assertSame($overview->payload->data['legalDocument'], $response->payload->data['legalDocument']);
+            self::assertSame(['hilos', 'hilos_legal', 'hilos_legal_documents', 'hilos_legal_document'],
+                array_column($response->payload->data['pageBreadcrumb'], 'page'));
+            self::assertSame([$table], array_keys($response->payload->windows));
+            self::assertSame(['document' => 'terms'], Hilos::$sr->getTableViewport(self::ACCEPT_KEY, $table)->filter);
+            $window = $response->payload->windows[$table];
+            self::assertCount($count, $window['rows']);
+            foreach ($window['rows'] as $row) {
+                self::assertSame([$slot], array_keys($row['slots']));
+                self::assertSame($row['rowKey'], $row['slots'][$slot]['rowKey']);
+            }
+            self::assertNotContains(SignalTypeConstants::TABLE_WINDOW, array_column($frames, 'name'));
+        }
+    }
+
+    /** A committed acceptance invalidates the existing Overview, with its guarded whole-page path. */
+    public function testDocumentOverviewCountersRefreshAfterRealAcceptanceChangesWithoutReload(): void
+    {
+        $this->record($this->userId, '2026-09-17');
+        $initial = $this->response($this->subscribe(LegalDocumentPage::class, ['documentKey' => 'terms']));
+        self::assertSame(1, $initial->payload->data['legalDocument']['lapsed']);
+        $agent = new DemoHilosLegalAgent();
+        $router = new PageSignalRouter(new HilosPageFactory($agent, Hilos::class), new ActionRouteConfig());
+        $resender = $this->createMock(PageResender::class);
+        $resender->method('resendPage')->willReturnCallback($router->resendPage(...));
+        Hilos::$browser->bindPageResender($resender);
+        $this->record($this->userId, '2026-10-01');
+        $subscriber = new LegalAcceptanceChangeSubscriber();
+        foreach ([SourceChangeProvenance::LocalWrite, SourceChangeProvenance::AppliedRemote] as $provenance) {
+            $subscriber->onSourceChange(SourceChange::dbCleared(HilosDbContext::legalAcceptances), $provenance);
+        }
+        LegalAdminAudience::onAgentTick($agent);
+        LegalAdminAudience::onAgentTick($agent);
+        Hilos::$browser->flushToSignalRouter();
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData) {
+                $frames[] = ['name' => $signal->signalName->getName(), 'data' => $signal->data->data];
+            }
+        }
+        $response = $this->response($frames);
+        $document = $response->payload->data['legalDocument'];
+        self::assertSame([1, 0, 0], [$document['covered'], $document['window'], $document['lapsed']]);
+        self::assertSame(['hilosLegalSettings'], array_keys($response->payload->windows));
+        self::assertNotContains(SignalTypeConstants::TABLE_WINDOW, array_column($frames, 'name'));
+    }
+
+    public function testAllDocumentTabsRefuseUnknownKeysAndRetainRecordedOnlyKeys(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
+            [$this->userId, 'retired', 'old', '2026-09-27 12:00:00'],
+        );
+        foreach ([LegalDocumentPage::class, LegalDocumentSetPage::class,
+            LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class] as $page) {
+            $data = $this->response($this->subscribe($page, ['documentKey' => 'retired']))->payload->data['legalDocument'];
+            self::assertSame('retired', $data['document']);
+            self::assertFalse($data['declared']);
+            self::assertNull($data['revision']);
+            self::assertNull($data['set']);
+            try {
+                $this->subscribe($page, ['documentKey' => 'missing']);
+                self::fail('Unknown document must be refused on every tab');
+            } catch (PageResourceNotFoundException $failure) {
+                self::assertSame('No such legal document', $failure->getMessage());
+            }
+        }
+    }
+
     public function testUnknownDocumentRefusesTheSubscription(): void
     {
         $this->expectException(PageResourceNotFoundException::class);
@@ -385,13 +643,16 @@ final class LegalAdminPagesTest extends IntegrationTestCase
     {
         $this->record($this->userId, 'removed');
         BrokenLegalAdminHilos::initBrowser(Hilos::$browser);
-        foreach ([LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class, LegalRevisionPage::class] as $page) {
-            $payload = new ReflectionMethod($page, 'buildPagePayload')->invoke(
-                new $page(new DemoHilosLegalAgent()), self::ACCEPT_KEY,
-                new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'removed']),
-            );
-            self::assertInstanceOf(PagePayload::class, $payload);
+        foreach ([LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
+            LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class,
+            LegalRevisionPage::class] as $page) {
+            $payload = $this->response($this->subscribe($page, ['documentKey' => 'terms', 'revisionId' => 'removed']))->payload;
             self::assertSame('Broken admin catalog', $payload->data['legalCatalogRefusal']);
+            foreach ($payload->windows as $table => $window) {
+                if ($table !== ChatTableContext::hilosLegalSettings) {
+                    self::assertSame([], $window['rows']);
+                }
+            }
             if ($page === LegalPage::class) {
                 self::assertArrayHasKey('legalOverview', $payload->data);
                 self::assertNull($payload->data['legalOverview']);
@@ -401,7 +662,9 @@ final class LegalAdminPagesTest extends IntegrationTestCase
 
         $guestKey = 'legal-admin-guest';
         Hilos::$rt->connections->actions->register($guestKey, null);
-        foreach ([LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class, LegalRevisionPage::class] as $page) {
+        foreach ([LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
+            LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class,
+            LegalRevisionPage::class] as $page) {
             $payload = new ReflectionMethod($page, 'buildPagePayload')->invoke(
                 new $page(new DemoHilosLegalAgent()), $guestKey,
                 new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'removed']),
@@ -448,6 +711,11 @@ final class LegalAdminPagesTest extends IntegrationTestCase
     private function subscribe(string $pageClass, array $params = [], array $tableWindows = []): array
     {
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+        $previous = Hilos::$sr->pageSubscription(self::ACCEPT_KEY);
+        if ($previous !== null && ($previous->page !== $pageClass::PAGE || $previous->params !== $params)) {
+            Hilos::$sr->unsubscribeFromAll(self::ACCEPT_KEY);
+            LegalAdminAudience::removeSubscriber(self::ACCEPT_KEY);
         }
         $subscribeSignal = new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $pageClass::PAGE, $params, $tableWindows);
         Hilos::$sr->subscribeToPage($pageClass::PAGE, $subscribeSignal);
@@ -497,5 +765,9 @@ final class BrokenLegalAdminCatalog implements LegalCatalogProviderInterface
 /** Keeps the refusal isolated from the demo's normal catalog. */
 abstract class BrokenLegalAdminHilos extends FrameworkHilos
 {
+    public const array PAGES = Hilos::PAGES;
+    public const array TABLES = Hilos::TABLES;
+    public const array PAGE_TABLES = Hilos::PAGE_TABLES;
+
     protected const ?string LEGAL_CATALOG = BrokenLegalAdminCatalog::class;
 }

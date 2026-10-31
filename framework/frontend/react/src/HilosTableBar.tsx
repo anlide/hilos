@@ -77,6 +77,7 @@ export function HilosTableBar<R>({
   const searchPlaceholder =
     useSignal(controller.frame.searchPlaceholder) ?? 'Search…'
 
+  const controlsAvailable = useSignal(controller.windowControlsAvailable)
   const search = useSignal(controller.search)
   const filters = useSignal(controller.frame.filters)
   const activeFilterCount = useSignal(controller.frame.activeFilterCount)
@@ -173,6 +174,7 @@ export function HilosTableBar<R>({
           </span>
           <input
             type="search"
+            disabled={!controlsAvailable}
             className="form-control"
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
@@ -187,6 +189,7 @@ export function HilosTableBar<R>({
               className="btn btn-outline-secondary"
               aria-label="Clear search"
               data-id="hilos-table-search-clear"
+              disabled={!controlsAvailable}
               onClick={() => controller.setSearch('')}
             >
               <i className="bi bi-x-lg" aria-hidden="true" />
@@ -205,6 +208,7 @@ export function HilosTableBar<R>({
             <HilosTableFilterControl
               key={filterKey(view)}
               view={view}
+              disabled={!controlsAvailable}
               controller={controller}
               placement="bar"
             />
@@ -223,6 +227,7 @@ export function HilosTableBar<R>({
             className="btn-close ms-1"
             aria-label="Reset filters"
             data-id="hilos-table-filter-reset"
+            disabled={!controlsAvailable}
             onClick={() => controller.resetFilters()}
           />
         </span>
@@ -241,6 +246,7 @@ export function HilosTableBar<R>({
         >
           <HilosDropdown
             value={activeOrderKey}
+            disabled={!controlsAvailable}
             options={orderOptions}
             menuAriaLabel={TABLE_ORDER_COPY.menu}
             onChange={onOrder}
@@ -293,6 +299,7 @@ export function HilosTableBar<R>({
           type="button"
           className="btn btn-sm btn-outline-secondary d-md-none"
           data-id="hilos-table-filters-open"
+          disabled={!controlsAvailable}
           onClick={() => setFiltersOpen(true)}
         >
           Filters
@@ -394,6 +401,7 @@ export function HilosTableBar<R>({
               <HilosTableFilterControl
                 key={filterKey(view)}
                 view={view}
+                disabled={!controlsAvailable}
                 controller={controller}
                 placement="modal"
               />

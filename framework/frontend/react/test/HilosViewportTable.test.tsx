@@ -78,6 +78,65 @@ function renderTable(controller: TableViewportController<Row>) {
 }
 
 describe('HilosViewportTable', () => {
+  it('keeps sorting unavailable until subscription metadata arrives', () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<Row>({
+      resolve: (row) => ({ name: String(row.slots.name) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+      initialFilterInSubscription: true,
+      frame: { title: 'List', columns: COLUMNS },
+    })
+    controller.ingestRefusal('internal_error')
+    const view = renderTable(controller)
+    const sort = () =>
+      view.container.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-table-sort-name"]',
+      )!
+    try {
+      expect(sort().disabled).toBe(true)
+      expect(
+        view.container.querySelector('[data-id="hilos-table-unavailable-hint"]')
+          ?.textContent,
+      ).toContain('Table controls will be available when the list loads.')
+      act(() =>
+        controller.ingestWindow(
+          [{ rowKey: 'a', slots: { name: 'Alice' } }],
+          100,
+          true,
+          null,
+          null,
+          37,
+        ),
+      )
+      expect(sort().disabled).toBe(true)
+      expect(
+        view.container.querySelector('[data-id="hilos-table-next"]'),
+      ).toBeNull()
+      act(() =>
+        controller.ingestSubscriptionWindow(
+          [{ rowKey: 'a', slots: { name: 'Alice' } }],
+          100,
+          true,
+          null,
+          null,
+          37,
+          undefined,
+          [],
+        ),
+      )
+      expect(sort().disabled).toBe(false)
+      expect(sent).toEqual([])
+      fireEvent.click(sort())
+      expect(sent.at(-1)).toMatchObject({
+        limit: 37,
+        sort: [{ field: 'name', direction: 'asc' }],
+      })
+    } finally {
+      view.unmount()
+      controller.dispose()
+    }
+  })
+
   afterEach(() => {
     cleanup()
     vi.useRealTimers()

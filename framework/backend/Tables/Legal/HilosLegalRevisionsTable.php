@@ -5,17 +5,24 @@ declare(strict_types=1);
 namespace Hilos\Tables\Legal;
 
 use Hilos\AdminViewMode\WireField;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\LegalAcceptance as ObjectLegalAcceptance;
@@ -26,9 +33,7 @@ use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalStandingResolver;
 
-/**
- * Legal catalog projection; the audience refreshes whole windows when its histograms change.
- */
+/** Legal revision projection with document-scoped aggregate mutations for ordinary viewport delivery. */
 final class HilosLegalRevisionsTable extends TableDefinition implements ViewportTable
 {
     public const string TABLE = 'hilosLegalRevisions';
@@ -45,6 +50,72 @@ final class HilosLegalRevisionsTable extends TableDefinition implements Viewport
     public function windowSize(): int
     {
         return 25;
+    }
+
+    /** @return TableSortOrderDTO Newest declared publication first */
+    public function defaultSort(): TableSortOrderDTO
+    {
+        return TableSortOrderDTO::of(new TableSortDTO(HilosLegalRevisionTableRow::publishedOn, TableConstants::ORDER_DESC));
+    }
+
+    /**
+     * @param PageRouteParams $params Document route, optionally naming an exact revision
+     * @return array<string, mixed> Document scope and exact revision when present
+     * @throws MissingPageRouteParamException When the document key is absent
+     */
+    public function defaultFilter(PageRouteParams $params): array
+    {
+        $filter = [self::FILTER_DOCUMENT => $params->requireString(HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY)];
+        $revision = $params->getString(HilosPageRouteParams::HILOS_LEGAL_REVISION_ID);
+        if ($revision !== null) {
+            $filter[self::FILTER_REVISION] = $revision;
+        }
+
+        return $filter;
+    }
+
+    /**
+     * Projects the full document scope independently of a viewer's search and window.
+     *
+     * @param TableQueryDTO $query Document scope, including an exact revision when requested
+     * @param list<string> $previousRowKeys Keys known to the current viewport
+     * @return list<TableRowMutationDTO> Current rows and deletions of vanished known keys
+     * @throws LegalException When the catalog is invalid
+     * @throws DatabaseException When acceptance histograms cannot be read
+     */
+    public function aggregateMutations(TableQueryDTO $query, array $previousRowKeys): array
+    {
+        $mutations = [];
+        $currentRowKeys = [];
+        foreach ($this->collectRows($query) as $row) {
+            $currentRowKeys[$row->rowKey] = true;
+            $mutations[] = new TableRowMutationDTO(TableMutationType::Update, $row->rowKey, $row);
+        }
+        foreach ($previousRowKeys as $rowKey) {
+            if (!isset($currentRowKeys[$rowKey])) {
+                $mutations[] = new TableRowMutationDTO(TableMutationType::Delete, $rowKey);
+            }
+        }
+
+        return $mutations;
+    }
+
+    /**
+     * @param string|int $rowKey Revision key to check within the document
+     * @param TableQueryDTO $query Window's document, exact revision and search scope
+     * @return ?bool Membership independent of window position
+     * @throws LegalException When the catalog is invalid
+     * @throws DatabaseException When acceptance histograms cannot be read
+     * @throws TableSearchNotSupportedException When the query asks for unsupported search
+     * @throws TableSearchFieldUnknownException When a declared search field is absent
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        return $this->containsRowInMemory(
+            array_map(static fn (HilosLegalRevisionTableRow $row): array => $row->toArray(), $this->collectRows($query)),
+            $rowKey,
+            $this->scopeSearch($query),
+        );
     }
 
     /**
@@ -90,6 +161,8 @@ final class HilosLegalRevisionsTable extends TableDefinition implements Viewport
             HilosLegalRevisionTableRow::origin => WireField::notPersonal(),
             HilosLegalRevisionTableRow::heldCount => WireField::notPersonal(),
             HilosLegalRevisionTableRow::acceptedCount => WireField::notPersonal(),
+            HilosLegalRevisionTableRow::publishedOn => WireField::notPersonal(),
+            HilosLegalRevisionTableRow::effectiveOn => WireField::notPersonal(),
         ];
     }
 
@@ -108,7 +181,10 @@ final class HilosLegalRevisionsTable extends TableDefinition implements Viewport
             $rows = [];
         }
 
-        return $this->filterInMemory($rows, $query);
+        return $this->filterInMemory(
+            array_map(static fn (HilosLegalRevisionTableRow $row): array => $row->toArray(), $rows),
+            $query,
+        );
     }
 
     /** Configures the typed row representation. */
@@ -117,9 +193,34 @@ final class HilosLegalRevisionsTable extends TableDefinition implements Viewport
         $this->setRowClass(HilosLegalRevisionTableRow::class);
     }
 
+    /** @return array<string, string> Search by exact revision key or publication date */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosLegalRevisionTableRow::rowKey => HilosLegalRevisionTableRow::rowKey,
+            HilosLegalRevisionTableRow::publishedOn => HilosLegalRevisionTableRow::publishedOn,
+        ];
+    }
+
+    /** @return array<string, string> Server orders over calendar metadata and holder counts */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosLegalRevisionTableRow::publishedOn => HilosLegalRevisionTableRow::publishedOn,
+            HilosLegalRevisionTableRow::effectiveOn => HilosLegalRevisionTableRow::effectiveOn,
+            HilosLegalRevisionTableRow::heldCount => HilosLegalRevisionTableRow::heldCount,
+        ];
+    }
+
+    /** @return bool Keep recorded-only revisions after declared dates in either direction */
+    protected function inMemoryNullsLast(): bool
+    {
+        return true;
+    }
+
     /**
      * @param TableQueryDTO $query Window filters
-     * @return list<array<string, mixed>> Wire rows in catalog order
+     * @return list<HilosLegalRevisionTableRow> Complete document projection in catalog order
      * @throws LegalException When the catalog is invalid
      * @throws DatabaseException When acceptance histograms cannot be read
      */
@@ -146,17 +247,21 @@ final class HilosLegalRevisionsTable extends TableDefinition implements Viewport
                     origin: LegalStandingResolver::origin($kind, $revision->id)->value,
                     heldCount: $tally->heldByRevision[$revision->id] ?? 0,
                     acceptedCount: $tally->acceptedByRevision[$revision->id] ?? 0,
-                )->toArray();
+                    publishedOn: $revision->publishedOn,
+                    effectiveOn: $revision->effectiveOn,
+                );
             }
         }
         foreach ($tally->undeclared as $revisionId => $people) {
-            $rows[] = new HilosLegalRevisionTableRow((string) $revisionId, false, null, false, null, $people, $people)->toArray();
+            $rows[] = new HilosLegalRevisionTableRow(
+                (string) $revisionId, false, null, false, null, $people, $people, null, null,
+            );
         }
         $requested = $query->filter[self::FILTER_REVISION] ?? null;
         if (is_string($requested)) {
             $rows = array_values(array_filter(
                 $rows,
-                static fn (array $row): bool => $row[HilosLegalRevisionTableRow::rowKey] === $requested,
+                static fn (HilosLegalRevisionTableRow $row): bool => $row->rowKey === $requested,
             ));
         }
 

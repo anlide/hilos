@@ -17,6 +17,8 @@ final class HilosLegalRevisionTableRow extends AbstractTableRow
     public const string origin = 'origin';
     public const string heldCount = 'heldCount';
     public const string acceptedCount = 'acceptedCount';
+    public const string publishedOn = 'publishedOn';
+    public const string effectiveOn = 'effectiveOn';
 
     /**
      * @param string $rowKey Stable row identity
@@ -26,6 +28,8 @@ final class HilosLegalRevisionTableRow extends AbstractTableRow
      * @param ?string $origin Origin
      * @param int $heldCount HeldCount
      * @param int $acceptedCount AcceptedCount
+     * @param ?string $publishedOn Declared publication date, YYYY-MM-DD
+     * @param ?string $effectiveOn Declared acceptance deadline, YYYY-MM-DD
      */
     public function __construct(
         public string $rowKey,
@@ -35,6 +39,8 @@ final class HilosLegalRevisionTableRow extends AbstractTableRow
         public ?string $origin,
         public int $heldCount,
         public int $acceptedCount,
+        public ?string $publishedOn,
+        public ?string $effectiveOn,
     ) {
     }
 
@@ -61,6 +67,8 @@ final class HilosLegalRevisionTableRow extends AbstractTableRow
             self::origin => $this->origin,
             self::heldCount => $this->heldCount,
             self::acceptedCount => $this->acceptedCount,
+            self::publishedOn => $this->publishedOn,
+            self::effectiveOn => $this->effectiveOn,
         ];
     }
 
@@ -79,6 +87,8 @@ final class HilosLegalRevisionTableRow extends AbstractTableRow
             origin: self::optionalString($data, self::origin),
             heldCount: self::requireInt($data, self::heldCount),
             acceptedCount: self::requireInt($data, self::acceptedCount),
+            publishedOn: self::optionalString($data, self::publishedOn),
+            effectiveOn: self::optionalString($data, self::effectiveOn),
         );
     }
 }

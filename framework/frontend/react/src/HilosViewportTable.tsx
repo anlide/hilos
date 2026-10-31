@@ -136,6 +136,7 @@ export function HilosViewportTable<R>({
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches below read this one
   // answer.
+  const controlsAvailable = useSignal(controller.windowControlsAvailable)
   const body = useSignal(controller.frame.body)
   const pageSize = useSignal(controller.pageSize)
   // As many skeleton rows as the window had rows, so the height of the table does
@@ -897,6 +898,7 @@ export function HilosViewportTable<R>({
                       type="button"
                       className="btn btn-link p-0 text-reset text-decoration-none d-inline-flex align-items-center gap-1"
                       data-id={`hilos-table-sort-${column.key}`}
+                      disabled={!controlsAvailable}
                       onClick={() => controller.setSort(column.key)}
                     >
                       {column.label}

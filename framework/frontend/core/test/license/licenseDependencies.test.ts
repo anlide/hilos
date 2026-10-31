@@ -87,7 +87,10 @@ describe('createHilosLicenseDependencies', () => {
     vi.stubGlobal('Blob', undefined)
     vi.stubGlobal('URL', undefined)
     vi.useFakeTimers()
-    const ingest = vi.spyOn(TableViewportController.prototype, 'ingestWindow')
+    const ingest = vi.spyOn(
+      TableViewportController.prototype,
+      'ingestSubscriptionWindow',
+    )
     const controller = mount()
     const { table } = controller
 
@@ -118,8 +121,9 @@ describe('createHilosLicenseDependencies', () => {
       null,
       null,
       4,
-      0,
       undefined,
+      [],
+      0,
     )
     expect(table.loaded.get()).toBe(true)
     expect(table.frame.body.get()).toBe('rows')

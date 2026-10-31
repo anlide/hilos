@@ -8,6 +8,9 @@ use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
@@ -23,6 +26,8 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
@@ -486,6 +491,9 @@ final class Hilos extends HilosFacade
         LegalPage::PAGE => LegalPage::class,
         LegalDocumentsPage::PAGE => LegalDocumentsPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
+        LegalDocumentSetPage::PAGE => LegalDocumentSetPage::class,
+        LegalDocumentDeviationsPage::PAGE => LegalDocumentDeviationsPage::class,
+        LegalDocumentRevisionsPage::PAGE => LegalDocumentRevisionsPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
@@ -748,6 +756,8 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
         ChatTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
         ChatTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+        ChatTableContext::hilosLegalDocumentSet => HilosLegalDocumentSetTable::class,
+        ChatTableContext::hilosLegalDocumentDeviations => HilosLegalDocumentDeviationsTable::class,
         ChatTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         ChatTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
         ChatTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
@@ -998,6 +1008,15 @@ final class Hilos extends HilosFacade
             ChatTableContext::hilosLegalSettings => [],
         ],
         LegalDocumentPage::PAGE => [
+            ChatTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentSetPage::PAGE => [
+            ChatTableContext::hilosLegalDocumentSet => [],
+        ],
+        LegalDocumentDeviationsPage::PAGE => [
+            ChatTableContext::hilosLegalDocumentDeviations => [],
+        ],
+        LegalDocumentRevisionsPage::PAGE => [
             ChatTableContext::hilosLegalRevisions => [],
         ],
         LegalRevisionPage::PAGE => [

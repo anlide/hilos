@@ -83,6 +83,7 @@ export function HilosTableEmptyState<R>({
   // table, so it is read without a signal.
   const declaration = controller.frame.declaration
 
+  const controlsAvailable = useSignal(controller.windowControlsAvailable)
   const search = useSignal(controller.search)
   const filters = useSignal(controller.frame.filters)
 
@@ -192,6 +193,9 @@ export function HilosTableEmptyState<R>({
         >
           The rows of this list could not be fetched. The rest of the page still
           works.
+          {!controlsAvailable
+            ? ' Table controls will be available when the list loads.'
+            : null}
         </p>
       </div>
     )

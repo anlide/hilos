@@ -71,6 +71,11 @@ describe('legal admin React pages', () => {
 it('opens both consent documents in a read-only React preview', async () => {
   const h = harness()
   h.scope.data.set('legalDocument', {
+    covered: 0,
+    window: 0,
+    lapsed: 0,
+    standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+    projectCatalogClass: 'Project\\Legal\\LegalCatalog',
     document: 'terms',
     declared: true,
     revision: {
@@ -114,6 +119,11 @@ it('opens both consent documents in a read-only React preview', async () => {
 it('shows the server unpublished sentence as text in the React preview', async () => {
   const h = harness()
   h.scope.data.set('legalDocument', {
+    covered: 0,
+    window: 0,
+    lapsed: 0,
+    standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
+    projectCatalogClass: 'Project\\Legal\\LegalCatalog',
     document: 'terms',
     declared: true,
     revision: null,

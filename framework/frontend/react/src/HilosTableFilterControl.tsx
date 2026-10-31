@@ -31,6 +31,8 @@ export interface HilosTableFilterControlProps<R> {
    * name again.
    */
   placement: 'bar' | 'modal'
+  /** Whether the table is waiting for its first known window. */
+  disabled?: boolean
 }
 
 // The value of an option is declared `unknown`, and the dropdown is typed
@@ -48,6 +50,7 @@ export function HilosTableFilterControl<R>({
   view,
   controller,
   placement,
+  disabled = false,
 }: HilosTableFilterControlProps<R>) {
   const filter = view.filter
 
@@ -150,6 +153,7 @@ export function HilosTableFilterControl<R>({
       <div data-id={dataId}>
         <HilosDropdown
           value={selectedIndex}
+          disabled={disabled}
           options={dropdownOptions}
           menuAriaLabel={filter.label}
           onChange={onSelect}
@@ -175,7 +179,7 @@ export function HilosTableFilterControl<R>({
                       className={`dropdown-item d-flex align-items-center justify-content-between gap-2${
                         selected ? ' active' : ''
                       }`}
-                      disabled={option.disabled}
+                      disabled={disabled || option.disabled}
                       role="option"
                       aria-selected={selected}
                       data-id={`hilos-dropdown-option-${option.value}`}
@@ -236,6 +240,7 @@ export function HilosTableFilterControl<R>({
           type="button"
           className="btn btn-sm btn-outline-secondary"
           aria-expanded={rangeOpen}
+          disabled={disabled}
           data-id={dataId}
           onClick={() => setRangeOpen(!rangeOpen)}
           onKeyDown={(event) => {
@@ -253,6 +258,7 @@ export function HilosTableFilterControl<R>({
           </label>
           <input
             id={fromId}
+            disabled={disabled}
             type="date"
             className="form-control form-control-sm mb-2"
             value={from}
@@ -264,6 +270,7 @@ export function HilosTableFilterControl<R>({
           </label>
           <input
             id={toId}
+            disabled={disabled}
             type="date"
             className="form-control form-control-sm mb-2"
             value={to}
@@ -274,6 +281,7 @@ export function HilosTableFilterControl<R>({
             type="button"
             className="btn btn-sm btn-outline-secondary w-100"
             data-id={`${dataId}-clear`}
+            disabled={disabled}
             onClick={() => setBounds('', '')}
           >
             Clear
@@ -287,6 +295,7 @@ export function HilosTableFilterControl<R>({
     <div className="form-check form-switch mb-0">
       <input
         id={toggleId}
+        disabled={disabled}
         className="form-check-input"
         type="checkbox"
         checked={view.active}

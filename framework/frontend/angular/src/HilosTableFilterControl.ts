@@ -48,6 +48,7 @@ const NO_CHOICE = -1
           <hilos-dropdown
             [options]="dropdownOptions()"
             [value]="selectedIndex()"
+            [disabled]="disabled()"
             [menuAriaLabel]="view().filter.label"
             (valueChange)="onSelect($event)"
           >
@@ -72,7 +73,7 @@ const NO_CHOICE = -1
                   type="button"
                   class="dropdown-item d-flex align-items-center justify-content-between gap-2"
                   [class.active]="selected"
-                  [disabled]="option.disabled"
+                  [disabled]="disabled() || option.disabled"
                   role="option"
                   [attr.aria-selected]="selected"
                   [attr.data-id]="'hilos-dropdown-option-' + option.value"
@@ -99,6 +100,7 @@ const NO_CHOICE = -1
             type="button"
             class="btn btn-sm btn-outline-secondary"
             [attr.aria-expanded]="rangeOpen()"
+            [disabled]="disabled()"
             [attr.data-id]="dataId()"
             (click)="rangeOpen.set(!rangeOpen())"
             (keydown.escape)="onRangeEscape($event)"
@@ -109,6 +111,7 @@ const NO_CHOICE = -1
             <label [for]="fromId" class="form-label small mb-1">From</label>
             <input
               [id]="fromId"
+              [disabled]="disabled()"
               type="date"
               class="form-control form-control-sm mb-2"
               [value]="bounds().from"
@@ -118,6 +121,7 @@ const NO_CHOICE = -1
             <label [for]="toId" class="form-label small mb-1">To</label>
             <input
               [id]="toId"
+              [disabled]="disabled()"
               type="date"
               class="form-control form-control-sm mb-2"
               [value]="bounds().to"
@@ -128,6 +132,7 @@ const NO_CHOICE = -1
               type="button"
               class="btn btn-sm btn-outline-secondary w-100"
               [attr.data-id]="dataId() + '-clear'"
+              [disabled]="disabled()"
               (click)="setBounds('', '')"
             >
               Clear
@@ -139,6 +144,7 @@ const NO_CHOICE = -1
         <div class="form-check form-switch mb-0">
           <input
             [id]="toggleId"
+            [disabled]="disabled()"
             class="form-check-input"
             type="checkbox"
             [checked]="view().active"
@@ -165,6 +171,8 @@ export class HilosTableFilterControl<R> {
    * name again.
    */
   readonly placement = input.required<'bar' | 'modal'>()
+  /** Whether the table is waiting for its first known window. */
+  readonly disabled = input(false)
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef)
   private readonly seq = filterControlSeq++

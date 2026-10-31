@@ -99,6 +99,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                   </span>
                   <input
                     type="search"
+                    [disabled]="!controlsAvailable()"
                     class="form-control"
                     [placeholder]="searchPlaceholder()"
                     [attr.aria-label]="searchPlaceholder()"
@@ -113,6 +114,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                       class="btn btn-outline-secondary"
                       aria-label="Clear search"
                       data-id="hilos-table-search-clear"
+                      [disabled]="!controlsAvailable()"
                       (click)="controller().setSearch('')"
                     >
                       <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -132,6 +134,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                   @for (view of filters(); track filterKey(view)) {
                     <hilos-table-filter-control
                       [view]="view"
+                      [disabled]="!controlsAvailable()"
                       [controller]="controller()"
                       placement="bar"
                     />
@@ -150,6 +153,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                     class="btn-close ms-1"
                     aria-label="Reset filters"
                     data-id="hilos-table-filter-reset"
+                    [disabled]="!controlsAvailable()"
                     (click)="controller().resetFilters()"
                   ></button>
                 </span>
@@ -170,6 +174,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                   <hilos-dropdown
                     [options]="orderOptions()"
                     [value]="activeOrderKey()"
+                    [disabled]="!controlsAvailable()"
                     [menuAriaLabel]="orderMenuLabel"
                     (valueChange)="onOrder($event)"
                   >
@@ -225,6 +230,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                   type="button"
                   class="btn btn-sm btn-outline-secondary d-md-none"
                   data-id="hilos-table-filters-open"
+                  [disabled]="!controlsAvailable()"
                   (click)="filtersOpen.set(true)"
                 >
                   Filters
@@ -293,6 +299,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
               </span>
               <input
                 type="search"
+                [disabled]="!controlsAvailable()"
                 class="form-control"
                 [placeholder]="searchPlaceholder()"
                 [attr.aria-label]="searchPlaceholder()"
@@ -307,6 +314,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                   class="btn btn-outline-secondary"
                   aria-label="Clear search"
                   data-id="hilos-table-search-clear"
+                  [disabled]="!controlsAvailable()"
                   (click)="controller().setSearch('')"
                 >
                   <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -324,6 +332,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
               @for (view of filters(); track filterKey(view)) {
                 <hilos-table-filter-control
                   [view]="view"
+                  [disabled]="!controlsAvailable()"
                   [controller]="controller()"
                   placement="bar"
                 />
@@ -342,6 +351,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                 class="btn-close ms-1"
                 aria-label="Reset filters"
                 data-id="hilos-table-filter-reset"
+                [disabled]="!controlsAvailable()"
                 (click)="controller().resetFilters()"
               ></button>
             </span>
@@ -362,6 +372,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
               <hilos-dropdown
                 [options]="orderOptions()"
                 [value]="activeOrderKey()"
+                [disabled]="!controlsAvailable()"
                 [menuAriaLabel]="orderMenuLabel"
                 (valueChange)="onOrder($event)"
               >
@@ -417,6 +428,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
               type="button"
               class="btn btn-sm btn-outline-secondary d-md-none"
               data-id="hilos-table-filters-open"
+              [disabled]="!controlsAvailable()"
               (click)="filtersOpen.set(true)"
             >
               Filters
@@ -472,6 +484,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
             @for (view of filters(); track filterKey(view)) {
               <hilos-table-filter-control
                 [view]="view"
+                [disabled]="!controlsAvailable()"
                 [controller]="controller()"
                 placement="modal"
               />
@@ -525,6 +538,7 @@ export class HilosTableBar<R> {
     () => this.resolvedPlaceholder() ?? 'Search…',
   )
 
+  protected readonly controlsAvailable = signal(true)
   protected readonly search = signal('')
   protected readonly filters = signal<readonly HilosTableFilterView[]>([])
   protected readonly activeFilterCount = signal(0)
@@ -634,6 +648,7 @@ export class HilosTableBar<R> {
         return subscribeSignal(source, (value) => target.set(value))
       }
       const subscriptions = [
+        bind(controller.windowControlsAvailable, this.controlsAvailable),
         bind(controller.search, this.search),
         bind(controller.frame.filters, this.filters),
         bind(controller.frame.activeFilterCount, this.activeFilterCount),

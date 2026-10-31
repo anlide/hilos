@@ -33,6 +33,8 @@ import {
   type TableAnchor,
   type TableAnchorDirection,
   type TableViewportDescriptor,
+  type TableWindowContinuation,
+  type TableWindowDescriptorSource,
 } from '../connection/HilosConnection.js'
 import { type ActionHandle } from '../connection/actionLifecycle.js'
 import { type TableRow } from '../state/TableRowsStore.js'
@@ -371,7 +373,7 @@ export type TableFacetCountsByFilter = Readonly<
  * window it is holding — because the wiring is what registers the table with the
  * connection that reports its window on the next page subscribe.
  */
-export interface TableWindowSink {
+export interface TableWindowSink extends TableWindowDescriptorSource {
   /** Reject stale tracked replies before any normalization or presentation writes. */
   acceptsWindowResponse?(requestId?: string): boolean
   /** End the local request epoch when its socket, scope or mount leaves. */
@@ -405,7 +407,7 @@ export interface TableWindowSink {
   ingestDelta(delta: TableViewportDelta): void
   ingestProgress(frame: HilosTableProgressFrame): void
   ingestBulkReport(report: HilosTableBulkReport): void
-  descriptor(): TableViewportDescriptor | null
+  descriptor(opening?: boolean): TableViewportDescriptor | null
   ingestCount(
     totalCount: number,
     totalExact: boolean,
@@ -546,9 +548,20 @@ export interface TableViewportControllerOptions<R> {
    * (`defaultFilter()`, empty unless it names one). That window does not say which
    * filter it ran at, so a table opening with a preset does not show its rows; it
    * keeps the order and the size it says, and asks for its own — even where the
-   * backend has already applied the same preset.
+   * backend has already applied the same preset, unless `initialFilterInSubscription`
+   * explicitly declares that match.
    */
   initialFilter?: Record<string, unknown>
+  /**
+   * The backend's `defaultFilter(PageRouteParams)` already applies `initialFilter`
+   * to the subscription's first window. Opt in only when both declarations match;
+   * the controller then consumes that window without requesting it again.
+   * On navigation it reports the opening preset for the next mount; the backend
+   * must discard a reported descriptor outside the destination route's scope.
+   * Window controls stay unavailable until the first subscription window teaches
+   * size and order; direct edits and refreshes leave the opening request unchanged.
+   */
+  initialFilterInSubscription?: boolean
   /**
    * Orders of more than one column this table declares, in the sequence the
    * "Order" menu offers them. The backend holds a composite order against the
@@ -840,7 +853,7 @@ export class TableViewportController<R> implements TableWindowSink {
   private openingOrder: TableSortOrder | undefined = undefined
 
   /** Whether {@link openingOrder} has been read off a window yet. */
-  private openingOrderKnown = false
+  private readonly openingOrderKnown = createSignal(false)
 
   /**
    * Pending moves by row key — the new row and the slot it lands in, applied on apply().
@@ -1014,6 +1027,15 @@ export class TableViewportController<R> implements TableWindowSink {
   /** False until the first window has been ingested — the view shows "loading" rather than "empty". */
   readonly loaded: ReadonlySignal<boolean>
 
+  /**
+   * Whether window controls may change the request. Subscription-preset tables
+   * wait for their first known size and order; legacy callers keep their policy.
+   */
+  readonly windowControlsAvailable: ReadonlySignal<boolean> = computedSignal(
+    () =>
+      !this.options.initialFilterInSubscription || this.openingOrderKnown.get(),
+  )
+
   /** The readable frame state, built once from the declaration and the window signals. */
   private readonly frameState: HilosTableFrameState
 
@@ -1134,6 +1156,7 @@ export class TableViewportController<R> implements TableWindowSink {
         : Math.floor(rowsBefore / this.pageSizeSignal.get())
     })
     this.hasNextPage = computedSignal(() => {
+      if (!this.windowControlsAvailable.get()) return false
       const hasRowsAfter = this.hasRowsAfterSignal.get()
       const shown = this.liveRowKeys().length
       // An empty answer has no edge to page from; its address and page count decide.
@@ -1147,6 +1170,7 @@ export class TableViewportController<R> implements TableWindowSink {
         : this.pageNumber.get() < pageCount - 1
     })
     this.hasPreviousPage = computedSignal(() => {
+      if (!this.windowControlsAvailable.get()) return false
       const rowsBefore = this.rowsBeforeSignal.get()
 
       return (
@@ -1155,6 +1179,7 @@ export class TableViewportController<R> implements TableWindowSink {
       )
     })
     this.paginated = computedSignal(() => {
+      if (!this.windowControlsAvailable.get()) return false
       const pageCount = this.pageCount.get()
 
       return pageCount === null || pageCount > 1
@@ -1246,7 +1271,10 @@ export class TableViewportController<R> implements TableWindowSink {
       this.subscriptions.push(
         subscribeSignal(this.loadedSignal, () => {
           const declared = this.facetOptions.get()
-          if (Object.keys(declared).length > 0) {
+          if (
+            this.windowControlsAvailable.get() &&
+            Object.keys(declared).length > 0
+          ) {
             sendFacets(declared)
           }
         }),
@@ -1256,7 +1284,7 @@ export class TableViewportController<R> implements TableWindowSink {
       // needs no frame of its own: the options are read fresh when that window lands.
       this.subscriptions.push(
         subscribeSignal(this.facetOptions, (declared) => {
-          if (this.loadedSignal.get()) {
+          if (this.loadedSignal.get() && this.windowControlsAvailable.get()) {
             sendFacets(declared)
           }
         }),
@@ -1365,7 +1393,10 @@ export class TableViewportController<R> implements TableWindowSink {
             nextRendered.length !== previousRendered.length ||
             nextRendered.some((key, index) => key !== previousRendered[index])
           previousRendered = nextRendered
-          if (filterChanged || orderChanged) {
+          if (
+            (filterChanged || orderChanged) &&
+            this.windowControlsAvailable.get()
+          ) {
             if (filterChanged) {
               this.filterSignal.set(nextFilter)
             }
@@ -1377,7 +1408,11 @@ export class TableViewportController<R> implements TableWindowSink {
               this.changeWindow()
             }
           }
-          if (renderedChanged && this.loadedSignal.get()) {
+          if (
+            renderedChanged &&
+            this.loadedSignal.get() &&
+            this.windowControlsAvailable.get()
+          ) {
             options.sendRendered?.(nextRendered)
           }
         },
@@ -1714,6 +1749,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * has no deltas of its own. A table on a live source never needs this.
    */
   refresh(): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.geometryOwner.invalidateWindow()
       this.textWindowActive = false
@@ -1732,6 +1768,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * themselves all go, and the server's answer is the whole truth again.
    */
   show(): void {
+    if (!this.windowControlsAvailable.get()) return
     this.changeWindow()
   }
 
@@ -1743,6 +1780,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param query The raw search text.
    */
   setSearch(query: string): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       const filter = { ...this.filterSignal.get() }
       if (query.trim() === '') {
@@ -1786,6 +1824,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param values The filter-map entries to write; a null/undefined/'' value clears its key.
    */
   setFilters(values: Record<string, unknown>): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       const filter = { ...this.filterSignal.get() }
       for (const [key, value] of Object.entries(values)) {
@@ -1812,6 +1851,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * same map — and "Nothing found" names the query and the filters together.
    */
   resetFilters(): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.filterSignal.set({ ...(this.options.initialFilter ?? {}) })
       this.resetAddress()
@@ -1835,6 +1875,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param field The field key to sort by.
    */
   setSort(field: string): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       const current = this.orderSignal.get()
       const cycle: readonly (TableSortOrder | undefined)[] = [
@@ -1874,6 +1915,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param order The order to run the window in.
    */
   setOrder(order: TableSortOrder): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.orderSignal.set(order)
       this.resetAddress()
@@ -1888,6 +1930,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * here; a page is free to call it from a reset control of its own.
    */
   resetOrder(): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.orderSignal.set(this.openingOrder)
       this.resetAddress()
@@ -1910,6 +1953,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param page The requested zero-based page index.
    */
   setPage(page: number): void {
+    if (!this.windowControlsAvailable.get()) return
     const pageCount = this.pageCount.get()
     if (pageCount === null) {
       return
@@ -1936,6 +1980,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * the control off there rather than live and inert.
    */
   nextPage(): void {
+    if (!this.windowControlsAvailable.get()) return
     if (!this.hasNextPage.get()) {
       return
     }
@@ -1974,6 +2019,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * was asked by: the same place, the other way round, leads where the reader stood.
    */
   prevPage(): void {
+    if (!this.windowControlsAvailable.get()) return
     if (!this.hasPreviousPage.get()) {
       return
     }
@@ -2209,7 +2255,10 @@ export class TableViewportController<R> implements TableWindowSink {
     }
     this.withPresentationUpdate({ kind: 'window' }, () => {
       this.replaceProgress(progress)
-      if (!this.openingOrderKnown) {
+      // A refusal ends the skeleton without teaching the window's size or order.
+      // Its first successful subscription answer still needs the rendered declaration.
+      const firstSubscriptionWindow = !this.openingOrderKnown.get()
+      if (!this.openingOrderKnown.get()) {
         // Where the sort cycle and a reset come home to: the order the table opened in, which
         // is the backend's declaration and never a later choice of the reader's.
         //
@@ -2217,11 +2266,14 @@ export class TableViewportController<R> implements TableWindowSink {
         // nothing recomputes when it lands, and the menu built off the order would otherwise
         // word its way home from the moment before the table knew where home was.
         this.openingOrder = sort
-        this.openingOrderKnown = true
       }
       this.orderSignal.set(sort)
       const firstWindow = !this.loadedSignal.get()
-      if (firstWindow && this.opensWithPreset()) {
+      if (
+        firstWindow &&
+        this.opensWithPreset() &&
+        !this.options.initialFilterInSubscription
+      ) {
         // The rows of this window may be the whole set: a table that declares no preset of
         // its own on the backend (defaultFilter()) was served without this one, and the
         // window does not say which filter it ran at.
@@ -2229,6 +2281,7 @@ export class TableViewportController<R> implements TableWindowSink {
         // everything under a page about one thing, so the skeleton stands until the right ones
         // come — asked for at the size the backend declared.
         this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
+        this.openingOrderKnown.set(true)
         this.send()
         return
       }
@@ -2241,16 +2294,21 @@ export class TableViewportController<R> implements TableWindowSink {
         limit,
         rowsBefore,
       )
-      if (!firstWindow) {
+      this.openingOrderKnown.set(true)
+      if (
+        !firstWindow ||
+        (firstSubscriptionWindow && this.options.initialFilterInSubscription)
+      ) {
         // A new owner holds the window again but has never heard this loaded controller's
-        // options. The first window already declares them through loadedSignal above.
+        // options. Opted-in tables also wait until size and order are known before
+        // declaring them; legacy first windows declare through loadedSignal above.
         const facets = this.facetOptions.get()
         if (Object.keys(facets).length > 0) {
           this.options.sendFacets?.(facets)
         }
       }
       if (
-        firstWindow &&
+        (firstWindow || firstSubscriptionWindow) &&
         this.renderedKeys.get().length > 0 &&
         this.options.sendRendered !== undefined
       ) {
@@ -3418,6 +3476,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * drawn and comes back with its row.
    */
   private changeWindow(): void {
+    if (!this.windowControlsAvailable.get()) return
     this.withPresentationUpdate({ kind: 'reset' }, () => {
       this.geometryOwner.invalidateWindow()
       this.textWindowActive = false
@@ -3555,11 +3614,28 @@ export class TableViewportController<R> implements TableWindowSink {
    * A table that declares its options for counting reports them with the window, so the
    * counts come back with it; the window frames it sends while mounted carry none.
    *
-   * @return The current descriptor, or null while no window has arrived.
+   * An opted-in table reports its opening preset for a new mount: that controller has no
+   * memory of this one's search or address. The server must discard a report outside the new route scope.
+   *
+   * @param opening Whether the subscription will mount a new controller.
+   * @return The requested subscription descriptor, or null while its size or order is unknown.
    */
-  descriptor(): TableViewportDescriptor | null {
-    if (!this.loadedSignal.get()) {
+  descriptor(opening = false): TableViewportDescriptor | null {
+    // Loaded includes a refused first window. Even a later standalone snapshot carries
+    // no order metadata: only the subscription answer settles unknown versus unsorted.
+    if (!this.loadedSignal.get() || !this.openingOrderKnown.get()) {
       return null
+    }
+    if (opening && this.options.initialFilterInSubscription) {
+      return {
+        filter: { ...(this.options.initialFilter ?? {}) },
+        sort: this.openingOrder ?? null,
+        limit: this.pageSizeSignal.get(),
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: null,
+        rendered: this.renderedKeys.get(),
+      }
     }
     const facets = this.facetOptions.get()
 
@@ -3567,6 +3643,34 @@ export class TableViewportController<R> implements TableWindowSink {
       Object.keys(facets).length > 0
       ? { ...this.currentDescriptor(), facets }
       : this.currentDescriptor()
+  }
+
+  /** Carry only an opted-in table's known controls across an access wait. */
+  retainWindow(): TableWindowContinuation | null {
+    if (!this.options.initialFilterInSubscription) return null
+    const current = this.descriptor()
+    const opening = this.descriptor(true)
+    return current && opening ? { current, opening } : null
+  }
+
+  /** Restore controls for the same route before consuming its retained window. */
+  restoreWindow({ current, opening }: TableWindowContinuation): void {
+    if (
+      !this.options.initialFilterInSubscription ||
+      !Object.entries(this.options.initialFilter ?? {}).every(
+        ([key, value]) => current.filter[key] === value,
+      )
+    )
+      return
+    this.filterSignal.set({ ...current.filter })
+    this.openingOrder = opening.sort ?? undefined
+    this.orderSignal.set(current.sort ?? undefined)
+    this.pageSizeSignal.set(current.limit)
+    this.anchor = current.anchor
+    this.anchorDirection = current.anchorDirection
+    this.pageIndex = current.pageIndex
+    this.pageSignal.set(current.pageIndex ?? 0)
+    this.openingOrderKnown.set(true)
   }
 
   /** Whether the page opened this table with a preset of its own in the filter map. */
@@ -3615,7 +3719,7 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   private send(): void {
-    if (this.disposed) {
+    if (this.disposed || !this.windowControlsAvailable.get()) {
       return
     }
     const requestId = `${this.windowRequestMount}:${this.windowRequestEpoch}:${++this.windowRequestSequence}`

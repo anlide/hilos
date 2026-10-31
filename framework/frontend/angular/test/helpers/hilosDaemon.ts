@@ -189,15 +189,45 @@ export function daemonHarness<T>(
         ? [...listeners.values()].reduce((sum, group) => sum + group.size, 0)
         : (listeners.get(event)?.size ?? 0),
     window(tableKey: string, rows: readonly TableRow[]) {
+      const sink = [...register.mock.calls]
+        .reverse()
+        .find(([key]) => key === tableKey)?.[1]
+      if (sink?.descriptor() === null) {
+        // First deliver the subscription metadata, then answer any legacy preset ask.
+        emit('projectSignal', {
+          type: 'page_response',
+          data: {
+            page,
+            payload: {
+              windows: {
+                [tableKey]: {
+                  rows,
+                  totalCount: rows.length,
+                  totalExact: true,
+                  firstAnchor: null,
+                  lastAnchor: null,
+                  limit: 25,
+                  sort: [],
+                },
+              },
+            },
+          },
+        })
+      }
+      const requestId = sendViewport.mock.calls.at(-1)?.[2].requestId
       emit('tableWindow', {
         data: {
           page,
           tableKey,
+          requestId: sink?.acceptsWindowResponse?.(requestId)
+            ? requestId
+            : undefined,
           rows,
           totalCount: rows.length,
           totalExact: true,
           firstAnchor: null,
           lastAnchor: null,
+          limit: 25,
         },
       })
       fixture.detectChanges()

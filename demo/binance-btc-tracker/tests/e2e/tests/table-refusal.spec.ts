@@ -14,7 +14,10 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { clearTableRefusal, refuseTableWindow } from '../helpers/tableRefusal'
+import {
+  clearTableRefusal,
+  refuseTableWindow,
+} from '../../../../../framework/frontend/scripts/tableRefusal.mjs'
 
 // HIL-1131: a table whose window the server cannot build shows "List unavailable"
 // in its body, and the rest of its page keeps working (HIL-943). A stand has no
@@ -30,7 +33,7 @@ import { clearTableRefusal, refuseTableWindow } from '../helpers/tableRefusal'
 // tab of the same session re-sends this page, and that resend has to be another
 // refusal rather than the window. example_string is also written by
 // settings.spec.ts; the binance suite runs in one worker
-// (helpers/tableRefusal.ts), so the two files do not race on the key.
+// (playwright.config.ts), so the two files do not race on the key.
 //
 // The 400 ms the table keeps its old rows before the skeleton (HIL-943) is not
 // measured here: on a starved stand the answer can take longer, and the threshold

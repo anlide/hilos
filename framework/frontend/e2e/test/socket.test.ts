@@ -689,6 +689,73 @@ describe('real-message proxy holds', () => {
     expect(route.sent.at(-1)).toBe('unparsed text after release')
   })
 
+  it('rearms access holds and separates real sessions from a batch without losing metadata or ACKs', async () => {
+    const route = proxy()
+    const hold = await holdPageReply(route.page, 'target', {
+      initiallyArmed: false,
+      passSession: true,
+    })
+    const opening = JSON.stringify(pageResponse('target'))
+    route.incoming(opening)
+    expect(route.sent).toEqual([opening])
+    for (const admin of [true, false]) {
+      const received = hold.arm()
+      const session = {
+        type: 'handshake_response',
+        data: { entities: { currentUser: { id: 7, admin } } },
+      }
+      const reply = pageResponse('target')
+      const ack = {
+        type: 'action_result',
+        data: { value: admin },
+        requestId: 'kept-ack',
+        outcome: 'success',
+      }
+      // Session is deliberately after the page in one of the physical batches.
+      const frames = admin ? [session, reply, ack] : [reply, ack, session]
+      const outer = {
+        type: 'signal_batch',
+        time: 123,
+        data: { frames, trace: 'kept' },
+      }
+      const since = route.sent.length
+      const forwarded = hold.forwarded.length
+      route.incoming(JSON.stringify(outer))
+      await received
+      expect(hold.forwarded.slice(forwarded).map(({ wire }) => wire)).toEqual([
+        session,
+      ])
+      expect(JSON.parse(String(route.sent[since]))).toEqual({
+        ...outer,
+        data: { ...outer.data, frames: [session] },
+      })
+      route.incoming('pong')
+      const successor = batch(pageResponse('neighbor'))
+      route.incoming(successor)
+      expect(route.sent.slice(since + 1)).toEqual(['pong'])
+      hold.release()
+      expect(JSON.parse(String(route.sent[since + 2]))).toEqual({
+        ...outer,
+        data: { ...outer.data, frames: [reply, ack] },
+      })
+      expect(route.sent.at(-1)).toBe(successor)
+      expect(hold.forwarded.slice(forwarded).map(({ wire }) => wire)).toEqual([
+        session,
+        undefined,
+        reply,
+        ack,
+        pageResponse('neighbor'),
+      ])
+      expect(hold.frames.slice(-5).map(({ wire }) => wire)).toEqual([
+        ...frames,
+        undefined,
+        pageResponse('neighbor'),
+      ])
+    }
+    hold.dispose()
+    expect(() => hold.arm()).toThrow('Release the live page-reply hold')
+  })
+
   it('holds real upload credits with neighbors, keeps requests/binary intact and releases once', async () => {
     const route = proxy()
     const evidence: Record<string, unknown>[] = []

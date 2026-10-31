@@ -186,30 +186,27 @@ function seededContext(
     }
   }
 
-  const connection = {
-    registerTableWindow(): void {
-      for (const listener of stateListeners) {
-        listener({
-          type: 'page_response',
-          data: {
-            page: HilosPages.MAINTENANCE_CIRCLE,
-            payload: {
-              windows: {
-                [CIRCLE_TABLE]: {
-                  rows: rows.map(wireRow),
-                  totalCount: rows.length,
-                  totalExact: true,
-                  firstAnchor: null,
-                  lastAnchor: null,
-                  offset: 0,
-                  limit: 10,
-                },
-              },
-            },
+  const pageWindow = () => ({
+    type: 'page_response',
+    data: {
+      page: HilosPages.MAINTENANCE_CIRCLE,
+      payload: {
+        windows: {
+          [CIRCLE_TABLE]: {
+            rows: rows.map(wireRow),
+            totalCount: rows.length,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+            offset: 0,
+            limit: 10,
           },
-        })
-      }
+        },
+      },
     },
+  })
+  const connection = {
+    registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(page: string, tableKey: string): boolean {
@@ -243,6 +240,7 @@ function seededContext(
         stateListeners.add(
           listener as (signal: { type: string; data: unknown }) => void,
         )
+        listener(pageWindow())
 
         return () =>
           stateListeners.delete(

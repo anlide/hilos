@@ -83,6 +83,9 @@ use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
@@ -95,6 +98,8 @@ use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
@@ -1005,6 +1010,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
         foreach ([
             LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
+            LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class,
             LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
@@ -1015,6 +1021,18 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([], LegalDocumentsPage::ACTIONS);
         $this->assertSame([], LegalDocumentsPage::SIGNALS);
         $this->assertSame([], LegalDocumentsPage::READING_ACTIONS);
+        foreach ([
+            LegalDocumentSetPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_SET,
+            LegalDocumentDeviationsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_DEVIATIONS,
+            LegalDocumentRevisionsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_REVISIONS,
+        ] as $page => $signal) {
+            $this->assertSame([BrowserConfigKey::SIGNAL => $signal], $page::BROWSER);
+            $this->assertSame([], $page::ACTIONS);
+            $this->assertSame([], $page::SIGNALS);
+            $this->assertSame([], $page::READING_ACTIONS);
+        }
+        $this->assertSame(HilosLegalDocumentSetTable::class, Hilos::TABLES[ChatTableContext::hilosLegalDocumentSet]);
+        $this->assertSame(HilosLegalDocumentDeviationsTable::class, Hilos::TABLES[ChatTableContext::hilosLegalDocumentDeviations]);
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
@@ -1027,7 +1045,10 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatTableContext::hilosLegalDocuments => [],
             ChatTableContext::hilosLegalSettings => [],
         ], Hilos::PAGE_TABLES[LegalDocumentsPage::PAGE]);
-        $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalDocumentSet => []], Hilos::PAGE_TABLES[LegalDocumentSetPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalDocumentDeviations => []], Hilos::PAGE_TABLES[LegalDocumentDeviationsPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentRevisionsPage::PAGE]);
         $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
         $this->assertSame([ChatTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
         $this->assertSame([ChatTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
@@ -1243,6 +1264,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_APPEARANCE,
             HilosPageConstants::HILOS_BACKUP,
             HilosPageConstants::HILOS_LEGAL,
+            HilosPageConstants::HILOS_LEGAL_DOCUMENT,
             PageConstants::ADMIN_BOTS,
         ], array_keys($pages));
         self::assertSame([

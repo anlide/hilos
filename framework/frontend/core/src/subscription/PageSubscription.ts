@@ -63,8 +63,10 @@ export interface PageSubscriptionConnection {
     event: K,
     listener: (payload: PageSubscriptionEventMap[K]) => void,
   ): () => void
-  forgetPageFrames(): void
-  tableWindowDescriptors(): Record<string, TableViewportDescriptor>
+  forgetPageFrames(retainTableWindows?: boolean): void
+  tableWindowDescriptors(
+    opening?: boolean,
+  ): Record<string, TableViewportDescriptor>
   /** Older connection ports can omit the local window request lifecycle. */
   resetTableWindowRequests?(): void
   /** Older connection ports can omit the local table presentation boundary. */
@@ -384,14 +386,18 @@ export class PageSubscription {
    * nothing changes for it. The frames the connection holds are dropped with it,
    * for the same reason: they too were decided for circumstances that are gone.
    *
+   * An opted-in table keeps only its window controls in the existing connection
+   * registration, so a replacement view can consume the server's held window.
+   * Capture them before publishing loading: a view adapter may unmount at once.
+   *
    * No frame is sent. The subscription is already live and the server re-decides
    * it on its own; asking again from here would mean the judged party initiates
    * the verdict.
    */
   awaitPageAnswer(): void {
+    this.connection.forgetPageFrames(true)
     this.pageErrorSignal.set(null)
     this.pageLoadingSignal.set(true)
-    this.connection.forgetPageFrames()
     const pageKey = this.current?.pageKey
     if (pageKey !== undefined) {
       this.scopes.openPage(pageKey)
@@ -567,14 +573,10 @@ export class PageSubscription {
       [FIELD_PAGE]: current.pageKey,
       [FIELD_PARAMS]: params,
     }
-    // The windows this tab is holding, asked of their controllers right now. On a reconnect
-    // those are the windows of the page on the screen, and reporting them is what brings the
-    // reader back to their place; on a navigation the new page's tables have not mounted yet,
-    // and whatever the page being left still has bound is reported for tables the page being
-    // entered does not declare — the server reads the map by its own bindings and passes over
-    // the rest. One rule, two scenes, and no flag saying which is which. An empty map is left
-    // out entirely, so an absent key and no windows say the same thing.
-    const windows = this.connection.tableWindowDescriptors()
+    // A new opening will mount new controllers. Opted-in tables report their route preset
+    // instead of a departing controller's search and address; reconnects keep the live window.
+    // The server checks route scope before accepting a report for a reused table key.
+    const windows = this.connection.tableWindowDescriptors(!current.prepared)
     if (Object.keys(windows).length > 0) {
       frame[FIELD_TABLE_WINDOWS] = windows
     }

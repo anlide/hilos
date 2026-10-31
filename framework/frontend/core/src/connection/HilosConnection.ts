@@ -142,6 +142,18 @@ export interface TableViewportDescriptor {
   readonly rendered?: readonly string[]
 }
 
+/** Data-free controls for a replacement mount of the same live subscription. */
+export interface TableWindowContinuation {
+  readonly current: TableViewportDescriptor
+  readonly opening: TableViewportDescriptor
+}
+
+/** One existing registration, with metadata while its page awaits a new verdict. */
+interface TableWindowRegistration {
+  source?: TableWindowDescriptorSource
+  continuation?: TableWindowContinuation
+}
+
 /**
  * Something holding a table window that can say what window it is holding.
  *
@@ -150,8 +162,12 @@ export interface TableViewportDescriptor {
  * table mounted.
  */
 export interface TableWindowDescriptorSource {
-  /** @return The window this table is holding, or null while it is holding none. */
-  descriptor(): TableViewportDescriptor | null
+  /** Report the held window, or an opted-in route preset for a new opening. */
+  descriptor(opening?: boolean): TableViewportDescriptor | null
+  /** Opt in to carrying controls, without row data, across an access wait. */
+  retainWindow?(): TableWindowContinuation | null
+  /** Restore the same subscription's controls before its answer is replayed. */
+  restoreWindow?(continuation: TableWindowContinuation): void
   /** End the local request epoch on disconnect, departure or re-subscribe. */
   resetWindowRequests?(): void
   /** Capture the live presentation before a synchronous store publication. */
@@ -433,12 +449,12 @@ export class HilosConnection {
    * window that was on the screen instead of to the first page of the set (HIL-642).
    *
    * A source rather than a stored descriptor: a window changes on every paging step, and a
-   * copy taken at bind time would be the one thing on this side that is never current. The
-   * map holds who to ask, and asks at the moment the frame goes out.
+   * copy taken at bind time would be the one thing on this side that is never current. An
+   * access wait retains only controls here until the replacement mount takes them over.
    */
   private readonly tableWindowSources = new Map<
     string,
-    TableWindowDescriptorSource
+    TableWindowRegistration
   >()
   /** A rotation held back until the wire is quiet, and the timer that stops holding it. */
   private heldRotation: SessionRotation | null = null
@@ -680,12 +696,23 @@ export class HilosConnection {
   /**
    * Drop every buffered page frame.
    *
-   * Called by the page subscription alone: the connection has no idea when a
-   * page ends, and the subscription has no idea when a frame arrives, so the
-   * two halves of the buffer's life live where each is known.
+   * An access wait keeps opted-in tables' controls in their existing registrations.
+   * Navigation and refusal discard that continuation along with the page frames.
+   *
+   * @param retainTableWindows Whether the same live subscription is being re-answered.
    */
-  forgetPageFrames(): void {
+  forgetPageFrames(retainTableWindows = false): void {
     this.pageFrames.clear()
+    for (const [key, registration] of this.tableWindowSources) {
+      registration.continuation = retainTableWindows
+        ? registration.source
+          ? (registration.source.retainWindow?.() ?? undefined)
+          : registration.continuation
+        : undefined
+      if (!registration.source && !registration.continuation) {
+        this.tableWindowSources.delete(key)
+      }
+    }
   }
 
   /** Open the connection. No-op unless currently `disconnected`. */
@@ -983,16 +1010,30 @@ export class HilosConnection {
     source: TableWindowDescriptorSource,
   ): void {
     const previous = this.tableWindowSources.get(tableKey)
-    if (previous !== source) {
-      previous?.resetWindowRequests?.()
+    if (previous?.source !== source) {
+      previous?.source?.resetWindowRequests?.()
+      if (previous?.continuation) {
+        source.restoreWindow?.(previous.continuation)
+      }
     }
-    this.tableWindowSources.set(tableKey, source)
+    this.tableWindowSources.set(tableKey, { source })
+  }
+
+  /** Consume an access wait only when its still-mounted table accepts the page answer. */
+  clearTableWindowContinuation(
+    tableKey: string,
+    source: TableWindowDescriptorSource,
+  ): void {
+    const registration = this.tableWindowSources.get(tableKey)
+    if (registration?.source === source) {
+      registration.continuation = undefined
+    }
   }
 
   /** Cancel tracked asks before a new socket or subscription answers the held windows. */
   resetTableWindowRequests(): void {
-    for (const source of this.tableWindowSources.values()) {
-      source.resetWindowRequests?.()
+    for (const { source } of this.tableWindowSources.values()) {
+      source?.resetWindowRequests?.()
     }
   }
 
@@ -1010,7 +1051,9 @@ export class HilosConnection {
     change: TablePresentationChange,
     update: () => T,
   ): T {
-    const sources = [...this.tableWindowSources.values()]
+    const sources = [...this.tableWindowSources.values()].flatMap(
+      ({ source }) => (source ? [source] : []),
+    )
     const enter = (index: number): T => {
       const source = sources[index]
       if (source === undefined) {
@@ -1026,7 +1069,7 @@ export class HilosConnection {
   }
 
   /**
-   * Drop one table's window from the report — its view has unmounted and holds nothing.
+   * Drop the mounted source. An access wait keeps only its data-free continuation.
    *
    * @param tableKey The table key to drop.
    * @param source The departing mount, when supplied; a replacement keeps its registration.
@@ -1036,11 +1079,17 @@ export class HilosConnection {
     source?: TableWindowDescriptorSource,
   ): void {
     const current = this.tableWindowSources.get(tableKey)
-    if (source !== undefined && current !== source) {
+    if (source !== undefined && current?.source !== source) {
       return
     }
-    current?.resetWindowRequests?.()
-    this.tableWindowSources.delete(tableKey)
+    current?.source?.resetWindowRequests?.()
+    if (current?.continuation) {
+      this.tableWindowSources.set(tableKey, {
+        continuation: current.continuation,
+      })
+    } else {
+      this.tableWindowSources.delete(tableKey)
+    }
   }
 
   /**
@@ -1050,13 +1099,19 @@ export class HilosConnection {
    * its own size or order yet, and the honest answer for it is the cold entry, where the
    * table's own backend declaration says what its first window is.
    *
+   * @param opening Whether a new page mount will consume the answer, rather than the held controllers.
    * @return One descriptor per table currently holding a window, by table key.
    */
-  tableWindowDescriptors(): Record<string, TableViewportDescriptor> {
+  tableWindowDescriptors(
+    opening = false,
+  ): Record<string, TableViewportDescriptor> {
     const descriptors: Record<string, TableViewportDescriptor> = {}
-    for (const [tableKey, source] of this.tableWindowSources) {
-      const descriptor = source.descriptor()
-      if (descriptor !== null) {
+    for (const [tableKey, { source, continuation }] of this
+      .tableWindowSources) {
+      const descriptor = source
+        ? source.descriptor(opening)
+        : continuation?.[opening ? 'opening' : 'current']
+      if (descriptor != null) {
         const held = { ...descriptor }
         delete held.requestId
         descriptors[tableKey] = held

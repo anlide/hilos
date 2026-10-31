@@ -98,6 +98,71 @@ function mountTable(controller: TableViewportController<unknown>) {
 }
 
 describe('HilosViewportTable', () => {
+  it('keeps sorting unavailable until subscription metadata arrives', async () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<unknown>({
+      resolve: (row) => ({ name: String(row.slots.name) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+      initialFilterInSubscription: true,
+      frame: { title: 'List', columns: COLUMNS },
+    })
+    controller.ingestRefusal('internal_error')
+    const view = mountTable(controller)
+    try {
+      expect(
+        (
+          view.get('[data-id="hilos-table-sort-name"]')
+            .element as HTMLButtonElement
+        ).disabled,
+      ).toBe(true)
+      expect(
+        view.get('[data-id="hilos-table-unavailable-hint"]').text(),
+      ).toContain('Table controls will be available when the list loads.')
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'Alice' } }],
+        100,
+        true,
+        null,
+        null,
+        37,
+      )
+      await nextTick()
+      expect(
+        (
+          view.get('[data-id="hilos-table-sort-name"]')
+            .element as HTMLButtonElement
+        ).disabled,
+      ).toBe(true)
+      expect(view.find('[data-id="hilos-table-next"]').exists()).toBe(false)
+      controller.ingestSubscriptionWindow(
+        [{ rowKey: 'a', slots: { name: 'Alice' } }],
+        100,
+        true,
+        null,
+        null,
+        37,
+        undefined,
+        [],
+      )
+      await nextTick()
+      expect(
+        (
+          view.get('[data-id="hilos-table-sort-name"]')
+            .element as HTMLButtonElement
+        ).disabled,
+      ).toBe(false)
+      expect(sent).toEqual([])
+      await view.get('[data-id="hilos-table-sort-name"]').trigger('click')
+      expect(sent.at(-1)).toMatchObject({
+        limit: 37,
+        sort: [{ field: 'name', direction: 'asc' }],
+      })
+    } finally {
+      view.unmount()
+      controller.dispose()
+    }
+  })
+
   it('renders a row per window row through the cell slot', () => {
     const { controller } = makeController()
     controller.ingestWindow(

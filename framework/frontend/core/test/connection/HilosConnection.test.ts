@@ -651,6 +651,163 @@ describe('action send', () => {
 })
 
 describe('table viewport send', () => {
+  it.each(['immediate', 'delayed', 'none'])(
+    'retains controls through an adapter access wait (unmount: %s)',
+    (unmount) => {
+      const { connection } = createConnection({
+        projectSchemas: PAGE_SIGNAL_SCHEMAS,
+      })
+      const scopes = new ScopeManager()
+      const pages = bindPageScope(connection, scopes)
+      connection.connect()
+      const socket = MockWebSocket.last
+      socket.open()
+      pages.subscribe('p')
+      pages.releaseOnSession()
+      const create = () =>
+        new TableViewportController({
+          resolve: (row) => row,
+          sendViewport: (descriptor) =>
+            connection.sendTableViewport('p', 't', descriptor),
+          initialFilter: { document: 'terms' },
+          initialFilterInSubscription: true,
+          frame: { columns: [] },
+        })
+      const controller = create()
+      const unbind = bindTableViewport(
+        connection,
+        scopes,
+        { page: 'p', tableKey: 't' },
+        controller,
+      )
+      const answer = () =>
+        socket.message(
+          JSON.stringify({
+            type: 'page_response',
+            data: {
+              page: 'p',
+              payload: {
+                windows: {
+                  t: {
+                    rows: [],
+                    totalCount: 0,
+                    totalExact: true,
+                    limit: 10,
+                    sort: [],
+                    firstAnchor: null,
+                    lastAnchor: null,
+                    rowsBefore: 0,
+                  },
+                },
+              },
+            },
+          }),
+        )
+      answer()
+      controller.setSearch('desired')
+      const stopLoading = subscribeSignal(pages.pageLoading, (loading) => {
+        if (loading && unmount === 'immediate') {
+          unbind()
+          controller.dispose()
+        }
+      })
+      const before = socket.sent.length
+      pages.awaitPageAnswer()
+      expect(socket.sent).toHaveLength(before)
+      if (unmount === 'delayed') {
+        // A late response for another page is rejected by both scope and table
+        // binders. It must not consume this live subscription's access wait.
+        socket.message(
+          JSON.stringify({
+            type: 'page_response',
+            data: {
+              page: 'left',
+              payload: {
+                windows: {
+                  t: {
+                    rows: [],
+                    totalCount: 0,
+                    totalExact: true,
+                    limit: 10,
+                    sort: [],
+                    firstAnchor: null,
+                    lastAnchor: null,
+                    rowsBefore: 0,
+                  },
+                },
+              },
+            },
+          }),
+        )
+        unbind()
+        controller.dispose()
+      }
+      answer()
+      if (unmount !== 'none') {
+        const replacement = create()
+        const release = bindTableViewport(
+          connection,
+          scopes,
+          { page: 'p', tableKey: 't' },
+          replacement,
+        )
+        expect(replacement.search.get()).toBe('desired')
+        expect(replacement.frame.body.get()).toBe('empty_filtered')
+        expect(socket.sent).toHaveLength(before)
+        release()
+        replacement.dispose()
+      } else {
+        expect(controller.search.get()).toBe('desired')
+        unbind()
+        controller.dispose()
+      }
+      // A surviving mount consumes the wait too; an ordinary later unmount
+      // must leave no controls for an unrelated replacement to revive.
+      expect(connection.tableWindowDescriptors()).toEqual({})
+      stopLoading()
+      pages.unsubscribe()
+      connection.close()
+    },
+  )
+
+  it('keeps legacy controllers outside access-wait retention', () => {
+    const { connection } = createConnection()
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes)
+    pages.subscribe('p')
+    const controller = new TableViewportController({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      frame: { columns: [] },
+    })
+    const release = bindTableViewport(
+      connection,
+      scopes,
+      { page: 'p', tableKey: 't' },
+      controller,
+    )
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    controller.setSearch('legacy')
+    expect(connection.tableWindowDescriptors().t?.filter).toEqual({
+      search: 'legacy',
+    })
+    pages.awaitPageAnswer()
+    release()
+    controller.dispose()
+    expect(connection.tableWindowDescriptors()).toEqual({})
+    pages.unsubscribe()
+    connection.close()
+  })
+
   it('applies only its tracked response in an ordered batch and recovers the desired window on a new socket', () => {
     const { connection } = createConnection({
       projectSchemas: PAGE_SIGNAL_SCHEMAS,

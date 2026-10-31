@@ -62,6 +62,8 @@ export const LEGAL_REVISION_FILTER = 'revision'
 export const HilosLegalTableKey = {
   documents: 'hilosLegalDocuments',
   checks: 'hilosLegalChecks',
+  documentSet: 'hilosLegalDocumentSet',
+  documentDeviations: 'hilosLegalDocumentDeviations',
   revisions: 'hilosLegalRevisions',
   acceptances: 'hilosLegalAcceptances',
   settings: 'hilosLegalSettings',
@@ -72,6 +74,15 @@ export const HilosLegalRowKey = {
   rowKey: 'rowKey',
   documentLabel: 'documentLabel',
   publishedOn: 'publishedOn',
+  effectiveOn: 'effectiveOn',
+  significance: 'significance',
+  setVersion: 'setVersion',
+  clauseKey: 'clauseKey',
+  statement: 'statement',
+  standardStatement: 'standardStatement',
+  text: 'text',
+  direction: 'direction',
+  position: 'position',
   declared: 'declared',
   revision: 'revision',
   covered: 'covered',
@@ -204,6 +215,11 @@ export const legalCatalogRefusalSchema = z.string().nullable()
 export const legalAdminDocumentSchema = z.looseObject({
   document: z.string(),
   declared: z.boolean(),
+  covered: z.number().int().nonnegative(),
+  window: z.number().int().nonnegative(),
+  lapsed: z.number().int().nonnegative(),
+  standardSetCatalogClass: z.string(),
+  projectCatalogClass: z.string().nullable(),
   revision: legalRevisionSchema.nullable(),
   set: legalStandardSetSchema.nullable(),
   newerSet: z
@@ -230,6 +246,23 @@ export const legalAdminRevisionSchema = z.looseObject({
 export type HilosLegalAdminDocument = z.infer<typeof legalAdminDocumentSchema>
 export type HilosLegalAdminRevision = z.infer<typeof legalAdminRevisionSchema>
 
+/**
+ * Reads the common document data of all four document pages. Undefined means
+ * the page has not supplied it; null or malformed data clears the last value.
+ * A catalog refusal remains in `LEGAL_CATALOG_REFUSAL_SECTION`.
+ */
+export function createHilosLegalDocument(
+  context: HilosLegalContext,
+): ReadonlySignal<HilosLegalAdminDocument | null | undefined> {
+  const source = context.scopes.pageDataSignal(LEGAL_DOCUMENT_SECTION)
+  return computedSignal(() => {
+    const value = source.get()
+    if (value === undefined) return undefined
+    const parsed = legalAdminDocumentSchema.safeParse(value)
+    return parsed.success ? parsed.data : null
+  })
+}
+
 export interface HilosLegalDocumentRow {
   readonly rowKey: string
   readonly documentLabel: string
@@ -245,10 +278,28 @@ export interface HilosLegalCheckRow {
   readonly ok: boolean
   readonly items: readonly Record<string, unknown>[]
 }
+export interface HilosLegalDocumentSetRow {
+  readonly rowKey: string
+  readonly clauseKey: string
+  readonly statement: string
+  readonly position: number
+}
+export interface HilosLegalDocumentDeviationRow extends HilosLegalDocumentSetRow {
+  readonly standardStatement: string
+  readonly text: string
+  /** Unknown only when the received direction is malformed. */
+  readonly direction: 'stricter' | 'looser' | null
+}
 export interface HilosLegalRevisionRow {
   readonly rowKey: string
   readonly declared: boolean
   readonly revision: HilosLegalRevision | null
+  /** Calendar dates, unchanged by the reader's time zone. */
+  readonly publishedOn: string | null
+  readonly effectiveOn: string | null
+  /** Projected from nullable revision metadata, never from a placeholder. */
+  readonly significance: HilosLegalRevision['significance'] | null
+  readonly setVersion: number | null
   readonly current: boolean
   readonly origin: string | null
   readonly heldCount: number
@@ -323,15 +374,52 @@ export function resolveHilosLegalCheckRow(row: TableRow): HilosLegalCheckRow {
   }
 }
 
+/** Resolves a clause in the adopted standard set, preserving catalog order. */
+export function resolveHilosLegalDocumentSetRow(
+  row: TableRow,
+): HilosLegalDocumentSetRow {
+  const slot = slotOf(row, 'clause')
+  return {
+    rowKey: String(row.rowKey),
+    clauseKey: readString(slot, HilosLegalRowKey.clauseKey),
+    statement: readString(slot, HilosLegalRowKey.statement),
+    position: readNumber(slot, HilosLegalRowKey.position),
+  }
+}
+
+/** Resolves the project's deviation beside the adopted standard statement. */
+export function resolveHilosLegalDocumentDeviationRow(
+  row: TableRow,
+): HilosLegalDocumentDeviationRow {
+  const slot = slotOf(row, 'deviation')
+  const direction = legalDeviationSchema.shape.direction.safeParse(
+    slot[HilosLegalRowKey.direction],
+  )
+  return {
+    rowKey: String(row.rowKey),
+    clauseKey: readString(slot, HilosLegalRowKey.clauseKey),
+    statement: readString(slot, HilosLegalRowKey.statement),
+    position: readNumber(slot, HilosLegalRowKey.position),
+    standardStatement: readString(slot, HilosLegalRowKey.standardStatement),
+    text: readString(slot, HilosLegalRowKey.text),
+    direction: direction.success ? direction.data : null,
+  }
+}
+
 /** Resolves a declared or historical revision and both server-computed counts. */
 export function resolveHilosLegalRevisionRow(
   row: TableRow,
 ): HilosLegalRevisionRow {
   const slot = slotOf(row, 'revision')
+  const revision = revisionOf(slot)
   return {
     rowKey: String(row.rowKey),
     declared: readBoolean(slot, HilosLegalRowKey.declared),
-    revision: revisionOf(slot),
+    revision,
+    publishedOn: readStringOrNull(slot, HilosLegalRowKey.publishedOn),
+    effectiveOn: readStringOrNull(slot, HilosLegalRowKey.effectiveOn),
+    significance: revision?.significance ?? null,
+    setVersion: revision?.setVersion ?? null,
     current: readBoolean(slot, HilosLegalRowKey.current),
     origin: readStringOrNull(slot, HilosLegalRowKey.origin),
     heldCount: readNumber(slot, HilosLegalRowKey.heldCount),
@@ -501,6 +589,7 @@ function tableFor<R>(
                 ? { [LEGAL_REVISION_FILTER]: revisionId.get() }
                 : {}),
             },
+            initialFilterInSubscription: true,
           }
         : {}),
       frame,
@@ -646,6 +735,61 @@ export function createHilosLegalChecksTable(
   )
 }
 
+/** The adopted standard set, searched and ordered on the server. */
+export function createHilosLegalDocumentSetTable(
+  context: HilosLegalContext,
+  document: ReadonlySignal<string>,
+): HilosLegalTable<HilosLegalDocumentSetRow> {
+  const columns: HilosTableColumnOf<HilosLegalDocumentSetRow>[] = [
+    { key: HilosLegalRowKey.clauseKey, label: 'Clause', sortable: true },
+    { key: HilosLegalRowKey.statement, label: 'Statement', sortable: true },
+  ]
+  return tableFor(
+    context,
+    HilosPages.LEGAL_DOCUMENT_SET,
+    HilosLegalTableKey.documentSet,
+    resolveHilosLegalDocumentSetRow,
+    {
+      columns,
+      search: { placeholder: 'Clause or statement' },
+      empty: { title: 'No adopted standard set.' },
+    },
+    document,
+  )
+}
+
+/** The current revision's deviations from its adopted standard set. */
+export function createHilosLegalDocumentDeviationsTable(
+  context: HilosLegalContext,
+  document: ReadonlySignal<string>,
+): HilosLegalTable<HilosLegalDocumentDeviationRow> {
+  const columns: HilosTableColumnOf<HilosLegalDocumentDeviationRow>[] = [
+    {
+      key: HilosLegalRowKey.statement,
+      label: 'Deviation',
+      reads: [HilosLegalRowKey.text, HilosLegalRowKey.standardStatement],
+    },
+    { key: HilosLegalRowKey.direction, label: 'Direction', sortable: true },
+    {
+      key: HilosLegalRowKey.clauseKey,
+      label: 'Standard clause',
+      sortable: true,
+    },
+  ]
+  return tableFor(
+    context,
+    HilosPages.LEGAL_DOCUMENT_DEVIATIONS,
+    HilosLegalTableKey.documentDeviations,
+    resolveHilosLegalDocumentDeviationRow,
+    {
+      columns,
+      search: { placeholder: 'Statement, text or clause' },
+      empty: { title: 'No project deviations are declared.' },
+    },
+    document,
+  )
+}
+
 /** Revision history on either the document page or an individual revision page. */
 export function createHilosLegalRevisionsTable(
   context: HilosLegalContext,
@@ -653,12 +797,43 @@ export function createHilosLegalRevisionsTable(
   page: string = HilosPages.LEGAL_DOCUMENT,
   revisionId?: ReadonlySignal<string>,
 ): HilosLegalTable<HilosLegalRevisionRow> {
+  const columns: HilosTableColumnOf<HilosLegalRevisionRow>[] = [
+    {
+      key: HilosLegalRowKey.publishedOn,
+      label: 'Revision',
+      sortable: true,
+      reads: [
+        HilosLegalRowKey.rowKey,
+        HilosLegalRowKey.current,
+        HilosLegalRowKey.declared,
+      ],
+    },
+    {
+      key: HilosLegalRowKey.significance,
+      label: 'Significance',
+      reads: [HilosLegalRowKey.revision],
+    },
+    { key: HilosLegalRowKey.effectiveOn, label: 'Effective', sortable: true },
+    {
+      key: HilosLegalRowKey.setVersion,
+      label: 'Set',
+      reads: [HilosLegalRowKey.revision],
+    },
+    { key: HilosLegalRowKey.heldCount, label: 'Held by', sortable: true },
+    {
+      key: HILOS_TABLE_ACTIONS_KEY,
+      label: '',
+      reads: [HilosLegalRowKey.rowKey],
+    },
+  ]
   return tableFor(
     context,
     page,
     HilosLegalTableKey.revisions,
     resolveHilosLegalRevisionRow,
-    { title: 'Revisions', columns: REVISION_COLUMNS },
+    page === HilosPages.LEGAL_DOCUMENT_REVISIONS
+      ? { columns, search: { placeholder: 'Revision or publication date' } }
+      : { title: 'Revisions', columns: REVISION_COLUMNS },
     document,
     revisionId,
   )

@@ -94,10 +94,8 @@ final class PageCatalogResolverTest extends TestCase
                 ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
             ], $head->pageTabs);
         }
-        foreach ([HilosPageConstants::HILOS_LEGAL_DOCUMENT, HilosPageConstants::HILOS_LEGAL_REVISION] as $page) {
-            self::assertSame($page, PageCatalogResolver::rowOwner($page));
-            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams([])));
-        }
+        self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_LEGAL_REVISION));
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION, new PageRouteParams([])));
 
         Hilos::$sr = $this->createStub(SignalRouter::class);
         Hilos::$sr->method('servesPage')->willReturnCallback(static fn (string $page): bool => $page !== HilosPageConstants::HILOS_LEGAL_DOCUMENTS);
@@ -106,6 +104,50 @@ final class PageCatalogResolverTest extends TestCase
             ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
             ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
         ], PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL, new PageRouteParams([]))->pageTabs);
+    }
+
+    /** Chat adopts only the Document owner and its four pages beside the Legal section. */
+    public function testDocumentHeadSharesFourTabsAndKeepsRevisionAsAnIndependentEntity(): void
+    {
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            ChatPageCatalog::pages()[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
+        );
+        ChatLegalPageHeadTestHilos::initBrowser();
+        $tabs = [
+            ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET, 'label' => 'Standard set'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS, 'label' => 'Deviations'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS, 'label' => 'Revisions'],
+        ];
+        foreach (array_column($tabs, 'page') as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams(['documentKey' => 'terms']));
+            self::assertSame(HilosPageConstants::HILOS_LEGAL_DOCUMENT, PageCatalogResolver::rowOwner($page));
+            self::assertSame([
+                'page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+                'label' => 'Document',
+                'lead' => 'The standard set, project deviations, and declared revisions.',
+                'icon' => 'bi-file-earmark-text',
+            ], $head->pageHeadOwner);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Legal'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENTS, 'label' => 'Documents'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT, 'label' => 'Document'],
+            ], $head->pageBreadcrumb);
+            self::assertSame($tabs, $head->pageTabs);
+        }
+        self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_LEGAL_REVISION));
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION, new PageRouteParams([])));
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(
+            static fn (string $page): bool => $page !== HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS,
+        );
+        self::assertSame([$tabs[0], $tabs[1], $tabs[3]],
+            PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_DOCUMENT, new PageRouteParams([]))->pageTabs);
     }
 
     public function testLegalFrameworkAndExistingProvidersKeepTheirLegacyHead(): void
@@ -3064,16 +3106,13 @@ abstract class LegacyLegalPageHeadTestHilos extends Hilos
         HilosPageConstants::HILOS_LEGAL => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_DOCUMENTS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_DOCUMENT => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_REVISION => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_SETTINGS => PageHeadTestPage::class,
     ];
-}
-
-/** Future owner adoption exercised without enabling a project route or view. */
-abstract class LegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
-{
-    protected const string PAGE_CATALOG = LegalPageHeadTestCatalog::class;
 }
 
 /** Existing React provider remains unadopted. */
@@ -3088,28 +3127,10 @@ abstract class PollsLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
     protected const string PAGE_CATALOG = PollsPageCatalog::class;
 }
 
-/** Chat adopts the Legal section without adopting its nested entities. */
+/** Chat adopts Legal and Document while Revision keeps its legacy head. */
 abstract class ChatLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = ChatPageCatalog::class;
-}
-
-final class LegalPageHeadTestCatalog implements PageCatalogProviderInterface
-{
-    /** @return array<string, array<string, mixed>> Complete Legal owner entry with local adoption */
-    public static function pages(): array
-    {
-        return [HilosPageConstants::HILOS_LEGAL => array_replace(
-            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL],
-            [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
-        )];
-    }
-
-    /** @return list<array{title: string, description: string, items: list<string>}> No additional dashboard groups */
-    public static function dashboardSections(): array
-    {
-        return [];
-    }
 }
 
 /** Registers the test profile pages without changing any product facade. */

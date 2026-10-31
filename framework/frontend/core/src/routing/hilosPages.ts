@@ -135,6 +135,9 @@ export const HilosPages = {
   LEGAL: 'hilos_legal',
   LEGAL_DOCUMENTS: 'hilos_legal_documents',
   LEGAL_DOCUMENT: 'hilos_legal_document',
+  LEGAL_DOCUMENT_SET: 'hilos_legal_document_set',
+  LEGAL_DOCUMENT_DEVIATIONS: 'hilos_legal_document_deviations',
+  LEGAL_DOCUMENT_REVISIONS: 'hilos_legal_document_revisions',
   LEGAL_REVISION: 'hilos_legal_revision',
   LEGAL_ACCEPTANCES: 'hilos_legal_acceptances',
   LEGAL_SETTINGS: 'hilos_legal_settings',
@@ -466,6 +469,18 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.LEGAL_DOCUMENT]: {
     path: '/hilos/legal/document/{documentKey}',
+    admin: true,
+  },
+  [HilosPages.LEGAL_DOCUMENT_SET]: {
+    path: '/hilos/legal/document/{documentKey}/set',
+    admin: true,
+  },
+  [HilosPages.LEGAL_DOCUMENT_DEVIATIONS]: {
+    path: '/hilos/legal/document/{documentKey}/deviations',
+    admin: true,
+  },
+  [HilosPages.LEGAL_DOCUMENT_REVISIONS]: {
+    path: '/hilos/legal/document/{documentKey}/revisions',
     admin: true,
   },
   [HilosPages.LEGAL_REVISION]: {

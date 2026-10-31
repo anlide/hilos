@@ -114,6 +114,34 @@ export async function gotoPage(
 }
 
 /**
+ * Open an in-app history destination when no visible link targets it.
+ *
+ * The mounted navigator handles popstate with its ordinary leave/subscribe
+ * cycle, while the departing controllers are still present. No document loads.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page The already mounted browser page.
+ * @param path The destination pathname on the current origin.
+ * @param expected The settled state to require, or undefined for either.
+ */
+export async function navigateByHistory(
+  expect: Expect,
+  page: Page,
+  path: string,
+  expected?: PageOutcome,
+): Promise<void> {
+  await page.evaluate((path) => {
+    window.history.pushState(null, '', path)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, path)
+  await expect(page).toHaveURL(path)
+  await expect(page.getByTestId(PAGE_STATE)).toHaveAttribute(
+    'data-state',
+    expected ?? SETTLED,
+  )
+}
+
+/**
  * Open an auth return route and wait for its relay screen to be on screen.
  *
  * A return route — `/auth/magic`, and `/auth/callback` when it is entered cold —

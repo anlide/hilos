@@ -168,4 +168,47 @@ describe('the cold entry of a table', () => {
     expect(controller.loaded.get()).toBe(true)
     expect(controller.descriptor()?.limit).toBe(10)
   })
+
+  it('keeps a legacy controller report on a new subscription without the opt-in', () => {
+    const connection = new HilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: (url) => new ScriptedSocket(url),
+      projectSchemas: PAGE_SIGNAL_SCHEMAS,
+    })
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes)
+    connection.connect()
+    ScriptedSocket.last.open()
+    pages.releaseOnSession()
+    pages.subscribe(PAGE)
+    ScriptedSocket.last.message(WINDOW_ANSWER)
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) =>
+        connection.sendTableViewport(PAGE, TABLE, descriptor),
+      frame: { columns: [{ key: 'key', label: 'Key', sortable: true }] },
+    })
+    const unbind = bindTableViewport(
+      connection,
+      scopes,
+      { page: PAGE, tableKey: TABLE },
+      controller,
+    )
+    try {
+      controller.setSearch('kept')
+      controller.setSort('key')
+      pages.subscribe(PAGE)
+      expect(JSON.parse(ScriptedSocket.last.sent.at(-1) ?? 'null')).toEqual({
+        type: 'page_subscribe',
+        page: PAGE,
+        params: {},
+        tableWindows: { [TABLE]: controller.descriptor() },
+      })
+      expect(controller.descriptor()?.filter).toEqual({ search: 'kept' })
+    } finally {
+      unbind()
+      pages.unsubscribe()
+      connection.close()
+    }
+  })
 })

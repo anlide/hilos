@@ -16,6 +16,9 @@ export const HILOS_UNBUILT_PAGES: Readonly<
 > = {
   [HilosPages.ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.LEGAL_DOCUMENTS]: ['react', 'angular'],
+  [HilosPages.LEGAL_DOCUMENT_SET]: ['react', 'angular'],
+  [HilosPages.LEGAL_DOCUMENT_DEVIATIONS]: ['react', 'angular'],
+  [HilosPages.LEGAL_DOCUMENT_REVISIONS]: ['react', 'angular'],
   [HilosPages.USER_ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.USER_ACCESS]: ['vue', 'react', 'angular'],
   [HilosPages.USER_SESSIONS]: ['vue', 'react', 'angular'],

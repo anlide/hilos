@@ -121,6 +121,8 @@ abstract class LegalAdminTestHilos extends Hilos
 final class LegalAdminReadProbe
 {
     public int $reads = 0;
+    /** @var list<string> Recorded document keys */
+    public array $documents = ['terms'];
     public array $held = ['first' => 3, 'current' => 2];
     public array $accepted = ['first' => 5, 'current' => 2, 'gone' => 1];
     public int $revisionReads = 0;
@@ -137,7 +139,7 @@ final class LegalAdminReadProbe
     public function documentsOnRecord(): array
     {
         $this->reads++;
-        return ['terms'];
+        return $this->documents;
     }
 
     /**

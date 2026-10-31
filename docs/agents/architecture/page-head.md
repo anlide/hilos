@@ -60,10 +60,13 @@ framework catalog's opt-in. Its only page is Overview, so the tab row stays
 hidden and no child cards are drawn.
 Legal is opted into the shared section head only by Chat's Vue provider. Its
 Overview / Documents / Acceptances / Settings pages share the Legal row.
-Document and Revision remain catalog entities (`entity: true`) without their
-own page-head adoption; Revision remains a child of Document. The framework
-catalog default, Tasks (React) and Polls (Angular) retain their existing
-composition pending parity.
+Chat's Vue provider also opts Document into the shared entity head. Document is
+an entity child of Documents; its Overview / Standard set / Deviations /
+Revisions pages share one head and link row. Revision remains a separate entity
+child of Document without its own head adoption; that redraw belongs to HIL-1666.
+The framework catalog default, Tasks (React) and Polls (Angular) retain their
+existing composition. The three new Document tabs remain unbuilt in React
+(HIL-1854) and Angular (HIL-1855).
 
 ## Core Rule And Ownership
 

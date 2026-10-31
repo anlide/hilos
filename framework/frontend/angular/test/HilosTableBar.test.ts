@@ -175,6 +175,112 @@ function orderItems(fixture: ComponentFixture<unknown>): HTMLElement[] {
 }
 
 describe('HilosTableBar', () => {
+  it.each([false, true])(
+    'disables unknown subscription controls until recovery, bulk: %s',
+    (bulk) => {
+      const sent: TableViewportDescriptor[] = []
+      const controller = new TableViewportController<unknown>({
+        resolve: (row) => row,
+        sendViewport: (descriptor) => sent.push(descriptor),
+        initialFilter: { document: 'terms', unread: true },
+        initialFilterInSubscription: true,
+        frame: {
+          columns: [{ key: 'name', label: 'Name', sortable: true }],
+          search: {},
+          filters: [
+            {
+              kind: 'select',
+              key: 'state',
+              label: 'State',
+              options: () => [{ value: 'up', label: 'Up' }],
+            },
+            { kind: 'toggle', key: 'unread', label: 'Unread only', on: true },
+            {
+              kind: 'date_range',
+              fromKey: 'from',
+              toKey: 'to',
+              label: 'Period',
+            },
+          ],
+          mainAction: { label: 'Create', press: vi.fn() },
+          ...(bulk
+            ? {
+                bulkActions: [
+                  {
+                    key: 'archive',
+                    label: 'Archive',
+                    refusalTitle: 'Cannot archive',
+                    run: vi.fn(),
+                  },
+                ],
+              }
+            : {}),
+        },
+      })
+      controller.ingestRefusal('internal_error')
+      const fixture = mountBar(controller)
+      try {
+        for (const selector of [
+          '[data-id="hilos-table-search"]',
+          '[data-id="hilos-table-filter-unread"]',
+          '[data-id="hilos-table-filter-from"]',
+          '[data-id="hilos-table-filter-state"] [data-id="hilos-dropdown-toggle"]',
+          '[data-id="hilos-table-order"] [data-id="hilos-dropdown-toggle"]',
+          '[data-id="hilos-table-filter-reset"]',
+          '[data-id="hilos-table-filters-open"]',
+        ]) {
+          expect(
+            (fixture.nativeElement.querySelector(selector) as HTMLButtonElement)
+              .disabled,
+          ).toBe(true)
+        }
+        expect(
+          (byId(fixture, 'hilos-table-main-action') as HTMLButtonElement)
+            .disabled,
+        ).toBe(false)
+        expect(controller.filter.get()).toEqual({
+          document: 'terms',
+          unread: true,
+        })
+        expect(sent).toEqual([])
+        controller.ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          37,
+          undefined,
+          [],
+        )
+        fixture.detectChanges()
+        for (const selector of [
+          '[data-id="hilos-table-search"]',
+          '[data-id="hilos-table-filter-unread"]',
+          '[data-id="hilos-table-filter-from"]',
+          '[data-id="hilos-table-filter-state"] [data-id="hilos-dropdown-toggle"]',
+          '[data-id="hilos-table-order"] [data-id="hilos-dropdown-toggle"]',
+          '[data-id="hilos-table-filter-reset"]',
+          '[data-id="hilos-table-filters-open"]',
+        ]) {
+          expect(
+            (fixture.nativeElement.querySelector(selector) as HTMLButtonElement)
+              .disabled,
+          ).toBe(false)
+        }
+        type(fixture, 'hilos-table-search', 'retention')
+        expect(sent.at(-1)).toMatchObject({
+          filter: { document: 'terms', unread: true, search: 'retention' },
+          limit: 37,
+          sort: null,
+        })
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    },
+  )
+
   it('shows the declared title and subtitle, the title carrying the given id', () => {
     const { controller } = makeController({
       title: 'Backups',

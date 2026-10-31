@@ -6,8 +6,12 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Hilos;
+use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
@@ -39,6 +43,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\Legal\StandardSetCatalog;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentPage;
 use Hilos\Pages\Legal\AbstractHilosLegalPage;
 use Hilos\Pages\Legal\AbstractHilosLegalRevisionPage;
@@ -252,55 +257,58 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
         Hilos::$setting = new SettingsAccessor(HiddenLegalPolicyCatalog::class);
         try {
             foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-                $frames = $this->subscribe(LegalDocumentsPage::class, [], $acceptKey);
-                $settingsRows = $this->window($frames, ChatTableContext::hilosLegalSettings)['rows'];
-                $policyRows = array_values(array_filter($settingsRows, static fn (array $row): bool =>
-                    $row[BrowserPageSignalData::rowKey] === LegalSettings::REFUSAL_KEY));
-                self::assertCount(1, $policyRows);
-                $policy = reset($policyRows[0][PagePayload::slots]);
-                self::assertTrue(HiddenValue::isMark($policy[HilosLegalSettingsTableRow::value]));
-                self::assertTrue(HiddenValue::isMark($policy[HilosLegalSettingsTableRow::defaultValue]));
-                $wire = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
-                self::assertStringNotContainsString('freeze', $wire);
-                self::assertStringNotContainsString('Frozen', $wire);
-                self::assertStringNotContainsString('Past deadline', $wire);
+                foreach ([LegalDocumentsPage::class => [], LegalDocumentPage::class => ['documentKey' => self::TERMS_DOCUMENT]]
+                    as $page => $params) {
+                    $frames = $this->subscribe($page, $params, $acceptKey);
+                    $settingsRows = $this->window($frames, ChatTableContext::hilosLegalSettings)['rows'];
+                    $policyRows = array_values(array_filter($settingsRows, static fn (array $row): bool =>
+                        $row[BrowserPageSignalData::rowKey] === LegalSettings::REFUSAL_KEY));
+                    self::assertCount(1, $policyRows);
+                    $policy = reset($policyRows[0][PagePayload::slots]);
+                    self::assertTrue(HiddenValue::isMark($policy[HilosLegalSettingsTableRow::value]));
+                    self::assertTrue(HiddenValue::isMark($policy[HilosLegalSettingsTableRow::defaultValue]));
+                    $wire = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
+                    self::assertStringNotContainsString('freeze', $wire);
+                    self::assertStringNotContainsString('Frozen', $wire);
+                    self::assertStringNotContainsString('Past deadline', $wire);
+                }
             }
         } finally {
             Hilos::$setting = $settings;
         }
     }
 
-    /**
-     * A viewer receives the document page with code catalog declarations, deviations, and unmasked revisions.
-     */
-    public function testAViewerSeesTheLegalDocumentPageWithCatalogDeclarationsAndRevisions(): void
+    /** All document tabs expose catalog metadata and aggregates without personal values. */
+    public function testAViewerSeesAllDocumentTabsWithTheirReadonlyWindows(): void
     {
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $frames = $this->subscribe(
-                LegalDocumentPage::class,
-                [HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT],
-                $acceptKey,
-                [
-                    ChatTableContext::hilosLegalRevisions => new TableWindowDescriptorDTO(
-                        limit: TableConstants::NO_LIMIT,
-                        filter: [HilosLegalRevisionsTable::FILTER_DOCUMENT => self::TERMS_DOCUMENT],
-                    ),
-                ],
-            );
-            $pageData = $this->pagePayload($frames)[PagePayload::data];
-            $document = $pageData[AbstractHilosLegalDocumentPage::SECTION];
-            self::assertFalse(HiddenValue::isMark($document));
-            self::assertSame(1, $document['set']['version']);
-            self::assertCount(4, $document['deviations']);
-
-            $revRows = $this->window($frames, ChatTableContext::hilosLegalRevisions)[TableWindowSignalData::rows];
-            self::assertNotEmpty($revRows);
-            foreach ($revRows as $revRow) {
-                self::assertCount(1, $revRow[PagePayload::slots]);
-                $revSlot = reset($revRow[PagePayload::slots]);
-                foreach ($revSlot as $val) {
-                    self::assertFalse(HiddenValue::isMark($val));
+            foreach ([
+                LegalDocumentPage::class => ChatTableContext::hilosLegalSettings,
+                LegalDocumentSetPage::class => ChatTableContext::hilosLegalDocumentSet,
+                LegalDocumentDeviationsPage::class => ChatTableContext::hilosLegalDocumentDeviations,
+                LegalDocumentRevisionsPage::class => ChatTableContext::hilosLegalRevisions,
+            ] as $page => $table) {
+                $frames = $this->subscribe($page, ['documentKey' => self::TERMS_DOCUMENT], $acceptKey);
+                $payload = $this->pagePayload($frames);
+                $document = $payload[PagePayload::data][AbstractHilosLegalDocumentPage::SECTION];
+                self::assertFalse(HiddenValue::isMark($document));
+                self::assertSame(1, $document['set']['version']);
+                self::assertCount(4, $document['deviations']);
+                self::assertSame([1, 0, 0], [$document['covered'], $document['window'], $document['lapsed']]);
+                self::assertSame(StandardSetCatalog::class, $document['standardSetCatalogClass']);
+                self::assertSame(LegalCatalog::class, $document['projectCatalogClass']);
+                self::assertSame([$table], array_keys($payload[PagePayload::windows]));
+                $rows = $this->window($frames, $table)[TableWindowSignalData::rows];
+                self::assertNotEmpty($rows);
+                foreach ($rows as $row) {
+                    self::assertCount(1, $row[PagePayload::slots]);
+                    foreach (reset($row[PagePayload::slots]) as $value) {
+                        self::assertFalse(HiddenValue::isMark($value));
+                    }
                 }
+                $wire = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
+                self::assertStringNotContainsString(self::TEST_USER_NAME, $wire);
+                self::assertStringNotContainsString(self::TEST_USER_EMAIL, $wire);
             }
         }
     }
@@ -440,17 +448,10 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
                 ChatTableContext::hilosLegalSettings => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
             ...$this->subscribe(LegalDocumentsPage::class, [], self::ADMIN_KEY),
-            ...$this->subscribe(
-                LegalDocumentPage::class,
-                [HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT],
-                self::ADMIN_KEY,
-                [
-                    ChatTableContext::hilosLegalRevisions => new TableWindowDescriptorDTO(
-                        limit: TableConstants::NO_LIMIT,
-                        filter: [HilosLegalRevisionsTable::FILTER_DOCUMENT => self::TERMS_DOCUMENT],
-                    ),
-                ],
-            ),
+            ...$this->subscribe(LegalDocumentPage::class, ['documentKey' => self::TERMS_DOCUMENT], self::ADMIN_KEY),
+            ...$this->subscribe(LegalDocumentSetPage::class, ['documentKey' => self::TERMS_DOCUMENT], self::ADMIN_KEY),
+            ...$this->subscribe(LegalDocumentDeviationsPage::class, ['documentKey' => self::TERMS_DOCUMENT], self::ADMIN_KEY),
+            ...$this->subscribe(LegalDocumentRevisionsPage::class, ['documentKey' => self::TERMS_DOCUMENT], self::ADMIN_KEY),
             ...$this->subscribe(
                 LegalRevisionPage::class,
                 [
@@ -519,6 +520,11 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
         array $tableWindows = [],
     ): array {
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+        $previous = Hilos::$sr->pageSubscription($acceptKey);
+        if ($previous !== null && ($previous->page !== $pageClass::PAGE || $previous->params !== $params)) {
+            Hilos::$sr->unsubscribeFromAll($acceptKey);
+            LegalAdminAudience::removeSubscriber($acceptKey);
         }
         Hilos::$sr->subscribeToPage($pageClass::PAGE, new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, $params, $tableWindows));
         if ($tableWindows !== []) {

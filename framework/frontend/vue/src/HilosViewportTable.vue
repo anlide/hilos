@@ -114,6 +114,7 @@ function mirrors() {
     rows: useSignal(controller.rows),
     order: useSignal(controller.order),
     body: useSignal(controller.frame.body),
+    controlsAvailable: useSignal(controller.windowControlsAvailable),
     pageSize: useSignal(controller.pageSize),
     rowProgress: useSignal(controller.progress.rows),
   }
@@ -213,6 +214,7 @@ const order = computed(() => current.value.order.value)
 // view layers cannot decide it three ways, and both branches below read this one
 // answer.
 const body = computed(() => current.value.body.value)
+const controlsAvailable = computed(() => current.value.controlsAvailable.value)
 const pageSize = computed(() => current.value.pageSize.value)
 
 // As many skeleton rows as the window had rows, so the height of the table does
@@ -580,6 +582,7 @@ function onSelectPage(event: Event): void {
                 type="button"
                 class="btn btn-link p-0 text-reset text-decoration-none d-inline-flex align-items-center gap-1"
                 :data-id="`hilos-table-sort-${column.key}`"
+                :disabled="!controlsAvailable"
                 @click="controller.setSort(column.key)"
               >
                 {{ column.label }}

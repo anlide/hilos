@@ -112,6 +112,38 @@ filter map for tables that need none. The window says on arrival what size and
 what order it ran at, and the controller takes both from there rather than
 holding an opinion beside the backend's.
 
+`TableViewportControllerOptions.initialFilterInSubscription?: boolean` defaults
+to `false`. With an explicit `true`, the controller consumes the first
+subscription window for its `initialFilter` without requesting it again. Legal
+opts in only for its document-scoped tables, whose backend
+`defaultFilter(PageRouteParams)` matches the client `initialFilter`. This is a
+controller option, not a wire field.
+
+For a new opening, `PageSubscription` asks `tableWindowDescriptors(true)`.
+An opted-in controller still bound on the departing page reports its initial
+filter, opening order and the start of the set, so a new controller can consume
+the answer with the same controls. The destination page discards any report
+outside its route scope before building its windows. This also applies to an
+active link opening the same page again. Legacy controllers keep reporting
+their held window. Reconnects and owner recovery use the default
+`tableWindowDescriptors()` and preserve the live controller's search, order
+and address.
+
+An access re-answer keeps the subscription live while `awaitPageAnswer()` drops
+the page scope and unmounts its view. Before publishing that wait,
+`forgetPageFrames(true)` lets an opted-in controller retain its current and
+opening descriptors in the existing table registration. Unmount releases the
+controller and its rows; only those controls remain. The replacement registers
+before the buffered page answer is replayed and restores its filter, search,
+order and address through `restoreWindow()`. The original opening order remains
+the reset target. The response supplies fresh rows and their place in the set.
+Neither the wait nor restoration requests a window; the usual `table_rendered`
+declaration may follow. A reply that arrives before unmount lets the live
+controller consume it and discards the continuation. Navigation and page refusal
+discard it too. A cold refusal retains no unknown descriptor, and controllers
+with the default-false option keep their existing policy. This lifecycle is in
+core and is shared by all three view adapters.
+
 A tab that is already holding a window reports it instead, in the `tableWindows`
 map of its `page_subscribe`, and the server serves back what the descriptor
 names. That is what a reconnect is: the same page, the same window, the reader's
@@ -120,6 +152,29 @@ also keeps its own filter and boundaries; both precede the cold declarations.
 A controller that has never received a window reports none — it does
 not know its own size or order until one arrives — and the table's declaration
 answers for it, which is the same cold entry a second time.
+A first refusal ends the skeleton but teaches neither size nor order, so both
+opening and reconnect reports still omit that table. A standalone recovery
+snapshot teaches its size but carries no order; the report stays absent until
+a subscription window names the order, including a known absence of sorting.
+That first successful subscription window still declares its rendered fields.
+A refusal after a known window preserves its size, order, filter and address
+in the reports. A browser-only table's local owner supplies its known opening
+order through the same subscription-window ingress before ordinary snapshots.
+
+For `initialFilterInSubscription: true`, `windowControlsAvailable` remains false
+until the first successful subscription window supplies both size and order.
+Search, filter changes and resets, order changes and resets, paging, Show and
+refresh leave controls and request tracking unchanged while it is false. They
+send no viewport; facet and rendered declarations also wait. All three SDKs
+disable the corresponding inputs, filter controls, order menus and headers;
+paging is absent until its window is known. The unavailable body explains that
+controls become available when the list loads. A standalone snapshot without
+order metadata does not enable them. A known unsorted subscription window does.
+There is no retained user intent to replay: active navigation and an access
+remount consume the route preset with the server's full default window, with no
+additional mount viewport. Once known, even a later refusal leaves controls
+available for explicit retry. Default-false controllers keep their existing
+startup and `initialFilter` policy.
 
 **Every declared order ends with the primary key**, so the order is total.
 Without that, a column with repeats (a status, a kind) lets two adjacent pages
@@ -477,11 +532,13 @@ React and Angular their own context and token). A page holding two tables names
 both.
 
 **A preset is not a filter of the bar.** The channel a route names reaches the
-table as `initialFilter`, and the window the page's own answer carries was built
-without it — the backend serves a cold entry by the table's declaration alone. So
-a table opening with a preset draws none of that window's rows: it keeps the order
-and the size the window says and asks for its own, the skeleton standing until it
-arrives.
+table as `initialFilter`. The backend serves a cold entry by the table's
+declaration alone, and the window does not report which filter it ran at. By
+default, a table opening with a preset draws none of that window's rows: it keeps
+the order and the size the window says and asks for its own, the skeleton
+standing until it arrives. Even a matching backend preset keeps that behavior
+unless the caller explicitly sets `initialFilterInSubscription: true` as
+described above.
 
 Several filter-map entries are set in one window change with `setFilters()`, and
 `resetFilters()` returns the map to the filters the table opened with —

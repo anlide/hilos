@@ -95,6 +95,10 @@ final class PageCatalog implements PageCatalogProviderInterface
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
+            HilosPageConstants::HILOS_LEGAL_DOCUMENT => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
             PageConstants::ADMIN_BOTS => [
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',

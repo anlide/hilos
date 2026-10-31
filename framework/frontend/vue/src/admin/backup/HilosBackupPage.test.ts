@@ -212,30 +212,28 @@ function seededContext(
   const emit = (event: string, data: unknown, type?: string): void => {
     for (const listener of listeners.get(event) ?? []) listener({ data, type })
   }
-  const connection = {
-    registerTableWindow(): void {
-      emit(
-        'projectSignal',
-        {
-          page: HilosPages.BACKUP,
-          payload: {
-            windows: {
-              [BACKUPS_TABLE]: {
-                rows: rows.map(wireRow),
-                totalCount: rows.length,
-                totalExact: true,
-                firstAnchor: null,
-                lastAnchor: null,
-                sort: [{ field: 'createdAt', direction: 'desc' }],
-                limit: 10,
-                progress: options.progress ?? [],
-              },
-            },
+  const pageWindow = () => ({
+    type: 'page_response',
+    data: {
+      page: HilosPages.BACKUP,
+      payload: {
+        windows: {
+          [BACKUPS_TABLE]: {
+            rows: rows.map(wireRow),
+            totalCount: rows.length,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+            sort: [{ field: 'createdAt', direction: 'desc' }],
+            limit: 10,
+            progress: options.progress ?? [],
           },
         },
-        'page_response',
-      )
+      },
     },
+  })
+  const connection = {
+    registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(pageKey: string, tableKey: string): boolean {
@@ -273,6 +271,9 @@ function seededContext(
         listeners.set(event, eventListeners)
       }
       eventListeners.add(listener)
+      if (event === 'projectSignal') {
+        listener(pageWindow())
+      }
 
       return () => eventListeners.delete(listener)
     },

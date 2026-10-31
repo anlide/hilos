@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit\Tables\Legal;
 
 use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -16,20 +18,29 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\View\Collection\LegalAcceptances;
 use Hilos\Hilos;
+use Hilos\Legal\Deviation;
+use Hilos\Legal\DeviationDirection;
+use Hilos\Legal\Exception\UnknownRevisionException;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Legal\LegalSignificance;
+use Hilos\Legal\StandardSet;
+use Hilos\Legal\StandardSetCatalog;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalDocumentTableRow;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalRevisionTableRow;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Hilos\Tests\Unit\Pages\Legal\LegalAdminTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 
 /** Catalog table windows share aggregates, preserve declaration order and keep unknown records. */
 final class HilosLegalTablesTest extends LegalAdminTestCase
@@ -257,6 +268,13 @@ final class HilosLegalTablesTest extends LegalAdminTestCase
         self::assertFalse($snapshot->rows[2]->declared);
         self::assertNull($snapshot->rows[2]->revision);
         self::assertNull($snapshot->rows[2]->origin);
+        self::assertSame(['2020-02-01', '2020-01-01', null], array_column($snapshot->rows, 'publishedOn'));
+        self::assertNull($snapshot->rows[2]->effectiveOn);
+        foreach ($snapshot->rows as $row) {
+            self::assertSame($row->revision['publishedOn'] ?? null, $row->publishedOn);
+            self::assertSame($row->revision['effectiveOn'] ?? null, $row->effectiveOn);
+            self::assertSame($row->toArray(), HilosLegalRevisionTableRow::fromArray($row->toArray())->toArray());
+        }
         self::assertSame(0, $table->getPage(new TableQueryDTO())->totalCount);
         self::assertSame(0, $table->getPage(new TableQueryDTO(filter: ['document' => 'unknown']))->totalCount);
         $window = $table->getPage(new TableQueryDTO(limit: 1, filter: ['document' => 'terms'], pageIndex: 1));
@@ -313,6 +331,202 @@ final class HilosLegalTablesTest extends LegalAdminTestCase
         }
     }
 
+    /** All document tables preset their cold window from the route, preserving exact Revision scope. */
+    public function testLegalDocumentTablesDeclareRouteDefaults(): void
+    {
+        foreach ([new HilosLegalDocumentSetTable(), new HilosLegalDocumentDeviationsTable(), new HilosLegalRevisionsTable()] as $table) {
+            self::assertSame(25, $table->windowSize());
+            self::assertSame(['document' => 'retired'], $table->defaultFilter(new PageRouteParams(['documentKey' => 'retired'])));
+        }
+        self::assertSame(
+            ['document' => 'terms', 'revision' => 'gone-29'],
+            new HilosLegalRevisionsTable()->defaultFilter(new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'gone-29'])),
+        );
+        self::assertSame([['field' => 'position', 'direction' => 'asc']], new HilosLegalDocumentSetTable()->defaultSort()->toArray());
+        self::assertSame([['field' => 'position', 'direction' => 'asc']], new HilosLegalDocumentDeviationsTable()->defaultSort()->toArray());
+        self::assertSame([['field' => 'publishedOn', 'direction' => 'desc']], new HilosLegalRevisionsTable()->defaultSort()->toArray());
+    }
+
+    /** A missing route cannot silently open an unscoped declaration window. */
+    public function testDocumentTablePresetRequiresTheDocumentKey(): void
+    {
+        $this->expectException(MissingPageRouteParamException::class);
+        new HilosLegalDocumentSetTable()->defaultFilter(new PageRouteParams([]));
+    }
+
+    /** Both tables use the adopted set even after a new framework set exists; declarations cannot reorder clauses. */
+    public function testSetAndDeviationRowsUseTheAdoptedSetAndItsClauseOrder(): void
+    {
+        LegalClausesTestHilos::initBrowser();
+        $adopted = StandardSetCatalog::set(LegalDocument::TERMS, 1);
+        $previousSets = new ReflectionProperty(StandardSetCatalog::class, 'sets')->getValue();
+        try {
+            new ReflectionProperty(StandardSetCatalog::class, 'sets')->setValue(null, [
+                ...$previousSets,
+                'terms' => [$adopted, new StandardSet(LegalDocument::TERMS, 2, '2026-10-01', LegalSignificance::EDITORIAL, [])],
+            ]);
+            $set = new HilosLegalDocumentSetTable();
+            $rows = $set->getPage(new TableQueryDTO(sort: $set->defaultSort(), filter: ['document' => 'terms']))->rows;
+            self::assertSame(array_column($adopted->clauses, 'key'), array_column($rows, 'rowKey'));
+            self::assertSame([0, 1, 2, 3, 4, 5], array_column($rows, 'position'));
+            self::assertSame(array_column($rows, 'rowKey'), array_column($rows, 'clauseKey'));
+            foreach ($rows as $row) {
+                self::assertSame($row->toArray(), $row::fromArray($row->toArray())->toArray());
+                self::assertSame(['clause' => $row->toArray()], $set->browserRow($row)['sources']);
+            }
+            $table = new HilosLegalDocumentDeviationsTable();
+            $rows = $table->getPage(new TableQueryDTO(sort: $table->defaultSort(), filter: ['document' => 'terms']))->rows;
+            self::assertSame(['standard.file_access', 'standard.moderation'], array_column($rows, 'rowKey'));
+            self::assertSame([0, 2], array_column($rows, 'position'));
+            self::assertSame(['looser', 'stricter'], array_column($rows, 'direction'));
+            self::assertSame(['Shared files', 'Reviewed posts'], array_column($rows, 'statement'));
+            self::assertSame([$adopted->clauses[0]->statement, $adopted->clauses[2]->statement], array_column($rows, 'standardStatement'));
+            foreach ($rows as $row) {
+                self::assertSame($row->rowKey, $row->clauseKey);
+                self::assertNotSame('', $row->text);
+                self::assertSame($row->toArray(), $row::fromArray($row->toArray())->toArray());
+                self::assertSame(['deviation' => $row->toArray()], $table->browserRow($row)['sources']);
+            }
+        } finally {
+            new ReflectionProperty(StandardSetCatalog::class, 'sets')->setValue(null, $previousSets);
+        }
+        self::assertSame(0, $this->reads->reads);
+    }
+
+    /** Search matches the declared fields, and all offered scalar orders run on the server. */
+    public function testCatalogTablesServeTheirDeclaredSearchAndOrders(): void
+    {
+        LegalClausesTestHilos::initBrowser();
+        $set = new HilosLegalDocumentSetTable();
+        $table = new HilosLegalDocumentDeviationsTable();
+        foreach (['STANDARD.MODERATION', 'automation'] as $term) {
+            self::assertSame(['standard.moderation'], array_column(
+                $set->getPage(new TableQueryDTO(search: $term, filter: ['document' => 'terms']))->rows, 'rowKey',
+            ));
+        }
+        foreach (['STANDARD.MODERATION', 'REVIEWED POSTS'] as $term) {
+            self::assertSame(['standard.moderation'], array_column(
+                $table->getPage(new TableQueryDTO(search: $term, filter: ['document' => 'terms']))->rows, 'rowKey',
+            ));
+        }
+        self::assertSame(['standard.file_access'], array_column(
+            $table->getPage(new TableQueryDTO(search: 'guessing or sharing', filter: ['document' => 'terms']))->rows, 'rowKey',
+        ));
+        foreach ([
+            [$set, 'clauseKey', ['account_rules', 'availability', 'file_access', 'moderation', 'ownership', 'retention']],
+            [$set, 'statement', ['retention', 'moderation', 'file_access', 'availability', 'account_rules', 'ownership']],
+            [$table, 'direction', ['file_access', 'moderation']],
+            [$table, 'clauseKey', ['file_access', 'moderation']],
+        ] as [$projection, $field, $keys]) {
+            $expectedKeys = array_map(static fn (string $key): string => 'standard.' . $key, $keys);
+            foreach (['asc', 'desc'] as $direction) {
+                $rows = $projection->getPage(new TableQueryDTO(
+                    sort: TableSortOrderDTO::of(new TableSortDTO($field, $direction)), filter: ['document' => 'terms'],
+                ))->rows;
+                self::assertSame($direction === 'asc' ? $expectedKeys : array_reverse($expectedKeys), array_column($rows, 'rowKey'));
+            }
+        }
+    }
+
+    /** Historical keys have no invented catalog rows; catalog refusals leave both windows safely empty. */
+    public function testCatalogTablesKeepHistoricalAndRefusedWindowsEmpty(): void
+    {
+        foreach ([new HilosLegalDocumentSetTable(), new HilosLegalDocumentDeviationsTable()] as $table) {
+            foreach ([[], ['document' => 'retired'], ['document' => 'privacy']] as $filter) {
+                self::assertSame(0, $table->getPage(new TableQueryDTO(filter: $filter))->totalCount);
+            }
+        }
+        LegalRefusedTableTestHilos::initBrowser();
+        foreach ([new HilosLegalDocumentSetTable(), new HilosLegalDocumentDeviationsTable()] as $table) {
+            self::assertSame(0, $table->getPage(new TableQueryDTO(filter: ['document' => 'terms'], search: 'anything'))->totalCount);
+        }
+    }
+
+    /** New metadata and catalog fields are explicitly visible in admin view mode. */
+    public function testLegalCatalogFieldOriginsCoverEveryWireField(): void
+    {
+        LegalClausesTestHilos::initBrowser();
+        foreach ([new HilosLegalDocumentSetTable(), new HilosLegalDocumentDeviationsTable()] as $table) {
+            $row = $table->getPage(new TableQueryDTO(filter: ['document' => 'terms']))->rows[0];
+            self::assertSame(array_keys($row->toArray()), array_keys($table->wireFields()));
+            foreach ($table->wireFields() as $field) {
+                self::assertEquals(WireField::notPersonal(), $field);
+            }
+        }
+        $fields = new HilosLegalRevisionsTable()->wireFields();
+        self::assertEquals(WireField::notPersonal(), $fields['publishedOn']);
+        self::assertEquals(WireField::notPersonal(), $fields['effectiveOn']);
+    }
+
+    /** Publication and deadline stay calendar dates, nulls last in both directions, with the usual key tie-breaker. */
+    public function testRevisionsServeSearchAndScalarOrders(): void
+    {
+        $this->reads->accepted['gone-a'] = 4;
+        $table = new HilosLegalRevisionsTable();
+        foreach (['CURRENT' => ['current'], '2020-01' => ['first'], 'gone' => ['gone', 'gone-a'], 'substantial' => []] as $term => $keys) {
+            self::assertSame($keys, array_column($table->getPage(new TableQueryDTO(search: $term, filter: ['document' => 'terms']))->rows, 'rowKey'));
+        }
+        foreach ([
+            ['publishedOn', 'asc', ['first', 'current', 'gone', 'gone-a']],
+            ['publishedOn', 'desc', ['current', 'first', 'gone-a', 'gone']],
+            ['effectiveOn', 'asc', ['first', 'current', 'gone', 'gone-a']],
+            ['effectiveOn', 'desc', ['current', 'first', 'gone-a', 'gone']],
+            ['heldCount', 'asc', ['gone', 'current', 'first', 'gone-a']],
+            ['heldCount', 'desc', ['gone-a', 'first', 'current', 'gone']],
+        ] as [$field, $direction, $keys]) {
+            self::assertSame($keys, array_column($table->getPage(new TableQueryDTO(
+                sort: TableSortOrderDTO::of(new TableSortDTO($field, $direction)), filter: ['document' => 'terms'],
+            ))->rows, 'rowKey'));
+        }
+        self::assertTrue($table->containsRow('current', new TableQueryDTO(
+            search: '2020-02', filter: ['document' => 'terms'], limit: 1, pageIndex: 9,
+        )));
+        self::assertFalse($table->containsRow('current', new TableQueryDTO(filter: ['document' => 'privacy'])));
+        self::assertFalse($table->containsRow('current', new TableQueryDTO(filter: ['document' => 'terms', 'revision' => 'first'])));
+    }
+
+    /** The complete scope drives mutations; errors propagate before any successful removals can be delivered. */
+    public function testRevisionAggregateMutationsKeepDocumentAndExactRevisionScope(): void
+    {
+        $table = new HilosLegalRevisionsTable();
+        $query = new TableQueryDTO(search: 'current', limit: 1, pageIndex: 20, filter: ['document' => 'terms']);
+        $mutations = $table->aggregateMutations($query, ['current', 'retired']);
+        self::assertSame(['current', 'first', 'gone', 'retired'], array_column($mutations, 'rowKey'));
+        self::assertSame([TableMutationType::Update, TableMutationType::Update, TableMutationType::Update, TableMutationType::Delete],
+            array_column($mutations, 'type'));
+        self::assertSame(5, $mutations[1]->row->acceptedCount);
+        self::assertSame(3, $mutations[1]->row->heldCount);
+        self::assertSame('first', $mutations[1]->row->origin);
+        unset($this->reads->accepted['gone']);
+        LegalAdminAudience::markStale();
+        $mutations = $table->aggregateMutations($query->withFilter('revision', 'gone'), ['gone']);
+        self::assertCount(1, $mutations);
+        self::assertSame(TableMutationType::Delete, $mutations[0]->type);
+        LegalRefusedTableTestHilos::initBrowser();
+        LegalAdminAudience::markStale();
+        $this->expectException(UnknownRevisionException::class);
+        $table->aggregateMutations($query, ['current']);
+    }
+
+    /** SQL histogram failures are not successful removal of previously shown revisions. */
+    public function testRevisionAggregateReadFailurePropagates(): void
+    {
+        $acceptances = $this->createStub(LegalAcceptances::class);
+        $acceptances->method('documentsOnRecord')->willThrowException(new DatabaseException('Histogram read failed'));
+        Hilos::$db->legalAcceptances = $acceptances;
+        $this->expectException(DatabaseException::class);
+        new HilosLegalRevisionsTable()->aggregateMutations(new TableQueryDTO(filter: ['document' => 'terms']), ['current']);
+    }
+
+    /** A calendar scalar on the wire cannot be replaced by a number. */
+    public function testRevisionRowRefusesANumericDate(): void
+    {
+        $row = new HilosLegalRevisionsTable()->getPage(new TableQueryDTO(filter: ['document' => 'terms']))->rows[0]->toArray();
+        $row['effectiveOn'] = 20201001;
+        $this->expectException(InvalidFormatException::class);
+        HilosLegalRevisionTableRow::fromArray($row);
+    }
+
     /** @param list<string> $recordedOnly Historical document keys that still have acceptance records */
     private function useDocumentSources(array $recordedOnly = ['legacy-b', 'legacy-a']): void
     {
@@ -354,4 +568,43 @@ final class LegalDocumentsTestCatalog implements LegalCatalogProviderInterface
 abstract class LegalDocumentsTestHilos extends Hilos
 {
     protected const ?string LEGAL_CATALOG = LegalDocumentsTestCatalog::class;
+}
+
+/** Two deviations deliberately declared in reverse clause order. */
+final class LegalClausesTestCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Revision adopting the original framework set */
+    public static function revisions(): array
+    {
+        $clauses = StandardSetCatalog::set(LegalDocument::TERMS, 1)->clauses;
+
+        return ['terms' => [new LegalRevision(
+            LegalDocument::TERMS, 'adopted', '2026-09-17', 1, LegalSignificance::SUBSTANTIAL, '2026-09-17', [
+                new Deviation($clauses[2]->key, DeviationDirection::STRICTER, 'Reviewed posts', $clauses[2]->textFile),
+                new Deviation($clauses[0]->key, DeviationDirection::LOOSER, 'Shared files', $clauses[0]->textFile),
+            ],
+        )]];
+    }
+}
+
+/** Separate provider binding without changing any project registry. */
+abstract class LegalClausesTestHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = LegalClausesTestCatalog::class;
+}
+
+/** A source refusal must not become a successful deletion from an aggregate viewport. */
+final class LegalRefusedTableTestCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Never returns */
+    public static function revisions(): array
+    {
+        throw new UnknownRevisionException('Broken table catalog');
+    }
+}
+
+/** Installs the refused catalog for snapshot and mutation boundaries. */
+abstract class LegalRefusedTableTestHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = LegalRefusedTableTestCatalog::class;
 }

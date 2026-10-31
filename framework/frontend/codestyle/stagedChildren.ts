@@ -22,4 +22,16 @@ export const STAGED_CHILDREN: readonly StagedChild[] = [
     child: 'hilos_analytics_browser_session',
     leaf: 'HIL-1741',
   },
+  {
+    layer: 'react',
+    parent: 'hilos_legal_documents',
+    child: 'hilos_legal_document',
+    leaf: 'HIL-1665',
+  },
+  {
+    layer: 'angular',
+    parent: 'hilos_legal_documents',
+    child: 'hilos_legal_document',
+    leaf: 'HIL-1665',
+  },
 ]

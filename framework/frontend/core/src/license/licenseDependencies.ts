@@ -150,13 +150,33 @@ export function createHilosLicenseDependencies(
         typeof filter['language'] === 'string' ? filter['language'] : '',
     })
     visible.set(admitted)
+    const rows = admitted.map((entry) => ({
+      rowKey: licenseEntryKey(entry),
+      slots: {},
+    }))
+    const limit = Math.max(1, snapshot.entries.length)
+    if (!table.loaded.get()) {
+      // This local owner knows its opening order: inventory order, with no sorting.
+      table.ingestSubscriptionWindow(
+        rows,
+        admitted.length,
+        true,
+        null,
+        null,
+        limit,
+        undefined,
+        [],
+        0,
+      )
+      return
+    }
     table.ingestWindow(
-      admitted.map((entry) => ({ rowKey: licenseEntryKey(entry), slots: {} })),
+      rows,
       admitted.length,
       true,
       null,
       null,
-      Math.max(1, snapshot.entries.length),
+      limit,
       0,
       requestId,
     )
