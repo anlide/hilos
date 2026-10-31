@@ -294,16 +294,16 @@ final class ProtectedModeNodeReportTest extends TestCase
         );
         [$link, $far] = $this->link($server, 'node-b');
         $this->tick($server, 100.0);
-        $this->assertSame([null, false], array_column($this->rows(), 'quiesced'));
+        $this->assertSame([true, false], array_column($this->rows(), 'quiesced'));
         $this->assertSame([false, true], array_column($this->rows(), 'isInitiator'));
         $this->assertSame(['node-b'], $this->sentReports($link, $far)[0]->pendingNodeIds);
         $pending = [];
         $this->tick($server, 101.0);
-        $this->assertSame([null, true], array_column($this->rows(), 'quiesced'));
+        $this->assertSame([true, true], array_column($this->rows(), 'quiesced'));
         $this->assertSame([], $this->sentReports($link, $far)[0]->pendingNodeIds);
         $pending = ['node-b'];
         $this->tick($server, 102.0);
-        $this->assertSame([null, false], array_column($this->rows(), 'quiesced'));
+        $this->assertSame([true, false], array_column($this->rows(), 'quiesced'));
     }
 
     public function testSlaveSendsEvenWithoutRuntimeAndNeverPublishesAMasterProjection(): void

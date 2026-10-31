@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /** Pure projection of membership and the master's current-link transport inbox. */
 final class ProtectedModeNodesCollector
@@ -13,10 +14,14 @@ final class ProtectedModeNodesCollector
     public const string REPORT_MISSING = 'missing';
     public const string REPORT_SILENT = 'silent';
 
+    /** Own phases in which a leader left out of its own round (a direct window) has already gone quiet. */
+    private const array LEADER_OUTSIDE_ROUND_QUIET_PHASES = [ProtectedModeRuntime::PHASE_VERIFYING, ProtectedModeRuntime::PHASE_ACTIVE];
+
     /**
      * Arrays here are infrastructure snapshots, not a second membership register.
      * Only the recognized leader's complete report in the current term describes a round.
      * A fresh report with no RT phase still leaves the node's phase fact missing.
+     * A direct window leaves the leader out of the round it opened, so its own phase answers for it.
      *
      * @param list<string> $nodeIds Existing membership, including offline and slave nodes
      * @param list<string> $linkedNodeIds Reachable nodes, including the local process
@@ -43,9 +48,12 @@ final class ProtectedModeNodesCollector
             $nodes[] = [
                 'nodeId' => $nodeId,
                 'phase' => $report?->phase,
-                'quiesced' => $round !== null && in_array($nodeId, $round->quiesceNodeIds, true)
-                    ? !in_array($nodeId, $round->pendingNodeIds, true)
-                    : null,
+                'quiesced' => match (true) {
+                    $round === null => null,
+                    in_array($nodeId, $round->quiesceNodeIds, true) => !in_array($nodeId, $round->pendingNodeIds, true),
+                    $nodeId === $leaderNodeId && in_array($report?->phase, self::LEADER_OUTSIDE_ROUND_QUIET_PHASES, true) => true,
+                    default => null,
+                },
                 'isLeader' => $term !== null && $leaderNodeId === $nodeId,
                 'isInitiator' => $round !== null && $round->initiatorNodeId === $nodeId,
                 'reportState' => !$linked ? self::REPORT_SILENT

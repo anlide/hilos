@@ -577,8 +577,9 @@ test('cluster manual maintenance: every master closes, another admitted admin op
       ).initiatorNodeId
       expect(nodeIds).toContain(initiatorNodeId)
       for (const node of nodeIds) {
-        // The direct window round awaits follower masters, excluding leader self.
-        // Slaves keep reporting their actual inactive phase without an ack.
+        // The direct window round awaits follower masters, excluding leader self;
+        // the leader answers by its own verifying phase. Slaves keep reporting
+        // their actual inactive phase without an ack.
         const master = CLUSTER_MASTERS.includes(node)
         const role =
           [
@@ -590,7 +591,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
           observer,
           node,
           master ? 'verifying' : 'inactive',
-          master && node !== CLUSTER_LEADER ? 'Yes' : '—',
+          master ? 'Yes' : '—',
           role,
         )
       }

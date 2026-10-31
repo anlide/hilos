@@ -1372,7 +1372,10 @@ is `missing`; a reported phase is `current`. `isLeader` follows the recognized
 leader and term. `isInitiator` comes from the authoritative leader report, not
 from the browser's node. `quiesced` is `true` for a participant absent from the
 leader's pending set, `false` for a pending participant, and `null` when the
-current report cannot establish either fact. A leader or term change clears the
+current report cannot establish either fact. A direct verification window
+leaves the leader out of the round it opened, so the leader's own row is `true`
+once its own phase is `verifying` or `active`, as it would be as a participant
+of a full freeze. A leader or term change clears the
 cached round authority; replacing a node's working link clears that node's
 cached report.
 

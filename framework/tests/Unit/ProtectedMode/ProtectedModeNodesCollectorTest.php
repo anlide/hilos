@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\ProtectedMode\ProtectedModeNodesCollector;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
 
 final class ProtectedModeNodesCollectorTest extends TestCase
@@ -72,11 +73,34 @@ final class ProtectedModeNodesCollectorTest extends TestCase
             'a' => new PeerProtectedModeNodeReportDTO('verifying', 4, ['a', 'b'], [], 'b'),
         ], 'a', 4);
         $next = ProtectedModeNodesCollector::project(['a', 'b'], ['a', 'b'], [
-            'a' => new PeerProtectedModeNodeReportDTO('verifying', 4, ['b'], ['b'], 'a'),
+            'a' => new PeerProtectedModeNodeReportDTO('activating', 4, ['b'], ['b'], 'a'),
         ], 'a', 4);
 
         $this->assertSame([true, true], array_column($first, 'quiesced'));
         $this->assertSame([null, false], array_column($next, 'quiesced'));
         $this->assertSame([true, false], array_column($next, 'isInitiator'));
+    }
+
+    public function testALeaderOutsideItsDirectWindowRoundAnswersByItsOwnPhase(): void
+    {
+        foreach ([
+            ProtectedModeRuntime::PHASE_VERIFYING => [true, false, true],
+            ProtectedModeRuntime::PHASE_ACTIVE => [true, false, true],
+            ProtectedModeRuntime::PHASE_ACTIVATING => [null, false, true],
+        ] as $phase => $quiesced) {
+            $rows = ProtectedModeNodesCollector::project(['a', 'b', 'c'], ['a', 'b', 'c'], [
+                'a' => new PeerProtectedModeNodeReportDTO($phase, 4, ['b', 'c'], ['b'], 'a'),
+            ], 'a', 4);
+            $this->assertSame($quiesced, array_column($rows, 'quiesced'), $phase);
+        }
+    }
+
+    public function testALeaderInsideAFullFreezeRoundAnswersByThePendingSetWhateverItsPhase(): void
+    {
+        $rows = ProtectedModeNodesCollector::project(['a', 'b'], ['a', 'b'], [
+            'a' => new PeerProtectedModeNodeReportDTO(ProtectedModeRuntime::PHASE_VERIFYING, 4, ['a', 'b'], ['a'], 'b'),
+        ], 'a', 4);
+
+        $this->assertSame([false, true], array_column($rows, 'quiesced'));
     }
 }
