@@ -58,8 +58,9 @@ use `$hilos-testing-cli`.
    assertion rules and exceptions when reviewing mixed tests.
 2. Only after justifying a new file, choose its demo: a file that checks the server
    goes to the least-loaded demo where its feature is on and its stand carries
-   the needed services — the shortest `check` + `php` + `e2e` chain in `$demos`
-   in `scripts/test-suite.php`. A new test in an existing spec goes into that
+   the needed services — the shortest `check` + `php` + `e2e` chain in the
+   summary of the latest green full run, not in `$demos` of
+   `scripts/test-suite.php`. A new test in an existing spec goes into that
    spec. A spec of a screen stays with its view framework and area; a feature
    switched on only in chat leaves chat as the only candidate.
 3. Whenever you touch a spec, check whose it is: `demo` needs that demo's

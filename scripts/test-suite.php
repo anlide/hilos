@@ -35,28 +35,17 @@ require_once __DIR__ . '/framework-pieces.php';
  *   database  the database inside the stand this step works in, when it is not
  *            the one the stand's database container names as MYSQL_DATABASE;
  *            the step's snapshot reads this one.
- *   seconds  the last measured duration (HIL-1227, 2026-09-29; the e2e of chat
- *            and binance-btc-tracker re-measured by HIL-1221 the same day, after
- *            the protected-mode spec moved between them, again by HIL-1220, after
- *            the backup specs did, and again by HIL-1219, after the settings,
- *            people and admin specs did; polls and online-testing e2e re-measured
- *            by HIL-1226 in isolated green test:e2e-full cycles on 2026-10-02
- *            after the operations half moved, and the e2e of tasks and
- *            ecommerce-shop by HIL-1225 the same day, the same way), read off
- *            GREEN runs on the test box. The framework-php group, chat-php,
- *            chat-e2e and the three fleets were re-measured alone there by HIL-1327
- *            on 2026-10-04 after the test databases moved into memory; chat and
- *            tasks e2e re-measured by HIL-1324 on 2026-10-09 after sign-in,
- *            step-up, session and passkey suites moved between them; chat and
- *            polls e2e re-measured by HIL-1325 on 2026-10-09 after profile,
- *            legal, second-factor, data export and privacy suites moved between
- *            them. A step beside its neighbours takes what it takes alone
- *            (chat-e2e 19m47s alone against 19m21s–21m30s beside two, 28.09). A
- *            scheduling HINT only, and a narrow one (`scripts/launch-order.php`):
- *            of the steps ready to go, the group whose longest member is longest
- *            goes first, its shortest step ahead of the rest, and nothing here
- *            looks at the work waiting behind a step. A stale number costs wall
- *            clock, never correctness.
+ *   seconds  a rough duration, written by hand off green runs on the test box
+ *            (the demo numbers last on 2026-10-16) and not kept current: specs
+ *            land every day and nobody refreshes it. A scheduling HINT only, and
+ *            a narrow one (`scripts/launch-order.php`): of the steps ready to go,
+ *            the group whose longest member is longest goes first, its shortest
+ *            step ahead of the rest, and nothing here looks at the work waiting
+ *            behind a step. A stale number costs wall clock, never correctness.
+ *            It is no measure of load: the demo a new spec file is born in is
+ *            chosen from the durations of the latest green full run
+ *            (docs/agents/frontend/testing-strategy.md, "Which demo carries a
+ *            spec").
  *
  * WHAT BOUNDS A FULL RUN, and why neither the order nor the lanes are the lever.
  * Measured 2026-09-29 (HIL-1227) on the test box, run 0659, the first green run
@@ -108,7 +97,8 @@ require_once __DIR__ . '/framework-pieces.php';
  */
 
 /**
- * Demos carrying a tests/e2e suite, with their measured per-step durations.
+ * Demos carrying a tests/e2e suite, with rough per-step durations for the launch order
+ * (`seconds` above) — not the load that places a new spec.
  *
  * A demo with a `build` duration builds its frontend in a step of its own, `<demo>-build`,
  * and its e2e step serves that build instead of making one (`test:e2e-prebuilt`). Only

@@ -269,13 +269,17 @@ the moment:
    stand carries the needed service. Read
    `demo/<demo>/docker/docker-compose.test.yml`: the Telegram/SMS gateway is
    in chat, tasks and polls; Mailpit is in all six demos.
-3. Of those candidates, choose the shortest group chain: add `check`, `php`
-   and `e2e` in `$demos` in `scripts/test-suite.php`. A tie permits either.
-   A feature switched on only in chat leaves chat as the only candidate.
+3. Of those candidates, choose the shortest group chain: add the demo's
+   `check`, `php` and `e2e` durations from the `=== SUMMARY` table that
+   `scripts/run-test-suite.php` prints at the end of the latest green full
+   run. A tie permits either. A feature switched on only in chat leaves chat
+   as the only candidate.
 
-A new test in an existing spec goes into that spec. The durations are the
-last measurement, refreshed by the leaves that move specs; nobody keeps the
-lengths level. Load decides only where a new spec file is born. A spec born
+A new test in an existing spec goes into that spec. The durations come from a
+run, never from `$demos` in `scripts/test-suite.php`: those numbers only hint
+the launch order, nobody refreshes them, and every spec that lands leaves them
+further behind. Nobody keeps the lengths level either. Load decides only where
+a new spec file is born. A spec born
 away from its area takes shared helpers from `framework/frontend/e2e/` and
 `framework/frontend/scripts/`, without copying them; follow
 [the toolbox route](#the-shared-toolbox--look-there-first-leave-there-what-you-grow)
