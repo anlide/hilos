@@ -21,6 +21,7 @@
       "@hilos/angular/admin/logs": ["./src/admin/logs/index.ts"],
       "@hilos/angular/admin/maintenance": ["./src/admin/maintenance/index.ts"],
       "@hilos/angular/admin/mcp-skills": ["./src/admin/mcpSkills/index.ts"],
+      "@hilos/angular/admin/moderation": ["./src/admin/moderation/index.ts"],
       "@hilos/angular/admin/roles": ["./src/admin/roles/index.ts"],
       "@hilos/angular/admin/security": ["./src/admin/security/index.ts"],
       "@hilos/angular/admin/settings": ["./src/admin/settings/index.ts"],

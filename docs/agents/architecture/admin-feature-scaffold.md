@@ -750,10 +750,10 @@ For its data and privacy boundaries, read
 The schema, receipt, trigger and restore contracts live in
 [change-log.md](change-log.md). All six demos activate the backend section.
 Chat journals five framework tables, `hilos_moderation_rule` among them, plus
-`bot`; binance-btc-tracker, ecommerce-shop, tasks,
-online-testing and polls each journal only the four framework tables they have,
-without the rules table until they declare `MODERATION`. Chat and
-binance-btc-tracker mount all three Vue pages of the section. The remaining
+`bot`; tasks and polls also journal those five framework tables after declaring
+`MODERATION`. Binance-btc-tracker, ecommerce-shop and online-testing each journal
+only the other four framework tables. Chat and binance-btc-tracker mount all
+three Vue pages of the section. The remaining
 view mounts keep the leaf boundaries above. Where
 Backup is already active, it collects the six journal verdicts from the journal
 Entities mounted by `CHANGE_LOG`, under schema index 1. Do not register
@@ -835,7 +835,9 @@ stay with their marked leaves:
    `@hilos/react/admin/moderation` entry exports those three pages and their
    `Props` types, while the compatibility root exports only
    `HilosModerationPage` from moderation.
-   Angular/polls receives the section. (not in the code yet — HIL-1637)
+   Angular/polls mounts the root, kind and rules pages through lazy wrappers in
+   `views/hilos/moderation/`; all three use the shared `hilosModerationContext`,
+   and `app.ts` maps their routes to those wrappers.
 
 The name window's framework wiring and `Checking your name…` line are separate
 from mounting the admin section.

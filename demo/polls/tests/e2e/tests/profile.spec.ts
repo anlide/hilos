@@ -31,6 +31,13 @@ import {
   uniquePhone,
   waitForSmsCode,
 } from '../../../../../framework/frontend/scripts/standSms.mjs'
+import {
+  dictateModelAnswer,
+  forgetModelKey,
+  modelKey,
+  readModelRequests,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
+import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 
 // The profile root (HIL-1169): the avatar in the header leads to /profile over
 // the live socket. The Name row exposes Change through the shared rename flow.
@@ -100,9 +107,12 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
 })
 
-test('renames the profile name without moderation', async ({ page }) => {
+test('publishes a profile name only after model approval and preserves it after refusal', async ({
+  page,
+}) => {
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
+  const key = modelKey()
   try {
     const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
@@ -113,10 +123,22 @@ test('renames the profile name without moderation', async ({ page }) => {
 
     await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
-    const newName = `${user.name} Updated`
+    const newName = `Updated ${key}`
+    await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 3000 })
     await typeInto(page.getByTestId('profile-name-input'), newName)
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
+    await expect.poll(async () => (await readModelRequests(key)).length).toBe(1)
+    await expectProfileNameSnapshot(expect, wire, user.userId, {
+      name: newName,
+      phase: 'checking',
+    })
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    await expect(page.getByTestId('profile-identity-name')).toHaveText(
+      user.name,
+    )
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
       phase: 'done',
@@ -145,16 +167,39 @@ test('renames the profile name without moderation', async ({ page }) => {
     expect([
       ...new Set(attempt.map(({ state }) => state.change?.requestId)),
     ]).toEqual([requestId])
-    expect(attempt.map(({ state }) => state.change?.phase)).not.toContain(
+    expect(attempt.map(({ state }) => state.change?.phase)).toContain(
       'checking',
     )
     expect(attempt.at(-1)?.state.change?.phase).toBe('done')
+
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
+    const refusedName = `Refused ${key}`
+    await dictateModelAnswer(
+      key,
+      JSON.stringify({ allow: false, reason: 'insult' }),
+    )
+    await typeInto(page.getByTestId('profile-name-input'), refusedName)
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+    await expectProfileNameSnapshot(expect, wire, user.userId, {
+      name: refusedName,
+      phase: 'refused',
+    })
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(
+      'This name was not accepted because it appears to contain an insult.',
+    )
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(
+      refusedName,
+    )
+    await expect(page.getByTestId('profile-name')).toHaveText(newName)
+    await expect(page.getByTestId('profile-identity-name')).toHaveText(newName)
+    expect(sends()).toBe(2)
   } finally {
     await test.info().attach('profile-name-wire', {
       body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
       contentType: 'application/json',
     })
     wire.stop()
+    await forgetModelKey(key)
   }
 })
 

@@ -32,6 +32,7 @@ import {
   HilosMagicLinkPage,
   HilosMaintenance,
   HilosModal,
+  HilosModerationPage,
   HilosOAuthCallbackPage,
   HilosPageHead,
   HilosProfileHead,
@@ -54,6 +55,7 @@ import {
   HilosUsersPage,
   HilosView,
   HilosViewportTable,
+  HilosTableEmptyState,
   HilosTableText,
   LoadingButton,
   connectionStateSignal,
@@ -63,6 +65,7 @@ import {
 } from '../src/index.js'
 import * as root from '../src/index.js'
 import * as base from '../src/base/index.js'
+import * as moderation from '@hilos/angular/admin/moderation'
 
 it('exports the @hilos/angular public surface', () => {
   expect(connectionStateSignal).toBeTypeOf('function')
@@ -101,6 +104,24 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosUploadFiles).toBeTypeOf('function')
   expect(HilosUploadPicker).toBeTypeOf('function')
   expect(HilosViewportTable).toBeTypeOf('function')
+  expect(HilosTableEmptyState).toBeTypeOf('function')
+  expect(HilosTableEmptyState).toBe(base.HilosTableEmptyState)
+  expect(HilosModerationPage).toBeTypeOf('function')
+  expect(HilosModerationPage).toBe(moderation.HilosModerationPage)
+  expect(moderation.HilosModerationKindRulesPage).toBeTypeOf('function')
+  expect(root).not.toHaveProperty('HilosModerationKindPage')
+  expect(root).not.toHaveProperty('HilosModerationKindRulesPage')
+  expect(base).not.toHaveProperty('HilosModerationPage')
+  expect(base).not.toHaveProperty('HilosModerationKindRulesPage')
+  for (const name of [
+    'HilosModerationRuleAdd',
+    'HilosModerationRuleEdit',
+    'HilosModerationRuleDelete',
+  ]) {
+    expect(moderation).not.toHaveProperty(name)
+    expect(root).not.toHaveProperty(name)
+    expect(base).not.toHaveProperty(name)
+  }
   expect(HilosTableText).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')

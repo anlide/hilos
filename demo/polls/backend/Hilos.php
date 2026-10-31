@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Polls;
 
+use Demo\Polls\Pages\Hilos\Moderation\ModerationPage;
+use Demo\Polls\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\Polls\Pages\Hilos\Moderation\ModerationKindRulesPage;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Demo\Polls\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Polls\Pages\Hilos\Legal\LegalPage;
@@ -293,6 +302,7 @@ final class Hilos extends HilosFacade
         HilosFeature::UPLOADS,
         HilosFeature::IMAGES,
         HilosFeature::PROFILE_PHOTO,
+        HilosFeature::MODERATION,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -301,6 +311,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGES = [
+        ModerationPage::PAGE => ModerationPage::class,
+        ModerationKindPage::PAGE => ModerationKindPage::class,
+        ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
@@ -390,6 +403,16 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        ModerationAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ModerationRulesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         FilesLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => FilesLibraryAgent::class,
             AgentRegistryKey::DAEMON => FilesLibraryAgentDaemon::class,
@@ -540,6 +563,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        PollsTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+        PollsTableContext::hilosModerationRules => HilosModerationRulesTable::class,
         PollsTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
         PollsTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
@@ -672,6 +697,16 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ModerationPage::PAGE => [
+            PollsTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindPage::PAGE => [
+            PollsTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindRulesPage::PAGE => [
+            PollsTableContext::hilosModerationKinds => [],
+            PollsTableContext::hilosModerationRules => [],
+        ],
         TermsHistoryPage::PAGE => [
             PollsTableContext::hilosTermsHistory => [],
         ],

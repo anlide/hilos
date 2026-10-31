@@ -7,7 +7,11 @@ import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
-import { Injector, runInInjectionContext } from '@angular/core'
+import {
+  createEnvironmentInjector,
+  Injector,
+  runInInjectionContext,
+} from '@angular/core'
 import { sdkEvidence } from '../../core/bin/initial-bundle-sdk.mjs'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -24,7 +28,7 @@ for (const [subpath, target] of Object.entries(manifest.exports)) {
     target.default.replace(/^\.\//, ''),
   )
 }
-assert.equal(entries.size, 21)
+assert.equal(entries.size, 22)
 // Resolve the actual published APF manifest, independently of the workspace's
 // file: forwarding manifests and the unit suite's source aliases.
 async function loadEntry(name) {
@@ -34,8 +38,37 @@ const root = await loadEntry('@hilos/angular')
 const base = await loadEntry('@hilos/angular/base')
 const { hilosAdminViews } = await loadEntry('@hilos/angular/admin-views')
 const { HilosAnalyticsPage } = await loadEntry('@hilos/angular/admin/analytics')
-const { HilosSettingsPage } = await loadEntry('@hilos/angular/admin/settings')
 const { HilosDashboardPage } = await loadEntry('@hilos/angular/admin/dashboard')
+const { HilosSettingsPage } = await loadEntry('@hilos/angular/admin/settings')
+const moderation = await loadEntry('@hilos/angular/admin/moderation')
+for (const name of [
+  'HilosModerationPage',
+  'HilosModerationKindPage',
+  'HilosModerationKindRulesPage',
+]) {
+  assert.ok(moderation[name].ɵcmp, `Real Angular page: ${name}`)
+  assert.equal(moderation[name].ɵcmp.standalone, true)
+  assert.ok(moderation[name].ɵcmp.inputs.context, `Required context: ${name}`)
+  assert.equal(name in base, false)
+}
+assert.deepEqual(Object.keys(moderation).sort(), [
+  'HilosModerationKindPage',
+  'HilosModerationKindRulesPage',
+  'HilosModerationPage',
+])
+assert.equal(root.HilosModerationPage, moderation.HilosModerationPage)
+assert.equal('HilosModerationKindPage' in root, false)
+assert.equal('HilosModerationKindRulesPage' in root, false)
+for (const name of [
+  'HilosModerationRuleAdd',
+  'HilosModerationRuleEdit',
+  'HilosModerationRuleDelete',
+]) {
+  assert.equal(name in root, false)
+  assert.equal(name in base, false)
+}
+assert.equal(typeof base.HilosTableEmptyState, 'function')
+assert.equal(root.HilosTableEmptyState, base.HilosTableEmptyState)
 assert.notEqual(base.HilosTableText, undefined, 'HilosTableText')
 assert.equal(typeof base.HilosTableText, 'function', 'HilosTableText component')
 assert.equal(
@@ -101,14 +134,41 @@ for (const file of await readdir(join(dist, 'fesm2022'))) {
   const code = await readFile(join(dist, name), 'utf8')
   const syntax = ts.createSourceFile(name, code, ts.ScriptTarget.Latest, true)
   const modules = []
-  // ng-packagr emits a pure compatibility reexport without a map. Its whole
-  // syntax must then consist of exports of declared public entrypoints.
+  // ng-packagr emits pure compatibility reexports without a map. Named
+  // reexports may become imports followed by a local export list; each local
+  // name must still come from a declared public entrypoint, with no execution.
+  const forwarded = new Set()
+  for (const node of syntax.statements) {
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      entries.has(node.moduleSpecifier.text) &&
+      node.importClause?.name === undefined &&
+      node.importClause?.namedBindings &&
+      ts.isNamedImports(node.importClause.namedBindings)
+    ) {
+      for (const binding of node.importClause.namedBindings.elements) {
+        forwarded.add(binding.name.text)
+      }
+    }
+  }
   const pureBarrel = syntax.statements.every(
     (node) =>
-      ts.isExportDeclaration(node) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier) &&
-      entries.has(node.moduleSpecifier.text),
+      (ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        entries.has(node.moduleSpecifier.text) &&
+        node.importClause?.name === undefined &&
+        node.importClause?.namedBindings &&
+        ts.isNamedImports(node.importClause.namedBindings)) ||
+      (ts.isExportDeclaration(node) &&
+        (node.moduleSpecifier
+          ? ts.isStringLiteral(node.moduleSpecifier) &&
+            entries.has(node.moduleSpecifier.text)
+          : node.exportClause &&
+            ts.isNamedExports(node.exportClause) &&
+            node.exportClause.elements.every((binding) =>
+              forwarded.has((binding.propertyName ?? binding.name).text),
+            ))),
   )
   const map = pureBarrel
     ? { sources: [], sourcesContent: [] }
@@ -243,6 +303,20 @@ assert.equal(
   1,
   'Table text and its internal mount modules must share one APF compilation owner',
 )
+assert.equal(owners.get('src/HilosTableEmptyState.ts'), baseName)
+for (const name of [
+  'HilosModerationPage',
+  'HilosModerationKindPage',
+  'HilosModerationKindRulesPage',
+  'HilosModerationRuleAdd',
+  'HilosModerationRuleEdit',
+  'HilosModerationRuleDelete',
+]) {
+  assert.equal(
+    owners.get(`src/admin/moderation/${name}.ts`),
+    entries.get('@hilos/angular/admin/moderation'),
+  )
+}
 assert.equal(graph.get(metadataName).dynamicImports.length, 30)
 for (const [name, value] of Object.entries(base)) {
   assert.equal(root[name], value, `Root/base identity: ${name}`)
@@ -266,13 +340,14 @@ const router = {
   pageIdentity: coreBase.createSignal(undefined),
   dashboardSections: coreBase.createSignal(undefined),
 }
-const injector = Injector.create({
-  providers: [{ provide: root.HILOS_ROUTER, useValue: router }],
-})
+const injector = createEnvironmentInjector(
+  [{ provide: root.HILOS_ROUTER, useValue: router }],
+  Injector.NULL,
+)
 try {
   const page = runInInjectionContext(injector, () => new HilosDashboardPage())
   assert.equal(
-    page.resolvePath('test'),
+    page.resolvePath(coreBase.HilosPages.USERS),
     '/same-router',
     'Section reads the root-provided base token',
   )
@@ -296,5 +371,5 @@ assert.ok(
   ),
 )
 console.log(
-  'Angular dist: 21 APF entries, table text ownership, acyclic graph, lazy defaults and singleton injection verified',
+  'Angular dist: 22 APF entries, moderation pages, base ownership, acyclic graph, lazy defaults and singleton injection verified',
 )

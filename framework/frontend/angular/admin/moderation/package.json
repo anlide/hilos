@@ -1,0 +1,5 @@
+{
+  "main": "../../dist/fesm2022/hilos-angular-admin-moderation.mjs",
+  "module": "../../dist/fesm2022/hilos-angular-admin-moderation.mjs",
+  "types": "../../dist/types/hilos-angular-admin-moderation.d.ts"
+}

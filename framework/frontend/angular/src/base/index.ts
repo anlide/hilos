@@ -102,6 +102,7 @@ export {
   type ViewportTableProgressContext,
   type ViewportTableRowProgressContext,
 } from '../HilosViewportTable.js'
+export { HilosTableEmptyState } from '../HilosTableEmptyState.js'
 export {
   HilosTableCell,
   type HilosTableCellContext,

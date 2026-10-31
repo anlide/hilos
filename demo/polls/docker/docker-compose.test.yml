@@ -199,6 +199,8 @@ services:
       # generic provider posts to the endpoint exactly as configured, the way a
       # real gateway's endpoint is a whole address rather than a base.
       - SMS_ENDPOINT_URL=https://stand-gateway:18000/sms/send
+      - HILOS_MODERATION_TEXT_URL=https://stand-gateway:18000/model
+      - HILOS_MODERATION_IMAGE_URL=https://stand-gateway:18000/model
       # Telegram Gateway (HIL-492): the stand's own gateway, which is the only
       # reason the endpoint is configurable at all. The channel prefix is the base
       # the client appends its method paths to. The token is what makes the channel

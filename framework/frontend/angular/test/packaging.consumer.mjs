@@ -20,12 +20,14 @@ try {
     import * as base from '@hilos/angular/base'
     import { hilosAdminViews } from '@hilos/angular/admin-views'
     import { HilosAnalyticsPage } from '@hilos/angular/admin/analytics'
-    import { HilosSettingsPage } from '@hilos/angular/admin/settings'
     import { HilosDashboardPage } from '@hilos/angular/admin/dashboard'
-    import { Component, Injector, runInInjectionContext } from '@angular/core'
+    import { HilosSettingsPage } from '@hilos/angular/admin/settings'
+    import { HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage } from '@hilos/angular/admin/moderation'
+    import { Component, createEnvironmentInjector, Injector, runInInjectionContext, type EnvironmentInjector } from '@angular/core'
     import {
       HilosProfileHead,
       HilosTableCell,
+      HilosTableEmptyState,
       HilosTableText,
       HilosViewportTable,
     } from '@hilos/angular/base'
@@ -37,9 +39,23 @@ try {
       type HilosTableColumn,
       type HilosTableFrame,
     } from '@hilos/core/base'
+    import type { HilosModerationRulesContext } from '@hilos/core/admin/moderation'
     import * as coreRoot from '@hilos/core'
     import * as coreBase from '@hilos/core/base'
     import * as coreSettings from '@hilos/core/admin/settings'
+    @Component({
+      selector: 'hilos-moderation-consumer',
+      standalone: true,
+      imports: [HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage],
+      template: \`
+        <hilos-moderation-page [context]="context" />
+        <hilos-moderation-kind-page [context]="context" />
+        <hilos-moderation-kind-rules-page [context]="context" />
+      \`,
+    })
+    class HilosModerationConsumer {
+      readonly context!: HilosModerationRulesContext
+    }
     type TableTextRow = { name: Hideable<string> }
     const tableTextFrame: HilosTableFrame = {
       title: 'Table text consumer',
@@ -66,6 +82,26 @@ try {
       \`,
     })
     class HilosTableTextConsumer {
+      readonly controller = new TableViewportController<TableTextRow>({
+        resolve: (row) => ({ name: row.slots['name'] as Hideable<string> }),
+        sendViewport: () => undefined,
+        frame: tableTextFrame,
+      })
+    }
+    @Component({
+      selector: 'hilos-table-empty-state-consumer',
+      standalone: true,
+      imports: [HilosTableEmptyState],
+      template: \`
+        <ng-template #fallback></ng-template>
+        <hilos-table-empty-state
+          [controller]="controller"
+          kind="unavailable"
+          [fallback]="fallback"
+        />
+      \`,
+    })
+    class HilosTableEmptyStateConsumer {
       readonly controller = new TableViewportController<TableTextRow>({
         resolve: (row) => ({ name: row.slots['name'] as Hideable<string> }),
         sendViewport: () => undefined,
@@ -135,23 +171,31 @@ try {
       'HilosModal',
       'HilosPageHead',
       'HilosProfileHead',
+      'HilosTableEmptyState',
     ]
       .map((name) => `root.${name} === base.${name}`)
       .join(' && ')} && root.HilosTableText !== undefined &&
       root.HilosTableText === base.HilosTableText
     const samePages = root.HilosSettingsPage === HilosSettingsPage &&
       root.HilosAnalyticsPage === HilosAnalyticsPage &&
-      root.HilosDashboardPage === HilosDashboardPage
-    const router = {
-      resolvePath: () => '/same',
-      pageIdentity: coreBase.createSignal(undefined),
-      dashboardSections: coreBase.createSignal(undefined),
+      root.HilosDashboardPage === HilosDashboardPage &&
+      root.HilosModerationPage === HilosModerationPage
+    class DashboardProbe extends HilosDashboardPage {
+      sameRouter(): boolean {
+        return this.resolvePath(coreBase.HilosPages.USERS) === '/same'
+      }
     }
-    const environment = Injector.create({ providers: [
-      { provide: root.HILOS_ROUTER, useValue: router },
-    ] })
-    const injected = runInInjectionContext(environment, () =>
-      new HilosDashboardPage() instanceof root.HilosDashboardPage)
+    const environment = createEnvironmentInjector([
+      { provide: root.HILOS_ROUTER, useValue: {
+        resolvePath: () => '/same',
+        pageIdentity: coreBase.createSignal(undefined),
+        dashboardSections: coreBase.createSignal(undefined),
+      } },
+    ], Injector.NULL as EnvironmentInjector)
+    const injected = runInInjectionContext(environment, () => {
+      const page = new DashboardProbe()
+      return page instanceof root.HilosDashboardPage && page.sameRouter()
+    })
     environment.destroy()
     const defaults = Object.values(hilosAdminViews())
     const loaded = Promise.all(defaults.map(view => {
@@ -165,6 +209,9 @@ try {
       samePages,
       injected,
       loaded,
+      moderationPages: [HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage],
+      moderationHost: HilosModerationConsumer,
+      tableEmptyStateHost: HilosTableEmptyStateConsumer,
       tableTextHost: HilosTableTextConsumer,
       profileHeadHost: HilosProfileHeadConsumer,
       headTypes: sameHead && headContext && headStore,
@@ -188,6 +235,9 @@ try {
           ],
           '@hilos/core/admin/settings': [
             join(consumer, 'node_modules/@hilos/core/dist/admin/settings'),
+          ],
+          '@hilos/core/admin/moderation': [
+            join(consumer, 'node_modules/@hilos/core/dist/admin/moderation'),
           ],
           '@hilos/angular': [join(consumer, 'node_modules/@hilos/angular')],
           '@hilos/angular/*': [join(consumer, 'node_modules/@hilos/angular/*')],
@@ -253,6 +303,18 @@ try {
   assert.equal(result.sameTokens, true)
   assert.equal(result.samePages, true)
   assert.equal(result.injected, true)
+  assert.equal(result.moderationPages.length, 3)
+  assert.ok(result.moderationHost.ɵcmp, 'Real AOT contextual moderation host')
+  assert.equal(result.moderationHost.ɵcmp.standalone, true)
+  assert.equal(typeof result.moderationHost.ɵcmp.template, 'function')
+  for (const page of result.moderationPages) {
+    assert.ok(page.ɵcmp, 'Real AOT Moderation page')
+    assert.equal(page.ɵcmp.standalone, true)
+    assert.equal(typeof page.ɵcmp.template, 'function')
+  }
+  assert.ok(result.tableEmptyStateHost.ɵcmp, 'Real AOT empty-state host')
+  assert.equal(result.tableEmptyStateHost.ɵcmp.standalone, true)
+  assert.equal(typeof result.tableEmptyStateHost.ɵcmp.template, 'function')
   assert.ok(
     result.tableTextHost.ɵcmp,
     'AOT table text host must remain emitted',

@@ -175,6 +175,10 @@ export default defineConfig({
         packageDir,
         'src/admin/mcpSkills/index.ts',
       ),
+      '@hilos/angular/admin/moderation': resolve(
+        packageDir,
+        'src/admin/moderation/index.ts',
+      ),
       '@hilos/angular/admin/roles': resolve(
         packageDir,
         'src/admin/roles/index.ts',

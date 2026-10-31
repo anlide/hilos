@@ -652,7 +652,8 @@ that behavior on their own surfaces.
 Tasks mounts the React section's root, kind Overview and Rules pages through
 three lazy wrappers. The section presents the framework's Profile name and
 Profile photo kinds; Add, Edit and Delete remain internal to its Rules page.
-Mount the Angular SDK section in polls. (not in the code yet — HIL-1637)
+Polls mounts the Angular SDK section through three lazy page wrappers and a
+shared moderation context.
 Profile photos in tasks are separate work. (not in the code yet — HIL-1644)
 Profile photos in polls are separate work. (not in the code yet — HIL-1645)
 
@@ -673,11 +674,12 @@ There is no verdict journal and no per-kind on/off switch in this design.
 queue and its signals, the moderator, its profiles and settings, the profile
 photo flow (HIL-1623–HIL-1625), the own-name check (HIL-1626), and Chat as a
 consumer (HIL-1627). Also built are the kinds/rules browser tables registered
-by Chat (HIL-1628), the Vue Rules Add, Edit and Delete flows with focused e2e
-coverage, and the React/tasks mount with three lazy pages and internal Rules
-forms.
+by Chat (HIL-1628), the Vue Rules Add, Edit and Delete flows, the React/tasks
+mount with three lazy pages and internal Rules forms, and the Angular/polls
+root, kind and rules pages mounted through lazy wrappers and a shared context.
+These activations have focused e2e coverage.
 
-**Not built yet:** the Angular/polls SDK mount (HIL-1637); broader moderation
+**Not built yet:** broader moderation
 e2e coverage and cluster coverage (HIL-1638/HIL-1639); enabling profile photos
 in tasks/polls (HIL-1644/HIL-1645).
 

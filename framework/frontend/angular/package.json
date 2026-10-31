@@ -25,6 +25,7 @@
     "admin/logs/package.json",
     "admin/maintenance/package.json",
     "admin/mcp-skills/package.json",
+    "admin/moderation/package.json",
     "admin/roles/package.json",
     "admin/security/package.json",
     "admin/settings/package.json",

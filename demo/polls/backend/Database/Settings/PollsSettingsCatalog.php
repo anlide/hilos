@@ -21,6 +21,7 @@ use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
@@ -91,6 +92,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             AuthThrottleSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
             UploadsSettingsCatalog::getCatalog(),
+            ModerationSettingsCatalog::getCatalog(),
         );
     }
 }

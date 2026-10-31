@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tables;
 
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
@@ -65,6 +67,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * users table activation; accessed via Hilos::$table->settings /
  * Hilos::$table->hilosUsers. Also binds the maintenance section's verifier circle table.
  *
+ * @property-read HilosModerationKindsTable $hilosModerationKinds
+ * @property-read HilosModerationRulesTable $hilosModerationRules
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosTermsHistoryTable $hilosTermsHistory
  * @property-read HilosPrivacyHistoryTable $hilosPrivacyHistory
@@ -118,6 +122,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  */
 final class PollsTableContext extends TableContext
 {
+    public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
+    public const string hilosModerationRules = HilosModerationRulesTable::TABLE;
     public const string hilosStatusWorks = HilosStatusWorksTable::TABLE;
     public const string hilosStatusHistory = HilosStatusHistoryTable::TABLE;
 

@@ -1,10 +1,11 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 
 import {
   createTestUser,
   countSentFrames,
   watchClientDocument,
   watchSocketFrames,
+  type SignedInUser,
   type SocketFrame,
   clickSubmit,
   openAndSelectPhoto,
@@ -14,7 +15,28 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
-import { decodePhoto, picture } from '../helpers/profilePhoto.js'
+import {
+  dictateModelAnswer,
+  forgetModelKey,
+  modelKey,
+  readModelRequests,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
+import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import { decodePhoto, nameForPhoto, picture } from '../helpers/profilePhoto.js'
+
+const test = base.extend<{
+  photoSubject: { key: string; person: SignedInUser }
+}>({
+  photoSubject: async ({ page }, use) => {
+    const key = modelKey()
+    try {
+      const person = await nameForPhoto(expect, page, key)
+      await use({ key, person })
+    } finally {
+      await forgetModelKey(key)
+    }
+  },
+})
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
 // Flat interior pixels survive the browser JPEG and server WebP encoders with
@@ -40,11 +62,12 @@ function expectPixel(actual: number[], expected: number[]): void {
 test('an EXIF crop is public, replaces the photo in both tabs and removes back to initials', async ({
   page,
   request,
+  photoSubject,
 }) => {
   // Account preparation, two publications and removal across two live Angular pages.
   test.slow()
   const uploads = countSentFrames(page, 'hilos_upload_init')
-  const person = await createTestUser(expect, page)
+  const { key: photoKey, person } = photoSubject
   await gotoPage(expect, page, '/profile', PAGE_READY)
   const second = await page.context().newPage()
   try {
@@ -74,6 +97,10 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
           await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
         }
       }
+      await dictateModelAnswer(
+        photoKey,
+        JSON.stringify({ allow: true, reason: 'ok' }),
+      )
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('modal')).toBeHidden()
       await expect(
@@ -140,7 +167,26 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
         }
       }
       expect(uploads()).toBe(1)
+      await dictateModelAnswer(
+        photoKey,
+        JSON.stringify({ allow: true, reason: 'ok' }),
+      )
+      await dictateGatewayBehavior('/model/api/generate', photoKey, {
+        delayMs: 3000,
+      })
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+      // Name preparation and the first photo have already spent two answers.
+      await expect
+        .poll(async () => (await readModelRequests(photoKey)).length)
+        .toBe(3)
+      await expect(page.getByTestId('profile-photo-checking')).toBeVisible()
+      for (const tab of [page, second]) {
+        for (const avatar of avatarSurfaces(tab)) {
+          await expect(
+            avatar.getByTestId('hilos-avatar-photo'),
+          ).toHaveAttribute('src', src)
+        }
+      }
       await expect(page.getByTestId('modal')).toBeHidden()
       const profilePhoto = page
         .getByTestId('profile-identity')
@@ -173,17 +219,41 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
         contentType: 'image/webp',
       })
 
+      await openAndSelectPhoto(
+        expect,
+        page,
+        await picture(page, 'image/jpeg'),
+        'image/jpeg',
+      )
+      await dictateModelAnswer(
+        photoKey,
+        JSON.stringify({ allow: false, reason: 'nudity' }),
+      )
+      await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+      await expect(page.getByTestId('profile-photo-error')).toHaveText(
+        'This photo was not accepted: it looks like nudity or sexual content.',
+      )
+      await expect(page.getByTestId('profile-photo-preview')).toBeVisible()
+      for (const tab of [page, second]) {
+        for (const avatar of avatarSurfaces(tab)) {
+          await expect(
+            avatar.getByTestId('hilos-avatar-photo'),
+          ).toHaveAttribute('src', replacement)
+        }
+      }
+      await clickSubmit(expect, page.getByTestId('profile-photo-cancel'))
+      await expect(page.getByTestId('modal')).toBeHidden()
       await clickSubmit(expect, page.getByTestId('profile-photo-open'))
       await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
       await expect(page.getByTestId('modal')).toBeHidden()
       for (const tab of [page, second]) {
         for (const avatar of avatarSurfaces(tab)) {
           await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
-          await expect(avatar).toHaveText('E')
+          await expect(avatar).toHaveText('PM')
         }
         await expect(tab.getByTestId('profile-name')).toHaveText(person.name)
       }
-      expect(uploads()).toBe(2)
+      expect(uploads()).toBe(3)
       for (const document of documents) await document.unchanged()
     } finally {
       for (const document of documents) await document.dispose()
@@ -223,10 +293,11 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
   page,
   browser,
   baseURL,
+  photoSubject,
 }) => {
   // A prepared account, a separate admin session and live card updates.
   test.slow()
-  const person = await createTestUser(expect, page)
+  const { key: photoKey, person } = photoSubject
   await gotoPage(expect, page, '/profile', PAGE_READY)
   const adminContext = await browser.newContext({
     baseURL,
@@ -244,7 +315,7 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
     const avatar = admin
       .getByTestId('hilos-user-detail')
       .getByTestId('hilos-avatar')
-    await expect(avatar).toHaveText('E')
+    await expect(avatar).toHaveText('PM')
     const document = await watchClientDocument(admin)
     try {
       await openAndSelectPhoto(
@@ -252,6 +323,10 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
         page,
         await picture(page, 'image/jpeg'),
         'image/jpeg',
+      )
+      await dictateModelAnswer(
+        photoKey,
+        JSON.stringify({ allow: true, reason: 'ok' }),
       )
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('modal')).toBeHidden()
@@ -306,6 +381,10 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
         await picture(page, 'image/png'),
         'image/png',
       )
+      await dictateModelAnswer(
+        photoKey,
+        JSON.stringify({ allow: true, reason: 'ok' }),
+      )
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('modal')).toBeHidden()
       await expect(photo).not.toHaveAttribute('src', src)
@@ -329,7 +408,7 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
       await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
       await expect(page.getByTestId('modal')).toBeHidden()
       await expect(photo).toHaveCount(0)
-      await expect(avatar).toHaveText('E')
+      await expect(avatar).toHaveText('PM')
       await document.unchanged()
       await test.info().attach('viewer-photo-frames', {
         body: JSON.stringify(frames),

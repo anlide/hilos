@@ -95,8 +95,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame('20261022124515804554_HIL-1582_browser_time_zones/' . $unit, $change->parts[0]->key());
                 $origins[] = $change;
             }
-            if ($index === 0 || $index === 1) {
-                // Chat takes the rules table for its seed; Tasks activates the framework moderator (HIL-1636).
+            if ($index === 0 || $index === 1 || $index === 2) {
+                // Chat installed rules for its seed; tasks and polls install them with MODERATION.
                 $unit = $schema->unit('moderation_rule');
                 $base = $project->root . ($index === 0 ? '/101' : '/070') . '_framework_install_moderation_rule';
                 $up = FsPath::read($base . '.sql');

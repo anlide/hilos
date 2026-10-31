@@ -14,9 +14,9 @@
 // reader needs is the way back to the rows. The fourth is the framework's as well
 // and offers nothing: the rows could not be fetched, and the way out is the next
 // window, not a button.
-// Internal to the Angular view layer on purpose: it is not exported from
-// index.ts, for the reason the bar is not. The Angular port of the Vue reference
-// (vue/src/HilosTableEmptyState.vue), under the same names and words.
+// Public through base for standalone read-only metadata as well as tables.
+// The Angular port of the Vue reference (vue/src/HilosTableEmptyState.vue),
+// under the same names and words.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,

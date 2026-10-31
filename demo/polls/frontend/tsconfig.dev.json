@@ -74,6 +74,9 @@
       "@hilos/angular/admin/maintenance": [
         "../../../framework/frontend/angular/src/admin/maintenance/index.ts"
       ],
+      "@hilos/angular/admin/moderation": [
+        "../../../framework/frontend/angular/src/admin/moderation/index.ts"
+      ],
       "@hilos/angular/admin/mcp-skills": [
         "../../../framework/frontend/angular/src/admin/mcpSkills/index.ts"
       ],
@@ -113,6 +116,9 @@
       ],
       "@hilos/core/admin/maintenance": [
         "../../../framework/frontend/core/src/admin/maintenance/index.ts"
+      ],
+      "@hilos/core/admin/moderation": [
+        "../../../framework/frontend/core/src/admin/moderation/index.ts"
       ],
       "@hilos/core/admin/communications": [
         "../../../framework/frontend/core/src/admin/communications/index.ts"

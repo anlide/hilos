@@ -15,9 +15,6 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   Partial<Record<HilosPageKey, readonly HilosViewLayer[]>>
 > = {
   [HilosPages.ROLES]: ['vue', 'react', 'angular'],
-  [HilosPages.MODERATION]: ['angular'],
-  [HilosPages.MODERATION_KIND]: ['angular'],
-  [HilosPages.MODERATION_KIND_RULES]: ['angular'],
   [HilosPages.LEGAL_DOCUMENTS]: ['react', 'angular'],
   [HilosPages.USER_ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.USER_ACCESS]: ['vue', 'react', 'angular'],

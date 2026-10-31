@@ -1,8 +1,37 @@
-import type { Page } from '@playwright/test'
+import type { Expect, Page } from '@playwright/test'
 import {
+  PASSWORD,
+  clickSubmit,
+  createTestUser,
   drawPhotoFixture,
+  gotoPage,
   samplePhotoPixels,
+  typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/standModel.mjs'
+
+/**
+ * Prepare Polls' photo subject with a key in the name carried by image prompts.
+ *
+ * @param expect The calling spec's assertions.
+ * @param page The anonymous browser to bind to the prepared account.
+ * @param key The test-owned stand model key.
+ * @returns The prepared account with its published name and original identity.
+ */
+export async function nameForPhoto(expect: Expect, page: Page, key: string) {
+  const person = await createTestUser(expect, page)
+  await gotoPage(expect, page, '/profile')
+  const name = `Photo ${key}`
+  await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+  await clickSubmit(expect, page.getByTestId('profile-edit'))
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
+  await typeInto(page.getByTestId('profile-name-input'), name)
+  await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+  await expect(page.getByTestId('modal')).toBeHidden()
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
+  return { ...person, name }
+}
 
 /** Keep Polls' narrow yellow JPEG crop marker and its separate PNG colors and height. */
 export async function picture(

@@ -4,12 +4,28 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tests\Unit;
 
+use Demo\Polls\Pages\Hilos\Moderation\ModerationPage;
+use Demo\Polls\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\Polls\Pages\Hilos\Moderation\ModerationKindRulesPage;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationInput;
+use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleUpdateActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
+use Hilos\Runtime\View\Collection\HilosModerationChecks;
 use Demo\Polls\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Polls\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
-use Hilos\Core\Page\PageReach;
 use Demo\Polls\Core\Daemon\PollsWorkerManager;
 use Demo\Polls\Pages\Hilos\TermsHistoryPage;
 use Demo\Polls\Pages\Hilos\PrivacyHistoryPage;
@@ -220,6 +236,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageReach;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
 use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
@@ -566,6 +583,141 @@ final class PollsTopologyRegistryTest extends TestCase
         ], $statusUnits);
     }
 
+    /** The section activates the existing pages, single writers, kinds and runtime checks. */
+    public function testModerationIsOnWithItsRulesLibraryAndItsModerator(): void
+    {
+        $this->assertContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
+        $this->assertSame(HilosModerationKindsTable::TABLE, PollsTableContext::hilosModerationKinds);
+        $this->assertSame(HilosModerationKindsTable::class, Hilos::TABLES[PollsTableContext::hilosModerationKinds]);
+        $this->assertSame(HilosModerationRulesTable::TABLE, PollsTableContext::hilosModerationRules);
+        $this->assertSame(HilosModerationRulesTable::class, Hilos::TABLES[PollsTableContext::hilosModerationRules]);
+        self::assertSame(ModerationPage::class, Hilos::PAGES[ModerationPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[ModerationPage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION,
+        ], ModerationPage::BROWSER);
+        self::assertSame([
+            PollsTableContext::hilosModerationKinds => [],
+        ], Hilos::PAGE_TABLES[ModerationPage::PAGE]);
+        self::assertSame([], ModerationPage::ACTIONS);
+        self::assertSame([], ModerationPage::SIGNALS);
+
+        self::assertSame(ModerationKindPage::class, Hilos::PAGES[ModerationKindPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[ModerationKindPage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND,
+        ], ModerationKindPage::BROWSER);
+        self::assertSame([
+            PollsTableContext::hilosModerationKinds => [],
+        ], Hilos::PAGE_TABLES[ModerationKindPage::PAGE]);
+        self::assertSame(PageAccessLevel::ADMIN, ModerationKindPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, ModerationKindPage::REACH);
+        self::assertSame([], ModerationKindPage::ACTIONS);
+        self::assertSame([], ModerationKindPage::SIGNALS);
+
+        self::assertSame(ModerationKindRulesPage::class, Hilos::PAGES[ModerationKindRulesPage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[ModerationKindRulesPage::PAGE]);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
+        ], ModerationKindRulesPage::BROWSER);
+        self::assertSame([
+            PollsTableContext::hilosModerationKinds => [],
+            PollsTableContext::hilosModerationRules => [],
+        ], Hilos::PAGE_TABLES[ModerationKindRulesPage::PAGE]);
+        self::assertSame(PageAccessLevel::ADMIN, ModerationKindRulesPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, ModerationKindRulesPage::REACH);
+        self::assertSame([
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE => HilosModerationRuleUpdateActionDTO::class,
+        ], ModerationKindRulesPage::ACTIONS);
+        self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ]], ModerationKindRulesPage::SIGNALS);
+        self::assertSame([], ModerationKindRulesPage::READING_ACTIONS);
+        self::assertSame(HilosModerationRuleAddActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_MODERATION_RULE_ADD]);
+        self::assertArrayNotHasKey(HilosSignalConstants::MODERATION_RULE_ADD, Hilos::getActionAgentRoutes());
+        self::assertSame(HilosModerationRuleDeleteActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_MODERATION_RULE_DELETE]);
+        self::assertArrayNotHasKey(HilosSignalConstants::MODERATION_RULE_DELETE, Hilos::getActionAgentRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_MODERATION_RULE_DELETE, ModerationRulesLibraryAgent::AGENT_ACTIONS);
+
+        self::assertSame(HilosModerationRuleUpdateActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE]);
+        self::assertArrayNotHasKey(HilosSignalConstants::MODERATION_RULE_UPDATE, Hilos::getActionAgentRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE, ModerationRulesLibraryAgent::AGENT_ACTIONS);
+
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
+        $this->assertSame([
+            AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ], $entry);
+        $this->assertSame(ModerationRulesLibraryAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(ModerationRulesLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertFalse(AgentRegistry::requiresIndex($entry));
+        $this->assertTrue((new ModerationRulesLibraryAgentDaemon())->requiresMonopolisticProcess());
+
+        $moderator = Hilos::AGENTS[HilosAgentType::HILOS_MODERATOR];
+        $this->assertSame([
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ], $moderator);
+        $this->assertSame(ModerationAgent::class, AgentRegistry::workerClass($moderator));
+        $this->assertSame(ModerationAgentDaemon::class, AgentRegistry::daemonClass($moderator));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($moderator));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($moderator));
+        $this->assertFalse(AgentRegistry::requiresIndex($moderator));
+        $this->assertTrue((new ModerationAgentDaemon())->requiresMonopolisticProcess());
+
+        $catalog = PollsSettingsCatalog::getCatalog();
+        foreach (ModerationSettingsCatalog::getCatalog() as $key => $settingEntry) {
+            self::assertSame($settingEntry, $catalog[$key]);
+        }
+        self::assertSame(ModerationKindDirectory::class, Hilos::moderationKindDirectoryClass());
+        $kinds = Hilos::moderationKinds();
+        self::assertSame([ModerationKindKey::PROFILE_NAME, ModerationKindKey::PROFILE_PHOTO], array_keys($kinds));
+        self::assertSame(ModerationInput::TEXT, $kinds[ModerationKindKey::PROFILE_NAME]->input);
+        self::assertSame(ModerationInput::IMAGE, $kinds[ModerationKindKey::PROFILE_PHOTO]->input);
+        foreach ($kinds as $kind) {
+            self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $kind->verdictTo);
+        }
+        foreach (ModerationKindRulesPage::ACTIONS as $action => $dto) {
+            self::assertSame(ModerationKindRulesPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+        }
+        self::assertSame(ModerationKindRulesPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
+        self::assertSame(AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
+        self::assertSame(HandoverAnswerSignalData::class,
+            Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_MODERATION_VERDICT, Hilos::getAgentSignalRoutes());
+
+        $requirements = (new FeatureRegistry())->definition(HilosFeature::MODERATION)->requirements();
+        self::assertSame([HilosAgentType::HILOS_MODERATOR], $requirements->requiredAgents);
+        self::assertSame([HilosAgentType::HILOS_MODERATION_RULES_LIBRARY, HilosAgentType::HILOS_SETTINGS_LIBRARY],
+            $requirements->requiredSharedAgents);
+        self::assertSame([ModerationSettingsCatalog::class], $requirements->requiredCatalogFragments);
+        self::assertSame(['hilos_moderation_rule'], $requirements->requiredDbTables);
+        $previousRt = Hilos::$rt;
+        try {
+            Hilos::$rt = new PollsRtContext();
+            $registry = new FeatureRegistry();
+            Hilos::$rt->mountFeatureRuntime(array_map($registry->definition(...), Hilos::features()));
+            Hilos::$rt->configure();
+            Hilos::$rt->assertFeatureRuntimeIntact();
+            self::assertInstanceOf(HilosModerationChecks::class, Hilos::$rt->hilosModerationChecks);
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
+    }
+
     /** The photo pipeline uses framework policies and one policy-placed holder per subsystem. */
     public function testProfilePhotoPipelineUsesTheFrameworkAgentsAndCatalogs(): void
     {
@@ -585,7 +737,7 @@ final class PollsTopologyRegistryTest extends TestCase
             self::assertTrue((new $daemonClass())->requiresMonopolisticProcess());
         }
 
-        self::assertFalse(Hilos::hasFeature(HilosFeature::MODERATION));
+        self::assertTrue(Hilos::hasFeature(HilosFeature::MODERATION));
         self::assertSame([], Hilos::UPLOAD_TARGETS);
         self::assertSame([], Hilos::IMAGE_VARIANTS);
         self::assertSame([ProfilePhotoUploadTarget::NAME => ProfilePhotoUploadTarget::class], Hilos::uploadTargets());
@@ -1040,6 +1192,9 @@ final class PollsTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [
+                HilosSignalConstants::MODERATION_RULE_ADD => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_DELETE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_UPDATE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
                 HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
                 HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
                 HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
@@ -1258,6 +1413,7 @@ final class PollsTopologyRegistryTest extends TestCase
             HilosFeature::UPLOADS,
             HilosFeature::IMAGES,
             HilosFeature::PROFILE_PHOTO,
+            HilosFeature::MODERATION,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -1419,6 +1575,8 @@ final class PollsTopologyRegistryTest extends TestCase
         // and hilos-users (the users list page + the user-detail page with its
         // rename action and a filtered detail browser table).
         $this->assertSame([
+            PollsTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+            PollsTableContext::hilosModerationRules => HilosModerationRulesTable::class,
             PollsTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
             PollsTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
             PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
@@ -1483,6 +1641,9 @@ final class PollsTopologyRegistryTest extends TestCase
 
         $this->assertSame(
             [
+                ModerationPage::PAGE,
+                ModerationKindPage::PAGE,
+                ModerationKindRulesPage::PAGE,
                 TermsHistoryPage::PAGE,
                 PrivacyHistoryPage::PAGE,
                 BrowserSessionPage::PAGE,

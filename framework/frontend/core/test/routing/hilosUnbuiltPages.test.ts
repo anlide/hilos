@@ -186,25 +186,25 @@ describe('hilosUnbuiltPages', () => {
     )
   })
 
-  it('serves the Moderation root in Vue and React while Angular remains unbuilt', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION]).toEqual(['angular'])
+  it('serves the Moderation root in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.MODERATION)
     expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION)).toBe(false)
-    expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION)).toBe(false)
   })
 
-  it('serves kind Overview and Rules in Vue and React while Angular remains unbuilt', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION_KIND]).toEqual(['angular'])
+  it('serves kind Overview and Rules in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.MODERATION_KIND)
     expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION_KIND)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.MODERATION_KIND)).toBe(
       false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.MODERATION_KIND)).toBe(
-      true,
+      false,
     )
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MODERATION_KIND_RULES]).toEqual([
-      'angular',
-    ])
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.MODERATION_KIND_RULES,
+    )
     expect(hilosUnbuiltPages('vue').has(HilosPages.MODERATION_KIND_RULES)).toBe(
       false,
     )
@@ -213,7 +213,7 @@ describe('hilosUnbuiltPages', () => {
     ).toBe(false)
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.MODERATION_KIND_RULES),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('opens the Daemon environment page in all three view layers', () => {

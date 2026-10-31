@@ -126,6 +126,8 @@ services:
       - path: ../.env
         required: false
     container_name: polls-daemon-local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ..:/app
       # Mount framework package to /hilos for composer path repository
