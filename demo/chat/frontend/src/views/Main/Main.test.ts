@@ -278,6 +278,79 @@ describe('Main composer refusal', () => {
   })
 })
 
+describe('Main composer send pause', () => {
+  async function typeMessage(wrapper: ReturnType<typeof setup>): Promise<void> {
+    await wrapper.get('[data-id="message-input"]').setValue('Hello')
+    await settle()
+  }
+
+  function isSendDisabled(): boolean {
+    return byId('message-send').hasAttribute('disabled')
+  }
+
+  it('lifts the pause when the server remaining drops to 0', async () => {
+    const wrapper = setup()
+    await typeMessage(wrapper)
+    expect(isSendDisabled()).toBe(false)
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 10,
+      moderation: null,
+    })
+    await settle()
+    expect(byId('message-cooldown').textContent).toBe('10s')
+    expect(isSendDisabled()).toBe(true)
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 0,
+      moderation: null,
+    })
+    await settle()
+    expect(wrapper.find('[data-id="message-cooldown"]').exists()).toBe(false)
+    expect(isSendDisabled()).toBe(false)
+  })
+
+  it('adopts a shorter non-zero server remaining and a longer one alike', async () => {
+    const wrapper = setup()
+    await typeMessage(wrapper)
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 10,
+      moderation: null,
+    })
+    await settle()
+    expect(byId('message-cooldown').textContent).toBe('10s')
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 4,
+      moderation: null,
+    })
+    await settle()
+    expect(byId('message-cooldown').textContent).toBe('4s')
+    expect(isSendDisabled()).toBe(true)
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 9,
+      moderation: null,
+    })
+    await settle()
+    expect(byId('message-cooldown').textContent).toBe('9s')
+    expect(isSendDisabled()).toBe(true)
+  })
+
+  it('starts the pause from a remaining already reported on load', async () => {
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 7,
+      moderation: null,
+    })
+    const wrapper = setup()
+    await typeMessage(wrapper)
+
+    expect(byId('message-cooldown').textContent).toBe('7s')
+    expect(isSendDisabled()).toBe(true)
+  })
+})
+
 describe('Main roster links', () => {
   it('keeps an empty roster as plain rows', async () => {
     setup()

@@ -21,7 +21,10 @@ import {
   modelKey,
   readModelRequests,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateGatewayBehavior,
+  releaseGatewayAnswer,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { decodePhoto, nameForPhoto, picture } from '../helpers/profilePhoto.js'
 
 const test = base.extend<{
@@ -172,7 +175,7 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
         JSON.stringify({ allow: true, reason: 'ok' }),
       )
       await dictateGatewayBehavior('/model/api/generate', photoKey, {
-        delayMs: 3000,
+        awaitRelease: true,
       })
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       // Name preparation and the first photo have already spent two answers.
@@ -187,6 +190,7 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
           ).toHaveAttribute('src', src)
         }
       }
+      await releaseGatewayAnswer('/model/api/generate', photoKey)
       await expect(page.getByTestId('modal')).toBeHidden()
       const profilePhoto = page
         .getByTestId('profile-identity')

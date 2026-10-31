@@ -8,12 +8,12 @@ import {
   gotoPage,
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { walkLogStore } from '../../../../../framework/frontend/scripts/standLogs.mjs'
 import {
   dictateModelAnswer,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
-import { dictateModerationVerdict } from '../helpers/moderation'
+import { answerBotNow, openBotEdit, watchBotSearch } from '../helpers/bots.js'
 
 // spec-owner: demo — chat's live bot agents and the replies they publish
 
@@ -31,15 +31,19 @@ async function openSetting(page: Page, key: string): Promise<void> {
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 }
 
-/** Activate a leader and put a unique key in the prompt it will send to the model. */
+/**
+ * Activate a leader and put a unique key in the prompt it will send to the model.
+ *
+ * @returns The activated bot's id.
+ */
 async function activateBot(
   page: Page,
   name: string,
   key: string,
   activated: ActivatedBot[],
   windows: Awaited<ReturnType<typeof watchBotSearch>>,
-): Promise<void> {
-  await openBotEdit(page, name, windows)
+): Promise<number> {
+  const id = Number(await openBotEdit(page, name, windows))
   const description = await page
     .getByTestId('admin-bots-description')
     .inputValue()
@@ -51,6 +55,8 @@ async function activateBot(
   await page.getByTestId('admin-bots-active').check()
   await clickSubmit(expect, page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+
+  return id
 }
 
 /** Restore a seeded bot so another spec sees its original fixture. */
@@ -71,9 +77,8 @@ test(
   'a saved invalid bot model logs an error and a later request uses the restored model',
   { tag: '@quarantine:F-055' },
   async ({ page }) => {
-    // The leaders each decide whether to react. Three message rounds give the role
-    // another real context change if all three decline an earlier one.
-    test.setTimeout(test.info().timeout * 5)
+    // One leader and no chat message: each request is the test-only command that
+    // sends the bot to the model now, past its delay and its chance to decline.
     const windows = await watchBotSearch(page)
     await grantAdminToSelf(expect, page)
     const settingKey = 'chat_bot_model'
@@ -90,16 +95,28 @@ test(
       changed = true
       await dictateModelAnswer(botKey, answer)
 
-      for (const name of ['Marcus', 'Elena', 'David']) {
-        await activateBot(page, name, botKey, activated, windows)
-      }
+      const botId = await activateBot(
+        page,
+        'Marcus',
+        botKey,
+        activated,
+        windows,
+      )
+      await answerBotNow(botId)
 
       await gotoPage(expect, page, '/hilos/logs')
       const error = page
         .getByTestId('hilos-logs-recent-row')
         .filter({ hasText: 'Model is required for Ollama' })
         .filter({ hasText: 'agent-bot_' })
-      await expect(error.first()).toBeVisible({ timeout: 60_000 })
+      // The command is accepted before the bot reaches the model, and a line
+      // reaches this screen by the walk of the log store: walk before each probe.
+      await expect
+        .poll(async () => {
+          await walkLogStore()
+          return error.first().isVisible()
+        })
+        .toBe(true)
       await gotoPage(expect, page, '/')
       await expect(
         page.getByTestId('event-text').filter({ hasText: answer }),
@@ -109,42 +126,11 @@ test(
       await clearCustomSetting(page, settingKey)
       changed = false
 
+      await answerBotNow(botId)
       await gotoPage(expect, page, '/')
-      const botReply = page
-        .getByTestId('event-text')
-        .filter({ hasText: answer })
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const messageKey = modelKey()
-        await dictateModerationVerdict(messageKey, true, 'ok')
-        await dictateModelAnswer(
-          messageKey,
-          JSON.stringify({
-            topic: 'technology',
-            topicConfidence: 0.9,
-            summary: messageKey,
-          }),
-        )
-        await typeInto(
-          page.getByTestId('message-input'),
-          `please discuss ${messageKey}`,
-        )
-        await expect(page.getByTestId('message-send')).toBeEnabled({
-          timeout: 20_000,
-        })
-        await clickSubmit(expect, page.getByTestId('message-send'))
-        await expect(
-          page.getByTestId('event-text').filter({ hasText: messageKey }),
-        ).toHaveCount(1)
-
-        try {
-          await expect(botReply).toHaveCount(1, { timeout: 25_000 })
-          break
-        } catch (error) {
-          if (attempt === 2) {
-            throw error
-          }
-        }
-      }
+      await expect(
+        page.getByTestId('event-text').filter({ hasText: answer }),
+      ).toHaveCount(1)
     } finally {
       if (changed) {
         await openSetting(page, settingKey)

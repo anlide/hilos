@@ -7,11 +7,11 @@ namespace Hilos\StandGateway;
 use Hilos\Core\Exception\ValidationException;
 
 /**
- * InvalidBehaviorException - the gateway refused a behavior a spec declared.
+ * InvalidBehaviorException - the gateway refused a behavior a spec declared, or a release it sent for a held answer.
  *
  * It carries a code rather than only a sentence, because the code is what the spec reads:
- * POST /test/behavior answers it as a 400 with the code in `error`, and the spec helper fails
- * on the spot with that reason. A declaration taken silently would show up much later as a
+ * POST /test/behavior and POST /test/release answer it as a 400 with the code in `error`, and
+ * the spec helper fails on the spot with that reason. A declaration taken silently would show up much later as a
  * provider that answered as usual, which reads as a product defect rather than as a typo in
  * the test.
  */
@@ -34,6 +34,9 @@ final class InvalidBehaviorException extends ValidationException
 
     /** The cut is not a boolean. */
     public const string CUT_INVALID = 'CUT_INVALID';
+
+    /** The wait for a release is not a boolean. */
+    public const string RELEASE_INVALID = 'RELEASE_INVALID';
 
     /**
      * Refuses a behavior declaration.

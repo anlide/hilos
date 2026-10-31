@@ -11,6 +11,7 @@ import { modelKey } from '../../../../../framework/frontend/scripts/standModel.m
 import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
+import { endSendPause } from '../helpers/sendPause.js'
 
 // spec-owner: demo — the feed, Participants and /user/{id} are chat's own screens.
 
@@ -93,10 +94,9 @@ test('a guest sees the circles of a series, the roster and the user page follow 
     const second = `the second of a series ${secondKey}`
     await dictateModerationVerdict(secondKey, true, 'ok')
     await typeInto(page.getByTestId('message-input'), second)
-    // The first submit's re-send lockout has to run out first.
-    await expect(page.getByTestId('message-send')).toBeEnabled({
-      timeout: 20_000,
-    })
+    // A command ends the first submit's re-send lockout.
+    await endSendPause(userId)
+    await expect(page.getByTestId('message-send')).toBeEnabled()
     await clickSubmit(expect, page.getByTestId('message-send'))
 
     const head = guestPage.getByTestId('event').filter({

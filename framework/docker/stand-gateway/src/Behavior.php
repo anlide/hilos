@@ -8,7 +8,7 @@ namespace Hilos\StandGateway;
  * Behavior - how a provider route answers one call, as a spec declared it (HIL-922).
  *
  * A spec posts the declaration to POST /test/behavior before the product makes its call, and
- * the gateway spends it on exactly one call of that route carrying that key. Four levers, each
+ * the gateway spends it on exactly one call of that route carrying that key. Five levers, each
  * optional, and they combine:
  *
  * - status: the resident's handler is not called at all and the call is refused with this
@@ -17,7 +17,10 @@ namespace Hilos\StandGateway;
  * - cut: the status line, the headers and the first half of the body leave, then the
  *   connection closes;
  * - holdMs: after the last byte of the answer, whole or cut, the connection stays open this
- *   much longer before the gateway closes it.
+ *   much longer before the gateway closes it;
+ * - awaitRelease: the answer is built when the call arrives, and its bytes leave only once a
+ *   spec released one answer of that route and key at POST /test/release; with a delay too,
+ *   they leave when both are over.
  *
  * A declaration with no lever at all is legitimate: it answers as usual, which is how a spec
  * writes "then normally" inside a sequence of declarations.
@@ -42,6 +45,9 @@ final readonly class Behavior
     /** Declaration and stored key of the hold after the answer, in milliseconds. */
     public const string FIELD_HOLD_MS = 'holdMs';
 
+    /** Declaration and stored key of the wait for a spec's release before the answer leaves. */
+    public const string FIELD_AWAIT_RELEASE = 'awaitRelease';
+
     /** Every key a declaration may carry. */
     private const array FIELDS = [
         self::FIELD_PATH,
@@ -50,6 +56,7 @@ final readonly class Behavior
         self::FIELD_DELAY_MS,
         self::FIELD_CUT,
         self::FIELD_HOLD_MS,
+        self::FIELD_AWAIT_RELEASE,
     ];
 
     /** Lowest status a declaration may dictate: a dictated answer is a refusal, never a success. */
@@ -65,12 +72,14 @@ final readonly class Behavior
      * @param int $delayMs Delay before the answer's bytes leave, in milliseconds
      * @param int $holdMs How long the connection stays open after the answer, in milliseconds
      * @param bool $cut Whether the answer is cut in the middle of its body
+     * @param bool $awaitRelease Whether the answer's bytes wait for a spec to release them
      */
     public function __construct(
         public ?int $status,
         public int $delayMs,
         public int $holdMs,
         public bool $cut,
+        public bool $awaitRelease,
     ) {
     }
 
@@ -98,13 +107,14 @@ final readonly class Behavior
             delayMs: self::duration($fields, self::FIELD_DELAY_MS),
             holdMs: self::duration($fields, self::FIELD_HOLD_MS),
             cut: self::cut($fields),
+            awaitRelease: self::awaitRelease($fields),
         );
     }
 
     /**
      * Rebuilds a behavior from the form the store keeps it in.
      *
-     * @param array{status: ?int, delayMs: int, cut: bool, holdMs: int} $stored Behavior as {@see toArray()} wrote it
+     * @param array{status: ?int, delayMs: int, cut: bool, holdMs: int, awaitRelease: bool} $stored Behavior as {@see toArray()} wrote it
      * @return self Stored behavior
      */
     public static function fromArray(array $stored): self
@@ -114,6 +124,7 @@ final readonly class Behavior
             delayMs: $stored[self::FIELD_DELAY_MS],
             holdMs: $stored[self::FIELD_HOLD_MS],
             cut: $stored[self::FIELD_CUT],
+            awaitRelease: $stored[self::FIELD_AWAIT_RELEASE],
         );
     }
 
@@ -137,7 +148,7 @@ final readonly class Behavior
     /**
      * The form the store keeps a behavior in.
      *
-     * @return array{status: ?int, delayMs: int, cut: bool, holdMs: int} Stored behavior
+     * @return array{status: ?int, delayMs: int, cut: bool, holdMs: int, awaitRelease: bool} Stored behavior
      */
     public function toArray(): array
     {
@@ -146,6 +157,7 @@ final readonly class Behavior
             self::FIELD_DELAY_MS => $this->delayMs,
             self::FIELD_CUT => $this->cut,
             self::FIELD_HOLD_MS => $this->holdMs,
+            self::FIELD_AWAIT_RELEASE => $this->awaitRelease,
         ];
     }
 
@@ -190,5 +202,26 @@ final readonly class Behavior
         }
 
         return $cut;
+    }
+
+    /**
+     * Reads the release lever; an absent one means the answer leaves without waiting for a release.
+     *
+     * @param array<string, mixed> $fields Decoded declaration
+     * @return bool Whether the answer waits for a spec to release it
+     * @throws InvalidBehaviorException When the lever is not a boolean
+     */
+    private static function awaitRelease(array $fields): bool
+    {
+        if (!array_key_exists(self::FIELD_AWAIT_RELEASE, $fields)) {
+            return false;
+        }
+
+        $awaitRelease = $fields[self::FIELD_AWAIT_RELEASE];
+        if (!is_bool($awaitRelease)) {
+            throw new InvalidBehaviorException(InvalidBehaviorException::RELEASE_INVALID);
+        }
+
+        return $awaitRelease;
     }
 }

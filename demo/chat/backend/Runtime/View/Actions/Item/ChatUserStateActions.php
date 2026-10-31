@@ -32,4 +32,22 @@ final class ChatUserStateActions extends RtActions
 
         $this->sync();
     }
+
+    /**
+     * Age the moment of the last accepted outbound submit by the whole rate-limit period.
+     *
+     * The moment stays a moment of sending, only its time moves, so the ordinary rate-limit rule accepts the
+     * next submit at once. The period and its tolerance are the product's own and do not change here.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function endSendPause(): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->lastOutboundSubmittedAt = microtime(true) - ViewChatUserState::MESSAGE_RATE_LIMIT_SECONDS;
+
+        $this->sync();
+    }
 }

@@ -195,9 +195,13 @@ const canSend = computed(
 )
 
 const startCooldown = (seconds = MESSAGE_RATE_LIMIT_SECONDS): void => {
-  cooldownSeconds.value = seconds
   if (cooldownTimer !== null) {
     clearInterval(cooldownTimer)
+    cooldownTimer = null
+  }
+  cooldownSeconds.value = Math.max(0, seconds)
+  if (cooldownSeconds.value === 0) {
+    return
   }
   cooldownTimer = setInterval(() => {
     cooldownSeconds.value = Math.max(0, cooldownSeconds.value - 1)
@@ -226,13 +230,14 @@ const submitMessage = (): void => {
   startCooldown()
 }
 
-// Reconcile the countdown with the backend-reported remaining seconds: on
-// reload or a cross-tab submit the server is the source of truth, so adopt a
-// longer remaining than the local one (e.g. resume a lockout after a refresh).
+// The backend-reported remaining seconds reconcile the countdown in both
+// directions: on reload or a cross-tab submit the server is the source of truth,
+// so adopt a longer remaining (e.g. resume a lockout after a refresh) and a
+// shorter one alike, and a remaining of 0 puts the countdown out.
 watch(
   () => selfConn.value?.messageRateLimitSecondsRemaining ?? 0,
   (seconds) => {
-    if (seconds > cooldownSeconds.value) {
+    if (seconds !== cooldownSeconds.value) {
       startCooldown(seconds)
     }
   },

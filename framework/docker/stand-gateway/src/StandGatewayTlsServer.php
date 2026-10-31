@@ -19,11 +19,12 @@ use Socket;
  * one is a class beside {@see TelegramRoutes} and {@see SmsRoutes} plus an endpoint in
  * the stack's compose - not a new service, a new port and a new way to read it.
  *
- * Only the house's own routes stay unprefixed, because they are about the gateway
- * rather than about any channel: a reset that wipes the whole store, a health probe the
- * compose healthcheck waits on, and the behavior handle. The levers a spec dictates -
- * a status, a delay, a cut, a hold - are the house's too (HIL-922): they work the same on
- * every provider route of every resident, so a spec learns one arrangement.
+ * Only the house's own routes stay unprefixed, and there are four, because they are about
+ * the gateway rather than about any channel: a reset that wipes the whole store, a health
+ * probe the compose healthcheck waits on, the behavior handle, and the release of an answer
+ * a behavior holds. The levers a spec dictates - a status, a delay, a cut, a hold, the wait
+ * for a release - are the house's too (HIL-922): they work the same on every provider route
+ * of every resident, so a spec learns one arrangement.
  *
  * A resident's routes are assembled per connection rather than once: a declared
  * behavior is played out on the connection that carries the call, and each connection
@@ -53,6 +54,9 @@ use Socket;
  */
 final class StandGatewayTlsServer extends AbstractTlsServer
 {
+    /** Every key a release may carry: the pair of the held answer and nothing else. */
+    private const array RELEASE_FIELDS = [Behavior::FIELD_PATH, Behavior::FIELD_KEY];
+
     /** @var list<GatewayResident> Channels living in the gateway, registered on every connection */
     private array $residents;
 
@@ -122,6 +126,7 @@ final class StandGatewayTlsServer extends AbstractTlsServer
         $routes->test(HttpConstants::METHOD_GET, '/test/health', $this->testHealth(...));
         $routes->test(HttpConstants::METHOD_POST, '/test/reset', $this->testReset(...));
         $routes->test(HttpConstants::METHOD_POST, '/test/behavior', fn(array $fields): array => $this->testBehavior($routes, $fields));
+        $routes->test(HttpConstants::METHOD_POST, '/test/release', fn(array $fields): array => $this->testRelease($routes, $fields));
 
         $client->setRouter($router);
 
@@ -181,15 +186,8 @@ final class StandGatewayTlsServer extends AbstractTlsServer
         try {
             Behavior::refuseUnknownField($fields);
 
-            $path = $fields[Behavior::FIELD_PATH] ?? null;
-            if (!is_string($path) || !$routes->isProvider($path)) {
-                throw new InvalidBehaviorException(InvalidBehaviorException::PATH_NOT_PROVIDER);
-            }
-
-            $key = $fields[Behavior::FIELD_KEY] ?? null;
-            if (!is_string($key) || $key === '') {
-                throw new InvalidBehaviorException(InvalidBehaviorException::KEY_REQUIRED);
-            }
+            $path = self::providerPath($routes, $fields);
+            $key = self::callKey($fields);
 
             Store::pushBehavior($path, $key, Behavior::fromFields($fields));
         } catch (InvalidBehaviorException $refusal) {
@@ -197,5 +195,73 @@ final class StandGatewayTlsServer extends AbstractTlsServer
         }
 
         return ['ok' => true];
+    }
+
+    /**
+     * Test route: let out one answer a behavior holds on a provider route for a key.
+     *
+     * One release lets out one held answer of the pair; a release that comes before the call
+     * waits in the store, so the call leaves the moment it arrives. It is refused like a
+     * declaration, with the same codes in the same order - an unknown key, the path, the key -
+     * because it names the same pair a declaration does.
+     *
+     * @param GatewayRoutes $routes Routes of the connection the release came over
+     * @param array<string, mixed> $fields Request fields
+     * @return array<string, mixed> Acknowledgement, or a 400 naming the refusal
+     */
+    private function testRelease(GatewayRoutes $routes, array $fields): array
+    {
+        try {
+            if (array_diff(array_keys($fields), self::RELEASE_FIELDS) !== []) {
+                throw new InvalidBehaviorException(InvalidBehaviorException::FIELD_UNKNOWN);
+            }
+
+            $path = self::providerPath($routes, $fields);
+            $key = self::callKey($fields);
+
+            Store::pushRelease($path, $key);
+        } catch (InvalidBehaviorException $refusal) {
+            return self::json(['ok' => false, 'error' => $refusal->error], HttpConstants::HTTP_BAD_REQUEST);
+        }
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Reads the provider route a declaration or a release names.
+     *
+     * Checked against this connection's routes, which is where the residents registered their
+     * provider halves.
+     *
+     * @param GatewayRoutes $routes Routes of the connection the request came over
+     * @param array<string, mixed> $fields Request fields
+     * @return string Provider route
+     * @throws InvalidBehaviorException When the path is missing, not a string, or not a provider route
+     */
+    private static function providerPath(GatewayRoutes $routes, array $fields): string
+    {
+        $path = $fields[Behavior::FIELD_PATH] ?? null;
+        if (!is_string($path) || !$routes->isProvider($path)) {
+            throw new InvalidBehaviorException(InvalidBehaviorException::PATH_NOT_PROVIDER);
+        }
+
+        return $path;
+    }
+
+    /**
+     * Reads the value of the call a declaration or a release is keyed by.
+     *
+     * @param array<string, mixed> $fields Request fields
+     * @return string Key of the call
+     * @throws InvalidBehaviorException When the key is missing, not a string, or empty
+     */
+    private static function callKey(array $fields): string
+    {
+        $key = $fields[Behavior::FIELD_KEY] ?? null;
+        if (!is_string($key) || $key === '') {
+            throw new InvalidBehaviorException(InvalidBehaviorException::KEY_REQUIRED);
+        }
+
+        return $key;
     }
 }

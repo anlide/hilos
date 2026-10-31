@@ -9,6 +9,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
+import { endSendPause } from '../helpers/sendPause.js'
 
 // spec-owner: demo — chat consumes framework moderation verdicts for its messages
 
@@ -21,8 +22,8 @@ import { dictateModerationVerdict } from '../helpers/moderation.js'
 // into the text of its message, so it disturbs no other spec. /test/reset is never
 // called here — it would wipe what the other workers dictated.
 //
-// Recovery waits for the original re-send lockout through the control's state;
-// room.spec.ts holds the lockout itself.
+// Recovery ends the original re-send lockout by command and then waits for the
+// control's state; room.spec.ts holds the lockout itself.
 
 test('a rejected message stays out of the room and its author is told', async ({
   page,
@@ -62,7 +63,7 @@ test('a rejected message stays out of the room and its author is told', async ({
 test('an unavailable message returns its draft and a corrected retry publishes once', async ({
   page,
 }) => {
-  await createTestUserJoined(expect, page)
+  const { userId } = await createTestUserJoined(expect, page)
 
   // No verdict is dictated: the model refuses the call with a 503, which for the
   // product is a model that is not answering.
@@ -89,10 +90,10 @@ test('an unavailable message returns its draft and a corrected retry publishes o
   const corrected = `a corrected message ${key}`
   await dictateModerationVerdict(key, true, 'ok')
   await typeInto(page.getByTestId('message-input'), corrected)
-  // Unavailable does not clear the original ten-second submit lockout.
-  await expect(page.getByTestId('message-send')).toBeEnabled({
-    timeout: 20_000,
-  })
+  // Unavailable does not clear the original ten-second submit lockout; a
+  // command ends it.
+  await endSendPause(userId)
+  await expect(page.getByTestId('message-send')).toBeEnabled()
   await clickSubmit(expect, page.getByTestId('message-send'))
   await expect(page.getByTestId('moderation-text')).toHaveCount(0)
   await expect(page.getByTestId('message-input')).toHaveValue('')

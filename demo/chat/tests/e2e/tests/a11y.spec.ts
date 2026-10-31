@@ -100,7 +100,10 @@ import {
 
 import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateGatewayBehavior,
+  releaseGatewayAnswer,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
@@ -664,8 +667,11 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
     const key = modelKey()
     const name = `Accessible ${key}`
     await dictateModerationVerdict(key, false, 'spam')
-    // The real model holds its response while keyboard and pending semantics are checked.
-    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 2_000 })
+    // The gateway holds the model's answer until keyboard and pending semantics
+    // are checked.
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      awaitRelease: true,
+    })
     await typeInto(field, name)
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
     const accepted = await expectProfileNameSnapshot(
@@ -695,6 +701,7 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
     await expect(page.getByTestId('modal-confirm')).toBeFocused()
     await clickSubmit(expect, page.getByTestId('modal-confirm-cancel'))
     await expect(field).toHaveValue(name)
+    await releaseGatewayAnswer('/model/api/generate', key)
     await expectProfileNameSnapshot(expect, wire, user.userId, {
       requestId: accepted.state.change!.requestId,
       phase: 'refused',

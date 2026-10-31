@@ -14,7 +14,10 @@ import {
   expectPageReady,
   createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateGatewayBehavior,
+  releaseGatewayAnswer,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 
@@ -132,9 +135,8 @@ test('a rename nobody dictated a verdict for comes back as moderation unavailabl
 })
 
 test.describe('accepted name attempt lifetime', () => {
-  // Four seconds leaves room for F5 and close/reopen, below the stand's
-  // 20-second provider cap and 90-second check deadline. No browser sleep.
-  const MODEL_DELAY_MS = 4_000
+  // The gateway holds the model's answer until the test releases it, once the
+  // checking state, F5, close/reopen or a newer draft have been checked.
   let wire: ProfileRenameFrameLog
   let sends: () => number
   let starts: () => number
@@ -167,7 +169,7 @@ test.describe('accepted name attempt lifetime', () => {
     const name = `Reload ${key}`
     await dictateModerationVerdict(key, true, 'ok')
     await dictateGatewayBehavior('/model/api/generate', key, {
-      delayMs: MODEL_DELAY_MS,
+      awaitRelease: true,
     })
     await openRename(page)
     await typeInto(page.getByTestId('profile-name-input'), name)
@@ -204,6 +206,7 @@ test.describe('accepted name attempt lifetime', () => {
         requestId,
       })
       await expect(fresh.getByTestId('modal')).toBeHidden()
+      await releaseGatewayAnswer('/model/api/generate', key)
       await expectProfileNameSnapshot(expect, wire, user.userId, {
         name,
         requestId,
@@ -252,7 +255,7 @@ test.describe('accepted name attempt lifetime', () => {
     const name = `Closed ${key}`
     await dictateModerationVerdict(key, true, 'ok')
     await dictateGatewayBehavior('/model/api/generate', key, {
-      delayMs: MODEL_DELAY_MS,
+      awaitRelease: true,
     })
     await openRename(page)
     await typeInto(page.getByTestId('profile-name-input'), name)
@@ -285,6 +288,8 @@ test.describe('accepted name attempt lifetime', () => {
     expect(starts()).toBe(stepUpStarts)
     await clickSubmit(expect, page.getByTestId('modal-close'))
     await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await releaseGatewayAnswer('/model/api/generate', key)
     await expectProfileNameSnapshot(expect, wire, user.userId, {
       requestId,
       phase: 'done',
@@ -312,12 +317,9 @@ test.describe('accepted name attempt lifetime', () => {
     const key = modelKey()
     const name = `Refused ${key}`
     const refusal = 'This name was not accepted because it appears to be spam.'
-    // This path only closes before the answer; unlike the F5 cases it needs no
-    // four-second hold. Leave the existing poll room for async model delivery.
-    const BACKGROUND_REFUSAL_DELAY_MS = 2_000
     await dictateModerationVerdict(key, false, 'spam')
     await dictateGatewayBehavior('/model/api/generate', key, {
-      delayMs: BACKGROUND_REFUSAL_DELAY_MS,
+      awaitRelease: true,
     })
     await openRename(page)
     await typeInto(page.getByTestId('profile-name-input'), name)
@@ -337,8 +339,10 @@ test.describe('accepted name attempt lifetime', () => {
     await expect(page.getByTestId('modal')).toBeHidden()
     const closedObservedAt = Date.now()
     const closedSnapshotCount = wire.snapshots.length
-    // A fast refusal before closure would miss the background path entirely.
+    // Nothing follows the accepted snapshot while the answer is held, so the
+    // refusal released now lands on a closed window: the background path.
     expect(wire.snapshots.at(-1)).toEqual(accepted)
+    await releaseGatewayAnswer('/model/api/generate', key)
     const refused = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name,
       requestId,
@@ -355,7 +359,6 @@ test.describe('accepted name attempt lifetime', () => {
         {
           name,
           requestId,
-          delayMs: BACKGROUND_REFUSAL_DELAY_MS,
           checkingObservedAt,
           closedObservedAt,
           refusalObservedAt,
@@ -417,7 +420,7 @@ test.describe('accepted name attempt lifetime', () => {
     const newer = `Unsent ${key}`
     await dictateModerationVerdict(key, true, 'ok')
     await dictateGatewayBehavior('/model/api/generate', key, {
-      delayMs: MODEL_DELAY_MS,
+      awaitRelease: true,
     })
     await openRename(page)
     await typeInto(page.getByTestId('profile-name-input'), name)
@@ -443,6 +446,7 @@ test.describe('accepted name attempt lifetime', () => {
     )
     await expectPageReady(expect, page)
     await expect(page.getByTestId('profile-name-input')).toHaveValue(newer)
+    await releaseGatewayAnswer('/model/api/generate', key)
     await expectProfileNameSnapshot(expect, wire, user.userId, {
       requestId,
       phase: 'done',

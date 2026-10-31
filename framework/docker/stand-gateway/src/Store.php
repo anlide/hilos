@@ -8,11 +8,11 @@ namespace Hilos\StandGateway;
  * Store - the stand gateway's state, which has to survive between requests.
  *
  * Which numbers are declared absent from Telegram, how a provider route answers the calls
- * a spec declared a behavior for, the world of the OAuth emulator - which accounts exist
- * at a provider, which codes and tokens it has handed out, and the orders for expired
- * codes - and what the local model answers next live in one JSON file under an exclusive
- * lock. That is the whole of the storage design, and it is enough: one runner, a few writes
- * per suite. A resident keeps no store of its own.
+ * a spec declared a behavior for, the releases a spec sent for held answers, the world of the
+ * OAuth emulator - which accounts exist at a provider, which codes and tokens it has handed
+ * out, and the orders for expired codes - and what the local model answers next live in one
+ * JSON file under an exclusive lock. That is the whole of the storage design, and it is
+ * enough: one runner, a few writes per suite. A resident keeps no store of its own.
  *
  * The file was forced by PHP's built-in server, which re-entered the script for every
  * request and kept nothing in memory. The gateway has been one long-lived process since
@@ -36,6 +36,7 @@ final class Store
     private const array EMPTY_STATE = [
         'reachable' => [],
         'behaviors' => [],
+        'releases' => [],
         'oauthAccounts' => [],
         'oauthCodes' => [],
         'oauthTokens' => [],
@@ -131,6 +132,64 @@ final class Store
     }
 
     /**
+     * Adds one release to the releases waiting for an answer held on one provider route and key.
+     *
+     * A count rather than one flag, because one release lets out one held answer: a spec that
+     * releases twice lets out two calls of the pair. A release that comes before the call waits
+     * here, so the call it is meant for leaves the moment it arrives and a spec does not have to
+     * catch that moment.
+     *
+     * @param string $path Provider route whose held answer is released
+     * @param string $key Value of the call the held answer is keyed by
+     */
+    public static function pushRelease(string $path, string $key): void
+    {
+        self::mutate(static function (array $state) use ($path, $key): array {
+            $state['releases'][$path][$key] = ($state['releases'][$path][$key] ?? 0) + 1;
+
+            return $state;
+        });
+    }
+
+    /**
+     * Spends one release of a provider route and key, if there is one.
+     *
+     * A pair nothing was released for is answered off the shared lock and does not rewrite the
+     * file - that is every tick of a held answer until its release comes. A spent last release is
+     * gone, and an emptied route is removed with it.
+     *
+     * @param string $path Provider route of the held answer
+     * @param string $key Value of the call the held answer is keyed by
+     * @return bool Whether a release was spent, that is whether the held answer may leave
+     */
+    public static function takeRelease(string $path, string $key): bool
+    {
+        if (!isset(self::read()['releases'][$path][$key])) {
+            return false;
+        }
+
+        $taken = false;
+        self::mutate(static function (array $state) use ($path, $key, &$taken): array {
+            if (!isset($state['releases'][$path][$key])) {
+                return $state;
+            }
+
+            $taken = true;
+            $state['releases'][$path][$key]--;
+            if ($state['releases'][$path][$key] <= 0) {
+                unset($state['releases'][$path][$key]);
+            }
+            if ($state['releases'][$path] === []) {
+                unset($state['releases'][$path]);
+            }
+
+            return $state;
+        });
+
+        return $taken;
+    }
+
+    /**
      * Puts a dictated model answer at the end of the queue of one key.
      *
      * A queue for the same reason a behavior has one: one dictation answers one call, and three
@@ -211,18 +270,27 @@ final class Store
     }
 
     /**
-     * Forgets only one test's observations and unspent model arrangements. A delayed connection
-     * already holds its own answer and behavior; it never writes an old Store snapshot back.
+     * Forgets only one test's observations and unspent model arrangements, its unspent releases
+     * among them. A delayed connection already holds its own answer and behavior; it never writes
+     * an old Store snapshot back.
      *
-     * @param string $path Model provider route whose behaviors are removed
+     * @param string $path Model provider route whose behaviors and releases are removed
      * @param string $key Test whose arrangements and observations are removed
      */
     public static function forgetModel(string $path, string $key): void
     {
         self::mutate(static function (array $state) use ($path, $key): array {
-            unset($state['modelRequests'][$key], $state['answers'][$key], $state['behaviors'][$path][$key]);
+            unset(
+                $state['modelRequests'][$key],
+                $state['answers'][$key],
+                $state['behaviors'][$path][$key],
+                $state['releases'][$path][$key],
+            );
             if (($state['behaviors'][$path] ?? null) === []) {
                 unset($state['behaviors'][$path]);
+            }
+            if (($state['releases'][$path] ?? null) === []) {
+                unset($state['releases'][$path]);
             }
 
             return $state;
@@ -449,8 +517,8 @@ final class Store
     }
 
     /**
-     * Forgets every declared number, every declared behavior, the whole world of the OAuth emulator and its orders for
-     * expired codes, every dictated model answer and every model observation.
+     * Forgets every declared number, every declared behavior and every unspent release, the whole world of the OAuth
+     * emulator and its orders for expired codes, every dictated model answer and every model observation.
      */
     public static function reset(): void
     {
@@ -460,7 +528,8 @@ final class Store
     /**
      * @return array{
      *     reachable: array<string, bool>,
-     *     behaviors: array<string, array<string, list<array{status: ?int, delayMs: int, cut: bool, holdMs: int}>>>,
+     *     behaviors: array<string, array<string, list<array{status: ?int, delayMs: int, cut: bool, holdMs: int, awaitRelease: bool}>>>,
+     *     releases: array<string, array<string, int>>,
      *     oauthAccounts: array<string, array<string, array{subject: string, login: string, name: ?string, email: ?string}>>,
      *     oauthCodes: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
      *     oauthTokens: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,

@@ -12,10 +12,12 @@ use Hilos\Constants\HttpConstants;
  * GatewayRoutes - the routes of one gateway connection, and the behavior levers on its provider routes.
  *
  * One per connection, built when the gateway accepts it. A behavior a spec declared is played
- * out on the connection that carries the call - a delay, a cut and a hold are about THAT
- * connection's bytes - and a route learns which connection that is from the routes it was
- * registered through. Neither a static "current client", which would hide the link, nor a hook
- * in the framework's HTTP client, which has no consumer for stretching an answer, is needed.
+ * out on the connection that carries the call - a delay, a cut, a hold and the wait for a
+ * release are about THAT connection's bytes - and a route learns which connection that is from
+ * the routes it was registered through. Neither a static "current client", which would hide the
+ * link, nor a hook in the framework's HTTP client, which has no consumer for stretching an
+ * answer, is needed. The connection is told the route and the key the behavior was taken by
+ * too: an answer that awaits a release leaves on a release of that very pair.
  *
  * Every route is wrapped in the one decoding the gateway does: the core hands a route the
  * body as a raw string, and a handler here takes fields. A provider route additionally names
@@ -91,13 +93,14 @@ final class GatewayRoutes
         $this->providerPaths[$path] = true;
 
         $this->router->addRoute($method, $path, self::handler(function (array $fields, array $headers) use ($path, $handler, $key): array {
-            $behavior = Store::takeBehavior($path, $key($fields, $headers));
+            $announcedKey = $key($fields, $headers);
+            $behavior = Store::takeBehavior($path, $announcedKey);
             if ($behavior === null) {
                 return $handler($fields, $headers);
             }
 
             // Told before the answer exists: the router hands it to the connection right after this returns.
-            $this->client->dictate($behavior);
+            $this->client->dictate($behavior, $path, $announcedKey);
 
             if ($behavior->status !== null) {
                 return StandGatewayTlsServer::json(['ok' => false, 'error' => self::ERROR_STATUS_DICTATED], $behavior->status);

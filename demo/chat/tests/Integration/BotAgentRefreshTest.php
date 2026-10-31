@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\LibraryAgent;
+use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\CommandConstants;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -21,11 +26,13 @@ use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMResultUnavailableException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use ReflectionProperty;
 
 /**
- * Request boundaries on one running bot agent.
+ * Request boundaries on one running bot agent, and the test-only answer-now that brings its next request to now.
  */
 final class BotAgentRefreshTest extends IntegrationTestCase
 {
@@ -84,6 +91,88 @@ final class BotAgentRefreshTest extends IntegrationTestCase
         }
     }
 
+    public function testAnswerNowCommandSignalsAnActiveBotAndRefusesAStoppedOrUnknownOne(): void
+    {
+        $bot = Hilos::$db->bots->actions->create('Answering Bot');
+        $this->assertNotNull($bot->id);
+        $botId = $bot->id;
+
+        try {
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $this->drainSignals();
+            $this->assertSame([
+                ['signal', ChatSignalConstants::BOT_ANSWER_NOW, $botId],
+                ['reply', true, [ChatCommandConstants::botId => $botId]],
+            ], $this->askLibraryToAnswerNow($botId), 'Accepted at once, without waiting for the model');
+
+            $bot->actions->update(active: false);
+            $this->drainSignals();
+            $this->assertSame([
+                ['reply', false, [CommandConstants::FIELD_MESSAGE => "Bot {$botId} is not active"]],
+            ], $this->askLibraryToAnswerNow($botId), 'A signal would start the agent of a stopped bot');
+
+            $unknownId = $botId + 1000;
+            $this->assertArrayNotHasKey($unknownId, Hilos::$db->bots);
+            $this->assertSame([
+                ['reply', false, [CommandConstants::FIELD_MESSAGE => "Bot {$unknownId} is not active"]],
+            ], $this->askLibraryToAnswerNow($unknownId));
+        } finally {
+            $bot->actions->delete();
+        }
+    }
+
+    public function testAnswerNowTakesAQuietBotToTheModelOnTheNextTickAndOnlyOnce(): void
+    {
+        $bot = Hilos::$db->bots->actions->create('Quiet Bot');
+        $this->assertNotNull($bot->id);
+        $bot->getObject()->reactionDelayMin = 3600;
+        $bot->getObject()->reactionDelayMax = 3600;
+        $bot->getObject()->reactionChance = 0;
+        $bot->getObject()->cooldownAfterMessage = 0;
+        $bot->getObject()->sync();
+
+        $agentId = 'bot:' . $bot->id . ':answer-now-test';
+        RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, TruthSourceKeys::listed((string)$bot->id), $agentId);
+        ExecutionContext::setCurrentAgentId($agentId);
+
+        try {
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new BotAgent((string)$bot->id);
+            $client = new CompletedBotChatClient();
+            (new ReflectionProperty($agent, 'chatClient'))->setValue($agent, $client);
+            $agent->onStart();
+            $agent->onTick();
+            $this->scheduleAgain($agent);
+            $agent->onTick();
+            $this->assertSame(0, $client->startGenerateCalls, 'No chance and an hour of delay: without the signal the bot keeps quiet');
+
+            $this->answerNow($agent, $bot->id + 1);
+            $agent->onTick();
+            $this->assertSame(0, $client->startGenerateCalls, 'Another bot is asked, not this one');
+
+            $this->answerNow($agent, $bot->id);
+            $this->scheduleAgain($agent);
+            $agent->onTick();
+            $this->assertSame(1, $client->startGenerateCalls, 'A chat change after the signal does not push the answer back by the delay');
+
+            $this->answerNow($agent, $bot->id);
+            $agent->onTick();
+            $this->assertSame(2, $client->startGenerateCalls, 'Asked while a request runs: the answer is the next request after it');
+
+            $agent->onTick();
+            $this->scheduleAgain($agent);
+            $agent->onTick();
+            $this->assertSame(2, $client->startGenerateCalls, 'The answer spent, the ordinary reaction is back');
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            RtTruthSourceRegistry::unregisterAgent($agentId);
+            ExecutionContext::setCurrentAgentId(null);
+            $bot->actions->delete();
+        }
+    }
+
     /** @param EntitySetting $setting Peer row whose persisted value is delivered to the bot's context */
     private function saveAndApplySetting(EntitySetting $setting): void
     {
@@ -102,6 +191,43 @@ final class BotAgentRefreshTest extends IntegrationTestCase
             'rt',
             'rt_sync_updated',
         );
+    }
+
+    /**
+     * @param BotAgent $agent Agent the library's signal reaches
+     * @param int $botId Bot the signal names
+     */
+    private function answerNow(BotAgent $agent, int $botId): void
+    {
+        $agent->onSignalAgent(
+            new AgentSignalData(new BotAgentSignalData(botId: $botId)),
+            'agent:' . LibraryAgent::AGENT_TYPE,
+            ChatSignalConstants::BOT_ANSWER_NOW,
+        );
+    }
+
+    /**
+     * @param int $botId Bot the command names
+     * @return list<array{string, mixed, mixed}> Every frame the library queued, in order: a signal with its name and bot, a reply
+     *     with its outcome and payload
+     */
+    private function askLibraryToAnswerNow(int $botId): array
+    {
+        $request = new CommandRequestDTO('answer-now', ChatCommandConstants::BOT_TEST_ANSWER_NOW, ['botId' => $botId]);
+        new LibraryAgent()->onSignalCommand(Hilos::$sr->createCommandPayloadDTO($request->command, $request), 'command', $request->command);
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $this->assertSame('answer-now', $signal->data->correlationId);
+                $frames[] = ['reply', $signal->data->isOk(), $signal->data->payload];
+                continue;
+            }
+            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+            $this->assertInstanceOf(BotAgentSignalData::class, $signal->data->data);
+            $frames[] = ['signal', $signal->signalName->getName(), $signal->data->data->botId];
+        }
+
+        return $frames;
     }
 }
 

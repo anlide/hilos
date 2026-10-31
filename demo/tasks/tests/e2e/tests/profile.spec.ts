@@ -22,7 +22,10 @@ import {
   modelKey,
   readModelRequests,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateGatewayBehavior,
+  releaseGatewayAnswer,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 
 // spec-owner: demo — tasks' React profile mounts the shared name edit flow.
 
@@ -111,8 +114,11 @@ test('publishes a profile name only after the model approves it', async ({
     const newName = `Updated ${key}`
     await typeInto(page.getByTestId('profile-name-input'), newName)
     await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
-    // Keep the provider answer pending while checking the published identity.
-    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 3000 })
+    // The gateway holds the provider answer while the published identity is
+    // checked; the test releases it afterwards.
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      awaitRelease: true,
+    })
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
     const checking = await expectProfileNameSnapshot(
@@ -139,6 +145,7 @@ test('publishes a profile name only after the model approves it', async ({
       user.name,
     )
 
+    await releaseGatewayAnswer('/model/api/generate', key)
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
       phase: 'done',

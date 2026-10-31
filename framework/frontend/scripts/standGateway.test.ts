@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   dictateGatewayBehavior,
   postToGateway,
+  releaseGatewayAnswer,
   STAND_GATEWAY_URL,
 } from './standGateway.mjs'
 
@@ -52,4 +53,30 @@ it('dictates a behavior as the route, the key and the levers together', async ()
     status: 502,
     delayMs: 300,
   })
+})
+
+it('releases a held answer by the route and the key alone', async () => {
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(null, { status: 204 }))
+
+  await releaseGatewayAnswer('/model/api/generate', 'bot-reply-1')
+
+  const [url, init] = fetch.mock.calls[0]
+  expect(url).toBe(`${STAND_GATEWAY_URL}/test/release`)
+  expect(init?.method).toBe('POST')
+  expect(JSON.parse(String(init?.body))).toEqual({
+    path: '/model/api/generate',
+    key: 'bot-reply-1',
+  })
+})
+
+it('fails with the release route when the gateway refuses a release', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(null, { status: 400 }),
+  )
+
+  await expect(
+    releaseGatewayAnswer('/model/api/generate', 'bot-reply-1'),
+  ).rejects.toThrow('stand gateway refused /test/release: 400')
 })

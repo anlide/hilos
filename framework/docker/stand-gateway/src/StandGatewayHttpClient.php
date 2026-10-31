@@ -18,7 +18,10 @@ use Hilos\Socket\SocketException;
  * is not kept alive, closes it the moment the answer is out. A declared {@see Behavior} bends
  * exactly those two moments: a delay holds the answer's bytes back, a cut shortens them and
  * closes, a hold keeps the connection open after them. HIL-921 made them two separate events
- * in the framework, which is what lets a subclass move one without touching the other.
+ * in the framework, which is what lets a subclass move one without touching the other. The
+ * fourth bend moves the first moment too: an answer that awaits its release is held until a
+ * spec released one answer of the call's route and key, and with a delay as well it leaves
+ * when both are over.
  *
  * Every wait is a deadline the gateway's tick checks, never a pause inside the call: the
  * gateway is one process serving every connection, and a call that stopped to wait would
@@ -32,6 +35,8 @@ use Hilos\Socket\SocketException;
  *   loop turning without end - so read() is not overridden.
  * - The delay counts from the moment the behavior was dictated, not from the first attempt to
  *   write, which would add a tick to every declared delay.
+ * - A release is spent once, by the first write that finds it; the writes after it do not ask
+ *   for another, or one held answer would spend the releases of its neighbors on the pair.
  * - An encrypted stream may take none or part of the bytes offered. The cut is made once, over
  *   the whole answer, and never over what is left after a partial write.
  */
@@ -49,27 +54,42 @@ final class StandGatewayHttpClient extends HttpClient
     /** @var ?float Moment the held connection is closed, as microtime(true); null while none is held */
     private ?float $closeAt = null;
 
+    /** @var ?string Provider route of the call being answered, null when nothing is dictated */
+    private ?string $path = null;
+
+    /** @var ?string Value of the call the dictated behavior was taken by, null when nothing is dictated */
+    private ?string $key = null;
+
+    /** @var bool Whether a spec's release has already let the held answer out */
+    private bool $released = false;
+
     /**
      * Takes the behavior declared for the call being routed.
      *
      * Called while the request is routed, before the answer is queued, so the delay runs from
-     * the call's arrival.
+     * the call's arrival. The route and the key are the pair the behavior was taken by, and so
+     * the pair a release for an answer that awaits one is looked for under.
      *
      * @param Behavior $behavior Behavior to send the coming answer with
+     * @param string $path Provider route that was called
+     * @param string $key Value of the call the behavior was taken by
      */
-    public function dictate(Behavior $behavior): void
+    public function dictate(Behavior $behavior, string $path, string $key): void
     {
         $this->behavior = $behavior;
         $this->releaseAt = microtime(true) + $behavior->delayMs / TimeConstants::MS_PER_SECOND;
+        $this->path = $path;
+        $this->key = $key;
     }
 
     /**
      * Sends the queued answer, holding it back, cutting it or keeping the connection open as dictated.
      *
-     * Before the delay is over nothing leaves and the buffer stays whole. Then a cut shortens
-     * the answer once, to its headers and the first half of its body, and closes the
-     * connection when that is out; a hold takes the closing over from the keep-alive policy.
-     * Without a dictated behavior this is the framework's write.
+     * Before a release came for an answer that awaits one, and before the delay is over,
+     * nothing leaves and the buffer stays whole. Then a cut shortens the answer once, to its
+     * headers and the first half of its body, and closes the connection when that is out; a
+     * hold takes the closing over from the keep-alive policy. Without a dictated behavior this
+     * is the framework's write.
      *
      * @throws SocketException If socket write fails
      * @throws HilosException When buffered wire input refuses to become a DTO
@@ -77,6 +97,13 @@ final class StandGatewayHttpClient extends HttpClient
     public function write(): void
     {
         if ($this->behavior !== null && $this->writeBuffer !== '') {
+            if ($this->behavior->awaitRelease && !$this->released) {
+                if (!Store::takeRelease($this->path, $this->key)) {
+                    return;
+                }
+                $this->released = true;
+            }
+
             if (microtime(true) < $this->releaseAt) {
                 return;
             }
@@ -132,9 +159,9 @@ final class StandGatewayHttpClient extends HttpClient
     /**
      * Once the answer is out, starts the dictated hold, or forgets the behavior and reads the next request.
      *
-     * A cut without a hold never gets here: the connection is already set to close. A status
-     * or a delay leaves the connection's policy alone, so the next request on a kept-alive
-     * connection is answered without levers.
+     * A cut without a hold never gets here: the connection is already set to close. A status,
+     * a delay or a release leaves the connection's policy alone, so the next request on a
+     * kept-alive connection is answered without levers.
      *
      * @throws SocketException When outbound write fails while handling a subsequent request
      * @throws InvalidFormatException When the request query string carries a non-string value
@@ -150,6 +177,9 @@ final class StandGatewayHttpClient extends HttpClient
 
         $this->behavior = null;
         $this->releaseAt = null;
+        $this->path = null;
+        $this->key = null;
+        $this->released = false;
 
         parent::onAfterOutboundDrained();
     }

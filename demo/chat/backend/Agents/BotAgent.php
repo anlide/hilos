@@ -22,7 +22,10 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Utils\ChatLLMHelper;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -75,6 +78,10 @@ final class BotAgent extends AbstractLlmChatAgent
             AgentSignalConfigKey::INDEX_FIELD => 'botId',
             AgentSignalConfigKey::DTO => BotAgentSignalData::class,
         ],
+        ChatSignalConstants::BOT_ANSWER_NOW => [
+            AgentSignalConfigKey::INDEX_FIELD => 'botId',
+            AgentSignalConfigKey::DTO => BotAgentSignalData::class,
+        ],
     ];
 
     private const int MAX_RESPONSE_TOKENS = 256;
@@ -83,6 +90,12 @@ final class BotAgent extends AbstractLlmChatAgent
     private const int REACTION_CHANCE_MAX_PERCENT = 100;
 
     private float $scheduledReactAt = 0.0;
+
+    /**
+     * Raised by the answer-now signal: the next request goes to the model past the delay, the chance, the pause after
+     * its own message and the topic. Read by this agent alone, and a restart has nothing of it worth keeping.
+     */
+    private bool $answerNow = false;
 
     private float $lastMessageSentAt = 0.0;
 
@@ -192,6 +205,35 @@ final class BotAgent extends AbstractLlmChatAgent
     }
 
     /**
+     * Takes the signals addressed to this bot's agent.
+     *
+     * @param AgentSignalData $data Agent signal wrapper with the bot payload
+     * @param string $sender Sender in full, unused
+     * @param string $name Agent signal name
+     * @throws AgentUnknownSignalException When the signal name is not one this agent declares
+     * @throws InvalidAgentSignalPayloadException When the answer-now payload is not a bot signal payload
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case ChatSignalConstants::BOT_AGENT_START:
+                // The frame addressed to the agent is what started it; nothing is left for the handler.
+                return;
+
+            case ChatSignalConstants::BOT_ANSWER_NOW:
+                if (!$data->data instanceof BotAgentSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BotAgentSignalData::class, $data->data);
+                }
+                $this->scheduleAnswerNow($data->data);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
      * Schedules a post-clear reaction when the chat event stream is reset.
      *
      * @param DbSyncCreatedSignalData $data Created event row sync payload
@@ -249,14 +291,16 @@ final class BotAgent extends AbstractLlmChatAgent
     }
 
     /**
-     * Consumes the scheduled reaction and starts generation when the bot should react.
+     * Consumes the scheduled reaction and starts generation when the bot was asked to answer now or should react.
      *
      * @throws HilosException On bot or chat context lookup failure
      */
     protected function startRequest(): void
     {
+        $forced = $this->answerNow;
+        $this->answerNow = false;
         $this->scheduledReactAt = 0.0;
-        if ($this->shouldReact()) {
+        if ($forced || $this->shouldReact()) {
             $this->startGenerate();
         }
     }
@@ -299,13 +343,27 @@ final class BotAgent extends AbstractLlmChatAgent
     }
 
     /**
-     * Schedules the next reaction from bot delay settings unless generation is active or bot is missing.
+     * Moves this bot's reaction to now and raises the answer-now flag; a request already running goes first.
+     *
+     * @param BotAgentSignalData $data Bot asked to answer now
+     */
+    private function scheduleAnswerNow(BotAgentSignalData $data): void
+    {
+        if ($data->botId !== $this->botId) {
+            return;
+        }
+        $this->answerNow = true;
+        $this->scheduledReactAt = microtime(true);
+    }
+
+    /**
+     * Schedules the next reaction from bot delay settings unless an answer-now is due, generation is active or bot is missing.
      *
      * @throws HilosException When bot lookup fails
      */
     private function scheduleReaction(): void
     {
-        if ($this->chatClient->isBusy() || $this->generationInFlight) {
+        if ($this->answerNow || $this->chatClient->isBusy() || $this->generationInFlight) {
             return;
         }
 

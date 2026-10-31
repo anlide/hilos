@@ -344,6 +344,20 @@ final class ChatSignalRouterTest extends TestCase
         ], $destinations);
     }
 
+    public function testBotAnswerNowRoutesToBotAgentWithExtractedIndex(): void
+    {
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(ChatSignalConstants::BOT_ANSWER_NOW),
+            new AgentSignalData(new BotAgentSignalData(botId: 42)),
+        ));
+
+        $this->assertEquals([
+            new AgentDestination(AgentType::BOT, '42'),
+        ], $destinations);
+    }
+
     /**
      * The delivery seam on the real chat topology (HIL-567).
      *

@@ -37,7 +37,10 @@ import {
   modelKey,
   readModelRequests,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateGatewayBehavior,
+  releaseGatewayAnswer,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 
 // The profile root (HIL-1169): the avatar in the header leads to /profile over
 // the live socket. The Name row exposes Change through the shared rename flow.
@@ -125,7 +128,9 @@ test('publishes a profile name only after model approval and preserves it after 
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     const newName = `Updated ${key}`
     await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
-    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 3000 })
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      awaitRelease: true,
+    })
     await typeInto(page.getByTestId('profile-name-input'), newName)
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
@@ -137,6 +142,7 @@ test('publishes a profile name only after model approval and preserves it after 
     await expect(page.getByTestId('modal')).toBeVisible()
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
+    await releaseGatewayAnswer('/model/api/generate', key)
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
       phase: 'done',

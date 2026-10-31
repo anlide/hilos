@@ -34,7 +34,10 @@ import {
   observeModeration,
   observeChatSubmission,
 } from '../../../../../framework/frontend/scripts/moderationObservation.mjs'
-import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateGatewayBehavior,
+  releaseGatewayAnswer,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import {
   UPLOADS_WORKER_AGENT,
@@ -42,6 +45,7 @@ import {
 } from '../../../../../framework/frontend/scripts/stoppedUploadWorker.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { queuedPicture, pictureControls } from '../helpers/queuedPicture.js'
+import { endSendPause } from '../helpers/sendPause.js'
 import { logout } from '../helpers/session.js'
 
 // spec-owner: demo — chat consumes framework moderation for its message attachments
@@ -51,7 +55,9 @@ import { logout } from '../helpers/session.js'
 // dictations for the key in both text and file names play in attachment order.
 //
 // Content refusals notify the author; unavailable and local unreadable do not.
-// Recovery waits for the original re-send lockout through the control's state.
+// Recovery ends the original re-send lockout by command and then waits for the
+// control's state. A model answer the gateway holds leaves only when the spec
+// releases it, after the state that stands while it is held has been checked.
 
 const PNG_MIME = 'image/png'
 
@@ -154,13 +160,15 @@ test('the second picture refusal releases both inputs and a new selection can pu
   const trace = await pictureControls(page, record)
   const failures: unknown[] = []
   try {
-    await createTestUserJoined(expect, page)
+    const { userId } = await createTestUserJoined(expect, page)
     await dictateModerationVerdict(key, true, 'ok')
     await dictateModerationVerdict(key, true, 'ok')
     await dictateModerationVerdict(key, false, 'violence')
     await dictateGatewayBehavior('/model/api/generate', key, {})
     await dictateGatewayBehavior('/model/api/generate', key, {})
-    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 1_600 })
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      awaitRelease: true,
+    })
 
     await attachPngs(page, [
       { name: first, buffer: PICTURE_PNG },
@@ -191,6 +199,7 @@ test('the second picture refusal releases both inputs and a new selection can pu
       originals,
       arrivals: await readModelRequests(key),
     })
+    await releaseGatewayAnswer('/model/api/generate', key)
 
     await expect(page.getByTestId('moderation-text')).toHaveText(
       'Message rejected: attachment 2 (' + second + ') looks violent.',
@@ -264,10 +273,11 @@ test('the second picture refusal releases both inputs and a new selection can pu
     await dictateModerationVerdict(key, true, 'ok')
     await dictateGatewayBehavior('/model/api/generate', key, {})
     await dictateGatewayBehavior('/model/api/generate', key, {})
-    await dictateGatewayBehavior('/model/api/generate', key, { delayMs: 1_600 })
-    await expect(page.getByTestId('message-send')).toBeEnabled({
-      timeout: 20_000,
+    await dictateGatewayBehavior('/model/api/generate', key, {
+      awaitRelease: true,
     })
+    await endSendPause(userId)
+    await expect(page.getByTestId('message-send')).toBeEnabled()
     await clickSubmit(expect, page.getByTestId('message-send'))
     await expect
       .poll(
@@ -290,6 +300,7 @@ test('the second picture refusal releases both inputs and a new selection can pu
       retryUploads,
       arrivals: await readModelRequests(key),
     })
+    await releaseGatewayAnswer('/model/api/generate', key)
     const messages = page.getByTestId('event-text').filter({ hasText: key })
     await expect(messages).toHaveCount(1)
     await expect(page.getByTestId('moderation-text')).toHaveCount(0)
@@ -356,7 +367,7 @@ test('the second picture refusal releases both inputs and a new selection can pu
 test('an unavailable picture returns its chip and a corrected retry publishes once', async ({
   page,
 }) => {
-  await createTestUserJoined(expect, page)
+  const { userId } = await createTestUserJoined(expect, page)
 
   const key = modelKey()
   const filename = `${key}.png`
@@ -391,10 +402,10 @@ test('an unavailable picture returns its chip and a corrected retry publishes on
   await dictateModerationVerdict(key, true, 'ok')
   await dictateModerationVerdict(key, true, 'ok')
   await typeInto(page.getByTestId('message-input'), corrected)
-  // Unavailable does not clear the original ten-second submit lockout.
-  await expect(page.getByTestId('message-send')).toBeEnabled({
-    timeout: 20_000,
-  })
+  // Unavailable does not clear the original ten-second submit lockout; a
+  // command ends it.
+  await endSendPause(userId)
+  await expect(page.getByTestId('message-send')).toBeEnabled()
   await clickSubmit(expect, page.getByTestId('message-send'))
   await expect(page.getByTestId('moderation-text')).toHaveCount(0)
   await expect(page.getByTestId('message-input')).toHaveValue('')
@@ -499,7 +510,7 @@ test.describe('a replacement queued before upload hold admission', () => {
       await dictateModerationVerdict(keys.message, true, 'ok')
       await dictateModerationVerdict(keys.a, true, 'ok')
       await dictateGatewayBehavior('/model/api/generate', keys.a, {
-        delayMs: 1_000,
+        awaitRelease: true,
       })
       // Announce B for request capture without dictating a verdict for it.
       await dictateGatewayBehavior('/model/api/generate', keys.b, {})
@@ -595,6 +606,8 @@ test.describe('a replacement queued before upload hold admission', () => {
         replaced,
         observation: await observeModeration(acceptKey, 'chat_message'),
       })
+      // An answer for A, had its call come, leaves only after the replacement.
+      await releaseGatewayAnswer('/model/api/generate', keys.a)
       await expect(author.getByTestId('moderation-text')).toHaveText(
         'Moderation is unavailable right now. Your message is still here.',
       )
@@ -752,10 +765,10 @@ test.describe('the whole picture group through final owner handover', () => {
       await dictateModerationVerdict(keys.a2, true, 'ok')
       await dictateGatewayBehavior('/model/api/generate', keys.b, {})
       await dictateGatewayBehavior('/model/api/generate', keys.a1, {
-        delayMs: 1_600,
+        awaitRelease: true,
       })
       await dictateGatewayBehavior('/model/api/generate', keys.a2, {
-        delayMs: 4_000,
+        awaitRelease: true,
       })
       await attachPngs(author, files)
       const originals = structuredClone(trace.observer.summary())
@@ -810,6 +823,7 @@ test.describe('the whole picture group through final owner handover', () => {
         return observation
       }
       const firstStage = await activePicture(keys.a1)
+      await releaseGatewayAnswer('/model/api/generate', keys.a1)
       const secondStage = await activePicture(keys.a2)
       expect(secondStage.checkRequestId).not.toBe(firstStage.checkRequestId)
       expect(secondStage.activeRequestId).not.toBe(firstStage.activeRequestId)
@@ -921,6 +935,7 @@ test.describe('the whole picture group through final owner handover', () => {
           observation: activeWhileStopped,
         })
         await held.assertStopped()
+        await releaseGatewayAnswer('/model/api/generate', keys.a2)
         await expect
           .poll(async () => {
             await held.assertStopped()
@@ -1074,12 +1089,12 @@ test.describe('the whole picture group through final owner handover', () => {
     const failures: unknown[] = []
     let replacementId: string | undefined
     try {
-      await createTestUserJoined(expect, page)
+      const { userId } = await createTestUserJoined(expect, page)
       await dictateModerationVerdict(keys.message, true, 'ok')
       await dictateModerationVerdict(keys.a1, true, 'ok')
       await dictateModerationVerdict(keys.a2, true, 'ok')
       await dictateGatewayBehavior('/model/api/generate', keys.a2, {
-        delayMs: 2_000,
+        awaitRelease: true,
       })
       await dictateGatewayBehavior('/model/api/generate', keys.b, {})
       await attachPngs(page, [
@@ -1175,16 +1190,18 @@ test.describe('the whole picture group through final owner handover', () => {
       await expect(unreadBadge(page)).toBeHidden()
       await page.getByTestId('hilos-notification-toggle').click()
 
-      // A real new selection and the original submit lockout carry us beyond
-      // the old delayed allow. No manual check/connection restore is involved.
+      // The old allow for A2 leaves only now, after the same-id replacement
+      // completed. A real new selection, sent once a command ends the original
+      // submit lockout, follows it. No manual check/connection restore is
+      // involved.
+      await releaseGatewayAnswer('/model/api/generate', keys.a2)
       const retryFile = { name: `${keys.retryImage}.png`, buffer: PICTURE_PNG }
       await attachPngs(page, [retryFile])
       await dictateModerationVerdict(keys.retry, true, 'ok')
       await dictateModerationVerdict(keys.retryImage, true, 'ok')
       await typeInto(page.getByTestId('message-input'), keys.retry)
-      await expect(page.getByTestId('message-send')).toBeEnabled({
-        timeout: 20_000,
-      })
+      await endSendPause(userId)
+      await expect(page.getByTestId('message-send')).toBeEnabled()
       await clickSubmit(expect, page.getByTestId('message-send'))
       const messages = page
         .getByTestId('event-text')
@@ -1302,7 +1319,6 @@ test.describe('an active picture loses its submitting connection or person', () 
     test(`${transition} discards the old attempt before a new person's picture publishes`, async ({
       browser,
     }, info) => {
-      const delayMs = 3_500
       const keys = {
         message: modelKey(),
         first: modelKey(),
@@ -1337,7 +1353,7 @@ test.describe('an active picture loses its submitting connection or person', () 
         await dictateModerationVerdict(keys.first, true, 'ok')
         await dictateModerationVerdict(keys.last, true, 'ok')
         await dictateGatewayBehavior('/model/api/generate', keys.last, {
-          delayMs,
+          awaitRelease: true,
         })
         await attachPngs(author, originalFiles)
         const originals = structuredClone(trace.observer.summary())
@@ -1398,7 +1414,6 @@ test.describe('an active picture loses its submitting connection or person', () 
           admitted,
           arrivals,
           oldArrivalObservedAt,
-          delayMs,
         })
 
         await test.step('end the original attempt through the real lifecycle door', async () => {
@@ -1491,9 +1506,10 @@ test.describe('an active picture loses its submitting connection or person', () 
         }
 
         await test.step('a fresh SDK picture crosses the old response window and publishes once', async () => {
-          // This successful provider round trip starts AFTER cleanup and has
-          // the same delay as the old IMAGE. Its completion, rather than a
+          // The old IMAGE answer leaves only AFTER cleanup, and this successful
+          // provider round trip starts after it. Its completion, rather than a
           // sleep or instantaneous DOM read, fences the old response window.
+          await releaseGatewayAnswer('/model/api/generate', keys.last)
           const witness = transition === 'close' ? observer : author
           const witnessControl = transition === 'close' ? witnessTrace : trace
           const witnessFile = {
@@ -1506,7 +1522,7 @@ test.describe('an active picture loses its submitting connection or person', () 
             '/model/api/generate',
             keys.witnessImage,
             {
-              delayMs,
+              awaitRelease: true,
             },
           )
           await attachPngs(witness, [witnessFile])
@@ -1540,14 +1556,12 @@ test.describe('an active picture loses its submitting connection or person', () 
           expect(witnessActive.activeRequestId).toEqual(expect.any(String))
           expect(witnessActive.activeRequestId).not.toBe(active.activeRequestId)
           record({ kind: 'witness-image-active', witnessActive, fresh })
+          await releaseGatewayAnswer('/model/api/generate', keys.witnessImage)
           const messages = observer
             .getByTestId('event-text')
             .filter({ hasText: keys.witness })
           await expect(messages).toHaveCount(1)
           await expect(messages).toHaveText(keys.witness)
-          expect(Date.now() - oldArrivalObservedAt).toBeGreaterThanOrEqual(
-            delayMs,
-          )
           expect(await observeChatSubmission(witnessAcceptKey)).toEqual({
             phase: '',
             activeCheckRequestIds: [],

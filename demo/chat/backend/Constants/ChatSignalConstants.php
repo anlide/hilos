@@ -46,6 +46,12 @@ final class ChatSignalConstants
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */
     public const string BOT_AGENT_START = 'bot_agent_start';
 
+    /**
+     * @var string LibraryAgent → BotAgent: go to the model on the next free tick, past the delay, the chance,
+     *     the pause after its own message and the topic (the test-only answer-now command)
+     */
+    public const string BOT_ANSWER_NOW = 'bot_answer_now';
+
     /** @var string BotAgent → ChatAgent: publish generated bot message */
     public const string BOT_MESSAGE = 'bot_message';
 

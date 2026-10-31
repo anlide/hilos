@@ -20,6 +20,13 @@ Each active bot gets its own `BotAgent` instance, started on boot or by `Library
 6. `ChatAgent` publishes the message to the event stream
 7. `selfStop()` when bot is disabled or deleted
 
+## Answer now (test-only)
+
+`BOT_ANSWER_NOW` comes from `LibraryAgent` on the test-only `test:chat:bot-answer-now` command and is routed by `botId`
+like `BOT_AGENT_START`. It moves the reaction to now and raises a flag: the next free tick goes to the model past the delay,
+the chance, the pause after the bot's own message and the topic, and an ordinary reschedule does not move it back. A request
+already running goes first. The ordinary reaction does not change.
+
 ## Agent index
 
 Bot agents use `botId` (string) as `agentIndex`:

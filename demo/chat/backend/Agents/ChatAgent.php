@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
+use Demo\Chat\CLI\DTO\SendPauseEndCommandData;
 use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\AgentType;
@@ -132,6 +133,7 @@ final class ChatAgent extends AbstractAgent
 
     public const array AGENT_COMMANDS = [
         ChatCommandConstants::SUBMISSION_TEST_OBSERVE => SubmissionObserveCommandData::class,
+        ChatCommandConstants::SEND_PAUSE_TEST_END => SendPauseEndCommandData::class,
     ];
 
     // The library frame is declared HERE and not in the library, which is what routes it to
@@ -158,17 +160,30 @@ final class ChatAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
-        if ($data->command !== ChatCommandConstants::SUBMISSION_TEST_OBSERVE) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+        switch ($data->command) {
+            case ChatCommandConstants::SUBMISSION_TEST_OBSERVE:
+                if (!NonProductionGate::admitted()) {
+                    $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Submission observation is test-only'));
 
-            return;
-        }
-        if (!NonProductionGate::admitted()) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Submission observation is test-only'));
+                    return;
+                }
+                $this->observeSubmission($data, $data->parsedPayload);
 
-            return;
+                return;
+
+            case ChatCommandConstants::SEND_PAUSE_TEST_END:
+                if (!NonProductionGate::admitted()) {
+                    $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Send pause end is test-only'));
+
+                    return;
+                }
+                $this->endSendPause($data, $data->parsedPayload);
+
+                return;
+
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
         }
-        $this->observeSubmission($data, $data->parsedPayload);
     }
 
     /**
@@ -631,6 +646,25 @@ final class ChatAgent extends AbstractAgent
             ChatCommandConstants::phase => Hilos::$rt->connections[$query->acceptKey]->outboundModerationPhase,
             ChatCommandConstants::activeCheckRequestIds => $requestIds,
         ]));
+    }
+
+    /**
+     * Ages the moment of the person's last accepted send, so MainPage's own rate-limit rule accepts the next one.
+     *
+     * @param CommandRequestDTO $request Command to answer
+     * @param SendPauseEndCommandData $query Person whose send pause ends
+     * @throws HilosException When the user state cannot be read or written or the reply cannot be queued
+     */
+    private function endSendPause(CommandRequestDTO $request, SendPauseEndCommandData $query): void
+    {
+        $userState = Hilos::$rt->userStates[$query->userId];
+        if ($userState === null || $userState->lastOutboundSubmittedAt === 0.0) {
+            $this->replyToCommand(CommandReplyDTO::error($request->correlationId, "No send pause to end for user {$query->userId}"));
+
+            return;
+        }
+        $userState->actions->endSendPause();
+        $this->replyToCommand(CommandReplyDTO::ok($request->correlationId, [ChatCommandConstants::userId => $query->userId]));
     }
 
     /**

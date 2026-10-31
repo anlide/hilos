@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
+import { walkLogStore } from '../../../../../framework/frontend/scripts/standLogs.mjs'
 import {
   deriveTimeoutScale,
   readHostPressure,
@@ -16,7 +17,8 @@ import {
 //
 // The round trip shared with adminGrant.ts lives in the framework's node-side
 // scripts; this helper keeps only the binance-btc-tracker daemon's address, the
-// command names and the reply window.
+// append and rotate command names and the reply window. The walk is asked
+// through the shared standLogs.mjs, which any demo's spec can use.
 const COMMAND_HOST =
   process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
@@ -30,8 +32,6 @@ const REPLY_TIMEOUT_MS = 10_000
 const APPEND_COMMAND = 'test:log:append'
 
 const ROTATE_COMMAND = 'test:logs:rotate'
-
-const WALK_COMMAND = 'test:logs:walk'
 
 const channels = new Map<string, ReturnType<typeof createCommandChannel>>()
 
@@ -132,7 +132,7 @@ export async function rotateLogs(host = COMMAND_HOST): Promise<number> {
  * @param host Daemon whose log-store agent should walk.
  */
 export async function walkLogs(host = COMMAND_HOST): Promise<void> {
-  await channel(host)(WALK_COMMAND, {})
+  await walkLogStore(host)
 }
 
 /**

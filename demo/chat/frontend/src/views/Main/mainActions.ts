@@ -19,7 +19,8 @@ const MESSAGE_ACTION = 'message'
  * Re-send lockout in seconds shown after a submit, mirroring the backend
  * `ChatUserState::MESSAGE_RATE_LIMIT_SECONDS`. The backend tolerates a re-send
  * one second early, so the client countdown is the safe upper bound; the
- * backend-reported remaining (`messageRateLimitSecondsRemaining`) reconciles it.
+ * backend-reported remaining (`messageRateLimitSecondsRemaining`) reconciles the
+ * countdown in both directions, and a remaining of 0 puts it out.
  */
 export const MESSAGE_RATE_LIMIT_SECONDS = 10
 

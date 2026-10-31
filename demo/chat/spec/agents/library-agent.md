@@ -9,5 +9,7 @@ Owns admin-managed chat library data: bot profiles.
 - Register `ChatDbContext::bots` as the DB truth source.
 - Serve `ADMIN_BOTS` subscriptions and `BOT_CREATE` / `BOT_UPDATE` / `BOT_DELETE` actions through `AdminBotsPage`.
 - Start a `BotAgent:botId` after creating or reactivating an active bot.
+- Answer the test-only `test:chat:bot-answer-now` command: an active bot's agent gets `BOT_ANSWER_NOW` and the command is
+  accepted at once; a stopped or unknown bot is refused, because the signal would start an agent nothing stops afterwards.
 
 `LibraryAgent` does not run LLM work and does not write chat events, users, or runtime connection state.

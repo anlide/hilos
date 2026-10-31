@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\ChatCommandConstants;
+use Demo\Chat\CLI\DTO\BotAnswerNowCommandData;
+use Demo\Chat\CLI\DTO\SendPauseEndCommandData;
 use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
 use Hilos\Moderation\ModerationCommandConstants;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
@@ -2185,6 +2187,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MODERATION_RULE_DELETE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
             HilosSignalConstants::MODERATION_RULE_UPDATE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
+            ChatSignalConstants::BOT_ANSWER_NOW => AgentType::BOT,
             HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_AGENT_PASS => HilosAgentType::HILOS_INDEX,
@@ -2246,6 +2249,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatCommandConstants::SUBMISSION_TEST_OBSERVE => AgentType::CHAT,
+            ChatCommandConstants::SEND_PAUSE_TEST_END => AgentType::CHAT,
             CliCommands::LEGAL_TEST_HOLD => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::VERIFICATION_TEST_SWEEP => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::VERIFICATION_TEST_END_PAUSE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2280,6 +2284,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::I18N_TEST_COUNTRY_NAMES_SEED => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR => HilosAgentType::HILOS_I18N_LIBRARY,
             ModerationCommandConstants::TEST_OBSERVE => HilosAgentType::HILOS_MODERATOR,
+            ChatCommandConstants::BOT_TEST_ANSWER_NOW => AgentType::LIBRARY,
             CliCommands::COMMAND_TEST_ECHO => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
@@ -2307,7 +2312,9 @@ final class ChatTopologyRegistryTest extends TestCase
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([
             ChatCommandConstants::SUBMISSION_TEST_OBSERVE => SubmissionObserveCommandData::class,
+            ChatCommandConstants::SEND_PAUSE_TEST_END => SendPauseEndCommandData::class,
             ModerationCommandConstants::TEST_OBSERVE => ModerationObserveCommandData::class,
+            ChatCommandConstants::BOT_TEST_ANSWER_NOW => BotAnswerNowCommandData::class,
         ], Hilos::getCommandDtoRoutes());
     }
 
@@ -2364,6 +2371,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => 'userId',
             ChatSignalConstants::BOT_AGENT_START => 'botId',
+            ChatSignalConstants::BOT_ANSWER_NOW => 'botId',
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::shardKey,
@@ -2537,6 +2545,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MODERATION_RULE_DELETE => ModerationRuleDeleteSignalData::class,
             HilosSignalConstants::MODERATION_RULE_UPDATE => ModerationRuleUpdateSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
+            ChatSignalConstants::BOT_ANSWER_NOW => BotAgentSignalData::class,
             HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
             HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => ManualMaintenanceDisableSignalData::class,
             HilosSignalConstants::MAINTENANCE_AGENT_PASS => ManualMaintenancePassSignalData::class,

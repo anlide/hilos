@@ -9,9 +9,9 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * BotAgentSignalData - DTO for bot agent lifecycle signals (start/stop/reload).
+ * BotAgentSignalData - DTO for the signals addressed to one bot's agent.
  *
- * Used by BOT_AGENT_START, BOT_AGENT_STOP, BOT_AGENT_RELOAD signals.
+ * Used by BOT_AGENT_START and BOT_ANSWER_NOW signals.
  */
 final class BotAgentSignalData extends BaseDTO implements SignalDataInterface
 {

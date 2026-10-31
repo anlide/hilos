@@ -283,8 +283,8 @@ deviation the owner approves in the leaf's contract
 
 Specs written before this rule still wait clocks: the delivery window, the Status heartbeat and
 staleness with their fast compose overlay and the split binance phases, node reports, cron
-firings, the chat send pause, stand gateway delays, bot reaction
-delays, and socket silence on a shortened stand clock. They are debt, not a pattern to copy.
+firings, the OAuth agent's request deadline, waited out through a stand gateway delay or hold,
+and socket silence on a shortened stand clock. They are debt, not a pattern to copy.
 
 ## Database-free commands
 

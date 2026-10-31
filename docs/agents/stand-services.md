@@ -101,10 +101,11 @@ Two things about the house are deliberate and easy to "fix" by mistake:
   The gateway runs the framework's own classes, written in the same PHP as the
   rest of the repository, and an older image would not parse them — the
   container would not come up at all (`Dockerfile`, header comment).
-- **Only the house's own routes are unprefixed**, and there are three:
+- **Only the house's own routes are unprefixed**, and there are four:
   `GET /test/health`, which the compose healthcheck waits on before it starts the
-  daemon; `POST /test/reset`, which wipes the whole store; and
-  `POST /test/behavior`, which dictates how a provider route answers. They are
+  daemon; `POST /test/reset`, which wipes the whole store;
+  `POST /test/behavior`, which dictates how a provider route answers; and
+  `POST /test/release`, which lets out an answer a behavior holds. They are
   about the gateway, not about any resident — the behavior levers work the same
   on every provider route, so they are the house's — and a resident does not add
   to them. What a resident has to be told lives under its own prefix instead:
@@ -414,10 +415,11 @@ the house's, not the resident's.
 
 A provider route answers the way a spec tells it to (HIL-922). The spec declares
 the answer over HTTP, on the house's own route, before the product's call arrives,
-and the declaration is spent on exactly one call. Four levers: the **status** the
+and the declaration is spent on exactly one call. Five levers: the **status** the
 call is refused with, a **delay** before the answer, a **cut** in the middle of
-the answer, and a **hold** — keeping the connection open for a while after the
-answer is complete.
+the answer, a **hold** — keeping the connection open for a while after the
+answer is complete — and an **awaitRelease**, keeping the answer back until the
+spec releases it.
 
 **The wire.** `POST /test/behavior` with a JSON body:
 
@@ -426,19 +428,20 @@ answer is complete.
 ```
 
 `path` names a provider route of a resident and `key` the value of the call the
-declaration is scoped to; `status`, `delayMs`, `cut` and `holdMs` are the levers,
-each optional. Accepted — `200 {"ok":true}`. Refused —
+declaration is scoped to; `status`, `delayMs`, `cut`, `holdMs` and `awaitRelease`
+are the levers, each optional. Accepted — `200 {"ok":true}`. Refused —
 `400 {"ok":false,"error":<code>}`, and the checks run in this order, so the first
 mistake is the one named:
 
-1. `FIELD_UNKNOWN` — a key that is not one of the six; this is what catches
+1. `FIELD_UNKNOWN` — a key that is not one of the seven; this is what catches
    `delay_ms` written for `delayMs`;
 2. `PATH_NOT_PROVIDER` — the path is not a provider route: a path nobody
    registered, a resident's test half, or a house route;
 3. `KEY_REQUIRED` — the key is missing, not a string, or empty;
 4. `STATUS_OUT_OF_RANGE` — the status is not an integer from 400 to 599;
 5. `DURATION_INVALID` — `delayMs` or `holdMs` is not an integer of at least 0;
-6. `CUT_INVALID` — `cut` is not a boolean.
+6. `CUT_INVALID` — `cut` is not a boolean;
+7. `RELEASE_INVALID` — `awaitRelease` is not a boolean.
 
 The types are strict because the helper sends JSON only; a refusal fails the spec
 where the declaration was made, rather than later on a provider that answered as
@@ -460,7 +463,7 @@ that fails three retries, and "500, then slow, then as usual" is three
 declarations — there is no counter field.
 
 **What each lever does**, and they combine in one declaration ("500 after two
-seconds", "cut, then hold"):
+seconds", "cut, then hold", "500 when released"):
 
 - **status** — the resident's handler is not called: a provider that failed
   delivered nothing, and a letter in Mailpit for a refused call would be a lie a
@@ -475,17 +478,43 @@ seconds", "cut, then hold"):
 - **holdMs** — after the last byte of the answer, whole or cut, the connection
   stays open that many milliseconds and then the gateway closes it; whatever
   arrives meanwhile is thrown away, and a peer that closes first ends it at once.
+- **awaitRelease** — the answer is built when the call arrives, as with a delay,
+  and its bytes leave only once the spec released it. The connection is read all
+  the while, so a product that gives the call up by its own deadline closes it at
+  once. It combines with a status, a cut and a hold; with a delay the answer
+  leaves when both are met — the release has come and the delay is over.
 
 A call with a cut or a hold always ends its connection, even when the request
-asked for keep-alive. A status and a delay leave the connection's policy alone,
-and the next request on a kept-alive connection is answered without levers.
+asked for keep-alive. A status, a delay and a release leave the connection's
+policy alone, and the next request on a kept-alive connection is answered without
+levers.
+
+**The release.** `POST /test/release` with a JSON body naming the same pair a
+declaration does, and nothing else:
+
+```json
+{"path": "/model/api/generate", "key": "bot-reply-1"}
+```
+
+One release lets out one held answer of that pair. A release that comes before
+the call is kept, and the call it is meant for leaves the moment it arrives — so
+a spec releases when its scenario is ready and never has to catch the call's
+arrival. Which of two answers held on one pair leaves first is not promised; a
+spec that needs an order gives the calls different keys. Accepted —
+`200 {"ok":true}`; refused — `400 {"ok":false,"error":<code>}` with the codes and
+the order of a declaration: `FIELD_UNKNOWN` for a key other than `path` and
+`key`, then `PATH_NOT_PROVIDER`, then `KEY_REQUIRED`. Kept releases live in the
+store beside the declarations: `POST /test/reset` wipes them with everything else,
+and the model's `POST /model/test/forget` wipes those of its key with that key's
+other arrangements.
 
 **How precise a deadline is.** A delay and a hold are deadlines the gateway's tick
 checks every 10 ms (`bin/serve.php`, `LOOP_PAUSE_US`), never a pause inside a
 handler: the gateway is one process serving every connection, and a handler that
 stopped to wait would stall all of them — the very failure a delay exists to
 imitate on ONE call. A deadline never comes early and comes at most one tick late,
-so a spec measures only the lower bound.
+so a spec measures only the lower bound. A held answer looks for its release on
+the same tick, so it leaves at most one tick after the release came.
 
 The hold is not a nicety, and the number behind it was measured while
 HIL-732 was being fixed (recorded on the epic, HIL-918): a counterpart that
@@ -520,12 +549,15 @@ failed-provider scenarios are written once: they live in
 `demo/chat/tests/e2e/tests/auth.spec.ts` (HIL-926) — a status, a delay and a cut
 from the house, and beside them the order for an expired code, which no lever
 gives because a provider refuses a code in a form of its own. The declaration is
-`src/Behavior.php`, the queues live in `Store`, `GatewayRoutes::provider()` takes
-the declaration on the call, and `src/StandGatewayHttpClient.php` plays the delay,
-the cut and the hold out on the connection. A spec dictates through
-`dictateGatewayBehavior()` in `framework/frontend/scripts/standGateway.mjs`; the
-gateway's own mechanics are held to this contract by
-`demo/chat/tests/e2e/tests/stand-gateway.spec.ts`.
+`src/Behavior.php`, the queues and the kept releases live in `Store`,
+`GatewayRoutes::provider()` takes the declaration on the call, and
+`src/StandGatewayHttpClient.php` plays the delay, the cut, the hold and the wait
+for a release out on the connection. A spec dictates through
+`dictateGatewayBehavior()` and releases through `releaseGatewayAnswer()`, both in
+`framework/frontend/scripts/standGateway.mjs`; the gateway's own mechanics are
+held to this contract by `demo/chat/tests/e2e/tests/stand-gateway.spec.ts`, and
+the release by `framework/tests/Unit/StandGateway/ReleaseBehaviorTest.php` over
+socket pairs.
 
 ## Adding the Next Resident
 

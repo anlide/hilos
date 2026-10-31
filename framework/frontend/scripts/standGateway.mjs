@@ -15,13 +15,15 @@ export const STAND_GATEWAY_URL =
 
 /**
  * How a provider route answers one call, as a spec dictates it. Every lever is
- * optional and they combine; none at all answers as usual.
+ * optional and they combine; none at all answers as usual. An answer that awaits
+ * its release and has a delay too leaves when both are over.
  *
  * @typedef {object} GatewayBehavior
  * @property {number} [status] Refuse the call with this status (400–599) without asking the resident.
  * @property {number} [delayMs] Hold the answer's bytes back this many milliseconds after the call arrives.
  * @property {boolean} [cut] Send the headers and the first half of the body, then close the connection.
  * @property {number} [holdMs] Keep the connection open this many milliseconds after the answer's last byte.
+ * @property {boolean} [awaitRelease] Hold the answer's bytes back until `releaseGatewayAnswer` lets them out.
  */
 
 /**
@@ -64,4 +66,23 @@ export async function postToGateway(path, payload) {
  */
 export async function dictateGatewayBehavior(path, key, behavior) {
   await postToGateway('/test/behavior', { path, key, ...behavior })
+}
+
+/**
+ * Let out one answer a behavior with `awaitRelease` holds on a provider route for
+ * a key.
+ *
+ * One release lets out one held answer of the route and key. A release sent before
+ * the call arrives waits on the gateway and lets the call out the moment it
+ * arrives, so a spec never has to catch that moment. Which of two answers held on
+ * the same route and key leaves first is not promised: give them different keys
+ * when their order matters.
+ *
+ * @param {string} path The provider route the held answer was called on, e.g. `/model/api/generate`.
+ * @param {string} key The value of the call the held answer is keyed by.
+ * @returns {Promise<void>}
+ * @throws {Error} When the gateway refuses the release.
+ */
+export async function releaseGatewayAnswer(path, key) {
+  await postToGateway('/test/release', { path, key })
 }
