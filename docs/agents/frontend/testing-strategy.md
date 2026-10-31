@@ -666,6 +666,35 @@ If the needed command operation does not exist, resolve it through the task's
 normal contract process, including approval for any gated contract change.
 Do not silently add SQL or a general reset, or invent an API in the spec.
 
+### Time — a command brings the moment to now, the spec never waits it out
+
+When a scenario meets a timer — an expiry, a cooldown, a delivery window, a
+polling or reporting interval, a heartbeat and its staleness, a cron rule, a
+rotation by age, a delayed answer — the spec calls the feature's own test-only
+command, which brings that one moment to now and stamps it where the browser
+reads it, and then waits for the state that arrives over the socket. Try that
+shape first: `test:verification:end-pause` ages the resend gate and stamps the
+browser's line at now (HIL-1186), so the step after the pause runs at once and
+the production cooldown stays what it is. A missing command is the leaf's
+contract work, not a reason to wait.
+
+- No `waitForTimeout`, sleep, `expect.poll`, `toPass` or raised timeout whose job
+  is to let a period pass, and no `test.slow()` bought for it.
+- No test env value or compose overlay that sets a production timer smaller for
+  the stand: every spec on that stand runs on the changed clock, and two specs
+  that need different clocks end up split into phases with daemon restarts
+  between them.
+- A production value is not proved by waiting it out; the default or the
+  constant is a unit test's assertion.
+- Where the period itself is the subject — a delivery window's cadence — observe
+  a few real periods at the value the product runs with and drive the source by
+  a command, not through a slow UI; do not stretch or shrink the period to fit.
+
+A real wait or a shortened stand clock is a deviation the owner approves in the
+leaf's contract (`agents.md`, "Contract approval gate"). The rule and its debt —
+specs written before it that still wait clocks — are in
+[`../cli/commands.md`](../cli/commands.md#time-based-features-no-universal-clock).
+
 ### People and administrators as preconditions
 
 For an ordinary administrator, call `await grantAdminToSelf(expect, page)` once
@@ -1391,11 +1420,13 @@ above the pin, and the loadavg term steps aside whenever it is set.
 
 ### A test longer than the cap declares its own
 
-A test whose own work runs past the base cap — three letters in a row, a wait on
-a clock — says so itself: `test.slow()` when a flat triple fits, or a named factor
+A test whose own work runs past the base cap — three letters in a row — says so
+itself: `test.slow()` when a flat triple fits, or a named factor
 over `test.info().timeout` when it does not (`SIGN_IN_LINK_TIMEOUT_FACTOR` in
 `demo/polls/tests/e2e/tests/auth.spec.ts` is the sample), with the measured
-duration and the reason in a comment.
+duration and the reason in a comment. A wait for a period to pass is not such
+work: a command brings the moment to now
+([Time](#time--a-command-brings-the-moment-to-now-the-spec-never-waits-it-out)).
 
 Do not lean on the host factor as a budget: it is 1.0 on an idle box, and a test
 that passes only because the box was loaded goes red on the day the box is quiet

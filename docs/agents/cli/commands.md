@@ -246,10 +246,45 @@ in 5 seconds instead of 21 days" — is exactly what must never be reachable on 
 cannot test its own harness, so the only guard is discipline: keep the capability small and
 per-feature so it is obvious in review.
 
-So each time-based feature gets its **own** narrow test-only command that ages the one stored
-timestamp it needs, making the scheduled logic fire now. For example `test:account:force-purge`
-writes the deletion timestamp into the past so the scheduled purge runs immediately. Write these
-per-feature and carefully; never generalise them into a shared time-travel utility.
+So each time-based feature gets its **own** narrow test-only command that brings its moment to
+now. Time-based is any wait a feature owns, not only a stored timestamp: a grace period or an
+expiry, a scheduled round or a cron rule, a delivery window, a polling or reporting interval, a
+heartbeat and the threshold that calls it stale, a cooldown or a rate limit, a rotation by age,
+a delay before an answer. The command ages the one moment the feature reads — or releases what
+it holds — so the logic fires now. For example `test:account:force-purge` writes the deletion
+timestamp into the past so the scheduled purge runs immediately. Write these per-feature and
+carefully; never generalise them into a shared time-travel utility.
+
+**The command also stamps the moved moment where its reader reads it.** A browser counts down
+from the moment the server sent it, and a pause shortened in advance kills the very state the
+test has to see. So `test:verification:end-pause` ages the address's resend gate *and* stamps
+that browser's line at now, changing neither the production cooldown nor the cap (HIL-1186,
+[../architecture/verification-codes.md](../architecture/verification-codes.md)). Try this
+shape first whenever a test meets a timer.
+
+**A test does not wait a clock out, and a stand does not shorten one:**
+
+- no sleep, poll, raised timeout or `test.slow()` that exists to let a period pass;
+- no test env value or compose overlay that sets a production timer smaller — that is the
+  universal knob again, spread over a whole stand, and every other spec on the stand runs on
+  it too;
+- a production value is not proved by waiting it out: the default or the constant is a unit
+  test's assertion.
+
+Where the period itself is the behavior under test — the cadence of a delivery window — the
+test observes a few real periods at the value the product runs with, and a command drives the
+source instead of a slow UI; it does not stretch or shrink the period to fit.
+
+**A test-only command is not a production lever.** It extends `TestOnlyCommand` and is refused
+on production and on the socket (above), so a plan does not rule one out as "a new CLI" or "a
+new production action". Waiting a real clock or shortening a stand's clock instead is a
+deviation the owner approves in the leaf's contract
+([../../../agents.md](../../../agents.md), "Contract approval gate").
+
+Specs written before this rule still wait clocks: the delivery window, the Status heartbeat and
+staleness with their fast compose overlay and the split binance phases, node reports, journal
+and log rotations, cron firings, the chat send pause, stand gateway delays, bot reaction
+delays, and socket silence on a shortened stand clock. They are debt, not a pattern to copy.
 
 ## Database-free commands
 

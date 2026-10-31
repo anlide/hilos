@@ -6,7 +6,8 @@ description: >
   wrappers. Use when extending an entity scenario, preparing command fixtures
   and cleanup, distinguishing behavior from cosmetics, choosing a demo or
   spec owner, reusing helpers, or adding selectors, input, submit, socket-state
-  assertions, themes or viewports to a Playwright test.
+  assertions, themes or viewports to a Playwright test, or when a scenario
+  meets a timer — an expiry, a cooldown, a window, an interval, a heartbeat.
   For which suites to run use $hilos-selective-testing; for how to run them
   use $hilos-testing-cli.
 ---
@@ -36,6 +37,9 @@ use `$hilos-testing-cli`.
   `framework/frontend/scripts/*.mjs` modules — for example `standCommand.mjs`,
   `commandChannel.mjs`, `i18n.mjs`, `i18nFixtures.mjs`, `testUser.mjs`, `mail.mjs`
   and `standMailbox.mjs`.
+- A scenario meets a timer — a command brings its moment to now; never wait it
+  out or shorten it on the stand: `docs/agents/frontend/testing-strategy.md`,
+  "Time — a command brings the moment to now, the spec never waits it out".
 - Test-owned setup/cleanup and account preparation:
   `docs/agents/frontend/testing-strategy.md`, "Preconditions — test commands with
   owned cleanup" and "People and administrators as preconditions".
@@ -105,7 +109,11 @@ use `$hilos-testing-cli`.
 11. After triggering an action, wait for it to **settle** — loading cleared, the
     surface/dialog closed on success, or the inline error shown — before asserting
     its result. Asserting through an in-flight action races the reply and flakes.
-12. Assert on **state that arrives over the socket**, not on fixed timeouts.
+12. Assert on **state that arrives over the socket**, not on fixed timeouts. A
+    timer the scenario meets is brought to now by the feature's own test-only
+    command, never waited out and never shortened through stand env or a compose
+    overlay; a missing command is the leaf's contract work, and a real wait is the
+    owner's to approve: "Time" in `docs/agents/frontend/testing-strategy.md`.
 13. Where the action makes the application **reload itself** — today the lift of
     protected mode — do not navigate at all: mark the document beforehand with
     `markDocument`, wait for the mark to go with `expectSelfReload`, then add

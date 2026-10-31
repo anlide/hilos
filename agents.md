@@ -250,10 +250,17 @@ the user for explicit confirmation:
   signal DTO payload shape, topology DTO class declarations in page `SIGNALS`
   or agent `AGENT_SIGNALS`, or declarative routing in `SignalRouter`,
   `PageSignalRouter`, or worker/page route config.
+- Time in tests: a test that waits a real clock out, or a stand that shortens a
+  production timer through test env or a compose overlay, instead of the
+  feature's own test-only command that brings the moment to now
+  ([docs/agents/cli/commands.md](docs/agents/cli/commands.md#time-based-features-no-universal-clock)).
+  The command is the default and needs no confirmation; the deviation does.
 
 The confirmation request must list the exact RT item fields, DB entity fields,
-signals, DTOs, and routes that would change. If implementation discovers an
-additional change in one of these surfaces, stop and ask again before editing it.
+signals, DTOs, and routes that would change, and for time in tests the timer,
+its production value and why no command can bring it to now. If implementation
+discovers an additional change in one of these surfaces, stop and ask again
+before editing it.
 
 On the headless line the stop has one more form — the "plan is incomplete" door of the
 line's own procedure, which the agent receives at launch rather than from this repository.

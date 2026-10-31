@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos E2E Testing"
-  short_description: "Choose e2e coverage, scenarios and owned test fixtures"
-  default_prompt: "Use $hilos-e2e-testing to choose or review behavioral coverage before adding or extending a scenario, and create, edit, move, split or port its spec or browser/Node-only helpers using shared toolboxes and test-owned preconditions."
+  short_description: "Choose e2e coverage, scenarios, owned fixtures and timer commands"
+  default_prompt: "Use $hilos-e2e-testing to choose or review behavioral coverage before adding or extending a scenario, and create, edit, move, split or port its spec or browser/Node-only helpers using shared toolboxes and test-owned preconditions, and bring any timer to now with its test-only command instead of waiting it out."

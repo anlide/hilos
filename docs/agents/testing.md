@@ -587,7 +587,9 @@ The single-node half is `presence-liveness.spec.ts` in each demo's `tests/e2e/te
 (Vue, React, Angular). Each demo's `docker/docker-compose.test.yml` runs the master at a
 fortieth of the production spans and in their proportions
 (`WEBSOCKET_PING_IDLE_MS=1000`, `WEBSOCKET_PING_INTERVAL_MS=1250`,
-`WEBSOCKET_PROBABLY_OFFLINE_MS=3000`, `WEBSOCKET_CLOSE_TIMEOUT_MS=15000`), because no
+`WEBSOCKET_PROBABLY_OFFLINE_MS=3000`, `WEBSOCKET_CLOSE_TIMEOUT_MS=15000`) — a shortened
+stand clock that predates the rule in `cli/commands.md` § "Time-based features: no universal
+clock" and is debt until a command ages a socket's silence. Raw sockets are needed because no
 browser keeps silent: Chromium answers a ping in its network service whatever its page
 is doing. The spec therefore opens raw sockets with the cookies of a browser context
 (`openRawWebSocket()` from
@@ -1219,7 +1221,12 @@ keep their existing behavior.
   table — `Process`; measuring a file's metadata — bare `proc_open()` without
   pipes.
 - **Time-based features** (grace periods, token/session expiry, digests,
-  scheduled rounds/settlement): there is no global clock to mock — see
-  `cli/commands.md` § "Time-based features: no universal clock". Add a small,
-  per-feature test-only CLI (`extends TestOnlyCommand`) that ages the one stored
-  timestamp so the scheduled logic fires now; never build a shared time-travel knob.
+  scheduled rounds/settlement, cron rules, delivery windows, polling and
+  reporting intervals, heartbeats and staleness, cooldowns, rotations by age,
+  delayed answers): there is no global clock to mock — see `cli/commands.md`
+  § "Time-based features: no universal clock". Add a small, per-feature
+  test-only CLI (`extends TestOnlyCommand`) that brings the one moment to now
+  and stamps it where its reader reads it; never build a shared time-travel
+  knob. A test does not wait a period out, and a stand does not shorten a
+  production timer through env or a compose overlay — a deviation is the
+  owner's to approve in the leaf's contract.
