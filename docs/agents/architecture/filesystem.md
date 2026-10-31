@@ -95,6 +95,11 @@ registrations are in
 `demo/ecommerce-shop/backend/Fs/EcommerceShopFsContext.php` and
 `demo/online-testing/backend/Fs/OnlineTestingFsContext.php`.
 
+`BACKUP_DIR` is no `$fs` name (see below), but a test stand keeps it apart the
+same way: the chat, tasks and polls test stands, whose `test:up` runs
+`test:backup:reset`, set the process value `/app/data/backup-test`, which wins
+over the local `.env` the project bind shows them.
+
 A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy
 (`hilos_image_rendered`, field `tmpIndex`), both to the files library, which
