@@ -46,7 +46,7 @@ subnet, and other compose-level values *before any container exists* — does no
 look at that file at all. Compose interpolation reads the shell environment and a
 `.env` sitting **next to the compose file**, i.e. `docker/.env`.
 
-So a host-port override (`NGINX_HTTPS_PORT`, `MYSQL_HOST_PORT`, `PHPMYADMIN_PORT`,
+So a host-port override (`NGINX_HTTPS_PORT`, `MYSQL_HOST_PORT`,
 `MAILPIT_HTTP_PORT`, `FRONTEND_DEV_PORT`, `HTTP_STATUS_HOST_PORT`,
 `WORKER_COMM_HOST_PORT`, `WEBSOCKET_HOST_PORT`, or `FRONTEND_HTML_HOST_PORT`) only
 takes effect from `docker/.env` (or the shell); the same line placed in the demo
@@ -65,7 +65,7 @@ non-committable interpolation overrides (e.g. the chat demo's `LLM_LOCAL_URL`).
 
 Every host publish in the dev, test, and framework stacks binds to `127.0.0.1`
 by default, so a fresh clone on any machine — including a public dev box — starts
-closed: MySQL (root, with a repo-published dev password), phpMyAdmin, the daemon
+closed: MySQL (root, with a repo-published dev password), the daemon
 status/worker/ws ports, the Vite/Angular dev server and the local/test nginx are
 reachable only from that machine. The bind address is a single knob per stack,
 `${HILOS_BIND_HOST:-127.0.0.1}` prefixed onto every publish; a host that must
@@ -91,7 +91,7 @@ chat demo's `LLM_LOCAL_URL` at the same address.
 
 **Reaching a stack from another machine** keeps the loopback default and tunnels:
 
-- HTTP surfaces (vite, phpMyAdmin, daemon status, ws) are already reachable over
+- HTTP surfaces (vite, daemon status, ws) are already reachable over
   the preview lane `*.hilos` on Tailscale — Caddy runs host-network and proxies
   host loopback, so nothing needs to move off `127.0.0.1`.
 - MySQL and the local/test nginx ports have no proxy; reach them by SSH tunnel

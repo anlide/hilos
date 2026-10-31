@@ -158,7 +158,7 @@ app key (`chat-…`, `polls-…`, `tasks-…`) so it stays globally unique
 project-scoped — never reuse another project's).
 
 **Local** (`docker-compose.local.yml`, the developer sandbox): mysql (datadir
-bind-mounted at `data/mysql`, `mysql/init.sql`), phpMyAdmin, the daemon, a cli
+bind-mounted at `data/mysql`, `mysql/init.sql`), the daemon, a cli
 service (profile `cli`), the prod-parity nginx (profile `full`), and the
 frontend dev server (no profile — `composer run daemon-start` brings the whole
 stack up). The daemon/cli `env_file` uses the long form with
@@ -179,25 +179,25 @@ always via `--profile "*" down` or profiled services leak.
 `/ws` to the hardcoded `:8092`. Only host-side publishes shift. Current
 registry of taken host ports:
 
-| Stack | mysql | daemon (status/comm/ws) | pma | mailpit | nginx | FE dev | subnet |
-|---|---|---|---|---|---|---|---|
-| chat local | 33060 | 8090/8091/8092 (+8093 legacy) | 8080 | 8025 (dev 8028) | https 443 | 5173 | 10.196 |
-| chat test | 33061 | 8095/8096/8097 | — | — | http 8086 / https 8446 | — | 10.186 |
-| framework test | 33062 | — | — | — | — | — | 10.189 |
-| tasks local | 33063 | 8098/8099/8100 | 8081 | 8026 (dev 8029) | https 444 | 5174 | 10.197 |
-| tasks test | 33064 | 8101/8102/8103 | — | — | http 8087 / https 8447 | — | 10.187 |
-| polls local | 33065 | 8104/8105/8106 | 8082 | 8027 (dev 8030) | https 8445 | 5175 | 10.198 |
-| polls test | 33066 | 8107/8108/8109 | — | — | http 8088 / https 8448 | — | 10.188 |
-| binance-btc-tracker local | 33067 | 8110/8111/8112 | 8119 | 8120 | https 8116 | 5176 | 10.201 |
-| binance-btc-tracker test | 33068 | 8113/8114/8115 | — | — | http 8117 / https 8118 | — | 10.211 |
-| binance-btc-tracker cluster | — | — | — | — | — | — | 10.221 |
-| ecommerce-shop local | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
-| ecommerce-shop test | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
-| ecommerce-shop cluster | — | — | — | — | — | — | 10.222 |
-| online-testing local | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
-| online-testing test | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
-| online-testing cluster | — | — | — | — | — | — | 10.223 |
-| retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | — | 10.185 |
+| Stack | mysql | daemon (status/comm/ws) | mailpit | nginx | FE dev | subnet |
+| --- | --- | --- | --- | --- | --- | --- |
+| chat local | 33060 | 8090/8091/8092 (+8093 legacy) | 8025 (dev 8028) | https 443 | 5173 | 10.196 |
+| chat test | 33061 | 8095/8096/8097 | — | http 8086 / https 8446 | — | 10.186 |
+| framework test | 33062 | — | — | — | — | 10.189 |
+| tasks local | 33063 | 8098/8099/8100 | 8026 (dev 8029) | https 444 | 5174 | 10.197 |
+| tasks test | 33064 | 8101/8102/8103 | — | http 8087 / https 8447 | — | 10.187 |
+| polls local | 33065 | 8104/8105/8106 | 8027 (dev 8030) | https 8445 | 5175 | 10.198 |
+| polls test | 33066 | 8107/8108/8109 | — | http 8088 / https 8448 | — | 10.188 |
+| binance-btc-tracker local | 33067 | 8110/8111/8112 | 8120 | https 8116 | 5176 | 10.201 |
+| binance-btc-tracker test | 33068 | 8113/8114/8115 | — | http 8117 / https 8118 | — | 10.211 |
+| binance-btc-tracker cluster | — | — | — | — | — | 10.221 |
+| ecommerce-shop local | 33069 | 8130/8131/8132 | 8140 | https 8136 | 5177 | 10.202 |
+| ecommerce-shop test | 33070 | 8133/8134/8135 | — | http 8137 / https 8138 | — | 10.212 |
+| ecommerce-shop cluster | — | — | — | — | — | 10.222 |
+| online-testing local | 33071 | 8150/8151/8152 | 8160 | https 8156 | 5178 | 10.203 |
+| online-testing test | 33072 | 8153/8154/8155 | — | http 8157 / https 8158 | — | 10.213 |
+| online-testing cluster | — | — | — | — | — | 10.223 |
+| retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults
 of `demo/<demo>/docker/docker-compose.{local,dev,test}.yml` and of
@@ -209,8 +209,8 @@ A demo from binance-btc-tracker on takes a block of twenty host ports in the
 81xx range — 8110–8129, 8130–8149, 8150–8169; the next project takes
 8170–8189 — with the same offsets in every block: +0/+1/+2 the local daemon
 status/comm/ws, +3/+4/+5 the test daemon, +6 the local nginx https, +7/+8 the
-test nginx http/https, +9 phpMyAdmin, +10 the local Mailpit, +11…+19 kept for
-the demo's later stacks. mysql and FE dev keep their own rows: the next
+test nginx http/https, +10 the local Mailpit; +9 and +11…+19 are kept for the
+demo's later stacks. mysql and FE dev keep their own rows: the next
 project takes 33073/33074 and 5179. A block, because the rows of the first
 three demos have no room left: the next test http port would be 8089, and
 8090 is already the chat daemon; and the `443+n` scheme for local https is
@@ -278,7 +278,7 @@ Mirror the binance-btc-tracker demo's `composer.json` scripts: `setup-env` (copi
 `.env.example→.env` and `tests/.env.example→tests/.env`; runs in the node cli
 container to avoid the env_file chicken-and-egg), `install-deps`,
 `daemon-start[-build]/stop/restart/status`, `cli`, `db:migration:*`,
-`db:seed:apply`, `db:schema:status`, `pma`, `frontend:*`, and the test lane:
+`db:seed:apply`, `db:schema:status`, `frontend:*`, and the test lane:
 `test:up/down/down-volumes/db-wait/db-reset/unit/phpunit/install-deps`,
 `test:check`, `test:e2e-build/install/check/up/(run)/down/full`.
 `test:e2e-up` = mysql up → `db:wait` → `test:db:reset` → daemon + nginx up.

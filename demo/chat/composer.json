@@ -60,8 +60,6 @@
         "db:migration:retry": "docker compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:migration:retry",
         "db:seed:apply": "docker compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:seed:apply",
         "db:schema:status": "docker compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:schema:status",
-        "pma": "docker compose -f docker/docker-compose.local.yml up -d phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8080",
-        "pma-stop": "docker compose -f docker/docker-compose.local.yml stop phpmyadmin-local",
         "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm chat-frontend-cli-local npm install",
         "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm chat-frontend-cli-local npm run check",
         "frontend:lint": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm chat-frontend-cli-local npm run lint",

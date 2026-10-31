@@ -54,8 +54,6 @@
         "db:migration:retry": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:migration:retry",
         "db:seed:apply": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:seed:apply",
         "db:schema:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-cli-local php backend/Bootstrap/cli.php db:schema:status",
-        "pma": "docker compose -f docker/docker-compose.local.yml up -d tasks-phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8081",
-        "pma-stop": "docker compose -f docker/docker-compose.local.yml stop tasks-phpmyadmin-local",
         "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local npm install",
         "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local npm run check",
         "frontend:lint": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm tasks-frontend-cli-local npm run lint",

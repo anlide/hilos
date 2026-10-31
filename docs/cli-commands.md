@@ -73,10 +73,6 @@ composer run db:migration:retry
 # Database schema & ORM
 composer run db:schema:status
 
-# phpMyAdmin (optional)
-composer run pma                 # Start phpMyAdmin at http://localhost:8080
-composer run pma-stop            # Stop phpMyAdmin
-
 # Frontend
 composer run frontend-install    # npm install
 composer run frontend-build      # npm run build

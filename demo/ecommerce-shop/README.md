@@ -114,7 +114,7 @@ composer run install-deps       # composer install in the PHP container
 #   docker compose -f framework/docker/docker-compose.frontend.yml \
 #     run --rm hilos-frontend-cli npm install
 composer run frontend:install   # npm install in the frontend container
-composer run daemon-start       # MySQL + phpMyAdmin + Mailpit + daemon + Vite dev server
+composer run daemon-start       # MySQL + Mailpit + daemon + Vite dev server
 ```
 
 The daemon applies migrations on startup. Endpoints (defaults):
@@ -123,7 +123,6 @@ The daemon applies migrations on startup. Endpoints (defaults):
 |---|---|
 | Frontend dev server (HMR) | http://localhost:5177 |
 | Built frontend behind nginx (`daemon-start-build`) | https://localhost:8136 |
-| phpMyAdmin | http://localhost:8139 |
 | Mailpit (the codes a registration and a recovery send) | http://localhost:8140 |
 | Daemon status API | http://localhost:8130/status |
 | Daemon WebSocket | ws://localhost:8132 |
@@ -144,7 +143,7 @@ the container `env_file`.
 
 | Command | What it does |
 |---|---|
-| `composer run daemon-start` | start the local stack (MySQL, phpMyAdmin, Mailpit, daemon, Vite dev server) |
+| `composer run daemon-start` | start the local stack (MySQL, Mailpit, daemon, Vite dev server) |
 | `composer run daemon-start-build` | the same plus the prod-parity nginx over the built artifact |
 | `composer run daemon-stop` | stop the local stack |
 | `composer run daemon-restart` | restart the daemon container |
@@ -164,7 +163,6 @@ the container `env_file`.
 | `composer run db:migration:down` | roll back the last migration |
 | `composer run db:migration:status` | migration status |
 | `composer run db:schema:status` | compare schema against entities |
-| `composer run pma` | start phpMyAdmin at http://localhost:8139 |
 
 ## PHP tests
 

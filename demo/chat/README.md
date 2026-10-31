@@ -63,7 +63,7 @@ From `demo/chat/`, everything in containers:
    # then, from demo/chat/: install the demo app's own frontend deps
    composer run frontend:install
    ```
-4. **Start the dev stack** (MySQL + phpMyAdmin + daemon + Vite dev server):
+4. **Start the dev stack** (MySQL + daemon + Vite dev server):
    ```bash
    composer run daemon-start
    ```
@@ -78,8 +78,7 @@ From `demo/chat/`, everything in containers:
    ```
 6. Open the app and tooling:
    - **Frontend (Vite dev, HMR):** http://localhost:5173
-   - **phpMyAdmin:** http://localhost:8080 — server `mysql-local`, user `root` /
-     `hilos_root_pass`, database `hilos-demo-chat`
+   - **MySQL (from host, any client):** 127.0.0.1:33060 — user `root` / `hilos_root_pass`, database `hilos-demo-chat`
    - **Mailpit (mail, SMS and Telegram of the stand):** http://localhost:8025
    - Daemon HTTP status: http://localhost:8090 · WebSocket: `ws://localhost:8092`
 
@@ -187,12 +186,11 @@ prerender are not finalized here yet.
 |---------|-------------|
 | `composer run setup-env` | create `.env` from `.env.example` if missing |
 | `composer run install-deps` | install backend Composer packages (PHP container) |
-| `composer run daemon-start` | start the dev stack: MySQL + phpMyAdmin + daemon + Vite dev server |
+| `composer run daemon-start` | start the dev stack: MySQL + daemon + Vite dev server |
 | `composer run daemon-stop` | stop the stack |
 | `composer run daemon-restart` | restart the daemon container |
 | `composer run daemon-status` | daemon status snapshot |
 | `composer run daemon-monitor` | live daemon monitor |
-| `composer run pma` / `pma-stop` | start / stop phpMyAdmin only |
 
 ### Database
 

@@ -72,7 +72,7 @@ versus the static compiled dist served by nginx.
 ### Three things that bite in the build stack
 
 - **`demo/chat/.env` does not configure ports.** It is the container `env_file`.
-  Compose *interpolation* (`${NGINX_HTTPS_PORT:-443}`, `${PHPMYADMIN_PORT:-8080}`)
+  Compose *interpolation* (`${NGINX_HTTPS_PORT:-443}`, `${MYSQL_HOST_PORT:-33060}`)
   reads `demo/chat/docker/.env` — the file next to the compose file. Port
   overrides put in `demo/chat/.env` are silently ignored.
 - **Published attachments are not mounted here.** The prod and test composes

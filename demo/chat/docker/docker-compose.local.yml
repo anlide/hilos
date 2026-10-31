@@ -1,5 +1,5 @@
 # Docker Compose configuration for LOCAL development.
-# The full dev stack runs in Docker: MySQL, phpMyAdmin, the daemon, the files gateway
+# The full dev stack runs in Docker: MySQL, the daemon, the files gateway
 # (chat-files-local), and the Vite frontend dev server (chat-frontend-local, HMR).
 # `composer run daemon-start` brings the whole stack up; the chat-frontend-cli-local
 # service (profile cli) runs on-demand npm commands (see the composer frontend:* scripts).
@@ -42,24 +42,6 @@ services:
     networks:
       hilos-demo-chat-local-network:
         ipv4_address: ${DOCKER_MYSQL_IP:-10.196.0.10}
-
-  phpmyadmin-local:
-    image: phpmyadmin:latest@sha256:62a50b1419fe55b9b4c3cd6f5aed03a18f8f5b4a236f24735d76400bea75a5ff
-    container_name: chat-phpmyadmin-local
-    environment:
-      - PMA_HOST=mysql-local
-      - PMA_PORT=3306
-      - PMA_USER=root
-      - PMA_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
-      - PMA_ARBITRARY=1
-      - UPLOAD_LIMIT=256M
-    depends_on:
-      - mysql-local
-    ports:
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${PHPMYADMIN_PORT:-8080}:80"
-    restart: unless-stopped
-    networks:
-      - hilos-demo-chat-local-network
 
   # Mail interceptor for the local stack: the daemon sends over SMTP to it and its
   # web UI is published on the host, so a verification code or a notification is

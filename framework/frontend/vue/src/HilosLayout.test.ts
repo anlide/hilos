@@ -1693,6 +1693,8 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
   it('draws the yellow document icon after the user slot with the days left', () => {
     vi.useFakeTimers()
     vi.setSystemTime(Date.UTC(2026, 10, 1))
+    // Clear any server clock offset left by a previous test suite.
+    applyServerTime(Date.now())
     const session = bindSession()
     unbind = session.unbind
     session.handshake(reconsentHandshake(inWindow))
