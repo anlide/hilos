@@ -546,12 +546,12 @@ direct URL with one subscribed `languageCard` snapshot and live updates; its
 Names and Locales pages use the same datum (HIL-1479). The Language entity head
 and Overview / Names / Locales row are adopted in Vue, React and Angular. The
 shared breadcrumb passes through Languages and ends at the live native name;
-the row links only pages whose route exists in that project. The Vue language
-Overview has three route-aware summary tiles — Names, Locales, and the locale
-without a country — followed by Main and State. The Locales tile shows total
-and enabled counts. Its Names editor explains base names and locale
-corrections. The React and Angular language page bodies retain
-their previous presentation under HIL-1729 and HIL-1730.
+the row links only pages whose route exists in that project. The Vue and Angular
+language Overview has three route-aware summary tiles — Names, Locales, and the
+locale without a country — followed by Main and State. The Locales tile shows total
+and enabled counts. The Vue and Angular Names editors explain base names and
+locale corrections. The React language page body retains its previous
+presentation under HIL-1729.
 
 The Vue names page of a language is built (HIL-1477): its table opens on the
 language named by the address, under the shared head and tabs fed by

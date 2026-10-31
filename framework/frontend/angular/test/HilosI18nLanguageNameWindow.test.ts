@@ -1,13 +1,14 @@
 // The Angular window of a language name over the core name window and the real
 // names table: add and edit of the base and of a locale correction with their
-// empty-value hints, a stored empty value told from no value, one door for Save
-// and Enter, a refusal that stays and a busy save that holds every close, the
-// conflict choices and the expected value they send, a draft kept after its
-// subject disappears, a late failure of a previous opening that paints nothing,
-// a viewer of the admin view mode, and the row let go when the view ends. The
-// session itself is the core's and is tested there.
+// empty-value hints and base/correction notes, a stored empty value told from
+// no value, one door for Save and Enter, a refusal that stays and a busy save
+// that holds every close, the conflict choices and the expected value they
+// send, a draft kept after its subject disappears, a late failure of a previous
+// opening that paints nothing, a viewer of the admin view mode, and the row let
+// go when the view ends. The session itself is the core's and is tested there.
 import { signal } from '@angular/core'
 import {
+  HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAMES,
   HilosPages,
   computedSignal,
@@ -113,13 +114,23 @@ describe('HilosI18nLanguageNameWindow', () => {
       expect(
         document.querySelector(`label[for="${h.input().id}"]`)?.textContent,
       ).toBe('Name')
-      expect(
-        document.getElementById(h.input().getAttribute('aria-describedby')!)
-          ?.textContent,
-      ).toBe(
+      const descriptions =
+        h.input().getAttribute('aria-describedby')?.split(/\s+/) ?? []
+      expect(descriptions).toEqual([
+        'i18n-language-name-hint',
+        'i18n-language-name-note',
+      ])
+      const hint = document.getElementById(descriptions[0]!)
+      const note = document.getElementById(descriptions[1]!)
+      expect(hint?.textContent).toBe(
         kind === 'value'
           ? 'Empty text is saved as your own value. Delete the name to remove it.'
           : 'Empty text is saved as your own correction. Delete the correction to inherit the base name.',
+      )
+      expect(note?.textContent?.trim()).toBe(
+        localeCode === null
+          ? HILOS_I18N_LANGUAGE_NAME_COPY.notes.base
+          : HILOS_I18N_LANGUAGE_NAME_COPY.notes.correction,
       )
       expect(
         document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
@@ -264,6 +275,9 @@ describe('HilosI18nLanguageNameWindow', () => {
   it('lets a viewer fill the draft and cancel, while Save and Enter send nothing', () => {
     const h = setup(true)
     h.act(() => h.window.open('15'))
+    expect(h.el('i18n-language-name-note')?.textContent?.trim()).toBe(
+      HILOS_I18N_LANGUAGE_NAME_COPY.notes.base,
+    )
     h.type('i18n-language-name-input', 'Viewer draft')
     expect(h.input().disabled).toBe(false)
     expect(h.button('submit').disabled).toBe(true)

@@ -8,6 +8,7 @@ import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGE_SWITCH_ON_COPY,
+  HILOS_I18N_LANGUAGE_WINDOW_COPY,
   HilosPages,
 } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
@@ -34,6 +35,244 @@ function setup(viewer = false) {
 const enabledCard = { ...languageCard, enabled: true }
 
 describe('HilosI18nLanguagePage', () => {
+  it.each(['missing', 'off', 'on'] as const)(
+    'reads zero and live nonzero summary values with countryless=%s',
+    (countrylessLocale) => {
+      const h = setup()
+      h.act(() =>
+        h.card({
+          ...languageCard,
+          summary: {
+            ...languageCard.summary,
+            nameCount: 0,
+            localeCount: 0,
+            enabledLocaleCount: 0,
+            countrylessLocale,
+          },
+        }),
+      )
+      expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe(
+        '0',
+      )
+      expect(h.el('language-overview-locale-count')?.textContent?.trim()).toBe(
+        '0',
+      )
+      expect(
+        h.el('language-overview-enabled-locale-count')?.textContent?.trim(),
+      ).toBe('0')
+      expect(h.el('language-overview-locales')?.textContent).toContain(
+        'None created.',
+      )
+      expect(
+        h.el('language-overview-countryless-state')?.textContent?.trim(),
+      ).toBe(
+        { missing: 'Not created', off: 'Switched off', on: 'Switched on' }[
+          countrylessLocale
+        ],
+      )
+      h.act(() =>
+        h.card({
+          ...languageCard,
+          summary: {
+            ...languageCard.summary,
+            nameCount: 7,
+            localeCount: 4,
+            enabledLocaleCount: 3,
+            countrylessLocale,
+          },
+        }),
+      )
+      expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe(
+        '7',
+      )
+      expect(h.el('language-overview-locale-count')?.textContent?.trim()).toBe(
+        '4',
+      )
+      expect(
+        h.el('language-overview-enabled-locale-count')?.textContent?.trim(),
+      ).toBe('3')
+      expect(h.el('language-overview-locales')?.textContent).not.toContain(
+        'None created.',
+      )
+      expect(h.calls).toEqual([])
+    },
+  )
+
+  it('updates the countryless state from the live summary without remounting', () => {
+    const h = setup()
+    h.act(() => h.card())
+    for (const [countrylessLocale, label] of [
+      ['missing', 'Not created'],
+      ['off', 'Switched off'],
+      ['on', 'Switched on'],
+    ] as const) {
+      h.act(() =>
+        h.card({
+          ...languageCard,
+          summary: { ...languageCard.summary, countrylessLocale },
+        }),
+      )
+      const value = h.el('language-overview-countryless-state')!
+      expect(value.textContent?.trim()).toBe(label)
+      expect(value.getAttribute('aria-label')).toBe(
+        `Locale without a country: ${label}`,
+      )
+    }
+  })
+
+  it('offers native summary links and hands primary clicks to the router', () => {
+    const h = setup()
+    h.act(() => h.card())
+    for (const [id, label, path] of [
+      ['name-count', 'Names: 3', '/hilos/i18n/languages/uk/names'],
+      ['locale-count', 'Locales: 2', '/hilos/i18n/languages/uk/locales'],
+      [
+        'countryless-state',
+        'Locale without a country: Not created',
+        '/hilos/i18n/languages/uk/locales',
+      ],
+    ]) {
+      const value = h.el(`language-overview-${id}`)!
+      expect(value.tagName).toBe('A')
+      expect(value.getAttribute('href')).toBe(path)
+      expect(value.getAttribute('aria-label')).toBe(label)
+      h.click(`language-overview-${id}`)
+      expect(h.navigate).toHaveBeenLastCalledWith(path)
+    }
+    expect(h.calls).toEqual([])
+  })
+
+  it.each(['catalog', 'route'] as const)(
+    'keeps a summary value as text when the %s does not permit its target',
+    (source) => {
+      const h = setup()
+      h.act(() => h.card())
+      h.act(() => {
+        if (source === 'catalog') {
+          h.scope.data.set('pageTabs', [
+            { page: HilosPages.I18N_LANGUAGE, label: 'Overview' },
+            { page: HilosPages.I18N_LANGUAGE_NAMES, label: 'Names' },
+          ])
+        } else {
+          const resolve = h.paths.resolvePath
+          h.paths.resolvePath = (key, params) =>
+            key === HilosPages.I18N_LANGUAGE_LOCALES
+              ? undefined
+              : resolve(key, params)
+          h.scope.data.set('pageLead', 'Routes unavailable')
+        }
+      })
+      expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
+        '/hilos/i18n/languages/uk/names',
+      )
+      for (const id of ['locale-count', 'countryless-state']) {
+        const value = h.el(`language-overview-${id}`)!
+        expect(value.tagName).toBe('SPAN')
+        expect(value.getAttribute('href')).toBeNull()
+      }
+      expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe(
+        '3',
+      )
+      expect(h.el('language-overview-locale-count')?.textContent?.trim()).toBe(
+        '2',
+      )
+      expect(
+        h.el('language-overview-countryless-state')?.textContent?.trim(),
+      ).toBe('Not created')
+      expect(h.navigate).not.toHaveBeenCalled()
+    },
+  )
+
+  it('names frozen and editable controls and exposes the disabled writing direction', () => {
+    const h = setup()
+    h.act(() => h.card())
+    expect(h.el('language-card-editable')?.textContent?.trim()).toBe(
+      'Language switched off — edit freely',
+    )
+    expect(
+      h
+        .el('language-card-editable')
+        ?.querySelector('i')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    expect(h.el('language-card-enabled')?.textContent?.trim()).toBe(
+      'Language switched off',
+    )
+    const edit = h.el('language-card-edit')!
+    expect(edit.getAttribute('aria-label')).toBe(
+      HILOS_I18N_LANGUAGE_WINDOW_COPY.open.edit,
+    )
+    expect(edit.getAttribute('title')).toBe(
+      HILOS_I18N_LANGUAGE_WINDOW_COPY.open.edit,
+    )
+    expect(edit.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    const rtl = h.el<HTMLInputElement>('language-card-rtl')!
+    expect(rtl.type).toBe('checkbox')
+    expect(rtl.disabled).toBe(true)
+    expect(rtl.checked).toBe(false)
+    expect(rtl.getAttribute('aria-label')).toBe('Right to left')
+    expect(rtl.labels?.[0]?.textContent?.trim()).toBe('Writing direction')
+    expect(
+      document
+        .getElementById(rtl.getAttribute('aria-describedby')!)
+        ?.textContent?.trim(),
+    ).toBe('Right-to-left writing reverses the product layout.')
+    expect(h.el('language-card-direction')?.textContent?.trim()).toBe(
+      'Left to right',
+    )
+    h.act(() => h.card({ ...enabledCard, rtl: true }))
+    expect(h.el('language-card-editable')).toBeNull()
+    expect(h.el('language-card-frozen')?.textContent?.trim()).toBe(
+      'Language enabled — frozen',
+    )
+    expect(
+      h
+        .el('language-card-frozen')
+        ?.querySelector('i')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    expect(h.el('language-card-enabled')?.textContent?.trim()).toBe(
+      'Language switched on',
+    )
+    const view = h.el('language-card-view')!
+    expect(view.getAttribute('aria-label')).toBe(
+      HILOS_I18N_LANGUAGE_WINDOW_COPY.open.view,
+    )
+    expect(view.getAttribute('title')).toBe(
+      HILOS_I18N_LANGUAGE_WINDOW_COPY.open.view,
+    )
+    expect(view.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(h.el<HTMLInputElement>('language-card-rtl')?.checked).toBe(true)
+    expect(h.el<HTMLInputElement>('language-card-rtl')?.disabled).toBe(true)
+    expect(h.el('language-card-direction')?.textContent?.trim()).toBe(
+      'Right to left',
+    )
+    expect(document.querySelectorAll('h1')).toHaveLength(1)
+    expect(
+      [...document.querySelectorAll('h2')].map((heading) =>
+        heading.textContent?.trim(),
+      ),
+    ).toEqual(expect.arrayContaining(['Main', 'State']))
+  })
+
+  it('names the delete icon and explains an available deletion', () => {
+    const h = setup()
+    h.act(() => h.card())
+    const control = h.el<HTMLButtonElement>('language-card-delete')!
+    expect(control.tagName).toBe('BUTTON')
+    expect(control.disabled).toBe(false)
+    expect(control.getAttribute('aria-label')).toBe('Delete language')
+    expect(control.getAttribute('title')).toBe('Delete language')
+    expect(control.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(h.el('language-card-delete-verdict')?.textContent).toContain(
+      HILOS_I18N_LANGUAGE_DELETE_COPY.body,
+    )
+    expect(h.el('language-card-delete-verdict')?.textContent).toContain(
+      HILOS_I18N_LANGUAGE_DELETE_COPY.note,
+    )
+    expect(h.el('language-card-delete-reason')).toBeNull()
+  })
+
   it('preserves a draft without retargeting a same-code replacement', () => {
     const h = setup()
     h.act(() => h.card())
@@ -161,6 +400,11 @@ describe('HilosI18nLanguagePage', () => {
       expect(control.getAttribute('aria-describedby')).toBe(
         'language-card-delete-reason',
       )
+      expect(control.getAttribute('aria-label')).toBe('Delete language')
+      expect(control.getAttribute('title')).toBe('Delete language')
+      expect(
+        document.getElementById(control.getAttribute('aria-describedby')!),
+      ).toBe(h.el('language-card-delete-reason'))
       expect(h.el('language-card-delete-reason')?.textContent?.trim()).toBe(
         HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
       )
@@ -205,6 +449,9 @@ describe('HilosI18nLanguagePage', () => {
     h.act(() => h.card(enabledCard))
     expect(h.el('hilos-page-tabs')).toBeNull()
     expect(document.querySelector('[data-id^="hilos-page-tab-"]')).toBeNull()
+    for (const id of ['name-count', 'locale-count', 'countryless-state']) {
+      expect(h.el(`language-overview-${id}`)?.tagName).toBe('SPAN')
+    }
     h.click('language-card-view')
     expect(
       h.el<HTMLInputElement>('i18n-language-edit-native-name')?.disabled,
@@ -402,6 +649,15 @@ describe('HilosI18nLanguagePage', () => {
     expect(lastCrumb()).toBe('Français')
     expect(languageName(h)).toEqual(['Français', 'Français'])
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
+    expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
+      '/hilos/i18n/languages/fr/names',
+    )
+    expect(h.el('language-overview-locale-count')?.getAttribute('href')).toBe(
+      '/hilos/i18n/languages/fr/locales',
+    )
+    expect(
+      h.el('language-overview-countryless-state')?.getAttribute('href'),
+    ).toBe('/hilos/i18n/languages/fr/locales')
     h.click('language-card-delete')
     h.click('i18n-language-delete-confirm')
     h.act(() => {
@@ -421,6 +677,12 @@ describe('HilosI18nLanguagePage', () => {
     expect(lastCrumb()).toBe('العربية')
     expect(languageName(h)).toEqual(['العربية', 'العربية'])
     expect(h.el('modal')).toBeNull()
+    expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
+      '/hilos/i18n/languages/ar/names',
+    )
+    expect(h.el('language-overview-locale-count')?.getAttribute('href')).toBe(
+      '/hilos/i18n/languages/ar/locales',
+    )
     h.click('language-card-delete')
     await h.settle(() => h.succeed())
     expect(h.navigate).not.toHaveBeenCalled()
@@ -441,12 +703,27 @@ describe('HilosI18nLanguagePage', () => {
       languageId: 13,
       code: 'fr',
       nativeName: 'Français',
+      summary: { ...languageCard.summary, nameCount: 8 },
     })
     h.fixture.componentRef.setInput('context', next.context)
     h.detect()
     expect(h.el('i18n-language-edit-window')).toBeNull()
     expect(languageName(h)).toEqual(['Language', 'Language'])
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
+    expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
+      '/hilos/i18n/languages/fr/names',
+    )
+    expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe('8')
+    h.act(() =>
+      h.card({
+        ...languageCard,
+        summary: { ...languageCard.summary, nameCount: 99 },
+      }),
+    )
+    expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe('8')
+    expect(
+      h.el('language-overview-countryless-state')?.getAttribute('href'),
+    ).toBe('/hilos/i18n/languages/fr/locales')
     h.fixture.destroy()
     expect(h.listenerCount()).toBe(h.unmounted)
     expect(languageName(h)).toEqual(['Language', 'Language'])

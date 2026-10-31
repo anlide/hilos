@@ -268,7 +268,7 @@ export async function openI18nName(
   const input = page.getByTestId(`i18n-${subject}-name-input`)
   await expect(input).toBeFocused()
   await expect(input).toHaveAccessibleName('Name')
-  // Vue renders a supplementary note; React and Angular name the hint alone.
+  // Vue and Angular render the language-name note; React awaits HIL-1729.
   const note = page.getByTestId('i18n-language-name-note')
   const noteCount = subject === 'language' ? await note.count() : 0
   expect(noteCount).toBeLessThanOrEqual(1)

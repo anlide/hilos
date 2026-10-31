@@ -99,12 +99,19 @@ type NameWindowNotice = ReturnType<NameWindow['notice']['get']>
             [value]="form().name"
             [attr.maxlength]="nameMax"
             [disabled]="saving()"
-            aria-describedby="i18n-language-name-hint"
+            aria-describedby="i18n-language-name-hint i18n-language-name-note"
             data-id="i18n-language-name-input"
             data-autofocus
             (input)="changeName($event)"
           />
           <div id="i18n-language-name-hint" class="form-text">{{ hint() }}</div>
+          <p
+            id="i18n-language-name-note"
+            class="form-text mb-0"
+            data-id="i18n-language-name-note"
+          >
+            {{ note() }}
+          </p>
         </form>
         <div data-id="i18n-language-name-error">
           <hilos-action-error
@@ -199,6 +206,11 @@ export class HilosI18nLanguageNameWindow {
     this.target()?.localeCode === null
       ? this.copy.hints.base
       : this.copy.hints.correction,
+  )
+  protected readonly note = computed(() =>
+    this.target()?.localeCode === null
+      ? this.copy.notes.base
+      : this.copy.notes.correction,
   )
 
   constructor() {

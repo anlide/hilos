@@ -34,6 +34,7 @@ import {
   HilosPages,
   bindPageInstanceName,
   computedSignal,
+  hilosTabLinks,
 } from '@hilos/core/base'
 import type {
   HilosI18nLanguageCard,
@@ -42,6 +43,7 @@ import type {
 
 import {
   HilosAdminPage,
+  HilosLink,
   HILOS_ROUTER,
   hilosSignal,
   mirrorHilosSignal,
@@ -58,6 +60,7 @@ import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosLink,
     HilosI18nLanguageDelete,
     HilosI18nLanguageSwitchOff,
     HilosI18nLanguageSwitchOn,
@@ -115,14 +118,108 @@ import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
             </p>
           </ng-template>
 
-          <section class="mb-4" data-id="language-card-main">
-            <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="row row-cols-1 row-cols-md-3 g-3 mb-3">
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="language-overview-names"
+              >
+                <h2 class="small text-body-secondary">Names</h2>
+                <div class="fs-4 fw-semibold lh-sm my-1">
+                  @if (namesPath(); as path) {
+                    <a
+                      [hilosLink]="path"
+                      [attr.aria-label]="'Names: ' + current.summary.nameCount"
+                      data-id="language-overview-name-count"
+                      >{{ current.summary.nameCount }}</a
+                    >
+                  } @else {
+                    <span data-id="language-overview-name-count">{{
+                      current.summary.nameCount
+                    }}</span>
+                  }
+                </div>
+                <p class="small text-body-secondary mb-0">
+                  Non-empty base names in other languages; corrections do not
+                  count.
+                </p>
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="language-overview-locales"
+              >
+                <h2 class="small text-body-secondary">Locales</h2>
+                <div class="fs-4 fw-semibold lh-sm my-1">
+                  @if (localesPath(); as path) {
+                    <a
+                      [hilosLink]="path"
+                      [attr.aria-label]="
+                        'Locales: ' + current.summary.localeCount
+                      "
+                      data-id="language-overview-locale-count"
+                      >{{ current.summary.localeCount }}</a
+                    >
+                  } @else {
+                    <span data-id="language-overview-locale-count">{{
+                      current.summary.localeCount
+                    }}</span>
+                  }
+                </div>
+                <p class="small text-body-secondary mb-0">
+                  <span data-id="language-overview-enabled-locale-count">{{
+                    current.summary.enabledLocaleCount
+                  }}</span>
+                  switched on, including the locale without a country.
+                  @if (current.summary.localeCount === 0) {
+                    <span>None created.</span>
+                  }
+                </p>
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="language-overview-countryless"
+              >
+                <h2 class="small text-body-secondary">
+                  Locale without a country
+                </h2>
+                <div class="fs-4 fw-semibold lh-sm my-1">
+                  @if (localesPath(); as path) {
+                    <a
+                      [hilosLink]="path"
+                      [attr.aria-label]="
+                        'Locale without a country: ' + countrylessState()
+                      "
+                      data-id="language-overview-countryless-state"
+                      >{{ countrylessState() }}</a
+                    >
+                  } @else {
+                    <span data-id="language-overview-countryless-state">{{
+                      countrylessState()
+                    }}</span>
+                  }
+                </div>
+                <p class="small text-body-secondary mb-0">
+                  Dates and numbers when the country is unknown.
+                </p>
+              </section>
+            </div>
+          </div>
+
+          <section class="border rounded-3 mb-4" data-id="language-card-main">
+            <div
+              class="d-flex flex-wrap align-items-center gap-2 border-bottom bg-body-tertiary rounded-top-3 p-3"
+            >
               <h2 class="h5 mb-0 flex-grow-1">Main</h2>
               @if (current.enabled) {
                 <p
-                  class="badge text-bg-warning mb-0"
+                  class="badge bg-warning-subtle text-warning-emphasis mb-0"
                   data-id="language-card-frozen"
                 >
+                  <i class="bi bi-lock me-1" aria-hidden="true"></i>
                   Language enabled — frozen
                 </p>
                 <button
@@ -136,6 +233,13 @@ import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
                   <i class="bi bi-eye" aria-hidden="true"></i>
                 </button>
               } @else {
+                <p
+                  class="badge bg-info-subtle text-info-emphasis mb-0"
+                  data-id="language-card-editable"
+                >
+                  <i class="bi bi-pencil me-1" aria-hidden="true"></i>
+                  Language switched off — edit freely
+                </p>
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-primary"
@@ -148,69 +252,132 @@ import { HilosI18nLanguageWindow } from './HilosI18nLanguageWindow.js'
                 </button>
               }
             </div>
-            <dl class="row mb-0 border rounded-3 p-3">
-              <dt class="col-sm-4">Code</dt>
-              <dd class="col-sm-8 text-uppercase" data-id="language-card-code">
-                {{ current.code }}
-              </dd>
-              <dt class="col-sm-4">Native name</dt>
-              <dd class="col-sm-8" data-id="language-card-name">
-                {{ current.nativeName }}
-              </dd>
-              <dt class="col-sm-4">Writing direction</dt>
-              <dd class="col-sm-8" data-id="language-card-direction">
-                {{ current.rtl ? 'Right to left' : 'Left to right' }}
-              </dd>
+            <dl class="mb-0 p-3">
+              <div class="row align-items-baseline g-2 py-2 border-bottom">
+                <dt class="col-md-3 small text-body-secondary">Code</dt>
+                <dd
+                  class="col-md-3 small fw-semibold text-uppercase mb-0"
+                  data-id="language-card-code"
+                >
+                  {{ current.code }}
+                </dd>
+                <dd class="col-md-6 small text-body-secondary mb-0">
+                  Unique language code. Never changes: locale and name addresses
+                  refer to it.
+                </dd>
+              </div>
+              <div class="row align-items-baseline g-2 py-2 border-bottom">
+                <dt class="col-md-3 small text-body-secondary">Native name</dt>
+                <dd
+                  class="col-md-3 small fw-semibold text-break mb-0"
+                  data-id="language-card-name"
+                >
+                  {{ current.nativeName }}
+                </dd>
+                <dd class="col-md-6 small text-body-secondary mb-0">
+                  How the language calls itself.
+                </dd>
+              </div>
+              <div class="row align-items-baseline g-2 py-2">
+                <dt class="col-md-3 small text-body-secondary">
+                  <label for="language-card-rtl">Writing direction</label>
+                </dt>
+                <dd class="col-md-3 small fw-semibold mb-0">
+                  <input
+                    id="language-card-rtl"
+                    data-id="language-card-rtl"
+                    class="form-check-input me-2"
+                    type="checkbox"
+                    disabled
+                    [checked]="current.rtl"
+                    aria-label="Right to left"
+                    aria-describedby="language-card-rtl-hint"
+                  />
+                  <span data-id="language-card-direction">{{
+                    current.rtl ? 'Right to left' : 'Left to right'
+                  }}</span>
+                </dd>
+                <dd
+                  id="language-card-rtl-hint"
+                  class="col-md-6 small text-body-secondary mb-0"
+                >
+                  Right-to-left writing reverses the product layout.
+                </dd>
+              </div>
             </dl>
           </section>
 
-          <section class="mb-4" data-id="language-card-state">
-            <h2 class="h5">State</h2>
-            <div class="border rounded-3 p-3">
-              <dl class="row mb-0">
-                <dt class="col-sm-4">Availability</dt>
-                <dd class="col-sm-8">
-                  <span data-id="language-card-enabled">
-                    {{ current.enabled ? 'Enabled' : 'Disabled' }}
-                  </span>
-                  <div class="mt-2">
-                    <hilos-i18n-language-switch-off
-                      [context]="subject.context"
-                      [card]="current"
-                    />
-                    <hilos-i18n-language-switch-on
-                      [context]="subject.context"
-                      [card]="current"
-                    />
-                  </div>
-                </dd>
-                <dt class="col-sm-4">Delete language</dt>
-                <dd class="col-sm-8" data-id="language-card-delete-verdict">
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-danger"
-                    [disabled]="deleteVerdict().disabled"
-                    [attr.aria-describedby]="
-                      deleteVerdict().reason
-                        ? 'language-card-delete-reason'
-                        : null
-                    "
-                    data-id="language-card-delete"
-                    (click)="deleteOpen.set(true)"
-                  >
-                    {{ deleteCopy.open }}
-                  </button>
+          <section class="border rounded-3 mb-4" data-id="language-card-state">
+            <div class="border-bottom bg-body-tertiary rounded-top-3 p-3">
+              <h2 class="h5 mb-0">State</h2>
+            </div>
+            <div class="px-3">
+              <div
+                class="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom"
+              >
+                <div
+                  class="flex-grow-1 small fw-semibold"
+                  data-id="language-card-enabled"
+                >
+                  {{
+                    current.enabled
+                      ? 'Language switched on'
+                      : 'Language switched off'
+                  }}
+                </div>
+                <div>
+                  <hilos-i18n-language-switch-off
+                    [context]="subject.context"
+                    [card]="current"
+                  />
+                  <hilos-i18n-language-switch-on
+                    [context]="subject.context"
+                    [card]="current"
+                  />
+                </div>
+              </div>
+              <div
+                class="d-flex flex-wrap align-items-center gap-3 py-3"
+                data-id="language-card-delete-verdict"
+              >
+                <div class="flex-grow-1 flex-shrink-1 w-75">
+                  <div class="small fw-semibold">Delete language</div>
                   @if (deleteVerdict().reason; as reason) {
                     <p
                       id="language-card-delete-reason"
-                      class="small text-body-secondary mt-1 mb-0"
+                      class="small text-body-secondary mb-0"
                       data-id="language-card-delete-reason"
                     >
                       {{ reason }}
                     </p>
+                  } @else {
+                    <p class="small text-body-secondary mb-0">
+                      {{ deleteCopy.body }}
+                    </p>
+                    <p class="small text-body-secondary mb-0">
+                      {{ deleteCopy.note }}
+                    </p>
                   }
-                </dd>
-              </dl>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  [class.btn-outline-secondary]="deleteVerdict().disabled"
+                  [class.btn-outline-danger]="!deleteVerdict().disabled"
+                  [disabled]="deleteVerdict().disabled"
+                  [attr.aria-label]="deleteCopy.open"
+                  [title]="deleteCopy.open"
+                  [attr.aria-describedby]="
+                    deleteVerdict().reason
+                      ? 'language-card-delete-reason'
+                      : null
+                  "
+                  data-id="language-card-delete"
+                  (click)="deleteOpen.set(true)"
+                >
+                  <i class="bi bi-trash" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
           </section>
         } @else if (loading()) {
@@ -256,6 +423,7 @@ export class HilosI18nLanguagePage {
 
   private readonly router = inject(HILOS_ROUTER)
   protected readonly loading = hilosSignal(this.router.pageLoading)
+  private readonly identity = hilosSignal(this.router.pageIdentity)
   // The language the address names now — read live, never a snapshot of the
   // first mount: navigating to another language is a new subject.
   private readonly languageCode = hilosSignal(
@@ -278,6 +446,36 @@ export class HilosI18nLanguagePage {
   })
   protected readonly card = signal<HilosI18nLanguageCard | null>(null)
   protected readonly deleteOpen = signal(false)
+  private readonly tabs = computed(() => {
+    const current = this.card()
+    return current === null
+      ? []
+      : hilosTabLinks(
+          this.identity()?.pageTabs ?? [],
+          { languageCode: current.code },
+          this.router.resolvePath,
+        )
+  })
+  protected readonly namesPath = computed(
+    () =>
+      this.tabs().find((tab) => tab.page === HilosPages.I18N_LANGUAGE_NAMES)
+        ?.to,
+  )
+  protected readonly localesPath = computed(
+    () =>
+      this.tabs().find((tab) => tab.page === HilosPages.I18N_LANGUAGE_LOCALES)
+        ?.to,
+  )
+  protected readonly countrylessState = computed(() => {
+    switch (this.card()?.summary.countrylessLocale) {
+      case 'on':
+        return 'Switched on'
+      case 'off':
+        return 'Switched off'
+      default:
+        return 'Not created'
+    }
+  })
   protected readonly deleteVerdict = computed(() =>
     hilosI18nLanguageDelete(this.card()?.summary ?? null),
   )
