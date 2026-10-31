@@ -1,5 +1,5 @@
 import { openNodePage } from './helpers/hilosDaemonNode.js'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as daemon from '@hilos/core/admin/daemon'
 import * as core from '@hilos/core/base'
@@ -13,6 +13,7 @@ import {
   type HilosRouter,
   type HilosDaemonNodeHeading,
   type PageRouteMatch,
+  type TableViewportDescriptor,
 } from '@hilos/core'
 import {
   bindAdminAccess,
@@ -152,7 +153,306 @@ function rule(
   }
 }
 
+function expectViewportChange(
+  h: ReturnType<typeof harness>,
+  action: () => void,
+  expected: Pick<TableViewportDescriptor, 'filter' | 'sort'>,
+) {
+  const requests = h.sendViewport.mock.calls.length
+  const previous = h.sendViewport.mock.calls.at(-1)?.[2]
+  action()
+  expect(h.sendViewport).toHaveBeenCalledTimes(requests + 1)
+  expect(h.sendViewport).toHaveBeenLastCalledWith(
+    HilosPages.DAEMON_CRON,
+    'hilosDaemonCron',
+    expect.objectContaining({ ...expected, anchor: null, pageIndex: null }),
+  )
+  const descriptor = h.sendViewport.mock.calls.at(-1)![2]
+  expect(descriptor).not.toBe(previous)
+  expect(descriptor.requestId).toEqual(expect.any(String))
+  expect(descriptor.requestId).not.toBe(previous?.requestId)
+}
+
 describe('HilosDaemonCronPage', () => {
+  it('names and focuses the native search and the two sortable column controls', () => {
+    const h = harness()
+    h.window([rule()])
+    const search = h.find('hilos-table-search') as HTMLInputElement
+    expect(search.type).toBe('search')
+    expect(search.value).toBe('')
+    expect(search.placeholder).toBe('Find by rule or agent')
+    expect(search.getAttribute('aria-label')).toBe('Find by rule or agent')
+    expect(search.disabled).toBe(false)
+    search.focus()
+    expect(document.activeElement).toBe(search)
+    expect(h.register.mock.calls[0]![1].descriptor()).toMatchObject({
+      filter: { node: 'n1' },
+      sort: null,
+    })
+    const buttons = [
+      ...h.view.container.querySelectorAll<HTMLButtonElement>('th button'),
+    ]
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Rule',
+      'Next run',
+    ])
+    for (const button of buttons) {
+      expect(button.type).toBe('button')
+      expect(button.disabled).toBe(false)
+      expect(button.tabIndex).toBe(0)
+      expect(button.closest('th')!.getAttribute('aria-sort')).toBe('none')
+      expect(button.querySelector('i')!.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
+      button.focus()
+      expect(document.activeElement).toBe(button)
+    }
+    for (const name of ['Run by', 'Expression', 'Last run']) {
+      expect(
+        h.view.getByRole('columnheader', { name }).hasAttribute('aria-sort'),
+      ).toBe(false)
+    }
+  })
+
+  it.each([true, false])(
+    'searches by rule and agent, cycles both sorts and clears only search for admin=%s',
+    (admin) => {
+      const h = harness()
+      act(() =>
+        ingest(h.scopes.session, {
+          entities: { currentUser: { id: 3, admin } },
+          data: { adminViewMode: true },
+        }),
+      )
+      let releaseAccess: () => void
+      act(() => {
+        releaseAccess = bindAdminAccess(h.scopes)
+      })
+      try {
+        expect(hilosAdminAccess.get()).toBe(admin ? 'full' : 'view')
+        h.window([rule()])
+        const search = h.find('hilos-table-search') as HTMLInputElement
+        for (const field of ['name', 'nextRunAt']) {
+          expectViewportChange(
+            h,
+            () => fireEvent.change(search, { target: { value: 'cleanup' } }),
+            { filter: { node: 'n1', search: 'cleanup' }, sort: null },
+          )
+          h.window([rule()])
+          const button = h.find(`hilos-table-sort-${field}`)!
+          for (const [direction, ariaSort] of [
+            ['asc', 'ascending'],
+            ['desc', 'descending'],
+            [null, 'none'],
+          ] as const) {
+            expectViewportChange(h, () => fireEvent.click(button), {
+              filter: { node: 'n1', search: 'cleanup' },
+              sort: direction === null ? null : [{ field, direction }],
+            })
+            expect(button.closest('th')!.getAttribute('aria-sort')).toBe(
+              ariaSort,
+            )
+            const other = field === 'name' ? 'nextRunAt' : 'name'
+            expect(
+              h
+                .find(`hilos-table-sort-${other}`)!
+                .closest('th')!
+                .getAttribute('aria-sort'),
+            ).toBe('none')
+            h.window([rule()])
+          }
+          const sort = [{ field, direction: 'asc' as const }]
+          expectViewportChange(h, () => fireEvent.click(button), {
+            filter: { node: 'n1', search: 'cleanup' },
+            sort,
+          })
+          for (const clear of ['input', 'button', 'whitespace']) {
+            if (clear !== 'input') {
+              expectViewportChange(
+                h,
+                () =>
+                  fireEvent.change(search, {
+                    target: { value: 'hilos_sessions_library' },
+                  }),
+                {
+                  filter: { node: 'n1', search: 'hilos_sessions_library' },
+                  sort,
+                },
+              )
+            }
+            const clearButton = h.find('hilos-table-search-clear')!
+            expect(clearButton.getAttribute('aria-label')).toBe('Clear search')
+            expectViewportChange(
+              h,
+              () => {
+                if (clear === 'button') fireEvent.click(clearButton)
+                else
+                  fireEvent.change(search, {
+                    target: { value: clear === 'input' ? '' : '   ' },
+                  })
+              },
+              { filter: { node: 'n1' }, sort },
+            )
+            expect(search.value).toBe('')
+            expect(h.find('hilos-table-search-clear')).toBeNull()
+            expect(button.closest('th')!.getAttribute('aria-sort')).toBe(
+              'ascending',
+            )
+            h.window([rule()])
+          }
+          for (const direction of ['desc', null] as const) {
+            expectViewportChange(h, () => fireEvent.click(button), {
+              filter: { node: 'n1' },
+              sort: direction === null ? null : [{ field, direction }],
+            })
+          }
+        }
+      } finally {
+        h.view.unmount()
+        act(() => releaseAccess!())
+      }
+    },
+  )
+
+  it.each([true, false])(
+    'waits for the searched window and offers reset instead of node empty states for admin=%s',
+    (admin) => {
+      const h = harness()
+      act(() =>
+        ingest(h.scopes.session, {
+          entities: { currentUser: { id: 3, admin } },
+          data: { adminViewMode: true },
+        }),
+      )
+      let releaseAccess: () => void
+      act(() => {
+        releaseAccess = bindAdminAccess(h.scopes)
+      })
+      try {
+        expect(hilosAdminAccess.get()).toBe(admin ? 'full' : 'view')
+        h.window([rule()])
+        const row = h.find('hilos-table-row-/cleanup')!
+        const search = h.find('hilos-table-search') as HTMLInputElement
+        expectViewportChange(
+          h,
+          () => fireEvent.click(h.find('hilos-table-sort-nextRunAt')!),
+          {
+            filter: { node: 'n1' },
+            sort: [{ field: 'nextRunAt', direction: 'asc' }],
+          },
+        )
+        expectViewportChange(
+          h,
+          () =>
+            fireEvent.change(search, {
+              target: { value: 'no-such-rule-or-agent' },
+            }),
+          {
+            filter: { node: 'n1', search: 'no-such-rule-or-agent' },
+            sort: [{ field: 'nextRunAt', direction: 'asc' }],
+          },
+        )
+        expect(h.find('hilos-table-row-/cleanup')).toBe(row)
+        expect(h.find('hilos-table-no-matches')).toBeNull()
+        h.window([])
+        expect(h.find('hilos-table-row-/cleanup')).toBeNull()
+        for (const state of ['waiting', 'silent', 'none']) {
+          if (state === 'silent')
+            h.heading({
+              clustered: true,
+              role: null,
+              state: 'silent',
+              silentSince: 1_700_000_000_000,
+            })
+          if (state === 'none') h.reported(true)
+          expect(h.find('hilos-table-no-matches')!.textContent).toContain(
+            'Nothing found',
+          )
+          expect(h.find('hilos-table-no-matches-terms')!.textContent).toBe(
+            'No rows match “no-such-rule-or-agent”',
+          )
+          for (const empty of ['waiting', 'silent', 'none'])
+            expect(h.find(`hilos-daemon-cron-empty-${empty}`)).toBeNull()
+        }
+        const reset = h.find(
+          'hilos-table-no-matches-reset',
+        ) as HTMLButtonElement
+        expect(reset.textContent).toBe('Reset filters')
+        expect(reset.type).toBe('button')
+        expect(reset.disabled).toBe(false)
+      } finally {
+        h.view.unmount()
+        act(() => releaseAccess!())
+      }
+    },
+  )
+
+  it.each([true, false])(
+    'preserves sort when resetting filters and restores reported-empty for admin=%s',
+    (admin) => {
+      const h = harness()
+      act(() =>
+        ingest(h.scopes.session, {
+          entities: { currentUser: { id: 3, admin } },
+          data: { adminViewMode: true },
+        }),
+      )
+      let releaseAccess: () => void
+      act(() => {
+        releaseAccess = bindAdminAccess(h.scopes)
+      })
+      try {
+        expect(hilosAdminAccess.get()).toBe(admin ? 'full' : 'view')
+        h.reported(true)
+        h.window([rule()])
+        const search = h.find('hilos-table-search') as HTMLInputElement
+        const sortButton = h.find('hilos-table-sort-nextRunAt')!
+        const sort = [{ field: 'nextRunAt', direction: 'asc' as const }]
+        expectViewportChange(h, () => fireEvent.click(sortButton), {
+          filter: { node: 'n1' },
+          sort,
+        })
+        h.window([rule()])
+        expectViewportChange(
+          h,
+          () =>
+            fireEvent.change(search, {
+              target: { value: 'no-such-rule-or-agent' },
+            }),
+          {
+            filter: { node: 'n1', search: 'no-such-rule-or-agent' },
+            sort,
+          },
+        )
+        h.window([])
+        expect(h.find('hilos-table-no-matches')!.textContent).toContain(
+          'Nothing found',
+        )
+        expect(h.find('hilos-daemon-cron-empty-none')).toBeNull()
+        expect(sortButton.closest('th')!.getAttribute('aria-sort')).toBe(
+          'ascending',
+        )
+        expectViewportChange(
+          h,
+          () => fireEvent.click(h.find('hilos-table-no-matches-reset')!),
+          { filter: { node: 'n1' }, sort },
+        )
+        expect(search.value).toBe('')
+        expect(sortButton.closest('th')!.getAttribute('aria-sort')).toBe(
+          'ascending',
+        )
+        h.window([])
+        expect(h.find('hilos-daemon-cron-empty-none')!.textContent).toBe(
+          'The node reports no cron rules',
+        )
+        expect(h.find('hilos-table-no-matches')).toBeNull()
+      } finally {
+        h.view.unmount()
+        act(() => releaseAccess!())
+      }
+    },
+  )
+
   it('reformats mounted runs and both silence captions without replacing the searched and sorted window', () => {
     const resolved = new Intl.DateTimeFormat().resolvedOptions()
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
