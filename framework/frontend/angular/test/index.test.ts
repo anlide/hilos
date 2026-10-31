@@ -9,6 +9,7 @@ import {
   HILOS_AUTH_GATE,
   HilosAnalyticsBrowserSessionPage,
   HilosAnalyticsPage,
+  HilosAnalyticsPeoplePage,
   HilosAppearancePage,
   HilosAnalyticsPersonPage,
   HilosChangeLogPage,
@@ -156,14 +157,16 @@ it('exports the three Change Log pages and leaves them out of the default map', 
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.CHANGE_LOG_TABLE)
 })
 
-it('exports the three Analytics context pages and leaves them out of the default map', () => {
+it('exports the four Analytics context pages and leaves them out of the default map', () => {
   expect(HilosAnalyticsPage).toBeTypeOf('function')
   expect(HilosAnalyticsBrowserSessionPage).toBeTypeOf('function')
+  expect(HilosAnalyticsPeoplePage).toBeTypeOf('function')
   expect(HilosAnalyticsPersonPage).toBeTypeOf('function')
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS)
   expect(hilosAdminViews()).not.toHaveProperty(
     HilosPages.ANALYTICS_BROWSER_SESSION,
   )
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS_PEOPLE)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS_PERSON)
 })
 

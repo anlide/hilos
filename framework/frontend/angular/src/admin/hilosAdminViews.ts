@@ -14,11 +14,12 @@
 // HilosChangeLogPage / HilosChangeLogTablesPage / HilosChangeLogTablePage) that
 // require a project-supplied context, so a project mounts them directly rather
 // than through this default map.
-// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage and HilosAnalyticsPersonPage
-// likewise need the project's Analytics context and are mounted explicitly under
-// HilosPages.ANALYTICS, ANALYTICS_BROWSER_SESSION and ANALYTICS_PERSON. The
-// dashboard is the real HilosDashboardPage (self-contained, no project context),
-// reused here as its own default.
+// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage, HilosAnalyticsPeoplePage
+// and HilosAnalyticsPersonPage likewise need the project's Analytics context and
+// mount explicitly under HilosPages.ANALYTICS, ANALYTICS_BROWSER_SESSION,
+// ANALYTICS_PEOPLE and ANALYTICS_PERSON. The dashboard is the real
+// HilosDashboardPage (self-contained, no project context), reused here as its own
+// default.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core

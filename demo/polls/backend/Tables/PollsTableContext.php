@@ -11,6 +11,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -119,6 +120,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
  */
 final class PollsTableContext extends TableContext
 {
@@ -175,6 +177,7 @@ final class PollsTableContext extends TableContext
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
 
     /**
      * Registers polls table definitions from the project topology registry.

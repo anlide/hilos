@@ -42,6 +42,7 @@ use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\OnlineTesting\Pages\Hilos\Analytics\PeoplePage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
 use Demo\OnlineTesting\Pages\Hilos\LicenseDependenciesPage;
@@ -141,6 +142,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -257,6 +259,7 @@ final class Hilos extends HilosFacade
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PeoplePage::PAGE => PeoplePage::class,
         PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
@@ -475,6 +478,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         OnlineTestingTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         OnlineTestingTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        OnlineTestingTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
         HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
@@ -527,6 +531,9 @@ final class Hilos extends HilosFacade
         ],
         BrowserSessionPage::PAGE => [
             OnlineTestingTableContext::hilosAnalyticsActions => [],
+        ],
+        PeoplePage::PAGE => [
+            OnlineTestingTableContext::hilosAnalyticsPeople => [],
         ],
         PersonPage::PAGE => [
             OnlineTestingTableContext::hilosAnalyticsBrowserSessions => [],

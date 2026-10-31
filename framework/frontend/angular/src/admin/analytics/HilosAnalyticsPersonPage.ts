@@ -16,6 +16,7 @@ import {
   effect,
   inject,
   input,
+  signal,
 } from '@angular/core'
 import {
   ANALYTICS_BROWSER_SESSION_ACTION_COUNT_FIELD,
@@ -28,19 +29,29 @@ import {
   createHilosAnalyticsBrowserSessionsTable,
   formatAnalyticsSessionNumber,
   formatAnalyticsTime,
+  hilosAnalyticsPerson,
   readAnalyticsRouteId,
   type HilosAnalyticsContext,
+  type HilosAnalyticsPerson,
 } from '@hilos/core/admin/analytics'
-import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
+import {
+  bindPageInstanceName,
+  computedSignal,
+  HilosPages,
+  hilosTimeZone,
+  isHiddenValue,
+} from '@hilos/core/base'
 
 import {
   HilosAdminPage,
+  HilosAvatar,
   HilosHideable,
   HilosLink,
   HilosTableCell,
   HilosViewportTable,
   HILOS_ROUTER,
   hilosSignal,
+  mirrorHilosSignal,
 } from '@hilos/angular/base'
 
 /** The person page of the Analytics section: the browser sessions in which the person in the address signed in last. */
@@ -49,13 +60,37 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosAvatar,
     HilosHideable,
     HilosLink,
     HilosTableCell,
     HilosViewportTable,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="entity">
+      <ng-template #headVisual>
+        <span data-id="analytics-person-head-avatar" aria-hidden="true">
+          <hilos-avatar
+            [name]="avatar().name"
+            [photo]="avatar().photo"
+            [icon]="avatar().icon"
+            size="md"
+          />
+        </span>
+      </ng-template>
+      <ng-template #headDescription>
+        <p
+          class="text-body-secondary mb-0"
+          data-id="analytics-person-head-description"
+        >
+          {{ identity()?.pageHeadOwner?.lead }}
+        </p>
+      </ng-template>
+      <ng-template #headSkeletonVisual>
+        <span
+          class="hilos-avatar-md rounded-circle bg-body-secondary flex-shrink-0"
+        ></span>
+      </ng-template>
       @if (sessions(); as table) {
         @for (current of [table]; track userId()) {
           <hilos-viewport-table
@@ -149,6 +184,23 @@ export class HilosAnalyticsPersonPage {
   } as const
 
   private readonly router = inject(HILOS_ROUTER)
+  protected readonly identity = hilosSignal(this.router.pageIdentity)
+  private readonly person = signal<HilosAnalyticsPerson | undefined>(undefined)
+  protected readonly avatar = computed(() => {
+    const person = this.person()
+    if (
+      person === undefined ||
+      person.name === null ||
+      isHiddenValue(person.name)
+    ) {
+      return { name: '', photo: null, icon: 'bi-person' }
+    }
+    return {
+      name: person.name,
+      photo: isHiddenValue(person.photo) ? null : person.photo,
+      icon: null,
+    }
+  })
   // The person the address names now — read live: another number on the same
   // page is a new subject.
   protected readonly userId = hilosSignal(
@@ -170,6 +222,26 @@ export class HilosAnalyticsPersonPage {
   })
 
   constructor() {
+    effect((onCleanup) => {
+      const { scopes } = this.context()
+      const stop = mirrorHilosSignal(hilosAnalyticsPerson(scopes), this.person)
+      const pageLabel = scopes.pageDataSignal('pageLabel')
+      const unbindName = bindPageInstanceName(
+        scopes,
+        HilosPages.ANALYTICS_PERSON,
+        computedSignal(() => {
+          if (scopes.page()?.key !== HilosPages.ANALYTICS_PERSON) {
+            return undefined
+          }
+          const label = pageLabel.get()
+          return typeof label === 'string' ? label : undefined
+        }),
+      )
+      onCleanup(() => {
+        unbindName()
+        stop()
+      })
+    })
     // Bind the person's table after the change that published its route, once
     // the router has dropped the previous page's buffered answer, and release it
     // when the number changes, disappears, or the page is destroyed.

@@ -4,12 +4,15 @@
 // table states, and one controller per person in the address.
 import { TestBed } from '@angular/core/testing'
 import {
+  computedSignal,
   createSignal,
   formatAnalyticsTime,
   HilosPages,
   pageIdentity,
   resolveHilosPath,
   ScopeManager,
+  sessionUserName,
+  sessionUserPhoto,
   type HilosAnalyticsBrowserSessionRow,
   type HilosConnection,
   type HilosRouter,
@@ -33,24 +36,53 @@ const SESSION = {
 }
 type Listener = (signal: { type?: string; data: unknown }) => void
 
+function personIdentity(
+  scopes: ScopeManager,
+  label = 'Ada (#7)',
+  name: unknown = 'Ada Lovelace',
+  photo: unknown = null,
+) {
+  const data = scopes.page()!.data
+  data.set('pageLabel', label)
+  data.set('pageLead', LEAD)
+  data.set('name', name)
+  data.set('photo', photo)
+  data.set('pageHeadOwner', { page: PAGE, label: 'Person', lead: LEAD })
+  data.set('pageBreadcrumb', [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.ANALYTICS, label: 'Analytics' },
+    { page: HilosPages.ANALYTICS_PEOPLE, label: 'People' },
+    { page: PAGE, label: 'Person' },
+  ])
+  data.set('pageTabs', [{ page: PAGE, label: 'Overview' }])
+  data.set('pageChildren', [])
+}
+
 function harness(
   param: string | undefined = '7',
   resolvePath: HilosRouter['resolvePath'] = resolveHilosPath,
 ) {
   const scopes = new ScopeManager()
   scopes.openPage(PAGE)
+  const currentUser = { type: 'user', id: 99 }
+  scopes.session.entities.upsert(currentUser, {
+    name: 'Session user',
+    photo: '/session.jpg',
+  })
+  scopes.session.data.set('currentUser', currentUser)
   const currentRoute = createSignal<PageRouteMatch>({
     page: PAGE,
     params: param === undefined ? {} : { userId: param },
     admin: true,
   })
+  const identity = createSignal(pageIdentity(scopes))
   const router: HilosRouter = {
     currentRoute,
     currentPath: createSignal('/hilos/analytics/people/7'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: pageIdentity(scopes),
+    pageIdentity: computedSignal(() => identity.get().get()),
     dashboardSections: createSignal(undefined),
     resolvePath,
     clearPageError: () => {},
@@ -103,11 +135,22 @@ function harness(
 
   return {
     fixture,
+    scopes,
+    router,
+    connection,
     root: fixture.nativeElement as HTMLElement,
     registered,
     listeners,
     sendTableViewport,
     unregisterTableWindow,
+    setContext(nextScopes: ScopeManager) {
+      identity.set(pageIdentity(nextScopes))
+      fixture.componentRef.setInput('context', {
+        connection,
+        scopes: nextScopes,
+      })
+      fixture.detectChanges()
+    },
     route(params: Record<string, string>) {
       currentRoute.set({ page: PAGE, params, admin: true })
       fixture.detectChanges()
@@ -120,13 +163,12 @@ function harness(
       heldPageResponse = undefined
       fixture.detectChanges()
     },
-    identity(label = 'Ada (#7)') {
-      const data = scopes.page()!.data
-      data.set('pageLabel', label)
-      data.set('pageLead', LEAD)
-      data.set('pageBreadcrumb', [
-        { page: HilosPages.ANALYTICS, label: 'Analytics' },
-      ])
+    identity(
+      label = 'Ada (#7)',
+      name: unknown = 'Ada Lovelace',
+      photo: unknown = null,
+    ) {
+      personIdentity(scopes, label, name, photo)
       fixture.detectChanges()
     },
     coldWindow() {
@@ -207,6 +249,180 @@ function cells(h: Harness, id: string): string[] {
 }
 
 describe('HilosAnalyticsPersonPage', () => {
+  it('creates no real avatar, description or name before the owner answer', () => {
+    const h = harness()
+    expect(sessionUserName(h.scopes).get()).toBe('Session user')
+    expect(sessionUserPhoto(h.scopes).get()).toBe('/session.jpg')
+    const data = h.scopes.page()!.data
+    data.set('name', 'Unanswered person')
+    data.set('photo', '/unanswered.jpg')
+    h.fixture.detectChanges()
+
+    expect(find(h, '[data-id="hilos-page-head-skeleton"]')).not.toBeNull()
+    expect(find(h, 'h1')).toBeNull()
+    expect(find(h, 'hilos-avatar')).toBeNull()
+    expect(find(h, '[data-id="analytics-person-head-avatar"]')).toBeNull()
+    expect(find(h, '[data-id="analytics-person-head-description"]')).toBeNull()
+    expect(find(h, 'nav')).toBeNull()
+    expect(h.root.innerHTML).not.toContain('/session.jpg')
+    expect(h.root.innerHTML).not.toContain('/unanswered.jpg')
+    expect(h.root.textContent).not.toContain('Unanswered person')
+    expect(h.root.textContent).not.toContain('Session user')
+  })
+
+  it('uses the target raw name and photo while the permitted label names the head and breadcrumb', () => {
+    const h = harness()
+    expect(sessionUserName(h.scopes).get()).toBe('Session user')
+    expect(sessionUserPhoto(h.scopes).get()).toBe('/session.jpg')
+    h.identity('Permitted label (#7)', 'Ada Lovelace', '/ada.jpg')
+
+    expect(find(h, 'h1')?.textContent?.trim()).toBe('Permitted label (#7)')
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+      'Permitted label (#7)',
+    )
+    const crumbs = [
+      ...h.root.querySelectorAll('nav[aria-label="Breadcrumb"] li'),
+    ]
+    const lastCrumb = crumbs.at(-1)!.cloneNode(true) as HTMLElement
+    lastCrumb.querySelector('[aria-hidden="true"]')?.remove()
+    expect(lastCrumb.textContent?.trim()).toBe('Permitted label (#7)')
+    expect(crumbs.at(-1)?.getAttribute('aria-current')).toBe('page')
+    expect(crumbs.at(-1)?.querySelector('a')).toBeNull()
+    expect(
+      find(h, `a[href="/hilos/analytics/people"]`)?.textContent?.trim(),
+    ).toBe('People')
+    const avatar = find(h, '[data-id="analytics-person-head-avatar"]')
+    expect(avatar?.getAttribute('aria-hidden')).toBe('true')
+    const photo = avatar?.querySelector('img')
+    expect(photo?.getAttribute('src')).toBe('/ada.jpg')
+    expect(photo?.getAttribute('alt')).toBe('')
+    expect(h.root.innerHTML).not.toContain('/session.jpg')
+    expect(h.root.textContent).not.toContain('Session user')
+    expect(
+      find(
+        h,
+        '[data-id="analytics-person-head-description"]',
+      )?.textContent?.trim(),
+    ).toBe(LEAD)
+    expect(find(h, '[data-id="hilos-page-tabs"]')).toBeNull()
+
+    photo?.dispatchEvent(new Event('error'))
+    h.fixture.detectChanges()
+    expect(find(h, '[data-id="hilos-avatar-photo"]')).toBeNull()
+    expect(find(h, '[data-id="hilos-avatar"]')?.textContent?.trim()).toBe('AL')
+  })
+
+  it('uses initials from the raw name without a photo or the label number', () => {
+    const h = harness()
+    h.identity('Different permitted label (#7)', 'Ada Lovelace')
+    expect(find(h, '[data-id="hilos-avatar"]')?.textContent?.trim()).toBe('AL')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')).toBeNull()
+  })
+
+  it('keeps a live empty name and its photo distinct from a deleted person', () => {
+    const h = harness()
+    h.identity(' (#7)', '', '/empty-name.jpg')
+    expect(find(h, 'h1')?.textContent?.trim()).toBe('(#7)')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')?.getAttribute('src')).toBe(
+      '/empty-name.jpg',
+    )
+    expect(find(h, '[data-id="hilos-avatar-icon"]')).toBeNull()
+    expect(h.root.textContent).not.toContain('Deleted')
+  })
+
+  it.each([
+    ['hidden name', { _hidden: true }, '/private.jpg', ''],
+    ['hidden photo', 'Ada Lovelace', { _hidden: true }, 'AL'],
+  ])('does not use a %s as an image source', (_case, name, photo, initials) => {
+    const h = harness()
+    h.identity('Person', name, photo)
+    expect(find(h, '[data-id="hilos-avatar-photo"]')).toBeNull()
+    expect(find(h, '[data-id="hilos-avatar"]')?.textContent?.trim()).toBe(
+      initials,
+    )
+    expect(h.root.innerHTML).not.toContain('/private.jpg')
+    expect(h.root.innerHTML).not.toContain('_hidden')
+  })
+
+  it('keeps an empty permitted label and reads the description from the owner lead', () => {
+    const h = harness()
+    h.identity('', 'Ada Lovelace')
+    h.scopes.page()!.data.set('pageHeadOwner', {
+      page: PAGE,
+      label: 'Person',
+      lead: 'Project catalog lead',
+    })
+    h.fixture.detectChanges()
+    expect(find(h, 'h1')?.textContent?.trim()).toBe('')
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('')
+    expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe('')
+    expect(
+      find(
+        h,
+        '[data-id="analytics-person-head-description"]',
+      )?.textContent?.trim(),
+    ).toBe('Project catalog lead')
+  })
+
+  it('drops the name and photo outside the Person scope and on a cold replacement', () => {
+    const h = harness()
+    h.identity('Ada (#7)', 'Ada Lovelace', '/ada.jpg')
+    const other = h.scopes.openPage(HilosPages.ANALYTICS_BROWSER_SESSION)
+    personIdentity(h.scopes, 'Other page label', 'Other person', '/other.jpg')
+    h.fixture.detectChanges()
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Person')
+    expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe('Person')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')).toBeNull()
+    expect(find(h, '[data-id="hilos-avatar-icon"]')).not.toBeNull()
+    other.data.set('pageLabel', 'Another unrelated label')
+    h.fixture.detectChanges()
+    expect(find(h, 'h1')?.textContent?.trim()).toBe('Person')
+
+    h.scopes.dropPage()
+    h.fixture.detectChanges()
+    expect(h.router.pageIdentity.get()).toBeUndefined()
+    expect(find(h, 'h1')).toBeNull()
+    expect(find(h, 'hilos-avatar')).toBeNull()
+    h.scopes.openPage(PAGE)
+    h.fixture.detectChanges()
+    expect(find(h, 'h1')).toBeNull()
+    expect(h.root.innerHTML).not.toContain('/ada.jpg')
+    expect(h.root.innerHTML).not.toContain('/other.jpg')
+  })
+
+  it('releases the former context mirror and name binding, then releases both on destroy', () => {
+    const h = harness()
+    h.identity('Ada (#7)', 'Ada Lovelace', '/ada.jpg')
+    const next = new ScopeManager()
+    next.openPage(PAGE)
+    h.setContext(next)
+    expect(pageIdentity(h.scopes).get()?.pageHeadOwner?.label).toBe('Person')
+    expect(pageIdentity(h.scopes).get()?.breadcrumb.at(-1)?.label).toBe(
+      'Person',
+    )
+    expect(find(h, 'h1')).toBeNull()
+    expect(find(h, 'hilos-avatar')).toBeNull()
+
+    personIdentity(next, 'Bob (#7)', 'Bob Target', '/bob.jpg')
+    h.fixture.detectChanges()
+    expect(find(h, 'h1')?.textContent?.trim()).toBe('Bob (#7)')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')?.getAttribute('src')).toBe(
+      '/bob.jpg',
+    )
+    h.identity('Former context update', 'Former person', '/former.jpg')
+    expect(find(h, 'h1')?.textContent?.trim()).toBe('Bob (#7)')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')?.getAttribute('src')).toBe(
+      '/bob.jpg',
+    )
+    expect(pageIdentity(next).get()?.breadcrumb.at(-1)?.label).toBe('Bob (#7)')
+
+    h.fixture.destroy()
+    expect(pageIdentity(next).get()?.pageHeadOwner?.label).toBe('Person')
+    expect(pageIdentity(next).get()?.breadcrumb.at(-1)?.label).toBe('Person')
+    expect(h.registered.size).toBe(0)
+    expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
+  })
+
   it('draws the shared identity, the person preset and real cells with session links', () => {
     const h = harness()
     h.identity()
@@ -277,13 +493,15 @@ describe('HilosAnalyticsPersonPage', () => {
 
   it('takes a deleted account label from the page answer', () => {
     const h = harness()
-    h.identity('Deleted user #7')
+    h.identity('Deleted user #7', null, '/should-not-load.jpg')
     expect(find(h, 'h1')?.textContent?.trim()).toBe('Deleted user #7')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')).toBeNull()
+    expect(find(h, '[data-id="hilos-avatar-icon"]')).not.toBeNull()
   })
 
   it('draws Hidden in every value without epoch dates, zeros or values in attributes', () => {
     const h = harness()
-    h.identity('Person')
+    h.identity('Person', { _hidden: true }, { _hidden: true })
     h.coldWindow()
     h.window([
       [
@@ -345,7 +563,7 @@ describe('HilosAnalyticsPersonPage', () => {
 
   it('replaces the controller on a new person, drops old rows and releases every listener on unmount', () => {
     const h = harness()
-    h.identity()
+    h.identity('Ada (#7)', 'Ada Lovelace', '/ada.jpg')
     h.coldWindow()
     h.window([['57', SESSION]])
     const old = h.registered.get(TABLE)
@@ -366,8 +584,11 @@ describe('HilosAnalyticsPersonPage', () => {
     ).toBe(false)
     expect(find(h, '[data-record="57"]')).toBeNull()
     expect(h.root.textContent).not.toContain('Ada')
+    expect(find(h, 'hilos-avatar')).toBeNull()
+    expect(find(h, '[data-id="analytics-person-head-description"]')).toBeNull()
+    expect(h.root.innerHTML).not.toContain('/ada.jpg')
 
-    h.identity('Bob (#8)')
+    h.identity('Bob (#8)', 'Bob Target', '/bob.jpg')
     h.coldWindow()
     expect(h.sendTableViewport).toHaveBeenLastCalledWith(
       PAGE,
@@ -376,6 +597,9 @@ describe('HilosAnalyticsPersonPage', () => {
     )
     h.window([['60', { ...SESSION, browser: 'Chrome 141 / macOS' }]])
     expect(find(h, 'h1')?.textContent?.trim()).toBe('Bob (#8)')
+    expect(find(h, '[data-id="hilos-avatar-photo"]')?.getAttribute('src')).toBe(
+      '/bob.jpg',
+    )
     expect(cells(h, 'browser')).toEqual(['Chrome 141 / macOS'])
     expect(find(h, '[data-record="57"]')).toBeNull()
 

@@ -159,11 +159,15 @@ let pageHeadHeadingSeq = 0
           aria-hidden="true"
           data-id="hilos-page-head-skeleton"
         >
-          <span
-            class="hilos-avatar-md bg-secondary-subtle flex-shrink-0"
-            [class.rounded-3]="kind() === 'entity'"
-            [class.rounded-circle]="kind() !== 'entity'"
-          ></span>
+          @if (skeletonVisual(); as skeletonVisualTemplate) {
+            <ng-container [ngTemplateOutlet]="skeletonVisualTemplate" />
+          } @else {
+            <span
+              class="hilos-avatar-md bg-secondary-subtle flex-shrink-0"
+              [class.rounded-3]="kind() === 'entity'"
+              [class.rounded-circle]="kind() !== 'entity'"
+            ></span>
+          }
           <div class="flex-grow-1 min-w-0">
             <span
               class="placeholder placeholder-lg col-4 d-block mb-2 rounded"
@@ -196,6 +200,8 @@ export class HilosPageHead {
   readonly tabsLabel = input('Page sections')
   /** The one transition the head offers as a button. */
   readonly action = input<HilosPageHeadAction>()
+  /** The decorative picture in the skeleton; omitted keeps the kind's default. */
+  readonly skeletonVisual = input<TemplateRef<unknown>>()
   /** The block's picture: an entity's tile or avatar; a section's icon by default. */
   readonly visual = input<TemplateRef<unknown>>()
   /** A short mark beside the title, such as the entity's code. */

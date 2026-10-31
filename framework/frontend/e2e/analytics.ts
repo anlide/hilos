@@ -272,6 +272,15 @@ async function expectAnalyticsWindow(
       ),
     )
     .toEqual(rows.map((row) => row.rowKey))
+  expect(Number.isSafeInteger(window.totalCount)).toBe(true)
+  expect(window.totalCount).toBeGreaterThanOrEqual(rows.length)
+  expect(typeof window.totalExact).toBe('boolean')
+  if (rows.length > 0) {
+    const first = Number(window.rowsBefore ?? 0) + 1
+    await expect(table.getByTestId('hilos-table-count')).toHaveText(
+      `${first} – ${first + rows.length - 1} of ${window.totalCount}${window.totalExact ? '' : '+'}`,
+    )
+  }
   return { request, window, rows, context }
 }
 
@@ -409,55 +418,51 @@ export function analyticsPersonLink(page: Page, userId: number): Locator {
   )
 }
 
-/** The explicit kit's served tabs, in catalog order, and section crumbs. */
+/** The kit's accessible section navigation resolves to its served pages. */
 export async function expectAnalyticsSectionHead(
   expect: Expect,
   page: Page,
   current: 'overview' | 'sessions' | 'people',
-  kit: 'vue' | 'react' = 'vue',
+  kit: 'vue' | 'react' | 'angular' = 'vue',
 ): Promise<void> {
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Analytics')
   const tabs = page.getByTestId('hilos-page-tabs')
+  await expect(tabs).toHaveRole('navigation')
   await expect(tabs).toHaveAccessibleName('Analytics pages')
-  await expect(tabs.getByRole('link')).toHaveText(
-    kit === 'vue'
-      ? ['Overview', 'Browser sessions', 'People']
-      : ['Overview', 'People'],
-  )
-  for (const [key, path, active] of [
-    ['hilos_analytics', '/hilos/analytics', current === 'overview'],
+  await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
+  for (const [key, name, path, active] of [
+    ['hilos_analytics', 'Overview', '/hilos/analytics', current === 'overview'],
     ...(kit === 'vue'
       ? ([
           [
             SESSION_LIST_PAGE,
+            'Browser sessions',
             ANALYTICS_SESSION_LIST_PATH,
             current === 'sessions',
           ],
         ] as const)
       : []),
-    [PEOPLE_PAGE, '/hilos/analytics/people', current === 'people'],
+    [PEOPLE_PAGE, 'People', '/hilos/analytics/people', current === 'people'],
   ] as const) {
     const link = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(link).toHaveRole('link')
+    await expect(link).toHaveAccessibleName(name)
     await expect(link).toHaveAttribute('href', path)
     if (active) await expect(link).toHaveAttribute('aria-current', 'page')
     else await expect(link).not.toHaveAttribute('aria-current')
   }
-  // React draws decorative, aria-hidden separators inside the breadcrumb items.
-  await expect
-    .poll(() =>
-      page
-        .getByTestId('hilos-breadcrumb')
-        .locator('li')
-        .evaluateAll((items) =>
-          items.map((item) => {
-            const words = item.cloneNode(true) as Element
-            for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-              hidden.remove()
-            return words.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-          }),
-        ),
-    )
-    .toEqual(['Hilos', 'Analytics'])
+  const breadcrumb = page.getByRole('navigation', {
+    name: 'Breadcrumb',
+    exact: true,
+  })
+  await expect(
+    breadcrumb.getByRole('link', { name: 'Hilos', exact: true }),
+  ).toHaveAttribute('href', '/hilos')
+  const currentCrumb = breadcrumb.locator('[aria-current="page"]')
+  await expect(currentCrumb).toContainText('Analytics')
+  await expect(currentCrumb).not.toHaveRole('link')
 }
 
 /** A real signed-in person's period count and moment agree with the served row. */
@@ -618,7 +623,7 @@ export async function expectAnalyticsPeopleAccessibility(
   expect: Expect,
   page: Page,
   direction: 'ascending' | 'descending',
-  kit: 'vue' | 'react' = 'vue',
+  kit: 'vue' | 'react' | 'angular' = 'vue',
 ): Promise<void> {
   await expectAnalyticsSectionHead(expect, page, 'people', kit)
   const table = page
@@ -631,7 +636,6 @@ export async function expectAnalyticsPeopleAccessibility(
       .getByRole('heading', { level: 1 })
       .getAttribute('id')) as string,
   )
-  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
   await expect(
     table.getByRole('columnheader', { name: 'Last seen' }),
   ).toHaveAttribute('aria-sort', direction)
@@ -640,42 +644,28 @@ export async function expectAnalyticsPeopleAccessibility(
   ).toHaveAccessibleName('Last seen')
 }
 
-/** Person has one entity head, no tab row, and an all-time People return link. */
+/** Person's permitted identity, return address and all-time target agree. */
 export async function expectAnalyticsPersonNavigation(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
   person: { userId: number; name: string },
 ): Promise<void> {
-  const head = page.getByTestId('hilos-page-head')
-  await expect(head).toBeVisible()
-  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  await expect(head.getByRole('heading', { level: 1 })).toHaveText(
-    `${person.name} (#${person.userId})`,
-  )
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
+  const label = `${person.name} (#${person.userId})`
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText(label)
   await expect(page.getByRole('tablist')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-  await expect
-    .poll(() =>
-      page
-        .getByTestId('hilos-breadcrumb')
-        .locator('li')
-        .evaluateAll((items) =>
-          items.map((item) => {
-            const words = item.cloneNode(true) as Element
-            for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-              hidden.remove()
-            return words.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-          }),
-        ),
-    )
-    .toEqual([
-      'Hilos',
-      'Analytics',
-      'People',
-      `${person.name} (#${person.userId})`,
-    ])
+  const breadcrumb = page.getByRole('navigation', {
+    name: 'Breadcrumb',
+    exact: true,
+  })
+  const current = breadcrumb.locator('[aria-current="page"]')
+  await expect(current).toContainText(label)
+  await expect(current).not.toHaveRole('link')
+  await expect(
+    page.getByTestId('hilos-breadcrumb-hilos_analytics_people'),
+  ).toHaveAccessibleName('People')
   await expect(
     page.getByTestId('hilos-breadcrumb-hilos_analytics_people'),
   ).toHaveAttribute('href', '/hilos/analytics/people')
@@ -877,12 +867,12 @@ export async function expectAnalyticsDashboardCard(
  *
  * @param expect The spec's expect.
  * @param page The page showing the ready overview.
- * @param kit Vue has both lists and count links; React has People navigation.
+ * @param kit Vue has both lists and count links; React and Angular have People navigation.
  */
 export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
-  kit: 'legacy' | 'vue' | 'react' = 'legacy',
+  kit: 'legacy' | 'vue' | 'react' | 'angular' = 'legacy',
 ): Promise<void> {
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)

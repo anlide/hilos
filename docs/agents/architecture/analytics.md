@@ -437,9 +437,14 @@ layer that has built the section, which all three layers have.
   the catalog, shared Analytics head and table. The Vue bindings expose the
   `Overview`, `Browser sessions` and `People` tabs in Chat and Binance, with
   People active on this page. Tasks and ecommerce-shop mount the React Overview
-  and People pages, whose row contains those two tabs; Angular People remains
-  with HIL-1740. People is optional and its table is not required by every
-  Analytics activation.
+  and People pages; Polls and OnlineTesting mount the Angular Overview and
+  People pages. Each project's row contains the pages its kit serves. In Polls
+  and OnlineTesting, `PeoplePage` extends `AbstractHilosAnalyticsPeoplePage`
+  and is registered in `PAGES`; its existing Analytics agent supplies the
+  subscription route. Each project registers `HilosAnalyticsPeopleTable` in its
+  `TableContext` and `TABLES`, then binds it to `PeoplePage::PAGE` in
+  `PAGE_TABLES`. The page and table are optional; `HilosFeature::ANALYTICS` does
+  not require them.
   The accessible table/list name is `Analytics`, supplied by the section's one
   heading.
 - People groups rows from `hilos_analytics_browser_session` where
@@ -460,14 +465,14 @@ layer that has built the section, which all three layers have.
 - A People row keeps its numeric user id only in the envelope `rowKey`; the
   inline `person` slot contains `name`, `sessionCount` and `lastSeenTs`. Names
   come from the mounted `Hilos::$db->users` collection for rows in the window;
-  an absent account is shown as `Deleted user #<id>`. The Vue and React lists
-  link the public number to the registered Person page. The standard total and
-  Period facets remain available as aggregate counts capped at 500 with an
-  exactness flag. In admin view mode all three row values are Hidden while the
-  public number remains; the table does not declare them `notPersonal()`, and a
-  hidden `lastSeenTs` sort is removed. Viewer anchors carry only the public
-  `rowKey`, without its hidden moment. People has no search, actions or live
-  updates.
+  an absent account is shown as `Deleted user #<id>`. The Vue, React and Angular
+  lists link the public number to the registered Person page. The standard
+  total and Period facets remain available as aggregate counts capped at 500,
+  with an exactness flag. In admin view mode all three row values are Hidden
+  while the public number remains. The table does not declare them
+  `notPersonal()`, and it removes a hidden `lastSeenTs` sort. Viewer anchors
+  carry only the public `rowKey`, without its hidden moment. People has no
+  search, actions or live updates.
 - A person's page lists the browser sessions in which they were the last to
   sign in — first and last seen, browser and the number of actions — each
   session number linking to its session page. Its key is
@@ -485,18 +490,22 @@ layer that has built the section, which all three layers have.
   is published. A user or photo source failure remains a page failure; this
   adds no request or live fan-out.
   Chat and Binance opt the Vue page into the entity head; Tasks and
-  ecommerce-shop do the same for React. Both use the permitted `pageLabel` for
-  the owner name and breadcrumb, with `name` and `photo` from the same
-  `page_response` snapshot for the avatar. The avatar shows initials/name and
+  ecommerce-shop do the same for React; Polls and OnlineTesting do the same for
+  Angular. All three use the permitted `pageLabel` for the owner name and
+  breadcrumb, with `name` and `photo` from the same `page_response` snapshot
+  for the avatar. The avatar shows initials/name and
   the published photo, falls back to initials when the image fails, and shows
   `bi-person` for a deleted or hidden name; a hidden photo is not used as an
   image source. A live empty name remains distinct from a deleted person and
   may have a published photo. The React page supplies a blank circular picture
-  through `headSkeletonVisual` while the answer is pending. The description is
-  the current catalog lead about browser sessions, not visit-based copy; name
-  and photo do not receive live updates. Angular retains its legacy Person
-  presentation until HIL-1740. The heading and the table remain a snapshot of the
-  subscription, without live updates. It remains an all-time page and does not
+  through `headSkeletonVisual` while the answer is pending. Angular uses the
+  scoped `hilosAnalyticsPerson` name and photo, binds the permitted `pageLabel`
+  with `bindPageInstanceName()`, and passes a blank circular template through
+  `HilosAdminPage` to the optional `HilosPageHead.skeletonVisual` input. The
+  description is the current catalog lead about browser sessions, not
+  visit-based copy; name and photo do not receive live updates. The heading and
+  the table remain a snapshot of the subscription, without live updates. It
+  remains an all-time page and does not
   inherit the People period. In the shared head it is a child of People; direct
   opens and list links resolve `Hilos › Analytics › People › Name (#N)` with
   the current permitted name, or the deleted-user label. A view-mode viewer
@@ -607,8 +616,8 @@ frontend core supplies their controllers, column declarations, row readers and
 local-time labels. In all three view layers the browser-session page opens the
 actions table with its route's session number as the preset, and the person
 page opens the browser-sessions table with its route's `userId` as the preset.
-The People table is rendered in Vue and React; the Browser sessions list remains
-Vue-only.
+The People table is rendered in Vue, React and Angular; the Browser sessions list
+remains Vue-only.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a
@@ -635,7 +644,16 @@ People-to-Person and Period flows in `demo/tasks/tests/e2e/tests/analytics.spec.
 keeps the User-to-Person-to-session regression in
 `demo/tasks/tests/e2e/tests/analytics-browser-session.spec.ts`, and checks the
 assembled People/Person outlet in `demo/tasks/tests/e2e/tests/a11y.spec.ts`.
-These People navigation and accessibility checks are not implied for other demos.
+Polls carries the Angular People-to-Person and Period/Reset journey, including
+one opening Today viewport without an extra Any time request, reuse of the
+captured context, the first name/photo reply, direct entry, F5, and Back/Forward
+in `demo/polls/tests/e2e/tests/analytics.spec.ts`; its separate
+`analytics-browser-session.spec.ts` keeps the User-to-Person-to-session
+regression, including session ownership, action order and viewer privacy; the
+Analytics accessibility group in `a11y.spec.ts` checks
+keyboard links, sort direction, current-page state, one heading and table name,
+return/focus behavior, and the People/Person table semantics. These People
+navigation and accessibility checks are not implied for other demos.
 Every action of the registered person's session stands on `main`, checked by
 `expectAnalyticsActionsOnPage`.
 

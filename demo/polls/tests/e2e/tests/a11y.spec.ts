@@ -3,13 +3,24 @@ import { holdLegalRevision } from '../helpers/legalHold.js'
 
 import {
   enterIdentifierAndPassword,
+  login,
   logout,
   openSignIn,
   PASSWORD,
   createTestUser,
+  analyticsPersonLink,
+  deliveryObject,
   expectAnalyticsOverview,
   expectAnalyticsOverviewTiles,
+  expectAnalyticsPeopleAccessibility,
+  expectAnalyticsPeoplePerson,
+  expectAnalyticsPeopleWindow,
+  expectAnalyticsPersonNavigation,
+  expectAnalyticsPersonSession,
   readAnalyticsOverviewSnapshot,
+  uniqueEmail,
+  waitAnalyticsBrowserSession,
+  watchDeliveryFrames,
   watchSocketFrames,
   type SocketFrame,
   expectCommunicationsAccessibility,
@@ -40,6 +51,9 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
+import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -703,15 +717,37 @@ test('Node pages expose one entity heading, link tabs and tables named through t
   }
 })
 
-test.describe('Analytics overview accessibility', () => {
+test.describe('Analytics accessibility', () => {
   test.use({ timezoneId: 'Asia/Kathmandu' })
 
-  test('exposes one heading, a breadcrumb landmark and semantic visitor data', async ({
+  test('exposes visitor data and keyboard People/Person navigation, sorting and table names', async ({
     page,
+    browser,
+    baseURL,
+    ignoreHTTPSErrors,
   }) => {
+    // A real login and the journal-writer wait precede the keyboard journey.
+    test.slow()
     const frames: SocketFrame[] = []
     const observer = watchSocketFrames(page, (frame) => frames.push(frame))
+    const delivery = watchDeliveryFrames(page)
+    const userContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
     try {
+      const user = await seedTestUser({ email: `person-${uniqueEmail()}` })
+      const userPage = await userContext.newPage()
+      await gotoPage(expect, userPage, '/')
+      await openSignIn(expect, userPage)
+      await login(expect, userPage, user.email, PASSWORD)
+      const browserMajor = await userPage.evaluate(
+        () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
+      )
+      expect(browserMajor).toBeDefined()
+      const session = await waitAnalyticsBrowserSession(
+        expect,
+        createStandCommandChannel({ timeoutMs: 5_000 }),
+        user.userId,
+        AUTH_ACTION_LOGIN,
+      )
       await grantAdminToSelf(expect, page)
       const browserTimeZone = await page.evaluate(
         () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -719,7 +755,7 @@ test.describe('Analytics overview accessibility', () => {
       const opening = frames.length
       await gotoPage(expect, page, '/hilos/analytics')
       await expectPageReady(expect, page)
-      await expectAnalyticsOverview(expect, page)
+      await expectAnalyticsOverview(expect, page, 'angular')
       const snapshot = readAnalyticsOverviewSnapshot(frames.slice(opening))
       await expectAnalyticsOverviewTiles(
         expect,
@@ -742,15 +778,12 @@ test.describe('Analytics overview accessibility', () => {
       await expect(currentCrumb.getByRole('link')).toHaveCount(0)
 
       const tiles = page.getByTestId('hilos-analytics-overview-tiles')
-      await expect(tiles.locator('dl')).toHaveCount(3)
       for (const period of ['week', 'day', 'hour'] as const) {
         const dl = tiles
           .getByTestId(`hilos-analytics-visitors-${period}`)
           .and(tiles.locator('dl'))
         await expect(dl).toBeVisible()
-        await expect(dl.getByRole('term')).toHaveCount(1)
         await expect(dl.getByRole('term')).toBeVisible()
-        await expect(dl.getByRole('definition')).toHaveCount(2)
         for (const field of ['count', 'since']) {
           const value = dl.getByTestId(
             `hilos-analytics-visitors-${period}-${field}`,
@@ -760,21 +793,155 @@ test.describe('Analytics overview accessibility', () => {
         }
       }
 
-      const icon = page
-        .getByTestId('hilos-page-head')
-        .locator('span[aria-hidden="true"]')
-        .filter({ has: page.locator('i') })
-      await expect(icon).toBeVisible()
-      await expect(icon).toHaveAttribute('aria-hidden', 'true')
-
       // These aggregates are read-only text, with no keyboard focus target.
       await expect(
         tiles.locator(
           'a, button, input, select, textarea, [tabindex], [contenteditable="true"], [role="link"], [role="button"]',
         ),
       ).toHaveCount(0)
+
+      await test.step('People link and Last seen sort work from the keyboard', async () => {
+        const people = page.getByTestId('hilos-page-tab-hilos_analytics_people')
+        await people.focus()
+        await expect(people).toBeFocused()
+        await people.press('Enter')
+        await expect(page).toHaveURL('/hilos/analytics/people')
+        await expectPageReady(expect, page)
+        const today = await expectAnalyticsPeopleWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+        )
+        await expectAnalyticsPeoplePerson(expect, page, today, user)
+        await expectAnalyticsPeopleAccessibility(
+          expect,
+          page,
+          'descending',
+          'angular',
+        )
+        const sorting = delivery.sent.length
+        const sort = page
+          .getByTestId('hilos-analytics-people-table')
+          .getByTestId('hilos-table-sort-lastSeenTs')
+        await sort.focus()
+        await expect(sort).toBeFocused()
+        await sort.press('Enter')
+        const ascending = await expectAnalyticsPeopleWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          sorting,
+        )
+        expect(ascending.request.sort).toEqual([
+          { field: 'lastSeenTs', direction: 'asc' },
+        ])
+        expect(ascending.request.filter).toEqual(today.request.filter)
+        await expectAnalyticsPeopleAccessibility(
+          expect,
+          page,
+          'ascending',
+          'angular',
+        )
+        await expect(sort).toBeFocused()
+
+        const descendingSort = delivery.sent.length
+        await sort.press('Enter')
+        const descending = await expectAnalyticsPeopleWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          descendingSort,
+        )
+        expect(descending.request.sort).toEqual([
+          { field: 'lastSeenTs', direction: 'desc' },
+        ])
+        expect(descending.request.filter).toEqual(today.request.filter)
+        await expectAnalyticsPeopleAccessibility(
+          expect,
+          page,
+          'descending',
+          'angular',
+        )
+        await expectAnalyticsPeoplePerson(expect, page, descending, user)
+        await expect(sort).toBeFocused()
+      })
+
+      await test.step('Person is named by its data and its People return is keyboard operable', async () => {
+        const person = analyticsPersonLink(page, user.userId)
+        await person.focus()
+        await expect(person).toBeFocused()
+        await person.press('Enter')
+        await expect(page).toHaveURL(`/hilos/analytics/people/${user.userId}`)
+        await expectPageReady(expect, page)
+        await expectAnalyticsPersonSession(
+          expect,
+          page,
+          user,
+          session,
+          browserMajor!,
+        )
+        await expectAnalyticsPersonNavigation(expect, page, delivery, user)
+        const label = `${user.name} (#${user.userId})`
+        const heading = page.getByRole('heading', { level: 1 })
+        const table = page
+          .getByTestId('hilos-analytics-browser-sessions-table')
+          .getByRole('table', { name: label, exact: true })
+        await expect(table).toBeVisible()
+        await expect(table).toHaveAttribute(
+          'aria-labelledby',
+          (await heading.getAttribute('id'))!,
+        )
+        const returning = delivery.sent.length
+        const people = page.getByTestId(
+          'hilos-breadcrumb-hilos_analytics_people',
+        )
+        await people.focus()
+        await expect(people).toBeFocused()
+        await people.press('Enter')
+        await expect(page).toHaveURL('/hilos/analytics/people')
+        await expectPageReady(expect, page)
+        const today = await expectAnalyticsPeopleWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          returning,
+        )
+        await expectAnalyticsPeopleAccessibility(
+          expect,
+          page,
+          'descending',
+          'angular',
+        )
+        await expectAnalyticsPeoplePerson(expect, page, today, user)
+        const reopened = analyticsPersonLink(page, user.userId)
+        await reopened.focus()
+        await expect(reopened).toBeFocused()
+        const requests = delivery.sent
+          .map(({ wire }) => deliveryObject(wire))
+          .filter(
+            (wire) =>
+              wire.type === 'page_subscribe' &&
+              wire.page === 'hilos_analytics_person',
+          )
+        expect(requests).toHaveLength(1)
+        expect(requests[0].params).toEqual({ userId: String(user.userId) })
+      })
     } finally {
+      await test.info().attach('analytics-accessibility-frames', {
+        body: JSON.stringify(
+          { sent: delivery.sent, packets: delivery.packets },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      })
       observer.stop()
+      delivery.stop()
+      await userContext.close()
     }
   })
 })

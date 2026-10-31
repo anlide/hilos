@@ -13,9 +13,11 @@
 // shell's own (docs/agents/architecture/page-head.md). The answer alone decides
 // it: the head inputs and the head templates the page projects (#headVisual,
 // #headMeta, #headBadges, #headDescription) only dress the owner's block, and on
-// a page without an owner they are ignored. Until an answer arrives, a page that
-// names its head kind already stands on that head's skeleton rather than on the
-// legacy one.
+// a page without an owner they are ignored. #headSkeletonVisual may supply the
+// decorative picture in that head's aria-hidden skeleton while the answer is
+// pending; it does not expose the owner's real content. Until an answer arrives,
+// a page that names its head kind already stands on that head's skeleton rather
+// than on the legacy one.
 //
 // Under the legacy heading the shell always draws the section's sub-navigation
 // cards — one for every child the live params can resolve — and a page's own
@@ -137,6 +139,7 @@ let adminPageHeadingSeq = 0
             [headingId]="headingId"
             [kind]="headKind() ?? 'section'"
             [action]="headAction()"
+            [skeletonVisual]="headSkeletonVisual()"
             [breadcrumbLabel]="breadcrumbLabel()"
             [tabsLabel]="tabsLabel()"
             [visual]="headVisual()"
@@ -276,6 +279,9 @@ export class HilosAdminPage {
   protected readonly headingId = inject(HILOS_PAGE_HEADING_ID)
   protected readonly identity = hilosSignal(this.router.pageIdentity)
   protected readonly params = computed(() => this.route().params)
+  /** The shared head's decorative loading picture before its owner answers. */
+  protected readonly headSkeletonVisual =
+    contentChild<TemplateRef<unknown>>('headSkeletonVisual')
   /** The shared head's block picture: an entity's tile or avatar. */
   protected readonly headVisual =
     contentChild<TemplateRef<unknown>>('headVisual')

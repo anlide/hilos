@@ -25,6 +25,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -78,6 +79,7 @@ use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\AnalyticsPage;
 use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Polls\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
 use Demo\Polls\Pages\Hilos\LicensePage;
 use Demo\Polls\Pages\Hilos\LicenseDependenciesPage;
@@ -326,6 +328,7 @@ final class Hilos extends HilosFacade
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
+        PeoplePage::PAGE => PeoplePage::class,
         PersonPage::PAGE => PersonPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
@@ -613,6 +616,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+        PollsTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
         HilosStatusSubscribersTable::TABLE => HilosStatusSubscribersTable::class,
         HilosStatusWorksTable::TABLE => HilosStatusWorksTable::class,
@@ -715,6 +719,9 @@ final class Hilos extends HilosFacade
         ],
         BrowserSessionPage::PAGE => [
             PollsTableContext::hilosAnalyticsActions => [],
+        ],
+        PeoplePage::PAGE => [
+            PollsTableContext::hilosAnalyticsPeople => [],
         ],
         PersonPage::PAGE => [
             PollsTableContext::hilosAnalyticsBrowserSessions => [],

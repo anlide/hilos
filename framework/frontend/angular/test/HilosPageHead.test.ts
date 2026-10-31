@@ -283,6 +283,38 @@ class PageHeadHost {
   protected readonly resolvePath = resolvePath
 }
 
+/** A page module with a loading picture and real block templates. */
+@Component({
+  selector: 'test-page-head-skeleton-host',
+  imports: [HilosPageHead],
+  template: `
+    <ng-template #skeletonVisual>
+      <span data-id="skeleton-visual"></span>
+    </ng-template>
+    <ng-template #visual>
+      <span data-id="live-visual"></span>
+    </ng-template>
+    <ng-template #description>
+      <p data-id="live-description">Owner description</p>
+    </ng-template>
+    <hilos-page-head
+      [identity]="identity()"
+      page="demo_entity"
+      [params]="params"
+      [resolvePath]="resolvePath"
+      kind="entity"
+      [skeletonVisual]="skeletonVisual"
+      [visual]="visual"
+      [description]="description"
+    />
+  `,
+})
+class PageHeadSkeletonHost {
+  readonly identity = signal<HilosPageIdentity | undefined>(undefined)
+  protected readonly params: Record<string, string> = ENTITY_PARAMS
+  protected readonly resolvePath = resolvePath
+}
+
 /**
  * Mount the head inside a page module that hands it every block template.
  *
@@ -807,6 +839,27 @@ describe('HilosPageHead', () => {
     expect(has(host, '[data-id="hilos-page-head-skeleton"]')).toBe(false)
     expect(get(host, 'h1').textContent?.trim()).toBe('United States')
     expect(probesCreated).toBe(4)
+  })
+
+  it('keeps the supplied skeleton picture decorative until real block content can render', () => {
+    const fixture = TestBed.createComponent(PageHeadSkeletonHost)
+    fixture.detectChanges()
+
+    const skeleton = get(fixture, '[data-id="hilos-page-head-skeleton"]')
+    expect(skeleton.getAttribute('aria-hidden')).toBe('true')
+    expect(skeleton.querySelector('[data-id="skeleton-visual"]')).not.toBeNull()
+    expect(has(fixture, '[data-id="hilos-page-head-block"]')).toBe(false)
+    expect(has(fixture, '[data-id="live-visual"]')).toBe(false)
+    expect(has(fixture, '[data-id="live-description"]')).toBe(false)
+    expect(has(fixture, 'h1')).toBe(false)
+
+    fixture.componentInstance.identity.set(ENTITY)
+    fixture.detectChanges()
+
+    expect(has(fixture, '[data-id="hilos-page-head-skeleton"]')).toBe(false)
+    expect(has(fixture, '[data-id="skeleton-visual"]')).toBe(false)
+    expect(has(fixture, '[data-id="live-visual"]')).toBe(true)
+    expect(has(fixture, '[data-id="live-description"]')).toBe(true)
   })
 
   it("draws a section's skeleton tile round", () => {

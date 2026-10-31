@@ -1001,16 +1001,17 @@ no-value sign reads as a null page name, as the frames carry it) and the cell
 locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` checks the way
 in. The shared Overview check always requires tiles and has no body `kind` or
 empty mode. Its signature is
-`expectAnalyticsOverview(expect: Expect, page: Page, kit: 'legacy' | 'vue' | 'react' = 'legacy'): Promise<void>`:
+`expectAnalyticsOverview(expect: Expect, page: Page, kit: 'legacy' | 'vue' | 'react' | 'angular' = 'legacy'): Promise<void>`:
 Vue expects Overview, Browser sessions and People tabs plus count links; React
-expects Overview and People tabs without count links; legacy checks the
-breadcrumb and tiles without a shared head.
-`expectAnalyticsSectionHead(expect: Expect, page: Page, current: 'overview' | 'sessions' | 'people', kit: 'vue' | 'react' = 'vue'): Promise<void>`
+and Angular expect Overview and People tabs without count links; legacy checks
+the breadcrumb and tiles without a shared head.
+`expectAnalyticsSectionHead(expect: Expect, page: Page, current: 'overview' | 'sessions' | 'people', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 and
-`expectAnalyticsPeopleAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' = 'vue'): Promise<void>`
-select the right tab row and People table for React callers. The chat (Vue),
-tasks (React) and polls (Angular) Overview specs arm `watchSocketFrames` before
-setup and bookmark the log before opening Analytics from the dashboard.
+`expectAnalyticsPeopleAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
+select the right tab row and People table; React and Angular callers pass their
+kit explicitly, while Vue callers retain the default. The chat (Vue), tasks
+(React) and polls (Angular) Overview specs arm `watchSocketFrames` before setup
+and bookmark the log before opening Analytics from the dashboard.
 `readAnalyticsOverviewSnapshot`
 reads one complete reply from that opening's frames;
 `expectAnalyticsOverviewTiles` compares all three counts and their captured
@@ -1045,13 +1046,22 @@ can use the same waiter without `expectedAction`.
 
 Tasks' React `analytics.spec.ts` uses the shared Overview helper with the
 `'react'` kit, keeps the snapshot oracle and carries People-to-Person navigation,
-direct entry, F5, browser history and return to
-People, plus Period changes and Reset over the captured context. Its existing
+direct entry, F5, browser history and return to People, plus Period changes and
+Reset over the captured context. Its existing `analytics-browser-session.spec.ts`
+keeps the User-to-Person-to-session privacy and action-order regression. The
+Analytics accessibility group in `a11y.spec.ts` covers the assembled
+People/Person outlet, including keyboard navigation and table semantics.
+Polls' Angular `analytics.spec.ts`
+uses the shared helpers with the `'angular'` kit and covers People-to-Person
+navigation, one opening Today viewport without an extra Any time request,
+Period and Reset over the captured context, direct entry, F5, Back/Forward, and
+the first Person reply's name and photo. Its separate
 `analytics-browser-session.spec.ts` keeps the User-to-Person-to-session
-regression. The Analytics accessibility group in `a11y.spec.ts` covers the
-assembled People/Person outlet, including keyboard navigation and table
-semantics. These are the Tasks React carriers; other demo carriers keep their
-own existing scenario coverage.
+privacy and action-order regression; its Analytics accessibility group in
+`a11y.spec.ts` covers keyboard links, `aria-current`, `aria-sort`, the single
+heading and table name, and the People return and focus. These are the Tasks
+React and Polls Angular carriers; other demo carriers keep their own existing
+scenario coverage.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master

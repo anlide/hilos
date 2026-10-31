@@ -9,7 +9,7 @@ use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
-/** Communications head adoption for the polls demo. */
+/** Framework page head adoption for the polls demo. */
 final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
@@ -21,6 +21,10 @@ final class PageCatalog implements PageCatalogProviderInterface
     public static function pages(): array
     {
         return [
+            HilosPageConstants::HILOS_ANALYTICS_PERSON => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_PERSON],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
             HilosPageConstants::HILOS_COMMUNICATIONS => array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_COMMUNICATIONS],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],

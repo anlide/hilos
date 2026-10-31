@@ -22,6 +22,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.COMMUNICATIONS,
     HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
     HilosPages.ANALYTICS,
+    HilosPages.ANALYTICS_PEOPLE,
     HilosPages.ANALYTICS_PERSON,
     HilosPages.MODERATION,
     HilosPages.MODERATION_KIND,

@@ -289,6 +289,9 @@ describe('HilosAdminPage', () => {
       tabsLabel="Section pages"
       [headAction]="action"
     >
+      <ng-template #headSkeletonVisual>
+        <span data-id="probe-skeleton-visual"></span>
+      </ng-template>
       <ng-template #headVisual>
         <span data-id="probe-tile">IN</span>
       </ng-template>
@@ -389,6 +392,28 @@ class TableHost {
 }
 
 describe('HilosAdminPage with the shared head', () => {
+  it('forwards the optional skeleton picture without creating the owner templates before its answer', () => {
+    const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+    const fixture = mount(HeadHost, undefined, router(undefined, identity))
+    const skeleton = el(fixture, 'hilos-page-head-skeleton')
+
+    expect(skeleton?.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      skeleton?.querySelector('[data-id="probe-skeleton-visual"]'),
+    ).not.toBeNull()
+    for (const probe of ['tile', 'code', 'badge', 'description']) {
+      expect(el(fixture, `probe-${probe}`), `probe-${probe}`).toBeNull()
+    }
+    expect(el(fixture, 'hilos-page-head-block')).toBeNull()
+
+    identity.set(OWNER_IDENTITY)
+    fixture.detectChanges()
+
+    expect(el(fixture, 'hilos-page-head-skeleton')).toBeNull()
+    expect(el(fixture, 'probe-skeleton-visual')).toBeNull()
+    expect(el(fixture, 'probe-tile')).not.toBeNull()
+  })
+
   it('draws the shared head in place of its own heading, lead and cards when the answer names an owner', () => {
     const fixture = mount(BareHost, OWNER_IDENTITY)
     const root = fixture.nativeElement as HTMLElement

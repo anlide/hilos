@@ -79,10 +79,8 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('serves People in Vue and React while keeping it unbuilt in Angular', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.ANALYTICS_PEOPLE]).toEqual([
-      'angular',
-    ])
+  it('serves People in all three kits', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.ANALYTICS_PEOPLE)
     expect(hilosUnbuiltPages('vue').has(HilosPages.ANALYTICS_PEOPLE)).toBe(
       false,
     )
@@ -90,7 +88,7 @@ describe('hilosUnbuiltPages', () => {
       false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.ANALYTICS_PEOPLE)).toBe(
-      true,
+      false,
     )
   })
 

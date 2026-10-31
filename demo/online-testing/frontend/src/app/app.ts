@@ -177,6 +177,11 @@ export class App {
         (module) => module.AnalyticsPerson,
       ),
     ),
+    [HilosPages.ANALYTICS_PEOPLE]: lazyPage(() =>
+      import('./views/hilos/analytics/people.js').then(
+        (module) => module.AnalyticsPeople,
+      ),
+    ),
     // The framework Change Log section: the framework owns the tiles, the feed,
     // the tables viewport, the history, the receipt modal and every word; the
     // project binds its connection, page scope and action lifecycle

@@ -647,7 +647,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
-  it('declares People without period route params and serves Vue and React views', () => {
+  it('declares People without period route params and serves every view layer', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const page = HilosPages.ANALYTICS_PEOPLE
     expect(page).toBe('hilos_analytics_people')
@@ -663,7 +663,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     })
     expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
     expect(hilosUnbuiltPages('react').has(page)).toBe(false)
-    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
     for (const layer of ['vue', 'react', 'angular'] as const) {
       expect(hilosUnbuiltPages(layer).has(HilosPages.ANALYTICS_PERSON)).toBe(
         false,

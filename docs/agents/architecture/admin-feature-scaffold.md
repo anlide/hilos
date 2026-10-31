@@ -678,15 +678,24 @@ subscription; no custom subscribe handler, query, table subclass or new URL is
 needed. Its address remains
 `/hilos/analytics/people`.
 
-The React SDK exports `HilosAnalyticsPeoplePage` and
-`HilosAnalyticsPeoplePageProps` from `@hilos/react/admin/analytics`; its
-props require `{ context: HilosAnalyticsContext }`, supplied by a thin project
-wrapper. Mount it under the literal `HilosPages.ANALYTICS_PEOPLE` lazy page
-entry. Tasks and ecommerce-shop are the current examples of this optional
-activation. The React Overview and People pages both receive that context
-explicitly and stay outside the default admin view map. People is not bound to
-Overview or Person, and projects without this opt-in continue to use the rest
-of Analytics independently.
+The Vue SDK exports `HilosAnalyticsPeoplePage` from
+`@hilos/vue/admin/analytics`; Chat and Binance mount it under the
+`hilos_analytics_people` lazy page with a thin wrapper that supplies their
+`HilosAnalyticsContext`. The React SDK exports `HilosAnalyticsPeoplePage` and
+`HilosAnalyticsPeoplePageProps` from `@hilos/react/admin/analytics`; its props
+require `{ context: HilosAnalyticsContext }`, supplied by a thin project
+wrapper. Tasks and ecommerce-shop mount this optional page under the literal
+`HilosPages.ANALYTICS_PEOPLE` lazy page entry. The Angular SDK exports the
+standalone `HilosAnalyticsPeoplePage` from `@hilos/angular/admin/analytics`; its
+required `context` input takes `HilosAnalyticsContext`, which Polls and
+OnlineTesting supply from thin wrappers in their lazy People pages.
+
+The Analytics Overview also requires project context in Vue, React and Angular.
+Every project mounts it through a thin wrapper outside the context-free default
+admin view map: Chat and Binance in Vue, Tasks and ecommerce-shop in React, and
+Polls and OnlineTesting in Angular. People is not bound to Overview or Person,
+and projects without this opt-in continue to use the rest of Analytics
+independently.
 For its data and privacy boundaries, read
 [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
