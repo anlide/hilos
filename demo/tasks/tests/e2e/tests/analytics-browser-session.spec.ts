@@ -42,8 +42,6 @@ test('shows real session actions in source order without bodies or another sessi
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Two real logins and the wait on the journal writer exceed the base cap.
-  test.slow()
   const user = await seedTestUser({ email: uniqueEmail() })
   await gotoPage(expect, page, '/')
   await openSignIn(expect, page)

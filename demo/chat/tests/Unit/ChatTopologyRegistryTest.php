@@ -2300,6 +2300,9 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::PROTECTED_MODE_OPEN => AgentType::HILOS_BACKUP,
             CliCommands::PROTECTED_MODE_CLOSE => AgentType::HILOS_BACKUP,
             CliCommands::LOG_TEST_APPEND => HilosAgentType::HILOS_LOG_STORE,
+            CliCommands::LOGS_TEST_ROTATE => HilosAgentType::HILOS_LOG_STORE,
+            CliCommands::LOGS_TEST_WALK => HilosAgentType::HILOS_LOG_STORE,
+            CliCommands::ANALYTICS_TEST_ROTATE => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([

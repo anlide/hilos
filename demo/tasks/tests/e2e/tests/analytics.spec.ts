@@ -70,8 +70,6 @@ test('opens a real person from Analytics People and returns through People crumb
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Independent browsers and the real journal-writer wait exceed the base cap.
-  test.slow()
   const user = await seedTestUser({ email: uniqueEmail() })
   await gotoPage(expect, page, '/')
   await openSignIn(expect, page)
@@ -274,8 +272,6 @@ test('opens a real person from Analytics People and returns through People crumb
 test('People starts with one Today viewport and resets only its Period filter', async ({
   page,
 }) => {
-  // The probe waits for the real rotating analytics journal before opening People.
-  test.slow()
   const frames = watchDeliveryFrames(page)
   try {
     const user = await seedTestUser({ email: uniqueEmail() })

@@ -561,8 +561,6 @@ test('Analytics overview exposes one heading, breadcrumb landmark and semantic v
 test('Analytics People and Person name their tables and support keyboard navigation and sorting', async ({
   page,
 }) => {
-  // A real sign-in and journal-writer wait precede the keyboard journey.
-  test.slow()
   const user = await seedTestUser({ email: uniqueEmail() })
   await gotoPage(expect, page, '/')
   await openSignIn(expect, page)

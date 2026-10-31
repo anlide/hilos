@@ -136,12 +136,21 @@ final class LogStoreAgent extends AbstractAgent
      * follower watching agent-hilos_log_store.log sees the same shape it would see in
      * production, not a line a test wrote into a file.
      *
-     * What keeps the append off a production node is its `test:` prefix, which the command
+     * The test-only rotation and walk (HIL-1858) are mounted here for the same reason: rotating
+     * and walking the directory is this agent's own work, so a test that cannot wait for an axis
+     * or a walk interval asks the one process that does it to do it now.
+     * {@see CliCommands::LOGS_TEST_ROTATE} makes the very attempt an axis makes, without a cron
+     * receipt; {@see CliCommands::LOGS_TEST_WALK} makes the full walk and sends the index at once,
+     * changed or not. Neither moves an axis, a walk interval or the keepalive.
+     *
+     * What keeps all three off a production node is their `test:` prefix, which the command
      * socket reads through {@see TestOnlyCommandRegistry}: the socket authenticates nobody,
      * so the name has to say what the command may do.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::LOG_TEST_APPEND,
+        CliCommands::LOGS_TEST_ROTATE,
+        CliCommands::LOGS_TEST_WALK,
     ];
 
     /** @var int Lines one page of the viewer holds, the number the mockup shows */
@@ -458,22 +467,12 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         $rotate = function () use ($now, $rotator): void {
-            $this->lastRotationAt = $now;
-            $report = $this->rotateOnce($rotator);
-            // Hung on the ATTEMPT and not on its outcome: a node quiet enough to have nothing to move
-            // makes no batch, and a cleanup waiting for one would never run there at all.
-            $this->pruneTakenBatches((int)$now);
-            if ($report?->batchDirName === null) {
-                return;
+            try {
+                $this->attemptRotation($now, $rotator);
+            } catch (LogRotationException) {
+                // Best-effort: a failed rotation must never crash the owner. It is in the journal
+                // already, the cleanup has run, and the next walk tries again.
             }
-
-            $this->logAgentInfo("Log rotation: moved {$report->movedCount} live log file(s)");
-            // Out of turn, both of them: a batch appeared this instant, and the screen would otherwise
-            // learn of it a full walk and a push interval later.
-            $this->lastFullScanAt = $now;
-            $this->lastLiveScanAt = $now;
-            $this->walkStore((int)$now);
-            $this->pushIndex();
         };
         if ($cronDue) {
             JournalReceiptScope::run(
@@ -486,24 +485,61 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Runs one rotation and reports what it could not move, best-effort throughout.
+     * Makes one rotation attempt, runs the cleanup that rides it, and announces the batch it made.
      *
-     * The failure answers with nothing rather than with an empty report: a rotation that could not
-     * make its batch is not the same event as one that found nothing to move, and only the caller's
-     * next step — announcing a batch — treats the two alike.
+     * The one attempt there is: an axis that fired makes it, and so does the test-only
+     * {@see CliCommands::LOGS_TEST_ROTATE}, so what a test brings to now is the very thing the
+     * policy does rather than a copy of it. Whether the attempt is due, and the cron receipt the
+     * schedule axis writes around it, are the caller's.
+     *
+     * @param float $now Wall clock of the attempt, the new age-axis baseline
+     * @param LogRotator $rotator Rotator bound to this node's log directory
+     * @return LogRotationReport What the rotation moved
+     * @throws LogRotationException When the batch cannot be made; it is in the journal already,
+     *     and the cleanup has run all the same
+     * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
+     */
+    private function attemptRotation(float $now, LogRotator $rotator): LogRotationReport
+    {
+        $this->lastRotationAt = $now;
+        try {
+            $report = $this->rotateOnce($rotator);
+        } finally {
+            // Hung on the ATTEMPT and not on its outcome: a node quiet enough to have nothing to move
+            // makes no batch, and a cleanup waiting for one would never run there at all.
+            $this->pruneTakenBatches((int)$now);
+        }
+        if ($report->batchDirName === null) {
+            return $report;
+        }
+
+        $this->logAgentInfo("Log rotation: moved {$report->movedCount} live log file(s)");
+        // Out of turn: a batch appeared this instant, and the screen would otherwise learn of it a
+        // full walk and a push interval later.
+        $this->walkAndPushIndex($now);
+
+        return $report;
+    }
+
+    /**
+     * Runs one rotation and reports what it could not move, best-effort for every single file.
+     *
+     * A failure to make the batch at all leaves as the exception it is, said in the journal on its
+     * way out: a rotation that could not make its batch is not the same event as one that found
+     * nothing to move, and the test-only command answers its caller with that text.
      *
      * @param LogRotator $rotator Rotator bound to this node's log directory
-     * @return ?LogRotationReport What the rotation did, or null when it could not run at all
+     * @return LogRotationReport What the rotation did
+     * @throws LogRotationException When the staging or batch directory cannot be created
      */
-    private function rotateOnce(LogRotator $rotator): ?LogRotationReport
+    private function rotateOnce(LogRotator $rotator): LogRotationReport
     {
         try {
             $report = $rotator->rotate();
         } catch (LogRotationException $exception) {
-            // Best-effort: a failed rotation must never crash the owner; the next walk tries again.
             $this->logAgentError('Log rotation failed: ' . $exception->getMessage());
 
-            return null;
+            throw $exception;
         }
 
         foreach ($report->failedFiles as $failedFile) {
@@ -777,22 +813,37 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Answers the test-only append command on the command channel (HIL-395).
+     * Answers the test-only commands on the command channel: the append (HIL-395), the rotation
+     * and the walk (HIL-1858); a command this agent does not own is refused.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
      * @param string $name Signal name (unused; the routing is on $data->command)
-     * @throws InvalidArgumentException When the command reply carries an empty correlation id
+     * @throws InvalidArgumentException When the command reply carries an empty correlation id, or
+     *     the index frame the rotation or the walk sends cannot be named
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
-        if ($data->command !== CliCommands::LOG_TEST_APPEND) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+        switch ($data->command) {
+            case CliCommands::LOG_TEST_APPEND:
+                $this->handleLogAppend($data);
 
-            return;
+                return;
+
+            case CliCommands::LOGS_TEST_ROTATE:
+                $this->rotateOnCommand($data->correlationId);
+
+                return;
+
+            case CliCommands::LOGS_TEST_WALK:
+                $this->walkAndPushIndex(microtime(true));
+                $this->replyToCommand(CommandReplyDTO::ok($data->correlationId));
+
+                return;
+
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
         }
-
-        $this->handleLogAppend($data);
     }
 
     /**
@@ -840,6 +891,55 @@ final class LogStoreAgent extends AbstractAgent
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             LogCommandConstants::FIELD_COUNT => $count,
+        ]));
+    }
+
+    /**
+     * Makes the rotation attempt an axis makes, now, and answers with how many files it moved (HIL-1858).
+     *
+     * The two refusals are the two early exits of {@see self::rotateIfDue()} that are about the
+     * node rather than about the moment: a store nobody can read, and a policy with every axis
+     * off. Whether an axis is due is exactly the question the command answers for the test, so it
+     * is not asked, and no cron receipt is written: nothing on a schedule ran.
+     *
+     * Whatever the attempt did, the caller is answered with the index already walked and sent: a
+     * new batch is announced by the attempt itself, and without one — nothing to move, or a batch
+     * that could not be made — the walk and the frame are made here.
+     *
+     * @param string $correlationId Correlation id of the command to answer
+     * @throws InvalidArgumentException When the reply or the index frame cannot be named
+     */
+    private function rotateOnCommand(string $correlationId): void
+    {
+        $rotator = $this->rotator;
+        if ($rotator === null || !$this->index->available) {
+            $this->replyToCommand(CommandReplyDTO::error($correlationId, 'Log store is unavailable on this node'));
+
+            return;
+        }
+
+        $this->refreshPolicy();
+        if (!$this->policy->isActive()) {
+            $this->replyToCommand(CommandReplyDTO::error($correlationId, 'Log rotation is off on this node'));
+
+            return;
+        }
+
+        $now = microtime(true);
+        try {
+            $report = $this->attemptRotation($now, $rotator);
+        } catch (LogRotationException $failure) {
+            $this->walkAndPushIndex($now);
+            $this->replyToCommand(CommandReplyDTO::error($correlationId, 'Log rotation failed: ' . $failure->getMessage()));
+
+            return;
+        }
+        if ($report->batchDirName === null) {
+            $this->walkAndPushIndex($now);
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($correlationId, [
+            LogCommandConstants::FIELD_MOVED => $report->movedCount,
         ]));
     }
 
@@ -1930,6 +2030,23 @@ final class LogStoreAgent extends AbstractAgent
         );
         $this->indexChangedSincePush = false;
         $this->lastPushAt = microtime(true);
+    }
+
+    /**
+     * Makes the full walk out of turn and sends the index at once, whether or not the walk changed it.
+     *
+     * Both walk clocks restart at the given instant: the walk just made is a full one, and the live
+     * resample it covers is not owed again for its own interval.
+     *
+     * @param float $now Wall clock to stamp the walk with and to restart both walk clocks at
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function walkAndPushIndex(float $now): void
+    {
+        $this->lastFullScanAt = $now;
+        $this->lastLiveScanAt = $now;
+        $this->walkStore((int)$now);
+        $this->pushIndex();
     }
 
     /**

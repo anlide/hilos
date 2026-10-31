@@ -55,7 +55,7 @@ export async function readAnalyticsBrowserSession(
   return { browserSessionId, actionNames }
 }
 
-/** A journal rotates within ten seconds; allow its writer to load that file too. */
+/** How long a stand's analytics agents may take to start and report. */
 export const ANALYTICS_WRITER_TIMEOUT_MS = 20_000
 
 /** One action of a browser session, as the session page draws its row. */
@@ -145,32 +145,41 @@ const sessionListSurface = {
   link: SESSION_LIST_LINK,
 }
 
+/** A command-channel request function, as the stand's address binds it. */
+type SendCommand = Parameters<typeof readAnalyticsBrowserSession>[0]
+
 /**
  * Wait on the real journal writer for a session and, when given, its action.
+ * It rotates the journal of every named node before each probe, so the writer
+ * loads what the node holds now instead of what the next rotation would bring.
  *
  * @param expect The calling spec's Playwright expect.
- * @param sendCommand The stand's command-channel request function.
+ * @param sendCommand The stand's command-channel request function; it also
+ *   carries the probe.
  * @param userId The last signed-in user's positive integer id.
  * @param expectedAction An action whose arrival the caller needs to observe.
+ * @param journals The request function of every node whose journal may hold
+ *   the wanted rows; the probe's own node by default.
  */
 export async function waitAnalyticsBrowserSession(
   expect: Expect,
-  sendCommand: Parameters<typeof readAnalyticsBrowserSession>[0],
+  sendCommand: SendCommand,
   userId: number,
   expectedAction?: string,
+  journals: readonly SendCommand[] = [sendCommand],
 ): Promise<AnalyticsBrowserSession> {
   await expect
-    .poll(
-      async () => {
-        const session = await readAnalyticsBrowserSession(sendCommand, userId)
-        return (
-          session.browserSessionId !== null &&
-          (expectedAction === undefined ||
-            session.actionNames.includes(expectedAction))
-        )
-      },
-      { timeout: ANALYTICS_WRITER_TIMEOUT_MS },
-    )
+    .poll(async () => {
+      await Promise.all(
+        journals.map((send) => send('test:analytics:rotate', {})),
+      )
+      const session = await readAnalyticsBrowserSession(sendCommand, userId)
+      return (
+        session.browserSessionId !== null &&
+        (expectedAction === undefined ||
+          session.actionNames.includes(expectedAction))
+      )
+    })
     .toBe(true)
   const session = await readAnalyticsBrowserSession(sendCommand, userId)
   expect(session.browserSessionId).not.toBeNull()

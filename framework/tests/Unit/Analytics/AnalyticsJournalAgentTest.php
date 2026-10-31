@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Analytics;
 
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalDirectory;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
@@ -24,13 +27,16 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
  * The journal agent of a node (HIL-1154): a batch becomes lines of a file, a read is answered with
  * a portion, a confirmation deletes the file, and a stop either closes the journal or - under a
- * freeze - throws it away.
+ * freeze - throws it away. The test-only rotation (HIL-1858) brings the rotation by age to now.
  */
 final class AnalyticsJournalAgentTest extends TestCase
 {
@@ -212,6 +218,106 @@ final class AnalyticsJournalAgentTest extends TestCase
 
         $agent->onTick();
         $this->assertReadyNotice();
+    }
+
+    /**
+     * The socket refuses a test-only name on production on the declaration alone, so the
+     * declaration is what has to be pinned: the route is the agent's and carries the prefix.
+     */
+    public function testTheRotateRouteDeclaresItselfTestOnly(): void
+    {
+        self::assertContains(CliCommands::ANALYTICS_TEST_ROTATE, AnalyticsJournalAgent::AGENT_COMMANDS);
+        self::assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::ANALYTICS_TEST_ROTATE));
+    }
+
+    /**
+     * @throws HilosException When a frame or the command cannot be handled
+     */
+    public function testRotateCommandMakesTheOpenFileReadyAndTellsTheWriter(): void
+    {
+        $agent = $this->startedAgent();
+        $this->append($agent, ['{"t":"a"}']);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $this->command($agent, CliCommands::ANALYTICS_TEST_ROTATE);
+
+        $this->assertNextIsReadyNotice();
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
+        self::assertSame([AnalyticsCommandConstants::FIELD_ROTATED => true], $reply->payload);
+        $files = $this->files();
+        self::assertCount(1, $files);
+        self::assertTrue(AnalyticsJournalDirectory::isReadyName($files[0]));
+    }
+
+    /**
+     * @throws HilosException When the command cannot be handled
+     */
+    public function testRotateCommandWithoutAnOpenFileAnswersFalseAndTellsNobody(): void
+    {
+        $agent = $this->startedAgent();
+
+        $this->command($agent, CliCommands::ANALYTICS_TEST_ROTATE);
+
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
+        self::assertSame([AnalyticsCommandConstants::FIELD_ROTATED => false], $reply->payload);
+        self::assertSame([], $this->files());
+    }
+
+    /**
+     * @throws HilosException When the command cannot be handled
+     */
+    public function testAnUnownedCommandIsAnsweredWithAnError(): void
+    {
+        $agent = $this->startedAgent();
+
+        $this->command($agent, 'test:analytics:no-such-command');
+
+        $reply = $this->consumeReply();
+        self::assertFalse($reply->isOk());
+        self::assertSame('Unknown command: test:analytics:no-such-command', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+    }
+
+    /**
+     * @throws HilosException When the command cannot be handled
+     */
+    public function testRotateCommandOnAJournalThatCannotStartIsRefused(): void
+    {
+        mkdir($this->root);
+        file_put_contents($this->root . '/test', 'blocks the journal directory');
+        $agent = new AnalyticsJournalAgent();
+        $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE, AnalyticsSettingsCatalog::DEFAULT_JOURNAL_MAX_BYTES);
+
+        $this->command($agent, CliCommands::ANALYTICS_TEST_ROTATE);
+
+        $reply = $this->consumeReply();
+        self::assertFalse($reply->isOk());
+        self::assertSame('Analytics journal is not writable on this node', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+    }
+
+    /**
+     * A failed rename is said the way the tick says it, and the caller hears it instead of a timeout.
+     *
+     * @throws HilosException When a frame or the command cannot be handled
+     */
+    public function testAFailedRotateCommandIsSaidAndAnsweredWithItsFailure(): void
+    {
+        $agent = $this->startedAgent();
+        $this->append($agent, ['{"t":"a"}']);
+        $open = $this->files()[0];
+        $readyPath = $this->path . '/' . substr($open, 0, -strlen('.open')) . '.jsonl';
+        mkdir($readyPath);
+        try {
+            $this->command($agent, CliCommands::ANALYTICS_TEST_ROTATE);
+        } finally {
+            rmdir($readyPath);
+        }
+
+        $reply = $this->consumeReply();
+        self::assertFalse($reply->isOk());
+        self::assertStringStartsWith('Analytics journal rotation failed: ', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertStringContainsString('cannot sync or rotate', $this->agentLog());
     }
 
     /**
@@ -422,6 +528,30 @@ final class AnalyticsJournalAgentTest extends TestCase
     }
 
     /**
+     * @param AnalyticsJournalAgent $agent Agent to drive
+     * @param string $command Command-channel wire name to send, with an empty payload
+     */
+    private function command(AnalyticsJournalAgent $agent, string $command): void
+    {
+        $agent->onSignalCommand(new CommandRequestDTO(correlationId: 'corr-1', command: $command, payload: []), '', '');
+    }
+
+    /**
+     * Takes the single reply the agent queued last and fails the test when it queued none.
+     *
+     * @return CommandReplyDTO The queued reply
+     */
+    private function consumeReply(): CommandReplyDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        self::assertNotNull($signal, 'Every command branch answers exactly once');
+        self::assertInstanceOf(CommandReplyDTO::class, $signal->data);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal(), 'Nothing follows the reply');
+
+        return $signal->data;
+    }
+
+    /**
      * @param AnalyticsJournalAgent $agent Agent to ask
      * @param string $file File to read, '' for the oldest
      * @param int $offset Offset to read from
@@ -453,6 +583,12 @@ final class AnalyticsJournalAgentTest extends TestCase
 
     private function assertReadyNotice(): void
     {
+        $this->assertNextIsReadyNotice();
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    private function assertNextIsReadyNotice(): void
+    {
         $signal = Hilos::$sr?->getNextQueuedSignal();
         $this->assertNotNull($signal);
         $this->assertSame(HilosSignalConstants::ANALYTICS_JOURNAL_READY, $signal->signalName->getName());
@@ -460,7 +596,6 @@ final class AnalyticsJournalAgentTest extends TestCase
         $this->assertInstanceOf(AnalyticsJournalReadySignalData::class, $signal->data->data);
         $this->assertSame(self::NODE, $signal->data->data->nodeId);
         $this->assertSame(self::NODE, AnalyticsJournalReadySignalData::fromArray($signal->data->data->toArray())->nodeId);
-        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     /**

@@ -6,26 +6,32 @@ import {
   readHostPressure,
 } from '../../../../../framework/frontend/scripts/timeout-scale.mjs'
 
-// The daemon command channel — the same socket the CLI test:log:append command
-// speaks. The Playwright runner has no PHP, so the e2e asks over the wire
-// directly; the lines are still written by the log-store agent the ordinary way,
-// so the master files them under the agent's own log and a follower sees exactly
-// what it would see in production. Appending to the file from here instead would
-// prove only that a file grew.
+// The daemon command channel — the same socket the CLI test:log:append,
+// test:logs:rotate and test:logs:walk commands speak. The Playwright runner has
+// no PHP, so the e2e asks over the wire directly; the lines are still written by
+// the log-store agent the ordinary way, so the master files them under the
+// agent's own log and a follower sees exactly what it would see in production.
+// Appending to the file from here instead would prove only that a file grew. The
+// rotation and the walk are that agent's own work too, asked of it out of turn.
 //
 // The round trip shared with adminGrant.ts lives in the framework's node-side
 // scripts; this helper keeps only the binance-btc-tracker daemon's address, the
-// command name and the reply window.
+// command names and the reply window.
 const COMMAND_HOST =
   process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
-// Past the append's own work — the agent writes the lines synchronously, and the
-// master files each of them — so a slow box comes back as the agent's answer
-// rather than as a socket timeout.
+// Past each command's own work — the agent writes appended lines synchronously
+// and the master files each of them; a rotation moves the live files and walks
+// the whole store — so a slow box comes back as the agent's answer rather than
+// as a socket timeout.
 const REPLY_TIMEOUT_MS = 10_000
 
 const APPEND_COMMAND = 'test:log:append'
+
+const ROTATE_COMMAND = 'test:logs:rotate'
+
+const WALK_COMMAND = 'test:logs:walk'
 
 const channels = new Map<string, ReturnType<typeof createCommandChannel>>()
 
@@ -64,21 +70,6 @@ export const TAIL_ARRIVAL_TIMEOUT_MS =
   }).factor
 
 /**
- * The cap a wait on rotated batches arriving from cluster nodes gets, in milliseconds.
- *
- * Four rounds of the live scan (LogStoreAgent::LIVE_SCAN_INTERVAL_SECONDS, 5 s),
- * as in the single-node scenario, plus the path of the node index to the follower master.
- *
- * Scaled by the same host-pressure factor every Playwright cap is.
- */
-export const ROTATION_ARRIVAL_TIMEOUT_MS =
-  30_000 *
-  deriveTimeoutScale({
-    override: process.env.HILOS_E2E_TIMEOUT_SCALE,
-    ...readHostPressure(),
-  }).factor
-
-/**
  * The stream the appended lines land in.
  *
  * Written out rather than read from the reply because the rule behind it — an
@@ -108,6 +99,40 @@ export async function appendLogLines(
   const reply = await channel(host)(APPEND_COMMAND, { message, count })
 
   return Number(reply.count)
+}
+
+/**
+ * Asks the live daemon's log-store agent for the rotation attempt an axis makes,
+ * now.
+ *
+ * The attempt is the policy's own: a new batch, the cleanup of confirmed
+ * batches, a full walk and the index sent at once. No axis has to come due for
+ * it, and none is moved by it beyond what any attempt does — the age axis counts
+ * from here. A refusal — no readable store, rotation off on the node, a batch
+ * that could not be made — rejects with the server's words.
+ *
+ * @param host Daemon whose log-store agent should rotate.
+ * @returns How many live files the rotation moved; 0 when there was nothing to
+ *   put in a batch.
+ */
+export async function rotateLogs(host = COMMAND_HOST): Promise<number> {
+  const reply = await channel(host)(ROTATE_COMMAND, {})
+
+  return Number(reply.moved)
+}
+
+/**
+ * Asks the live daemon's log-store agent for a full walk and its index, now.
+ *
+ * The index is sent whether or not the walk changed it, so a verdict that moved
+ * with a setting — retention, the undo window — or a batch the carrier has just
+ * put into the archive reaches the screen without waiting for the live walk,
+ * the full walk or the keepalive.
+ *
+ * @param host Daemon whose log-store agent should walk.
+ */
+export async function walkLogs(host = COMMAND_HOST): Promise<void> {
+  await channel(host)(WALK_COMMAND, {})
 }
 
 /**

@@ -282,8 +282,8 @@ deviation the owner approves in the leaf's contract
 ([../../../agents.md](../../../agents.md), "Contract approval gate").
 
 Specs written before this rule still wait clocks: the delivery window, the Status heartbeat and
-staleness with their fast compose overlay and the split binance phases, node reports, journal
-and log rotations, cron firings, the chat send pause, stand gateway delays, bot reaction
+staleness with their fast compose overlay and the split binance phases, node reports, cron
+firings, the chat send pause, stand gateway delays, bot reaction
 delays, and socket silence on a shortened stand clock. They are debt, not a pattern to copy.
 
 ## Database-free commands

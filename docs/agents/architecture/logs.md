@@ -543,6 +543,18 @@ the rotation line into that worker's log rather than the journal of whoever
 asked), then walks and pushes out of turn, so the batch is on the screen now
 rather than a full walk and a push interval later.
 
+Two test-only commands bring these moments to now, so no test waits for an
+axis, a walk or the keepalive (HIL-1858); both are answered by the owner of the
+node that took them. `test:logs:rotate` makes the very attempt a fired axis
+makes — the age baseline, the batch, the cleanup that rides it, the line in the
+journal — without asking whether an axis is due and without a cron receipt, then
+answers with the number of live files it moved once the index has been walked
+and sent; it refuses a store it cannot read, a policy with every axis off, and a
+batch that cannot be made, the last with the rotator's own text. `test:logs:walk`
+makes the full walk and sends the index at once, changed or not. Neither moves a
+production period: the 5-second live walk, the 60-second full walk, the
+60-second keepalive and the three rotation axes stay what they are.
+
 ## The Archive May Live On Another Device (HIL-870)
 
 Keeping the archive on a large volume or a mounted share, with the live logs on

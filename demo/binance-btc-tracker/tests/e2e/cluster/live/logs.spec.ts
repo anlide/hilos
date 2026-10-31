@@ -1,8 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import {
-  clearCustomSetting,
-  setCustomSetting,
   shownByTestId,
   watchLogFrames,
   expectLogLineClock,
@@ -16,7 +14,6 @@ import {
   expectDocumentUnchanged,
   grantAdminToSelf,
   tableRowKeys,
-  typeInto,
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_MASTERS,
@@ -29,7 +26,7 @@ import {
   appendLogLines,
   FOLLOWED_STREAM,
   logMarker,
-  ROTATION_ARRIVAL_TIMEOUT_MS,
+  rotateLogs,
   TAIL_ARRIVAL_TIMEOUT_MS,
 } from '../../helpers/logs.js'
 // Red on the first attempt once in the 80 runs after HIL-1506 (0982, one lane) and
@@ -176,69 +173,6 @@ test(
     }
   },
 )
-
-const ROTATION_MAX_AGE = 'logs.rotation.max_age_seconds'
-const ROW_ID_PREFIX = 'hilos-table-row-'
-
-let rotationControl: Page | null = null
-
-test.afterEach(async () => {
-  const tab = rotationControl
-  rotationControl = null
-  if (tab !== null && !tab.isClosed()) {
-    try {
-      await resetSetting(tab, ROTATION_MAX_AGE)
-    } catch {
-      // Best-effort cleanup when the tab or stand failed
-    }
-  }
-})
-
-/**
- * Narrow the server window to one settings key so assertions ignore pagination.
- *
- * @param tab The settings tab.
- * @param key Catalog key to isolate.
- */
-async function isolate(tab: Page, key: string): Promise<void> {
-  const search = shownByTestId(tab, 'hilos-table-search')
-  await typeInto(search, key)
-  await expect(shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)).toBeVisible()
-}
-
-/**
- * Write a custom value for one catalog key, the way a person would.
- *
- * @param tab The settings tab.
- * @param key Catalog key to write.
- * @param value Value to write, as the field takes it.
- */
-async function setSetting(
-  tab: Page,
-  key: string,
-  value: string,
-): Promise<void> {
-  await isolate(tab, key)
-  await setCustomSetting(tab, key, value)
-
-  await expect(tab.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
-  await expect(shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)).toContainText(
-    'custom',
-  )
-}
-
-/**
- * Return one key to the catalog default by taking its custom value away.
- *
- * @param tab The settings tab.
- * @param key Catalog key to reset.
- */
-async function resetSetting(tab: Page, key: string): Promise<void> {
-  await isolate(tab, key)
-  const row = shownByTestId(tab, `${ROW_ID_PREFIX}${key}`)
-  await clearCustomSetting(tab, key)
-  await expect(row).toContainText('default')
-}
 
 /**
  * Wait for the complete sorted node list before trusting its indexed data ids.
@@ -418,18 +352,16 @@ test(
   'cluster logs rotations: shows node column, creates batches via max_age, and filters by every cluster member',
   { tag: '@quarantine:F-011' },
   async ({ browser }) => {
-    test.slow()
+    // The title still says max_age: the quarantine ledger keys on the title, so
+    // the card is renamed with the lift. The batches are the command's.
     const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
-    const control = await page.context().newPage()
     const frames = watchLogFrames(page)
     const viewer = await page.context().newPage()
     const viewerFrames = watchLogFrames(viewer)
-    rotationControl = control
     const members = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]
     let slaveBatch: Record<string, unknown> | undefined
     try {
       await grantAdminToSelf(expect, page)
-      await gotoPage(expect, control, '/hilos/settings', PAGE_READY)
 
       await expectClusterTable(page, {
         path: '/hilos/logs/rotations',
@@ -444,14 +376,16 @@ test(
               expectLogEpochMoment(expect, row.batchAt),
             ),
           )
-          await setSetting(control, ROTATION_MAX_AGE, '1')
 
           for (const member of members) {
+            // Each node rotates once, by command, on the node's own socket;
+            // its batch row then reaches the follower master by push.
+            expect(await rotateLogs(nodeHost(member))).toBeGreaterThan(0)
             await selectMember(page, members, member)
             await expectMemberRows(
               page,
               member,
-              ROTATION_ARRIVAL_TIMEOUT_MS,
+              TAIL_ARRIVAL_TIMEOUT_MS,
               'rotation preparation',
             )
             await expect
@@ -464,7 +398,7 @@ test(
                       typeof row.batchAt === 'number' &&
                       row.batchAt > newestBefore,
                   ),
-                { timeout: ROTATION_ARRIVAL_TIMEOUT_MS },
+                { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
               )
               .toBe(true)
             if (member === CLUSTER_SLAVES[0]) {
@@ -478,7 +412,6 @@ test(
             }
           }
 
-          await setSetting(control, ROTATION_MAX_AGE, '0')
           await resetNodeFilter(page)
         },
       })
@@ -519,14 +452,7 @@ test(
         }),
         contentType: 'application/json',
       })
-      try {
-        if (!control.isClosed()) {
-          await resetSetting(control, ROTATION_MAX_AGE)
-        }
-      } finally {
-        rotationControl = null
-        await page.context().close()
-      }
+      await page.context().close()
     }
   },
 )

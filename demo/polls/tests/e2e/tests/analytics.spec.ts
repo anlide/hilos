@@ -70,8 +70,6 @@ test('People filters real sessions and opens the scoped Person through navigatio
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Real sign-in, journal rotation and independent document entries exceed the base cap.
-  test.slow()
   const user = await seedTestUser({ email: `person-${uniqueEmail()}` })
   await gotoPage(expect, page, '/')
   await openSignIn(expect, page)

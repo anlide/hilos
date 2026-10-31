@@ -19,26 +19,34 @@ import {
   grantAdminToSelf,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { appendLogLines, logMarker } from '../helpers/logs.js'
+import { rotateLogs, walkLogs } from '../helpers/logs.js'
 
 const READER_ZONE = 'America/Los_Angeles'
 test.use({ timezoneId: READER_ZONE })
 
 // Rotation, carrying a batch off and cleaning it up, end to end (HIL-763): the
-// second and last through-scenario of the logs epic. It forces a rotation, sees
-// the batch it made land on the rotations screen, reads the takeout instruction,
+// second and last through-scenario of the logs epic. It makes rotations, sees
+// the batches land on the rotations screen, reads the takeout instruction,
 // confirms it, and watches the cleaner remove exactly that batch while the table
 // updates itself.
 //
-// It drives the stand the way an operator would, through four catalog settings
-// and the log-store owner's own live walk — no test-only command exists here and
-// none is wanted (the owner's decision, 2026-09-02). That is the point of the
-// scenario rather than an accident of it: the one thing nothing else checks is
-// that a setting written into the database reaches the agent, that the policy is
-// re-read, and that the verdict it yields travels to a screen nobody reloaded.
-// A stand-configuration override would have measured an installation that does
-// not exist in production, and there is no injectable clock to age anything with
-// (docs/agents/cli/commands.md, "Time-based features: no universal clock").
+// The moments come from the log-store owner's own test-only commands (HIL-1858):
+// test:logs:rotate makes the very attempt a fired axis makes — the batch, the
+// cleanup of confirmed batches, a full walk and the index at once — and
+// test:logs:walk makes the full walk and sends the index at once. Nothing waits
+// for an axis, the five-second live walk, the minute-long full walk or the
+// keepalive (the rule of 2026-10-31, docs/agents/frontend/testing-strategy.md,
+// "Time — a command brings the moment to now"); it replaced the owner's decision
+// of 2026-09-02 that wanted no command here. What is left to wait is the carrier
+// putting a batch from staging into the archive (a second at most) and the
+// aggregator's half-second delivery window.
+//
+// What the commands do not stand in for is the path the scenario exists for: a
+// setting written through the screen reaches the agent, the policy is re-read,
+// and the verdict it yields travels to a screen nobody reloaded. The retention
+// rule and the undo window still take that whole path, and the rotation axis
+// takes it once, to the rule line — the commands only choose the moment the node
+// acts on what it was told.
 //
 // Two changes ride inside the same walk (HIL-1233): a batch returns under
 // protection while the takeout dialog stands open, and the cleaner removes an
@@ -64,13 +72,14 @@ test.use({ timezoneId: READER_ZONE })
 // rotation moves live log files out from under all of them — which is safe only
 // because the suite is serial here (CI=1 on binance-btc-tracker-e2e-runner,
 // workers=1 in the config). It is
-// also why the four keys go back to their defaults in an afterEach: a threshold
-// left raised keeps rotating every five seconds for the rest of the run, and the
-// worker logs a red e2e is diagnosed from would walk into the archive.
+// also why the four keys go back to their defaults in an afterEach: a retention
+// left at one batch and an undo window left at zero would let any later attempt
+// clean up what the rest of the run, or the next one, still reads.
 
 /**
- * The trigger axis the scenario switches on and off; 0 is its default. The stand's other two axes
- * default to the night and the 512 MiB of the Normal mode (HIL-906).
+ * The age axis of rotation, written once so the rule line can be seen to say it; 0 is its
+ * default. The stand's other two axes default to the night and the 512 MiB of the Normal mode
+ * (HIL-906), so rotation is on and the rotation command is never refused for being off.
  */
 const ROTATION_MAX_AGE = 'logs.rotation.max_age_seconds'
 
@@ -83,7 +92,7 @@ const RETENTION_MAX_AGE = 'logs.archive_retention.max_age_seconds'
 /** How long this node protects a confirmed batch from its own cleaner, in seconds. */
 const TAKEOUT_UNDO_WINDOW = 'logs.takeout.undo_window_seconds'
 
-/** Every key the scenario writes, in the order the cleanup returns them by. */
+/** Every key a test of this file writes, in the order the cleanup returns them by. */
 const MOVED_KEYS = [
   ROTATION_MAX_AGE,
   RETENTION_KEEP_BATCHES,
@@ -93,16 +102,6 @@ const MOVED_KEYS = [
 
 /** Prefix the framework table gives every row's `data-id`; the key follows it. */
 const ROW_ID_PREFIX = 'hilos-table-row-'
-
-/**
- * Cap for anything that rides the log-store owner's live walk.
- *
- * The walk runs every five seconds (LogStoreAgent::LIVE_SCAN_INTERVAL_SECONDS)
- * and re-reads the policy on every pass, so a written setting is obeyed within
- * one interval; the cap is four of them, because a starved box stretches the
- * walk and not the rule.
- */
-const WALK_WAIT_MS = 20_000
 
 /** The control tab, so the cleanup can reach the settings screen after a failure. */
 let control: Page | null = null
@@ -234,6 +233,59 @@ async function newBatchKeys(
 }
 
 /**
+ * Wait until the wall clock has left the second a batch is named after.
+ *
+ * A batch directory is named by the UTC second of its rotation, so two rotations
+ * in one second share a name: the later one either joins the batch while it is
+ * still in staging or meets the carried one in the archive, which the carrier
+ * refuses for good. An axis cannot fire twice in a second — every attempt
+ * restarts its count — but two commands in a row can. The wait is a second at
+ * most and usually a fraction of one: the earlier batch's row has already
+ * crossed the aggregator's window to reach the screen.
+ *
+ * @param key A rotations-table row key of the batch made last.
+ */
+async function leaveBatchSecond(key: string): Promise<void> {
+  const nextSecond = batchInstant(key) + 1_000
+  while (Date.now() < nextSecond) {
+    await new Promise((resolve) => setTimeout(resolve, nextSecond - Date.now()))
+  }
+}
+
+/**
+ * Rotate now and return the batch the rotation made, once its row has arrived by
+ * push on a page that did not navigate.
+ *
+ * The rotation has to move something: a batch is what every caller goes on to
+ * read, and the live logs of a running stand are never all empty.
+ *
+ * @param page The tab holding the rotations table.
+ * @param before Row keys the window held before the scenario rotated.
+ * @param previous Row key of the batch the scenario made last, if it made one.
+ */
+async function rotateNewBatch(
+  page: Page,
+  before: readonly string[],
+  previous?: string,
+): Promise<string> {
+  const after = previous === undefined ? 0 : batchInstant(previous)
+  if (previous !== undefined) {
+    await leaveBatchSecond(previous)
+  }
+  expect(await rotateLogs()).toBeGreaterThan(0)
+  await expect
+    .poll(
+      async () =>
+        (await newBatchKeys(page, before)).filter(
+          (key) => batchInstant(key) > after,
+        ).length,
+    )
+    .toBeGreaterThanOrEqual(1)
+
+  return (await newBatchKeys(page, before)).at(-1)!
+}
+
+/**
  * Press the reset cross of a rotations screen that stands on the address filter,
  * and see the whole filter go with it: the switch is off, the address is the
  * general one, and the cross is gone from both branches of the table.
@@ -254,8 +306,8 @@ async function resetRotationFilters(page: Page): Promise<void> {
 
 test.afterEach(async () => {
   // Runs on the passing and the failing path alike, and it is the failing one it
-  // exists for: the trigger this spec raises is the only thing on the stand that
-  // rotates at all, and nothing else would ever lower it again.
+  // exists for: the retention and the undo window this spec narrows would
+  // otherwise outlive it, and nothing else would ever widen them again.
   const tab = control
   control = null
   try {
@@ -284,36 +336,17 @@ test('opens a new kept batch without a stream and reads only after a catalog str
   await gotoPage(expect, page, '/hilos/logs/rotations', PAGE_READY)
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
 
-  const settings = await page.context().newPage()
-  control = settings
-  await gotoPage(expect, settings, '/hilos/settings', PAGE_READY)
-
   // Keep the default retention protection. Only a batch newer than this real
   // window can prove the transition; an archive left by another run cannot.
   const before = await rowKeys(page)
-  await setSetting(settings, ROTATION_MAX_AGE, '1')
-  await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-    '1 second after the last rotation',
-    { timeout: WALK_WAIT_MS },
-  )
+  const rowKey = await rotateNewBatch(page, before)
+  // The batch is announced while it is still in staging. The carrier puts it
+  // into the archive on its own tick, a second at most, and only a walk after
+  // that reads it there — so each probe walks first.
   await expect
-    .poll(async () => (await newBatchKeys(page, before)).length, {
-      timeout: WALK_WAIT_MS,
-    })
-    .toBeGreaterThanOrEqual(1)
-  const rowKey = (await newBatchKeys(page, before))[0]!
-  // The next rotation re-reads both batch directories. Without it, switching
-  // the trigger off leaves the first batch's carrying index until the minute
-  // walk, even after the carrier has moved it. Keep the first batch as target.
-  await expect
-    .poll(async () => (await newBatchKeys(page, before)).length, {
-      timeout: WALK_WAIT_MS,
-    })
-    .toBeGreaterThanOrEqual(2)
-  await resetSetting(settings, ROTATION_MAX_AGE)
-  await expect
-    .poll(() => rotationFrames.rotations().get(rowKey)?.retentionState, {
-      timeout: WALK_WAIT_MS,
+    .poll(async () => {
+      await walkLogs()
+      return rotationFrames.rotations().get(rowKey)?.retentionState
     })
     .toBe('kept')
 
@@ -355,9 +388,7 @@ test('opens a new kept batch without a stream and reads only after a catalog str
       )
       .map((stream) => String(stream.key))
   }
-  await expect
-    .poll(() => offeredStreams().length, { timeout: WALK_WAIT_MS })
-    .toBeGreaterThan(0)
+  await expect.poll(() => offeredStreams().length).toBeGreaterThan(0)
   await expect(page.getByTestId('hilos-log-stream')).toHaveValue('')
   await expect(page.getByTestId('hilos-log-empty-unchosen')).toBeVisible()
   await expect(page).toHaveURL(path)
@@ -375,17 +406,11 @@ test(
   'keeps a quiet agent log on missing live after rotation until its latest batch link is opened',
   { tag: '@quarantine:F-018' },
   async ({ page }) => {
-    // Two log-store walks, settings round trips and real page subscriptions.
-    test.slow()
     const agent = 'hilos_settings_library'
     const stream = `agent-${agent}.log`
     const livePath = `/hilos/logs/view/standalone/live/${stream}`
 
     await grantAdminToSelf(expect, page)
-    const settings = await page.context().newPage()
-    control = settings
-    await gotoPage(expect, settings, '/hilos/settings', PAGE_READY)
-    await setSetting(settings, ROTATION_MAX_AGE, '0')
 
     // A previous attempt may already have archived this quiet writer's startup.
     // Restart through the real Daemon dialog to get a live file on every attempt;
@@ -417,26 +442,15 @@ test(
     await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
     await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
     const entry = page.getByTestId('hilos-log-entry').first()
-    await expect(entry).toBeVisible({ timeout: WALK_WAIT_MS })
+    await expect(entry).toBeVisible()
     const liveEntry = (await entry.textContent()) ?? ''
     expect(liveEntry).not.toBe('')
 
     await gotoPage(expect, page, '/hilos/logs/rotations', PAGE_READY)
     await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
     const before = await rowKeys(page)
-    await setSetting(settings, ROTATION_MAX_AGE, '1')
-    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-      '1 second after the last rotation',
-      { timeout: WALK_WAIT_MS },
-    )
-    await expect
-      .poll(async () => (await newBatchKeys(page, before)).length, {
-        timeout: WALK_WAIT_MS,
-      })
-      .toBeGreaterThanOrEqual(1)
-    const batch = batchInstant((await newBatchKeys(page, before))[0] ?? '')
+    const batch = batchInstant(await rotateNewBatch(page, before))
     expect(batch).toBeGreaterThan(0)
-    await resetSetting(settings, ROTATION_MAX_AGE)
 
     await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
     await typeInto(search, agent)
@@ -448,9 +462,7 @@ test(
     // A new viewer has no retained lines from before rotation. Its completed read
     // must prove this exact live file is missing: a new batch alone does not prove
     // the writer is quiet, and a displayed stream option does not prove a file.
-    await expect(page.getByTestId('hilos-log-empty-missing')).toBeVisible({
-      timeout: WALK_WAIT_MS,
-    })
+    await expect(page.getByTestId('hilos-log-empty-missing')).toBeVisible()
     await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
     await expect(page.getByTestId('hilos-log-source')).toHaveValue('live')
     await expect(page).toHaveURL(livePath)
@@ -478,17 +490,12 @@ test(
     await expect(page.getByTestId('hilos-log-stream')).toHaveValue(stream)
     await expect(page).toHaveURL(livePath)
     await expect(latestBatch).toHaveAttribute('href', archivePath)
-    // Keep the independent control tab registered for afterEach on either path.
   },
 )
 
-test('rotates on the configured threshold, carries a batch off on the operator confirmation, and prunes exactly that batch while the table updates itself', async ({
+test('shows the configured rotation threshold, carries a batch off on the operator confirmation, and prunes exactly that batch while the table updates itself', async ({
   page,
 }) => {
-  // Two batches are waited for, one after another, and each rides a five-second
-  // walk; the default cap would expire in the middle of the first one.
-  test.slow()
-
   await grantAdminToSelf(expect, page)
 
   // The observer opens first and never leaves: everything it is asked about
@@ -524,83 +531,69 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   try {
     await gotoPage(expect, overview, '/hilos/logs', PAGE_READY)
 
-    // The three preparatory keys, none of which starts a clock. Both retention
-    // criteria are needed together: they are joined by "and", and the count one —
-    // the twenty newest batches are always protected — is not something ageing or
-    // waiting can take away.
-    await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
-    await setSetting(tabB, RETENTION_MAX_AGE, '1')
+    // The three preparatory keys, none of which starts a clock. Retention keeps
+    // its count criterion alone, at one batch, so everything but the newest batch
+    // of the archive is recommended. The age criterion goes off: it compares whole
+    // seconds, strictly, and would hold a batch made this second for up to two
+    // more — while the count is not something ageing or waiting takes away.
+    await setSetting(tabB, RETENTION_KEEP_BATCHES, '1')
+    await setSetting(tabB, RETENTION_MAX_AGE, '0')
     await setSetting(tabB, TAKEOUT_UNDO_WINDOW, '120')
+
+    // The age axis of rotation, and the one check that it reaches the screen at
+    // all: the rule line on the observer says the new threshold. The axis itself
+    // never comes due in this run — a day is long, and every attempt below starts
+    // its count again — so the rotations are the command's.
+    await setSetting(tabB, ROTATION_MAX_AGE, '86400')
+    await walkLogs()
+    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+      '1 day after the last rotation',
+    )
 
     // The archive as it stands, read here rather than at the top: every write above
     // repaints the badges and so re-serves this window, which means the picture on
-    // screen now is one the page has answered for three times over. Nothing can
+    // screen now is one the page has answered for four times over. Nothing can
     // have been added to it either — until the next line, only the nightly schedule
-    // and the size threshold are on, and the scenario reaches neither.
+    // and the size threshold may rotate, and the scenario reaches neither.
     const before = await rowKeys(page)
 
-    // And the trigger. Until this line a stand rotates only on the nightly schedule
-    // and at 512 MiB, neither of which the scenario reaches in its seconds; a run
-    // that crosses 03:00 gets one batch beyond its own, which lands after `before`
-    // and is counted as the scenario's — the checks below count "at least", so they
-    // hold. From here the owner of the log directory rotates on each of its live walks.
-    await setSetting(tabB, ROTATION_MAX_AGE, '1')
+    // Three batches, oldest first, each arriving on a page that has not navigated
+    // since it opened. Batch C, the newest, is the one the count criterion keeps;
+    // A and B are outside it. A rotation after the first always has something to
+    // move: a rotation that moved anything writes a line saying so under the
+    // agent's own name, and the next rotation carries that file off (HIL-480).
+    const batchA = await rotateNewBatch(page, before)
+    const batchB = await rotateNewBatch(page, before, batchA)
+    const batchC = await rotateNewBatch(page, before, batchB)
 
-    // The gate, before anything is waited for: the rule line on the observer says
-    // the new threshold. Without it a setting that never landed and a rotation that
-    // never ran are the same red — a timeout on a row that did not appear.
-    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-      '1 second after the last rotation',
-      { timeout: WALK_WAIT_MS },
-    )
-
-    // Batch A: the first rotation this scenario caused. It arrives on a page that
-    // has not navigated since it opened.
+    // Batch C is announced while it is still in staging, and a batch on its way is
+    // left out of the verdict, so B reads as the newest kept one until the carrier
+    // has put C into the archive — a second at most — and a walk has read it there.
     await expect
-      .poll(async () => (await newBatchKeys(page, before)).length, {
-        timeout: WALK_WAIT_MS,
+      .poll(async () => {
+        await walkLogs()
+        const rows = rotationFrames.rotations()
+        return [
+          rows.get(batchA)?.retentionState,
+          rows.get(batchB)?.retentionState,
+        ]
       })
-      .toBeGreaterThanOrEqual(1)
-    const batchA = (await newBatchKeys(page, before))[0] ?? ''
-    expect(batchA).not.toBe('')
-
-    // Batch B, the second one, and it is guaranteed to exist rather than hoped for:
-    // a rotation that moved anything writes a line saying so under the agent's own
-    // name, the master puts that line in the live file, and the next rotation
-    // carries that file off (HIL-480).
-    await expect
-      .poll(async () => (await newBatchKeys(page, before)).length, {
-        timeout: WALK_WAIT_MS,
-      })
-      .toBeGreaterThanOrEqual(2)
-    const batchB = (await newBatchKeys(page, before)).filter(
-      (key) => key !== batchA,
-    )[0]
-    expect(batchB).toBeTruthy()
-
-    // The trigger goes back down as soon as both batches are here: left up it makes
-    // a batch every five seconds, and the rest of the scenario wants a table that
-    // holds still.
-    await setSetting(tabB, ROTATION_MAX_AGE, '0')
+      .toEqual(['due', 'due'])
 
     const batch = rotationFrames.rotations().get(batchA)!
     const batchAt = expectLogEpochMoment(expect, batch.batchAt)
-    const batchBAt = batchInstant(batchB!)
+    const batchCAt = batchInstant(batchC)
     const directory = logBatchDirectory(batchAt)
     await expect
-      .poll(
-        () =>
-          Date.parse(
-            String(
-              overviewFrames.data('subscription_page_hilos_logs').at(-1)
-                ?.lastRotationAt,
-            ),
+      .poll(() =>
+        Date.parse(
+          String(
+            overviewFrames.data('subscription_page_hilos_logs').at(-1)
+              ?.lastRotationAt,
           ),
-        {
-          timeout: WALK_WAIT_MS,
-        },
+        ),
       )
-      .toBeGreaterThanOrEqual(batchBAt)
+      .toBeGreaterThanOrEqual(batchCAt)
     const lastRotationAt = expectLogUtcMoment(
       expect,
       overviewFrames.data('subscription_page_hilos_logs').at(-1)
@@ -619,9 +612,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
       `/hilos/logs/view/${batch.node}/${batchAt}/daemon.log`,
       PAGE_READY,
     )
-    await expect(viewer.getByTestId('hilos-log-entry').first()).toBeVisible({
-      timeout: WALK_WAIT_MS,
-    })
+    await expect(viewer.getByTestId('hilos-log-entry').first()).toBeVisible()
     await expectLogBatchViewer(expect, viewer, viewerFrames, batch, READER_ZONE)
 
     // The verdict of the rule, arrived at from the settings written above, through
@@ -632,9 +623,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
       await logMomentLabel(page, batchAt, READER_ZONE),
     )
     await expect(rowA).toContainText(directory)
-    await expect(rowA).toContainText('Awaiting carry-off', {
-      timeout: WALK_WAIT_MS,
-    })
+    await expect(rowA).toContainText('Awaiting carry-off')
     // The footer counts a window that holds rows. The archive can be empty when
     // the screen opens — the scenario has not rotated yet — and an empty window
     // draws no "0 of 0".
@@ -686,20 +675,17 @@ test('rotates on the configured threshold, carries a batch off on the operator c
       expect,
       deliveryObject(deliveryObject(ack.data).reply).takenAt,
     )
-    expect(takenAt).toBeGreaterThanOrEqual(batchBAt)
+    expect(takenAt).toBeGreaterThanOrEqual(batchCAt)
     // The node's own sentence, because the badge is repainted a moment later and
     // elsewhere on the page; its wording belongs to HIL-483 and is not pinned here.
     await expect(page.getByTestId('hilos-toast-success')).toBeVisible()
 
-    // The badge repaints because the node's next index says the marker is on disk,
-    // not because this tab drew what it had just asked for. Batch B is untouched.
-    await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
-    // Batch B's own verdict rides the same walk: made seconds ago, it may still read
-    // as kept or as on its way to the archive when the walk after the trigger went
-    // down has not come round yet.
-    await expect(rowB).toContainText('Awaiting carry-off', {
-      timeout: WALK_WAIT_MS,
-    })
+    // The badge repaints because the node's index says the marker is on disk, not
+    // because this tab drew what it had just asked for; the walk sends that index
+    // now instead of on the next walk of its own. Batch B is untouched.
+    await walkLogs()
+    await expect(rowA).toContainText('Taken')
+    await expect(rowB).toContainText('Awaiting carry-off')
 
     // The takeout modal stands open on batch B while another tab puts it back
     // under protection. The batch leaves the Awaiting window under the dialog;
@@ -711,9 +697,11 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     const modal = page.getByTestId('modal')
     await expect(modal).toBeVisible()
 
-    // Batch B is the second newest, so the count criterion alone protects it.
+    // Batch B is among the hundred newest, so the count criterion alone protects
+    // it; the walk carries the new verdict to the screen at once.
     await setSetting(tabB, RETENTION_KEEP_BATCHES, '100')
-    await expect(rowB).toHaveCount(0, { timeout: WALK_WAIT_MS })
+    await walkLogs()
+    await expect(rowB).toHaveCount(0)
 
     await expect(
       page.getByTestId('hilos-rotation-takeout-notice'),
@@ -723,52 +711,49 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     ).toBeDisabled()
     await expect(modal).toBeVisible()
 
-    // Back to the walk: the count criterion goes back to leaving batch B
+    // Back to one batch: the count criterion goes back to leaving batch B
     // unprotected after the operator closes the dialog.
     await page.getByTestId('modal-close').click()
     await expect(modal).toHaveCount(0)
-    await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
+    await setSetting(tabB, RETENTION_KEEP_BATCHES, '1')
+    await walkLogs()
     await shownByTestId(page, 'hilos-table-filter-state').click()
     await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
-    await expect(rowB).toContainText('Awaiting carry-off', {
-      timeout: WALK_WAIT_MS,
-    })
+    await expect(rowB).toContainText('Awaiting carry-off')
 
     // The withdrawal dialog opens before the cleaner runs and stays open while
     // batch A goes.
-    await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
+    await expect(rowA).toContainText('Taken')
     await rowA.getByTestId('hilos-rotation-undo').click()
     await expect(modal).toBeVisible()
     const deadline = takenAt + 120_000
     await expect
-      .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore, {
-        timeout: WALK_WAIT_MS,
-      })
+      .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore)
       .toBe(deadline)
     await expect(page.getByTestId('hilos-rotation-undo-deadline')).toHaveText(
       `The cleaner may delete this batch after ${await logMomentLabel(page, deadline, READER_ZONE)}.`,
     )
     await setSetting(tabB, TAKEOUT_UNDO_WINDOW, '0')
-    // A policy-only change rides the next changed index or keepalive. A real
-    // write calls for that index now, before the attempt that runs the cleaner.
-    expect(await appendLogLines(logMarker('e2e-cleaner-ready'), 1)).toBe(1)
+    // A policy-only change changes no file, so no walk of the node's own would
+    // send an index for it before the keepalive. The walk sends one now, before
+    // the attempt that runs the cleaner.
+    await walkLogs()
     await expect
-      .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore, {
-        timeout: WALK_WAIT_MS,
-      })
+      .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore)
       .toBeNull()
     await expect(page.getByTestId('hilos-rotation-undo-deadline')).toHaveText(
       'The cleaner may delete this batch as soon as it next runs.',
     )
 
     // The cleaner has no trigger of its own: it rides the ATTEMPT to rotate, so one
-    // more attempt is what runs it (HIL-382).
-    await setSetting(tabB, ROTATION_MAX_AGE, '1')
+    // more attempt is what runs it (HIL-382) — batch D, should it move anything.
+    await leaveBatchSecond(batchC)
+    await rotateLogs()
 
     // What the whole scenario was built to see: the batch the operator answered for
     // is gone from the table, it went without anybody reloading anything, and the
     // batch nobody answered for is still there with the verdict it had.
-    await expect(rowA).toHaveCount(0, { timeout: WALK_WAIT_MS })
+    await expect(rowA).toHaveCount(0)
     await expect(rowB).toContainText('Awaiting carry-off')
 
     await expect(page.getByTestId('hilos-rotation-undo-notice')).toContainText(
@@ -779,9 +764,9 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     await page.getByTestId('modal-close').click()
     await expect(modal).toHaveCount(0)
 
-    // The control tab is deliberately left open and left registered: the trigger has
-    // been up again since the attempt that ran the cleaner, and the cleanup is the
-    // one thing that lowers it.
+    // The control tab is deliberately left open and left registered: all four keys
+    // still carry the values written above, and the cleanup is the one thing that
+    // returns them.
   } finally {
     overviewFrames.stop()
     viewerFrames.stop()

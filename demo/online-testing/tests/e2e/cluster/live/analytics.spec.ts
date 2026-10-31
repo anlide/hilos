@@ -33,6 +33,9 @@ import { AUTH_ACTION_LOGIN } from '../../../../../../framework/frontend/core/src
 
 const stand = readClusterBrowserStand()
 const sendCommand = clusterCommandChannel(stand, stand.follower)
+const journals = Object.keys(stand.nodeLogs)
+  .sort()
+  .map((node) => clusterCommandChannel(stand, node))
 
 for (const [index, sourceNode] of stand.masters.entries()) {
   const viewerNode = stand.masters[(index + 1) % stand.masters.length]
@@ -40,8 +43,6 @@ for (const [index, sourceNode] of stand.masters.entries()) {
   test(`an action through ${sourceNode} is shown on the session page through ${viewerNode}`, async ({
     browser,
   }) => {
-    // Two real logins, journal rotation and remote reads exceed the base cap.
-    test.slow()
     const before = (await sendCommand(
       'test:cluster:inspect',
       {},
@@ -105,12 +106,14 @@ for (const [index, sourceNode] of stand.masters.entries()) {
         sendCommand,
         user.userId,
         AUTH_ACTION_LOGIN,
+        journals,
       )
       const adminSession = await waitAnalyticsBrowserSession(
         expect,
         sendCommand,
         adminId,
         AUTH_ACTION_LOGIN,
+        journals,
       )
       expect(userSession.browserSessionId).not.toBeNull()
       expect(adminSession.browserSessionId).not.toBeNull()

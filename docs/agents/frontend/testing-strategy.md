@@ -1068,9 +1068,15 @@ both the person and administrator accounts with `seedTestUser`, then perform
 real `openSignIn` / `login` on the main page. Chat uses its `message-signin`
 entry; the other carriers use the standard sign-in entry.
 
-`waitAnalyticsBrowserSession(expect, sendCommand, userId, expectedAction?)`
+`waitAnalyticsBrowserSession(expect, sendCommand, userId, expectedAction?, journals = [sendCommand])`
 waits for the journal writer and returns
 `{ browserSessionId: number | null, actionNames: readonly string[] }`.
+Before each probe of a round it sends `test:analytics:rotate` to every request
+function in `journals` at once, so the writer loads what each node's journal
+holds now and the wait is the ordinary `expect` limit, not a rotation period.
+A refused rotation rejects the wait with the server's text. What remains is the
+journal's outbox, which hands its batch of events to the journal about once a
+second.
 It waits for a non-null session and, only when `expectedAction` is supplied,
 for that action in `actionNames`. The session-action specs wait for
 `AUTH_ACTION_LOGIN` (`'hilos_login'`) for both actors before following the
@@ -1111,7 +1117,10 @@ probe, since that agent starts on demand; this probe creates no account or
 session. The live cluster scenario creates fixture accounts for the person
 and administrator through `seedTestUser` / `test:user:create`, performs real
 UI sign-ins on the selected nodes and waits for both actors' `hilos_login`
-with `waitAnalyticsBrowserSession`.
+with `waitAnalyticsBrowserSession`, passing as `journals` a command channel
+for every node in `stand.nodeLogs` — the follower alone would rotate its own
+journal, while the sessions sit in the journals of the nodes that served the
+logins.
 The latter three checks take the spec's `expect` first. Common readiness uses
 `probeStatic`, `probeWebSocketUpgrade` and `waitUntilReady`; demo wrappers keep
 their own setup order. Scenario order, navigation and context cleanup stay in

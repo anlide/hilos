@@ -8,6 +8,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Log\LogStoreAgent;
@@ -375,6 +376,42 @@ final class CliCommands
      * @var string Command: Append lines to this node's log through the live daemon (test-only)
      */
     public const string LOG_TEST_APPEND = 'test:log:append';
+
+    /**
+     * Rotate this node's live logs now, the way an axis of the rotation policy does (test-only).
+     *
+     * Doubles as the command-channel wire name routed to {@see LogStoreAgent}, the one owner of
+     * the node's log directory. It brings the moment an axis fires to now: the same attempt, the
+     * cleanup of confirmed batches that rides it, and the index walked and sent at once, so a
+     * test does not wait for a schedule, an age or a size. No axis changes, and no cron receipt
+     * is written.
+     *
+     * @var string Command: Rotate this node's live logs now through the live daemon (test-only)
+     */
+    public const string LOGS_TEST_ROTATE = 'test:logs:rotate';
+
+    /**
+     * Walk this node's whole log store and send its index now (test-only).
+     *
+     * Doubles as the command-channel wire name routed to {@see LogStoreAgent}. It brings the
+     * full walk and the index frame to now, even when the walk finds nothing new, so a test does
+     * not wait out the walk intervals or the keepalive. The intervals themselves do not change.
+     *
+     * @var string Command: Walk this node's log store and send its index now (test-only)
+     */
+    public const string LOGS_TEST_WALK = 'test:logs:walk';
+
+    /**
+     * Rotate this node's open analytics journal file now (test-only).
+     *
+     * Doubles as the command-channel wire name routed to {@see AnalyticsJournalAgent}, the one
+     * owner of the node's journal. It brings the rotation by age to now: the open file becomes
+     * ready and the writer is told, exactly as when the file grows old, so a test does not wait
+     * the production period out. The period itself does not change.
+     *
+     * @var string Command: Rotate this node's open analytics journal file now (test-only)
+     */
+    public const string ANALYTICS_TEST_ROTATE = 'test:analytics:rotate';
 
     /**
      * Enter protected mode through the live initiator agent (test-only).

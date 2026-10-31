@@ -4,14 +4,24 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogBatchCarrier;
 use Hilos\Log\LogBatchTakeoutMarker;
+use Hilos\Log\LogCommandConstants;
 use Hilos\Log\LogStoreAgent;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 use PHPUnit\Framework\TestCase;
@@ -30,6 +40,10 @@ use PHPUnit\Framework\TestCase;
  * no device gate left to cover — the rotation moment is O(1) whatever the archive is, because
  * staging is inside the log root by construction, and the boundary is crossed afterwards by
  * {@see LogBatchCarrier}, which has a test of its own.
+ *
+ * The test-only rotation and walk (HIL-1858) are driven here too, through the command handler a
+ * daemon routes them to: the rotation is the very attempt an axis makes, so it is held to the same
+ * outcomes, and both answer only once the index has gone out.
  */
 final class LogStoreAgentRotationTest extends TestCase
 {
@@ -47,6 +61,12 @@ final class LogStoreAgentRotationTest extends TestCase
 
     /** Size axis the tests arm, small enough that one fixture file crosses it. */
     private const string MAX_LIVE_SIZE_BYTES = '1024';
+
+    /** Age axis the command cases arm: on, and an hour away from firing. */
+    private const string MAX_AGE_SECONDS = '3600';
+
+    /** Size axis the command cases arm: on, and far above what any fixture here weighs. */
+    private const string FAR_MAX_LIVE_SIZE_BYTES = '1048576';
 
     /** @var int Baseline the walks are placed relative to; the real clock, as onStart stamps its own walk with it */
     private int $t0 = 0;
@@ -274,6 +294,172 @@ final class LogStoreAgentRotationTest extends TestCase
     }
 
     /**
+     * The socket refuses a test-only name on production on the declaration alone, so the
+     * declaration is what has to be pinned: both routes are this agent's and carry the prefix.
+     */
+    public function testTheRotateAndWalkRoutesDeclareThemselvesTestOnly(): void
+    {
+        foreach ([CliCommands::LOGS_TEST_ROTATE, CliCommands::LOGS_TEST_WALK] as $command) {
+            $this->assertContains($command, LogStoreAgent::AGENT_COMMANDS);
+            $this->assertTrue(TestOnlyCommandRegistry::isTestOnly($command));
+        }
+    }
+
+    /**
+     * Both axes are on and neither is due, so the policy moves nothing; the command makes the
+     * attempt all the same, and it is the attempt an axis makes: the batch, the cleanup of the
+     * confirmed batch riding it, the line in the journal, and the frame before the answer.
+     */
+    public function testRotateCommandMovesTheLiveLogsAndTakesTheConfirmedBatchWithNoAxisDue(): void
+    {
+        $this->putRotationEnvironment(self::MAX_AGE_SECONDS, self::FAR_MAX_LIVE_SIZE_BYTES, '');
+        $agent = $this->startedAgent();
+        // Staged after the start so the start's own cleanup pass is not the one under test.
+        $taken = $this->archiveBatch($this->t0 - 7200, confirmed: true);
+        $kept = $this->archiveBatch($this->t0 - 3600, confirmed: false);
+        $this->write(self::DAEMON_LOG, 100);
+        $this->write(self::AGENT_LOG, 100);
+        $this->walkAndRotate($agent, $this->t0 + 10);
+        $this->assertSame([], $this->batchNames(), 'No axis is due, so the policy itself moves nothing');
+        $this->drainQueue();
+
+        ob_start();
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_ROTATE);
+        $said = (string)ob_get_clean();
+
+        $reply = $this->replyOf($signals);
+        $this->assertTrue($reply->isOk());
+        $this->assertSame([LogCommandConstants::FIELD_MOVED => 2], $reply->payload);
+        $batches = $this->batchNames();
+        $this->assertCount(1, $batches);
+        $this->assertSame([self::AGENT_LOG, self::DAEMON_LOG], $this->batchFileNames($batches[0]));
+        $names = $this->archiveBatchNames();
+        $this->assertNotContains($this->batchDirName($taken), $names);
+        $this->assertContains($this->batchDirName($kept), $names);
+        $this->assertStringContainsString('Log rotation: moved 2 live log file(s)', $said);
+        $this->assertCount(1, $this->indexFramesOf($signals));
+        $delta = $agent->lastDelta();
+        $this->assertNotNull($delta);
+        $this->assertSame([$taken], $delta->vanishedBatchTimestamps);
+        $this->assertCount(1, $delta->appearedBatchTimestamps);
+    }
+
+    public function testRotateCommandWithNothingToMoveAnswersZeroAndStillSendsTheIndex(): void
+    {
+        $this->putRotationEnvironment(self::MAX_AGE_SECONDS, '0', '');
+        $agent = $this->startedAgent();
+        $this->drainQueue();
+
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_ROTATE);
+
+        $reply = $this->replyOf($signals);
+        $this->assertTrue($reply->isOk());
+        $this->assertSame([LogCommandConstants::FIELD_MOVED => 0], $reply->payload);
+        $this->assertCount(1, $this->indexFramesOf($signals));
+        $this->assertSame([], $this->batchNames());
+    }
+
+    public function testRotateCommandIsRefusedWhileEveryAxisIsOff(): void
+    {
+        $this->write(self::DAEMON_LOG, 2048);
+        $agent = $this->startedAgent();
+        $this->drainQueue();
+
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_ROTATE);
+
+        $reply = $this->replyOf($signals);
+        $this->assertFalse($reply->isOk());
+        $this->assertSame('Log rotation is off on this node', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        $this->assertSame([], $this->indexFramesOf($signals));
+        $this->assertSame([self::DAEMON_LOG], $this->liveNames());
+        $this->assertSame([], $this->batchNames());
+    }
+
+    public function testRotateCommandOnAStoreThatCannotBeReadIsRefused(): void
+    {
+        $this->putRotationEnvironment(self::MAX_AGE_SECONDS, '0', '');
+        putenv(EnvConstants::DAEMON_LOG_FILE->name);
+        $agent = $this->startedAgent();
+        $this->drainQueue();
+
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_ROTATE);
+
+        $reply = $this->replyOf($signals);
+        $this->assertFalse($reply->isOk());
+        $this->assertSame('Log store is unavailable on this node', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        $this->assertSame([], $this->indexFramesOf($signals));
+    }
+
+    /**
+     * The batch cannot be made, and the caller hears why instead of waiting out a timeout; the
+     * index goes out all the same, so what the screen shows after the answer is the disk as it is.
+     *
+     * The error handler is stood down for the reason {@see self::testABatchThatCannotBeMadeLeavesTheAgentRunning()}
+     * gives.
+     */
+    #[WithoutErrorHandler]
+    public function testAFailedRotateCommandIsAnsweredWithItsTextAndStillSendsTheIndex(): void
+    {
+        $this->putRotationEnvironment(self::MAX_AGE_SECONDS, '0', '');
+        $this->write(self::DAEMON_LOG, 100);
+        $agent = $this->startedAgent();
+        $this->drainQueue();
+        file_put_contents(
+            $this->dir . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_STAGING_SUBDIR_NAME,
+            'a file where the staging directory would go',
+        );
+
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_ROTATE);
+
+        $reply = $this->replyOf($signals);
+        $this->assertFalse($reply->isOk());
+        $this->assertStringStartsWith('Log rotation failed: ', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+        $this->assertCount(1, $this->indexFramesOf($signals));
+        $this->assertSame([self::DAEMON_LOG], $this->liveNames());
+    }
+
+    /**
+     * Nothing changed since the start, so neither the push interval nor the keepalive owes a
+     * frame; the command sends one anyway, and that is what takes the keepalive out of a test.
+     */
+    public function testWalkCommandSendsTheIndexEvenWhenNothingChanged(): void
+    {
+        $this->write(self::AGENT_LOG, 100);
+        $agent = $this->startedAgent();
+        $this->drainQueue();
+        $agent->pushIndexIfDue(microtime(true));
+        $this->assertSame([], $this->drainQueue(), 'Nothing changed, so the schedule owes no frame');
+
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_WALK);
+
+        $reply = $this->replyOf($signals);
+        $this->assertTrue($reply->isOk());
+        $this->assertSame([], $reply->payload);
+        $frames = $this->indexFramesOf($signals);
+        $this->assertCount(1, $frames);
+        $this->assertSame([self::AGENT_LOG], array_column($frames[0]->toIndex()->keys, 'key'));
+        $this->assertTrue($agent->lastDelta()?->isEmpty());
+    }
+
+    /**
+     * The walk is the full one, archive included, so a batch that reached the archive since the
+     * last full walk is in the frame without waiting that walk's interval out.
+     */
+    public function testWalkCommandReadsTheArchiveToo(): void
+    {
+        $agent = $this->startedAgent();
+        $this->drainQueue();
+        $batch = $this->archiveBatch($this->t0 - 3600, confirmed: false);
+
+        $signals = $this->command($agent, CliCommands::LOGS_TEST_WALK);
+
+        $this->assertTrue($this->replyOf($signals)->isOk());
+        $frames = $this->indexFramesOf($signals);
+        $this->assertCount(1, $frames);
+        $this->assertSame([$batch], array_column($frames[0]->toIndex()->batches, 'timestamp'));
+    }
+
+    /**
      * Agent over the fixture directory, walked once by its own start hook.
      *
      * @return LogStoreAgent Started agent
@@ -296,6 +482,75 @@ final class LogStoreAgentRotationTest extends TestCase
     {
         $agent->walkStore($now);
         $agent->rotateIfDue((float)$now);
+    }
+
+    /**
+     * Drives one command through the agent, the way the daemon routes it, and takes what it queued.
+     *
+     * @param LogStoreAgent $agent Agent under test
+     * @param string $command Command-channel wire name to send, with an empty payload
+     * @return list<SignalDTO> Every signal the command queued, in order
+     */
+    private function command(LogStoreAgent $agent, string $command): array
+    {
+        $agent->onSignalCommand(new CommandRequestDTO(correlationId: 'corr-1', command: $command, payload: []), '', '');
+
+        return $this->drainQueue();
+    }
+
+    /**
+     * Empties the signal queue, so a case starts from what its own step queues.
+     *
+     * @return list<SignalDTO> Every queued signal, in the order they were queued
+     */
+    private function drainQueue(): array
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $signals[] = $signal;
+        }
+
+        return $signals;
+    }
+
+    /**
+     * The one reply a command queued, which comes last: whatever the command sends, it sends first.
+     *
+     * @param list<SignalDTO> $signals What the command queued
+     * @return CommandReplyDTO The reply
+     */
+    private function replyOf(array $signals): CommandReplyDTO
+    {
+        $last = array_pop($signals);
+        $this->assertNotNull($last, 'Every command branch answers exactly once');
+        $this->assertInstanceOf(CommandReplyDTO::class, $last->data, 'The answer comes last');
+        foreach ($signals as $signal) {
+            $this->assertNotInstanceOf(CommandReplyDTO::class, $signal->data, 'No branch answers twice');
+        }
+
+        return $last->data;
+    }
+
+    /**
+     * The index frames a command queued; anything else but its reply fails the case.
+     *
+     * @param list<SignalDTO> $signals What the command queued
+     * @return list<NodeLogIndexSignalData> Payloads of the index frames, in order
+     */
+    private function indexFramesOf(array $signals): array
+    {
+        $frames = [];
+        foreach ($signals as $signal) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                continue;
+            }
+            $this->assertSame(HilosSignalConstants::LOGS_NODE_INDEX_REPORT, $signal->signalName->getName());
+            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+            $this->assertInstanceOf(NodeLogIndexSignalData::class, $signal->data->data);
+            $frames[] = $signal->data->data;
+        }
+
+        return $frames;
     }
 
     /**

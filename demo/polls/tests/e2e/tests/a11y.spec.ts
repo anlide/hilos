@@ -726,8 +726,6 @@ test.describe('Analytics accessibility', () => {
     baseURL,
     ignoreHTTPSErrors,
   }) => {
-    // A real login and the journal-writer wait precede the keyboard journey.
-    test.slow()
     const frames: SocketFrame[] = []
     const observer = watchSocketFrames(page, (frame) => frames.push(frame))
     const delivery = watchDeliveryFrames(page)

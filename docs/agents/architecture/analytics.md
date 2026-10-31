@@ -71,7 +71,11 @@ every process, including master ── Hilos::$ac ──► AnalyticsJournalOutb
   ready files from a previous life. It sends nothing on stop. It measures the
   bytes of its open and ready files against a cluster setting, keeps losses by
   reason in episodes, and writes closed episodes even at the ceiling. Each
-  rotation ends with a `journal_end` event count.
+  rotation ends with a `journal_end` event count. The test-only
+  `test:analytics:rotate` brings the rotation by age to now: the journal agent of
+  the node that took it rotates the open file and tells the writer, as a rotation
+  by age does, and with no open file it does nothing and answers so. The
+  production period of 10 seconds does not change.
 - **The writer** (`AnalyticsWriterAgent`, `AgentPlacement::POLICY`, a monopolistic
   worker) reads the node register (`hilosClusterNodes`) before start and asks all
   online nodes for ready files. A node waits in its queue after a ready notice or

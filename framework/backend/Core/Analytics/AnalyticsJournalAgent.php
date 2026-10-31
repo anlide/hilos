@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Analytics;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -32,6 +33,8 @@ use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 
 /**
  * The journal agent of a node: the one owner of the node's analytics journal (HIL-1154).
@@ -77,6 +80,14 @@ final class AnalyticsJournalAgent extends AbstractAgent
             AgentSignalConfigKey::NODE_FIELD => AnalyticsJournalLoadedSignalData::nodeId,
             AgentSignalConfigKey::DTO => AnalyticsJournalLoadedSignalData::class,
         ],
+    ];
+
+    /**
+     * The test-only rotation, answered by the journal agent of the node that took the command
+     * (HIL-1858): it brings the rotation by age to now, so a test does not wait the period out.
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::ANALYTICS_TEST_ROTATE,
     ];
 
     /** @var string Existing standalone subdirectory, retained so older ready files remain visible. */
@@ -328,6 +339,27 @@ final class AnalyticsJournalAgent extends AbstractAgent
     }
 
     /**
+     * Answers the test-only rotation on the command channel; a command this agent does not own is refused.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused; the routing is on $data->command)
+     * @throws InvalidArgumentException When the reply or the ready notice cannot be named
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        switch ($data->command) {
+            case CliCommands::ANALYTICS_TEST_ROTATE:
+                $this->rotateNow($data->correlationId);
+
+                return;
+
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+        }
+    }
+
+    /**
      * Appends the lines of a batch; an empty line or one holding a line break is dropped, since it would break the file.
      *
      * @param AnalyticsJournalAppendSignalData $batch Lines, event count and source losses
@@ -435,6 +467,43 @@ final class AnalyticsJournalAgent extends AbstractAgent
         } catch (FsException $failure) {
             $this->reportFailure(self::OPERATION_DELETE, $failure);
         }
+    }
+
+    /**
+     * Rotates the open file now and tells the writer, as a rotation by age does; without an open file, nothing.
+     *
+     * The test-only door to the rotation the tick makes once the file is
+     * {@see AnalyticsJournalDirectory::ROTATE_AGE_MS} old: the period stays what it is, the
+     * moment comes to now. A failure is said the way the tick says it, and the caller is told.
+     *
+     * @param string $correlationId Correlation id of the command to answer
+     * @throws InvalidArgumentException When the reply or the ready notice cannot be named
+     */
+    private function rotateNow(string $correlationId): void
+    {
+        if ($this->journal === null || !$this->ensureStarted()) {
+            $this->replyToCommand(CommandReplyDTO::error($correlationId, 'Analytics journal is not writable on this node'));
+
+            return;
+        }
+
+        try {
+            $rotated = $this->journal->rotate(self::nowMs()) !== null;
+            if ($rotated) {
+                $this->announceReady();
+                $this->clearFailure(self::OPERATION_SYNC);
+            }
+        } catch (FsException $failure) {
+            $this->reportFailure(self::OPERATION_SYNC, $failure);
+            $this->replyToCommand(CommandReplyDTO::error(
+                $correlationId,
+                'Analytics journal rotation failed: ' . $failure->getMessage(),
+            ));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($correlationId, [AnalyticsCommandConstants::FIELD_ROTATED => $rotated]));
     }
 
     /**

@@ -89,8 +89,6 @@ test('opens a real person from Analytics People and returns through People crumb
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Independent browsers and the real journal-writer wait exceed the base cap.
-  test.slow()
   // Give the target initials distinct from the administrator's e2e- name.
   const email = `person-${uniqueEmail()}`
   const user = await createTestUser(expect, page, { email })
@@ -270,8 +268,6 @@ test('opens a real person from Analytics People and returns through People crumb
 test('People starts with one Today viewport and resets only its Period filter', async ({
   page,
 }) => {
-  // The probe waits for the real rotating analytics journal before opening People.
-  test.slow()
   const frames = watchDeliveryFrames(page)
   try {
     const userId = await createTestAdmin(expect, page)
@@ -400,8 +396,6 @@ test('People starts with one Today viewport and resets only its Period filter', 
 test('Browser sessions opens real sessions from the tab and Person with the same return link', async ({
   page,
 }) => {
-  // The session probe waits for a real journal rotation and its writer.
-  test.slow()
   const frames = watchDeliveryFrames(page)
   try {
     // The row checks a positive action count, so sign in through the surface.
@@ -660,8 +654,6 @@ test('Browser sessions viewer receives hidden personal values with only public s
   baseURL,
   ignoreHTTPSErrors,
 }) => {
-  // Seed through the real journal, then read from an independent guest browser.
-  test.slow()
   const userId = await createTestAdmin(expect, page)
   const session = await waitAnalyticsBrowserSession(expect, sendCommand, userId)
   const viewerContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
