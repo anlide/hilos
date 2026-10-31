@@ -3,11 +3,14 @@ import {
   clickSubmit,
   countSentFrames,
   dismissToasts,
+  expectI18nLanguageCounts,
   expectI18nPageHead,
   expectLanguagePageHead,
+  expectNoOtherLanguageNames,
   expectPageReady,
   gotoPage,
   grantAdminToSelf,
+  i18nLocaleRow,
   PAGE_READY,
   settleRemovedRow,
   shownByTestId,
@@ -34,7 +37,7 @@ test('language.life', async ({ page, i18n }) => {
   const updates = countSentFrames(page, 'hilos_i18n_language_update')
   await grantAdminToSelf(expect, page)
 
-  await test.step('Read the protected default card and visit Names and Locales', async () => {
+  await test.step('Read the protected default card and follow its count links to Names and Locales', async () => {
     await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
     await expectLanguagePageHead(expect, page, {
       code: 'en',
@@ -51,8 +54,11 @@ test('language.life', async ({ page, i18n }) => {
     await expect(page.getByTestId('language-card-direction')).toHaveText(
       'Left to right',
     )
+    const rtl = page.getByRole('checkbox', { name: 'Right to left' })
+    await expect(rtl).not.toBeChecked()
+    await expect(rtl).toBeDisabled()
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Enabled',
+      'Language switched on',
     )
     await expect(page.getByTestId('language-card-frozen')).toHaveText(
       'Language enabled — frozen',
@@ -98,32 +104,52 @@ test('language.life', async ({ page, i18n }) => {
     await clickSubmit(expect, page.getByTestId('i18n-language-edit-close'))
     await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
 
-    for (const [tab, path, key] of [
-      [
-        'hilos-page-tab-hilos_i18n_language_names',
-        '/names',
-        'hilos_i18n_language_names',
-      ],
-      [
-        'hilos-page-tab-hilos_i18n_language_locales',
-        '/locales',
-        'hilos_i18n_language_locales',
-      ],
-    ]) {
-      await clickSubmit(expect, page.getByTestId(tab!))
-      await expect(page).toHaveURL(new RegExp(`/languages/en${path}$`))
-      await expectPageReady(expect, page)
-      await expectLanguagePageHead(expect, page, {
-        code: 'en',
-        nativeName: 'English',
-        currentPage: key!,
-        appName: 'Hilos Tasks',
-      })
-      await page.reload()
-      await expectPageReady(expect, page)
+    const counts = {
+      names: 0,
+      locales: 1,
+      enabled: 1,
+      countryless: 'Switched on',
+    }
+    await expectI18nLanguageCounts(expect, page, counts)
+    for (const [field, path, key, count] of [
+      ['name-count', '/names', 'hilos_i18n_language_names', '0'],
+      ['locale-count', '/locales', 'hilos_i18n_language_locales', '1'],
+    ] as const) {
+      const link = page.getByTestId(`language-overview-${field}`)
+      await expect(link).toHaveRole('link')
+      await expect(link).toHaveText(count)
+      await expect(link).toHaveAttribute(
+        'href',
+        `/hilos/i18n/languages/en${path}`,
+      )
+      await clickSubmit(expect, link)
+      for (const reload of [false, true]) {
+        if (reload) await page.reload()
+        await expectPageReady(expect, page)
+        await expect(page).toHaveURL(new RegExp(`/languages/en${path}$`))
+        await expectLanguagePageHead(expect, page, {
+          code: 'en',
+          nativeName: 'English',
+          currentPage: key,
+          appName: 'Hilos Tasks',
+        })
+        if (path === '/names') await expectNoOtherLanguageNames(expect, page)
+        else {
+          const row = i18nLocaleRow(page, 'en')
+          await expect(row.getByTestId('i18n-locales-code-en')).toHaveText('en')
+          await expect(row.getByTestId('i18n-locales-enabled-en')).toBeChecked()
+        }
+      }
       await page.goBack()
       await expectPageReady(expect, page)
       await expect(page).toHaveURL(/\/languages\/en$/)
+      await expectLanguagePageHead(expect, page, {
+        code: 'en',
+        nativeName: 'English',
+        currentPage: 'hilos_i18n_language',
+        appName: 'Hilos Tasks',
+      })
+      await expectI18nLanguageCounts(expect, page, counts)
     }
   })
 
@@ -276,7 +302,7 @@ test('language.life', async ({ page, i18n }) => {
       page.getByTestId('language-card-switch-on-confirm'),
     ).toHaveCount(0)
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Enabled',
+      'Language switched on',
     )
     await expect(page.getByTestId('language-card-frozen')).toBeVisible()
     await clickSubmit(expect, page.getByTestId('language-card-view'))
@@ -296,7 +322,7 @@ test('language.life', async ({ page, i18n }) => {
       page.getByTestId('language-card-switch-off-confirm'),
     ).toHaveCount(0)
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Disabled',
+      'Language switched off',
     )
     await expect(page.getByTestId('language-card-frozen')).toHaveCount(0)
     await clickSubmit(expect, page.getByTestId('language-card-edit'))
@@ -354,7 +380,7 @@ test('language.life', async ({ page, i18n }) => {
       page.getByTestId('language-card-switch-on-confirm'),
     )
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Enabled',
+      'Language switched on',
     )
     await clickSubmit(expect, page.getByTestId('language-card-switch-off'))
     await clickSubmit(
@@ -362,7 +388,7 @@ test('language.life', async ({ page, i18n }) => {
       page.getByTestId('language-card-switch-off-confirm'),
     )
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Disabled',
+      'Language switched off',
     )
     const cardRemove = page.getByTestId('language-card-delete')
     await expect(cardRemove).toBeDisabled()

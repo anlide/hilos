@@ -550,8 +550,11 @@ the row links only pages whose route exists in that project. The Vue and Angular
 language Overview has three route-aware summary tiles — Names, Locales, and the
 locale without a country — followed by Main and State. The Locales tile shows total
 and enabled counts. The Vue and Angular Names editors explain base names and
-locale corrections. The React language page body retains its previous
-presentation under HIL-1729.
+locale corrections. The React language Overview likewise has route-aware Names,
+Locales, and locale-without-a-country tiles followed by Main and State; its
+Locales tile shows total and enabled counts, and its Main section shows the
+writing-direction checkbox disabled. Its Names editor explains base names and
+locale corrections.
 
 The Vue names page of a language is built (HIL-1477): its table opens on the
 language named by the address, under the shared head and tabs fed by

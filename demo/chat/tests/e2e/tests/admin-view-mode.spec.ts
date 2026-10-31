@@ -780,6 +780,7 @@ test('Legal recovers unknown windows and keeps searched ordered windows across s
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
       await expectPageReady(expect, page)
       await expectControls(term, keys, direction)
+      await expect.poll(() => pageReplies(packets)).toHaveLength(1)
       const asks = requests(sent)
       expect(asks.map(({ type }) => type)).toEqual(['page_subscribe'])
       expect(deliveryObject(asks[0]!.tableWindows)[tableKey]).toMatchObject({
@@ -787,7 +788,6 @@ test('Legal recovers unknown windows and keeps searched ordered windows across s
         sort: [{ field: 'clauseKey', direction }],
         limit: 25,
       })
-      expect(pageReplies(packets)).toHaveLength(1)
       const payload = deliveryObject(
         deliveryObject(deliveryObject(pageReplies(packets)[0]!.wire).data)
           .payload,

@@ -63,6 +63,8 @@ function NameForm({
   const title = `${copy.title[titleKey]} · ${target.languageNativeName}`
   const hint =
     target.localeCode === null ? copy.hints.base : copy.hints.correction
+  const note =
+    target.localeCode === null ? copy.notes.base : copy.notes.correction
   function submit(): void {
     if (!locked && canSave) void window.save(action.run)
   }
@@ -143,7 +145,7 @@ function NameForm({
             value={form.name}
             maxLength={HILOS_I18N_LANGUAGE_NAME_MAX}
             disabled={saving}
-            aria-describedby="i18n-language-name-hint"
+            aria-describedby="i18n-language-name-hint i18n-language-name-note"
             data-id="i18n-language-name-input"
             data-autofocus
             onChange={(event) => window.patchForm({ name: event.target.value })}
@@ -151,6 +153,13 @@ function NameForm({
           <div id="i18n-language-name-hint" className="form-text">
             {hint}
           </div>
+          <p
+            id="i18n-language-name-note"
+            className="form-text mb-0"
+            data-id="i18n-language-name-note"
+          >
+            {note}
+          </p>
         </form>
         <div data-id="i18n-language-name-error">
           <HilosActionError action={action} detailsTitle={copy.refusalTitle} />

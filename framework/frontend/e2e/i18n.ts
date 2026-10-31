@@ -131,14 +131,17 @@ export async function expectI18nLanguageCounts(
   expect: Expect,
   page: Page,
   counts: {
-    names: number
+    names?: number
     locales: number
     enabled: number
     countryless: string
   },
 ): Promise<void> {
+  if (counts.names !== undefined)
+    await expect(page.getByTestId('language-overview-name-count')).toHaveText(
+      String(counts.names),
+    )
   for (const [field, value] of [
-    ['name-count', counts.names],
     ['locale-count', counts.locales],
     ['enabled-locale-count', counts.enabled],
     ['countryless-state', counts.countryless],

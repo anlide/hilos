@@ -108,10 +108,20 @@ describe('React language name window', () => {
       expect(el('i18n-language-name-window').textContent).toContain(
         'English (en)',
       )
+      const describedBy = input.getAttribute('aria-describedby')!.split(/\s+/)
+      expect(describedBy).toEqual([
+        'i18n-language-name-hint',
+        'i18n-language-name-note',
+      ])
       expect(
-        document.getElementById(input.getAttribute('aria-describedby')!)
-          ?.textContent,
+        document.getElementById('i18n-language-name-hint')?.textContent,
       ).toContain(locale ? 'own correction' : 'own value')
+      expect(el('i18n-language-name-note').id).toBe('i18n-language-name-note')
+      expect(el('i18n-language-name-note').textContent).toBe(
+        locale === null
+          ? "The base name is shared across the language's locales until a specific locale sets its own correction."
+          : 'An optional correction handles small differences between variants of the same language.',
+      )
       expect(el<HTMLButtonElement>('i18n-language-name-submit').disabled).toBe(
         name !== null,
       )

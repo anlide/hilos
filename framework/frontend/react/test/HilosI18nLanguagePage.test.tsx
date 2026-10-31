@@ -52,6 +52,12 @@ describe('React language card', () => {
     expect(el('language-head-direction').textContent).toBe('Left to right')
     expect(el('language-card-code').textContent).toBe('uk')
     expect(el('language-card-direction').textContent).toBe('Left to right')
+    expect(el('language-card-editable').textContent).toContain(
+      'Language switched off — edit freely',
+    )
+    expect(el('language-card-enabled').textContent).toBe(
+      'Language switched off',
+    )
     expect(
       el('hilos-page-tab-hilos_i18n_language_names').getAttribute('href'),
     ).toBe('/hilos/i18n/languages/uk/names')
@@ -88,7 +94,9 @@ describe('React language card', () => {
       'Custom language',
     )
     expect(el('language-card-frozen')).not.toBeNull()
+    expect(el('language-card-editable')).toBeNull()
     expect(el('language-card-edit')).toBeNull()
+    expect(el('language-card-enabled').textContent).toBe('Language switched on')
     act(() => h.card({ ...languageCard, nativeName: '' }))
     expectLanguagePageHead(HilosPages.I18N_LANGUAGE, '')
     act(() => h.card([]))
@@ -98,6 +106,90 @@ describe('React language card', () => {
     )
     expect(document.querySelector('[aria-label="Loading language"]')).toBeNull()
   })
+  it('renders live summary values, direction semantics, and routed tile links', () => {
+    const h = setup()
+    act(() =>
+      h.card({
+        ...languageCard,
+        summary: {
+          ...languageCard.summary,
+          nameCount: 0,
+          localeCount: 0,
+          enabledLocaleCount: 0,
+          countrylessLocale: 'missing',
+        },
+      }),
+    )
+    const mainSection = el('language-card-main')
+    expect(el('language-overview-name-count').textContent).toBe('0')
+    expect(el('language-overview-locale-count').textContent).toBe('0')
+    expect(el('language-overview-enabled-locale-count').textContent).toBe('0')
+    expect(el('language-overview-locales').textContent).toContain(
+      'None created.',
+    )
+    expect(el('language-overview-countryless-state').textContent).toBe(
+      'Not created',
+    )
+    expect(el('language-overview-name-count').getAttribute('href')).toBe(
+      '/hilos/i18n/languages/uk/names',
+    )
+    expect(el('language-overview-locale-count').getAttribute('href')).toBe(
+      '/hilos/i18n/languages/uk/locales',
+    )
+    expect(el('language-overview-countryless-state').getAttribute('href')).toBe(
+      '/hilos/i18n/languages/uk/locales',
+    )
+
+    const rtl = document.getElementById('language-card-rtl') as HTMLInputElement
+    expect(rtl.checked).toBe(false)
+    expect(rtl.disabled).toBe(true)
+    expect(rtl.getAttribute('aria-label')).toBe('Right to left')
+    expect(rtl.getAttribute('aria-describedby')).toBe('language-card-rtl-hint')
+    expect(document.getElementById('language-card-rtl-hint')?.textContent).toBe(
+      'Right-to-left writing reverses the product layout.',
+    )
+
+    act(() =>
+      h.card({
+        ...languageCard,
+        rtl: true,
+        summary: {
+          ...languageCard.summary,
+          nameCount: 5,
+          localeCount: 4,
+          enabledLocaleCount: 2,
+          countrylessLocale: 'on',
+        },
+      }),
+    )
+    expect(el('language-card-main')).toBe(mainSection)
+    expect(el('language-overview-name-count').textContent).toBe('5')
+    expect(el('language-overview-locale-count').textContent).toBe('4')
+    expect(el('language-overview-enabled-locale-count').textContent).toBe('2')
+    expect(el('language-overview-countryless-state').textContent).toBe(
+      'Switched on',
+    )
+    expect(rtl.checked).toBe(true)
+  })
+  it.each([
+    ['missing', 'Not created'],
+    ['off', 'Switched off'],
+    ['on', 'Switched on'],
+  ] as const)(
+    'maps countryless locale state %s to %s',
+    (countrylessLocale, expected) => {
+      const h = setup()
+      act(() =>
+        h.card({
+          ...languageCard,
+          summary: { ...languageCard.summary, countrylessLocale },
+        }),
+      )
+      expect(el('language-overview-countryless-state').textContent).toBe(
+        expected,
+      )
+    },
+  )
   it.each(['default', 'locales', 'names'] as const)(
     'shows the live %s deletion hint with its disabled control',
     (deleteReason) => {
@@ -115,6 +207,17 @@ describe('React language card', () => {
       expect(el('language-card-delete-reason').textContent).toBe(
         HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
       )
+      expect(el('language-card-delete').getAttribute('aria-label')).toBe(
+        HILOS_I18N_LANGUAGE_DELETE_COPY.open,
+      )
+      expect(el('language-card-delete').getAttribute('title')).toBe(
+        HILOS_I18N_LANGUAGE_DELETE_COPY.open,
+      )
+      expect(
+        el('language-card-delete')
+          .querySelector('i')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true')
     },
   )
   it('sends the card edit action and keeps a deleted draft until the window closes', () => {
@@ -192,6 +295,12 @@ describe('React language card', () => {
     expect(el('i18n-language-edit-window')).toBeNull()
     expectLanguagePageHead(HilosPages.I18N_LANGUAGE, 'Français')
     expect(el('language-card-code').textContent).toBe('fr')
+    expect(el('language-overview-name-count').getAttribute('href')).toBe(
+      '/hilos/i18n/languages/fr/names',
+    )
+    expect(el('language-overview-locale-count').getAttribute('href')).toBe(
+      '/hilos/i18n/languages/fr/locales',
+    )
     click('language-card-delete')
     click('i18n-language-delete-confirm')
     act(() => {
@@ -218,6 +327,9 @@ describe('React language card', () => {
     h.navigation.resolvePath = () => undefined
     act(() => h.card({ ...languageCard, enabled: true }))
     expect(el('hilos-page-tabs')).toBeNull()
+    expect(el('language-overview-name-count').tagName).toBe('SPAN')
+    expect(el('language-overview-locale-count').tagName).toBe('SPAN')
+    expect(el('language-overview-countryless-state').tagName).toBe('SPAN')
     click('language-card-view')
     expect(
       el<HTMLInputElement>('i18n-language-edit-native-name').disabled,
@@ -225,6 +337,19 @@ describe('React language card', () => {
     expect(el('i18n-language-edit-submit')).toBeNull()
     click('i18n-language-edit-close')
     expect(el('modal')).toBeNull()
+  })
+  it('keeps the count readable when the page identity has no names tab', () => {
+    const h = setup()
+    act(() => h.card())
+    act(() =>
+      h.scope.data.set('pageTabs', [
+        { page: HilosPages.I18N_LANGUAGE, label: 'Overview' },
+        { page: HilosPages.I18N_LANGUAGE_LOCALES, label: 'Locales' },
+      ]),
+    )
+    expect(el('language-overview-name-count').tagName).toBe('SPAN')
+    expect(el('language-overview-name-count').textContent).toBe('3')
+    expect(el('language-overview-locale-count').tagName).toBe('A')
   })
   it('disposes an edit session when the project context changes', () => {
     const h = setup()

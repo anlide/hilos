@@ -6,6 +6,7 @@ import {
   dismissToasts,
   expectDocumentUnchanged,
   expectI18nActionReply,
+  expectI18nLanguageCounts,
   expectI18nLocaleFormats,
   expectLanguagePageHead,
   expectPageReady,
@@ -283,7 +284,7 @@ test('locale.life', async ({ page, context, i18n }) => {
     await expect(page.getByTestId(WINDOW)).toHaveCount(0)
   })
 
-  await test.step('Delete the Portuguese countryless locale from one of two subscribed tabs', async () => {
+  await test.step('Add, switch and delete the Portuguese countryless locale while its Overview and two locale tabs stay live', async () => {
     await gotoPage(expect, page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
     await gotoPage(
       expect,
@@ -299,8 +300,26 @@ test('locale.life', async ({ page, context, i18n }) => {
         currentPage: 'hilos_i18n_language_locales',
         appName: 'Hilos Tasks',
       })
-    const live = await watchI18nLivePages(expect, tabs)
-    await Promise.all(tabs.map(markDocument))
+    const languageCard = await context.newPage()
+    i18n.defer(() => languageCard.close())
+    await gotoPage(expect, languageCard, '/hilos/i18n/languages/pt', PAGE_READY)
+    await expectLanguagePageHead(expect, languageCard, {
+      code: 'pt',
+      nativeName: 'Português',
+      currentPage: 'hilos_i18n_language',
+      appName: 'Hilos Tasks',
+    })
+    await expect(languageCard.getByTestId('language-card-enabled')).toHaveText(
+      'Language switched on',
+    )
+    const livePages = [...tabs, languageCard]
+    const live = await watchI18nLivePages(expect, livePages)
+    await Promise.all(livePages.map(markDocument))
+    await expectI18nLanguageCounts(expect, languageCard, {
+      locales: 0,
+      enabled: 0,
+      countryless: 'Not created',
+    })
 
     const row = i18nLocaleRow(page, 'pt')
     await clickSubmit(expect, row.getByTestId('i18n-locales-add-pt'))
@@ -315,6 +334,12 @@ test('locale.life', async ({ page, context, i18n }) => {
       message: 'Locale pt added.',
     })
     await expect(row.getByTestId('i18n-locales-enabled-pt')).not.toBeChecked()
+    await expectI18nLanguageCounts(expect, languageCard, {
+      locales: 1,
+      enabled: 0,
+      countryless: 'Switched off',
+    })
+    await live.unchanged()
     await dismissToasts(page)
 
     await clickSubmit(expect, row.getByTestId('i18n-locales-edit-pt'))
@@ -336,6 +361,12 @@ test('locale.life', async ({ page, context, i18n }) => {
       await expect(shownByTestId(tab, 'i18n-locales-view-pt')).toBeVisible()
       await expect(tab.getByTestId('i18n-locales-edit-pt')).toHaveCount(0)
     }
+    await expectI18nLanguageCounts(expect, languageCard, {
+      locales: 1,
+      enabled: 1,
+      countryless: 'Switched on',
+    })
+    await live.unchanged()
 
     await dismissToasts(page)
     await clickSubmit(
@@ -382,18 +413,12 @@ test('locale.life', async ({ page, context, i18n }) => {
       await expect(tab.getByTestId('i18n-locales-view-pt')).toHaveCount(0)
     }
 
-    const languageCard = await context.newPage()
-    i18n.defer(() => languageCard.close())
-    await gotoPage(expect, languageCard, '/hilos/i18n/languages/pt', PAGE_READY)
-    await expectLanguagePageHead(expect, languageCard, {
-      code: 'pt',
-      nativeName: 'Português',
-      currentPage: 'hilos_i18n_language',
-      appName: 'Hilos Tasks',
+    await expectI18nLanguageCounts(expect, languageCard, {
+      locales: 1,
+      enabled: 0,
+      countryless: 'Switched off',
     })
-    await expect(languageCard.getByTestId('language-card-enabled')).toHaveText(
-      'Enabled',
-    )
+    await live.unchanged()
 
     const trash = shownByTestId(page, 'i18n-locales-delete-pt')
     await trash.scrollIntoViewIfNeeded()
@@ -443,8 +468,12 @@ test('locale.life', async ({ page, context, i18n }) => {
       })
       await expect(tab).toHaveURL(/\/hilos\/i18n\/languages\/pt\/locales$/)
     }
-    await expectDocumentUnchanged(expect, page)
-    await expectDocumentUnchanged(expect, other)
+    await expectI18nLanguageCounts(expect, languageCard, {
+      locales: 0,
+      enabled: 0,
+      countryless: 'Not created',
+    })
+    for (const tab of livePages) await expectDocumentUnchanged(expect, tab)
     await live.unchanged()
   })
 
@@ -483,7 +512,7 @@ test('locale.life', async ({ page, context, i18n }) => {
     ).not.toBeChecked()
     await gotoPage(expect, page, '/hilos/i18n/languages/qy', PAGE_READY)
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
-      'Disabled',
+      'Language switched off',
     )
   })
 

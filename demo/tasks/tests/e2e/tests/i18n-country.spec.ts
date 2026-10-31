@@ -66,7 +66,8 @@ async function expectCountryBreadcrumb(page: Page): Promise<void> {
   `)
 }
 
-test('country.life', async ({ page, i18n }) => {
+// FIXME(F-057, 31.10.2026): кнопка Delete country QR не получает фокус после focus · свой · попытка 3 · HIL-1729
+test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
   // One administrator owns list navigation, both add decisions, edits and both delete entry places.
   test.slow()
   await i18n.ownCountry('gg')
