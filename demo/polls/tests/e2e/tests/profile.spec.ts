@@ -67,7 +67,7 @@ test('the header avatar leads to the profile root and its sections', async ({
   const loadsAfterSignIn = fullLoads
 
   await clickSubmit(expect, page.getByTestId('nav-profile-name'))
-  await expect(page.getByTestId('profile-identity-name')).toHaveText(name)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(name)
   await expect(page.getByTestId('profile-edit')).toBeVisible()
@@ -136,9 +136,7 @@ test('publishes a profile name only after model approval and preserves it after 
     })
     await expect(page.getByTestId('modal')).toBeVisible()
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
-    await expect(page.getByTestId('profile-identity-name')).toHaveText(
-      user.name,
-    )
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
       phase: 'done',
@@ -156,7 +154,7 @@ test('publishes a profile name only after model approval and preserves it after 
         entities: { currentUser: { id: user.userId, name: newName } },
       })
     await expect(page.getByTestId('profile-name')).toHaveText(newName)
-    await expect(page.getByTestId('profile-identity-name')).toHaveText(newName)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(newName)
 
     const attempt = wire.snapshots.filter(
       ({ state }) => state.change?.name === newName,
@@ -191,7 +189,7 @@ test('publishes a profile name only after model approval and preserves it after 
       refusedName,
     )
     await expect(page.getByTestId('profile-name')).toHaveText(newName)
-    await expect(page.getByTestId('profile-identity-name')).toHaveText(newName)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(newName)
     expect(sends()).toBe(2)
   } finally {
     await test.info().attach('profile-name-wire', {

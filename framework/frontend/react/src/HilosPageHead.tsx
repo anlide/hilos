@@ -54,8 +54,6 @@ export interface HilosPageHeadProps {
   resolvePath: HilosPathResolver
   /** The id the h1 carries, from the caller; a local one when omitted. */
   headingId?: string
-  /** Replaces the h1's data-id; omitted or undefined keeps hilos-page-head-title. */
-  titleDataId?: string
   /** A section head or an entity block: the defaults and the skeleton's tile. */
   kind?: 'section' | 'entity'
   /** The breadcrumb navigation's accessible name. */
@@ -88,7 +86,6 @@ export function HilosPageHead({
   params,
   resolvePath,
   headingId,
-  titleDataId = 'hilos-page-head-title',
   kind = 'section',
   breadcrumbLabel = 'Breadcrumb',
   tabsLabel = 'Page sections',
@@ -201,7 +198,7 @@ export function HilosPageHead({
               <h1
                 id={headingId ?? localHeadingId}
                 className="h4 mb-0 text-break"
-                data-id={titleDataId}
+                data-id="hilos-page-head-title"
               >
                 {owner.label}
               </h1>

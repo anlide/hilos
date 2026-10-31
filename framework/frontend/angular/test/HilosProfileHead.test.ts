@@ -232,6 +232,11 @@ function byId(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-id="${id}"]`)
 }
 
+/** The page's one h1, which carries the profile name. */
+function pageHeading(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('h1')
+}
+
 /** The named navigation's links, in catalog order. */
 function links(): HTMLAnchorElement[] {
   return [
@@ -264,10 +269,8 @@ describe('HilosProfileHead', () => {
       expect(byId('profile-identity')).not.toBeNull()
       expect(byId('hilos-page-head')).not.toBeNull()
       expect(root.querySelectorAll('h1')).toHaveLength(1)
-      expect(root.querySelector('h1')).toBe(byId('profile-identity-name'))
-      expect(byId('profile-identity-name')?.textContent?.trim()).toBe('Ann Lee')
-      expect(byId('profile-identity-name')?.id).toBeTruthy()
-      expect(byId('hilos-page-head-title')).toBeNull()
+      expect(pageHeading()?.textContent?.trim()).toBe('Ann Lee')
+      expect(pageHeading()?.id).toBeTruthy()
       expect(byId('hilos-breadcrumb')).toBeNull()
       expect(root.textContent).not.toContain('Profile')
       expect(byId('profile-identity-email')?.textContent?.trim()).toBe(
@@ -333,7 +336,7 @@ describe('HilosProfileHead', () => {
     update()
     expect(f.pushState).toHaveBeenCalledWith('/profile')
     expect(f.router.currentRoute.get().page).toBe(HilosPages.PROFILE)
-    expect(byId('profile-identity-name')).toBeNull()
+    expect(pageHeading()).toBeNull()
     f.answer()
     expect(
       byId(`hilos-page-tab-${HilosPages.PROFILE}`)?.getAttribute(
@@ -372,7 +375,7 @@ describe('HilosProfileHead', () => {
     ])
     f.mountHead()
     expect(byId('hilos-page-tabs')).toBeNull()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe('Ann Lee')
+    expect(pageHeading()?.textContent?.trim()).toBe('Ann Lee')
     expect(document.querySelector('a')).toBeNull()
 
     f.answer([TABS[0]!, TABS[1]!, TABS[5]!])
@@ -442,7 +445,7 @@ describe('HilosProfileHead', () => {
       warning()?.closest('[data-id="hilos-page-head-block"]'),
     ).not.toBeNull()
     expect(
-      byId('profile-identity-name')!.compareDocumentPosition(warning()!) &
+      pageHeading()!.compareDocumentPosition(warning()!) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
 
@@ -459,14 +462,14 @@ describe('HilosProfileHead', () => {
     const f = fixture()
     f.answer()
     f.mountHead()
-    const heading = byId('profile-identity-name')!
+    const heading = pageHeading()!
     const headingId = heading.id
     expect(byId('hilos-avatar')?.getAttribute('aria-hidden')).toBe('true')
     expect(byId('hilos-avatar-photo')?.getAttribute('alt')).toBe('')
     expect(byId('hilos-avatar-photo')?.getAttribute('src')).toBe('/ann.jpg')
 
     f.session('Bea Smith', '/bea.jpg')
-    expect(byId('profile-identity-name')).toBe(heading)
+    expect(pageHeading()).toBe(heading)
     expect(heading.id).toBe(headingId)
     expect(heading.textContent?.trim()).toBe('Bea Smith')
     expect(byId('hilos-avatar-photo')?.getAttribute('src')).toBe('/bea.jpg')
@@ -530,7 +533,7 @@ describe('HilosProfileHead', () => {
     expect(root.querySelector('h1, nav, button, img')).toBeNull()
     expect(root.textContent?.trim()).toBe('')
     f.answer()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe('Ann Lee')
+    expect(pageHeading()?.textContent?.trim()).toBe('Ann Lee')
 
     f.router.navigate('/profile/example')
     update()
@@ -538,9 +541,7 @@ describe('HilosProfileHead', () => {
     expect(root.textContent?.trim()).toBe('')
     f.session('Next person', null)
     f.answer()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Next person',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Next person')
     expect(
       byId(`hilos-page-tab-${PROJECT_PAGE}`)?.getAttribute('aria-current'),
     ).toBe('page')
@@ -573,15 +574,11 @@ describe('HilosProfileHead', () => {
     const start = vi.spyOn(store, 'start')
     const dispose = vi.spyOn(store, 'dispose')
     f.mountHead(store)
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Project name',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Project name')
     expect(start).not.toHaveBeenCalled()
     name.set('Project renamed')
     update()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Project renamed',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Project renamed')
     await openPhoto()
     unmount()
     name.set('After destroy')
@@ -611,13 +608,9 @@ describe('HilosProfileHead', () => {
       'Profile',
     )
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Next person',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Next person')
     first.session('Old account', '/old.jpg')
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Next person',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Next person')
     expect(byId('hilos-avatar-photo')).toBeNull()
     await openPhoto()
     expect(byId('profile-photo-choose')).not.toBeNull()
@@ -651,15 +644,11 @@ describe('HilosProfileHead', () => {
     expect(disposeFirst).not.toHaveBeenCalled()
     expect(start).not.toHaveBeenCalled()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Next binding',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Next binding')
     name.set('Old binding')
     nextName.set('Next renamed')
     update()
-    expect(byId('profile-identity-name')?.textContent?.trim()).toBe(
-      'Next renamed',
-    )
+    expect(pageHeading()?.textContent?.trim()).toBe('Next renamed')
     await openPhoto()
     expect(byId('profile-photo-remove')).not.toBeNull()
     unmount()

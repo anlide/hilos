@@ -99,7 +99,7 @@ let pageHeadHeadingSeq = 0
                 <h1
                   [id]="titleId()"
                   class="h4 mb-0 text-break"
-                  [attr.data-id]="titleDataId() ?? 'hilos-page-head-title'"
+                  data-id="hilos-page-head-title"
                 >
                   {{ headOwner.label }}
                 </h1>
@@ -190,8 +190,6 @@ export class HilosPageHead {
   readonly resolvePath = input.required<HilosPathResolver>()
   /** The id the h1 carries, from the caller; a local one when omitted. */
   readonly headingId = input<string>()
-  /** Replaces the h1's data-id; omitted or undefined keeps hilos-page-head-title. */
-  readonly titleDataId = input<string>()
   /** A section head or an entity block: the defaults and the skeleton's tile. */
   readonly kind = input<'section' | 'entity'>('section')
   /** The breadcrumb navigation's accessible name. */

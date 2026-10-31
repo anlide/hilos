@@ -357,9 +357,7 @@ describe('HilosProfilePage', () => {
   it('shows the name without Change and no Email row when the project hands neither', () => {
     const wrapper = mountPage(nameOnly())
 
-    expect(wrapper.find('[data-id="profile-identity-name"]').text()).toBe(
-      'Ann Lee',
-    )
+    expect(wrapper.get('h1').text()).toBe('Ann Lee')
     expect(wrapper.find('[data-id="profile-name"]').text()).toBe('Ann Lee')
     expect(wrapper.find('[data-id="profile-edit"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="profile-email"]').exists()).toBe(false)

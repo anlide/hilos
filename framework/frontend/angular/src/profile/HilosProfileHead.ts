@@ -39,7 +39,6 @@ import { HilosProfilePhoto } from './HilosProfilePhoto.js'
         [resolvePath]="router.resolvePath"
         kind="entity"
         tabsLabel="Profile pages"
-        titleDataId="profile-identity-name"
         [visual]="visual"
         [description]="description"
       />

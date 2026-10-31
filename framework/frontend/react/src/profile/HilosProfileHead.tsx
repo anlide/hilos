@@ -76,7 +76,6 @@ export function HilosProfileHead({ context, store }: HilosProfileHeadProps) {
         resolvePath={router.resolvePath}
         kind="entity"
         tabsLabel="Profile pages"
-        titleDataId="profile-identity-name"
         visual={
           photoEnabled ? (
             <button

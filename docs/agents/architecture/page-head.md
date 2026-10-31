@@ -743,15 +743,11 @@ names no concrete page. Its props are `identity`, `page` (the rendered page
 key: the tab with that key is current, a child of a tab included), `params`,
 `resolvePath`, `headingId`, `kind` (`section` by default, or `entity`),
 `breadcrumbLabel` (`Breadcrumb` by default), `tabsLabel` (`Page sections` by
-default), `titleDataId?: string` and `action`. An omitted or `undefined`
-`titleDataId` keeps `data-id="hilos-page-head-title"` on the existing `h1`;
-a string replaces that hook on the same heading, including an empty string.
-It changes no DOM id, heading text or accessible-name relationship, and adds
-no wrapper or second heading. The skeleton has no `h1` or title hook.
-The slots `visual`, `meta`, `badges` and `description` fill the block only; the
-title is not a slot. The optional `skeleton-visual` slot replaces only the
-picture in the existing `aria-hidden` skeleton; without it, the picture remains
-round for a section and square for an entity, and the two bars remain. The one `h1` shows
+default) and `action`. The slots `visual`, `meta`, `badges` and `description`
+fill the block only; the title is not a slot. The optional `skeleton-visual`
+slot replaces only the picture in the existing `aria-hidden` skeleton; without
+it, the picture remains round for a section and square for an entity, and the
+two bars remain. The one `h1` shows
 `pageHeadOwner.label` and carries `headingId`, or a local id when none is
 given, for a section head and an entity block alike. A section defaults
 `visual` to its catalog icon in a circle and `description` to its lead; an
@@ -765,14 +761,12 @@ buttons.
 React's `HilosPageHead`, exported from `@hilos/react/base` and the root, draws
 the same head from the same identity and takes the same props — `identity`,
 `page`, `params`, `resolvePath`, `headingId`, `kind`, `breadcrumbLabel`,
-`tabsLabel`, `titleDataId?: string` and `action` — with the same defaults.
-`titleDataId` replaces only the existing `h1`'s `data-id`; omitted or
-`undefined` keeps `hilos-page-head-title`, with no title hook on the skeleton.
-`identity` is optional, as the answer may not have arrived. The block's content
-comes as `ReactNode` props `visual`, `meta`, `badges` and `description` in place
-of slots: omitted (`undefined`) keeps a section's icon and lead, and `null`
-turns that default off; an entity has no default to keep. Without a valid
-`pageHeadOwner` the head draws only its `aria-hidden` skeleton. Its optional
+`tabsLabel` and `action` — with the same defaults; `identity` is optional, as
+the answer may not have arrived. The block's content comes as `ReactNode`
+props `visual`, `meta`, `badges` and `description` in place of slots: omitted
+(`undefined`) keeps a section's icon and lead, and `null` turns that default
+off; an entity has no default to keep. Without a valid `pageHeadOwner` the
+head draws only its `aria-hidden` skeleton. Its optional
 `skeletonVisual?: ReactNode` prop replaces only the picture in that skeleton;
 omitting it keeps the kind's default picture and the two bars. The row is
 centered by `useLayoutEffect`; a `ResizeObserver` on the row's list attaches
@@ -784,12 +778,9 @@ Angular's `HilosPageHead` is the standalone `hilos-page-head` component with
 `OnPush` change detection, exported from `@hilos/angular/base` and the root. It
 draws the same head from the same identity and takes the same inputs —
 `identity`, `page`, `params`, `resolvePath`, `headingId`, `kind`,
-`breadcrumbLabel`, `tabsLabel`, `titleDataId` and `action` — with the same
-defaults. The optional string input `titleDataId` binds `data-id` on the
-existing template `h1`; omitted or `undefined` keeps `hilos-page-head-title`,
-with no title hook on the skeleton. `identity` is optional, as the answer may
-not have arrived. The block's content comes as inputs `visual`, `meta`,
-`badges` and `description`, each a
+`breadcrumbLabel`, `tabsLabel` and `action` — with the same defaults; `identity`
+is optional, as the answer may not have arrived. The block's content comes as
+inputs `visual`, `meta`, `badges` and `description`, each a
 `TemplateRef<unknown> | undefined` drawn through `NgTemplateOutlet`: omitted
 keeps a section's icon and lead, a template given in its place replaces the
 default, and an entity has no default to keep. Without a valid `pageHeadOwner`
@@ -849,12 +840,10 @@ the admin view mode are provided as `providers` of the shell around either
 head, and `headKind` before the answer picks the head's skeleton instead of the
 legacy one, as in Vue.
 
-The head's default `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
+The head's `data-id`s are `hilos-page-head`, `hilos-page-head-block`,
 `hilos-page-head-title`, `hilos-page-head-action`, `hilos-page-head-skeleton`,
 `hilos-page-tabs` and `hilos-page-tab-<page>`, beside the breadcrumb's
-`hilos-breadcrumb` and `hilos-breadcrumb-<page>`. In all three kits, opting in
-with `titleDataId` replaces only `hilos-page-head-title` on the existing `h1`;
-the heading does not carry both hooks. The country block adds
+`hilos-breadcrumb` and `hilos-breadcrumb-<page>`. The country block adds
 `country-head-tile`, `country-head-code`, `country-head-own` and
 `country-head-description`. The React and Angular heads and countries draw the
 same `data-id`s. Each kit reads them in the same country specs of its demo —
@@ -944,8 +933,7 @@ each StrictMode effect setup. The component presents the existing
 the existing `HilosProfilePhoto` flow when enabled, and the description shows
 the passkey-only warning or verified email. It uses the server's current page
 identity and the exact current page key for the `Profile pages` row, then lets
-the router omit pages without a client route. The existing heading hook is
-`titleDataId="profile-identity-name"`.
+the router omit pages without a client route.
 
 `HilosProfileNotificationsPage` also receives the actions in its required page
 context for the shared head. The standalone core

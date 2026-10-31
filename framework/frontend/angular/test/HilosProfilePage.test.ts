@@ -366,7 +366,7 @@ async function dismissStandardName(
 it('shows the name without Change and the sections in catalog order when the project hands no rename', () => {
   const { node } = setup(nameOnly())
 
-  expect(node('profile-identity-name')?.textContent?.trim()).toBe('Ann Lee')
+  expect(document.querySelector('h1')?.textContent?.trim()).toBe('Ann Lee')
   expect(node('profile-edit')).toBeNull()
   expect(node('profile-email')).toBeNull()
   expect(document.querySelectorAll('h1')).toHaveLength(1)

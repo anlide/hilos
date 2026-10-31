@@ -52,7 +52,6 @@ onScopeDispose(() => photoFlow.dispose())
       :resolve-path="router.resolvePath"
       kind="entity"
       tabs-label="Profile pages"
-      title-data-id="profile-identity-name"
     >
       <template #visual>
         <button

@@ -312,7 +312,7 @@ function nameOnly(): HilosProfileBinding {
 it('shows the name without Change and no Email row when the project hands neither', () => {
   const { node } = setup(nameOnly())
 
-  expect(node('profile-identity-name')?.textContent).toBe('Ann Lee')
+  expect(document.querySelector('h1')?.textContent).toBe('Ann Lee')
   expect(node('profile-edit')).toBeNull()
   expect(node('profile-email')).toBeNull()
   expect(document.querySelectorAll('h1')).toHaveLength(1)

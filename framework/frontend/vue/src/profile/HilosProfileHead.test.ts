@@ -233,13 +233,9 @@ describe('HilosProfileHead', () => {
       expect(head.findComponent(HilosPageHead).exists()).toBe(true)
       expect(head.attributes('data-id')).toBe('profile-identity')
       expect(head.findAll('h1')).toHaveLength(1)
-      const heading = head.get('[data-id="profile-identity-name"]')
-      expect(heading.element.tagName).toBe('H1')
+      const heading = head.get('h1')
       expect(heading.text()).toBe('Ann Lee')
       expect(heading.attributes('id')).toBeTruthy()
-      expect(head.find('[data-id="hilos-page-head-title"]').exists()).toBe(
-        false,
-      )
       expect(head.find('[data-id="hilos-breadcrumb"]').exists()).toBe(false)
       expect(head.text()).not.toContain('Profile')
       expect(head.get('[data-id="profile-identity-email"]').text()).toBe(
@@ -411,9 +407,7 @@ describe('HilosProfileHead', () => {
       warning().element.closest('[data-id="hilos-page-head-block"]'),
     ).not.toBeNull()
     expect(
-      head
-        .get('[data-id="profile-identity-name"]')
-        .element.compareDocumentPosition(warning().element) &
+      head.get('h1').element.compareDocumentPosition(warning().element) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
 
@@ -443,7 +437,7 @@ describe('HilosProfileHead', () => {
 
     f.session('Bea Smith', '/bea.jpg')
     await nextTick()
-    expect(head.get('[data-id="profile-identity-name"]').element).toBe(heading)
+    expect(head.get('h1').element).toBe(heading)
     expect(heading.id).toBe(headingId)
     expect(heading.textContent?.trim()).toBe('Bea Smith')
     expect(head.get('img').attributes('src')).toBe('/bea.jpg')
@@ -798,9 +792,7 @@ describe('HilosProfileHead', () => {
         expect(head.props('context')).toBe(f.context)
         expect(head.props('context').scopes).toBe(f.scopes)
         expect(head.findAll('h1')).toHaveLength(1)
-        expect(head.get('[data-id="profile-identity-name"]').text()).toBe(
-          expected,
-        )
+        expect(head.get('h1').text()).toBe(expected)
         const identity = pageIdentity(f.scopes).get()
         expect(identity?.pageHeadOwner?.label).toBe(expected)
         expect(

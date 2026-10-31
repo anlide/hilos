@@ -623,16 +623,14 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   The component mounts the existing `HilosPageHead` as an entity with the
   `Profile pages` row: the live name is the single `h1`, an `lg` avatar opens
   the existing `HilosProfilePhoto` flow when photo changes are enabled, and the
-  description shows the passkey-only warning or verified address. The existing
-  `h1` uses `titleDataId="profile-identity-name"`. Each mount owns its photo
-  flow; React creates a fresh flow on every StrictMode effect setup so cleanup
-  can dispose the prior one safely. The Notifications page takes the broader
+  description shows the passkey-only warning or verified address. Each mount
+  owns its photo flow; React creates a fresh flow on every StrictMode effect
+  setup so cleanup can dispose the prior one safely. The Notifications page takes the broader
   page context, including actions needed by the shared head, while the core
   `HilosProfileNotificationsContext` and
   `startHilosNotificationPreferences()` remain connection-and-scopes APIs.
-  Its stable hooks are `profile-identity`, `profile-identity-name`,
-  `profile-identity-email`, `profile-photo-open`, and
-  `profile-sign-in-passkey-only-line`. Project wrappers pass their existing
+  Its stable hooks are `profile-identity`, `profile-identity-email`,
+  `profile-photo-open`, and `profile-sign-in-passkey-only-line`. Project wrappers pass their existing
   actions. The project extension is covered by the test-only
   `project_profile_example` at `/profile/example`, not by a demo product route;
 - **`HilosHiddenMark`** and **`HilosHideable`** — the one mark of a value the

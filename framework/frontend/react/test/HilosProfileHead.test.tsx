@@ -234,9 +234,7 @@ describe('HilosProfileHead under StrictMode', () => {
       expect(byId('hilos-page-head')).not.toBeNull()
       expect(head.container.querySelectorAll('h1')).toHaveLength(1)
       const heading = screen.getByRole('heading', { level: 1, name: 'Ann Lee' })
-      expect(heading.dataset.id).toBe('profile-identity-name')
       expect(heading.id).toBeTruthy()
-      expect(byId('hilos-page-head-title')).toBeNull()
       expect(byId('hilos-breadcrumb')).toBeNull()
       expect(head.container.textContent).not.toContain('Profile')
       expect(byId('profile-identity-email')?.textContent).toBe(
@@ -443,8 +441,9 @@ describe('HilosProfileHead under StrictMode', () => {
       warning()?.closest('[data-id="hilos-page-head-block"]'),
     ).not.toBeNull()
     expect(
-      byId('profile-identity-name')!.compareDocumentPosition(warning()!) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      screen
+        .getByRole('heading', { level: 1 })
+        .compareDocumentPosition(warning()!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
 
     f.waysIn([PASSKEY, { ...PASSWORD, verified: false }])
@@ -469,7 +468,7 @@ describe('HilosProfileHead under StrictMode', () => {
     )
 
     f.session('Bea Smith', '/bea.jpg')
-    expect(byId('profile-identity-name')).toBe(heading)
+    expect(screen.getByRole('heading', { level: 1 })).toBe(heading)
     expect(heading.id).toBe(headingId)
     expect(heading.textContent).toBe('Bea Smith')
     expect(head.container.querySelector('img')?.getAttribute('src')).toBe(

@@ -58,7 +58,7 @@ test('the navbar links the current user to the profile page', async ({
   await expect(
     page.getByTestId('profile-identity').getByTestId('hilos-avatar'),
   ).toHaveText(name.charAt(0).toUpperCase())
-  await expect(page.getByTestId('profile-identity-name')).toHaveText(name)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
   const sections = [
     'sign-in',
     'notifications',

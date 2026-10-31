@@ -53,7 +53,7 @@ test('the header avatar leads to the profile root and its sections', async ({
   const loadsAfterSignIn = fullLoads
 
   await clickSubmit(expect, page.getByTestId('nav-profile-name'))
-  await expect(page.getByTestId('profile-identity-name')).toHaveText(name)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(name)
   await expect(page.getByTestId('profile-edit')).toBeVisible()
@@ -134,9 +134,7 @@ test('publishes a profile name only after the model approves it', async ({
         .filter({ hasText: 'Checking your name…' }),
     ).toHaveText('Checking your name…')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
-    await expect(page.getByTestId('profile-identity-name')).toHaveText(
-      user.name,
-    )
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
     await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
       user.name,
     )
@@ -158,7 +156,7 @@ test('publishes a profile name only after the model approves it', async ({
         entities: { currentUser: { id: user.userId, name: newName } },
       })
     await expect(page.getByTestId('profile-name')).toHaveText(newName)
-    await expect(page.getByTestId('profile-identity-name')).toHaveText(newName)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(newName)
     await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
       newName,
     )
