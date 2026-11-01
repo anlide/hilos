@@ -79,8 +79,14 @@ export interface BotsTable {
 }
 
 const BOTS_COLUMNS: HilosTableColumnOf<BotRow>[] = [
-  { key: 'name', label: 'Name', sortable: true, card: 'title' },
-  { key: 'description', label: 'Description' },
+  {
+    key: 'name',
+    label: 'Name',
+    sortable: true,
+    card: 'title',
+    heightContent: 'text',
+  },
+  { key: 'description', label: 'Description', heightContent: 'text' },
   { key: 'status', label: 'Status', sortable: true, card: 'badge' },
   { key: 'active', label: 'Active', sortable: true },
   {
@@ -94,6 +100,7 @@ const BOTS_COLUMNS: HilosTableColumnOf<BotRow>[] = [
 
 function botsFrame(view: BotsTableView): HilosTableFrame {
   return {
+    rowHeight: { mode: 'lines', count: 3 },
     search: { placeholder: 'Search bots…' },
     columns: BOTS_COLUMNS,
     mainAction: {

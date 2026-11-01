@@ -13,7 +13,9 @@ const HEIGHT_PRESETS = [
 ] as const
 const FRONTEND_ROOT = (
   globalThis as typeof globalThis & { process: { cwd: () => string } }
-).process.cwd()
+).process
+  .cwd()
+  .replace(/\/vue$/, '')
 const SASS_DELIVERIES = [
   `${FRONTEND_ROOT}/vue/src/hilos-styles.scss`,
   `${FRONTEND_ROOT}/react/src/hilos-styles.scss`,

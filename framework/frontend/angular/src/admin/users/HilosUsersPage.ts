@@ -36,8 +36,8 @@ import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
 
 import {
   HilosAdminPage,
-  HilosHideable,
   HilosTableCell,
+  HilosTableText,
   HilosViewportTable,
   HILOS_ROUTER,
 } from '@hilos/angular/base'
@@ -54,8 +54,8 @@ export interface UsersRowActionsContext {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosHideable,
     HilosTableCell,
+    HilosTableText,
     HilosViewportTable,
     NgTemplateOutlet,
   ],
@@ -63,21 +63,25 @@ export interface UsersRowActionsContext {
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="users().controller">
         <ng-template hilosTableCell="id" let-row>{{ row.id }}</ng-template>
-        <ng-template hilosTableCell="name" let-row
-          ><hilos-hideable [value]="row.name" />
-          @if (row.merged && mergedBadge !== null) {
-            <span
-              class="badge ms-1"
-              [class]="'text-bg-' + mergedBadge.tone"
-              data-id="hilos-users-merged"
-              ><i
-                class="bi me-1"
-                [class]="mergedBadge.icon"
-                aria-hidden="true"
-              ></i
-              >{{ mergedBadge.label }}</span
-            >
-          }
+        <ng-template hilosTableCell="name" let-row>
+          <div class="d-flex align-items-start gap-1">
+            <div class="flex-grow-1">
+              <hilos-table-text [value]="row.name" />
+            </div>
+            @if (row.merged && mergedBadge !== null) {
+              <span
+                class="badge flex-shrink-0"
+                [class]="'text-bg-' + mergedBadge.tone"
+                data-id="hilos-users-merged"
+                ><i
+                  class="bi me-1"
+                  [class]="mergedBadge.icon"
+                  aria-hidden="true"
+                ></i
+                >{{ mergedBadge.label }}</span
+              >
+            }
+          </div>
         </ng-template>
         <ng-template hilosTableCell="presence" let-row>
           @let badge = presenceBadge(row.presence);

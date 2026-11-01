@@ -6,6 +6,7 @@ import {
   draftCustomSetting,
   expectDataFreeDeparture,
   expectSettingsPageHead,
+  fitsWithoutOverflow,
   liesAbove,
   openSettingEdit,
   setCustomSetting,
@@ -283,6 +284,25 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await expect(value).toBeVisible()
   await expect(value).toHaveAttribute('disabled', '')
   await page.getByTestId('modal-close').click()
+
+  // A multi-sentence custom string wraps across the table row without being
+  // clipped to a single line, and leaves no toggle control behind.
+  await isolate(page, 'example_string')
+  const stringRow = page.getByTestId('hilos-table-row-example_string')
+  const longValue =
+    'First sentence of a long custom value that will wrap across multiple lines. ' +
+    'Second sentence ensures enough length to overflow a single table row cell. ' +
+    'Third sentence completes the multi-sentence payload.'
+  await setCustomSetting(page, 'example_string', longValue)
+  const stringValueText = stringRow
+    .getByTestId('setting-value')
+    .locator('.hilos-table-text')
+  await expect(stringValueText).toHaveText(longValue)
+  await fitsWithoutOverflow(stringValueText)
+  await expect(stringRow.getByTestId('hilos-table-text-toggle')).toHaveCount(0)
+  await clearCustomSetting(page, 'example_string')
+  await expect(stringRow).toContainText('default')
+  await expect(stringRow).not.toContainText(longValue)
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)

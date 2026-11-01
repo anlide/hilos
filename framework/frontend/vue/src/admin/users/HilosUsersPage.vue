@@ -28,7 +28,7 @@ import { HilosPages } from '@hilos/core/base'
 import { inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
-import HilosHideable from '../../HilosHideable.vue'
+import HilosTableText from '../../HilosTableText.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
@@ -65,32 +65,37 @@ const blockedBadge = hilosStandingBadge('blocked')
   <HilosAdminPage :page="HilosPages.USERS" head-kind="section">
     <HilosViewportTable :controller="usersTable">
       <template #cell-name="{ row }">
-        <HilosHideable :value="row.name" /><span
-          v-if="row.merged && mergedBadge !== null"
-          class="badge ms-1"
-          :class="`text-bg-${mergedBadge.tone}`"
-          data-id="hilos-users-merged"
-          ><i class="bi me-1" :class="mergedBadge.icon" aria-hidden="true"></i
-          >{{ mergedBadge.label }}</span
-        >
-        <template v-if="!row.merged">
+        <div class="d-flex align-items-start gap-1">
+          <div class="flex-grow-1">
+            <HilosTableText :value="row.name" />
+          </div>
           <span
-            v-if="row.block && blockedBadge !== null"
-            class="badge ms-1"
-            :class="`text-bg-${blockedBadge.tone}`"
-            ><i
-              class="bi me-1"
-              :class="blockedBadge.icon"
-              aria-hidden="true"
-            ></i
-            >{{ blockedBadge.label }}</span
+            v-if="row.merged && mergedBadge !== null"
+            class="badge flex-shrink-0"
+            :class="`text-bg-${mergedBadge.tone}`"
+            data-id="hilos-users-merged"
+            ><i class="bi me-1" :class="mergedBadge.icon" aria-hidden="true"></i
+            >{{ mergedBadge.label }}</span
           >
-          <span
-            v-if="row.id === currentUserId"
-            class="badge bg-body-secondary text-body-emphasis border ms-1"
-            >{{ HILOS_USERS_LIST_COPY.you }}</span
-          >
-        </template>
+          <template v-if="!row.merged">
+            <span
+              v-if="row.block && blockedBadge !== null"
+              class="badge flex-shrink-0"
+              :class="`text-bg-${blockedBadge.tone}`"
+              ><i
+                class="bi me-1"
+                :class="blockedBadge.icon"
+                aria-hidden="true"
+              ></i
+              >{{ blockedBadge.label }}</span
+            >
+            <span
+              v-if="row.id === currentUserId"
+              class="badge bg-body-secondary text-body-emphasis border flex-shrink-0"
+              >{{ HILOS_USERS_LIST_COPY.you }}</span
+            >
+          </template>
+        </div>
         <div class="small text-body-secondary">#{{ row.id }}</div>
       </template>
       <template #cell-presence="{ row }">

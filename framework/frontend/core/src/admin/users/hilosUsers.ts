@@ -689,6 +689,7 @@ const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
     sortable: true,
     cellClass: 'fw-medium',
     reads: [USER_MERGED_FIELD],
+    heightContent: 'parts',
   },
   {
     key: USER_PRESENCE_FIELD,
@@ -703,8 +704,14 @@ const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
     headerClass: 'text-end',
     cellClass: 'text-end',
     source: USER_CONNECTIONS_SLOT,
+    heightContent: 'text',
   },
-  { key: 'lastActivity', label: 'Last activity', sortable: true },
+  {
+    key: 'lastActivity',
+    label: 'Last activity',
+    sortable: true,
+    heightContent: 'text',
+  },
   {
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
@@ -722,6 +729,7 @@ const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
 const USERS_FRAME: HilosTableFrame = {
   search: { placeholder: 'Search users…' },
   columns: USERS_COLUMNS,
+  rowHeight: { mode: 'height', rem: 4.5 },
   empty: { title: 'No users yet.' },
   filters: [
     {

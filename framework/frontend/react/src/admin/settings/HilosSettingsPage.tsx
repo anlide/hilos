@@ -229,14 +229,13 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             <code className="text-break">{row.key}</code>
           ),
           [SETTING_VALUE_FIELD]: (row) => (
-            <div style={{ maxWidth: '18rem' }}>
-              <HilosSettingValueCell
-                value={row.value}
-                type={row.type}
-                valueSource={row.valueSource}
-                defaultReferenceKey={row.defaultReferenceKey}
-              />
-            </div>
+            <HilosSettingValueCell
+              value={row.value}
+              type={row.type}
+              valueSource={row.valueSource}
+              defaultReferenceKey={row.defaultReferenceKey}
+              wrap
+            />
           ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
             <>

@@ -1746,4 +1746,94 @@ describe('HilosSettingsPage in the admin view mode', () => {
     expect(save.disabled).toBe(false)
     expect(save.getAttribute('aria-describedby')).toBeNull()
   })
+
+  it('renders wrapped table values without reading buttons and keeps unwrapped cells in the edit modal', () => {
+    const longValue =
+      'A very long setting value that would naturally wrap across multiple lines in a content-sized table row without clipping'
+    const hidden = { _hidden: true } as const
+    const { context } = seededContext([
+      slot({
+        key: 'long_custom',
+        valueSource: 'override',
+        value: longValue,
+        defaultValue: 'default_val',
+        overrideValue: longValue,
+      }),
+      slot({
+        key: 'referenced',
+        valueSource: 'reference',
+        value: 'ref_val',
+        defaultReferenceKey: 'catalog.target.key',
+      }),
+      slot({
+        key: 'standard_default',
+        valueSource: 'default',
+        value: 'plain_default',
+      }),
+      slot({
+        key: 'hidden_val',
+        valueSource: 'default',
+        value: hidden,
+        defaultValue: hidden,
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    // In table: no reading toggle button for long values, and full value is accessible
+    expect(root.querySelector('[data-id="hilos-table-text-toggle"]')).toBeNull()
+
+    const longCell = root.querySelector(
+      'table [data-id="hilos-table-row-long_custom"] [data-id="setting-value"]',
+    )!
+    expect(longCell).not.toBeNull()
+    expect(longCell.classList.contains('d-flex')).toBe(true)
+    expect(longCell.classList.contains('align-items-start')).toBe(true)
+    expect(longCell.textContent).toContain(longValue)
+    const longTextSpan = longCell.querySelector('.hilos-table-text')!
+    expect(longTextSpan).not.toBeNull()
+    expect(longTextSpan.classList.contains('flex-grow-1')).toBe(true)
+    expect(longTextSpan.classList.contains('text-truncate')).toBe(false)
+    expect(longTextSpan.getAttribute('title')).toBeNull()
+
+    // Reference, default, custom and hidden: badge and mark in place
+    const refCell = root.querySelector(
+      'table [data-id="hilos-table-row-referenced"] [data-id="setting-value"]',
+    )!
+    expect(refCell.querySelector('.badge.text-wrap')?.textContent).toContain(
+      'catalog.target.key',
+    )
+    expect(refCell.querySelector('code.text-break')?.textContent).toBe(
+      'catalog.target.key',
+    )
+
+    const defaultCell = root.querySelector(
+      'table [data-id="hilos-table-row-standard_default"] [data-id="setting-value"]',
+    )!
+    expect(defaultCell.textContent).toContain('default')
+
+    expect(longCell.textContent).toContain('custom')
+
+    const hiddenCell = root.querySelector(
+      'table [data-id="hilos-table-row-hidden_val"] [data-id="setting-value"]',
+    )!
+    expect(hiddenCell.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+
+    // Edit modal displays the setting value using the previous (unwrapped) cell layout
+    el(root, 'hilos-settings-edit-long_custom')?.click()
+    fixture.detectChanges()
+
+    const modal = el(root, 'modal')
+    expect(modal).not.toBeNull()
+    const modalCell = modal!.querySelector('[data-id="setting-value"]')
+    expect(modalCell).not.toBeNull()
+    expect(modalCell?.classList.contains('d-inline-flex')).toBe(true)
+    expect(modalCell?.classList.contains('align-items-center')).toBe(true)
+    expect(modalCell?.classList.contains('mw-100')).toBe(true)
+    expect(modalCell?.classList.contains('d-flex')).toBe(false)
+    const modalValueSpan = modalCell?.querySelector('.text-truncate')
+    expect(modalValueSpan).not.toBeNull()
+    expect(modalValueSpan?.getAttribute('title')).toBe('default_val')
+    expect(modalCell?.querySelector('.hilos-table-text')).toBeNull()
+  })
 })

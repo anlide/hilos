@@ -21,7 +21,11 @@ import { HilosHiddenMark } from '@hilos/angular/base'
   imports: [HilosHiddenMark],
   template: `
     <span
-      class="d-inline-flex align-items-center gap-2 mw-100"
+      [class]="
+        wrap()
+          ? 'd-flex align-items-start gap-2'
+          : 'd-inline-flex align-items-center gap-2 mw-100'
+      "
       data-id="setting-value"
     >
       @if (isHidden()) {
@@ -44,9 +48,9 @@ import { HilosHiddenMark } from '@hilos/angular/base'
         </span>
       } @else {
         <span
-          class="text-truncate"
+          [class]="wrap() ? 'hilos-table-text flex-grow-1' : 'text-truncate'"
           [class.fst-italic]="isNumber()"
-          [title]="display()"
+          [attr.title]="wrap() ? null : display()"
           >{{ display() }}</span
         >
       }
@@ -54,6 +58,7 @@ import { HilosHiddenMark } from '@hilos/angular/base'
       @if (isReference()) {
         <span
           class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
+          [class.text-wrap]="wrap()"
           [attr.title]="
             isReferenceKeyHidden()
               ? null
@@ -64,9 +69,14 @@ import { HilosHiddenMark } from '@hilos/angular/base'
           @if (isReferenceKeyHidden()) {
             <hilos-hidden-mark />
           } @else {
-            <code class="text-truncate text-info-emphasis">{{
-              defaultReferenceKey()
-            }}</code>
+            <code
+              [class]="
+                wrap()
+                  ? 'text-break text-info-emphasis'
+                  : 'text-truncate text-info-emphasis'
+              "
+              >{{ defaultReferenceKey() }}</code
+            >
           }
         </span>
       } @else if (valueSource() === 'default') {
@@ -101,6 +111,8 @@ export class HilosSettingValueCell {
   readonly valueSource = input.required<SettingValueSource>()
   /** The referenced key when the default is a reference, else null. */
   readonly defaultReferenceKey = input.required<Hideable<string | null>>()
+  /** Whether to wrap the full value across multiple lines in table cells. */
+  readonly wrap = input(false)
 
   protected readonly isHidden = computed(() => isHiddenValue(this.value()))
   protected readonly isBoolean = computed(

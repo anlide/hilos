@@ -94,14 +94,13 @@ function inputStep(type: string | undefined): 'any' | undefined {
           <code class="text-break">{{ row.key }}</code>
         </ng-template>
         <ng-template hilosTableCell="value" let-row>
-          <div style="max-width: 18rem">
-            <hilos-setting-value-cell
-              [value]="row.value"
-              [type]="row.type"
-              [valueSource]="row.valueSource"
-              [defaultReferenceKey]="row.defaultReferenceKey"
-            />
-          </div>
+          <hilos-setting-value-cell
+            [value]="row.value"
+            [type]="row.type"
+            [valueSource]="row.valueSource"
+            [defaultReferenceKey]="row.defaultReferenceKey"
+            [wrap]="true"
+          />
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
           <button

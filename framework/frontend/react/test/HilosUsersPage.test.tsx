@@ -237,6 +237,8 @@ describe('HilosUsersPage', () => {
     cleanup()
     for (const release of readerTimeZoneReleases.splice(0)) release()
     vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('renders a row per user with name, presence, and sessions', () => {
@@ -457,10 +459,132 @@ describe('HilosUsersPage', () => {
     // declaration, so the count of sessions stays right-aligned without the page
     // saying so.
     expect(cells).toHaveLength(container.querySelectorAll('thead th').length)
-    expect(cells[1]?.textContent).toBe('Alice')
+    expect(cells[1]?.textContent).toBe('AliceShow in full')
     expect(cells[1]?.classList.contains('fw-medium')).toBe(true)
-    expect(cells[3]?.textContent).toBe('2')
+    expect(cells[3]?.textContent).toBe('2Show in full')
     expect(cells[3]?.classList.contains('text-end')).toBe(true)
+  })
+
+  function layout() {
+    const frames = new Map<number, FrameRequestCallback>()
+    let serial = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++serial, callback)
+      return serial
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        readonly nodes = new Set<Element>()
+        constructor(readonly callback: () => void) {}
+        observe(node: Element) {
+          this.nodes.add(node)
+        }
+        unobserve(node: Element) {
+          this.nodes.delete(node)
+        }
+        disconnect() {
+          this.nodes.clear()
+        }
+      },
+    )
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        return new DOMRect(0, 0, 200, 40)
+      },
+    )
+    for (const property of [
+      'clientWidth',
+      'clientHeight',
+      'scrollWidth',
+      'scrollHeight',
+    ] as const) {
+      vi.spyOn(HTMLElement.prototype, property, 'get').mockImplementation(
+        function (this: HTMLElement) {
+          if (property === 'clientHeight') return 40
+          if (property === 'scrollHeight') return 120
+          return 200
+        },
+      )
+    }
+    return {
+      async flush() {
+        await act(async () => {
+          const pending = [...frames.values()]
+          frames.clear()
+          for (const callback of pending) callback(0)
+        })
+      },
+    }
+  }
+
+  it('shows reading controls on overflowing fields and keeps badges outside the text window', async () => {
+    const dom = layout()
+    const context = seededContext([
+      {
+        id: 1,
+        name: 'Maria-Luisa Alexandra Konstantinopolskaya-Vishnevetskaya von Hohenzollern-Sigmaringen',
+        lastActivity: 1781863200000,
+        presence: 'offline',
+        onlineSessionCount: 12,
+        merged: true,
+      },
+      {
+        id: 2,
+        name: HIDDEN_VALUE,
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+      },
+    ])
+
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+    await dom.flush()
+
+    // 1. Name overflow on row 1 (merged):
+    const row1 = container.querySelector('[data-id="hilos-table-row-1"]')!
+    expect(row1).not.toBeNull()
+    const nameToggle1 = row1.querySelector<HTMLButtonElement>(
+      'button[aria-label="Show in full: Name"]',
+    )
+    expect(nameToggle1).not.toBeNull()
+    expect(nameToggle1?.getAttribute('data-id')).toBe('hilos-table-text-toggle')
+    const ariaControls1 = nameToggle1?.getAttribute('aria-controls')
+    expect(ariaControls1).toBeTruthy()
+    const textRegion1 = document.getElementById(ariaControls1!)
+    expect(textRegion1).not.toBeNull()
+    expect(textRegion1!.textContent).toContain('Maria-Luisa')
+    expect(textRegion1!.textContent).not.toContain('Merged')
+    expect(row1.querySelector('[data-id="hilos-users-merged"]')).not.toBeNull()
+
+    // 2. Sessions and Last activity have their own toggle buttons with their column label:
+    const sessionsToggle = row1.querySelector<HTMLButtonElement>(
+      'button[aria-label="Show in full: Sessions"]',
+    )
+    expect(sessionsToggle).not.toBeNull()
+    expect(sessionsToggle?.getAttribute('data-id')).toBe(
+      'hilos-table-text-toggle',
+    )
+
+    const activityToggle = row1.querySelector<HTMLButtonElement>(
+      'button[aria-label="Show in full: Last activity"]',
+    )
+    expect(activityToggle).not.toBeNull()
+    expect(activityToggle?.getAttribute('data-id')).toBe(
+      'hilos-table-text-toggle',
+    )
+
+    // 3. Hidden name: renders mark without reading toggle button:
+    const row2 = container.querySelector('[data-id="hilos-table-row-2"]')!
+    expect(row2.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(
+      row2.querySelector('button[aria-label="Show in full: Name"]'),
+    ).toBeNull()
   })
 })
 
@@ -562,7 +686,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(
       container.querySelectorAll('[data-id="hilos-table-row-2"] td')[3]
         ?.textContent,
-    ).toBe('2')
+    ).toBe('2Show in full')
     expect(container.textContent).toContain('Oct 21, 2026, 11:00:00 AM')
   })
 
@@ -599,7 +723,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(tone(presence(container, 1).badge)).toEqual(['text-bg-warning'])
     expect(presence(container, 1).twin?.textContent).toBe('probably offline')
     expect(stale()).toBe(false)
-    expect(sessions()).toBe('1')
+    expect(sessions()).toBe('1Show in full')
 
     // The source going quiet marks the row and leaves the word alone.
     await change(() => live.stale(1, ['connections']))
@@ -616,7 +740,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     )
     expect(presence(container, 1).badge?.textContent).toBe('online')
     expect(tone(presence(container, 1).badge)).toEqual(['text-bg-success'])
-    expect(sessions()).toBe('2')
+    expect(sessions()).toBe('2Show in full')
 
     await change(() =>
       live.update({ ...alice, presence: 'offline', onlineSessionCount: 0 }),

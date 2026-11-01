@@ -188,10 +188,8 @@ export async function expectUserActivityDisplay(
   const column = await header.evaluate(
     (header) => (header.closest('th') as HTMLTableCellElement).cellIndex,
   )
-  return expectReaderMillisecondMoment(
-    expect,
-    row.locator('td, th').nth(column),
-    moment,
-    timeZone,
-  )
+  const cell = row.locator('td, th').nth(column)
+  const textTarget = cell.locator('.hilos-table-text')
+  const target = (await textTarget.count()) > 0 ? textTarget : cell
+  return expectReaderMillisecondMoment(expect, target, moment, timeZone)
 }

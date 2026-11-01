@@ -1,14 +1,17 @@
 import { test, expect } from '@playwright/test'
 
 import {
+  clearCustomSetting,
   dismissToasts,
+  expectPageReady,
   expectSettingsPageHead,
-  openSettingEdit,
-  shownByTestId,
-  typeInto,
+  fitsWithoutOverflow,
   gotoPage,
   grantAdminToSelf,
-  expectPageReady,
+  openSettingEdit,
+  setCustomSetting,
+  shownByTestId,
+  typeInto,
   clickSubmit,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -172,6 +175,26 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await page.getByTestId('modal-close').click()
 
   await expect(value).toHaveCount(0)
+
+  // A multi-sentence custom string wraps across the table row without being
+  // clipped to a single line, and leaves no toggle control behind.
+  await typeInto(page.getByTestId('hilos-table-search'), 'example_string')
+  const stringRow = page.getByTestId('hilos-table-row-example_string')
+  await expect(stringRow).toBeVisible()
+  const longValue =
+    'First sentence of a long custom value that will wrap across multiple lines. ' +
+    'Second sentence ensures enough length to overflow a single table row cell. ' +
+    'Third sentence completes the multi-sentence payload.'
+  await setCustomSetting(page, 'example_string', longValue)
+  const stringValueText = stringRow
+    .getByTestId('setting-value')
+    .locator('.hilos-table-text')
+  await expect(stringValueText).toHaveText(longValue)
+  await fitsWithoutOverflow(stringValueText)
+  await expect(stringRow.getByTestId('hilos-table-text-toggle')).toHaveCount(0)
+  await clearCustomSetting(page, 'example_string')
+  await expect(stringRow).toContainText('default')
+  await expect(stringRow).not.toContainText(longValue)
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)

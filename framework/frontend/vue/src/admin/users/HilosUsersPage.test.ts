@@ -4,7 +4,7 @@
 // apart from the mark of a source gone quiet.
 import { type DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { h, markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
   formatMoment,
@@ -224,15 +224,20 @@ afterEach(() => {
   for (const wrapper of mounted.splice(0)) {
     wrapper.unmount()
   }
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  document.body.replaceChildren()
 })
 
 /**
  * Mount the list over a seeded context and let the first window land.
  *
  * @param context The seeded project context.
+ * @param options Mount options like DOM attachment.
  */
 async function mountList(
   context: HilosUsersContext,
+  options?: { attachTo?: HTMLElement },
 ): Promise<ReturnType<typeof mount>> {
   const wrapper = mount(HilosUsersPage, {
     props: { context: markRaw(context) },
@@ -241,6 +246,7 @@ async function mountList(
       'row-actions': ({ row }: { row: HilosUserRow }) =>
         h('a', { href: `/hilos/user/${row.id}` }, 'Open'),
     },
+    ...(options?.attachTo ? { attachTo: options.attachTo } : {}),
   })
   mounted.push(wrapper)
   await nextTick()
@@ -511,6 +517,134 @@ describe('HilosUsersPage', () => {
       wrapper.get('[data-id="hilos-table-row-1"] a').attributes('href'),
     ).toBe('/hilos/user/1')
   })
+
+  function layout() {
+    const frames = new Map<number, FrameRequestCallback>()
+    let serial = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++serial, callback)
+      return serial
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function () {
+        return new DOMRect(0, 0, 200, 40)
+      },
+    )
+    for (const property of [
+      'clientWidth',
+      'clientHeight',
+      'scrollWidth',
+      'scrollHeight',
+    ] as const) {
+      vi.spyOn(HTMLElement.prototype, property, 'get').mockImplementation(
+        function (this: HTMLElement) {
+          if (property === 'clientHeight') return 40
+          if (property === 'scrollHeight') return 120
+          return 200
+        },
+      )
+    }
+    return {
+      async flush() {
+        await nextTick()
+        const pending = [...frames.values()]
+        frames.clear()
+        for (const callback of pending) callback(0)
+        await nextTick()
+      },
+    }
+  }
+
+  it('shows reading controls on overflowing fields and keeps badges and id outside the text window', async () => {
+    const dom = layout()
+    const context = seededContext([
+      {
+        id: 1,
+        name: 'Maria-Luisa Alexandra Konstantinopolskaya-Vishnevetskaya von Hohenzollern-Sigmaringen',
+        lastActivity: 1781863200000,
+        presence: 'offline',
+        onlineSessionCount: 12,
+        merged: true,
+      },
+      {
+        id: 2,
+        name: 'Constance Current User Name Overflowing Height Window',
+        lastActivity: 1781863200000,
+        presence: 'online',
+        onlineSessionCount: 3,
+        block: true,
+      },
+      {
+        id: 3,
+        name: HIDDEN_VALUE,
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+      },
+    ])
+    context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 2,
+    })
+
+    const wrapper = await mountList(context, { attachTo: document.body })
+    await dom.flush()
+
+    // 1. Name overflow on row 1 (merged):
+    const nameCell1 = cell(wrapper, 1, 'Name')
+    const nameToggle1 = nameCell1.get('[data-id="hilos-table-text-toggle"]')
+    expect(nameToggle1.attributes('aria-label')).toBe('Show in full: Name')
+    const ariaControls1 = nameToggle1.attributes('aria-controls')
+    expect(ariaControls1).toBeTruthy()
+    const textRegion1 = document.getElementById(ariaControls1!)
+    expect(textRegion1).not.toBeNull()
+    expect(textRegion1!.textContent).toContain('Maria-Luisa')
+    expect(textRegion1!.textContent).not.toContain('Merged')
+    expect(textRegion1!.textContent).not.toContain('#1')
+    expect(nameCell1.find('[data-id="hilos-users-merged"]').exists()).toBe(true)
+    expect(nameCell1.text()).toContain('#1')
+
+    // 2. Name overflow on row 2 (blocked and you):
+    const nameCell2 = cell(wrapper, 2, 'Name')
+    const nameToggle2 = nameCell2.get('[data-id="hilos-table-text-toggle"]')
+    expect(nameToggle2.attributes('aria-label')).toBe('Show in full: Name')
+    const ariaControls2 = nameToggle2.attributes('aria-controls')
+    expect(ariaControls2).toBeTruthy()
+    const textRegion2 = document.getElementById(ariaControls2!)
+    expect(textRegion2).not.toBeNull()
+    expect(textRegion2!.textContent).toContain('Constance Current User')
+    expect(textRegion2!.textContent).not.toContain('Blocked')
+    expect(textRegion2!.textContent).not.toContain('You')
+    expect(textRegion2!.textContent).not.toContain('#2')
+    expect(nameCell2.text()).toContain('Blocked')
+    expect(nameCell2.text()).toContain('You')
+    expect(nameCell2.text()).toContain('#2')
+
+    // 3. Sessions and Last activity have their own toggle buttons with their column label:
+    const sessionsCell = cell(wrapper, 1, 'Sessions')
+    const sessionsToggle = sessionsCell.get(
+      '[data-id="hilos-table-text-toggle"]',
+    )
+    expect(sessionsToggle.attributes('aria-label')).toBe(
+      'Show in full: Sessions',
+    )
+
+    const activityCell = cell(wrapper, 1, 'Last activity')
+    const activityToggle = activityCell.get(
+      '[data-id="hilos-table-text-toggle"]',
+    )
+    expect(activityToggle.attributes('aria-label')).toBe(
+      'Show in full: Last activity',
+    )
+
+    // 4. Hidden name: renders mark without reading toggle button:
+    const nameCell3 = cell(wrapper, 3, 'Name')
+    expect(nameCell3.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+    expect(nameCell3.find('[data-id="hilos-table-text-toggle"]').exists()).toBe(
+      false,
+    )
+  })
 })
 
 describe('HilosUsersPage presence (HIL-1566)', () => {
@@ -583,7 +717,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     }
     expect(wrapper.text()).not.toContain('probably_offline')
     // The doubted connections are still registered, so the count keeps them.
-    expect(cell(wrapper, 2, 'Sessions').text()).toBe('2')
+    expect(cell(wrapper, 2, 'Sessions').text()).toBe('2Show in full')
     expect(wrapper.text()).toContain('Oct 21, 2026, 11:00:00 AM')
   })
 
@@ -611,7 +745,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     await settle()
     expect(presence(wrapper, 1).text()).toBe('probably offline')
     expect(stale()).toBe(false)
-    expect(cell(wrapper, 1, 'Sessions').text()).toBe('1')
+    expect(cell(wrapper, 1, 'Sessions').text()).toBe('1Show in full')
 
     // The source going quiet marks the row and leaves the word alone.
     live.stale(1, ['connections'])
@@ -628,7 +762,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     live.update({ ...alice, presence: 'online', onlineSessionCount: 2 })
     await settle()
     expect(presence(wrapper, 1).text()).toBe('online')
-    expect(cell(wrapper, 1, 'Sessions').text()).toBe('2')
+    expect(cell(wrapper, 1, 'Sessions').text()).toBe('2Show in full')
 
     live.update({ ...alice, presence: 'offline', onlineSessionCount: 0 })
     await settle()

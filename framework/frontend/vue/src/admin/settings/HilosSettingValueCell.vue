@@ -10,12 +10,18 @@ import { computed } from 'vue'
 
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 
-const props = defineProps<{
-  value: Hideable<string | null>
-  type: string
-  valueSource: SettingValueSource
-  defaultReferenceKey: Hideable<string | null>
-}>()
+const props = withDefaults(
+  defineProps<{
+    value: Hideable<string | null>
+    type: string
+    valueSource: SettingValueSource
+    defaultReferenceKey: Hideable<string | null>
+    wrap?: boolean
+  }>(),
+  {
+    wrap: false,
+  },
+)
 
 const isValueHidden = computed(() => isHiddenValue(props.value))
 const isBoolean = computed(() => props.type === 'boolean')
@@ -52,7 +58,11 @@ const isReferenceKeyHidden = computed(() =>
 
 <template>
   <span
-    class="d-inline-flex align-items-center gap-2 mw-100"
+    :class="
+      wrap
+        ? 'd-flex align-items-start gap-2'
+        : 'd-inline-flex align-items-center gap-2 mw-100'
+    "
     data-id="setting-value"
   >
     <HilosHiddenMark v-if="isValueHidden" />
@@ -74,24 +84,33 @@ const isReferenceKeyHidden = computed(() =>
     </span>
     <span
       v-else
-      class="text-truncate"
-      :class="{ 'fst-italic': isNumber }"
-      :title="display"
+      :class="[
+        wrap ? 'hilos-table-text flex-grow-1' : 'text-truncate',
+        { 'fst-italic': isNumber },
+      ]"
+      :title="wrap ? undefined : display"
       >{{ display }}</span
     >
 
     <span
       v-if="isReference"
       class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
+      :class="{ 'text-wrap': wrap }"
       :title="
         isReferenceKeyHidden ? undefined : `Default from ${defaultReferenceKey}`
       "
     >
       <i class="bi bi-arrow-down-right" aria-hidden="true"></i>
       <HilosHiddenMark v-if="isReferenceKeyHidden" />
-      <code v-else class="text-truncate text-info-emphasis">{{
-        defaultReferenceKey
-      }}</code>
+      <code
+        v-else
+        :class="
+          wrap
+            ? 'text-break text-info-emphasis'
+            : 'text-truncate text-info-emphasis'
+        "
+        >{{ defaultReferenceKey }}</code
+      >
     </span>
     <span
       v-else-if="valueSource === 'default'"

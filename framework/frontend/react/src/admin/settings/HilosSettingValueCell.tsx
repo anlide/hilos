@@ -18,6 +18,8 @@ export interface HilosSettingValueCellProps {
   valueSource: SettingValueSource
   /** The referenced key when the default is a reference, else null. */
   defaultReferenceKey: Hideable<string | null>
+  /** Whether to wrap the full value across multiple lines in table cells. */
+  wrap?: boolean
 }
 
 /**
@@ -30,6 +32,7 @@ export function HilosSettingValueCell({
   type,
   valueSource,
   defaultReferenceKey,
+  wrap = false,
 }: HilosSettingValueCellProps) {
   const isValueHidden = isHiddenValue(value)
   const isBoolean = type === 'boolean'
@@ -50,7 +53,11 @@ export function HilosSettingValueCell({
 
   return (
     <span
-      className="d-inline-flex align-items-center gap-2 mw-100"
+      className={
+        wrap
+          ? 'd-flex align-items-start gap-2'
+          : 'd-inline-flex align-items-center gap-2 mw-100'
+      }
       data-id="setting-value"
     >
       {isValueHidden ? (
@@ -74,8 +81,12 @@ export function HilosSettingValueCell({
         </span>
       ) : (
         <span
-          className={`text-truncate${isNumber ? ' fst-italic' : ''}`}
-          title={display}
+          className={
+            wrap
+              ? `hilos-table-text flex-grow-1${isNumber ? ' fst-italic' : ''}`
+              : `text-truncate${isNumber ? ' fst-italic' : ''}`
+          }
+          title={wrap ? undefined : display}
         >
           {display}
         </span>
@@ -83,7 +94,7 @@ export function HilosSettingValueCell({
 
       {isReference ? (
         <span
-          className="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
+          className={`badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1${wrap ? ' text-wrap' : ''}`}
           title={
             isReferenceKeyHidden
               ? undefined
@@ -94,7 +105,13 @@ export function HilosSettingValueCell({
           {isReferenceKeyHidden ? (
             <HilosHiddenMark />
           ) : (
-            <code className="text-truncate text-info-emphasis">
+            <code
+              className={
+                wrap
+                  ? 'text-break text-info-emphasis'
+                  : 'text-truncate text-info-emphasis'
+              }
+            >
               {defaultReferenceKey}
             </code>
           )}

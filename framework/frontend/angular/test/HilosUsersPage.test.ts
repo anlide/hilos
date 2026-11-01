@@ -19,7 +19,8 @@ import type {
   HilosUsersContext,
   PageRouteMatch,
 } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { HIDDEN_VALUE } from '@hilos/core/base'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosUsersPage } from '../src/admin/users/HilosUsersPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -203,6 +204,7 @@ async function mountList(
   })
   const fixture = TestBed.createComponent(HilosUsersPage)
   fixture.componentRef.setInput('context', context)
+  document.body.append(fixture.nativeElement)
   fixture.detectChanges()
   await fixture.whenStable()
   fixture.detectChanges()
@@ -218,9 +220,64 @@ function all(fixture: ComponentFixture<unknown>, id: string): HTMLElement[] {
   )
 }
 
+function layout() {
+  const frames = new Map<number, FrameRequestCallback>()
+  let serial = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++serial, callback)
+    return serial
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+  class Observer {
+    readonly nodes = new Set<Element>()
+    constructor(readonly callback: () => void) {}
+    observe(node: Element) {
+      this.nodes.add(node)
+    }
+    unobserve(node: Element) {
+      this.nodes.delete(node)
+    }
+    disconnect() {
+      this.nodes.clear()
+    }
+  }
+  vi.stubGlobal('ResizeObserver', Observer)
+  vi.stubGlobal('MutationObserver', Observer)
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    () => new DOMRect(0, 0, 200, 40),
+  )
+  for (const property of [
+    'clientWidth',
+    'clientHeight',
+    'scrollWidth',
+    'scrollHeight',
+  ] as const) {
+    vi.spyOn(HTMLElement.prototype, property, 'get').mockImplementation(
+      function (this: HTMLElement) {
+        if (property === 'clientHeight') return 40
+        if (property === 'scrollHeight') return 120
+        return 200
+      },
+    )
+  }
+  return {
+    async flush(fixture: ComponentFixture<unknown>) {
+      const pending = [...frames.values()]
+      frames.clear()
+      for (const callback of pending) callback(0)
+      fixture.detectChanges()
+      await fixture.whenStable()
+      fixture.detectChanges()
+    },
+  }
+}
+
 describe('HilosUsersPage', () => {
   afterEach(() => {
     TestBed.resetTestingModule()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    document.body.replaceChildren()
   })
 
   it('renders a row per user with the name and the presence', async () => {
@@ -302,11 +359,80 @@ describe('HilosUsersPage', () => {
         ?.querySelector('[data-id="hilos-users-merged"]'),
     ).toBeNull()
   })
+
+  it('shows reading controls on overflowing fields and keeps badges outside the text window', async () => {
+    const dom = layout()
+    const context = seededContext([
+      {
+        id: 1,
+        name: 'Maria-Luisa Alexandra Konstantinopolskaya-Vishnevetskaya von Hohenzollern-Sigmaringen',
+        lastActivity: 1781863200000,
+        presence: 'offline',
+        onlineSessionCount: 12,
+        merged: true,
+      },
+      {
+        id: 2,
+        name: HIDDEN_VALUE,
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+      },
+    ])
+
+    const fixture = await mountList(context)
+    await dom.flush(fixture)
+
+    const host = fixture.nativeElement as HTMLElement
+
+    // 1. Name overflow on row 1 (merged):
+    const row1 = host.querySelector('[data-id="hilos-table-row-1"]')!
+    expect(row1).not.toBeNull()
+    const nameToggle1 = row1.querySelector<HTMLButtonElement>(
+      'button[aria-label="Show in full: Name"]',
+    )
+    expect(nameToggle1).not.toBeNull()
+    expect(nameToggle1?.getAttribute('data-id')).toBe('hilos-table-text-toggle')
+    const ariaControls1 = nameToggle1?.getAttribute('aria-controls')
+    expect(ariaControls1).toBeTruthy()
+    const textRegion1 = document.getElementById(ariaControls1!)
+    expect(textRegion1).not.toBeNull()
+    expect(textRegion1!.textContent).toContain('Maria-Luisa')
+    expect(textRegion1!.textContent).not.toContain('Merged')
+    expect(row1.querySelector('[data-id="hilos-users-merged"]')).not.toBeNull()
+
+    // 2. Sessions and Last activity have their own toggle buttons with their column label:
+    const sessionsToggle = row1.querySelector<HTMLButtonElement>(
+      'button[aria-label="Show in full: Sessions"]',
+    )
+    expect(sessionsToggle).not.toBeNull()
+    expect(sessionsToggle?.getAttribute('data-id')).toBe(
+      'hilos-table-text-toggle',
+    )
+
+    const activityToggle = row1.querySelector<HTMLButtonElement>(
+      'button[aria-label="Show in full: Last activity"]',
+    )
+    expect(activityToggle).not.toBeNull()
+    expect(activityToggle?.getAttribute('data-id')).toBe(
+      'hilos-table-text-toggle',
+    )
+
+    // 3. Hidden name: renders mark without reading toggle button:
+    const row2 = host.querySelector('[data-id="hilos-table-row-2"]')!
+    expect(row2.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(
+      row2.querySelector('button[aria-label="Show in full: Name"]'),
+    ).toBeNull()
+  })
 })
 
 describe('HilosUsersPage presence (HIL-1566)', () => {
   afterEach(() => {
     TestBed.resetTestingModule()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    document.body.replaceChildren()
   })
 
   /**
@@ -404,7 +530,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll(
         '[data-id="hilos-table-row-2"] td',
       )[3]?.textContent,
-    ).toBe('2')
+    ).toBe('2Show in full')
     expect(text).toContain('Oct 21, 2026, 11:00:00 AM')
   })
 
@@ -443,7 +569,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
       'probably offline',
     )
     expect(stale()).toBe(false)
-    expect(sessions()).toBe('1')
+    expect(sessions()).toBe('1Show in full')
 
     // The source going quiet marks the row and leaves the word alone.
     await change(() => live.stale(1, ['connections']))
@@ -464,7 +590,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     )
     expect(presence(fixture, 1).badge?.textContent?.trim()).toBe('online')
     expect(tone(presence(fixture, 1).badge)).toEqual(['text-bg-success'])
-    expect(sessions()).toBe('2')
+    expect(sessions()).toBe('2Show in full')
 
     await change(() =>
       live.update({ ...alice, presence: 'offline', onlineSessionCount: 0 }),

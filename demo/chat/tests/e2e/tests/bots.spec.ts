@@ -429,7 +429,12 @@ test('a bot created here takes the place the sort gives it, and edits and delete
 }) => {
   const stamp = Date.now()
   const name = nameBeforeAll(stamp)
-  const description = `edited by e2e ${stamp}`
+  const description =
+    `Edited by e2e ${stamp}. ` +
+    `This assistant answers questions and summarizes conversations for the team. ` +
+    `It supports multiple conversational workflows across administrative channels. ` +
+    `Detailed instructions guide every response to ensure clarity, safety, and helpfulness throughout the session. ` +
+    `Additional operational notes explain how incoming requests are triaged and routed between agents.`
 
   await grantAdminToSelf(expect, page)
 
@@ -452,18 +457,31 @@ test('a bot created here takes the place the sort gives it, and edits and delete
 
   // Edit the description: the value lands in place, the row keeps its slot.
   await editBotDescription(page, key, description)
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
-    description,
-  )
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+  await expect(row).toContainText(description)
   expect((await tableRowKeys(page))[0]).toBe(key)
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  const toggle = row.getByRole('button', {
+    name: 'Show in full: Description',
+  })
+  await expect(toggle).toBeVisible()
+  await toggle.click()
+  const collapse = row.getByRole('button', { name: 'Collapse: Description' })
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true')
+  await expect(collapse).toHaveText('Collapse')
+  await collapse.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(toggle).toBeFocused()
 
   // Erase the description: an optional field left empty is written empty, not
   // skipped, so the cell clears and the dialog reopens on an empty field.
   await editBotDescription(page, key, '')
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).not.toContainText(
-    description,
-  )
+  await expect(row).not.toContainText(description)
+  await expect(
+    row.getByRole('button', { name: 'Show in full: Description' }),
+  ).toHaveCount(0)
+  await expect(shownByTestId(row, 'hilos-table-text-toggle')).toHaveCount(0)
   await shownByTestId(page, `admin-bots-edit-${key}`).click()
   await expect(page.getByTestId('admin-bots-description')).toHaveValue('')
   await page.getByTestId('modal-close').click()
@@ -1797,12 +1815,13 @@ test.describe('server geometry', () => {
     const { prefix, keys, reader, windows, frames, base, pads } =
       await botProofSet(page, 6, 'last-page')
     const watches: TableGeometryWatch[] = []
-    const watch = async (lastKey: string) => {
+    const watch = async (lastKey: string, checkTracks = true) => {
       const observed = await watchTableGeometry(expect, reader, {
         bodyId: 'admin-bots-view',
         projection,
         rowKeys: keys.slice(2, 5),
         lastKey,
+        tracks: checkTracks,
       })
       watches.push(observed)
       return observed
@@ -1849,7 +1868,8 @@ test.describe('server geometry', () => {
       const retained = [...keys, tail]
       let lastRetained = tail
       for (const ordinal of [80, 90, 100]) {
-        const appended = await watch(lastRetained)
+        // All slots are placeholders; tracks fix anew upon the first live row.
+        const appended = await watch(lastRetained, false)
         const name = `${prefix} ${ordinal} cycle tail`
         await createBot(page, name)
         const key = await tableRowKeyByText(expect, reader, name)
@@ -1884,7 +1904,8 @@ test.describe('server geometry', () => {
         retained.push(key)
         lastRetained = key
       }
-      const allPlaceholderAppend = await watch(lastRetained)
+      // All slots are placeholders; tracks fix anew upon the first live row.
+      const allPlaceholderAppend = await watch(lastRetained, false)
       await createBot(page, `${prefix} 120 retained tail`)
       const allPlaceholderTail = await tableRowKeyByText(
         expect,

@@ -1855,6 +1855,31 @@ describe('createHilosUsersTable', () => {
       expect(columns.find((column) => column.key === 'actions')?.reads).toEqual(
         ['id'],
       )
+      expect(controller.frame.rowHeight.mode).toBe('height')
+      expect(
+        columns
+          .filter((column) => column.heightContent !== undefined)
+          .map((column) => column.key),
+      ).toEqual(['name', 'onlineSessionCount', 'lastActivity'])
+      expect(
+        columns.find((column) => column.key === 'name')?.heightContent,
+      ).toBe('parts')
+      expect(
+        columns.find((column) => column.key === 'onlineSessionCount')
+          ?.heightContent,
+      ).toBe('text')
+      expect(
+        columns.find((column) => column.key === 'lastActivity')?.heightContent,
+      ).toBe('text')
+      expect(
+        columns.find((column) => column.key === 'id')?.heightContent,
+      ).toBeUndefined()
+      expect(
+        columns.find((column) => column.key === 'presence')?.heightContent,
+      ).toBeUndefined()
+      expect(
+        columns.find((column) => column.key === 'actions')?.heightContent,
+      ).toBeUndefined()
       expect(controller.frame.searchPlaceholder.get()).toBe('Search users…')
       expect(controller.frame.declaration.empty?.title).toBe('No users yet.')
       expect(controller.descriptor()?.sort).toEqual([

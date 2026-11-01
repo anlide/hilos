@@ -220,6 +220,23 @@ describe('createHilosSettingsTable', () => {
     expect(controller.rows.get()[0]?.row?.resetDisabledReason).toBeNull()
     controller.dispose()
   })
+
+  it('leaves row text height unconstrained and has no participating columns', () => {
+    const context = {
+      connection: { sendTableViewport: () => undefined },
+      scopes: {},
+      actions: {},
+    } as unknown as HilosSettingsContext
+    const { controller } = createHilosSettingsTable(context)
+
+    expect(controller.frame.rowHeight.mode).toBe('content')
+    expect(
+      controller.frame.columns
+        .get()
+        .filter((column) => column.heightContent !== undefined),
+    ).toEqual([])
+    controller.dispose()
+  })
 })
 
 describe('createHilosSettingsActions', () => {

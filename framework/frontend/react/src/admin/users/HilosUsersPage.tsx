@@ -27,7 +27,7 @@ import {
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosHideable } from '../../HilosHideable.js'
+import { HilosTableText } from '../../HilosTableText.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 
@@ -73,11 +73,13 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         cells={{
           id: (row) => row.id,
           name: (row) => (
-            <>
-              <HilosHideable value={row.name} />
+            <div className="d-flex align-items-start gap-1">
+              <div className="flex-grow-1">
+                <HilosTableText value={row.name} />
+              </div>
               {row.merged && mergedBadge !== null ? (
                 <span
-                  className={`badge text-bg-${mergedBadge.tone} ms-1`}
+                  className={`badge text-bg-${mergedBadge.tone} flex-shrink-0`}
                   data-id="hilos-users-merged"
                 >
                   <i
@@ -87,7 +89,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
                   {mergedBadge.label}
                 </span>
               ) : null}
-            </>
+            </div>
           ),
           [USER_PRESENCE_FIELD]: (row) => {
             const badge = hilosPresenceBadge(row.presence)

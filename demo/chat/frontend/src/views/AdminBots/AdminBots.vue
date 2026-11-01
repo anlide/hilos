@@ -364,12 +364,7 @@ async function submitDelete(): Promise<void> {
           <span class="fw-medium">{{ row.name }}</span>
         </template>
         <template #cell-description="{ row }">
-          <span
-            class="text-truncate d-block text-body-secondary"
-            style="max-width: 18rem"
-            :title="row.description ?? ''"
-            >{{ row.description ?? '—' }}</span
-          >
+          <span class="text-body-secondary">{{ row.description ?? '—' }}</span>
         </template>
         <template #cell-status="{ row }">
           <span

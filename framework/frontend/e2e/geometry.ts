@@ -715,6 +715,31 @@ export async function fitsInScrollport(element: Locator): Promise<void> {
 }
 
 /**
+ * Refuse an element clipped by its own horizontal overflow.
+ *
+ * Checks that the element's scrollWidth does not exceed its clientWidth,
+ * with the toolbox's 1px allowance for fractional layout rounding.
+ *
+ * @param element The container or text node whose contents must fit without overflow.
+ */
+export async function fitsWithoutOverflow(element: Locator): Promise<void> {
+  await element.evaluate(
+    (node, { slack, what }) => {
+      if (!node.checkVisibility({ visibilityProperty: true })) {
+        throw new Error(`${what}: the element is not visible`)
+      }
+      const clippedX = Math.max(0, node.scrollWidth - node.clientWidth)
+      if (clippedX > slack) {
+        throw new Error(
+          `${what}: clipped horizontally by ${clippedX}px (scrollWidth: ${node.scrollWidth}, clientWidth: ${node.clientWidth}); allowance ${slack}px`,
+        )
+      }
+    },
+    { slack: SLACK_PX, what: element.toString() },
+  )
+}
+
+/**
  * Watch how far below the top of the table's root its first row stands.
  *
  * A live message over the table takes room that was held before it arrived, so
@@ -770,6 +795,8 @@ export interface TableGeometryPlan {
   readonly projection: TableGeometryProjection
   readonly rowKeys: readonly string[]
   readonly lastKey: string
+  /** Whether wide column tracks are watched and compared (default true). */
+  readonly tracks?: boolean
 }
 
 interface TableBounds {
@@ -910,7 +937,7 @@ export async function watchTableGeometry(
         }
       }
       const tracks =
-        plan.projection === 'wide'
+        plan.tracks !== false && plan.projection === 'wide'
           ? [...root.querySelectorAll('table thead tr > th')].map((cell) => {
               const box = cell.getBoundingClientRect()
               return {

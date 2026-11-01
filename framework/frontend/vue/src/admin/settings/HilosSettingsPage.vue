@@ -264,14 +264,13 @@ async function submitReset(): Promise<void> {
         <code class="text-break">{{ row.key }}</code>
       </template>
       <template #cell-value="{ row }">
-        <div style="max-width: 18rem">
-          <HilosSettingValueCell
-            :value="row.value"
-            :type="row.type"
-            :value-source="row.valueSource"
-            :default-reference-key="row.defaultReferenceKey"
-          />
-        </div>
+        <HilosSettingValueCell
+          :value="row.value"
+          :type="row.type"
+          :value-source="row.valueSource"
+          :default-reference-key="row.defaultReferenceKey"
+          :wrap="true"
+        />
       </template>
       <template #cell-actions="{ row }">
         <button
