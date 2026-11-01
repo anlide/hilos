@@ -50,6 +50,7 @@ import {
   HilosI18nLanguageNamesPage,
   HilosI18nLanguagePage,
   HilosI18nLanguagesPage,
+  HilosI18nPage,
   HilosSwitch,
   HilosThemeMenu,
   HilosUserPage,
@@ -133,7 +134,8 @@ it('exports the @hilos/angular public surface', () => {
   expect(createHilosTrackedAction).toBeTypeOf('function')
   expect(HilosI18nLanguagesPage).toBeTypeOf('function')
   expect(HilosI18nLanguagePage).toBeTypeOf('function')
-  expect(hilosAdminViews()).toHaveProperty(HilosPages.I18N)
+  expect(HilosI18nPage).toBeTypeOf('function')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGES)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGE)
   expect(HilosI18nLanguageNamesPage).toBeTypeOf('function')

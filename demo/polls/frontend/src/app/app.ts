@@ -435,8 +435,13 @@ export class App {
     // lists, the two cards, their names, the language's locales and every
     // window over them; the project binds its connection, scope stores and
     // action lifecycle (views/hilos/i18n) and, on its backend, the pages, the
-    // library agent and the browser tables. The section root stays the
-    // framework default.
+    // library agent and the browser tables. The section root is also a project
+    // wrapper with its own scopes (views/hilos/i18n/overview.ts).
+    [HilosPages.I18N]: lazyPage(() =>
+      import('./views/hilos/i18n/overview.js').then(
+        (module) => module.I18nOverview,
+      ),
+    ),
     [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
       import('./views/hilos/i18n/lists/languages.js').then(
         (module) => module.I18nLanguages,

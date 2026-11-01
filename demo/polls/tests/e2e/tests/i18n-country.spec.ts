@@ -79,6 +79,7 @@ test('country.life', async ({ page, i18n }) => {
     await expectI18nPageHead(expect, page, {
       currentPage: 'hilos_i18n_countries',
       appName: APP_NAME,
+      tabsLabel: 'Internationalization pages',
     })
     await expect(page.getByTestId('i18n-countries-catalog')).toContainText(
       /The system knows \d+ languages and \d+ countries on its own/,
@@ -126,6 +127,7 @@ test('country.life', async ({ page, i18n }) => {
     await expectI18nPageHead(expect, page, {
       currentPage: 'hilos_i18n_countries',
       appName: APP_NAME,
+      tabsLabel: 'Internationalization pages',
     })
   })
 

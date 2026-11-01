@@ -19,7 +19,7 @@ import { switchLanguageOff } from '../../../../../framework/frontend/scripts/i18
 
 // The Vue overview's tiles, first complete answer and live summary stay the
 // subject of this spec. The React overview is checked by its own spec in
-// tasks. Angular tiles are HIL-1727.
+// tasks. The Angular overview is checked by its own spec in polls.
 
 // One administrator per worker attempt; every test still opens its own context.
 test.describe.configure({ mode: 'default' })

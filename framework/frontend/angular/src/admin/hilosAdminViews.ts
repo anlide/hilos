@@ -7,13 +7,13 @@
 // bootHilos projectViews. HILOS_UNBUILT_PAGES hides pages the layer has not built:
 // the router answers 404 and no card links to them.
 //
-// The users / user / settings / backup / maintenance, communications hub / channel
-// and Change Log pages are intentionally absent: they are real framework pages
-// (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage /
+// The users / user / settings / backup / maintenance, communications hub / channel,
+// Change Log and I18n Overview pages are intentionally absent: they are real framework
+// pages (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage /
 // HilosMaintenancePage / HilosCommunicationsPage / HilosCommunicationsChannelPage /
-// HilosChangeLogPage / HilosChangeLogTablesPage / HilosChangeLogTablePage) that
-// require a project-supplied context, so a project mounts them directly rather
-// than through this default map.
+// HilosChangeLogPage / HilosChangeLogTablesPage / HilosChangeLogTablePage /
+// HilosI18nPage) that require a project-supplied context, so a project mounts them
+// directly rather than through this default map.
 // HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage, HilosAnalyticsPeoplePage
 // and HilosAnalyticsPersonPage likewise need the project's Analytics context and
 // mount explicitly under HilosPages.ANALYTICS, ANALYTICS_BROWSER_SESSION,
@@ -45,18 +45,10 @@ export function hilosAdminViews(): Record<string, PageView<Type<unknown>>> {
     [HilosPages.ROLES]: lazyPage(() =>
       import('@hilos/angular/admin/roles').then((m) => m.HilosRolesPage),
     ),
-    [HilosPages.I18N]: lazyPage(() =>
-      import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nPage),
-    ),
-    // I18N_LANGUAGES, I18N_LANGUAGE, I18N_LANGUAGE_NAMES, I18N_LANGUAGE_LOCALES,
-    // I18N_COUNTRIES, I18N_COUNTRY and I18N_COUNTRY_NAMES are real framework
-    // pages since HIL-1503: the lists, the names and the locales read a live
-    // connection for their table, every card page reads one for its page
-    // datum, and all of them send their tracked actions, so a project mounts
-    // HilosI18nLanguagesPage, HilosI18nLanguagePage, HilosI18nLanguageNamesPage
-    // and HilosI18nLanguageLocalesPage directly with its language context, and
-    // HilosI18nCountriesPage, HilosI18nCountryPage and HilosI18nCountryNamesPage
-    // with its country context. The section root above stays self-contained.
+    // I18N Overview, I18N_LANGUAGES and I18N_COUNTRIES need project context:
+    // the overview reads page scopes (HilosI18nOverviewContext), and the lists
+    // use a live connection and action lifecycle. Projects mount thin views that
+    // provide these contexts.
     [HilosPages.I18N_ENTITIES]: lazyPage(() =>
       import('@hilos/angular/admin/i18n').then((m) => m.HilosI18nEntitiesPage),
     ),

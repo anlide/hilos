@@ -43,6 +43,35 @@ function setup(rows = [english, own], viewer = false) {
 }
 
 describe('HilosI18nLanguagesPage', () => {
+  it('names the section row Internationalization pages and keeps Languages current', () => {
+    const h = setup()
+    h.scope.data.set('pageLabel', 'Languages')
+    h.scope.data.set('pageHeadOwner', {
+      page: HilosPages.I18N,
+      label: 'Internationalization',
+      lead: 'Languages, countries, locales, and translation screens.',
+      icon: 'bi-translate',
+    })
+    h.scope.data.set('pageBreadcrumb', [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.I18N, label: 'Internationalization' },
+    ])
+    h.scope.data.set('pageTabs', [
+      { page: HilosPages.I18N, label: 'Overview' },
+      { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+    ])
+    h.scope.data.set('pageChildren', [])
+    h.fixture.detectChanges()
+
+    const tabs = document.querySelector(
+      'nav[aria-label="Internationalization pages"]',
+    )
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('Languages')
+  })
+
   it('draws the declared projections: linked codes, marks with words, read-only ticks and both openers', () => {
     const h = setup()
     expect(h.fixture.nativeElement.querySelector('table')).not.toBeNull()

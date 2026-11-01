@@ -414,6 +414,37 @@ export function answerAsCountryTab(scope: Scope, page: string): void {
   }
 }
 
+/** The section root answer metadata: the shared head hilos_i18n and the Overview · Languages · Countries tabs. */
+export function i18nSectionAnswer(): Record<string, unknown> {
+  return {
+    pageLabel: 'Internationalization',
+    pageLead: 'Languages, countries, locales, and translation screens.',
+    pageHeadOwner: {
+      page: HilosPages.I18N,
+      label: 'Internationalization',
+      lead: 'Languages, countries, locales, and translation screens.',
+      icon: 'bi-translate',
+    },
+    pageBreadcrumb: [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.I18N, label: 'Internationalization' },
+    ],
+    pageTabs: [
+      { page: HilosPages.I18N, label: 'Overview' },
+      { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+    ],
+    pageChildren: [],
+  }
+}
+
+/** Answer as the backend internationalization overview catalog does. */
+export function answerAsI18nSection(scope: Scope): void {
+  for (const [key, value] of Object.entries(i18nSectionAnswer())) {
+    scope.data.set(key, value)
+  }
+}
+
 /** The language's catalog lead: the owner's, and the Overview tab's own. */
 const LANGUAGE_OWNER_LEAD =
   'A single language: code, native name, and writing direction.'

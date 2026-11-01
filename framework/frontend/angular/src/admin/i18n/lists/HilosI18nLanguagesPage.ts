@@ -74,7 +74,11 @@ import { HilosI18nMarksLegend } from './HilosI18nMarksLegend.js'
     HilosViewportTable,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page
+      [page]="page"
+      headKind="section"
+      tabsLabel="Internationalization pages"
+    >
       @for (subject of [binding()]; track subject.window) {
         @if (builtInCatalog(); as catalog) {
           <hilos-i18n-catalog-note

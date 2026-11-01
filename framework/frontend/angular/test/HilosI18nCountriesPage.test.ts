@@ -65,6 +65,35 @@ function options(select: HTMLSelectElement | null): string[] {
 }
 
 describe('HilosI18nCountriesPage', () => {
+  it('names the section row Internationalization pages and keeps Countries current', () => {
+    const h = setup()
+    h.scope.data.set('pageLabel', 'Countries')
+    h.scope.data.set('pageHeadOwner', {
+      page: HilosPages.I18N,
+      label: 'Internationalization',
+      lead: 'Languages, countries, locales, and translation screens.',
+      icon: 'bi-translate',
+    })
+    h.scope.data.set('pageBreadcrumb', [
+      { page: HilosPages.DASHBOARD, label: 'Hilos' },
+      { page: HilosPages.I18N, label: 'Internationalization' },
+    ])
+    h.scope.data.set('pageTabs', [
+      { page: HilosPages.I18N, label: 'Overview' },
+      { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+      { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+    ])
+    h.scope.data.set('pageChildren', [])
+    h.fixture.detectChanges()
+
+    const tabs = document.querySelector(
+      'nav[aria-label="Internationalization pages"]',
+    )
+    expect(
+      tabs?.querySelector('[aria-current="page"]')?.textContent?.trim(),
+    ).toBe('Countries')
+  })
+
   it('draws the declared projections: linked codes, a missing name and locale, the own mark, read-only ticks and both openers', () => {
     const h = setup()
     expect(h.el('i18n-countries-link-us')?.getAttribute('href')).toBe(

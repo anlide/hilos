@@ -1272,9 +1272,10 @@ socket opens.
 live in `framework/frontend/e2e/i18nOverview.ts` and are exported from
 `framework/frontend/e2e/index.ts`. The first compares both tiles with one
 wire summary; the second collects summaries from the `page_response` of the
-`hilos_i18n` root. Binance's and Tasks' overview specs call them:
-`demo/binance-btc-tracker/tests/e2e/tests/i18n-overview.spec.ts` and
-`demo/tasks/tests/e2e/tests/i18n-overview.spec.ts`.
+`hilos_i18n` root. Binance's, Tasks' and Polls' overview specs call them:
+`demo/binance-btc-tracker/tests/e2e/tests/i18n-overview.spec.ts`,
+`demo/tasks/tests/e2e/tests/i18n-overview.spec.ts` and
+`demo/polls/tests/e2e/tests/i18n-overview.spec.ts`.
 
 ### The Change Log section — names and checks
 

@@ -6,10 +6,14 @@
 import type {
   HilosI18nCountryContext,
   HilosI18nLanguageContext,
+  HilosI18nOverviewContext,
 } from '@hilos/core/admin/i18n'
 
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'
+
+/** This project's context for the framework section overview. */
+export const hilosI18nOverviewContext: HilosI18nOverviewContext = { scopes }
 
 /** This project's context for the framework language list and language card. */
 export const hilosI18nLanguageContext: HilosI18nLanguageContext = {

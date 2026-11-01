@@ -21,6 +21,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.BACKUP,
     HilosPages.COMMUNICATIONS,
     HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
+    HilosPages.I18N,
     HilosPages.ANALYTICS,
     HilosPages.ANALYTICS_PEOPLE,
     HilosPages.ANALYTICS_PERSON,
@@ -49,6 +50,6 @@ it('loads every default as a real Angular component', async () => {
     Type<unknown>
   >[]
   const loaded = await Promise.all(views.map((view) => view.load()))
-  expect(loaded).toHaveLength(30)
+  expect(loaded).toHaveLength(29)
   for (const component of loaded) expect(component).toBeTypeOf('function')
 })

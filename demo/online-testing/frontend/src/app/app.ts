@@ -252,6 +252,11 @@ export class App {
     [HilosPages.LOGS_VIEW]: lazyPage(() =>
       import('./views/hilos/logs/view.js').then((module) => module.LogViewer),
     ),
+    [HilosPages.I18N]: lazyPage(() =>
+      import('./views/hilos/i18n/overview.js').then(
+        (module) => module.I18nOverview,
+      ),
+    ),
     [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
       import('./views/hilos/i18n/lists/languages.js').then(
         (module) => module.I18nLanguages,

@@ -584,8 +584,9 @@ the languages and countries lists. React also serves all eight reference pages
 (HIL-1502); its section root draws two live tiles and requires
 `HilosI18nOverviewContext`. Tasks and ecommerce-shop mount thin wrappers, and
 `hilosAdminViews()` does not supply the React section-root key. Angular serves
-the same eight pages (HIL-1503), with its section root also the context-free
-default shell; overview tiles and their context are HIL-1727.
+the same eight pages (HIL-1503); its section root draws two live tiles and
+requires `HilosI18nOverviewContext`. Polls and online-testing mount thin
+wrappers, and `hilosAdminViews()` does not supply the Angular section-root key.
 
 | Page key | Route |
 |---|---|
