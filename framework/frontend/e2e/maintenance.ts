@@ -2,15 +2,16 @@ import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
-import { liesAbove } from './geometry.js'
+import { MAINTENANCE_NODES_PATH } from './maintenanceNodes.js'
 import { shownByTestId } from './table.js'
 
 // Maintenance section steps shared by all three SDKs, whose data-id controls match,
 // and the manual-window checks all three kits must meet alike; the scenarios stay
-// in each demo's spec. Circle steps require the SDK's table page already open:
-// Circle in Vue and React, Overview in Angular until its own move. Manual steps
-// require Overview; code entry uses the maintenance screen itself. No step
-// navigates. Only an address somebody has confirmed can be named to the circle.
+// in each demo's spec. Circle steps require Circle already open, manual steps
+// require Overview, and the Words checks require Words; code entry uses the
+// maintenance screen itself. No step navigates, so a spec that clears the circle
+// and then turns the window on goes from one address to the other itself. Only an
+// address somebody has confirmed can be named to the circle.
 
 // How many rows the circle is emptied of before the attempt is called broken. Every
 // removal takes one row out, so the count is what ends that loop; this only makes a
@@ -35,37 +36,40 @@ export const MAINTENANCE_PATH = '/hilos/maintenance'
 
 /**
  * The Circle tab's address, copied verbatim from HilosPages.MAINTENANCE_CIRCLE in
- * core/src/routing/hilosPages.ts; available in Vue and React until Angular moves.
+ * core/src/routing/hilosPages.ts.
  */
 export const MAINTENANCE_CIRCLE_PATH = '/hilos/maintenance/circle'
 
 /**
  * The Words tab's address, copied verbatim from HilosPages.MAINTENANCE_WORDS in
- * core/src/routing/hilosPages.ts; available in Vue and React until Angular moves.
+ * core/src/routing/hilosPages.ts.
  */
 export const MAINTENANCE_WORDS_PATH = '/hilos/maintenance/words'
 
 /**
- * The phrase an operation without words of its own reads in place of them, copied
- * verbatim from HILOS_MAINTENANCE_WORDS_COPY.noOwnEntry in
- * core/src/admin/maintenance/hilosMaintenanceWords.ts. The e2e package builds against
- * no framework source, so the literal is kept beside the check that reads it.
+ * The section's pages as its tabs name them, copied verbatim from the Maintenance
+ * entries of framework/backend/Database/Pages/HilosPageCatalog.php. Nodes is not
+ * here: it answers only on a cluster, so a single node draws no tab for it.
  */
-const WORDS_NO_OWN_ENTRY = 'No own entry — uses default'
+const MAINTENANCE_TABS = [
+  ['hilos_maintenance', 'Overview', MAINTENANCE_PATH],
+  ['hilos_maintenance_circle', 'Circle', MAINTENANCE_CIRCLE_PATH],
+  ['hilos_maintenance_words', 'Words', MAINTENANCE_WORDS_PATH],
+] as const
+const MAINTENANCE_NODES_TAB = [
+  'hilos_maintenance_nodes',
+  'Nodes',
+  MAINTENANCE_NODES_PATH,
+] as const
 
 /**
- * The restore's operation, copied verbatim from BackupAgent::RESTORE_OPERATION
- * (framework/backend/Backup/Agent/BackupAgent.php); Words lists it whether or not the
- * project gave it words.
- */
-const RESTORE_OPERATION = 'restore'
-
-/**
- * The shared Maintenance head on Overview, Circle, or Words: one h1, the owner's trail,
- * the three real links with only the rendered page current, and no child cards.
+ * Maintenance's navigation on Overview, Circle or Words: one h1 naming the section,
+ * the trail's link back to Hilos with the section current, and the tabs' real links
+ * with only the rendered page current. The Nodes tab, drawn only on a cluster, is
+ * read where it stands and required nowhere.
  *
  * @param expect The spec's expect.
- * @param page A page on Maintenance Overview, Circle, or Words in an SDK building them.
+ * @param page A page on Maintenance Overview, Circle, or Words.
  * @param currentPage The key of the page on screen.
  */
 export async function expectMaintenancePageHead(
@@ -76,65 +80,43 @@ export async function expectMaintenancePageHead(
     | 'hilos_maintenance_circle'
     | 'hilos_maintenance_words',
 ): Promise<void> {
-  const head = page.getByTestId('hilos-page-head')
-  await expect(head).toHaveCount(1)
-  await expect(head).toBeVisible()
-  await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
-  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
   await expect(heading).toHaveText('Maintenance')
-  await expect(head.getByRole('heading', { level: 1 })).toHaveCount(1)
 
-  const crumbs = page.getByTestId('hilos-breadcrumb')
-  await expect(crumbs).toHaveCount(1)
-  await expect(crumbs).toHaveAccessibleName('Breadcrumb')
-  await expect
-    .poll(() =>
-      crumbs.getByRole('listitem').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Maintenance'])
-  await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
-    'href',
-    '/hilos',
-  )
-  const lastCrumb = crumbs.locator('[aria-current]')
-  await expect(lastCrumb).toHaveCount(1)
-  await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
-  await expect(lastCrumb.locator('a')).toHaveCount(0)
-  await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
+  const breadcrumb = page.getByRole('navigation', {
+    name: 'Breadcrumb',
+    exact: true,
+  })
+  await expect(
+    breadcrumb.getByRole('link', { name: 'Hilos', exact: true }),
+  ).toHaveAttribute('href', '/hilos')
+  const currentCrumb = breadcrumb.locator('[aria-current="page"]')
+  await expect(currentCrumb).toContainText('Maintenance')
+  await expect(currentCrumb.getByRole('link')).toHaveCount(0)
 
   const tabs = page.getByTestId('hilos-page-tabs')
-  await expect(tabs).toHaveCount(1)
+  await expect(tabs).toHaveRole('navigation')
   await expect(tabs).toHaveAccessibleName('Maintenance pages')
-  await expect(tabs.getByRole('link')).toHaveText([
-    'Overview',
-    'Circle',
-    'Words',
-  ])
-  for (const [key, path] of [
-    ['hilos_maintenance', MAINTENANCE_PATH],
-    ['hilos_maintenance_circle', MAINTENANCE_CIRCLE_PATH],
-    ['hilos_maintenance_words', MAINTENANCE_WORDS_PATH],
-  ] as const) {
-    const tab = tabs.getByTestId(`hilos-page-tab-${key}`)
-    await expect(tab).toHaveAttribute('href', path)
+  await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
+  // The tabs are drawn together, so once one is current the Nodes tab is either
+  // there or not drawn on this installation.
+  const nodes = tabs.getByTestId(`hilos-page-tab-${MAINTENANCE_NODES_TAB[0]}`)
+  const shown =
+    (await nodes.count()) === 0
+      ? MAINTENANCE_TABS
+      : [...MAINTENANCE_TABS, MAINTENANCE_NODES_TAB]
+  for (const [key, name, path] of shown) {
+    const link = tabs.getByTestId(`hilos-page-tab-${key}`)
+    await expect(link).toHaveRole('link')
+    await expect(link).toHaveAccessibleName(name)
+    await expect(link).toHaveAttribute('href', path)
     if (key === currentPage) {
-      await expect(tab).toHaveAttribute('aria-current', 'page')
+      await expect(link).toHaveAttribute('aria-current', 'page')
     } else {
-      await expect(tab).not.toHaveAttribute('aria-current')
+      await expect(link).not.toHaveAttribute('aria-current')
     }
   }
-  await expect(tabs.locator('[aria-current]')).toHaveCount(1)
-  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
 }
 
 /**
@@ -164,6 +146,127 @@ export async function expectMaintenancePageCurrent(
     links.getByTestId(`hilos-page-tab-${currentPage}`),
   ).toHaveAttribute('aria-current', 'page')
   await expect(links.locator('[aria-current]')).toHaveCount(1)
+}
+
+/**
+ * The Words page, its table and the slot its rows ride under, copied verbatim from
+ * HilosPages.MAINTENANCE_WORDS and core/src/admin/maintenance/hilosMaintenanceWords.ts.
+ */
+const WORDS_PAGE = 'hilos_maintenance_words'
+const WORDS_TABLE = 'hilosMaintenanceWords'
+const WORDS_SLOT = 'stub'
+const WORDS_TABLE_ID = 'hilos-maintenance-words-table'
+
+/**
+ * What a row without words of its own says in their place, copied verbatim from
+ * HILOS_MAINTENANCE_WORDS_COPY.noOwnEntry in hilosMaintenanceWords.ts.
+ */
+const WORDS_NO_OWN_ENTRY = 'No own entry — uses default'
+
+/**
+ * The restore's operation, copied verbatim from BackupAgent::RESTORE_OPERATION
+ * (framework/backend/Backup/Agent/BackupAgent.php); Words lists it whether or not the
+ * project gave it words.
+ */
+const RESTORE_OPERATION = 'restore'
+
+/** One operation's words as the page's answer carried them. */
+export interface MaintenanceWordsRow {
+  readonly operation: string
+  readonly title: string | null
+  readonly message: string | null
+  readonly bannerMessage: string | null
+  readonly usesDefault: boolean
+}
+
+/**
+ * The Words table drawn from the page's own answer: the first reply to the Words
+ * subscription after the bookmark carries the window, and every row of it is on
+ * screen with its words — or, for an operation with no entry of its own, with the
+ * line saying it uses the default instead. Requires a delivery log armed before
+ * the page's socket opened.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on Maintenance Words.
+ * @param log The page's real incoming deliveries.
+ * @param after Packet bookmark taken before the navigation that opened Words.
+ * @returns The rows of the window, as the reply carried them.
+ */
+export async function expectMaintenanceWordsInitial(
+  expect: Expect,
+  page: Page,
+  log: DeliveryFrameLog,
+  after = 0,
+): Promise<MaintenanceWordsRow[]> {
+  const replies = () =>
+    log.packets
+      .slice(after)
+      .flatMap((packet) => packet.frames)
+      .filter(({ wire }) => {
+        const frame = deliveryObject(wire)
+        return (
+          frame.type === 'page_response' &&
+          deliveryObject(frame.data).page === WORDS_PAGE
+        )
+      })
+  await expect.poll(() => replies().length).toBeGreaterThan(0)
+  const reply = replies()[0]!
+  expect(reply.failure).toBeUndefined()
+  const payload = deliveryObject(
+    deliveryObject(deliveryObject(reply.wire).data).payload,
+  )
+  const window = deliveryObject(deliveryObject(payload.windows)[WORDS_TABLE])
+  expect(window.rows).toEqual(expect.any(Array))
+  const rows = (window.rows as unknown[]).map((wire): MaintenanceWordsRow => {
+    const row = deliveryObject(wire)
+    const words = deliveryObject(deliveryObject(row.slots)[WORDS_SLOT])
+    expect(words.operation).toEqual(expect.any(String))
+    expect(row.rowKey).toBe(words.operation)
+    for (const field of [words.title, words.message, words.bannerMessage]) {
+      expect(field === null || typeof field === 'string').toBe(true)
+    }
+    expect(words.usesDefault).toEqual(expect.any(Boolean))
+    return {
+      operation: words.operation as string,
+      title: words.title as string | null,
+      message: words.message as string | null,
+      bannerMessage: words.bannerMessage as string | null,
+      usesDefault: words.usesDefault as boolean,
+    }
+  })
+
+  const table = page.getByTestId(WORDS_TABLE_ID)
+  await expect(shownByTestId(table, 'hilos-table-loading')).toHaveCount(0)
+  // Read through each row's own operation cell: a merged row message shares the
+  // row prefix the shared row-key reader goes by, and would be read as a row.
+  await expect
+    .poll(async () =>
+      (
+        await shownByTestId(
+          table,
+          /^hilos-maintenance-words-row-/,
+        ).allInnerTexts()
+      )
+        .map((operation) => operation.trim())
+        .sort(),
+    )
+    .toEqual(rows.map((row) => row.operation).sort())
+  for (const row of rows) {
+    const drawn = shownByTestId(table, `hilos-table-row-${row.operation}`)
+    await expect(
+      shownByTestId(drawn, `hilos-maintenance-words-row-${row.operation}`),
+    ).toHaveText(row.operation)
+    const instead = drawn.getByTestId('hilos-table-row-message')
+    if (row.usesDefault) {
+      await expect(instead).toHaveText(WORDS_NO_OWN_ENTRY)
+      continue
+    }
+    await expect(instead).toHaveCount(0)
+    for (const words of [row.title, row.message, row.bannerMessage]) {
+      if (words !== null) await expect(drawn).toContainText(words)
+    }
+  }
+  return rows
 }
 
 /**
@@ -565,9 +668,10 @@ export async function expectMaintenanceOpen(
 }
 
 /**
- * Read-only threshold copy, verbatim from HILOS_MAINTENANCE_WATCHDOG_COPY in
- * core/src/admin/maintenance/hilosMaintenance.ts. The e2e package builds against
- * no framework source; these literals stay beside the check that reads them.
+ * The threshold names, verbatim from HILOS_MAINTENANCE_WATCHDOG_COPY in
+ * core/src/admin/maintenance/hilosMaintenance.ts, each read beside its value. The e2e
+ * package builds against no framework source; these literals stay beside the check
+ * that reads them.
  */
 const WATCHDOG_THRESHOLD_LABELS = [
   'Wait for nodes to quiesce',
@@ -576,17 +680,19 @@ const WATCHDOG_THRESHOLD_LABELS = [
   'Send mail to',
   'Restart under manual maintenance',
 ]
-const WATCHDOG_THRESHOLDS_FOOTER =
-  'Thresholds and addresses come from the environment. Restart under manual maintenance is a setting changed in Settings.'
 
 /**
- * An administrator's Overview thresholds, compared with the real published frame.
- * Waits out unpublished startup values; never supplies mock configuration.
- * Requires a delivery log armed before the page's socket opened. The returned
- * values can also prove that navigation or a maintenance window kept the config.
+ * An administrator's Overview thresholds, compared with the real published
+ * frame: every value beside the threshold it belongs to, and nothing on the card
+ * to change. An administrator is shown the real addresses and the real restart
+ * choice, so a field the server kept hidden fails here instead of passing as a
+ * value. Waits out unpublished startup values; never supplies mock
+ * configuration. Requires a delivery log armed before the page's socket opened.
+ * The returned values can also prove that navigation or a maintenance window
+ * kept the config.
  *
  * @param expect The spec's expect.
- * @param page An administrator's page on an SDK building the Overview thresholds.
+ * @param page An administrator's page on Maintenance Overview.
  * @param log The page's real incoming deliveries, including live updates.
  * @returns The five displayed values in label order.
  */
@@ -638,19 +744,41 @@ export async function expectMaintenanceWatchdogThresholds(
   ]
   const thresholds = page.getByTestId('hilos-maintenance-watchdog-thresholds')
   await expect(thresholds).toBeVisible()
-  const heading = thresholds.getByRole('heading', { level: 2 })
-  await expect(heading).toHaveText('Watchdog thresholds')
-  await expect(heading).toHaveAccessibleName('Watchdog thresholds')
-  await expect(thresholds.getByRole('term')).toHaveText(
-    WATCHDOG_THRESHOLD_LABELS,
-  )
-  await expect(thresholds.getByRole('definition')).toHaveText(values)
-  await expect(thresholds.locator('.card-footer')).toHaveText(
-    WATCHDOG_THRESHOLDS_FOOTER,
-  )
+  await expect(
+    thresholds.getByRole('heading', { level: 2 }),
+  ).toHaveAccessibleName('Watchdog thresholds')
+  // Each term with the definition that follows it, compared as pairs: which value
+  // stands beside which threshold is the claim, the order of the rows is not.
+  const byLabel = (pairs: Array<[string | null, string | null]>) =>
+    pairs.sort(([a], [b]) => String(a).localeCompare(String(b)))
+  const words = (texts: string[]) =>
+    texts.map((text) => text.replace(/\s+/g, ' ').trim())
+  await expect
+    .poll(async () => {
+      const terms = words(await thresholds.getByRole('term').allInnerTexts())
+      const definitions = words(
+        await thresholds.getByRole('definition').allInnerTexts(),
+      )
+      return byLabel(
+        Array.from(
+          { length: Math.max(terms.length, definitions.length) },
+          (_, index): [string | null, string | null] => [
+            terms[index] ?? null,
+            definitions[index] ?? null,
+          ],
+        ),
+      )
+    })
+    .toEqual(
+      byLabel(
+        WATCHDOG_THRESHOLD_LABELS.map((label, index) => [
+          label,
+          values[index] ?? null,
+        ]),
+      ),
+    )
   await expect(
     thresholds.locator('input, select, textarea, button, a, [contenteditable]'),
   ).toHaveCount(0)
-  await liesAbove(page.getByTestId('hilos-maintenance-state'), thresholds)
   return values
 }

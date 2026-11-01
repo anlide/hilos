@@ -874,37 +874,53 @@ project-bound contract. Pick the recipe by which one it is:
   `FEATURES` ([admin-features.md](admin-features.md), Mode 1). The first one is
   `hilos_maintenance`, and its recipe is:
   - a thin Overview page `MaintenancePage extends
-    Hilos\Pages\Maintenance\AbstractHilosMaintenancePage` and a thin child
-    page `MaintenanceCirclePage extends
-    Hilos\Pages\Maintenance\AbstractHilosMaintenanceCirclePage`; both set
+    Hilos\Pages\Maintenance\AbstractHilosMaintenancePage` and three thin child
+    pages: `MaintenanceCirclePage extends
+    Hilos\Pages\Maintenance\AbstractHilosMaintenanceCirclePage`,
+    `MaintenanceWordsPage extends
+    Hilos\Pages\Maintenance\AbstractHilosMaintenanceWordsPage` and
+    `MaintenanceNodesPage extends
+    Hilos\Pages\Maintenance\AbstractHilosMaintenanceNodesPage`; all four set
     `SUBSCRIPTION_AGENT_TYPE` to the project's hilos index agent;
-  - `PAGES` — both page keys → their classes;
-  - `TABLES` — `HilosVerifierCircleTable::TABLE` under the project's
-    `TableContext` key, bound to `HilosVerifierCircleTable`;
-  - `PAGE_TABLES` — bind the table to Circle in all six demo backends. The two
-    Angular demos (`polls` and `online-testing`) also keep its transitional
-    Overview `PAGE_TABLES` entry until HIL-1682; `chat`, `binance-btc-tracker`,
-    `tasks` and `ecommerce-shop` have removed that binding;
+  - `PAGES` — all four page keys → their classes. Registering a child page is
+    what draws its tab, so each registered page needs its frontend mount below
+    in every frontend the project builds; a tab without one leads to a page the
+    application does not render;
+  - `TABLES` — `HilosVerifierCircleTable::TABLE`,
+    `HilosMaintenanceWordsTable::TABLE` and `HilosMaintenanceNodesTable::TABLE`
+    under the project's `TableContext` keys (`hilosVerifierCircle`,
+    `hilosMaintenanceWords`, `hilosMaintenanceNodes`), each bound to its table
+    class;
+  - `PAGE_TABLES` — bind each table to its own page — Circle, Words and Nodes —
+    in all six demo backends; none binds a table to Overview;
   - the Overview mount — `HilosMaintenancePage` from `@hilos/vue`, `@hilos/react`
     or `@hilos/angular` with the project's `{ connection, scopes, actions }`
-    context under `HilosPages.MAINTENANCE`. Vue also mounts
-    `HilosMaintenanceCirclePage` from `@hilos/vue/admin/maintenance` under
-    `HilosPages.MAINTENANCE_CIRCLE`. React mounts `HilosMaintenanceCirclePage`,
-    `HilosMaintenanceWordsPage` and `HilosMaintenanceNodesPage` from
-    `@hilos/react/admin/maintenance` under `HilosPages.MAINTENANCE_CIRCLE`,
-    `HilosPages.MAINTENANCE_WORDS` and `HilosPages.MAINTENANCE_NODES`, each as a
-    thin lazy wrapper in `views/Hilos/Maintenance/` that passes the same context
-    as Overview, and its Overview draws no circle table. Angular still renders the
-    circle table on Overview; Circle remains unbuilt in that SDK, so its tab is
-    hidden and a direct address returns `not_served` until HIL-1682;
+    context under `HilosPages.MAINTENANCE`; no SDK draws the circle table on
+    Overview;
+  - the Circle, Words and Nodes mounts — `HilosMaintenanceCirclePage` under
+    `HilosPages.MAINTENANCE_CIRCLE`, `HilosMaintenanceWordsPage` under
+    `HilosPages.MAINTENANCE_WORDS` and `HilosMaintenanceNodesPage` under
+    `HilosPages.MAINTENANCE_NODES`, each with the same project context as
+    Overview. Vue mounts them from `@hilos/vue/admin/maintenance`
+    (`views/Hilos/Maintenance/{Circle,Words,Nodes}.vue` in `chat` and
+    `binance-btc-tracker`); React from `@hilos/react/admin/maintenance`, each as
+    a thin lazy wrapper (`views/Hilos/Maintenance/{Circle,Words,Nodes}.tsx` in
+    `tasks` and `ecommerce-shop`); Angular from `@hilos/angular/admin/maintenance`
+    (`views/hilos/maintenance/{circle,words,nodes}.ts` in `polls` and
+    `online-testing`);
+  - Nodes applies only to a cluster: without `Hilos::$cluster->isEnabled()` the
+    page refuses a direct subscription as not found and draws no tab, and a table
+    query on a standalone installation follows the ordinary
+    `table_window_refused` path. The project registers the page and the table
+    either way and mounts the page in each frontend it builds; nothing is
+    declared per installation ([protected-mode.md](protected-mode.md), *The Nodes
+    Read Side*);
   - `createHilosMaintenanceCircleTable(context, view, page)` scopes the table
-    window, viewport, rendered fields and row focus to the selected page. A new
-    caller passes its page explicitly: Vue and React pass
-    `HilosPages.MAINTENANCE_CIRCLE`. The core default stays Overview, so the
-    two-argument call the Angular Overview still makes keeps targeting it. Circle
-    add/remove actions belong to the Circle page, but dispatch does not require a
-    Circle subscription, so the transitional Angular Overview actions continue to
-    work;
+    window, viewport, rendered fields and row focus to the selected page. A
+    caller passes its page explicitly: Vue, React and Angular pass
+    `HilosPages.MAINTENANCE_CIRCLE`. The core default stays Overview, so a
+    two-argument call targets it. Circle add/remove actions belong to the Circle
+    page, but dispatch does not require a Circle subscription;
   - no line in `FEATURES`, and nothing more to migrate: the circle's table is
     already required of every installation that can freeze (HIL-1118).
   - manual maintenance needs no extra wiring: the index agent already serves

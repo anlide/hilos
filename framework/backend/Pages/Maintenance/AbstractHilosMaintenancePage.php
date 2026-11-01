@@ -64,9 +64,7 @@ use Throwable;
  * The first admin section with no on-switch: the freeze under it is core and unconditional, so a
  * project activates the section by registering this Overview page and the Circle page, and binding
  * {@see HilosVerifierCircleTable} to the Circle page in the topology, with no line in FEATURES
- * (docs/agents/architecture/admin-features.md). This page holds no table of its own: a binding of the
- * circle table to it is transitional and stays in a project only until its frontend moves the table
- * to Circle (HIL-1682).
+ * (docs/agents/architecture/admin-features.md). This page holds no table of its own.
  *
  * The page hands manual entry to the index agent with a deferred answer (HIL-1362). It sends
  * the current protected-mode state before the page response, then pushes changes while open.

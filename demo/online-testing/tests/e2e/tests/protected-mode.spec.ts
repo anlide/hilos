@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
+  MAINTENANCE_CIRCLE_PATH,
   MAINTENANCE_PATH,
   clearMaintenanceCircle,
   dismissToasts,
@@ -170,9 +171,11 @@ test('two administrators close the system by hand, one lets the other in with a 
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
+  // The manual window is turned on from the Overview, so the operator goes back.
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {

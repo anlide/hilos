@@ -152,10 +152,10 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
-  it('serves Maintenance Circle in Vue and React and keeps only Angular unbuilt', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_CIRCLE]).toEqual([
-      'angular',
-    ])
+  it('serves Maintenance Circle in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.MAINTENANCE_CIRCLE,
+    )
     expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_CIRCLE)).toBe(
       false,
     )
@@ -164,13 +164,11 @@ describe('hilosUnbuiltPages', () => {
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_CIRCLE),
-    ).toBe(true)
+    ).toBe(false)
   })
 
-  it('serves Maintenance Words in Vue and React and keeps only Angular unbuilt', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_WORDS]).toEqual([
-      'angular',
-    ])
+  it('serves Maintenance Words in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.MAINTENANCE_WORDS)
     expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_WORDS)).toBe(
       false,
     )
@@ -178,14 +176,12 @@ describe('hilosUnbuiltPages', () => {
       false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_WORDS)).toBe(
-      true,
+      false,
     )
   })
 
-  it('serves Maintenance Nodes in Vue and React and keeps only Angular unbuilt', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_NODES]).toEqual([
-      'angular',
-    ])
+  it('serves Maintenance Nodes in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.MAINTENANCE_NODES)
     expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_NODES)).toBe(
       false,
     )
@@ -193,7 +189,7 @@ describe('hilosUnbuiltPages', () => {
       false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_NODES)).toBe(
-      true,
+      false,
     )
   })
 

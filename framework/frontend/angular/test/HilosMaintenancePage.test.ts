@@ -2,10 +2,12 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
-  HILOS_MAINTENANCE_CIRCLE_COPY,
   HILOS_MAINTENANCE_DISABLE_COPY,
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -23,21 +25,27 @@ import type {
   HilosConnection,
   HilosMaintenanceContext,
   HilosMaintenanceState,
+  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
   WritableSignal,
 } from '@hilos/core'
-import { hilosMaintenanceElapsed } from '@hilos/core/admin/maintenance'
-import { formatMoment } from '@hilos/core/base'
+import {
+  HILOS_MAINTENANCE_WATCHDOG_COPY,
+  hilosMaintenanceElapsed,
+} from '@hilos/core/admin/maintenance'
+import { HIDDEN_VALUE, formatMoment } from '@hilos/core/base'
 
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
-const CIRCLE_TABLE = 'hilosVerifierCircle'
 const timeZoneReleases: (() => void)[] = []
+const MAINTENANCE_LEAD =
+  'Node freeze under a destructive operation and manual maintenance: its state, the verifier circle, closing the system to visitors, and the way out of the window.'
 
+/** The router of a tab standing on Overview, with the identity its answer carries. */
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
@@ -45,13 +53,38 @@ function router(): HilosRouter {
       params: {},
       admin: true,
     }),
-    currentPath: createSignal(''),
+    currentPath: createSignal('/hilos/maintenance'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal<HilosPageIdentity | undefined>({
+      label: 'Maintenance',
+      lead: MAINTENANCE_LEAD,
+      breadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.MAINTENANCE, label: 'Maintenance' },
+      ],
+      children: [],
+      pageHeadOwner: {
+        page: HilosPages.MAINTENANCE,
+        label: 'Maintenance',
+        lead: MAINTENANCE_LEAD,
+        icon: 'bi-tools',
+      },
+      pageTabs: [
+        { page: HilosPages.MAINTENANCE, label: 'Overview' },
+        { page: HilosPages.MAINTENANCE_CIRCLE, label: 'Circle' },
+      ],
+    }),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page) =>
+      (
+        ({
+          [HilosPages.DASHBOARD]: '/hilos',
+          [HilosPages.MAINTENANCE]: '/hilos/maintenance',
+          [HilosPages.MAINTENANCE_CIRCLE]: '/hilos/maintenance/circle',
+        }) as Record<string, string>
+      )[page],
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -60,31 +93,6 @@ function router(): HilosRouter {
     replacePath: () => {},
     start: () => {},
     stop: () => {},
-  }
-}
-
-interface CircleMember {
-  memberId: number
-  identityType: string
-  /** The address, or the hidden mark a viewer of the admin view mode is sent. */
-  identifier: string | { readonly _hidden: true }
-  online: boolean
-}
-
-/** The wire row of one member: the id is the row key, the rest rides the slot. */
-function wireRow(member: CircleMember): {
-  rowKey: string
-  slots: Record<string, unknown>
-} {
-  return {
-    rowKey: String(member.memberId),
-    slots: {
-      verifierCircle: {
-        identityType: member.identityType,
-        identifier: member.identifier,
-        online: member.online,
-      },
-    },
   }
 }
 
@@ -98,7 +106,7 @@ interface Dispatched {
 
 /**
  * An action lifecycle that records what was dispatched and hands the answer back to
- * the test: the add dialog closes on the server's word, so a fake that settled by
+ * the test: a confirmation closes on the server's word, so a fake that settled by
  * itself would hide exactly the step under test.
  */
 function makeActions(): {
@@ -128,90 +136,55 @@ function makeActions(): {
   return { actions, dispatched }
 }
 
-function seededContext(
-  initial: CircleMember[],
-  actions: ActionLifecycle = makeActions().actions,
-): {
+/**
+ * A context whose connection hands the section's state frame to every listener of
+ * project signals and records any table traffic: Overview opens no table.
+ *
+ * @param actions The action lifecycle the confirmations dispatch over.
+ */
+function seededContext(actions: ActionLifecycle = makeActions().actions): {
   context: HilosMaintenanceContext
-  focus: string[]
+  tableTraffic: string[]
   pushState: (state: HilosMaintenanceState) => void
-  pushUpdate: (next: CircleMember) => void
-  pushRemove: (memberId: number, own?: boolean) => void
 } {
-  const rows = initial.slice()
-  const focus: string[] = []
-  const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.MAINTENANCE)
-  const windowListeners = new Set<(signal: { data: unknown }) => void>()
-  const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const tableTraffic: string[] = []
   const stateListeners = new Set<
     (signal: { type: string; data: unknown }) => void
   >()
-  const serveWindow = (
-    page: string = HilosPages.MAINTENANCE,
-    tableKey: string = CIRCLE_TABLE,
-  ): void => {
-    const data = {
-      page,
-      tableKey,
-      rows: rows.map(wireRow),
-      totalCount: rows.length,
-      totalExact: true,
-      firstAnchor: null,
-      lastAnchor: null,
-      offset: 0,
-      limit: 10,
-    }
-    for (const listener of windowListeners) {
-      listener({ data })
-    }
-  }
-
   const connection = {
     registerTableWindow(): void {
-      serveWindow()
+      tableTraffic.push('register')
     },
-    unregisterTableWindow(): void {},
-    tableWindowDescriptors: () => ({}),
-    sendTableViewport(page: string, tableKey: string): boolean {
-      serveWindow(page, tableKey)
-
-      return true
+    unregisterTableWindow(): void {
+      tableTraffic.push('unregister')
     },
-    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
-      focus.push(rowKey)
+    sendTableViewport(): boolean {
+      tableTraffic.push('viewport')
 
       return true
     },
     sendTableRendered(): boolean {
+      tableTraffic.push('rendered')
+
+      return true
+    },
+    sendTableRowFocus(): boolean {
+      tableTraffic.push('focus')
+
       return true
     },
     on(
       event: string,
-      listener: (signal: { data: unknown }) => void,
+      listener: (signal: { type: string; data: unknown }) => void,
     ): () => void {
-      if (event === 'tableWindow') {
-        windowListeners.add(listener)
+      if (event !== 'projectSignal') {
+        tableTraffic.push(event)
 
-        return () => windowListeners.delete(listener)
+        return () => {}
       }
-      if (event === 'tableViewportDelta') {
-        deltaListeners.add(listener)
+      stateListeners.add(listener)
 
-        return () => deltaListeners.delete(listener)
-      }
-      if (event === 'projectSignal') {
-        stateListeners.add(
-          listener as (signal: { type: string; data: unknown }) => void,
-        )
-
-        return () =>
-          stateListeners.delete(
-            listener as (signal: { type: string; data: unknown }) => void,
-          )
-      }
-
-      return () => {}
+      return () => stateListeners.delete(listener)
     },
   }
 
@@ -219,43 +192,14 @@ function seededContext(
     context: {
       connection:
         connection as unknown as HilosMaintenanceContext['connection'],
-      scopes,
+      scopes: new ScopeManager(),
       actions,
     },
-    focus,
+    tableTraffic,
     // The section's state frame, as the connection hands it to every listener.
     pushState(state: HilosMaintenanceState): void {
       for (const listener of stateListeners) {
         listener({ type: MAINTENANCE_STATE_SIGNAL, data: state })
-      }
-    },
-    pushUpdate(next: CircleMember): void {
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.MAINTENANCE,
-            tableKey: CIRCLE_TABLE,
-            kind: 'row_updated',
-            rowKey: String(next.memberId),
-            row: wireRow(next),
-          },
-        })
-      }
-    },
-    // The membership was taken out: a removal without a body, tagged as this tab's own
-    // when this tab is the one that took it out.
-    pushRemove(memberId: number, own = false): void {
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.MAINTENANCE,
-            tableKey: CIRCLE_TABLE,
-            kind: 'row_removed',
-            rowKey: String(memberId),
-            reason: 'deleted',
-            own,
-          },
-        })
       }
     },
   }
@@ -274,14 +218,6 @@ function mountPage(
   return fixture
 }
 
-// A row stands in the document twice — once in the table and once in the card the
-// same row becomes on a narrow screen — so a mark is looked up through the table.
-function mark(identifier: string): HTMLElement | null {
-  return document.querySelector(
-    `table [data-id="hilos-maintenance-circle-online-${identifier}"]`,
-  )
-}
-
 afterEach(() => {
   hilosToasts.clear()
   for (const release of timeZoneReleases.splice(0)) release()
@@ -297,42 +233,6 @@ async function settled(
   await new Promise((resolve) => setTimeout(resolve))
   await fixture.whenStable()
   fixture.detectChanges()
-}
-
-/** The add dialog's field, or null while the dialog is closed. */
-function addField(): HTMLInputElement | null {
-  return document.querySelector(
-    '[data-id="hilos-maintenance-circle-add-field"]',
-  )
-}
-
-/** The add dialog's confirm button; the dialog must be open. */
-function addConfirm(): HTMLButtonElement {
-  return document.querySelector(
-    '[data-id="hilos-maintenance-circle-add-confirm"]',
-  ) as HTMLButtonElement
-}
-
-/** The row's remove button, looked up through the table. */
-function trash(identifier: string): HTMLButtonElement {
-  return document.querySelector(
-    `table [data-id="hilos-maintenance-circle-remove-${identifier}"]`,
-  ) as HTMLButtonElement
-}
-
-/** The remove dialog's confirm button, or null while the dialog is closed. */
-function removeConfirm(): HTMLButtonElement | null {
-  return document.querySelector(
-    '[data-id="hilos-maintenance-circle-remove-confirm"]',
-  )
-}
-
-/** The one member the remove cases open their dialog over. */
-const ANN: CircleMember = {
-  memberId: 1,
-  identityType: 'password',
-  identifier: 'ann@example.test',
-  online: true,
 }
 
 function maintenanceState(
@@ -444,24 +344,9 @@ async function tryEveryClose(
   }
 }
 
-/** Open the add dialog and enter the address without normalizing it. */
-function openAndType(
-  fixture: ComponentFixture<HilosMaintenancePage>,
-  typed: string,
-): void {
-  document
-    .querySelector<HTMLButtonElement>('[data-id="hilos-table-main-action"]')
-    ?.click()
-  fixture.detectChanges()
-  const field = addField() as HTMLInputElement
-  field.value = typed
-  field.dispatchEvent(new Event('input', { bubbles: true }))
-  fixture.detectChanges()
-}
-
 describe('HilosMaintenancePage', () => {
   it('offers enable only after the open frame arrives', async () => {
-    const { context, pushState } = seededContext([])
+    const { context, pushState } = seededContext()
     const fixture = mountPage(context)
     expect(byId('hilos-maintenance-state-open')).toBeNull()
     expect(byId('hilos-maintenance-enable')).toBeNull()
@@ -487,7 +372,7 @@ describe('HilosMaintenancePage', () => {
   it.each(['disable', 'pass'] as const)(
     'offers %s only in the manual card, for either entry source',
     async (button) => {
-      const { context, pushState } = seededContext([])
+      const { context, pushState } = seededContext()
       const fixture = mountPage(context)
       const shown = () => byId(`hilos-maintenance-${button}`) !== null
       expect(shown()).toBe(false)
@@ -508,7 +393,7 @@ describe('HilosMaintenancePage', () => {
   )
 
   it('renders the manual card and redraws its pass count on a new frame', async () => {
-    const { context, pushState } = seededContext([])
+    const { context, pushState } = seededContext()
     const fixture = mountPage(context)
     const manual = manualState({
       startedAt: new Date(Date.now() - 150_000).toISOString(),
@@ -554,7 +439,7 @@ describe('HilosMaintenancePage', () => {
     const startClock = vi.spyOn(globalThis, 'setInterval')
     const stopClock = vi.spyOn(globalThis, 'clearInterval')
     try {
-      const { context, pushState } = seededContext([])
+      const { context, pushState } = seededContext()
       const fixture = mountPage(context)
       pushState(manualState({ startedAt: new Date().toISOString() }))
       await settled(fixture)
@@ -578,8 +463,8 @@ describe('HilosMaintenancePage', () => {
     }
   })
 
-  it('renders only the planned operation lines in the frozen card', async () => {
-    const { context, pushState } = seededContext([])
+  it('renders the operation card from the frame and keeps every unpublished fact a dash', async () => {
+    const { context, pushState } = seededContext()
     const fixture = mountPage(context)
     const startedAt = '2026-10-10T10:00:00.000Z'
 
@@ -594,6 +479,8 @@ describe('HilosMaintenancePage', () => {
     await settled(fixture)
 
     const card = byId('hilos-maintenance-state-operation') as HTMLElement
+    const fact = (dataId: string) =>
+      card.querySelector(`[data-id="${dataId}"]`)?.textContent?.trim()
     expect(card.textContent).toContain(
       HILOS_MAINTENANCE_STATE_COPY.operationTitle,
     )
@@ -605,364 +492,77 @@ describe('HilosMaintenancePage', () => {
       card.querySelector('[data-id="hilos-maintenance-started-at"]')
         ?.textContent,
     ).toBe(formatMoment(startedAt, { kind: 'dateTime' }))
-    expect(card.textContent).not.toContain('Initiator')
+    expect(card.textContent).toContain(HILOS_MAINTENANCE_STATE_COPY.initiator)
+    expect(fact('hilos-maintenance-initiator')).toBe('— · node —')
+    expect(fact('hilos-maintenance-stopped-agents')).toBe('—')
+    expect(fact('hilos-maintenance-diagnostics-node')).toBe('—')
+    expect(fact('hilos-maintenance-agent-start')).toBe('—')
+    expect(card.textContent).not.toContain(
+      HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+    )
+    expect(fact('hilos-maintenance-pass-count')).toBe('2')
     expect(card.querySelector('button')).toBeNull()
   })
 
-  it('renders a row per member with the mark of whether they are signed in', async () => {
-    const { context } = seededContext([
-      {
-        memberId: 1,
-        identityType: 'password',
-        identifier: 'ann@example.test',
-        online: true,
-      },
-      {
-        memberId: 2,
-        identityType: 'sms',
-        identifier: '+10000000001',
-        online: false,
-      },
-    ])
+  it('opens no circle table, viewport or row focus of its own', async () => {
+    const { context, pushState, tableTraffic } = seededContext()
     const fixture = mountPage(context)
-
-    expect(
-      (fixture.nativeElement as HTMLElement).querySelectorAll(
-        '[data-id^="hilos-table-row-"]',
-      ).length,
-    ).toBe(2)
-    expect(mark('ann@example.test')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.online,
-    )
-    expect(mark('+10000000001')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
-    )
-    expect(
-      document.querySelector(
-        '[data-id="hilos-table-cards"] [data-id="hilos-maintenance-circle-online-ann@example.test"]',
-      )?.textContent,
-    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.online)
-    expect(
-      document
-        .querySelector('[data-id="hilos-table-title"]')
-        ?.textContent?.trim(),
-    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.title)
-    expect(
-      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
-    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.rule)
-    expect(
-      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
-    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.volatile)
-    expect(
-      document
-        .querySelector('[data-id="hilos-table-count"]')
-        ?.textContent?.trim(),
-    ).toBe('1 – 2 of 2')
-  })
-
-  it('moves the mark in place when the live row changes', async () => {
-    const member = {
-      memberId: 1,
-      identityType: 'password',
-      identifier: 'ann@example.test',
-      online: true,
-    }
-    const { context, pushUpdate } = seededContext([member])
-    const fixture = mountPage(context)
-
-    pushUpdate({ ...member, online: false })
-    fixture.detectChanges()
-
-    expect(mark('ann@example.test')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
-    )
-  })
-
-  it('says what an empty circle means instead of drawing rows', async () => {
-    const { context } = seededContext([])
-    const fixture = mountPage(context)
-
-    expect(
-      (fixture.nativeElement as HTMLElement).querySelectorAll(
-        '[data-id^="hilos-table-row-"]',
-      ).length,
-    ).toBe(0)
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.empty.title,
-    )
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.empty.hint,
-    )
-    const emptyActions = [
-      ...document.querySelectorAll<HTMLButtonElement>(
-        'table [data-id="hilos-table-empty-action"]',
-      ),
-      ...document.querySelectorAll<HTMLButtonElement>(
-        '[data-id="hilos-table-cards"] [data-id="hilos-table-empty-action"]',
-      ),
-    ]
-    expect(emptyActions).toHaveLength(2)
-    for (const action of emptyActions) {
-      expect(action.textContent?.trim()).toBe(
-        HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
-      )
-      action.click()
-      fixture.detectChanges()
-      expect(addField()).not.toBeNull()
-      document
-        .querySelector<HTMLButtonElement>(
-          '[data-id="hilos-maintenance-circle-add-cancel"]',
-        )
-        ?.click()
-      fixture.detectChanges()
-      expect(addField()).toBeNull()
-    }
-  })
-
-  it('offers adding a member and removing one', async () => {
-    const { context } = seededContext([ANN])
-    const fixture = mountPage(context)
-    const panel = (fixture.nativeElement as HTMLElement).querySelector(
-      '[data-id="hilos-maintenance-circle-panel"]',
-    )
-
-    expect(
-      panel
-        ?.querySelector('[data-id="hilos-table-main-action"]')
-        ?.textContent?.trim(),
-    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.addButton)
-    expect(trash('ann@example.test').getAttribute('aria-label')).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle,
-    )
-    expect(trash('ann@example.test').querySelector('.bi-trash')).not.toBeNull()
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.title,
-    )
-  })
-
-  it('opens the remove dialog over the row, naming its address and taking it into focus', async () => {
-    const { context, focus } = seededContext([ANN])
-    const fixture = mountPage(context)
-
-    trash('ann@example.test').click()
-    fixture.detectChanges()
-
-    expect(focus).toEqual(['1'])
-    expect(document.querySelector('[data-id="modal"] code')?.textContent).toBe(
-      'ann@example.test',
-    )
-    expect(document.body.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeNote,
-    )
-    expect(removeConfirm()?.disabled).toBe(false)
-    expect(removeConfirm()?.textContent?.trim()).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeConfirm,
-    )
-  })
-
-  it("takes the member out by the row key and closes only on the server's word", async () => {
-    const { actions, dispatched } = makeActions()
-    const { context, focus } = seededContext([ANN], actions)
-    const fixture = mountPage(context)
-
-    trash('ann@example.test').click()
-    fixture.detectChanges()
-    removeConfirm()?.click()
+    pushState(manualState({ circleNamed: 1 }))
     await settled(fixture)
 
-    expect(dispatched).toMatchObject([
-      { action: 'maintenance_circle_remove', payload: { memberId: 1 } },
-    ])
-    expect(removeConfirm()).not.toBeNull()
-
-    dispatched[0]?.settle({
-      action: 'maintenance_circle_remove',
-    } as ActionResult)
-    await settled(fixture)
-
-    expect(removeConfirm()).toBeNull()
-    expect(focus).toEqual(['1', ''])
-  })
-
-  it('keeps the remove dialog open with the refusal on it', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([ANN], actions)
-    const fixture = mountPage(context)
-
-    trash('ann@example.test').click()
-    fixture.detectChanges()
-    removeConfirm()?.click()
-    await settled(fixture)
-    dispatched[0]?.refuse(
-      new ActionError(
-        'maintenance_circle_remove',
-        'fail',
-        'This verifier is no longer in the circle',
-      ),
-    )
-    await settled(fixture)
-
-    expect(removeConfirm()).not.toBeNull()
+    const root = fixture.nativeElement as HTMLElement
+    expect(root.querySelector('table')).toBeNull()
     expect(
-      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
-    ).toContain('This verifier is no longer in the circle')
-  })
-
-  it('says the row was taken out elsewhere and locks Remove', async () => {
-    const { context, pushRemove } = seededContext([ANN])
-    const fixture = mountPage(context)
-
-    trash('ann@example.test').click()
-    fixture.detectChanges()
-    pushRemove(1)
-    fixture.detectChanges()
-
-    expect(
-      document.querySelector(
-        '[data-id="hilos-maintenance-circle-remove-notice"]',
-      )?.textContent,
-    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.removeGone)
-    expect(removeConfirm()?.textContent?.trim()).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeGoneConfirm,
-    )
-    expect(removeConfirm()?.disabled).toBe(true)
-    // The address the dialog opened with stays on screen.
-    expect(document.querySelector('[data-id="modal"] code')?.textContent).toBe(
-      'ann@example.test',
-    )
-  })
-
-  it('does not read its own removal, echoed before the answer, as taken out elsewhere', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context, pushRemove } = seededContext([ANN], actions)
-    const fixture = mountPage(context)
-
-    trash('ann@example.test').click()
-    fixture.detectChanges()
-    removeConfirm()?.click()
-    await settled(fixture)
-    pushRemove(1, true)
-    fixture.detectChanges()
-
-    // No message: the notice's room is held by its invisible twin only.
-    expect(
-      document.querySelector(
-        '[data-id="hilos-maintenance-circle-remove-notice"]',
-      ),
+      root.querySelector('[data-id="hilos-maintenance-circle-table"]'),
     ).toBeNull()
-    expect(removeConfirm()?.textContent?.trim()).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeConfirm,
-    )
-
-    dispatched[0]?.settle({
-      action: 'maintenance_circle_remove',
-    } as ActionResult)
-    await settled(fixture)
-
-    expect(removeConfirm()).toBeNull()
+    expect(tableTraffic).toEqual([])
+    fixture.destroy()
+    expect(tableTraffic).toEqual([])
   })
+})
 
-  it('opens the add dialog with an empty field and holds Add until something is typed', async () => {
-    const { context } = seededContext([])
+describe('HilosMaintenancePage head', () => {
+  it('shares the Maintenance section head and selects only Overview', () => {
+    const { context } = seededContext()
     const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
 
-    openAndType(fixture, '   ')
-
-    expect(document.body.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addLead,
-    )
-    expect(addField()?.placeholder).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder,
-    )
-    expect(addConfirm().disabled).toBe(true)
-
-    const field = addField() as HTMLInputElement
-    field.value = 'ann@example.test'
-    field.dispatchEvent(new Event('input'))
-    fixture.detectChanges()
-
-    expect(addConfirm().disabled).toBe(false)
-  })
-
-  it("names the address as typed and closes only on the server's word", async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    const fixture = mountPage(context)
-
-    openAndType(fixture, '+7 900 000-00-00')
-    addConfirm().click()
-    await settled(fixture)
-
-    expect(dispatched).toMatchObject([
-      {
-        action: 'maintenance_circle_add',
-        payload: { identifier: '+7 900 000-00-00' },
-      },
-    ])
-    expect(addField()).not.toBeNull()
-
-    dispatched[0]?.settle({ action: 'maintenance_circle_add' } as ActionResult)
-    await settled(fixture)
-
-    expect(addField()).toBeNull()
-  })
-
-  it('keeps the dialog open with the typed address and the refusal on it', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    const fixture = mountPage(context)
-
-    openAndType(fixture, 'nobody@example.test')
-    addConfirm().click()
-    await settled(fixture)
-    dispatched[0]?.refuse(
-      new ActionError(
-        'maintenance_circle_add',
-        'fail',
-        'Nobody has proven this address',
-      ),
-    )
-    await settled(fixture)
-
-    expect(addField()?.value).toBe('nobody@example.test')
+    expect(root.querySelectorAll('h1')).toHaveLength(1)
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Maintenance')
     expect(
-      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
-    ).toContain('Nobody has proven this address')
-    expect(addConfirm().disabled).toBe(false)
-  })
-
-  it('opens the dialog again with an empty field and no refusal left over', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    const fixture = mountPage(context)
-
-    openAndType(fixture, 'nobody@example.test')
-    addConfirm().click()
-    await settled(fixture)
-    dispatched[0]?.refuse(
-      new ActionError(
-        'maintenance_circle_add',
-        'fail',
-        'Nobody has proven this address',
+      root.querySelector('[data-id="hilos-page-head-block"]')?.textContent,
+    ).toContain(MAINTENANCE_LEAD)
+    const breadcrumb = root.querySelector('[data-id="hilos-breadcrumb"]')
+    // What each item says, without the separator drawn for the eye only.
+    expect(
+      [...(breadcrumb?.querySelectorAll('li') ?? [])].map((item) => {
+        const copy = item.cloneNode(true) as HTMLElement
+        copy
+          .querySelectorAll('[aria-hidden="true"]')
+          .forEach((node) => node.remove())
+        return copy.textContent?.trim()
+      }),
+    ).toEqual(['Hilos', 'Maintenance'])
+    expect(
+      [...(breadcrumb?.querySelectorAll('a') ?? [])].map((link) =>
+        link.getAttribute('href'),
       ),
+    ).toEqual(['/hilos'])
+    const tabs = root.querySelector('nav[aria-label="Maintenance pages"]')
+    const links = [...(tabs?.querySelectorAll('a') ?? [])].map((link) => [
+      link.textContent?.trim(),
+      link.getAttribute('href'),
+    ])
+    expect(links).toHaveLength(2)
+    expect(links).toEqual(
+      expect.arrayContaining([
+        ['Overview', '/hilos/maintenance'],
+        ['Circle', '/hilos/maintenance/circle'],
+      ]),
     )
-    await settled(fixture)
-    document
-      .querySelector<HTMLButtonElement>(
-        '[data-id="modal"] .modal-footer .btn-secondary',
-      )
-      ?.click()
-    await settled(fixture)
-    expect(addField()).toBeNull()
-    document
-      .querySelector<HTMLButtonElement>('[data-id="hilos-table-main-action"]')
-      ?.click()
-    fixture.detectChanges()
-
-    expect(addField()?.value).toBe('')
-    expect(document.body.textContent).not.toContain(
-      'Nobody has proven this address',
-    )
+    const current = tabs?.querySelectorAll('a[aria-current="page"]')
+    expect(current).toHaveLength(1)
+    expect(current?.[0]?.textContent?.trim()).toBe('Overview')
   })
 })
 
@@ -1072,7 +672,7 @@ function manualButton(
  */
 async function openManual(manual: Pick<ManualCase, 'name' | 'opensFrom'>) {
   const { actions, dispatched } = makeActions()
-  const { context, pushState } = seededContext([], actions)
+  const { context, pushState } = seededContext(actions)
   const fixture = mountPage(context)
   pushState(manual.opensFrom)
   await settled(fixture)
@@ -1252,52 +852,136 @@ describe.each(MANUAL_CASES)(
   },
 )
 
-describe('HilosMaintenancePage with the addresses hidden (HIL-1260)', () => {
-  const HIDDEN = { _hidden: true } as const
+/** The three steps of the restore ladder, by their name in the data-ids. */
+type RestoreId = 'pass' | 'open' | 'close'
 
-  it('draws the mark for each address and keys the rows by the membership', async () => {
-    const { context } = seededContext([
-      {
-        memberId: 1,
-        identityType: 'password',
-        identifier: HIDDEN,
-        online: true,
-      },
-      { memberId: 2, identityType: 'sms', identifier: HIDDEN, online: false },
-    ])
-    mountPage(context)
+const RESTORE_IDS: readonly RestoreId[] = ['pass', 'open', 'close']
 
-    const cell = document.querySelector(
-      'table [data-id="hilos-maintenance-circle-row-member-1"]',
-    )
-    expect(
-      cell?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
-    ).toBe('Hidden')
-    expect(mark('member-1')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.online,
-    )
-    expect(mark('member-2')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
-    )
+/**
+ * A restore in its verification window, as the server sends it to the browser
+ * that started it: every fact published.
+ *
+ * @param overrides The fields this frame says otherwise.
+ */
+function restoreFrame(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return maintenanceState({
+    phase: 'verifying',
+    operation: 'restore',
+    isInitiator: true,
+    initiatorAgentType: 'hilos_backup',
+    initiatorNodeId: 'node-1',
+    startedAt: '2026-09-11T03:14:02.000Z',
+    activatedAt: '2026-09-11T03:14:09.000Z',
+    progressAt: '2026-09-11T03:21:44.000Z',
+    diagnosticsNodeId: 'node-1',
+    stoppedAgentCount: 6,
+    preservedAgentTypes: ['hilos_mail'],
+    agentStartGateClosed: false,
+    passCount: 2,
+    circleNamed: 3,
+    circleAdmitted: 2,
+    ...overrides,
   })
+}
 
-  it('names the hidden address in the remove dialog by the mark', async () => {
-    const { context, focus } = seededContext([
-      { memberId: 2, identityType: 'sms', identifier: HIDDEN, online: false },
-    ])
-    const fixture = mountPage(context)
+/**
+ * The body of a restore step's dialog, or null while it is closed.
+ *
+ * @param id The step.
+ */
+function restoreModal(id: RestoreId): HTMLElement | null {
+  return byId(`hilos-maintenance-restore-${id}-modal`)
+}
 
-    trash('member-2').click()
-    fixture.detectChanges()
+/**
+ * A button of a restore step's dialog, which must already be open.
+ *
+ * @param id The step.
+ * @param button Which of the two buttons.
+ */
+function restoreButton(
+  id: RestoreId,
+  button: 'confirm' | 'cancel',
+): HTMLButtonElement {
+  return byId<HTMLButtonElement>(
+    `hilos-maintenance-restore-${id}-${button}`,
+  ) as HTMLButtonElement
+}
 
-    expect(focus).toEqual(['2'])
-    const modal = document.querySelector('[data-id="modal"]')
-    expect(modal?.querySelector('code')).toBeNull()
-    expect(
-      modal?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
-    ).toBe('Hidden')
+/**
+ * Press Enter on a focused button: a press the button cancels does not click.
+ *
+ * @param button The button under the key.
+ */
+function pressEnter(button: HTMLButtonElement): void {
+  button.focus()
+  const event = new KeyboardEvent('keydown', {
+    key: 'Enter',
+    bubbles: true,
+    cancelable: true,
   })
-})
+  button.dispatchEvent(event)
+  if (!event.defaultPrevented) button.click()
+}
+
+/**
+ * Mount the real page on the initiating browser's restore frame and open one
+ * step of its ladder.
+ *
+ * @param id The step to open.
+ */
+async function openRestore(id: RestoreId) {
+  const { actions, dispatched } = makeActions()
+  const { context, pushState } = seededContext(actions)
+  const fixture = mountPage(context)
+  pushState(restoreFrame())
+  await settled(fixture)
+  const opener = byId<HTMLButtonElement>(
+    `hilos-maintenance-restore-${id}`,
+  ) as HTMLButtonElement
+  opener.focus()
+  opener.click()
+  await settled(fixture)
+
+  return { fixture, pushState, dispatched, opener }
+}
+
+/** The trimmed values of the watchdog thresholds card, in display order. */
+function thresholdValues(): (string | undefined)[] {
+  return [
+    ...(byId('hilos-maintenance-watchdog-thresholds')?.querySelectorAll('dd') ??
+      []),
+  ].map((row) => row.textContent?.trim())
+}
+
+/**
+ * What each row of the thresholds card says, by its label: which threshold a
+ * value belongs to is the fact, not the order the rows are drawn in.
+ */
+function thresholdFacts(): Record<string, string> {
+  const card = byId('hilos-maintenance-watchdog-thresholds')
+  const labels = [...(card?.querySelectorAll('dt') ?? [])]
+  const values = [...(card?.querySelectorAll('dd') ?? [])]
+  expect(values).toHaveLength(labels.length)
+
+  return Object.fromEntries(
+    labels.map((label, index) => [
+      label.textContent?.trim() ?? '',
+      values[index]?.textContent?.trim() ?? '',
+    ]),
+  )
+}
+
+/**
+ * Leave the page as a route change, a reload or a refreeze does: the view is
+ * destroyed and its element leaves the document — a destroyed root view alone
+ * stays drawn.
+ */
+function leavePage(): void {
+  TestBed.resetTestingModule()
+}
 
 describe('HilosMaintenancePage and the admin view mode', () => {
   const releases: (() => void)[] = []
@@ -1361,7 +1045,7 @@ describe('HilosMaintenancePage and the admin view mode', () => {
       const { handshake } = bindSession()
       handshake(null, true)
       const { actions, dispatched } = makeActions()
-      const { context, pushState } = seededContext([], actions)
+      const { context, pushState } = seededContext(actions)
       const fixture = mountPage(context)
       pushState(manual.opensFrom)
       await settled(fixture)
@@ -1392,96 +1076,108 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     },
   )
 
-  it('a viewer opens the add dialog, may type an address and has nothing to send it with', async () => {
+  it('shows restore facts to a viewer and blocks the ladder and its confirmations', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
     const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
+    const { context, pushState } = seededContext(actions)
     const fixture = mountPage(context)
-
-    const addButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-table-main-action"]',
-    )
-    expect(addButton?.disabled).toBe(false)
-
-    openAndType(fixture, 'someone@example.test')
-    expect(addField()?.disabled).toBe(false)
-    expect(addField()?.value).toBe('someone@example.test')
-    expect(addConfirm().disabled).toBe(true)
-    expect(addConfirm().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-
-    addConfirm().click()
+    pushState(restoreFrame())
     await settled(fixture)
-    expect(dispatched).toHaveLength(0)
+    const card = byId('hilos-maintenance-state-operation') as HTMLElement
+    expect(
+      card
+        .querySelector('[data-id="hilos-maintenance-initiator"]')
+        ?.textContent?.trim(),
+    ).toBe('hilos_backup · node node-1')
+    expect(
+      card
+        .querySelector('[data-id="hilos-maintenance-stopped-agents"]')
+        ?.textContent?.trim(),
+    ).toBe('6 · hilos_mail left running')
+    expect(
+      card
+        .querySelector('[data-id="hilos-maintenance-diagnostics-node"]')
+        ?.textContent?.trim(),
+    ).toBe('node-1')
+    for (const id of RESTORE_IDS) {
+      const opener = byId<HTMLButtonElement>(
+        `hilos-maintenance-restore-${id}`,
+      ) as HTMLButtonElement
+      expect(opener.disabled).toBe(true)
+      expect(opener.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+      opener.click()
+      await settled(fixture)
+      expect(restoreModal(id)).toBeNull()
+    }
 
-    const cancelButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-add-cancel"]',
-    )
-    expect(cancelButton).not.toBeNull()
-    expect(cancelButton?.disabled).toBe(false)
-    cancelButton?.click()
-    await settled(fixture)
-    expect(addField()).toBeNull()
+    for (const id of RESTORE_IDS) {
+      handshake({ id: 7, admin: true }, true)
+      await settled(fixture)
+      const opener = byId<HTMLButtonElement>(
+        `hilos-maintenance-restore-${id}`,
+      ) as HTMLButtonElement
+      expect(opener.disabled).toBe(false)
+      opener.click()
+      await settled(fixture)
+      expect(restoreButton(id, 'confirm').disabled).toBe(false)
+
+      // The rights leave before the press: nothing is sent, Cancel still closes.
+      handshake({ id: 7, admin: false }, true)
+      await settled(fixture)
+      expect(restoreButton(id, 'confirm').disabled).toBe(true)
+      expect(
+        restoreButton(id, 'confirm').getAttribute('aria-describedby'),
+      ).toContain(HILOS_VIEW_MODE_STRIP_TEXT_ID)
+      pressEnter(restoreButton(id, 'confirm'))
+      restoreButton(id, 'confirm').click()
+      expect(dispatched).toHaveLength(0)
+      expect(restoreButton(id, 'cancel').disabled).toBe(false)
+      restoreButton(id, 'cancel').click()
+      await settled(fixture)
+      expect(restoreModal(id)).toBeNull()
+    }
   })
 
-  it('a viewer opens the remove dialog over a row and has nothing to send from it', async () => {
+  it('keeps watchdog details readable for a viewer and draws hidden thresholds through HiddenMark', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
     const { actions, dispatched } = makeActions()
-    const { context, focus } = seededContext([ANN], actions)
+    const { context, pushState } = seededContext(actions)
     const fixture = mountPage(context)
-
-    const trashButton = trash('ann@example.test')
-    expect(trashButton.disabled).toBe(false)
-    trashButton.click()
-    await settled(fixture)
-
-    expect(focus).toEqual(['1'])
-    expect(removeConfirm()?.disabled).toBe(true)
-    expect(removeConfirm()?.getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    pushState(
+      restoreFrame({
+        watchdogVerdict: 'silent',
+        watchdogAlertEmails: HIDDEN_VALUE,
+        watchdogManualRestartIsNormal: HIDDEN_VALUE,
+      }),
     )
-
-    removeConfirm()?.click()
     await settled(fixture)
-    expect(dispatched).toHaveLength(0)
-
-    const cancelButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-remove-cancel"]',
+    const card = byId('hilos-maintenance-watchdog-thresholds') as HTMLElement
+    expect(card.querySelectorAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    expect(thresholdValues()).toEqual(['—', '—', '—', 'Hidden', 'Hidden'])
+    expect(card.textContent).not.toContain('No recipients configured')
+    const opener = byId<HTMLButtonElement>(
+      'hilos-maintenance-watchdog-details',
+    ) as HTMLButtonElement
+    expect(opener.disabled).toBe(false)
+    opener.focus()
+    opener.click()
+    await settled(fixture)
+    expect(byId('hilos-maintenance-watchdog-full')?.textContent).toContain(
+      'No movement behind the freeze',
     )
-    expect(cancelButton).not.toBeNull()
-    expect(cancelButton?.disabled).toBe(false)
-    cancelButton?.click()
+    byId<HTMLButtonElement>('hilos-maintenance-watchdog-close')?.click()
     await settled(fixture)
-
-    expect(removeConfirm()).toBeNull()
-    expect(focus).toEqual(['1', ''])
-  })
-
-  it('an admin on a node in the mode names a verifier as today', async () => {
-    const { handshake } = bindSession()
-    handshake({ id: 1, admin: true }, true)
-    const { actions } = makeActions()
-    const { context } = seededContext([], actions)
-    const fixture = mountPage(context)
-
-    openAndType(fixture, 'someone@example.test')
-    expect(addConfirm().disabled).toBe(false)
-    expect(addConfirm().getAttribute('aria-describedby')).toBeNull()
+    expect(byId('hilos-maintenance-watchdog-full')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    expect(dispatched).toEqual([])
   })
 })
 
 describe('HilosMaintenancePage code result', () => {
-  /**
-   * Leave the page as a route change does: the view is destroyed and its
-   * element leaves the document — a destroyed root view alone stays drawn.
-   */
-  function leavePage(): void {
-    TestBed.resetTestingModule()
-  }
-
   const PASS: Pick<ManualCase, 'name' | 'opensFrom'> = {
     name: 'pass',
     opensFrom: manualState(),
@@ -1608,7 +1304,7 @@ describe('HilosMaintenancePage moments', () => {
     timeZone.receive('UTC')
 
     const startedAt = '2026-09-10T00:30:00.000Z'
-    const { context, pushState } = seededContext([])
+    const { context, pushState } = seededContext()
     const fixture = mountPage(context)
     pushState(manualState({ startedAt }))
     await settled(fixture)
@@ -1634,7 +1330,7 @@ describe('HilosMaintenancePage moments', () => {
     expect(dialogOf('hilos-maintenance-pass-modal')).toBe(dialog)
   })
 
-  it('reformats operation moments in the reader zone and keeps its dialog draft', async () => {
+  it('reformats operation moments in the reader zone and keeps its card', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     vi.setSystemTime(new Date('2026-09-10T00:45:00.000Z'))
     const timeZone = bindTestTimeZone('UTC')
@@ -1646,7 +1342,7 @@ describe('HilosMaintenancePage moments', () => {
     const progressAt = '2026-09-10T00:20:00.000Z'
 
     try {
-      const { context, pushState } = seededContext([])
+      const { context, pushState } = seededContext()
       const fixture = mountPage(context)
       pushState(
         maintenanceState({
@@ -1675,19 +1371,6 @@ describe('HilosMaintenancePage moments', () => {
         hilosMaintenanceElapsed(progressAt, Date.now()),
       )
 
-      const panel = byId('hilos-maintenance-circle-panel')
-      const opener = panel?.querySelector<HTMLButtonElement>(
-        '[data-id="hilos-table-main-action"]',
-      )
-      opener?.click()
-      fixture.detectChanges()
-      const draft = byId<HTMLInputElement>('hilos-maintenance-circle-add-field')
-      expect(draft).not.toBeNull()
-      if (draft === null) return
-      draft.value = 'draft@example.test'
-      draft.dispatchEvent(new Event('input', { bubbles: true }))
-      fixture.detectChanges()
-
       timeZone.receive('America/Los_Angeles')
       await fixture.whenStable()
       fixture.detectChanges()
@@ -1708,10 +1391,6 @@ describe('HilosMaintenancePage moments', () => {
         hilosMaintenanceElapsed(progressAt, Date.now()),
       )
       expect(byId('hilos-maintenance-state-operation')).toBe(card)
-      expect(byId<HTMLInputElement>('hilos-maintenance-circle-add-field')).toBe(
-        draft,
-      )
-      expect(draft.value).toBe('draft@example.test')
 
       pushState(
         maintenanceState({
@@ -1729,11 +1408,913 @@ describe('HilosMaintenancePage moments', () => {
       expect(progress?.textContent).toBe('—')
       expect(byId('hilos-maintenance-progress-elapsed')).toBeNull()
       expect(document.body.textContent).not.toContain('1970')
-      expect(draft.value).toBe('draft@example.test')
       fixture.destroy()
     } finally {
       vi.useRealTimers()
       vi.restoreAllMocks()
     }
+  })
+})
+
+describe('HilosMaintenancePage restore card', () => {
+  it('draws published facts in the reader zone and ages the last movement on the shared clock', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2026-09-11T03:24:14.000Z'))
+    const timeZone = bindTestTimeZone('UTC')
+    timeZoneReleases.push(timeZone.release)
+    timeZone.receive('UTC')
+
+    try {
+      const { context, pushState } = seededContext()
+      const fixture = mountPage(context)
+      const state = restoreFrame()
+      pushState(state)
+      await settled(fixture)
+
+      const card = byId('hilos-maintenance-state-operation') as HTMLElement
+      const fact = (dataId: string) =>
+        card.querySelector(`[data-id="${dataId}"]`)?.textContent?.trim()
+      const moments = () => [
+        fact('hilos-maintenance-started-at'),
+        fact('hilos-maintenance-activated-at'),
+        fact('hilos-maintenance-progress-at'),
+      ]
+      const expectedMoments = () =>
+        [state.startedAt, state.activatedAt, state.progressAt].map((moment) =>
+          formatMoment(moment ?? '', { kind: 'dateTime' }),
+        )
+      expect(fact('hilos-maintenance-initiator')).toBe(
+        'hilos_backup · node node-1',
+      )
+      const inUtc = expectedMoments()
+      expect(moments()).toEqual(inUtc)
+      expect(fact('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
+      expect(fact('hilos-maintenance-stopped-agents')).toBe(
+        '6 · hilos_mail left running',
+      )
+      expect(fact('hilos-maintenance-diagnostics-node')).toBe('node-1')
+      expect(fact('hilos-maintenance-agent-start')).toBe(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartOpen,
+      )
+
+      // The gate and the held agents are what the node published, never guessed.
+      pushState(restoreFrame({ agentStartGateClosed: true }))
+      await settled(fixture)
+      expect(fact('hilos-maintenance-agent-start')).toBe(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+      )
+      pushState(restoreFrame({ stoppedAgentCount: 0, preservedAgentTypes: [] }))
+      await settled(fixture)
+      expect(fact('hilos-maintenance-stopped-agents')).toBe('0')
+      expect(fact('hilos-maintenance-agent-start')).toBe(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartOpen,
+      )
+      pushState(
+        restoreFrame({
+          agentStartGateClosed: null,
+          stoppedAgentCount: null,
+          diagnosticsNodeId: null,
+        }),
+      )
+      await settled(fixture)
+      expect(fact('hilos-maintenance-agent-start')).toBe('—')
+      expect(fact('hilos-maintenance-stopped-agents')).toBe('—')
+      expect(fact('hilos-maintenance-diagnostics-node')).toBe('—')
+      pushState(state)
+      await settled(fixture)
+
+      timeZone.receive('America/Los_Angeles')
+      await settled(fixture)
+      const inLosAngeles = expectedMoments()
+      expect(inLosAngeles).not.toEqual(inUtc)
+      expect(moments()).toEqual(inLosAngeles)
+      expect(fact('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
+      timeZone.receive('Europe/Kyiv')
+      await settled(fixture)
+      const inKyiv = expectedMoments()
+      expect(inKyiv).not.toEqual(inLosAngeles)
+      expect(moments()).toEqual(inKyiv)
+      expect(state.activatedAt).toBe('2026-09-11T03:14:09.000Z')
+      expect(state.progressAt).toBe('2026-09-11T03:21:44.000Z')
+
+      vi.advanceTimersByTime(29_999)
+      await settled(fixture)
+      expect(fact('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
+      vi.advanceTimersByTime(1)
+      await settled(fixture)
+      expect(fact('hilos-maintenance-progress-elapsed')).toBe('3 minutes ago')
+      expect(moments()).toEqual(inKyiv)
+      expect(byId('hilos-maintenance-state-operation')).toBe(card)
+      fixture.destroy()
+    } finally {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('gives the initiating browser three live buttons and another browser only the line', async () => {
+    const { context, pushState } = seededContext()
+    const fixture = mountPage(context)
+    const ladder = () => byId('hilos-maintenance-restore-ladder')
+    const line = () => byId('hilos-maintenance-other-browser')
+    const noStep = () =>
+      RESTORE_IDS.every(
+        (id) => byId(`hilos-maintenance-restore-${id}`) === null,
+      )
+    expect(ladder()).toBeNull()
+    expect(line()).toBeNull()
+
+    // Before the window opens, and in a manual window, no restore ladder is drawn.
+    for (const state of [
+      restoreFrame({ phase: 'active' }),
+      restoreFrame({ phase: 'activating' }),
+      manualState({ isInitiator: true, enteredFromBrowser: true }),
+    ]) {
+      pushState(state)
+      await settled(fixture)
+      expect(ladder()).toBeNull()
+      expect(line()).toBeNull()
+      expect(noStep()).toBe(true)
+    }
+
+    pushState(restoreFrame())
+    await settled(fixture)
+    expect(line()).toBeNull()
+    const steps = [
+      ['pass', HILOS_MAINTENANCE_RESTORE_PASS_COPY.issue],
+      ['open', HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue],
+      ['close', HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.issue],
+    ] as const
+    for (const [id, label] of steps) {
+      const button = ladder()?.querySelector<HTMLButtonElement>(
+        `[data-id="hilos-maintenance-restore-${id}"]`,
+      ) as HTMLButtonElement
+      expect(button.tagName).toBe('BUTTON')
+      expect(button.textContent?.trim()).toBe(label)
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-disabled')).toBeNull()
+    }
+    expect(
+      byId('hilos-maintenance-state-operation')?.querySelector('button'),
+    ).toBeNull()
+
+    // Another admitted browser, and every browser of a restore started from the
+    // console, which has no initiating browser at all: the line names who leads.
+    for (const state of [
+      restoreFrame({ isInitiator: false, enteredFromBrowser: true }),
+      restoreFrame({ isInitiator: false, enteredFromBrowser: false }),
+    ]) {
+      pushState(state)
+      await settled(fixture)
+      expect(ladder()).toBeNull()
+      expect(noStep()).toBe(true)
+      expect(line()?.getAttribute('role')).toBe('status')
+      expect(line()?.textContent?.trim()).toBe(
+        'The operation is run by hilos_backup on node node-1. Only the browser that started it can open the system.',
+      )
+      expect(line()?.querySelector('button')).toBeNull()
+    }
+
+    pushState(
+      restoreFrame({
+        isInitiator: false,
+        initiatorAgentType: null,
+        initiatorNodeId: null,
+      }),
+    )
+    await settled(fixture)
+    expect(line()?.textContent?.trim()).toBe(
+      'The operation is run by — on node —. Only the browser that started it can open the system.',
+    )
+    expect(byId('hilos-maintenance-initiator')?.textContent?.trim()).toBe(
+      '— · node —',
+    )
+  })
+})
+
+const clipboardWritten: string[] = []
+const realClipboard = navigator.clipboard
+
+/**
+ * Stand a clipboard in for the browser's, or take it away.
+ *
+ * @param clipboard The clipboard the page sees, or undefined for none.
+ */
+function setClipboard(clipboard: Clipboard | undefined): void {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+}
+
+describe('HilosMaintenancePage restore code', () => {
+  afterEach(() => {
+    setClipboard(realClipboard)
+    clipboardWritten.length = 0
+  })
+
+  it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+    'explains minting and allows %s before dispatch without sending anything',
+    async (method) => {
+      const { fixture, dispatched, opener } = await openRestore('pass')
+      const dialog = dialogOf('hilos-maintenance-restore-pass-modal')
+      expect(dialog.getAttribute('aria-label')).toBe(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.mintTitle,
+      )
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(document.activeElement).toBe(dialog)
+      expect(dialog.querySelector('input, textarea')).toBeNull()
+      for (const text of [
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.lead,
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.reuseNote,
+      ]) {
+        expect(dialog.textContent).toContain(text)
+      }
+      expect(dialog.textContent?.toLowerCase()).not.toContain(
+        'turn maintenance off',
+      )
+      expect(dialog.textContent).not.toContain(
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      )
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+      ).not.toBeNull()
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+      await settled(fixture)
+      expect(dispatched).toHaveLength(0)
+      expect(restoreModal('pass')).not.toBeNull()
+
+      await closeBy(fixture, dialog, restoreButton('pass', 'cancel'), method)
+
+      expect(restoreModal('pass')).toBeNull()
+      expect(dispatched).toHaveLength(0)
+      expect(document.activeElement).toBe(opener)
+    },
+  )
+
+  it('blocks repeat, Enter and every close while busy, outlives a state push and reveals the code once', async () => {
+    setClipboard({
+      writeText: async (text: string) => {
+        clipboardWritten.push(text)
+      },
+    } as unknown as Clipboard)
+    const { fixture, dispatched, opener, pushState } = await openRestore('pass')
+    const dialog = dialogOf('hilos-maintenance-restore-pass-modal')
+    const confirm = () => restoreButton('pass', 'confirm')
+    const cancel = () => restoreButton('pass', 'cancel')
+    pressEnter(confirm())
+    pressEnter(confirm())
+    await settled(fixture)
+
+    expect(dispatched).toMatchObject([
+      { action: 'maintenance_restore_pass', payload: {} },
+    ])
+    expect(confirm().getAttribute('aria-disabled')).toBe('true')
+    expect(cancel().disabled).toBe(true)
+    pressEnter(confirm())
+    await tryEveryClose(fixture, dialog, cancel())
+    expect(restoreModal('pass')).not.toBeNull()
+    expect(dispatched).toHaveLength(1)
+
+    // A live frame is not the answer: the dialog stays busy and keeps waiting.
+    pushState(restoreFrame({ passCount: 3 }))
+    await settled(fixture)
+    expect(dialogOf('hilos-maintenance-restore-pass-modal')).toBe(dialog)
+    expect(cancel().disabled).toBe(true)
+    expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+
+    const secret = '<opaque&code>'
+    dispatched[0]?.settle({ message: 'Code minted', reply: { pass: secret } })
+    await settled(fixture)
+    const value = byId('hilos-maintenance-restore-pass-value')
+    expect(value?.textContent).toBe(secret)
+    expect(value?.querySelector('opaque')).toBeNull()
+    expect(document.activeElement).toBe(value)
+    expect(dialog.getAttribute('aria-label')).toBe(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.codeTitle,
+    )
+    expect(dialog.textContent).toContain(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.resultLead,
+    )
+    expect(dialog.textContent).toContain(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.resultNote,
+    )
+    expect(cancel().textContent?.trim()).toBe(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.close,
+    )
+    expect(byId('hilos-maintenance-restore-pass-confirm')).toBeNull()
+    expect(
+      byId('hilos-maintenance-state-operation')?.textContent,
+    ).not.toContain(secret)
+    expect(hilosToasts.toasts.get()).toMatchObject([{ message: 'Code minted' }])
+    expect(JSON.stringify(hilosToasts.toasts.get())).not.toContain(secret)
+    for (const element of document.querySelectorAll('*')) {
+      for (const attribute of element.attributes) {
+        expect(attribute.value).not.toContain(secret)
+      }
+    }
+    expect(
+      JSON.stringify({ ...localStorage, ...sessionStorage }),
+    ).not.toContain(secret)
+    expect(window.location.href).not.toContain(secret)
+
+    const copy = dialog.querySelector<HTMLButtonElement>(
+      '[data-id="modal-copy"]',
+    ) as HTMLButtonElement
+    expect(copy.tagName).toBe('BUTTON')
+    expect(copy.disabled).toBe(false)
+    pressEnter(copy)
+    await settled(fixture)
+    expect(clipboardWritten).toEqual([secret])
+    expect(JSON.stringify(hilosToasts.toasts.get())).not.toContain(secret)
+
+    cancel().click()
+    await settled(fixture)
+    expect(restoreModal('pass')).toBeNull()
+    expect(document.body.textContent).not.toContain(secret)
+    expect(document.activeElement).toBe(opener)
+    opener.click()
+    await settled(fixture)
+    expect(restoreModal('pass')?.textContent).not.toContain(secret)
+    expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+    expect(dispatched).toHaveLength(1)
+  })
+
+  it.each(['fail', 'timeout', 'disconnected', 'invalid-reply'] as const)(
+    'keeps %s in the mint dialog, with no control that opens the system, and never retries',
+    async (outcome) => {
+      const { fixture, dispatched } = await openRestore('pass')
+      restoreButton('pass', 'confirm').click()
+      await settled(fixture)
+      const reason =
+        outcome === 'fail'
+          ? 'This browser did not start the restore.'
+          : 'No reply received.'
+
+      dispatched[0]?.refuse(
+        new ActionError('maintenance_restore_pass', outcome, reason),
+      )
+      await settled(fixture)
+
+      const message =
+        outcome === 'fail'
+          ? reason
+          : HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote
+      const dialog = dialogOf('hilos-maintenance-restore-pass-modal')
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error"]')?.textContent,
+      ).toContain(message)
+      expect(
+        dialog
+          .querySelector('[data-id="hilos-action-error-slot"]')
+          ?.getAttribute('aria-live'),
+      ).toBe('assertive')
+      expect(message.toLowerCase()).not.toContain('turn maintenance off')
+      expect(dialog.textContent).not.toContain(
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      )
+      expect(
+        dialog.querySelector(
+          '[data-id="hilos-maintenance-restore-open-confirm"]',
+        ),
+      ).toBeNull()
+      expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message, severity: 'error' },
+      ])
+      expect(restoreButton('pass', 'cancel').disabled).toBe(false)
+      expect(restoreButton('pass', 'confirm').disabled).toBe(false)
+      await settled(fixture)
+      expect(dispatched).toHaveLength(1)
+    },
+  )
+
+  it('shows the entire refusal and its admin details through the standard plate', async () => {
+    const { fixture, dispatched } = await openRestore('pass')
+    restoreButton('pass', 'confirm').click()
+    await settled(fixture)
+    const reason = `${HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote} The initiator did not answer.`
+
+    dispatched[0]?.refuse(
+      new ActionError(
+        'maintenance_restore_pass',
+        'fail',
+        reason,
+        'MaintenanceFailure',
+        'Original detail',
+      ),
+    )
+    await settled(fixture)
+    restoreModal('pass')
+      ?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-error-details"]',
+      )
+      ?.click()
+    await settled(fixture)
+
+    expect(document.body.textContent).toContain(reason)
+    expect(document.body.textContent).toContain('MaintenanceFailure')
+    expect(document.body.textContent).toContain('Original detail')
+    expect(
+      [...document.querySelectorAll('[role="dialog"]')].map((dialog) =>
+        dialog.getAttribute('aria-label'),
+      ),
+    ).toContain(HILOS_MAINTENANCE_RESTORE_PASS_COPY.refusalTitle)
+  })
+
+  it('blocks an unsent mint when this browser is no longer the initiator', async () => {
+    const { fixture, pushState, dispatched } = await openRestore('pass')
+    pushState(restoreFrame({ isInitiator: false }))
+    await settled(fixture)
+
+    expect(byId('hilos-maintenance-restore-ladder')).toBeNull()
+    expect(byId('hilos-maintenance-other-browser')).not.toBeNull()
+    expect(restoreButton('pass', 'confirm').disabled).toBe(true)
+    pressEnter(restoreButton('pass', 'confirm'))
+    restoreButton('pass', 'confirm').click()
+    expect(dispatched).toHaveLength(0)
+    restoreButton('pass', 'cancel').click()
+    await settled(fixture)
+    expect(restoreModal('pass')).toBeNull()
+  })
+
+  it('forgets a shown code when the page goes', async () => {
+    const { fixture, dispatched } = await openRestore('pass')
+    restoreButton('pass', 'confirm').click()
+    await settled(fixture)
+    dispatched[0]?.settle({ reply: { pass: 'departed-code' } })
+    await settled(fixture)
+    expect(restoreModal('pass')?.textContent).toContain('departed-code')
+
+    leavePage()
+
+    expect(document.body.textContent).not.toContain('departed-code')
+    expect(restoreModal('pass')).toBeNull()
+  })
+
+  it('cannot resurrect a code from a reply that arrives after the page went', async () => {
+    const { fixture, dispatched } = await openRestore('pass')
+    restoreButton('pass', 'confirm').click()
+    await settled(fixture)
+    leavePage()
+
+    dispatched[0]?.settle({ reply: { pass: 'late-code' } })
+    await new Promise((resolve) => setTimeout(resolve))
+
+    expect(document.body.textContent).not.toContain('late-code')
+    expect(restoreModal('pass')).toBeNull()
+    const reopened = await openRestore('pass')
+    expect(restoreModal('pass')?.textContent).not.toContain('late-code')
+    expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+    expect(reopened.dispatched).toHaveLength(0)
+  })
+
+  it('a late success after timeout cannot replace a newly opened confirmation', async () => {
+    const { fixture, dispatched, opener } = await openRestore('pass')
+    restoreButton('pass', 'confirm').click()
+    await settled(fixture)
+    dispatched[0]?.refuse(
+      new ActionError('maintenance_restore_pass', 'timeout', 'Timed out'),
+    )
+    await settled(fixture)
+    expect(restoreModal('pass')?.textContent).toContain(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote,
+    )
+    restoreButton('pass', 'cancel').click()
+    await settled(fixture)
+    opener.click()
+    await settled(fixture)
+
+    dispatched[0]?.settle({ reply: { pass: 'orphan-code' } })
+    await settled(fixture)
+
+    expect(document.body.textContent).not.toContain('orphan-code')
+    expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+    expect(restoreButton('pass', 'confirm').disabled).toBe(false)
+    expect(dispatched).toHaveLength(1)
+  })
+})
+
+/** What the open and close steps of the ladder send and say. */
+const RESTORE_EXITS = [
+  {
+    id: 'open',
+    action: 'maintenance_restore_open',
+    copy: HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+    texts: [
+      HILOS_MAINTENANCE_RESTORE_OPEN_COPY.lead,
+      HILOS_MAINTENANCE_RESTORE_OPEN_COPY.noWayBack,
+    ],
+  },
+  {
+    id: 'close',
+    action: 'maintenance_restore_close',
+    copy: HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+    texts: [
+      HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.lead,
+      HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.footer,
+    ],
+  },
+] as const
+
+describe.each(RESTORE_EXITS)(
+  'HilosMaintenancePage restore $id confirmation',
+  (exit) => {
+    const confirm = () => restoreButton(exit.id, 'confirm')
+    const cancel = () => restoreButton(exit.id, 'cancel')
+
+    it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+      'explains itself, ignores Enter on the dialog and allows %s without sending anything',
+      async (method) => {
+        const { fixture, dispatched, opener } = await openRestore(exit.id)
+        const dialog = dialogOf(`hilos-maintenance-restore-${exit.id}-modal`)
+        expect(dialog.getAttribute('aria-label')).toBe(exit.copy.title)
+        expect(dialog.getAttribute('aria-modal')).toBe('true')
+        expect(document.activeElement).toBe(dialog)
+        expect(dialog.querySelector('input, textarea')).toBeNull()
+        for (const text of exit.texts) {
+          expect(dialog.textContent).toContain(text)
+        }
+        expect(
+          dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+        ).not.toBeNull()
+        dialog.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+        )
+        await settled(fixture)
+        expect(dispatched).toHaveLength(0)
+        expect(restoreModal(exit.id)).not.toBeNull()
+
+        await closeBy(fixture, dialog, cancel(), method)
+
+        expect(restoreModal(exit.id)).toBeNull()
+        expect(dispatched).toHaveLength(0)
+        expect(document.activeElement).toBe(opener)
+      },
+    )
+
+    it('blocks repeat, Enter and every close while busy, outlives a state push and closes on its one success', async () => {
+      const { fixture, dispatched, pushState } = await openRestore(exit.id)
+      const dialog = dialogOf(`hilos-maintenance-restore-${exit.id}-modal`)
+      pressEnter(confirm())
+      pressEnter(confirm())
+      await settled(fixture)
+
+      expect(dispatched).toMatchObject([{ action: exit.action, payload: {} }])
+      expect(confirm().getAttribute('aria-disabled')).toBe('true')
+      expect(cancel().disabled).toBe(true)
+      pressEnter(confirm())
+      await tryEveryClose(fixture, dialog, cancel())
+      expect(restoreModal(exit.id)).not.toBeNull()
+      dispatched[0]?.loading.set(true)
+      await settled(fixture)
+      expect(confirm().getAttribute('aria-busy')).toBe('true')
+
+      // The ladder leaves with the live frame; the dialog waits for its own answer.
+      pushState(restoreFrame({ phase: 'deactivating' }))
+      await settled(fixture)
+      expect(byId('hilos-maintenance-restore-ladder')).toBeNull()
+      expect(dialogOf(`hilos-maintenance-restore-${exit.id}-modal`)).toBe(
+        dialog,
+      )
+      expect(cancel().disabled).toBe(true)
+      expect(hilosToasts.toasts.get()).toHaveLength(0)
+
+      dispatched[0]?.settle({ message: 'Done' })
+      await settled(fixture)
+
+      expect(restoreModal(exit.id)).toBeNull()
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Done', severity: 'success', repeats: 1 },
+      ])
+      expect(dispatched).toHaveLength(1)
+    })
+
+    it.each(['fail', 'timeout', 'disconnected', 'invalid-reply'] as const)(
+      'keeps %s readable in the dialog, releases Cancel and never retries',
+      async (outcome) => {
+        const { fixture, dispatched } = await openRestore(exit.id)
+        confirm().click()
+        await settled(fixture)
+        const reason =
+          outcome === 'fail'
+            ? 'This browser did not start the restore.'
+            : 'No reply received.'
+
+        dispatched[0]?.refuse(new ActionError(exit.action, outcome, reason))
+        await settled(fixture)
+
+        const message = outcome === 'fail' ? reason : exit.copy.unconfirmedNote
+        const modal = restoreModal(exit.id)
+        expect(
+          modal?.querySelector('[data-id="hilos-action-error"]')?.textContent,
+        ).toContain(message)
+        expect(
+          modal
+            ?.querySelector('[data-id="hilos-action-error-slot"]')
+            ?.getAttribute('aria-live'),
+        ).toBe('assertive')
+        expect(hilosToasts.toasts.get()).toMatchObject([
+          { message, severity: 'error' },
+        ])
+        expect(cancel().disabled).toBe(false)
+        expect(confirm().disabled).toBe(false)
+        await settled(fixture)
+        expect(dispatched).toHaveLength(1)
+        cancel().click()
+        await settled(fixture)
+        expect(restoreModal(exit.id)).toBeNull()
+      },
+    )
+
+    it.each([
+      ['the window is gone', restoreFrame({ phase: 'deactivating' })],
+      ['this browser no longer leads', restoreFrame({ isInitiator: false })],
+    ] as const)(
+      'blocks an unsent confirmation when %s',
+      async (_reason, state) => {
+        const { fixture, pushState, dispatched } = await openRestore(exit.id)
+        pushState(state)
+        await settled(fixture)
+
+        expect(confirm().disabled).toBe(true)
+        pressEnter(confirm())
+        confirm().click()
+        expect(dispatched).toHaveLength(0)
+        expect(cancel().disabled).toBe(false)
+        cancel().click()
+        await settled(fixture)
+        expect(restoreModal(exit.id)).toBeNull()
+      },
+    )
+
+    it('brings neither the dialog nor its refusal back when the answer comes after the page went', async () => {
+      const { fixture, dispatched } = await openRestore(exit.id)
+      confirm().click()
+      await settled(fixture)
+
+      leavePage()
+      dispatched[0]?.refuse(
+        new ActionError(exit.action, 'disconnected', 'Connection lost.'),
+      )
+      await new Promise((resolve) => setTimeout(resolve))
+
+      // What the page owes is its own surface: no dialog comes alive and no
+      // late refusal is drawn. The toast the shared action driver files is the
+      // driver's, and this page does not promise it away.
+      expect(restoreModal(exit.id)).toBeNull()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(byId('hilos-action-error')).toBeNull()
+      expect(document.body.textContent).not.toContain(exit.copy.unconfirmedNote)
+      expect(dispatched).toHaveLength(1)
+    })
+  },
+)
+
+describe('HilosMaintenancePage watchdog', () => {
+  it('reserves the alarm slot before a frame without inventing threshold values', () => {
+    const { context, tableTraffic } = seededContext()
+    mountPage(context)
+    const slot = byId('hilos-maintenance-watchdog-slot') as HTMLElement
+    expect(slot.getAttribute('role')).toBe('status')
+    expect(slot.getAttribute('aria-live')).toBe('polite')
+    expect(slot.querySelectorAll('button')).toHaveLength(0)
+    expect(slot.querySelector('[aria-hidden="true"][inert]')).not.toBeNull()
+    expect(byId('hilos-maintenance-watchdog-alert')).toBeNull()
+    expect(byId('hilos-maintenance-watchdog-thresholds')).toBeNull()
+    expect(document.body.textContent).not.toContain('No recipients configured')
+    expect(tableTraffic).toEqual([])
+  })
+
+  it('keeps unknown, empty and real configuration distinct and redraws a live restart policy', async () => {
+    const { context, pushState } = seededContext()
+    const fixture = mountPage(context)
+    pushState(maintenanceState())
+    await settled(fixture)
+    const card = byId('hilos-maintenance-watchdog-thresholds') as HTMLElement
+    expect(card.querySelector('h2')?.textContent).toBe('Watchdog thresholds')
+    expect(
+      [...card.querySelectorAll('dt')].map((row) => row.textContent),
+    ).toEqual([
+      'Wait for nodes to quiesce',
+      'Consider silent after',
+      'Repeat alert',
+      'Send mail to',
+      'Restart under manual maintenance',
+    ])
+    expect(thresholdValues()).toEqual(['—', '—', '—', '—', '—'])
+    expect(
+      card.querySelectorAll('input, select, textarea, button, a'),
+    ).toHaveLength(0)
+
+    pushState(
+      maintenanceState({
+        watchdogAlertEmails: [],
+        watchdogManualRestartIsNormal: false,
+      }),
+    )
+    await settled(fixture)
+    expect(byId('hilos-maintenance-watchdog-thresholds')).toBe(card)
+    expect(thresholdValues()).toEqual([
+      '—',
+      '—',
+      '—',
+      'No recipients configured',
+      'Send an alert',
+    ])
+
+    pushState(
+      maintenanceState({
+        watchdogQuiesceTimeoutSeconds: 60,
+        watchdogSilenceTimeoutSeconds: 900,
+        watchdogAlertIntervalSeconds: 1800,
+        watchdogAlertEmails: ['ops@example.com'],
+        watchdogManualRestartIsNormal: true,
+      }),
+    )
+    await settled(fixture)
+    expect(thresholdValues()).toEqual([
+      '60 seconds',
+      '900 seconds',
+      '1800 seconds',
+      'ops@example.com',
+      'No mail — a log entry',
+    ])
+    expect(card.textContent).not.toContain('No recipients configured')
+  })
+
+  it.each([
+    [
+      'open',
+      HILOS_MAINTENANCE_STATE_COPY.openTitle,
+      'hilos-maintenance-enable',
+      HILOS_MAINTENANCE_ENABLE_COPY.enableTitle,
+    ],
+    [
+      'manual',
+      HILOS_MAINTENANCE_STATE_COPY.manualTitle,
+      'hilos-maintenance-disable',
+      HILOS_MAINTENANCE_DISABLE_COPY.disableTitle,
+    ],
+    [
+      'operation',
+      HILOS_MAINTENANCE_STATE_COPY.operationTitle,
+      'hilos-maintenance-restore-close',
+      HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.issue,
+    ],
+  ] as const)(
+    'shows the alarm slot, the state, its way out and the real thresholds read-only when %s',
+    async (position, stateTitle, actionId, actionName) => {
+      const { context, pushState } = seededContext()
+      const fixture = mountPage(context)
+      const state =
+        position === 'open'
+          ? maintenanceState()
+          : position === 'manual'
+            ? manualState()
+            : restoreFrame()
+      pushState({
+        ...state,
+        watchdogQuiesceTimeoutSeconds: 61,
+        watchdogSilenceTimeoutSeconds: 901,
+        watchdogAlertIntervalSeconds: 1801,
+        watchdogAlertEmails: ['ops@example.com', 'alerts@example.com'],
+        watchdogManualRestartIsNormal: true,
+      })
+      await settled(fixture)
+
+      const slot = byId('hilos-maintenance-watchdog-slot') as HTMLElement
+      expect(slot.getAttribute('role')).toBe('status')
+      expect(slot.querySelectorAll('button')).toHaveLength(0)
+      const headings = [...document.querySelectorAll('h2')].map((heading) =>
+        heading.textContent?.trim(),
+      )
+      expect(headings).toContain(stateTitle)
+      const action = byId<HTMLButtonElement>(actionId) as HTMLButtonElement
+      expect(action.tagName).toBe('BUTTON')
+      expect(action.textContent?.trim()).toBe(actionName)
+      expect(action.disabled).toBe(false)
+
+      const card = byId('hilos-maintenance-watchdog-thresholds') as HTMLElement
+      expect(card.querySelector('h2')?.textContent?.trim()).toBe(
+        'Watchdog thresholds',
+      )
+      expect(thresholdFacts()).toEqual({
+        'Wait for nodes to quiesce': '61 seconds',
+        'Consider silent after': '901 seconds',
+        'Repeat alert': '1801 seconds',
+        'Send mail to': 'ops@example.com, alerts@example.com',
+        'Restart under manual maintenance': 'No mail — a log entry',
+      })
+      expect(
+        card.querySelectorAll(
+          'input, select, textarea, button, a, [role="button"], [role="link"]',
+        ),
+      ).toHaveLength(0)
+    },
+  )
+
+  it('uses only the server verdict and keeps manual maintenance clear across elapsed time', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2026-10-28T12:00:00.000Z'))
+
+    try {
+      const { context, pushState } = seededContext()
+      const fixture = mountPage(context)
+      pushState(
+        manualState({
+          startedAt: '2026-01-01T00:00:00.000Z',
+          watchdogSilenceTimeoutSeconds: 1,
+          watchdogManualRestartIsNormal: true,
+        }),
+      )
+      await settled(fixture)
+      vi.advanceTimersByTime(60_000)
+      await settled(fixture)
+      expect(byId('hilos-maintenance-watchdog-alert')).toBeNull()
+      expect(byId('hilos-maintenance-watchdog-idle')).not.toBeNull()
+
+      pushState(
+        manualState({
+          watchdogVerdict: 'restored-from-disk',
+          watchdogManualRestartIsNormal: false,
+        }),
+      )
+      await settled(fixture)
+      expect(byId('hilos-maintenance-watchdog-alert')?.textContent).toContain(
+        HILOS_MAINTENANCE_WATCHDOG_COPY.manualRestartSummary,
+      )
+      fixture.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('updates diagnostic moments through the reader-zone bridge without another state frame or backend action', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    timeZoneReleases.push(timeZone.release)
+    timeZone.receive('UTC')
+    const { actions, dispatched } = makeActions()
+    const { context, pushState, tableTraffic } = seededContext(actions)
+    const fixture = mountPage(context)
+    const frame = restoreFrame({
+      watchdogVerdict: 'silent',
+      watchdogPendingNodeIds: ['node-3', 'node-4'],
+    })
+    pushState(frame)
+    await settled(fixture)
+    const opener = byId<HTMLButtonElement>(
+      'hilos-maintenance-watchdog-details',
+    ) as HTMLButtonElement
+    opener.focus()
+    opener.click()
+    await settled(fixture)
+    const full = byId('hilos-maintenance-watchdog-full') as HTMLElement
+    const moments = () =>
+      [...full.querySelectorAll('dd')].slice(4, 7).map((row) => row.textContent)
+    const published = () =>
+      [frame.startedAt, frame.activatedAt, frame.progressAt].map((moment) =>
+        formatMoment(moment!),
+      )
+    const inUtc = published()
+    expect(inUtc).not.toContain(null)
+    expect(moments()).toEqual(inUtc)
+    expect(full.textContent).toContain('node-3, node-4')
+
+    timeZone.receive('America/Los_Angeles')
+    await fixture.whenStable()
+    fixture.detectChanges()
+    const inLosAngeles = published()
+    expect(inLosAngeles).not.toEqual(inUtc)
+    expect(moments()).toEqual(inLosAngeles)
+
+    timeZone.receive('Europe/Kyiv')
+    await fixture.whenStable()
+    fixture.detectChanges()
+    const inKyiv = published()
+    expect(inKyiv).not.toEqual(inUtc)
+    expect(inKyiv).not.toEqual(inLosAngeles)
+    expect(moments()).toEqual(inKyiv)
+    expect(byId('hilos-maintenance-watchdog-full')).toBe(full)
+
+    pushState(
+      restoreFrame({
+        watchdogVerdict: 'initiator-lost',
+        watchdogPendingNodeIds: [],
+      }),
+    )
+    await settled(fixture)
+    expect(full.textContent).toContain('The initiator is gone')
+    expect(full.textContent).not.toContain('No movement behind the freeze')
+    expect(full.textContent).not.toContain('node-3')
+
+    pushState(maintenanceState())
+    await settled(fixture)
+    expect(byId('hilos-maintenance-watchdog-full')).toBeNull()
+    expect(document.body.textContent).not.toContain('The initiator is gone')
+    expect(dispatched).toEqual([])
+    expect(tableTraffic).toEqual([])
   })
 })

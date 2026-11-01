@@ -752,9 +752,6 @@ final class Hilos extends HilosFacade
         AppearancePage::PAGE => [
             PollsTableContext::hilosAppearanceSettings => [],
         ],
-        MaintenancePage::PAGE => [
-            PollsTableContext::hilosVerifierCircle => [],
-        ],
         MaintenanceCirclePage::PAGE => [
             PollsTableContext::hilosVerifierCircle => [],
         ],

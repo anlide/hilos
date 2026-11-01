@@ -658,8 +658,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         ], Hilos::PAGES);
     }
 
-    /** Both addresses keep the table until the view moves, Words binds the words table without actions, while Circle alone owns its mutations. */
-    public function testMaintenanceCircleUsesTheIndexAgentAndKeepsTheOverviewTableBinding(): void
+    /** The Overview binds no verifier window, Circle owns it with its mutations, and Words binds the words table without actions. */
+    public function testMaintenanceCircleUsesTheIndexAgentAndTheOverviewBindsNoTable(): void
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
         $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
@@ -693,10 +693,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             [OnlineTestingTableContext::hilosMaintenanceNodes => []],
             Hilos::PAGE_TABLES[MaintenanceNodesPage::PAGE],
         );
-        $this->assertSame(
-            [OnlineTestingTableContext::hilosVerifierCircle => []],
-            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
-        );
+        $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
     }
 
     /** Status uses the existing index agent, one read-only window and the ADMIN handover route. */
@@ -1407,7 +1404,6 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             ChangeLogTableTriggersPage::PAGE,
             SettingsPage::PAGE,
             AppearancePage::PAGE,
-            MaintenancePage::PAGE,
             MaintenanceCirclePage::PAGE,
             MaintenanceWordsPage::PAGE,
             MaintenanceNodesPage::PAGE,
@@ -1520,16 +1516,13 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Maintenance has no feature switch; its page and verifier table activate it. */
+    /** Maintenance has no feature switch; its page and verifier table activate it, and the Overview binds no table. */
     public function testMaintenanceSectionIsActivated(): void
     {
         $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(HilosMaintenanceNodesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosMaintenanceNodes]);
-        $this->assertSame(
-            [OnlineTestingTableContext::hilosVerifierCircle => []],
-            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
-        );
+        $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(
             [OnlineTestingTableContext::hilosMaintenanceWords => []],
             Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],

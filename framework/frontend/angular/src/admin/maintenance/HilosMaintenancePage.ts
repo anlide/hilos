@@ -1,12 +1,15 @@
-// HilosMaintenancePage — the framework maintenance section inside the admin shell
-// (HIL-1119), with the verifier circle's add and remove dialogs (HIL-1120/1121).
-// Angular counterpart of the Vue page (HIL-1123, HIL-1365): the live protected-mode
-// state with manual entry, exit and code issuance, each waiting for its own
-// tracked answer independently of the live state frame; the remove dialog holds
-// its row in focus and reports a removal in another tab; the list and its online
-// marks stay live. The state, table, row view-model, actions and words belong to
-// the core headless. A project supplies only HilosMaintenanceContext. Bootstrap
-// classes only.
+// HilosMaintenancePage — the Overview of the framework maintenance section inside
+// the admin shell (HIL-1119), under Maintenance's shared section head and its row
+// of tabs (HIL-1682). Angular counterpart of the Vue page (HIL-1123, HIL-1365,
+// HIL-1679, HIL-1680): the live protected-mode state with manual entry, exit and
+// code issuance, and the restore card with the initiating browser's way out — mint
+// a code, open the system, close the window again. Each action waits for its own
+// tracked answer independently of the live state frame. Above the state stands the
+// watchdog's one reserved alarm line, the server's verdict as it arrives; under
+// the state and the ladder, in every position, the watchdog's thresholds, read
+// only. The verifier circle is its own tab, HilosMaintenanceCirclePage; Overview
+// opens no table. The state, actions and words belong to the core headless. A
+// project supplies only HilosMaintenanceContext. Bootstrap classes only.
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -26,47 +29,48 @@ import {
   ActionError,
   HilosPages,
   hilosTimeZone,
-  isHiddenValue,
   subscribeSignal,
   type HilosMaintenanceState,
 } from '@hilos/core/base'
 import {
   createHilosMaintenanceActions,
-  createHilosMaintenanceCircleTable,
   createHilosMaintenanceState,
-  HILOS_MAINTENANCE_CIRCLE_COPY,
   HILOS_MAINTENANCE_DISABLE_COPY,
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
   hilosMaintenanceElapsed,
   hilosMaintenanceCard,
+  hilosMaintenanceOtherBrowserLine,
   hilosMaintenancePosition,
-  type HilosMaintenanceCircleRow,
+  hilosMaintenanceRestoreLadder,
+  hilosMaintenanceWatchdogAlert,
+  hilosMaintenanceWatchdogThresholds,
   type HilosMaintenanceContext,
 } from '@hilos/core/admin/maintenance'
 
 import {
   HilosActionError,
   HilosAdminPage,
-  HilosEditNotice,
-  HilosHiddenMark,
   HilosHideable,
   HilosModal,
-  HilosTableCell,
-  HilosViewportTable,
   LoadingButton,
   createHilosTrackedAction,
   hilosSignal,
 } from '@hilos/angular/base'
 
+import { HilosMaintenanceWatchdogAlert } from './HilosMaintenanceWatchdogAlert.js'
+
 /**
- * How a manual action reports a failure: a refusal in the server's own words,
+ * How a confirmed action reports a failure: a refusal in the server's own words,
  * anything else as the action's note that its outcome is unconfirmed.
  *
  * @param unconfirmedNote The action's own note for an outcome nobody confirmed.
  */
-function describeManualError(
+function describeActionError(
   unconfirmedNote: string,
 ): (error: unknown) => string {
   return (error) =>
@@ -76,8 +80,7 @@ function describeManualError(
 }
 
 /**
- * The protected-mode block and the verifier circle, with dialogs that close only
- * on the server's answer.
+ * The protected-mode block, with dialogs that close only on the server's answer.
  */
 @Component({
   selector: 'hilos-maintenance-page',
@@ -85,16 +88,19 @@ function describeManualError(
   imports: [
     HilosActionError,
     HilosAdminPage,
-    HilosEditNotice,
-    HilosHiddenMark,
     HilosHideable,
+    HilosMaintenanceWatchdogAlert,
     HilosModal,
-    HilosTableCell,
-    HilosViewportTable,
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page
+      [page]="page"
+      headKind="section"
+      tabsLabel="Maintenance pages"
+    >
+      <hilos-maintenance-watchdog-alert [alert]="watchdogAlert()" />
+
       <div aria-live="polite" data-id="hilos-maintenance-state">
         @if (position() === 'open') {
           <div
@@ -163,6 +169,10 @@ function describeManualError(
                   <dd class="col-sm-9">
                     <code>{{ card.operation ?? '—' }}</code>
                   </dd>
+                  <dt class="col-sm-3">{{ stateCopy.initiator }}</dt>
+                  <dd class="col-sm-9" data-id="hilos-maintenance-initiator">
+                    <code>{{ card.initiatorCaption }}</code>
+                  </dd>
                   <dt class="col-sm-3">{{ stateCopy.started }}</dt>
                   <dd class="col-sm-9">
                     <code data-id="hilos-maintenance-started-at">{{
@@ -187,6 +197,24 @@ function describeManualError(
                         >{{ progressElapsed(card.progressAt) }}</span
                       >
                     }
+                  </dd>
+                  <dt class="col-sm-3">{{ stateCopy.agentsStopped }}</dt>
+                  <dd
+                    class="col-sm-9"
+                    data-id="hilos-maintenance-stopped-agents"
+                  >
+                    {{ card.stoppedAgentsCaption }}
+                  </dd>
+                  <dt class="col-sm-3">{{ stateCopy.diagnosticsNode }}</dt>
+                  <dd
+                    class="col-sm-9"
+                    data-id="hilos-maintenance-diagnostics-node"
+                  >
+                    <code>{{ card.diagnosticsNodeId ?? '—' }}</code>
+                  </dd>
+                  <dt class="col-sm-3">{{ stateCopy.agentStart }}</dt>
+                  <dd class="col-sm-9" data-id="hilos-maintenance-agent-start">
+                    {{ card.agentStartCaption }}
                   </dd>
                 }
 
@@ -223,6 +251,73 @@ function describeManualError(
           </section>
         }
       </div>
+
+      @if (restoreLadder() === 'initiator') {
+        <div class="card mb-3" data-id="hilos-maintenance-restore-ladder">
+          <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+            <button
+              hilosLoadingButton
+              class="btn-outline-primary btn-sm"
+              [loading]="restorePassAction.busy()"
+              data-id="hilos-maintenance-restore-pass"
+              (click)="openRestorePass()"
+            >
+              {{ restorePassCopy.issue }}
+            </button>
+            <button
+              hilosLoadingButton
+              class="btn-warning btn-sm"
+              [loading]="restoreOpenAction.busy()"
+              data-id="hilos-maintenance-restore-open"
+              (click)="openRestoreOpen()"
+            >
+              {{ restoreOpenCopy.issue }}
+            </button>
+            <button
+              hilosLoadingButton
+              class="btn-outline-danger btn-sm ms-auto"
+              [loading]="restoreCloseAction.busy()"
+              data-id="hilos-maintenance-restore-close"
+              (click)="openRestoreClose()"
+            >
+              {{ restoreCloseCopy.issue }}
+            </button>
+          </div>
+        </div>
+      } @else if (restoreLadder() === 'other') {
+        <div
+          class="alert alert-secondary small mb-3"
+          role="status"
+          data-id="hilos-maintenance-other-browser"
+        >
+          <i class="bi bi-person-workspace me-1" aria-hidden="true"></i>
+          {{ otherBrowserLine() }}
+        </div>
+      }
+
+      @if (watchdogThresholds(); as thresholds) {
+        <section
+          class="card mb-3"
+          data-id="hilos-maintenance-watchdog-thresholds"
+        >
+          <div class="card-header">
+            <h2 class="h6 mb-0">{{ thresholds.title }}</h2>
+          </div>
+          <div class="card-body">
+            <dl class="row mb-0">
+              @for (row of thresholds.rows; track row.label) {
+                <dt class="col-sm-5">{{ row.label }}</dt>
+                <dd class="col-sm-7 text-break">
+                  <hilos-hideable [value]="row.value" />
+                </dd>
+              }
+            </dl>
+          </div>
+          <div class="card-footer small text-body-secondary">
+            {{ thresholds.footer }}
+          </div>
+        </section>
+      }
 
       <hilos-modal
         [open]="enableOpen()"
@@ -374,148 +469,152 @@ function describeManualError(
         </ng-template>
       </hilos-modal>
 
-      <div class="card mb-3" data-id="hilos-maintenance-circle-panel">
-        <div class="card-body">
-          <hilos-viewport-table
-            dataId="hilos-maintenance-circle-table"
-            [controller]="circle().controller"
-          >
-            <ng-template hilosTableCell="identifier" let-row>
-              <span
-                [attr.data-id]="
-                  'hilos-maintenance-circle-row-' + circleKey(row)
-                "
-              >
-                <hilos-hideable [value]="row.identifier" />
-              </span>
-            </ng-template>
-            <ng-template hilosTableCell="online" let-row>
-              <span
-                [class]="row.online ? 'text-success' : 'text-body-secondary'"
-                [attr.data-id]="
-                  'hilos-maintenance-circle-online-' + circleKey(row)
-                "
-                >{{ row.online ? circleCopy.online : circleCopy.offline }}</span
-              >
-            </ng-template>
-            <ng-template hilosTableCell="actions" let-row>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-danger"
-                [title]="circleCopy.removeTitle"
-                [attr.aria-label]="circleCopy.removeTitle"
-                [attr.data-id]="
-                  'hilos-maintenance-circle-remove-' + circleKey(row)
-                "
-                (click)="openCircleRemove(row)"
-              >
-                <i class="bi bi-trash" aria-hidden="true"></i>
-              </button>
-            </ng-template>
-          </hilos-viewport-table>
-        </div>
-      </div>
-
       <hilos-modal
-        [open]="circleAddOpen()"
-        (openChange)="circleAddOpen.set($event)"
-        [title]="circleCopy.addTitle"
-        [busy]="circleAdd.busy()"
+        [open]="restorePassOpen()"
+        (openChange)="$event || closeRestorePass()"
+        [title]="
+          restorePassStep() === 'confirm'
+            ? restorePassCopy.mintTitle
+            : restorePassCopy.codeTitle
+        "
+        [busy]="restorePassAction.busy()"
+        [copyText]="restorePass() ?? ''"
+        initialFocus="dialog"
       >
-        <hilos-action-error
-          [action]="circleAdd"
-          [detailsTitle]="circleCopy.addRefusalTitle"
-        />
-        <p class="mb-2 text-body-secondary">{{ circleCopy.addLead }}</p>
-        <label class="form-label" for="hilos-maintenance-circle-add-field">{{
-          circleCopy.addField
-        }}</label>
-        <input
-          id="hilos-maintenance-circle-add-field"
-          type="text"
-          class="form-control"
-          autocomplete="off"
-          [placeholder]="circleCopy.addPlaceholder"
-          [disabled]="circleAdd.busy()"
-          data-id="hilos-maintenance-circle-add-field"
-          data-autofocus
-          [value]="circleAddIdentifier()"
-          (input)="onCircleAddIdentifier($event)"
-        />
+        <div data-id="hilos-maintenance-restore-pass-modal">
+          @if (restorePassStep() === 'confirm') {
+            <hilos-action-error
+              [action]="restorePassAction"
+              [detailsTitle]="restorePassCopy.refusalTitle"
+            />
+            <p class="mb-2">{{ restorePassCopy.lead }}</p>
+            <p class="mb-0 text-body-secondary">
+              {{ restorePassCopy.reuseNote }}
+            </p>
+          } @else {
+            <div data-id="hilos-maintenance-restore-pass-result">
+              <p class="mb-2 text-body-secondary">
+                {{ restorePassCopy.resultLead }}
+              </p>
+              <div
+                #restorePassValue
+                tabindex="-1"
+                class="border rounded-3 p-3 bg-body-tertiary text-center user-select-all text-break"
+                data-id="hilos-maintenance-restore-pass-value"
+              >
+                <code class="fs-5">{{ restorePass() }}</code>
+              </div>
+              <p class="small text-body-secondary mt-2 mb-0">
+                {{ restorePassCopy.resultNote }}
+              </p>
+            </div>
+          }
+        </div>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
             class="btn btn-secondary"
-            [disabled]="circleAdd.busy()"
-            data-id="hilos-maintenance-circle-add-cancel"
+            [disabled]="restorePassAction.busy()"
+            data-id="hilos-maintenance-restore-pass-cancel"
             (click)="requestClose()"
           >
-            Cancel
+            {{
+              restorePassStep() === 'confirm'
+                ? restorePassCopy.cancel
+                : restorePassCopy.close
+            }}
+          </button>
+          @if (restorePassStep() === 'confirm') {
+            <button
+              hilosLoadingButton
+              class="btn-primary"
+              [loading]="restorePassAction.busy()"
+              [disabled]="restoreLadder() !== 'initiator'"
+              data-id="hilos-maintenance-restore-pass-confirm"
+              (click)="submitRestorePass()"
+            >
+              {{ restorePassCopy.mint }}
+            </button>
+          }
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="restoreOpenOpen()"
+        (openChange)="$event || closeRestoreOpen()"
+        [title]="restoreOpenCopy.title"
+        [busy]="restoreOpenAction.busy()"
+        initialFocus="dialog"
+      >
+        <div data-id="hilos-maintenance-restore-open-modal">
+          <hilos-action-error
+            [action]="restoreOpenAction"
+            [detailsTitle]="restoreOpenCopy.refusalTitle"
+          />
+          <p class="mb-2">{{ restoreOpenCopy.lead }}</p>
+          <p class="mb-0 text-body-secondary">
+            {{ restoreOpenCopy.noWayBack }}
+          </p>
+        </div>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="restoreOpenAction.busy()"
+            data-id="hilos-maintenance-restore-open-cancel"
+            (click)="requestClose()"
+          >
+            {{ restoreOpenCopy.cancel }}
           </button>
           <button
             hilosLoadingButton
-            class="btn-primary"
-            [loading]="circleAdd.busy()"
-            [disabled]="circleAddIdentifier().trim() === ''"
-            data-id="hilos-maintenance-circle-add-confirm"
-            (click)="submitCircleAdd()"
+            class="btn-warning"
+            [loading]="restoreOpenAction.busy()"
+            [disabled]="restoreLadder() !== 'initiator'"
+            data-id="hilos-maintenance-restore-open-confirm"
+            (click)="submitRestoreOpen()"
           >
-            {{ circleCopy.addConfirm }}
+            {{ restoreOpenCopy.confirm }}
           </button>
         </ng-template>
       </hilos-modal>
 
       <hilos-modal
-        [open]="circleRemoveOpen()"
-        (openChange)="$event ? circleRemoveOpen.set(true) : closeCircleRemove()"
-        [title]="circleCopy.removeTitle"
-        [busy]="circleRemove.busy()"
+        [open]="restoreCloseOpen()"
+        (openChange)="$event || closeRestoreClose()"
+        [title]="restoreCloseCopy.title"
+        [busy]="restoreCloseAction.busy()"
         initialFocus="dialog"
       >
-        <hilos-action-error
-          [action]="circleRemove"
-          [detailsTitle]="circleCopy.removeRefusalTitle"
-        />
-        @if (removeShown(); as member) {
-          <p class="mb-0">
-            {{ circleCopy.removeAskBefore }}
-            @if (isHiddenValue(member.identifier)) {
-              <hilos-hidden-mark />
-            } @else {
-              <code>{{ member.identifier }}</code>
-            }
-            {{ circleCopy.removeAskAfter }}
+        <div data-id="hilos-maintenance-restore-close-modal">
+          <hilos-action-error
+            [action]="restoreCloseAction"
+            [detailsTitle]="restoreCloseCopy.refusalTitle"
+          />
+          <p class="mb-2">{{ restoreCloseCopy.lead }}</p>
+          <p class="mb-0 text-body-secondary">
+            {{ restoreCloseCopy.footer }}
           </p>
-        }
-        <p class="mb-0 mt-2 text-body-secondary">{{ circleCopy.removeNote }}</p>
-        <hilos-edit-notice
-          [kind]="removeGone() ? 'deleted' : null"
-          [text]="circleCopy.removeGone"
-          dataId="hilos-maintenance-circle-remove-notice"
-        />
+        </div>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
             class="btn btn-secondary"
-            [disabled]="circleRemove.busy()"
-            data-id="hilos-maintenance-circle-remove-cancel"
+            [disabled]="restoreCloseAction.busy()"
+            data-id="hilos-maintenance-restore-close-cancel"
             (click)="requestClose()"
           >
-            Cancel
+            {{ restoreCloseCopy.cancel }}
           </button>
           <button
             hilosLoadingButton
             class="btn-danger"
-            [loading]="circleRemove.busy()"
-            [disabled]="removeGone()"
-            data-id="hilos-maintenance-circle-remove-confirm"
-            (click)="submitCircleRemove()"
+            [loading]="restoreCloseAction.busy()"
+            [disabled]="restoreLadder() !== 'initiator'"
+            data-id="hilos-maintenance-restore-close-confirm"
+            (click)="submitRestoreClose()"
           >
-            {{
-              removeGone()
-                ? circleCopy.removeGoneConfirm
-                : circleCopy.removeConfirm
-            }}
+            {{ restoreCloseCopy.confirm }}
           </button>
         </ng-template>
       </hilos-modal>
@@ -527,12 +626,13 @@ export class HilosMaintenancePage {
   readonly context = input.required<HilosMaintenanceContext>()
 
   protected readonly page = HilosPages.MAINTENANCE
-  protected readonly isHiddenValue = isHiddenValue
-  protected readonly circleCopy = HILOS_MAINTENANCE_CIRCLE_COPY
   protected readonly stateCopy = HILOS_MAINTENANCE_STATE_COPY
   protected readonly enableCopy = HILOS_MAINTENANCE_ENABLE_COPY
   protected readonly disableCopy = HILOS_MAINTENANCE_DISABLE_COPY
   protected readonly passCopy = HILOS_MAINTENANCE_PASS_COPY
+  protected readonly restorePassCopy = HILOS_MAINTENANCE_RESTORE_PASS_COPY
+  protected readonly restoreOpenCopy = HILOS_MAINTENANCE_RESTORE_OPEN_COPY
+  protected readonly restoreCloseCopy = HILOS_MAINTENANCE_RESTORE_CLOSE_COPY
   private readonly timeZone = hilosSignal(hilosTimeZone)
 
   private readonly injector = inject(Injector)
@@ -546,6 +646,24 @@ export class HilosMaintenancePage {
   )
   protected readonly stateCard = computed(() =>
     hilosMaintenanceCard(this.maintenanceState(), this.nowMs()),
+  )
+  // Whether this browser leads the restore is the server's verdict, never a local pick.
+  protected readonly restoreLadder = computed(() =>
+    hilosMaintenanceRestoreLadder(this.maintenanceState()),
+  )
+  protected readonly otherBrowserLine = computed(() => {
+    const state = this.maintenanceState()
+
+    return state === null ? '' : hilosMaintenanceOtherBrowserLine(state)
+  })
+  // The verdict is the server's; the zone is read so its moments follow the reader.
+  protected readonly watchdogAlert = computed(() => {
+    this.timeZone()
+
+    return hilosMaintenanceWatchdogAlert(this.maintenanceState())
+  })
+  protected readonly watchdogThresholds = computed(() =>
+    hilosMaintenanceWatchdogThresholds(this.maintenanceState()),
   )
 
   /** Format an absolute maintenance moment in the reader's current time zone. */
@@ -572,7 +690,7 @@ export class HilosMaintenancePage {
   // A state push may replace the open banner while this action still awaits its ack.
   protected readonly enableOpen = signal(false)
   protected readonly enableAction = createHilosTrackedAction({
-    describeError: describeManualError(
+    describeError: describeActionError(
       HILOS_MAINTENANCE_ENABLE_COPY.unconfirmedNote,
     ),
   })
@@ -580,7 +698,7 @@ export class HilosMaintenancePage {
   // The dialog survives a state push; the shared lift may reload before its ack arrives.
   protected readonly disableOpen = signal(false)
   protected readonly disableAction = createHilosTrackedAction({
-    describeError: describeManualError(
+    describeError: describeActionError(
       HILOS_MAINTENANCE_DISABLE_COPY.unconfirmedNote,
     ),
   })
@@ -592,42 +710,42 @@ export class HilosMaintenancePage {
   private readonly passValue = viewChild<ElementRef<HTMLElement>>('passValue')
   private passDisposed = false
   protected readonly passAction = createHilosTrackedAction({
-    describeError: describeManualError(
+    describeError: describeActionError(
       HILOS_MAINTENANCE_PASS_COPY.unconfirmedNote,
     ),
   })
-  protected readonly circle = computed(() =>
-    createHilosMaintenanceCircleTable(this.context(), {
-      openAdd: () => this.openCircleAdd(),
-    }),
-  )
+
+  // The clear restore code belongs only to this dialog's result and is forgotten on every exit.
+  protected readonly restorePassOpen = signal(false)
+  protected readonly restorePass = signal<string | null>(null)
+  protected readonly restorePassStep = signal<'confirm' | 'result'>('confirm')
+  private readonly restorePassValue =
+    viewChild<ElementRef<HTMLElement>>('restorePassValue')
+  private restorePassDisposed = false
+  protected readonly restorePassAction = createHilosTrackedAction({
+    describeError: describeActionError(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote,
+    ),
+  })
+
+  // Opening ends the restore; the reload it brings may take this page before its ack.
+  protected readonly restoreOpenOpen = signal(false)
+  protected readonly restoreOpenAction = createHilosTrackedAction({
+    describeError: describeActionError(
+      HILOS_MAINTENANCE_RESTORE_OPEN_COPY.unconfirmedNote,
+    ),
+  })
+
+  // The full freeze it brings back may take this page before its ack.
+  protected readonly restoreCloseOpen = signal(false)
+  protected readonly restoreCloseAction = createHilosTrackedAction({
+    describeError: describeActionError(
+      HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.unconfirmedNote,
+    ),
+  })
+
   private readonly actions = computed(() =>
     createHilosMaintenanceActions(this.context()),
-  )
-  private readonly liveRow = signal<HilosMaintenanceCircleRow | undefined>(
-    undefined,
-  )
-
-  protected readonly circleAddOpen = signal(false)
-  protected readonly circleAddIdentifier = signal('')
-  protected readonly circleAdd = createHilosTrackedAction()
-  protected readonly circleRemoveOpen = signal(false)
-  protected readonly circleRemoveRow = signal<HilosMaintenanceCircleRow | null>(
-    null,
-  )
-  protected readonly circleRemove = createHilosTrackedAction()
-  private readonly removeLive = computed(() =>
-    this.circleRemoveRow() ? this.liveRow() : undefined,
-  )
-  protected readonly removeShown = computed(
-    () => this.removeLive() ?? this.circleRemoveRow(),
-  )
-  // Our own echo can make the row a placeholder before the action ack arrives.
-  protected readonly removeGone = computed(
-    () =>
-      this.circleRemoveRow() !== null &&
-      !this.circleRemove.busy() &&
-      this.removeLive() === undefined,
   )
 
   constructor() {
@@ -654,19 +772,9 @@ export class HilosMaintenancePage {
       this.passDisposed = true
       this.pass.set(null)
       this.passOpen.set(false)
-    })
-    // Rebind the table and its focused-row mirror together when the context changes.
-    effect((onCleanup) => {
-      const circle = this.circle()
-      circle.start()
-      this.liveRow.set(circle.controller.focusedRow.get())
-      const unsubscribe = subscribeSignal(circle.controller.focusedRow, (row) =>
-        this.liveRow.set(row),
-      )
-      onCleanup(() => {
-        unsubscribe()
-        circle.dispose()
-      })
+      this.restorePassDisposed = true
+      this.restorePass.set(null)
+      this.restorePassOpen.set(false)
     })
   }
 
@@ -764,67 +872,111 @@ export class HilosMaintenancePage {
     }
   }
 
-  protected openCircleAdd(): void {
-    this.circleAdd.clearError()
-    this.circleAddIdentifier.set('')
-    this.circleAddOpen.set(true)
+  protected openRestorePass(): void {
+    if (
+      this.restorePassDisposed ||
+      this.restorePassAction.busy() ||
+      this.restoreLadder() !== 'initiator'
+    ) {
+      return
+    }
+    this.restorePass.set(null)
+    this.restorePassStep.set('confirm')
+    this.restorePassAction.clearError()
+    this.restorePassOpen.set(true)
   }
 
-  protected onCircleAddIdentifier(event: Event): void {
-    this.circleAddIdentifier.set((event.target as HTMLInputElement).value)
+  protected closeRestorePass(): void {
+    if (this.restorePassAction.busy()) {
+      return
+    }
+    this.restorePassOpen.set(false)
+    this.restorePass.set(null)
+    this.restorePassStep.set('confirm')
   }
 
-  protected async submitCircleAdd(): Promise<void> {
-    if (this.circleAdd.busy() || this.circleAddIdentifier().trim() === '') {
+  protected async submitRestorePass(): Promise<void> {
+    if (
+      this.restorePassDisposed ||
+      !this.restorePassOpen() ||
+      this.restorePassAction.busy() ||
+      this.restorePassStep() !== 'confirm' ||
+      this.restoreLadder() !== 'initiator'
+    ) {
+      return
+    }
+    const handle = this.actions().sendMaintenanceRestorePass()
+    if (await this.restorePassAction.run(handle)) {
+      const result = await handle.done
+      if (this.restorePassDisposed || !this.restorePassOpen()) {
+        return
+      }
+      this.restorePass.set(result.reply!.pass)
+      this.restorePassStep.set('result')
+      // The value takes focus once the result is on screen.
+      afterNextRender(() => this.restorePassValue()?.nativeElement.focus(), {
+        injector: this.injector,
+      })
+    }
+  }
+
+  protected openRestoreOpen(): void {
+    if (this.restoreOpenAction.busy() || this.restoreLadder() !== 'initiator') {
+      return
+    }
+    this.restoreOpenAction.clearError()
+    this.restoreOpenOpen.set(true)
+  }
+
+  protected closeRestoreOpen(): void {
+    if (!this.restoreOpenAction.busy()) {
+      this.restoreOpenOpen.set(false)
+    }
+  }
+
+  protected async submitRestoreOpen(): Promise<void> {
+    if (this.restoreOpenAction.busy() || this.restoreLadder() !== 'initiator') {
       return
     }
     if (
-      await this.circleAdd.run(
-        this.actions().sendMaintenanceCircleAdd(this.circleAddIdentifier()),
+      await this.restoreOpenAction.run(
+        this.actions().sendMaintenanceRestoreOpen(),
       )
     ) {
-      this.circleAddOpen.set(false)
+      this.restoreOpenOpen.set(false)
     }
   }
 
-  /**
-   * What tells a circle row apart in its data-ids: the address, or the membership
-   * id while the address is hidden — every hidden row would share one otherwise.
-   *
-   * @param row The circle row.
-   */
-  protected circleKey(row: HilosMaintenanceCircleRow): string {
-    return isHiddenValue(row.identifier)
-      ? `member-${row.memberId}`
-      : row.identifier
-  }
-
-  protected openCircleRemove(row: HilosMaintenanceCircleRow): void {
-    const fresh = this.circle().controller.focusRow(String(row.memberId))
-    if (!fresh) {
+  protected openRestoreClose(): void {
+    if (
+      this.restoreCloseAction.busy() ||
+      this.restoreLadder() !== 'initiator'
+    ) {
       return
     }
-    this.circleRemove.clearError()
-    this.circleRemoveRow.set(fresh)
-    this.circleRemoveOpen.set(true)
+    this.restoreCloseAction.clearError()
+    this.restoreCloseOpen.set(true)
   }
 
-  protected closeCircleRemove(): void {
-    this.circleRemoveOpen.set(false)
-    this.circle().controller.releaseFocus()
+  protected closeRestoreClose(): void {
+    if (!this.restoreCloseAction.busy()) {
+      this.restoreCloseOpen.set(false)
+    }
   }
 
-  protected async submitCircleRemove(): Promise<void> {
-    const row = this.circleRemoveRow()
-    if (!row || this.circleRemove.busy() || this.removeGone()) {
+  protected async submitRestoreClose(): Promise<void> {
+    if (
+      this.restoreCloseAction.busy() ||
+      this.restoreLadder() !== 'initiator'
+    ) {
       return
     }
     if (
-      await this.circleRemove.run(
-        this.actions().sendMaintenanceCircleRemove(row.memberId),
+      await this.restoreCloseAction.run(
+        this.actions().sendMaintenanceRestoreClose(),
       )
     ) {
-      this.closeCircleRemove()
+      this.restoreCloseOpen.set(false)
     }
   }
 }

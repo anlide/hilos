@@ -148,6 +148,7 @@ export {
   expectMaintenancePageHead,
   expectMaintenanceWatchdogThresholds,
   expectMaintenanceWords,
+  expectMaintenanceWordsInitial,
   expectManualMaintenanceOn,
   issueMaintenanceCode,
   maintenanceCircleOnline,
@@ -155,6 +156,7 @@ export {
   presentMaintenanceCode,
   turnOffMaintenance,
   turnOnMaintenance,
+  type MaintenanceWordsRow,
 } from './maintenance.js'
 export {
   MAINTENANCE_NODES_PATH,

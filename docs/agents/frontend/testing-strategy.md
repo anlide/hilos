@@ -831,11 +831,13 @@ the shared framework form is driven.
 ### The verifier circle — name, confirm removal, clear
 
 `MAINTENANCE_PATH` is the Overview address, `/hilos/maintenance`; the child
-Circle address is `MAINTENANCE_CIRCLE_PATH`, `/hilos/maintenance/circle`.
+Circle address is `MAINTENANCE_CIRCLE_PATH`, `/hilos/maintenance/circle`, and
+the Words address `MAINTENANCE_WORDS_PATH`, `/hilos/maintenance/words`.
 `expectMaintenancePageHead(expect, page, currentPage)` checks the shared
-Hilos › Maintenance head, the Overview/Circle/Words links with only the current
-page marked, and the absence of child cards. It applies where the SDK builds the
-Circle page: Vue and React; Angular builds it in HIL-1682.
+Hilos › Maintenance head on Overview, Circle or Words: one h1, the breadcrumb
+with the section current, and the tabs' real links with only the rendered page
+current. The Nodes tab, drawn only on a cluster, is read where it stands and
+required nowhere.
 
 `expectMaintenancePageCurrent(expect, page, currentPage)` tells which Maintenance
 page is on screen the way an assistive reader does: one level-1 heading, named
@@ -844,7 +846,7 @@ one for `currentPage` (`hilos_maintenance`, `hilos_maintenance_circle` or
 `hilos_maintenance_words`) marked `aria-current="page"`. It holds nothing about how
 the head is drawn or in what order its links stand, so a redraw does not break it;
 following the links, with the keyboard or the pointer, stays in the spec.
-`MAINTENANCE_WORDS_PATH` is the Words address, `/hilos/maintenance/words`.
+
 `expectMaintenanceWords(expect, page)` reads the Words table of a project that keeps
 the framework's words for the manual window and gives a restore none of its own:
 once the loading skeleton has left, the `manual_maintenance` row reads its operation
@@ -854,11 +856,19 @@ no row message, and the `restore` row keeps its operation and reads the one phra
 also expects the table to offer no search, filters, main action, actions or
 selection, and no row to carry a button, input, link or other control.
 
+`expectMaintenanceWordsInitial(expect, page, log, after)` proves the Words table
+against the page's own answer: it reads the window out of the first
+`page_response` to the Words subscription after the bookmark `after`, checks every
+row on screen with its words, or with the line saying it uses the default, and
+returns the rows, so a later Back, Forward, F5 or direct address can be compared
+with them. It requires a delivery log armed before the page's socket opens. The
+`maintenance.spec.ts` of online-testing (Angular) walks Overview, Circle and
+Words this way.
+
 `addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and
 `clearMaintenanceCircle` drive the circle dialogs and settle on their closing.
 The helpers do not navigate: their page must already show the SDK's circle table.
-Vue and React use the Circle page; Angular still shows the table on Overview under
-the transitional `PAGE_TABLES` binding until HIL-1682.
+Every SDK draws that table on the Circle page.
 `confirmMaintenanceCircleRemoval` also expects the removal dialog to be open.
 `maintenanceCircleRow` and
 `maintenanceCircleOnline` locate a row and its presence mark; `CIRCLE_ONLINE` and

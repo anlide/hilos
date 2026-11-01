@@ -22,12 +22,16 @@ const VIEW_MODE_STRIP_TEXT =
 /**
  * Every admin page of demo/online-testing/backend/Hilos.php (PAGES) whose route
  * takes no parameter, the dashboard aside — it is the shell's, walked in polls.
+ * Maintenance Nodes is aside too: it answers only on a cluster, and this stand
+ * is a single node.
  */
 const OPERATIONS_SCREENS = [
   '/hilos/settings',
   '/hilos/appearance',
   '/hilos/users',
   '/hilos/maintenance',
+  '/hilos/maintenance/circle',
+  '/hilos/maintenance/words',
   '/hilos/logs',
   '/hilos/logs/keys',
   '/hilos/logs/workers',

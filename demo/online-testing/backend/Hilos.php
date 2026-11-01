@@ -562,9 +562,6 @@ final class Hilos extends HilosFacade
         AppearancePage::PAGE => [
             OnlineTestingTableContext::hilosAppearanceSettings => [],
         ],
-        MaintenancePage::PAGE => [
-            OnlineTestingTableContext::hilosVerifierCircle => [],
-        ],
         MaintenanceCirclePage::PAGE => [
             OnlineTestingTableContext::hilosVerifierCircle => [],
         ],

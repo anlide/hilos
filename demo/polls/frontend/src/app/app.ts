@@ -509,6 +509,21 @@ export class App {
         (module) => module.Maintenance,
       ),
     ),
+    [HilosPages.MAINTENANCE_CIRCLE]: lazyPage(() =>
+      import('./views/hilos/maintenance/circle.js').then(
+        (module) => module.MaintenanceCircle,
+      ),
+    ),
+    [HilosPages.MAINTENANCE_WORDS]: lazyPage(() =>
+      import('./views/hilos/maintenance/words.js').then(
+        (module) => module.MaintenanceWords,
+      ),
+    ),
+    [HilosPages.MAINTENANCE_NODES]: lazyPage(() =>
+      import('./views/hilos/maintenance/nodes.js').then(
+        (module) => module.MaintenanceNodes,
+      ),
+    ),
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.TERMS_HISTORY]: TermsHistory,
