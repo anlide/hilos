@@ -3,20 +3,31 @@ import { test, expect } from '@playwright/test'
 import {
   createTestUser,
   uniqueEmail,
+  MAINTENANCE_CIRCLE_PATH,
   MAINTENANCE_PATH,
+  PAGE_READY,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
   dismissToasts,
+  expectMaintenanceOpen,
+  expectMaintenancePageCurrent,
+  expectMaintenanceWords,
+  expectPageReady,
   expectToastPlacement,
   maintenanceCircleRow,
   shownByTestId,
   gotoPage,
   grantAdminToSelf,
   typeInto,
+  watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Naming a verifier in Maintenance: the server decides, the row arrives over the
-// live table, and a refusal is said twice - in the dialog and in the corner.
+// live table and again in the first window of Circle's own reply, and a refusal is
+// said twice - in the dialog and in the corner. The same journey walks the React
+// section's pages the way a person does - a link taken with Enter or a click, Back,
+// Forward, a reload and a typed address - and reads Words: the project's words for
+// the manual window, and the one fallback phrase of an operation without its own.
 // The other live circle seams run once in their own demos: binance-btc-tracker's
 // protected-mode.spec.ts covers the freeze, the admitted circle and an absent member
 // with the live presence mark; online-testing's maintenance.spec.ts covers removal
@@ -24,16 +35,31 @@ import {
 // drives the React section's manual window: on with the button, a code issued in the
 // section, a second administrator let in by it and turning it off.
 // The section's dialogs in all three SDKs remain covered by unit tests:
-// framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
-// framework/frontend/react/test/HilosMaintenancePage.test.tsx,
+// framework/frontend/vue/src/admin/maintenance/HilosMaintenanceCirclePage.test.ts,
+// framework/frontend/react/test/HilosMaintenanceCirclePage.test.tsx,
 // framework/frontend/angular/test/HilosMaintenancePage.test.ts.
 
-test('naming a verifier shows the row, and refuses an unproven address and a repeat in the dialog and in the corner', async ({
+test('a verifier named on Circle shows live and in the first window, both refusals are said twice, and Circle, Words and Overview follow links, history and reload', async ({
   page,
   browser,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, MAINTENANCE_PATH)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
+
+  // Overview to Circle by the keyboard: the link is followed inside the document.
+  const circleLink = page.getByTestId('hilos-page-tab-hilos_maintenance_circle')
+  const wordsLink = page.getByTestId('hilos-page-tab-hilos_maintenance_words')
+  const overviewLink = page.getByTestId('hilos-page-tab-hilos_maintenance')
+  const entered = await watchClientDocument(page)
+  await circleLink.focus()
+  await expect(circleLink).toBeFocused()
+  await circleLink.press('Enter')
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
+  await entered.unchanged()
+  await entered.dispose()
   await clearMaintenanceCircle(page)
 
   // The prepared member has a verified address. This demo signs in by password
@@ -59,6 +85,12 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
       .getByTestId(`hilos-maintenance-circle-row-${memberEmail}`),
   ).toBeVisible()
   await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+
+  // A reload opens Circle cold: the member stands in the first window of its reply.
+  await page.reload()
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
 
   // An address nobody has proven: the dialog stays, the refusal is its first line and
   // the typed address is still there; the toast is the second addressee.
@@ -118,6 +150,45 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await dismissToasts(page)
   await memberContext.close()
 
-  await gotoPage(expect, page, MAINTENANCE_PATH)
+  // Circle to Words by a click, Back to Circle and Forward to Words: all inside the
+  // document, each page answering with its own first window.
+  const walked = await watchClientDocument(page)
+  await wordsLink.click()
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/words$/)
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_words')
+  await expectMaintenanceWords(expect, page)
+
+  await page.goBack()
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
+
+  await page.goForward()
+  await expect(page).toHaveURL(/\/hilos\/maintenance\/words$/)
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_words')
+  await expectMaintenanceWords(expect, page)
+  await walked.unchanged()
+  await walked.dispose()
+
+  // A reload opens Words cold, with the same words.
+  await page.reload()
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_words')
+  await expectMaintenanceWords(expect, page)
+
+  // Words to Overview by a click: the section's own page, open.
+  await overviewLink.click()
+  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+  await expectPageReady(expect, page)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
+  await expectMaintenanceOpen(expect, page)
+
+  // A typed address opens Circle with the member in it; the case leaves it empty.
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await clearMaintenanceCircle(page)
 })

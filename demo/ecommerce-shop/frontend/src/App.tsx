@@ -193,6 +193,15 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.MAINTENANCE]: lazyPage(() =>
     import('./views/Hilos/Maintenance/Maintenance.js').then((m) => m.default),
   ),
+  [HilosPages.MAINTENANCE_CIRCLE]: lazyPage(() =>
+    import('./views/Hilos/Maintenance/Circle.js').then((m) => m.default),
+  ),
+  [HilosPages.MAINTENANCE_WORDS]: lazyPage(() =>
+    import('./views/Hilos/Maintenance/Words.js').then((m) => m.default),
+  ),
+  [HilosPages.MAINTENANCE_NODES]: lazyPage(() =>
+    import('./views/Hilos/Maintenance/Nodes.js').then((m) => m.default),
+  ),
   [HilosPages.COMMUNICATIONS]: lazyPage(() =>
     import('./views/Hilos/Communications/Communications.js').then(
       (m) => m.default,

@@ -833,15 +833,32 @@ the shared framework form is driven.
 `MAINTENANCE_PATH` is the Overview address, `/hilos/maintenance`; the child
 Circle address is `MAINTENANCE_CIRCLE_PATH`, `/hilos/maintenance/circle`.
 `expectMaintenancePageHead(expect, page, currentPage)` checks the shared
-Hilos › Maintenance head, the Overview/Circle links with only the current page
-marked, and the absence of child cards. It applies where the SDK builds both
-pages; Circle is currently built only in Vue.
+Hilos › Maintenance head, the Overview/Circle/Words links with only the current
+page marked, and the absence of child cards. It applies where the SDK builds the
+Circle page: Vue and React; Angular builds it in HIL-1682.
+
+`expectMaintenancePageCurrent(expect, page, currentPage)` tells which Maintenance
+page is on screen the way an assistive reader does: one level-1 heading, named
+Maintenance, and, among the links of the `Maintenance pages` navigation, only the
+one for `currentPage` (`hilos_maintenance`, `hilos_maintenance_circle` or
+`hilos_maintenance_words`) marked `aria-current="page"`. It holds nothing about how
+the head is drawn or in what order its links stand, so a redraw does not break it;
+following the links, with the keyboard or the pointer, stays in the spec.
+`MAINTENANCE_WORDS_PATH` is the Words address, `/hilos/maintenance/words`.
+`expectMaintenanceWords(expect, page)` reads the Words table of a project that keeps
+the framework's words for the manual window and gives a restore none of its own:
+once the loading skeleton has left, the `manual_maintenance` row reads its operation
+and the stub's title and message (`MANUAL_STUB_TITLE`, `MANUAL_STUB_MESSAGE`) with
+no row message, and the `restore` row keeps its operation and reads the one phrase
+"No own entry — uses default" in place of the rest. Words is read only: the helper
+also expects the table to offer no search, filters, main action, actions or
+selection, and no row to carry a button, input, link or other control.
 
 `addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and
 `clearMaintenanceCircle` drive the circle dialogs and settle on their closing.
 The helpers do not navigate: their page must already show the SDK's circle table.
-Vue uses the Circle page; React and Angular still show the table on Overview under
-the transitional `PAGE_TABLES` binding until HIL-1681 and HIL-1682.
+Vue and React use the Circle page; Angular still shows the table on Overview under
+the transitional `PAGE_TABLES` binding until HIL-1682.
 `confirmMaintenanceCircleRemoval` also expects the removal dialog to be open.
 `maintenanceCircleRow` and
 `maintenanceCircleOnline` locate a row and its presence mark; `CIRCLE_ONLINE` and

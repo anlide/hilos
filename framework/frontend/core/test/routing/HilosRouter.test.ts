@@ -325,7 +325,7 @@ describe('unbuilt pages', () => {
     }
   })
 
-  it('serves Circle in Vue and keeps its direct address and links closed in React and Angular', () => {
+  it('serves Circle in Vue and React and keeps its direct address and links closed in Angular', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const { env } = fakeEnvironment('/hilos/maintenance/circle')
       const { pages, calls, refused } = fakePages()
@@ -347,7 +347,7 @@ describe('unbuilt pages', () => {
         { page: HilosPages.MAINTENANCE, label: 'Overview' },
         { page: HilosPages.MAINTENANCE_CIRCLE, label: 'Circle' },
       ]
-      if (layer === 'vue') {
+      if (layer !== 'angular') {
         expect(refused).toEqual([])
         expect(calls).toEqual([
           { page: HilosPages.MAINTENANCE_CIRCLE, params: {} },

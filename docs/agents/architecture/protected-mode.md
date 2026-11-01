@@ -535,7 +535,8 @@ future catalog verdict: `Hideable<boolean | null>`. The other five watchdog
 diagnostic fields are non-personal technical values, not a raw environment
 dump.
 
-Only the Vue Maintenance Overview draws this UI. It reserves one compact,
+The Vue and React Maintenance Overview pages draw this UI; Angular's does not
+yet (HIL-1682). It reserves one compact,
 polite status row above the state card: initiator-lost and restored-from-disk
 use danger tone; quiesce-overdue and silent use warning tone. The row truncates
 its plain-text summary and keeps “Show details” beside it. While clear, an
@@ -553,8 +554,10 @@ Durations retain their published seconds and units; unknown values show `—`.
 The standard `HilosHideable` renders hidden values, while a visible empty
 recipient list reads “No recipients configured.” Its footer identifies the
 environment sources and the Settings page where the restart policy is changed.
-React and Angular Maintenance parity is HIL-1681 and HIL-1682; Circle and Words
-do not show these thresholds.
+The React Overview draws the same row and section; its alarm row is the internal
+`HilosMaintenanceWatchdogAlert`, which the SDK does not export. Angular's Overview
+draws neither until HIL-1682. Circle, Words and Nodes do not show these thresholds
+in any SDK.
 
 ### The Freeze Survives A Restart And A Leader Change
 
@@ -574,8 +577,8 @@ automatically, the human path out has to actually work.
   Every accept key is dropped: it was minted on a 101 that died with the daemon.
   `restoreFromDisk()` keeps the restore initiator's session hash: the legacy
   Backups reopen button in React and Angular uses `belongsToInitiator()`, which
-  refuses null, so losing it would lock out the restore operator. Vue now sends
-  restore control from Maintenance. Passes, admitted sessions and the circle
+  refuses null, so losing it would lock out the restore operator. Vue and React
+  now send restore control from Maintenance. Passes, admitted sessions and the circle
   are cleared by choice: a code lasts minutes, and a verifier asks for a new
   one. The restored window admits only the initiating browser. A restored row is still frozen even
   before this node remembers its leader. It accepts the current leader's frames
@@ -976,12 +979,15 @@ Hilos › Maintenance and provides Overview/Circle/Words tabs in the existing pa
 response, without child cards or new wire fields or signals.
 
 All six demo backends register the Circle and Words pages and their table bindings.
-In the current frontend transition, only Vue builds the Circle and Words views.
-React and Angular keep the circle table on Overview and mark Circle and Words unbuilt,
-so their tabs are hidden and a direct Circle or Words address returns `not_served`;
-their Overview `PAGE_TABLES` entry remains until HIL-1681 and HIL-1682. Circle
-add/remove actions are already owned by the Circle page, and dispatch does not
-require a subscription to it, so the existing React and Angular Overview UI
+In the current frontend transition, Vue and React build the Circle and Words views.
+The React pages come from `@hilos/react/admin/maintenance` and are mounted by tasks
+and ecommerce-shop. React draws no circle table on Overview, and those two backends
+bind the circle table to the Circle page only, as chat and binance-btc-tracker do for
+Vue. Angular keeps the circle table on Overview and marks Circle and Words unbuilt,
+so its tabs are hidden and a direct Circle or Words address returns `not_served`;
+the Angular demos (polls and online-testing) keep their Overview `PAGE_TABLES` entry
+until HIL-1682. Circle add/remove actions are already owned by the Circle page, and
+dispatch does not require a subscription to it, so the existing Angular Overview UI
 continues to work.
 
 An agent requesting `verification_window` takes the row from `inactive` straight
@@ -1278,9 +1284,12 @@ connection takes the Maintenance page and the modal on it together. Open's
 lift can reload the browser before the action ack, as a manual disable already
 does.
 
-Vue draws the ladder and sends the reopen control from Maintenance. React is
-HIL-1681 and Angular is HIL-1682; their legacy Backups reopen action still uses
-`backup_reopen` until those frontends move to Maintenance.
+Vue and React draw the ladder and send the reopen control from Maintenance. The
+React Overview gives the initiating browser the three actions, each confirmed in
+its own window, and shows every other admitted administrator the one status line
+instead. Angular is HIL-1682; its legacy Backups reopen action still uses
+`backup_reopen` until it moves to Maintenance, and the React Backups page keeps
+that action beside the Maintenance ladder.
 
 ## This Node's Live Hold (HIL-1679)
 
@@ -1324,10 +1333,11 @@ head and tabs. Its applicability follows the installed cluster mode: without
 found. A table query on a standalone installation follows the ordinary
 `table_window_refused` path; it is not a page 404 response. All six demo
 backends register the page and table. The Vue mounts are in chat and
-binance-btc-tracker; the React and Angular mounts remain with HIL-1681 and
-HIL-1682. The [core table reader](../../../framework/frontend/core/src/admin/maintenance/hilosMaintenanceNodes.ts)
+binance-btc-tracker and the React mounts in tasks and ecommerce-shop; the Angular
+mounts remain with HIL-1682. The [core table reader](../../../framework/frontend/core/src/admin/maintenance/hilosMaintenanceNodes.ts)
 owns the presentation and copy, and the [Vue page](../../../framework/frontend/vue/src/admin/maintenance/HilosMaintenanceNodesPage.vue)
-draws it with the standard viewport and cards. Nodes adds no payload to the
+draws it with the standard viewport and cards. The [React page](../../../framework/frontend/react/src/admin/maintenance/HilosMaintenanceNodesPage.tsx)
+draws the same facts through the standard viewport table. Nodes adds no payload to the
 Maintenance Overview.
 
 One read-only [HilosMaintenanceNodesTable](../../../framework/backend/Tables/ProtectedMode/HilosMaintenanceNodesTable.php)
@@ -1516,9 +1526,11 @@ Refuse loudly and before any trace of entry, as above.
   the mail pool dropping and refusing its durable deliveries while its raw half
   keeps sending (`MailDeliveryChannelAgentTest`).
 - The Maintenance watchdog presentation is covered by Vue
-  `HilosMaintenanceWatchdogAlert.test.ts` and `HilosMaintenancePage.test.ts`;
+  `HilosMaintenanceWatchdogAlert.test.ts` and `HilosMaintenancePage.test.ts` and by
+  React `HilosMaintenanceWatchdogAlert.test.tsx` and `HilosMaintenancePage.test.tsx`;
   Overview e2e checks in `demo/binance-btc-tracker/tests/e2e/tests/`
-  (`protected-mode.spec.ts`, `maintenance-restore.spec.ts`, `a11y.spec.ts`) use
+  (`protected-mode.spec.ts`, `maintenance-restore.spec.ts`, `a11y.spec.ts`) and in
+  `demo/ecommerce-shop/tests/e2e/tests/protected-mode.spec.ts` use
   `expectMaintenanceWatchdogThresholds()` from `framework/frontend/e2e/maintenance.ts`;
   the cluster browser check is in
   `demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts`.
@@ -1538,7 +1550,8 @@ Refuse loudly and before any trace of entry, as above.
   shared Hilos › Maintenance head, one h1 and the current tab; the table on Circle
   and no circle/table-controller traffic on Overview; and the live window,
   admission, view mode and cleanup. `backup.spec.ts` keeps its pointer on Overview
-  and then selects the Circle tab. The Circle view is currently built only in Vue.
+  and then selects the Circle tab. The Circle view is built in Vue and React; Angular's
+  is HIL-1682.
   The manual window runs as one scenario in each kit's `protected-mode.spec.ts`
   (binance-btc-tracker Vue, ecommerce-shop React, online-testing Angular), with
   checks in `framework/frontend/e2e/maintenance.ts`; those helpers use Overview.
@@ -1564,3 +1577,8 @@ Refuse loudly and before any trace of entry, as above.
   protected-mode stub registry as a read-only table on the Words tab, verifying
   `manual_maintenance` copy and `rowMessage` fallback for the default stub, direct
   address entry, reload, and tab returns to Circle and Overview.
+- `demo/ecommerce-shop` e2e `maintenance.spec.ts` and `demo/tasks` e2e `a11y.spec.ts` —
+  walk the React Overview, Circle and Words by link, keyboard, history, reload and typed
+  address, checking the page on screen with `expectMaintenancePageCurrent()`; the shop
+  spec also reads Words with `expectMaintenanceWords()`. The shop's
+  `protected-mode.spec.ts` runs the manual window and reads the thresholds on Overview.

@@ -1,12 +1,14 @@
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   HIDDEN_VALUE,
-  HILOS_MAINTENANCE_CIRCLE_COPY,
   HILOS_MAINTENANCE_DISABLE_COPY,
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -15,6 +17,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  hilosMaintenanceOtherBrowserLine,
   hilosToasts,
 } from '@hilos/core'
 import {
@@ -22,11 +25,11 @@ import {
   hilosBrowserTimeZone,
   hilosTimeZone,
 } from '@hilos/core/base'
+import { HILOS_MAINTENANCE_WATCHDOG_COPY } from '@hilos/core/admin/maintenance'
 import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
-  Hideable,
   HilosConnection,
   HilosMaintenanceContext,
   HilosMaintenanceState,
@@ -39,8 +42,6 @@ import type {
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { readerTimeZone } from './readerTimeZone.js'
-
-const CIRCLE_TABLE = 'hilosVerifierCircle'
 
 function router(): HilosRouter {
   return {
@@ -64,30 +65,6 @@ function router(): HilosRouter {
     replacePath: () => {},
     start: () => {},
     stop: () => {},
-  }
-}
-
-interface CircleMember {
-  memberId: number
-  identityType: string
-  identifier: Hideable<string>
-  online: boolean
-}
-
-/** The wire row of one member: the id is the row key, the rest rides the slot. */
-function wireRow(member: CircleMember): {
-  rowKey: string
-  slots: Record<string, unknown>
-} {
-  return {
-    rowKey: String(member.memberId),
-    slots: {
-      verifierCircle: {
-        identityType: member.identityType,
-        identifier: member.identifier,
-        online: member.online,
-      },
-    },
   }
 }
 
@@ -131,87 +108,61 @@ function makeActions(): {
   return { actions, dispatched }
 }
 
-function seededContext(
-  initial: CircleMember[],
-  actions: ActionLifecycle = makeActions().actions,
-): {
+/**
+ * Only the transport is stubbed: the section's state frame reaches the page through
+ * the connection's project signal. Every call of the table channel is recorded —
+ * the Overview draws no table, so a window it registers, a viewport it sends or a
+ * table event it listens to would be a circle that came back.
+ */
+function overviewContext(actions: ActionLifecycle = makeActions().actions): {
   context: HilosMaintenanceContext
-  focus: string[]
+  tableTraffic: string[]
   pushState: (state: HilosMaintenanceState) => void
-  pushUpdate: (next: CircleMember) => void
-  pushRemove: (memberId: number, own?: boolean) => void
 } {
-  const rows = initial.slice()
-  const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.MAINTENANCE)
-  const windowListeners = new Set<(signal: { data: unknown }) => void>()
-  const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const tableTraffic: string[] = []
   const stateListeners = new Set<
     (signal: { type: string; data: unknown }) => void
   >()
-  const serveWindow = (
-    page: string = HilosPages.MAINTENANCE,
-    tableKey: string = CIRCLE_TABLE,
-  ): void => {
-    const data = {
-      page,
-      tableKey,
-      rows: rows.map(wireRow),
-      totalCount: rows.length,
-      totalExact: true,
-      firstAnchor: null,
-      lastAnchor: null,
-      offset: 0,
-      limit: 10,
-    }
-    for (const listener of windowListeners) {
-      listener({ data })
-    }
-  }
-
   const connection = {
     registerTableWindow(): void {
-      serveWindow()
+      tableTraffic.push('registerTableWindow')
     },
-    unregisterTableWindow(): void {},
-    tableWindowDescriptors: () => ({}),
-    sendTableViewport(page: string, tableKey: string): boolean {
-      serveWindow(page, tableKey)
+    unregisterTableWindow(): void {
+      tableTraffic.push('unregisterTableWindow')
+    },
+    tableWindowDescriptors: () => {
+      tableTraffic.push('tableWindowDescriptors')
+
+      return {}
+    },
+    sendTableViewport(): boolean {
+      tableTraffic.push('sendTableViewport')
 
       return true
     },
-    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
-      focus.push(rowKey)
+    sendTableRowFocus(): boolean {
+      tableTraffic.push('sendTableRowFocus')
 
       return true
     },
     sendTableRendered(): boolean {
+      tableTraffic.push('sendTableRendered')
+
       return true
     },
     on(
       event: string,
-      listener: (signal: { data: unknown }) => void,
+      listener: (signal: { type: string; data: unknown }) => void,
     ): () => void {
-      if (event === 'tableWindow') {
-        windowListeners.add(listener)
-
-        return () => windowListeners.delete(listener)
-      }
-      if (event === 'tableViewportDelta') {
-        deltaListeners.add(listener)
-
-        return () => deltaListeners.delete(listener)
-      }
       if (event === 'projectSignal') {
-        stateListeners.add(
-          listener as (signal: { type: string; data: unknown }) => void,
-        )
+        stateListeners.add(listener)
 
-        return () =>
-          stateListeners.delete(
-            listener as (signal: { type: string; data: unknown }) => void,
-          )
+        return () => stateListeners.delete(listener)
+      }
+      if (event === 'tableWindow' || event === 'tableViewportDelta') {
+        tableTraffic.push(`on ${event}`)
       }
 
       return () => {}
@@ -225,40 +176,11 @@ function seededContext(
       scopes,
       actions,
     },
-    focus,
+    tableTraffic,
     // The section's state frame, as the connection hands it to every listener.
     pushState(state: HilosMaintenanceState): void {
       for (const listener of stateListeners) {
         listener({ type: MAINTENANCE_STATE_SIGNAL, data: state })
-      }
-    },
-    pushUpdate(next: CircleMember): void {
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.MAINTENANCE,
-            tableKey: CIRCLE_TABLE,
-            kind: 'row_updated',
-            rowKey: String(next.memberId),
-            row: wireRow(next),
-          },
-        })
-      }
-    },
-    // The membership was taken out: a removal without a body, tagged as this tab's own
-    // when this tab is the one that took it out.
-    pushRemove(memberId: number, own = false): void {
-      for (const listener of deltaListeners) {
-        listener({
-          data: {
-            page: HilosPages.MAINTENANCE,
-            tableKey: CIRCLE_TABLE,
-            kind: 'row_removed',
-            rowKey: String(memberId),
-            reason: 'deleted',
-            own,
-          },
-        })
       }
     },
   }
@@ -278,55 +200,11 @@ function mountPage(context: HilosMaintenanceContext) {
   )
 }
 
-// A row stands in the document twice — once in the table and once in the card the
-// same row becomes on a narrow screen — so a mark is looked up through the table.
-function mark(identifier: string): HTMLElement | null {
-  return document.querySelector(
-    `table [data-id="hilos-maintenance-circle-online-${identifier}"]`,
-  )
-}
-
 /** Flush the action's promise and the resulting React render together. */
 async function settled(change: () => void): Promise<void> {
   await act(async () => {
     change()
   })
-}
-
-/** The add dialog's field, or null while the dialog is closed. */
-function addField(): HTMLInputElement | null {
-  return document.querySelector(
-    '[data-id="hilos-maintenance-circle-add-field"]',
-  )
-}
-
-/** The add dialog's confirm button; the dialog must be open. */
-function addConfirm(): HTMLButtonElement {
-  return document.querySelector(
-    '[data-id="hilos-maintenance-circle-add-confirm"]',
-  ) as HTMLButtonElement
-}
-
-/** The row's remove button, looked up through the table. */
-function trash(identifier: string): HTMLButtonElement {
-  return document.querySelector(
-    `table [data-id="hilos-maintenance-circle-remove-${identifier}"]`,
-  ) as HTMLButtonElement
-}
-
-/** The remove dialog's confirm button, or null while the dialog is closed. */
-function removeConfirm(): HTMLButtonElement | null {
-  return document.querySelector(
-    '[data-id="hilos-maintenance-circle-remove-confirm"]',
-  )
-}
-
-/** The one member the remove cases open their dialog over. */
-const ANN: CircleMember = {
-  memberId: 1,
-  identityType: 'password',
-  identifier: 'ann@example.test',
-  online: true,
 }
 
 function maintenanceState(
@@ -374,6 +252,61 @@ function manualState(
 }
 
 /**
+ * A restore in its verification window with every live fact published, as the
+ * initiating browser receives it.
+ *
+ * @param overrides The fields this case changes.
+ */
+function restoreState(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return maintenanceState({
+    phase: 'verifying',
+    operation: 'restore',
+    isInitiator: true,
+    initiatorAgentType: 'hilos_backup',
+    initiatorNodeId: 'node-1',
+    startedAt: '2026-09-11T03:14:02.000Z',
+    activatedAt: '2026-09-11T03:14:09.000Z',
+    progressAt: '2026-09-11T03:21:44.000Z',
+    diagnosticsNodeId: 'node-1',
+    stoppedAgentCount: 6,
+    preservedAgentTypes: ['hilos_mail'],
+    agentStartGateClosed: false,
+    passCount: 2,
+    circleNamed: 3,
+    circleAdmitted: 2,
+    ...overrides,
+  })
+}
+
+/**
+ * Keep the real Intl output but in one locale, so a moment can be written out
+ * by hand; the zone still comes from the reader's binding.
+ *
+ * @returns Restores the real formatter.
+ */
+function englishMoments(): () => void {
+  const DateTimeFormat = Intl.DateTimeFormat
+  const spy = vi
+    .spyOn(Intl, 'DateTimeFormat')
+    .mockImplementation(function (_locales, options) {
+      return new DateTimeFormat('en-US', options)
+    })
+
+  return () => spy.mockRestore()
+}
+
+/**
+ * The text of an element the page must have drawn.
+ *
+ * @param dataId The element's data-id.
+ */
+function textOf(dataId: string): string | null | undefined {
+  return byId(dataId)?.textContent
+}
+
+/**
  * An element by its data-id anywhere in the document, or null while it is not
  * drawn — a dialog portals out of the page's container.
  *
@@ -390,6 +323,15 @@ function byId<T extends HTMLElement = HTMLElement>(dataId: string): T | null {
  */
 function dialogOf(bodyId: string): HTMLElement {
   return byId(bodyId)?.closest<HTMLElement>('[role="dialog"]') as HTMLElement
+}
+
+/**
+ * The value lines of a definition list, in order.
+ *
+ * @param root The element holding the list.
+ */
+function definitions(root: Element): (string | null)[] {
+  return [...root.querySelectorAll('dd')].map((row) => row.textContent)
 }
 
 /** Ways a dialog is closed before anything is sent. */
@@ -433,19 +375,119 @@ async function tryEveryClose(
   }
 }
 
-/** Open the add dialog and enter the address without normalizing it. */
-function openAndType(typed: string): void {
-  fireEvent.click(
-    document.querySelector(
-      '[data-id="hilos-table-main-action"]',
-    ) as HTMLButtonElement,
-  )
-  fireEvent.change(addField() as HTMLInputElement, { target: { value: typed } })
+/** One of the three restore actions, by its name in the data-ids. */
+type RestoreName = 'pass' | 'open' | 'close'
+
+const RESTORE_NAMES: readonly RestoreName[] = ['pass', 'open', 'close']
+
+/** The ways a dialog's request may end other than its success. */
+const FAILURE_OUTCOMES = [
+  'fail',
+  'timeout',
+  'disconnected',
+  'invalid-reply',
+] as const
+
+/**
+ * Frames on which this browser no longer holds the restore ladder: another
+ * browser is the initiator, the window closed again, the system opened.
+ */
+const LADDER_GONE: [string, HilosMaintenanceState][] = [
+  ['another browser', restoreState({ isInitiator: false })],
+  ['the window closed', restoreState({ phase: 'active' })],
+  ['the system opened', maintenanceState()],
+]
+
+/**
+ * The body a restore dialog draws, or null while it is closed.
+ *
+ * @param name The restore action's name in its data-ids.
+ */
+function restoreModal(name: RestoreName): HTMLElement | null {
+  return byId(`hilos-maintenance-restore-${name}-modal`)
+}
+
+/**
+ * A button of a restore dialog, which must already be open.
+ *
+ * @param name The restore action's name in its data-ids.
+ * @param button Which of the two buttons.
+ */
+function restoreButton(
+  name: RestoreName,
+  button: 'confirm' | 'cancel',
+): HTMLButtonElement {
+  return byId<HTMLButtonElement>(
+    `hilos-maintenance-restore-${name}-${button}`,
+  ) as HTMLButtonElement
+}
+
+/**
+ * Press Enter on a focused button: a key the page lets through clicks it, a
+ * prevented one does not.
+ *
+ * @param button The button that has the focus.
+ */
+function pressEnter(button: HTMLButtonElement): void {
+  button.focus()
+  if (fireEvent.keyDown(button, { key: 'Enter' })) {
+    fireEvent.click(button)
+  }
+}
+
+/**
+ * Mount the real page as the initiating browser of a restore in its
+ * verification window and open one of the ladder's dialogs.
+ *
+ * @param name The restore action's name in its data-ids.
+ */
+async function openRestore(name: RestoreName) {
+  const { actions, dispatched } = makeActions()
+  const { context, pushState } = overviewContext(actions)
+  const view = await mountPage(context)
+  await settled(() => pushState(restoreState()))
+  const opener = byId<HTMLButtonElement>(
+    `hilos-maintenance-restore-${name}`,
+  ) as HTMLButtonElement
+  opener.focus()
+  await settled(() => fireEvent.click(opener))
+
+  return { view, pushState, dispatched, opener }
+}
+
+const realClipboard = navigator.clipboard
+
+/**
+ * Put a clipboard in the document, or give back the real one.
+ *
+ * @param clipboard The clipboard the document carries.
+ */
+function setClipboard(clipboard: Clipboard | undefined): void {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+}
+
+/**
+ * A clipboard that records what is written to it.
+ *
+ * @returns What the page wrote, in order.
+ */
+function recordingClipboard(): string[] {
+  const written: string[] = []
+  setClipboard({
+    writeText: async (text: string) => {
+      written.push(text)
+    },
+  } as unknown as Clipboard)
+
+  return written
 }
 
 describe('HilosMaintenancePage reader-zone moments', () => {
   it.each([true, false])(
-    'reformats the held startedAt and keeps its circle draft when manual=%s',
+    'reformats the held startedAt and keeps the card when manual=%s',
     async (manual) => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
       vi.setSystemTime(new Date('2026-01-01T00:32:35.123Z'))
@@ -463,7 +505,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
 
       try {
         act(() => reader.choose(firstZone))
-        const { context, pushState } = seededContext([ANN])
+        const { context, pushState } = overviewContext()
         const view = mountPage(context)
         const state = maintenanceState({
           phase: 'verifying',
@@ -478,10 +520,6 @@ describe('HilosMaintenancePage reader-zone moments', () => {
           `hilos-maintenance-state-${manual ? 'manual' : 'operation'}`,
         )
         const timestamp = byId('hilos-maintenance-started-at')
-        const table = view.container.querySelector('table')
-        const row = view.container.querySelector(
-          'table [data-id="hilos-table-row-1"]',
-        )
         expect(firstZone).not.toBe(browserZone)
         expect(timestamp?.textContent).toBe(
           formatMoment(startedAt, { kind: 'dateTime' }),
@@ -489,13 +527,6 @@ describe('HilosMaintenancePage reader-zone moments', () => {
         const firstTimestamp = timestamp?.textContent
         expect(card?.textContent).toContain('verifying')
         expect(byId('hilos-maintenance-pass-count')?.textContent).toBe('2')
-
-        openAndType('reviewer@example.test')
-        const field = addField()
-        const dialog = field?.closest('[role="dialog"]')
-        const confirm = addConfirm()
-        field?.focus()
-        expect(confirm.disabled).toBe(false)
 
         act(() => reader.choose(nextZone))
 
@@ -510,16 +541,6 @@ describe('HilosMaintenancePage reader-zone moments', () => {
         )
         expect(card?.textContent).toContain('verifying')
         expect(byId('hilos-maintenance-pass-count')?.textContent).toBe('2')
-        expect(view.container.querySelector('table')).toBe(table)
-        expect(
-          view.container.querySelector('table [data-id="hilos-table-row-1"]'),
-        ).toBe(row)
-        expect(field).toBe(addField())
-        expect(field?.value).toBe('reviewer@example.test')
-        expect(document.activeElement).toBe(field)
-        expect(field?.closest('[role="dialog"]')).toBe(dialog)
-        expect(addConfirm()).toBe(confirm)
-        expect(confirm.disabled).toBe(false)
 
         if (manual) {
           expect(card?.textContent).toContain('2 minutes ago')
@@ -552,7 +573,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
 
     try {
       act(() => reader.choose('Pacific/Kiritimati'))
-      const { context, pushState } = seededContext([])
+      const { context, pushState } = overviewContext()
       mountPage(context)
 
       for (const manual of [true, false]) {
@@ -598,7 +619,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
 
 describe('HilosMaintenancePage', () => {
   it('offers enable only after the open frame arrives', async () => {
-    const { context, pushState } = seededContext([])
+    const { context, pushState } = overviewContext()
     await mountPage(context)
     expect(byId('hilos-maintenance-state-open')).toBeNull()
     expect(byId('hilos-maintenance-enable')).toBeNull()
@@ -621,7 +642,7 @@ describe('HilosMaintenancePage', () => {
   it.each(['disable', 'pass'] as const)(
     'offers %s only in the manual card, for either entry source',
     async (button) => {
-      const { context, pushState } = seededContext([])
+      const { context, pushState } = overviewContext()
       await mountPage(context)
       const shown = () => byId(`hilos-maintenance-${button}`) !== null
       expect(shown()).toBe(false)
@@ -640,7 +661,7 @@ describe('HilosMaintenancePage', () => {
   )
 
   it('renders the manual card and redraws its pass count on a new frame', async () => {
-    const { context, pushState } = seededContext([])
+    const { context, pushState } = overviewContext()
     await mountPage(context)
     const manual = manualState({
       startedAt: new Date(Date.now() - 150_000).toISOString(),
@@ -676,7 +697,7 @@ describe('HilosMaintenancePage', () => {
   it("moves the manual card's elapsed time on the browser's clock", async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {
-      const { context, pushState } = seededContext([])
+      const { context, pushState } = overviewContext()
       const { unmount } = await mountPage(context)
       await settled(() =>
         pushState(manualState({ startedAt: new Date().toISOString() })),
@@ -694,8 +715,8 @@ describe('HilosMaintenancePage', () => {
     }
   })
 
-  it('renders only the planned operation lines in the frozen card', async () => {
-    const { context, pushState } = seededContext([])
+  it('renders the operation card from the frame and keeps an unpublished fact as a dash', async () => {
+    const { context, pushState } = overviewContext()
     await mountPage(context)
     const startedAt = '2026-10-10T10:00:00.000000Z'
 
@@ -706,6 +727,8 @@ describe('HilosMaintenancePage', () => {
           operation: 'restore',
           startedAt,
           passCount: 2,
+          circleNamed: 3,
+          circleAdmitted: 2,
         }),
       ),
     )
@@ -718,356 +741,231 @@ describe('HilosMaintenancePage', () => {
       HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
     )
     expect(card.textContent).toContain('restore')
-    expect(card.textContent).toContain(
-      formatMoment(startedAt, { kind: 'dateTime' }) ?? '—',
+    expect(card.textContent).toContain(HILOS_MAINTENANCE_STATE_COPY.initiator)
+    expect(textOf('hilos-maintenance-initiator')).toBe('— · node —')
+    expect(textOf('hilos-maintenance-started-at')).toBe(
+      formatMoment(startedAt, { kind: 'dateTime' }),
     )
-    expect(card.textContent).not.toContain('Initiator')
+    expect(textOf('hilos-maintenance-activated-at')).toBe('—')
+    expect(textOf('hilos-maintenance-progress-at')).toBe('—')
+    expect(byId('hilos-maintenance-progress-elapsed')).toBeNull()
+    expect(card.textContent).not.toContain(HILOS_MAINTENANCE_STATE_COPY.justNow)
+    // An unpublished hold is unknown, not zero agents and not a closed gate.
+    expect(textOf('hilos-maintenance-stopped-agents')).toBe('—')
+    expect(textOf('hilos-maintenance-diagnostics-node')).toBe('—')
+    expect(textOf('hilos-maintenance-agent-start')).toBe('—')
+    expect(card.textContent).not.toContain(
+      HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+    )
+    expect(textOf('hilos-maintenance-pass-count')).toBe('2')
+    expect(card.textContent).toContain('3 named · 2 let in')
     expect(card.querySelector('button')).toBeNull()
-  })
 
-  it('renders a row per member with the mark of whether they are signed in', async () => {
-    const { context } = seededContext([
-      {
-        memberId: 1,
-        identityType: 'password',
-        identifier: 'ann@example.test',
-        online: true,
-      },
-      {
-        memberId: 2,
-        identityType: 'sms',
-        identifier: '+10000000001',
-        online: false,
-      },
-    ])
-    const wrapper = await mountPage(context)
-
-    expect(
-      wrapper.container.querySelectorAll('[data-id^="hilos-table-row-"]')
-        .length,
-    ).toBe(2)
-    expect(mark('ann@example.test')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.online,
-    )
-    expect(mark('+10000000001')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
-    )
-    expect(
-      document.querySelector(
-        '[data-id="hilos-table-cards"] [data-id="hilos-maintenance-circle-online-ann@example.test"]',
-      )?.textContent,
-    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.online)
-    expect(
-      document
-        .querySelector('[data-id="hilos-table-title"]')
-        ?.textContent?.trim(),
-    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.title)
-    expect(
-      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
-    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.rule)
-    expect(
-      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
-    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.volatile)
-    expect(
-      document
-        .querySelector('[data-id="hilos-table-count"]')
-        ?.textContent?.trim(),
-    ).toBe('1 – 2 of 2')
-  })
-
-  it('moves the mark in place when the live row changes', async () => {
-    const member = {
-      memberId: 1,
-      identityType: 'password',
-      identifier: 'ann@example.test',
-      online: true,
-    }
-    const { context, pushUpdate } = seededContext([member])
-    await mountPage(context)
-
-    await settled(() => pushUpdate({ ...member, online: false }))
-
-    expect(mark('ann@example.test')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
-    )
-  })
-
-  it('says what an empty circle means instead of drawing rows', async () => {
-    const { context } = seededContext([])
-    const wrapper = await mountPage(context)
-
-    expect(
-      wrapper.container.querySelectorAll('[data-id^="hilos-table-row-"]')
-        .length,
-    ).toBe(0)
-    expect(wrapper.container.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.empty.title,
-    )
-    expect(wrapper.container.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.empty.hint,
-    )
-    const emptyActions = [
-      ...document.querySelectorAll<HTMLButtonElement>(
-        'table [data-id="hilos-table-empty-action"]',
-      ),
-      ...document.querySelectorAll<HTMLButtonElement>(
-        '[data-id="hilos-table-cards"] [data-id="hilos-table-empty-action"]',
-      ),
-    ]
-    expect(emptyActions).toHaveLength(2)
-    for (const action of emptyActions) {
-      expect(action.textContent?.trim()).toBe(
-        HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
-      )
-      await settled(() => fireEvent.click(action))
-      expect(addField()).not.toBeNull()
+    for (const [activatedAt, progressAt] of [
+      ['', 'malformed'],
+      ['2026-02-30T00:00:00.000000Z', ''],
+    ]) {
       await settled(() =>
-        fireEvent.click(
-          document.querySelector(
-            '[data-id="hilos-maintenance-circle-add-cancel"]',
-          ) as HTMLButtonElement,
+        pushState(
+          maintenanceState({
+            phase: 'verifying',
+            operation: 'restore',
+            startedAt,
+            activatedAt,
+            progressAt,
+          }),
         ),
       )
-      expect(addField()).toBeNull()
+      expect(textOf('hilos-maintenance-activated-at')).toBe('—')
+      expect(textOf('hilos-maintenance-progress-at')).toBe('—')
+      expect(byId('hilos-maintenance-progress-elapsed')).toBeNull()
+      expect(card.textContent).not.toContain(
+        HILOS_MAINTENANCE_STATE_COPY.justNow,
+      )
     }
   })
 
-  it('offers adding a member and removing one', async () => {
-    const { context } = seededContext([ANN])
-    const wrapper = await mountPage(context)
-    const panel = wrapper.container.querySelector(
-      '[data-id="hilos-maintenance-circle-panel"]',
-    )
-
-    expect(
-      panel?.querySelector('[data-id="hilos-table-main-action"]')?.textContent,
-    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.addButton)
-    expect(trash('ann@example.test').getAttribute('aria-label')).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle,
-    )
-    expect(trash('ann@example.test').querySelector('.bi-trash')).not.toBeNull()
-    expect(wrapper.container.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.title,
-    )
-  })
-
-  it('opens the remove dialog over the row, naming its address and taking it into focus', async () => {
-    const { context, focus } = seededContext([ANN])
+  it('keeps the operation lines off the manual card', async () => {
+    const { context, pushState } = overviewContext()
     await mountPage(context)
-
-    fireEvent.click(trash('ann@example.test'))
-
-    expect(focus).toEqual(['1'])
-    expect(document.querySelector('[data-id="modal"] code')?.textContent).toBe(
-      'ann@example.test',
-    )
-    expect(document.body.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeNote,
-    )
-    expect(removeConfirm()?.disabled).toBe(false)
-    expect(removeConfirm()?.textContent?.trim()).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeConfirm,
-    )
-  })
-
-  it("takes the member out by the row key and closes only on the server's word", async () => {
-    const { actions, dispatched } = makeActions()
-    const { context, focus } = seededContext([ANN], actions)
-    await mountPage(context)
-
-    fireEvent.click(trash('ann@example.test'))
-    fireEvent.click(removeConfirm() as HTMLButtonElement)
-
-    expect(dispatched).toMatchObject([
-      { action: 'maintenance_circle_remove', payload: { memberId: 1 } },
-    ])
-    expect(removeConfirm()).not.toBeNull()
 
     await settled(() =>
-      dispatched[0]?.settle({
-        action: 'maintenance_circle_remove',
-      } as ActionResult),
+      pushState(
+        manualState({
+          initiatorAgentType: 'hilos_backup',
+          initiatorNodeId: 'node-1',
+          stoppedAgentCount: 0,
+          agentStartGateClosed: false,
+        }),
+      ),
     )
 
-    expect(removeConfirm()).toBeNull()
-    expect(focus).toEqual(['1', ''])
+    for (const line of [
+      'initiator',
+      'activated-at',
+      'progress-at',
+      'stopped-agents',
+      'diagnostics-node',
+      'agent-start',
+    ]) {
+      expect(byId(`hilos-maintenance-${line}`)).toBeNull()
+    }
+    expect(byId('hilos-maintenance-other-browser')).toBeNull()
   })
 
-  it('keeps the remove dialog open with the refusal on it', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([ANN], actions)
-    await mountPage(context)
+  it('draws no circle table and opens no circle window', async () => {
+    const { context, pushState, tableTraffic } = overviewContext()
+    const view = mountPage(context)
 
-    fireEvent.click(trash('ann@example.test'))
-    fireEvent.click(removeConfirm() as HTMLButtonElement)
-    await settled(() =>
-      dispatched[0]?.refuse(
-        new ActionError(
-          'maintenance_circle_remove',
-          'fail',
-          'This verifier is no longer in the circle',
+    expect(view.container.querySelector('table')).toBeNull()
+    expect(tableTraffic).toEqual([])
+
+    await settled(() => pushState(manualState()))
+
+    expect(view.container.querySelector('table')).toBeNull()
+    expect(tableTraffic).toEqual([])
+  })
+})
+
+describe('HilosMaintenancePage restore card', () => {
+  it('draws published facts in the reader zone and ages the last movement on the shared clock', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2026-09-11T03:24:14.000Z'))
+    const restoreFormatter = englishMoments()
+    const reader = readerTimeZone()
+
+    try {
+      act(() => reader.choose('UTC'))
+      const { context, pushState } = overviewContext()
+      mountPage(context)
+      const state = restoreState()
+      await settled(() => pushState(state))
+
+      const card = byId('hilos-maintenance-state-operation') as HTMLElement
+      expect(textOf('hilos-maintenance-initiator')).toBe(
+        'hilos_backup · node node-1',
+      )
+      expect(textOf('hilos-maintenance-started-at')).toBe(
+        'Sep 11, 2026, 3:14:02 AM',
+      )
+      expect(textOf('hilos-maintenance-activated-at')).toBe(
+        'Sep 11, 2026, 3:14:09 AM',
+      )
+      expect(textOf('hilos-maintenance-progress-at')).toBe(
+        'Sep 11, 2026, 3:21:44 AM',
+      )
+      expect(textOf('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
+      expect(textOf('hilos-maintenance-stopped-agents')).toBe(
+        '6 · hilos_mail left running',
+      )
+      expect(textOf('hilos-maintenance-diagnostics-node')).toBe('node-1')
+      // The gate as published: open in the verification window.
+      expect(textOf('hilos-maintenance-agent-start')).toBe(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartOpen,
+      )
+      expect(card.textContent).not.toContain(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+      )
+
+      await settled(() =>
+        pushState(
+          restoreState({ stoppedAgentCount: 0, preservedAgentTypes: [] }),
         ),
-      ),
-    )
+      )
+      // Zero is a published count, and an empty preserved list is a value.
+      expect(textOf('hilos-maintenance-stopped-agents')).toBe('0')
+      await settled(() =>
+        pushState(restoreState({ agentStartGateClosed: true })),
+      )
+      expect(textOf('hilos-maintenance-agent-start')).toBe(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartClosed,
+      )
+      await settled(() =>
+        pushState(restoreState({ agentStartGateClosed: null })),
+      )
+      expect(textOf('hilos-maintenance-agent-start')).toBe('—')
+      await settled(() => pushState(state))
 
-    expect(removeConfirm()).not.toBeNull()
-    expect(
-      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
-    ).toContain('This verifier is no longer in the circle')
+      act(() => reader.choose('America/Los_Angeles'))
+      expect(textOf('hilos-maintenance-activated-at')).toBe(
+        'Sep 10, 2026, 8:14:09 PM',
+      )
+      expect(textOf('hilos-maintenance-progress-at')).toBe(
+        'Sep 10, 2026, 8:21:44 PM',
+      )
+      expect(textOf('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
+      act(() => reader.choose('Europe/Kyiv'))
+      expect(textOf('hilos-maintenance-activated-at')).toBe(
+        'Sep 11, 2026, 6:14:09 AM',
+      )
+      expect(textOf('hilos-maintenance-progress-at')).toBe(
+        'Sep 11, 2026, 6:21:44 AM',
+      )
+      expect(state.activatedAt).toBe('2026-09-11T03:14:09.000Z')
+      expect(state.progressAt).toBe('2026-09-11T03:21:44.000Z')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(29_999)
+      })
+      expect(textOf('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+      expect(textOf('hilos-maintenance-progress-elapsed')).toBe('3 minutes ago')
+      expect(textOf('hilos-maintenance-progress-at')).toBe(
+        'Sep 11, 2026, 6:21:44 AM',
+      )
+      expect(textOf('hilos-maintenance-started-at')).toBe(
+        'Sep 11, 2026, 6:14:02 AM',
+      )
+    } finally {
+      cleanup()
+      reader.release()
+      restoreFormatter()
+      vi.useRealTimers()
+    }
   })
 
-  it('says the row was taken out elsewhere and locks Remove', async () => {
-    const { context, pushRemove } = seededContext([ANN])
+  it('gives a browser that did not start the restore only the line', async () => {
+    const { context, pushState } = overviewContext()
     await mountPage(context)
 
-    fireEvent.click(trash('ann@example.test'))
-    await settled(() => pushRemove(1))
+    for (const state of [
+      restoreState({ phase: 'active', isInitiator: false }),
+      manualState({ initiatorAgentType: 'hilos_backup' }),
+      restoreState(),
+    ]) {
+      await settled(() => pushState(state))
+      expect(byId('hilos-maintenance-other-browser')).toBeNull()
+    }
 
-    expect(
-      document.querySelector(
-        '[data-id="hilos-maintenance-circle-remove-notice"]',
-      )?.textContent,
-    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.removeGone)
-    expect(removeConfirm()?.textContent?.trim()).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeGoneConfirm,
-    )
-    expect(removeConfirm()?.disabled).toBe(true)
-    // The address the dialog opened with stays on screen.
-    expect(document.querySelector('[data-id="modal"] code')?.textContent).toBe(
-      'ann@example.test',
-    )
-  })
+    // Another admitted browser, and a restore the console started: the console
+    // makes no browser the initiator, so every browser reads the same line.
+    for (const state of [
+      restoreState({ isInitiator: false }),
+      restoreState({ isInitiator: false, initiatorNodeId: 'node-2' }),
+    ]) {
+      await settled(() => pushState(state))
+      const line = byId('hilos-maintenance-other-browser') as HTMLElement
+      expect(line.getAttribute('role')).toBe('status')
+      expect(line.textContent).toContain(
+        hilosMaintenanceOtherBrowserLine(state),
+      )
+      expect(line.querySelector('button')).toBeNull()
+      expect(byId('hilos-maintenance-restore-ladder')).toBeNull()
+      for (const id of ['restore-pass', 'restore-open', 'restore-close']) {
+        expect(byId(`hilos-maintenance-${id}`)).toBeNull()
+      }
+      expect(
+        byId('hilos-maintenance-state-operation')?.querySelector('button'),
+      ).toBeNull()
+      expect(textOf('hilos-maintenance-initiator')).toBe(
+        `hilos_backup · node ${state.initiatorNodeId}`,
+      )
+    }
 
-  it('does not read its own removal, echoed before the answer, as taken out elsewhere', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context, pushRemove } = seededContext([ANN], actions)
-    await mountPage(context)
-
-    fireEvent.click(trash('ann@example.test'))
-    fireEvent.click(removeConfirm() as HTMLButtonElement)
-    await settled(() => pushRemove(1, true))
-
-    // No message: the notice's room is held by its invisible twin only.
-    expect(
-      document.querySelector(
-        '[data-id="hilos-maintenance-circle-remove-notice"]',
-      ),
-    ).toBeNull()
-    expect(removeConfirm()?.textContent?.trim()).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.removeConfirm,
-    )
-
-    await settled(() =>
-      dispatched[0]?.settle({
-        action: 'maintenance_circle_remove',
-      } as ActionResult),
-    )
-
-    expect(removeConfirm()).toBeNull()
-  })
-
-  it('opens the add dialog with an empty field and holds Add until something is typed', async () => {
-    const { context } = seededContext([])
-    await mountPage(context)
-
-    openAndType('   ')
-
-    expect(document.body.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addLead,
-    )
-    expect(addField()?.placeholder).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder,
-    )
-    expect(addConfirm().disabled).toBe(true)
-
-    fireEvent.change(addField() as HTMLInputElement, {
-      target: { value: 'ann@example.test' },
-    })
-
-    expect(addConfirm().disabled).toBe(false)
-  })
-
-  it("names the address as typed and closes only on the server's word", async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    await mountPage(context)
-
-    openAndType('+7 900 000-00-00')
-    fireEvent.click(addConfirm())
-
-    expect(dispatched).toMatchObject([
-      {
-        action: 'maintenance_circle_add',
-        payload: { identifier: '+7 900 000-00-00' },
-      },
-    ])
-    expect(addField()).not.toBeNull()
-
-    await settled(() =>
-      dispatched[0]?.settle({
-        action: 'maintenance_circle_add',
-      } as ActionResult),
-    )
-
-    expect(addField()).toBeNull()
-  })
-
-  it('keeps the dialog open with the typed address and the refusal on it', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    await mountPage(context)
-
-    openAndType('nobody@example.test')
-    fireEvent.click(addConfirm())
-    await settled(() =>
-      dispatched[0]?.refuse(
-        new ActionError(
-          'maintenance_circle_add',
-          'fail',
-          'Nobody has proven this address',
-        ),
-      ),
-    )
-
-    expect(addField()?.value).toBe('nobody@example.test')
-    expect(
-      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
-    ).toContain('Nobody has proven this address')
-    expect(addConfirm().disabled).toBe(false)
-  })
-
-  it('opens the dialog again with an empty field and no refusal left over', async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    await mountPage(context)
-
-    openAndType('nobody@example.test')
-    fireEvent.click(addConfirm())
-    await settled(() =>
-      dispatched[0]?.refuse(
-        new ActionError(
-          'maintenance_circle_add',
-          'fail',
-          'Nobody has proven this address',
-        ),
-      ),
-    )
-    fireEvent.click(
-      document.querySelector(
-        '[data-id="modal"] .modal-footer .btn-secondary',
-      ) as HTMLButtonElement,
-    )
-    expect(addField()).toBeNull()
-    fireEvent.click(
-      document.querySelector(
-        '[data-id="hilos-table-main-action"]',
-      ) as HTMLButtonElement,
-    )
-
-    expect(addField()?.value).toBe('')
-    expect(document.body.textContent).not.toContain(
-      'Nobody has proven this address',
-    )
+    await settled(() => pushState(maintenanceState()))
+    expect(byId('hilos-maintenance-other-browser')).toBeNull()
   })
 })
 
@@ -1177,7 +1075,7 @@ function manualButton(
  */
 async function openManual(manual: Pick<ManualCase, 'name' | 'opensFrom'>) {
   const { actions, dispatched } = makeActions()
-  const { context, pushState } = seededContext([], actions)
+  const { context, pushState } = overviewContext(actions)
   const view = await mountPage(context)
   await settled(() => pushState(manual.opensFrom))
   const opener = byId<HTMLButtonElement>(
@@ -1227,7 +1125,8 @@ describe.each(MANUAL_CASES)(
       fireEvent.click(confirm())
       await settled(() => {})
 
-      expect(dispatched).toMatchObject([{ action: manual.action, payload: {} }])
+      expect(dispatched).toMatchObject([{ action: manual.action }])
+      expect(dispatched[0]?.payload).toEqual({})
       expect(confirm().getAttribute('aria-disabled')).toBe('true')
       expect(cancel().disabled).toBe(true)
       await tryEveryClose(dialog, cancel())
@@ -1357,62 +1256,6 @@ describe.each(MANUAL_CASES)(
   },
 )
 
-describe('HilosMaintenancePage with the addresses hidden (HIL-1260)', () => {
-  afterEach(cleanup)
-
-  it('draws the mark for each address and keys the rows by the membership', () => {
-    const { context } = seededContext([
-      {
-        memberId: 1,
-        identityType: 'password',
-        identifier: HIDDEN_VALUE,
-        online: true,
-      },
-      {
-        memberId: 2,
-        identityType: 'sms',
-        identifier: HIDDEN_VALUE,
-        online: false,
-      },
-    ])
-    mountPage(context)
-
-    const cell = document.querySelector(
-      'table [data-id="hilos-maintenance-circle-row-member-1"]',
-    )
-    expect(
-      cell?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
-    ).toBe('Hidden')
-    expect(mark('member-1')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.online,
-    )
-    expect(mark('member-2')?.textContent).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
-    )
-  })
-
-  it('names the hidden address in the remove dialog by the mark', () => {
-    const { context, focus } = seededContext([
-      {
-        memberId: 2,
-        identityType: 'sms',
-        identifier: HIDDEN_VALUE,
-        online: false,
-      },
-    ])
-    mountPage(context)
-
-    fireEvent.click(trash('member-2'))
-
-    expect(focus).toEqual(['2'])
-    const modal = document.querySelector('[data-id="modal"]')
-    expect(modal?.querySelector('code')).toBeNull()
-    expect(
-      modal?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
-    ).toBe('Hidden')
-  })
-})
-
 describe('HilosMaintenancePage and the admin view mode', () => {
   const releases: (() => void)[] = []
 
@@ -1474,7 +1317,7 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     'disables $name for a viewer and after a live revoke while its confirmation is open',
     async (manual) => {
       const { actions, dispatched } = makeActions()
-      const { context, pushState } = seededContext([], actions)
+      const { context, pushState } = overviewContext(actions)
       const { handshake } = bindSession(context.scopes)
       handshake(null, true)
       await mountPage(context)
@@ -1502,76 +1345,115 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     },
   )
 
-  it('a viewer opens the add dialog, may type an address and has nothing to send it with', async () => {
+  it('shows restore facts to a viewer', async () => {
     const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    bindSession(context.scopes).handshake(null, true)
-    mountPage(context)
+    const { context, pushState } = overviewContext(actions)
+    const { handshake } = bindSession(context.scopes)
+    handshake(null, true)
+    await mountPage(context)
 
-    const addButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-table-main-action"]',
-    )
-    expect(addButton?.disabled).toBe(false)
-
-    openAndType('someone@example.test')
-    expect(addField()?.disabled).toBe(false)
-    expect(addField()?.value).toBe('someone@example.test')
-    expect(addConfirm().disabled).toBe(true)
-    expect(addConfirm().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-
-    await settled(() => fireEvent.click(addConfirm()))
+    for (const isInitiator of [true, false]) {
+      await settled(() =>
+        pushState(restoreState({ isInitiator, preservedAgentTypes: null })),
+      )
+      expect(textOf('hilos-maintenance-initiator')).toContain('hilos_backup')
+      expect(textOf('hilos-maintenance-stopped-agents')).toBe('6')
+      expect(textOf('hilos-maintenance-diagnostics-node')).toBe('node-1')
+      expect(textOf('hilos-maintenance-agent-start')).toBe(
+        HILOS_MAINTENANCE_STATE_COPY.agentStartOpen,
+      )
+    }
+    expect(textOf('hilos-maintenance-other-browser')).toContain('hilos_backup')
     expect(dispatched).toHaveLength(0)
-
-    const cancelButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-add-cancel"]',
-    )
-    expect(cancelButton).not.toBeNull()
-    expect(cancelButton?.disabled).toBe(false)
-    await settled(() => fireEvent.click(cancelButton as Element))
-    expect(addField()).toBeNull()
   })
 
-  it('a viewer opens the remove dialog over a row and has nothing to send from it', async () => {
+  it('blocks the restore ladder and its confirmations for a viewer and after a live revoke', async () => {
     const { actions, dispatched } = makeActions()
-    const { context, focus } = seededContext([ANN], actions)
-    bindSession(context.scopes).handshake(null, true)
-    mountPage(context)
+    const { context, pushState } = overviewContext(actions)
+    const { handshake } = bindSession(context.scopes)
+    handshake(null, true)
+    await mountPage(context)
+    await settled(() => pushState(restoreState()))
 
-    const trashButton = trash('ann@example.test')
-    expect(trashButton.disabled).toBe(false)
-    await settled(() => fireEvent.click(trashButton))
+    for (const name of RESTORE_NAMES) {
+      const opener = byId<HTMLButtonElement>(
+        `hilos-maintenance-restore-${name}`,
+      ) as HTMLButtonElement
+      expect(opener.disabled).toBe(true)
+      expect(opener.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+      await settled(() => fireEvent.click(opener))
+      expect(restoreModal(name)).toBeNull()
+    }
 
-    expect(focus).toEqual(['1'])
-    expect(removeConfirm()?.disabled).toBe(true)
-    expect(removeConfirm()?.getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
+    for (const name of RESTORE_NAMES) {
+      await settled(() => handshake({ id: 7, admin: true }, true))
+      const opener = byId<HTMLButtonElement>(
+        `hilos-maintenance-restore-${name}`,
+      ) as HTMLButtonElement
+      expect(opener.disabled).toBe(false)
+      await settled(() => fireEvent.click(opener))
+      expect(restoreButton(name, 'confirm').disabled).toBe(false)
 
-    await settled(() => fireEvent.click(removeConfirm() as Element))
-    expect(dispatched).toHaveLength(0)
-
-    const cancelButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-remove-cancel"]',
-    )
-    expect(cancelButton).not.toBeNull()
-    expect(cancelButton?.disabled).toBe(false)
-    await settled(() => fireEvent.click(cancelButton as Element))
-
-    expect(removeConfirm()).toBeNull()
-    expect(focus).toEqual(['1', ''])
+      await settled(() => handshake({ id: 7, admin: false }, true))
+      const confirm = restoreButton(name, 'confirm')
+      expect(confirm.disabled).toBe(true)
+      expect(confirm.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+      fireEvent.click(confirm)
+      pressEnter(confirm)
+      await settled(() => {})
+      expect(dispatched).toHaveLength(0)
+      expect(restoreButton(name, 'cancel').disabled).toBe(false)
+      await settled(() => fireEvent.click(restoreButton(name, 'cancel')))
+      expect(restoreModal(name)).toBeNull()
+    }
+    expect(byId('hilos-maintenance-restore-pass-value')).toBeNull()
   })
 
-  it('an admin on a node in the mode names a verifier as today', () => {
-    const { actions } = makeActions()
-    const { context } = seededContext([], actions)
-    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
-    mountPage(context)
-
-    openAndType('someone@example.test')
-    expect(addConfirm().disabled).toBe(false)
-    expect(addConfirm().getAttribute('aria-describedby')).toBeNull()
+  it('keeps watchdog details readable for a viewer and draws hidden thresholds through the hidden mark', async () => {
+    const { actions, dispatched } = makeActions()
+    const { context, pushState } = overviewContext(actions)
+    const { handshake } = bindSession(context.scopes)
+    handshake(null, true)
+    await mountPage(context)
+    await settled(() =>
+      pushState(
+        restoreState({
+          watchdogVerdict: 'silent',
+          watchdogAlertEmails: HIDDEN_VALUE,
+          watchdogManualRestartIsNormal: HIDDEN_VALUE,
+        }),
+      ),
+    )
+    const card = byId('hilos-maintenance-watchdog-thresholds') as HTMLElement
+    expect(card.querySelectorAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    // One mark in place of the list, never its size.
+    expect(definitions(card)).toEqual(['—', '—', '—', 'Hidden', 'Hidden'])
+    expect(card.textContent).not.toContain(
+      HILOS_MAINTENANCE_WATCHDOG_COPY.noRecipients,
+    )
+    const opener = byId<HTMLButtonElement>(
+      'hilos-maintenance-watchdog-details',
+    ) as HTMLButtonElement
+    expect(opener.disabled).toBe(false)
+    opener.focus()
+    await settled(() => fireEvent.click(opener))
+    expect(textOf('hilos-maintenance-watchdog-full')).toContain(
+      'No movement behind the freeze',
+    )
+    await settled(() =>
+      fireEvent.click(
+        byId<HTMLButtonElement>(
+          'hilos-maintenance-watchdog-close',
+        ) as HTMLButtonElement,
+      ),
+    )
+    expect(byId('hilos-maintenance-watchdog-full')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    expect(dispatched).toEqual([])
   })
 })
 
@@ -1691,5 +1573,710 @@ describe('HilosMaintenancePage code result', () => {
     expect(document.body.textContent).not.toContain('orphan-code')
     expect(byId('hilos-maintenance-pass-result')).toBeNull()
     expect(dispatched).toHaveLength(1)
+  })
+})
+
+describe('HilosMaintenancePage restore ladder', () => {
+  it('gives the initiator three live buttons and another browser only the line', async () => {
+    const { context, pushState } = overviewContext()
+    await mountPage(context)
+
+    // The ladder belongs to a restore's verification window and nowhere else.
+    for (const state of [
+      restoreState({ phase: 'active' }),
+      manualState({ isInitiator: true }),
+      maintenanceState(),
+    ]) {
+      await settled(() => pushState(state))
+      expect(byId('hilos-maintenance-restore-ladder')).toBeNull()
+      for (const name of RESTORE_NAMES) {
+        expect(byId(`hilos-maintenance-restore-${name}`)).toBeNull()
+      }
+    }
+
+    await settled(() => pushState(restoreState()))
+    expect(byId('hilos-maintenance-other-browser')).toBeNull()
+    const ladder = byId('hilos-maintenance-restore-ladder') as HTMLElement
+    for (const [name, label] of [
+      ['pass', HILOS_MAINTENANCE_RESTORE_PASS_COPY.issue],
+      ['open', HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue],
+      ['close', HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.issue],
+    ] as const) {
+      const button = ladder.querySelector<HTMLButtonElement>(
+        `[data-id="hilos-maintenance-restore-${name}"]`,
+      )
+      expect(button?.tagName).toBe('BUTTON')
+      expect(button?.textContent).toBe(label)
+      expect(button?.disabled).toBe(false)
+      expect(button?.getAttribute('aria-disabled')).toBeNull()
+    }
+    // The operation card keeps its facts and no control of its own.
+    expect(
+      byId('hilos-maintenance-state-operation')?.querySelector('button'),
+    ).toBeNull()
+
+    const other = restoreState({ isInitiator: false })
+    await settled(() => pushState(other))
+    expect(byId('hilos-maintenance-restore-ladder')).toBeNull()
+    for (const name of RESTORE_NAMES) {
+      expect(byId(`hilos-maintenance-restore-${name}`)).toBeNull()
+    }
+    const line = byId('hilos-maintenance-other-browser') as HTMLElement
+    expect(line.getAttribute('role')).toBe('status')
+    expect(line.textContent).toContain(hilosMaintenanceOtherBrowserLine(other))
+    expect(line.querySelector('button')).toBeNull()
+  })
+})
+
+describe('HilosMaintenancePage restore code', () => {
+  const confirm = () => restoreButton('pass', 'confirm')
+  const cancel = () => restoreButton('pass', 'cancel')
+
+  afterEach(() => {
+    setClipboard(realClipboard)
+  })
+
+  it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+    'explains minting and allows %s before dispatch without sending anything',
+    async (method) => {
+      const { dispatched, opener } = await openRestore('pass')
+      const dialog = dialogOf('hilos-maintenance-restore-pass-modal')
+      expect(dialog.getAttribute('aria-label')).toBe(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.mintTitle,
+      )
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(document.activeElement).toBe(dialog)
+      expect(dialog.querySelector('input, textarea')).toBeNull()
+      for (const text of [
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.lead,
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.reuseNote,
+      ]) {
+        expect(dialog.textContent).toContain(text)
+      }
+      // A restore code is not the manual window's: nothing here turns maintenance off.
+      expect(dialog.textContent?.toLowerCase()).not.toContain(
+        'turn maintenance off',
+      )
+      expect(dialog.textContent).not.toContain(
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      )
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+      ).not.toBeNull()
+      await settled(() => fireEvent.keyDown(dialog, { key: 'Enter' }))
+      expect(dispatched).toHaveLength(0)
+      expect(restoreModal('pass')).not.toBeNull()
+
+      await closeBy(dialog, cancel(), method)
+
+      expect(restoreModal('pass')).toBeNull()
+      expect(dispatched).toHaveLength(0)
+      expect(document.activeElement).toBe(opener)
+    },
+  )
+
+  it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+    'blocks repeat, Enter and every close while busy, reveals the code once and forgets it on %s',
+    async (method) => {
+      const written = recordingClipboard()
+      const { dispatched, opener } = await openRestore('pass')
+      const dialog = dialogOf('hilos-maintenance-restore-pass-modal')
+      pressEnter(confirm())
+      pressEnter(confirm())
+      await settled(() => {})
+
+      expect(dispatched).toMatchObject([{ action: 'maintenance_restore_pass' }])
+      expect(dispatched[0]?.payload).toEqual({})
+      expect(confirm().getAttribute('aria-disabled')).toBe('true')
+      expect(cancel().disabled).toBe(true)
+      pressEnter(confirm())
+      await tryEveryClose(dialog, cancel())
+      expect(restoreModal('pass')).not.toBeNull()
+      expect(dispatched).toHaveLength(1)
+      await settled(() => dispatched[0]?.loading.set(true))
+      expect(confirm().getAttribute('aria-busy')).toBe('true')
+
+      const secret = '<opaque&code>'
+      await settled(() =>
+        dispatched[0]?.settle({
+          message: 'Code minted',
+          reply: { pass: secret },
+        }),
+      )
+      const value = byId('hilos-maintenance-restore-pass-value')
+      expect(value?.textContent).toBe(secret)
+      expect(value?.querySelector('opaque')).toBeNull()
+      expect(document.activeElement).toBe(value)
+      expect(dialog.getAttribute('aria-label')).toBe(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.codeTitle,
+      )
+      expect(dialog.textContent).toContain(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.resultLead,
+      )
+      expect(dialog.textContent).toContain(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.resultNote,
+      )
+      expect(cancel().textContent?.trim()).toBe(
+        HILOS_MAINTENANCE_RESTORE_PASS_COPY.close,
+      )
+      expect(byId('hilos-maintenance-restore-pass-confirm')).toBeNull()
+      expect(textOf('hilos-maintenance-state-operation')).not.toContain(secret)
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Code minted', severity: 'success', repeats: 1 },
+      ])
+      expect(JSON.stringify(hilosToasts.toasts.get())).not.toContain(secret)
+      for (const element of document.querySelectorAll('*')) {
+        for (const attribute of element.attributes) {
+          expect(attribute.value).not.toContain(secret)
+        }
+      }
+      expect(
+        JSON.stringify({ ...localStorage, ...sessionStorage }),
+      ).not.toContain(secret)
+      expect(window.location.href).not.toContain(secret)
+
+      const copy = dialog.querySelector<HTMLButtonElement>(
+        '[data-id="modal-copy"]',
+      ) as HTMLButtonElement
+      expect(copy.tagName).toBe('BUTTON')
+      expect(copy.disabled).toBe(false)
+      await act(async () => {
+        pressEnter(copy)
+      })
+      expect(written).toEqual([secret])
+      expect(dispatched).toHaveLength(1)
+
+      await closeBy(dialog, cancel(), method)
+
+      expect(restoreModal('pass')).toBeNull()
+      expect(document.body.textContent).not.toContain(secret)
+      expect(document.activeElement).toBe(opener)
+      await settled(() => fireEvent.click(opener))
+      expect(restoreModal('pass')?.textContent).not.toContain(secret)
+      expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+      expect(confirm().disabled).toBe(false)
+      expect(dispatched).toHaveLength(1)
+    },
+  )
+
+  it.each(FAILURE_OUTCOMES)(
+    'keeps %s in the mint dialog with no control that opens the system and never retries',
+    async (outcome) => {
+      const { dispatched } = await openRestore('pass')
+      await settled(() => fireEvent.click(confirm()))
+      const reason =
+        outcome === 'fail'
+          ? 'Another request is awaiting confirmation.'
+          : 'No reply received.'
+
+      await settled(() =>
+        dispatched[0]?.refuse(
+          new ActionError('maintenance_restore_pass', outcome, reason),
+        ),
+      )
+
+      const message =
+        outcome === 'fail'
+          ? reason
+          : HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote
+      const dialog = dialogOf('hilos-maintenance-restore-pass-modal')
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error"]')?.textContent,
+      ).toContain(message)
+      expect(
+        dialog
+          .querySelector('[data-id="hilos-action-error-slot"]')
+          ?.getAttribute('aria-live'),
+      ).toBe('assertive')
+      expect(message.toLowerCase()).not.toContain('turn maintenance off')
+      expect(dialog.textContent).not.toContain(
+        HILOS_MAINTENANCE_RESTORE_OPEN_COPY.issue,
+      )
+      expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+      expect(cancel().disabled).toBe(false)
+      expect(confirm().disabled).toBe(false)
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message, severity: 'error' },
+      ])
+      expect(dispatched).toHaveLength(1)
+    },
+  )
+
+  it.each(LADDER_GONE)(
+    'blocks an unsent mint once this browser no longer holds the ladder: %s',
+    async (_case, state) => {
+      const { pushState, dispatched } = await openRestore('pass')
+
+      await settled(() => pushState(state))
+
+      expect(confirm().disabled).toBe(true)
+      fireEvent.click(confirm())
+      pressEnter(confirm())
+      await settled(() => {})
+      expect(dispatched).toHaveLength(0)
+      expect(cancel().disabled).toBe(false)
+      await settled(() => fireEvent.click(cancel()))
+      expect(restoreModal('pass')).toBeNull()
+    },
+  )
+
+  it('forgets a shown code on unmount', async () => {
+    const { view, dispatched } = await openRestore('pass')
+    await settled(() => fireEvent.click(confirm()))
+    await settled(() =>
+      dispatched[0]?.settle({ reply: { pass: 'departed-code' } }),
+    )
+    expect(restoreModal('pass')?.textContent).toContain('departed-code')
+
+    view.unmount()
+
+    expect(document.body.textContent).not.toContain('departed-code')
+    expect(restoreModal('pass')).toBeNull()
+  })
+
+  it('cannot resurrect a code from a reply after unmount', async () => {
+    const { view, dispatched } = await openRestore('pass')
+    await settled(() => fireEvent.click(confirm()))
+    view.unmount()
+
+    await settled(() => dispatched[0]?.settle({ reply: { pass: 'late-code' } }))
+
+    expect(document.body.textContent).not.toContain('late-code')
+    expect(restoreModal('pass')).toBeNull()
+    const reopened = await openRestore('pass')
+    expect(restoreModal('pass')?.textContent).not.toContain('late-code')
+    expect(reopened.dispatched).toHaveLength(0)
+  })
+
+  it('a late success after timeout cannot replace a newly opened confirmation', async () => {
+    const { dispatched, opener } = await openRestore('pass')
+    await settled(() => fireEvent.click(confirm()))
+    await settled(() =>
+      dispatched[0]?.refuse(
+        new ActionError('maintenance_restore_pass', 'timeout', 'Timed out'),
+      ),
+    )
+    expect(restoreModal('pass')?.textContent).toContain(
+      HILOS_MAINTENANCE_RESTORE_PASS_COPY.unconfirmedNote,
+    )
+    await settled(() => fireEvent.click(cancel()))
+    await settled(() => fireEvent.click(opener))
+
+    await settled(() =>
+      dispatched[0]?.settle({ reply: { pass: 'orphan-code' } }),
+    )
+
+    expect(document.body.textContent).not.toContain('orphan-code')
+    expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+    expect(confirm().disabled).toBe(false)
+    expect(dispatched).toHaveLength(1)
+  })
+})
+
+describe.each(['open', 'close'] as const)(
+  'HilosMaintenancePage restore %s confirmation',
+  (name) => {
+    const copy =
+      name === 'open'
+        ? {
+            ...HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+            note: HILOS_MAINTENANCE_RESTORE_OPEN_COPY.noWayBack,
+          }
+        : {
+            ...HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+            note: HILOS_MAINTENANCE_RESTORE_CLOSE_COPY.footer,
+          }
+    const action = `maintenance_restore_${name}`
+    const confirm = () => restoreButton(name, 'confirm')
+    const cancel = () => restoreButton(name, 'cancel')
+
+    it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+      'explains itself and allows %s before dispatch without sending anything',
+      async (method) => {
+        const { dispatched, opener } = await openRestore(name)
+        const dialog = dialogOf(`hilos-maintenance-restore-${name}-modal`)
+        expect(dialog.getAttribute('aria-label')).toBe(copy.title)
+        expect(dialog.getAttribute('aria-modal')).toBe('true')
+        expect(document.activeElement).toBe(dialog)
+        expect(dialog.querySelector('input, textarea')).toBeNull()
+        expect(dialog.textContent).toContain(copy.lead)
+        expect(dialog.textContent).toContain(copy.note)
+        expect(
+          dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+        ).not.toBeNull()
+        await settled(() => fireEvent.keyDown(dialog, { key: 'Enter' }))
+        expect(dispatched).toHaveLength(0)
+        expect(restoreModal(name)).not.toBeNull()
+
+        await closeBy(dialog, cancel(), method)
+
+        expect(restoreModal(name)).toBeNull()
+        expect(dispatched).toHaveLength(0)
+        expect(document.activeElement).toBe(opener)
+      },
+    )
+
+    it('blocks repeat, Enter and every close while busy and closes on its one success', async () => {
+      const { dispatched, opener } = await openRestore(name)
+      const dialog = dialogOf(`hilos-maintenance-restore-${name}-modal`)
+      pressEnter(confirm())
+      pressEnter(confirm())
+      await settled(() => {})
+
+      expect(dispatched).toMatchObject([{ action }])
+      expect(dispatched[0]?.payload).toEqual({})
+      expect(confirm().getAttribute('aria-disabled')).toBe('true')
+      expect(cancel().disabled).toBe(true)
+      pressEnter(confirm())
+      await tryEveryClose(dialog, cancel())
+      expect(restoreModal(name)).not.toBeNull()
+      expect(dispatched).toHaveLength(1)
+      await settled(() => dispatched[0]?.loading.set(true))
+      expect(confirm().getAttribute('aria-busy')).toBe('true')
+      expect(hilosToasts.toasts.get()).toHaveLength(0)
+
+      await settled(() => dispatched[0]?.settle({ message: 'Done' }))
+
+      expect(restoreModal(name)).toBeNull()
+      expect(document.activeElement).toBe(opener)
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Done', severity: 'success', repeats: 1 },
+      ])
+      expect(dispatched).toHaveLength(1)
+    })
+
+    it('keeps its dialog through a frame that takes the ladder away until its own answer', async () => {
+      const { dispatched, pushState } = await openRestore(name)
+      const dialog = dialogOf(`hilos-maintenance-restore-${name}-modal`)
+      await settled(() => fireEvent.click(confirm()))
+
+      // The answer's own frame may come first: the ladder goes, the dialog stays busy.
+      await settled(() =>
+        pushState(
+          name === 'open'
+            ? maintenanceState()
+            : restoreState({ phase: 'active' }),
+        ),
+      )
+      expect(byId('hilos-maintenance-restore-ladder')).toBeNull()
+      expect(restoreModal(name)?.closest('[role="dialog"]')).toBe(dialog)
+      expect(cancel().disabled).toBe(true)
+      await tryEveryClose(dialog, cancel())
+      expect(restoreModal(name)).not.toBeNull()
+
+      await settled(() => dispatched[0]?.settle({ message: 'Done' }))
+
+      expect(restoreModal(name)).toBeNull()
+      expect(dispatched).toHaveLength(1)
+    })
+
+    it.each(FAILURE_OUTCOMES)(
+      'keeps %s readable in the dialog, releases Cancel and never retries',
+      async (outcome) => {
+        const { dispatched } = await openRestore(name)
+        await settled(() => fireEvent.click(confirm()))
+        const reason =
+          outcome === 'fail'
+            ? 'Another request is awaiting confirmation.'
+            : 'No reply received.'
+
+        await settled(() =>
+          dispatched[0]?.refuse(new ActionError(action, outcome, reason)),
+        )
+
+        const message = outcome === 'fail' ? reason : copy.unconfirmedNote
+        expect(
+          restoreModal(name)?.querySelector('[data-id="hilos-action-error"]')
+            ?.textContent,
+        ).toContain(message)
+        expect(
+          restoreModal(name)
+            ?.querySelector('[data-id="hilos-action-error-slot"]')
+            ?.getAttribute('aria-live'),
+        ).toBe('assertive')
+        expect(cancel().disabled).toBe(false)
+        expect(confirm().disabled).toBe(false)
+        expect(hilosToasts.toasts.get()).toMatchObject([
+          { message, severity: 'error' },
+        ])
+        expect(dispatched).toHaveLength(1)
+        await settled(() => fireEvent.click(cancel()))
+        expect(restoreModal(name)).toBeNull()
+      },
+    )
+
+    it.each(LADDER_GONE)(
+      'blocks an unsent confirmation once this browser no longer holds the ladder: %s',
+      async (_case, state) => {
+        const { pushState, dispatched } = await openRestore(name)
+
+        await settled(() => pushState(state))
+
+        expect(confirm().disabled).toBe(true)
+        fireEvent.click(confirm())
+        pressEnter(confirm())
+        await settled(() => {})
+        expect(dispatched).toHaveLength(0)
+        expect(cancel().disabled).toBe(false)
+        await settled(() => fireEvent.click(cancel()))
+        expect(restoreModal(name)).toBeNull()
+      },
+    )
+  },
+)
+
+describe('HilosMaintenancePage watchdog', () => {
+  it('reserves the alarm slot before a frame without inventing threshold values', async () => {
+    const { context, tableTraffic } = overviewContext()
+    await mountPage(context)
+    const slot = byId('hilos-maintenance-watchdog-slot') as HTMLElement
+    expect(slot.getAttribute('role')).toBe('status')
+    expect(slot.getAttribute('aria-live')).toBe('polite')
+    expect(within(slot).queryAllByRole('button')).toHaveLength(0)
+    expect(slot.querySelector('[aria-hidden="true"][inert]')).toBe(
+      byId('hilos-maintenance-watchdog-idle'),
+    )
+    expect(byId('hilos-maintenance-watchdog-thresholds')).toBeNull()
+    expect(document.body.textContent).not.toContain(
+      HILOS_MAINTENANCE_WATCHDOG_COPY.thresholdsTitle,
+    )
+    expect(document.body.textContent).not.toContain(
+      HILOS_MAINTENANCE_WATCHDOG_COPY.noRecipients,
+    )
+    expect(tableTraffic).toEqual([])
+  })
+
+  it.each([
+    ['open', 'hilos-maintenance-enable'],
+    ['manual', 'hilos-maintenance-disable'],
+    ['operation', 'hilos-maintenance-restore-close'],
+  ] as const)(
+    'places alarm, state, operator actions and read-only thresholds in order when %s',
+    async (position, actionId) => {
+      const { context, pushState } = overviewContext()
+      await mountPage(context)
+      const state =
+        position === 'operation'
+          ? restoreState()
+          : position === 'manual'
+            ? manualState()
+            : maintenanceState()
+      await settled(() =>
+        pushState({
+          ...state,
+          watchdogQuiesceTimeoutSeconds: 61,
+          watchdogSilenceTimeoutSeconds: 901,
+          watchdogAlertIntervalSeconds: 1801,
+          watchdogAlertEmails: ['ops@example.com', 'alerts@example.com'],
+          watchdogManualRestartIsNormal: true,
+        }),
+      )
+      const slot = byId('hilos-maintenance-watchdog-slot') as HTMLElement
+      const stateRoot = byId('hilos-maintenance-state') as HTMLElement
+      const action = byId(actionId) as HTMLElement
+      const thresholds = byId(
+        'hilos-maintenance-watchdog-thresholds',
+      ) as HTMLElement
+      for (const [before, after] of [
+        [slot, stateRoot],
+        [stateRoot, action],
+        [action, thresholds],
+      ] as const) {
+        expect(
+          before.compareDocumentPosition(after) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).not.toBe(0)
+      }
+      expect(stateRoot.contains(slot)).toBe(false)
+      expect(stateRoot.contains(thresholds)).toBe(false)
+      expect(
+        within(thresholds).getByRole('heading', { level: 2 }).textContent,
+      ).toBe('Watchdog thresholds')
+      expect(
+        [...thresholds.querySelectorAll('dt')].map((row) => row.textContent),
+      ).toEqual([
+        'Wait for nodes to quiesce',
+        'Consider silent after',
+        'Repeat alert',
+        'Send mail to',
+        'Restart under manual maintenance',
+      ])
+      expect(definitions(thresholds)).toEqual([
+        '61 seconds',
+        '901 seconds',
+        '1801 seconds',
+        'ops@example.com, alerts@example.com',
+        'No mail — a log entry',
+      ])
+      expect(thresholds.textContent).toContain(
+        'Thresholds and addresses come from the environment. Restart under manual maintenance is a setting changed in Settings.',
+      )
+      // Read-only: no editor, no control, no way out of the card.
+      expect(
+        thresholds.querySelectorAll('input, select, textarea, button, a'),
+      ).toHaveLength(0)
+      expect(slot.querySelectorAll('button')).toHaveLength(0)
+    },
+  )
+
+  it('keeps unknown, empty and real configuration distinct and redraws a live restart policy', async () => {
+    const { context, pushState } = overviewContext()
+    await mountPage(context)
+    await settled(() => pushState(maintenanceState()))
+    const card = byId('hilos-maintenance-watchdog-thresholds') as HTMLElement
+    expect(definitions(card)).toEqual(['—', '—', '—', '—', '—'])
+
+    await settled(() =>
+      pushState(
+        maintenanceState({
+          watchdogAlertEmails: [],
+          watchdogManualRestartIsNormal: false,
+        }),
+      ),
+    )
+    expect(byId('hilos-maintenance-watchdog-thresholds')).toBe(card)
+    expect(definitions(card)).toEqual([
+      '—',
+      '—',
+      '—',
+      'No recipients configured',
+      'Send an alert',
+    ])
+
+    await settled(() =>
+      pushState(
+        maintenanceState({
+          watchdogQuiesceTimeoutSeconds: 60,
+          watchdogSilenceTimeoutSeconds: 900,
+          watchdogAlertIntervalSeconds: 1800,
+          watchdogAlertEmails: ['ops@example.com'],
+          watchdogManualRestartIsNormal: true,
+        }),
+      ),
+    )
+    expect(definitions(card)).toEqual([
+      '60 seconds',
+      '900 seconds',
+      '1800 seconds',
+      'ops@example.com',
+      'No mail — a log entry',
+    ])
+    expect(card.textContent).not.toContain('No recipients configured')
+  })
+
+  it('uses only the server verdict and keeps manual maintenance and a still operation clear across elapsed time', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(new Date('2026-10-28T12:00:00.000Z'))
+
+    try {
+      const { context, pushState } = overviewContext()
+      await mountPage(context)
+
+      // Every threshold long past, and still no verdict: the browser judges nothing.
+      for (const state of [
+        manualState({ startedAt: '2026-01-01T00:00:00.000Z' }),
+        restoreState({
+          phase: 'activating',
+          progressAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ]) {
+        await settled(() =>
+          pushState({
+            ...state,
+            watchdogQuiesceTimeoutSeconds: 1,
+            watchdogSilenceTimeoutSeconds: 1,
+            watchdogAlertIntervalSeconds: 1,
+            watchdogManualRestartIsNormal: true,
+          }),
+        )
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_000)
+        })
+        expect(byId('hilos-maintenance-watchdog-alert')).toBeNull()
+        expect(byId('hilos-maintenance-watchdog-idle')).not.toBeNull()
+      }
+
+      await settled(() =>
+        pushState(
+          manualState({
+            watchdogVerdict: 'restored-from-disk',
+            watchdogManualRestartIsNormal: false,
+          }),
+        ),
+      )
+      expect(textOf('hilos-maintenance-watchdog-alert')).toContain(
+        HILOS_MAINTENANCE_WATCHDOG_COPY.manualRestartSummary,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('updates diagnostic moments through the reader-zone bridge without another state frame or backend action', async () => {
+    const restoreMoments = englishMoments()
+    const reader = readerTimeZone()
+
+    try {
+      act(() => reader.choose('UTC'))
+      const { actions, dispatched } = makeActions()
+      const { context, pushState, tableTraffic } = overviewContext(actions)
+      await mountPage(context)
+      await settled(() =>
+        pushState(
+          restoreState({
+            watchdogVerdict: 'silent',
+            watchdogPendingNodeIds: ['node-3', 'node-4'],
+          }),
+        ),
+      )
+      const opener = byId<HTMLButtonElement>(
+        'hilos-maintenance-watchdog-details',
+      ) as HTMLButtonElement
+      opener.focus()
+      await settled(() => fireEvent.click(opener))
+      const full = byId('hilos-maintenance-watchdog-full') as HTMLElement
+      const moments = () => definitions(full).slice(4, 7)
+      expect(moments()).toEqual([
+        'Sep 11, 2026, 3:14:02 AM',
+        'Sep 11, 2026, 3:14:09 AM',
+        'Sep 11, 2026, 3:21:44 AM',
+      ])
+      expect(full.textContent).toContain('node-3, node-4')
+
+      act(() => reader.choose('America/Los_Angeles'))
+      expect(moments()).toEqual([
+        'Sep 10, 2026, 8:14:02 PM',
+        'Sep 10, 2026, 8:14:09 PM',
+        'Sep 10, 2026, 8:21:44 PM',
+      ])
+      act(() => reader.choose('Europe/Kyiv'))
+      expect(moments()).toEqual([
+        'Sep 11, 2026, 6:14:02 AM',
+        'Sep 11, 2026, 6:14:09 AM',
+        'Sep 11, 2026, 6:21:44 AM',
+      ])
+
+      await settled(() =>
+        pushState(
+          restoreState({
+            watchdogVerdict: 'initiator-lost',
+            watchdogPendingNodeIds: [],
+          }),
+        ),
+      )
+      expect(full.textContent).toContain('The initiator is gone')
+      expect(full.textContent).not.toContain('No movement behind the freeze')
+      expect(full.textContent).not.toContain('node-3')
+
+      await settled(() => pushState(maintenanceState()))
+      expect(byId('hilos-maintenance-watchdog-full')).toBeNull()
+      expect(document.body.textContent).not.toContain('The initiator is gone')
+      expect(dispatched).toEqual([])
+      expect(tableTraffic).toEqual([])
+    } finally {
+      cleanup()
+      reader.release()
+      restoreMoments()
+    }
   })
 })

@@ -33,6 +33,10 @@ import {
   expectStandaloneWebsockets,
   watchDaemonWebsocketsFrames,
   expectLanguagePageHead,
+  MAINTENANCE_CIRCLE_PATH,
+  MAINTENANCE_PATH,
+  MAINTENANCE_WORDS_PATH,
+  expectMaintenancePageCurrent,
   expectModerationAddDialogAccessibility,
   expectModerationPagesAccessibility,
   expectModerationRowDialogsAccessibility,
@@ -48,6 +52,7 @@ import {
   expectDaemonSectionAccessibility,
   expectPageReady,
   gotoPage,
+  PAGE_READY,
   grantAdminToSelf,
   expectProfileHeadAccessibility,
   login,
@@ -900,4 +905,85 @@ test.describe('Moderation accessibility', () => {
       )
     },
   )
+})
+
+test.describe('Maintenance accessibility', () => {
+  // An explicit browser zone, picked at random when the group was written.
+  test.use({ timezoneId: 'Asia/Tomsk' })
+
+  test('Maintenance links open their pages from the keyboard, the tables are named and the Circle Add dialog returns focus', async ({
+    page,
+  }) => {
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
+
+    /**
+     * Takes one of the section's links with Enter and lands on its page: the
+     * address, one h1 and the current mark move together.
+     */
+    const follow = async (
+      pageKey:
+        | 'hilos_maintenance'
+        | 'hilos_maintenance_circle'
+        | 'hilos_maintenance_words',
+      path: string,
+    ): Promise<void> => {
+      const link = page.getByTestId(`hilos-page-tab-${pageKey}`)
+      await link.focus()
+      await expect(link).toBeFocused()
+      await link.press('Enter')
+      await expect(page).toHaveURL(new RegExp(`${path}$`))
+      await expectPageReady(expect, page)
+      await expectMaintenancePageCurrent(expect, page, pageKey)
+    }
+
+    await test.step('Circle opens from the keyboard and names its table', async () => {
+      await follow('hilos_maintenance_circle', MAINTENANCE_CIRCLE_PATH)
+      await expect(
+        page.getByTestId('hilos-maintenance-circle-table').getByRole('table'),
+      ).toHaveAccessibleName('Who will check the system')
+    })
+
+    await test.step('Add opens from the keyboard and returns focus on Escape and Cancel', async () => {
+      // Nothing is submitted: the dialog's keyboard and focus path is the subject,
+      // so the circle is left exactly as the scenario found it.
+      const add = shownByTestId(
+        page.getByTestId('hilos-maintenance-circle-table'),
+        'hilos-table-main-action',
+      )
+      const dialog = page.getByTestId('modal')
+      const field = dialog.getByTestId('hilos-maintenance-circle-add-field')
+      await expect(add).toHaveAccessibleName('Add a verifier')
+      await add.focus()
+      await add.press('Enter')
+      await expect(dialog).toHaveRole('dialog')
+      await expect(dialog).toHaveAttribute('aria-modal', 'true')
+      await expect(dialog).toHaveAccessibleName('Add a verifier')
+      await expect(field).toHaveAccessibleName('Address')
+      await expect(field).toBeFocused()
+      await field.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(add).toBeFocused()
+
+      await add.press('Enter')
+      await expect(field).toBeFocused()
+      const cancel = dialog.getByTestId('hilos-maintenance-circle-add-cancel')
+      await expect(cancel).toHaveAccessibleName('Cancel')
+      await cancel.focus()
+      await cancel.press('Enter')
+      await expect(dialog).toBeHidden()
+      await expect(add).toBeFocused()
+    })
+
+    await test.step('Words opens from the keyboard and names its table', async () => {
+      await follow('hilos_maintenance_words', MAINTENANCE_WORDS_PATH)
+      await expect(
+        page.getByTestId('hilos-maintenance-words-table').getByRole('table'),
+      ).toHaveAccessibleName('Words used to announce maintenance')
+    })
+
+    await test.step('Overview opens from the keyboard', () =>
+      follow('hilos_maintenance', MAINTENANCE_PATH))
+  })
 })

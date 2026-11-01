@@ -557,9 +557,6 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => [
             EcommerceShopTableContext::hilosBackups => [],
         ],
-        MaintenancePage::PAGE => [
-            EcommerceShopTableContext::hilosVerifierCircle => [],
-        ],
         MaintenanceCirclePage::PAGE => [
             EcommerceShopTableContext::hilosVerifierCircle => [],
         ],

@@ -881,23 +881,30 @@ project-bound contract. Pick the recipe by which one it is:
   - `PAGES` — both page keys → their classes;
   - `TABLES` — `HilosVerifierCircleTable::TABLE` under the project's
     `TableContext` key, bound to `HilosVerifierCircleTable`;
-  - `PAGE_TABLES` — bind the table to Circle in all six demo backends. The four
-    React/Angular demos (`tasks`, `ecommerce-shop`, `polls` and `online-testing`)
-    also keep its transitional Overview `PAGE_TABLES` entry; `chat` and
-    `binance-btc-tracker` have removed that binding;
+  - `PAGE_TABLES` — bind the table to Circle in all six demo backends. The two
+    Angular demos (`polls` and `online-testing`) also keep its transitional
+    Overview `PAGE_TABLES` entry until HIL-1682; `chat`, `binance-btc-tracker`,
+    `tasks` and `ecommerce-shop` have removed that binding;
   - the Overview mount — `HilosMaintenancePage` from `@hilos/vue`, `@hilos/react`
     or `@hilos/angular` with the project's `{ connection, scopes, actions }`
     context under `HilosPages.MAINTENANCE`. Vue also mounts
     `HilosMaintenanceCirclePage` from `@hilos/vue/admin/maintenance` under
-    `HilosPages.MAINTENANCE_CIRCLE`. React and Angular still render the circle
-    table on Overview; Circle remains unbuilt in those SDKs, so its tab is hidden
-    and a direct address returns `not_served` until HIL-1681 and HIL-1682;
+    `HilosPages.MAINTENANCE_CIRCLE`. React mounts `HilosMaintenanceCirclePage`,
+    `HilosMaintenanceWordsPage` and `HilosMaintenanceNodesPage` from
+    `@hilos/react/admin/maintenance` under `HilosPages.MAINTENANCE_CIRCLE`,
+    `HilosPages.MAINTENANCE_WORDS` and `HilosPages.MAINTENANCE_NODES`, each as a
+    thin lazy wrapper in `views/Hilos/Maintenance/` that passes the same context
+    as Overview, and its Overview draws no circle table. Angular still renders the
+    circle table on Overview; Circle remains unbuilt in that SDK, so its tab is
+    hidden and a direct address returns `not_served` until HIL-1682;
   - `createHilosMaintenanceCircleTable(context, view, page)` scopes the table
-    window, viewport, rendered fields and row focus to the selected page. Vue
-    passes `HilosPages.MAINTENANCE_CIRCLE`; existing two-argument calls continue
-    to target Overview. Circle add/remove actions belong to the Circle page, but
-    dispatch does not require a Circle subscription, so the transitional Overview
-    actions continue to work;
+    window, viewport, rendered fields and row focus to the selected page. A new
+    caller passes its page explicitly: Vue and React pass
+    `HilosPages.MAINTENANCE_CIRCLE`. The core default stays Overview, so the
+    two-argument call the Angular Overview still makes keeps targeting it. Circle
+    add/remove actions belong to the Circle page, but dispatch does not require a
+    Circle subscription, so the transitional Angular Overview actions continue to
+    work;
   - no line in `FEATURES`, and nothing more to migrate: the circle's table is
     already required of every installation that can freeze (HIL-1118).
   - manual maintenance needs no extra wiring: the index agent already serves

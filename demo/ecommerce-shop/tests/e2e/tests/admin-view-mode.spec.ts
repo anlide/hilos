@@ -22,6 +22,8 @@ const VIEW_MODE_STRIP_TEXT =
 /**
  * Every admin page of demo/ecommerce-shop/backend/Hilos.php (PAGES) whose route
  * takes no parameter, the dashboard aside — it is the shell's, walked in tasks.
+ * Maintenance Nodes is left out too: a single node answers it as not found, so a
+ * viewer meets that refusal rather than the strip.
  */
 const OPERATIONS_SCREENS = [
   '/hilos/settings',
@@ -29,6 +31,8 @@ const OPERATIONS_SCREENS = [
   '/hilos/users',
   '/hilos/backup',
   '/hilos/maintenance',
+  '/hilos/maintenance/circle',
+  '/hilos/maintenance/words',
 ]
 
 test.afterEach(() => setAdminViewMode(false))

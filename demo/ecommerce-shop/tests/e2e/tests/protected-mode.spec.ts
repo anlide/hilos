@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
+  MAINTENANCE_CIRCLE_PATH,
   MAINTENANCE_PATH,
   clearMaintenanceCircle,
   dismissToasts,
@@ -9,6 +10,7 @@ import {
   expectHeldByManualMaintenance,
   expectMaintenanceCodeIssued,
   expectMaintenanceOpen,
+  expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
   issueMaintenanceCode,
   presentMaintenanceCode,
@@ -21,6 +23,7 @@ import {
   markDocument,
   expectSelfReload,
   expectPageReady,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   enterProtectedMode,
@@ -93,10 +96,15 @@ test('two administrators close the system by hand, one lets the other in with a 
   browser,
 }) => {
   test.slow() // Two sessions stay open through the manual window, its code and its reload.
+  // Armed before the first socket opens: the thresholds are read off the real
+  // published Overview state, not off mock configuration.
+  const frames = watchDeliveryFrames(page)
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+  await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
   // An emptied circle keeps the second administrator outside until the code.
   await clearMaintenanceCircle(page)
+  await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
+  await expectMaintenanceWatchdogThresholds(expect, page, frames)
   const otherContext = await browser.newContext()
   const other = await otherContext.newPage()
   try {
@@ -122,6 +130,11 @@ test('two administrators close the system by hand, one lets the other in with a 
     }
     expect((await inspectProtectedMode()).phase).toBe('inactive')
   } finally {
+    frames.stop()
+    await test.info().attach('maintenance-watchdog-manual-wire', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
     await otherContext.close()
   }
 })

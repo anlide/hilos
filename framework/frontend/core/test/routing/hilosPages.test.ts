@@ -370,7 +370,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
   })
 
-  it('addresses Circle without params under Maintenance with the PHP key', () => {
+  it('addresses Circle without params under Maintenance with the PHP key and keeps it unbuilt only in Angular', () => {
     const page = HilosPages.MAINTENANCE_CIRCLE
     const path = '/hilos/maintenance/circle'
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
@@ -393,13 +393,13 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     expect(router.match(`${path}/7`).page).toBeNull()
-    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
-    for (const layer of ['react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    for (const layer of ['vue', 'react'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(false)
     }
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
   })
 
-  it('addresses Words without params under Maintenance with the PHP key and keeps it unbuilt across React and Angular', () => {
+  it('addresses Words without params under Maintenance with the PHP key and keeps it unbuilt only in Angular', () => {
     const page = HilosPages.MAINTENANCE_WORDS
     const path = '/hilos/maintenance/words'
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
@@ -417,10 +417,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(resolveHilosPath(page)).toBe(path)
     expect(router.match(path)).toEqual({ page, params: {}, admin: true })
     expect(router.match(`${path}/extra`).page).toBeNull()
-    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
-    for (const layer of ['react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    for (const layer of ['vue', 'react'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(false)
     }
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
   })
 
   it('addresses Nodes without params under Maintenance with the PHP key', () => {
@@ -443,10 +443,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.path(page, {})).toBe(path)
     expect(router.match(path)).toEqual({ page, params: {}, admin: true })
     expect(router.match(`${path}/extra`).page).toBeNull()
-    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
-    for (const layer of ['react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
+    for (const layer of ['vue', 'react'] as const) {
+      expect(hilosUnbuiltPages(layer).has(page)).toBe(false)
     }
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
   })
 
   it('addresses all five i18n detail pages by code', () => {

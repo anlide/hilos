@@ -152,48 +152,45 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
-  it('keeps only React and Angular Circle views unbuilt', () => {
+  it('serves Maintenance Circle in Vue and React and keeps only Angular unbuilt', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_CIRCLE]).toEqual([
-      'react',
       'angular',
     ])
     expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_CIRCLE)).toBe(
       false,
     )
     expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE_CIRCLE)).toBe(
-      true,
+      false,
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_CIRCLE),
     ).toBe(true)
   })
 
-  it('keeps React and Angular Words views unbuilt while Vue is built by this sheet', () => {
+  it('serves Maintenance Words in Vue and React and keeps only Angular unbuilt', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_WORDS]).toEqual([
-      'react',
       'angular',
     ])
     expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_WORDS)).toBe(
       false,
     )
     expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE_WORDS)).toBe(
-      true,
+      false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_WORDS)).toBe(
       true,
     )
   })
 
-  it('serves Maintenance Nodes only in Vue', () => {
+  it('serves Maintenance Nodes in Vue and React and keeps only Angular unbuilt', () => {
     expect(HILOS_UNBUILT_PAGES[HilosPages.MAINTENANCE_NODES]).toEqual([
-      'react',
       'angular',
     ])
     expect(hilosUnbuiltPages('vue').has(HilosPages.MAINTENANCE_NODES)).toBe(
       false,
     )
     expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE_NODES)).toBe(
-      true,
+      false,
     )
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE_NODES)).toBe(
       true,

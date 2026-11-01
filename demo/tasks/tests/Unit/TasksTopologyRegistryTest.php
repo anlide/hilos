@@ -937,8 +937,8 @@ final class TasksTopologyRegistryTest extends TestCase
         }
     }
 
-    /** Both addresses keep the table until the view moves, Words binds the words table without actions, while Circle alone owns its mutations. */
-    public function testMaintenanceCircleUsesTheIndexAgentAndKeepsTheOverviewTableBinding(): void
+    /** Circle alone binds the verifier table and its mutations; Words binds the words table without actions; Overview keeps the manual actions. */
+    public function testMaintenanceCircleUsesTheIndexAgentAndOwnsTheTableBinding(): void
     {
         $this->assertSame(MaintenanceCirclePage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_CIRCLE]);
         $this->assertSame(MaintenanceWordsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_MAINTENANCE_WORDS]);
@@ -973,10 +973,7 @@ final class TasksTopologyRegistryTest extends TestCase
             [TasksTableContext::hilosMaintenanceNodes => []],
             Hilos::PAGE_TABLES[MaintenanceNodesPage::PAGE],
         );
-        $this->assertSame(
-            [TasksTableContext::hilosVerifierCircle => []],
-            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
-        );
+        $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
     }
 
     /** Status uses the existing index agent, one read-only window and the ADMIN handover route. */
@@ -1727,7 +1724,6 @@ final class TasksTopologyRegistryTest extends TestCase
                 SettingsPage::PAGE,
                 AppearancePage::PAGE,
                 BackupPage::PAGE,
-                MaintenancePage::PAGE,
                 MaintenanceCirclePage::PAGE,
                 MaintenanceWordsPage::PAGE,
                 MaintenanceNodesPage::PAGE,
@@ -1895,10 +1891,7 @@ final class TasksTopologyRegistryTest extends TestCase
     {
         $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
-        $this->assertSame(
-            [TasksTableContext::hilosVerifierCircle => []],
-            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
-        );
+        $this->assertArrayNotHasKey(MaintenancePage::PAGE, Hilos::PAGE_TABLES);
         $this->assertSame(
             [TasksTableContext::hilosMaintenanceWords => []],
             Hilos::PAGE_TABLES[MaintenanceWordsPage::PAGE],

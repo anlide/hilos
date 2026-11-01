@@ -8,7 +8,7 @@ import { shownByTestId } from './table.js'
 // Maintenance section steps shared by all three SDKs, whose data-id controls match,
 // and the manual-window checks all three kits must meet alike; the scenarios stay
 // in each demo's spec. Circle steps require the SDK's table page already open:
-// Circle in Vue, Overview in React/Angular until their own moves. Manual steps
+// Circle in Vue and React, Overview in Angular until its own move. Manual steps
 // require Overview; code entry uses the maintenance screen itself. No step
 // navigates. Only an address somebody has confirmed can be named to the circle.
 
@@ -35,15 +35,30 @@ export const MAINTENANCE_PATH = '/hilos/maintenance'
 
 /**
  * The Circle tab's address, copied verbatim from HilosPages.MAINTENANCE_CIRCLE in
- * core/src/routing/hilosPages.ts; available in Vue until the other SDKs move.
+ * core/src/routing/hilosPages.ts; available in Vue and React until Angular moves.
  */
 export const MAINTENANCE_CIRCLE_PATH = '/hilos/maintenance/circle'
 
 /**
  * The Words tab's address, copied verbatim from HilosPages.MAINTENANCE_WORDS in
- * core/src/routing/hilosPages.ts; available in Vue until the other SDKs move.
+ * core/src/routing/hilosPages.ts; available in Vue and React until Angular moves.
  */
 export const MAINTENANCE_WORDS_PATH = '/hilos/maintenance/words'
+
+/**
+ * The phrase an operation without words of its own reads in place of them, copied
+ * verbatim from HILOS_MAINTENANCE_WORDS_COPY.noOwnEntry in
+ * core/src/admin/maintenance/hilosMaintenanceWords.ts. The e2e package builds against
+ * no framework source, so the literal is kept beside the check that reads it.
+ */
+const WORDS_NO_OWN_ENTRY = 'No own entry — uses default'
+
+/**
+ * The restore's operation, copied verbatim from BackupAgent::RESTORE_OPERATION
+ * (framework/backend/Backup/Agent/BackupAgent.php); Words lists it whether or not the
+ * project gave it words.
+ */
+const RESTORE_OPERATION = 'restore'
 
 /**
  * The shared Maintenance head on Overview, Circle, or Words: one h1, the owner's trail,
@@ -123,6 +138,35 @@ export async function expectMaintenancePageHead(
 }
 
 /**
+ * Which Maintenance page is on screen, read the way an assistive reader tells it: one
+ * h1 naming the section, and among the section's own links only the rendered page's
+ * marked current. Nothing here holds how the head is drawn or in what order its links
+ * stand, so the check outlives a redraw; following the links is the spec's.
+ *
+ * @param expect The spec's expect.
+ * @param page A page on Maintenance Overview, Circle, or Words.
+ * @param currentPage The key of the page on screen.
+ */
+export async function expectMaintenancePageCurrent(
+  expect: Expect,
+  page: Page,
+  currentPage:
+    | 'hilos_maintenance'
+    | 'hilos_maintenance_circle'
+    | 'hilos_maintenance_words',
+): Promise<void> {
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Maintenance')
+
+  const links = page.getByRole('navigation', { name: 'Maintenance pages' })
+  await expect(
+    links.getByTestId(`hilos-page-tab-${currentPage}`),
+  ).toHaveAttribute('aria-current', 'page')
+  await expect(links.locator('[aria-current]')).toHaveCount(1)
+}
+
+/**
  * The operation the manual window stands under, copied verbatim from
  * ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE
  * (framework/backend/Runtime/State/Item/ProtectedModeRuntime.php). The e2e package
@@ -150,6 +194,59 @@ export const MANUAL_STUB_MESSAGE =
  */
 export const MAINTENANCE_ON_NOTICE =
   'Maintenance is on — the system is closed to visitors'
+
+/**
+ * The Words window of a project that keeps the framework's words for the manual
+ * window and gives a restore none of its own. The manual row reads its operation, the
+ * stub's title and its message; the restore row keeps its operation and reads the one
+ * fallback phrase in place of the rest. Words is read only: no row carries anything to
+ * press or type into, and the table offers no search, filters or actions.
+ *
+ * @param expect The spec's expect.
+ * @param page An administrator's page on Maintenance Words.
+ */
+export async function expectMaintenanceWords(
+  expect: Expect,
+  page: Page,
+): Promise<void> {
+  const table = page.getByTestId('hilos-maintenance-words-table')
+  await expect(table).toBeVisible()
+  // The skeleton stands in the table and in the cards at once; both leave together
+  // when the first window arrives.
+  await shownByTestId(table, 'hilos-table-loading').waitFor({ state: 'hidden' })
+
+  const manual = shownByTestId(
+    table,
+    `hilos-table-row-${MANUAL_MAINTENANCE_OPERATION}`,
+  )
+  await expect(
+    manual.getByTestId(
+      `hilos-maintenance-words-row-${MANUAL_MAINTENANCE_OPERATION}`,
+    ),
+  ).toHaveText(MANUAL_MAINTENANCE_OPERATION)
+  await expect(manual).toContainText(MANUAL_STUB_TITLE)
+  await expect(manual).toContainText(MANUAL_STUB_MESSAGE)
+  await expect(manual.getByTestId('hilos-table-row-message')).toHaveCount(0)
+
+  const restore = shownByTestId(table, `hilos-table-row-${RESTORE_OPERATION}`)
+  await expect(
+    restore.getByTestId(`hilos-maintenance-words-row-${RESTORE_OPERATION}`),
+  ).toHaveText(RESTORE_OPERATION)
+  const fallback = restore.getByTestId('hilos-table-row-message')
+  await expect(fallback).toHaveCount(1)
+  await expect(fallback).toHaveText(WORDS_NO_OWN_ENTRY)
+
+  await expect(
+    table.getByTestId(
+      /^hilos-table-(search|filters-open|main-action|actions|selection)$/,
+    ),
+  ).toHaveCount(0)
+  await expect(
+    shownByTestId(table, /^hilos-table-row-/).locator(
+      'button, input, select, textarea, a, [contenteditable]',
+    ),
+  ).toHaveCount(0)
+}
 
 /**
  * Names one address to the verifier circle through the maintenance section's own modal.

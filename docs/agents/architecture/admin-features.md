@@ -77,13 +77,13 @@ children, so the existing `page_response` carries Hilos › Maintenance and
 Overview/Circle/Words tabs without child cards or new wire fields or signals.
 
 All six demo backends register Circle and Words and bind their tables to those
-pages. The frontend is transitional: Vue renders Circle and Words and scopes
-their tables there; React and Angular still render the circle table on
-Overview, and their Circle and Words pages are unbuilt, so those tabs are hidden
-and their direct addresses return `not_served`. Those four demos keep the
-Overview page's `PAGE_TABLES` entry until HIL-1681 and HIL-1682. Circle actions
-are already owned by the Circle page, but dispatch does not require a
-subscription to it, so the transitional Overview UI can still send them.
+pages. The frontend is transitional: Vue and React render Circle and Words and
+scope their tables there; Angular still renders the circle table on Overview, and
+its Circle and Words pages are unbuilt, so those tabs are hidden and their direct
+addresses return `not_served`. The two Angular demos keep the Overview page's
+`PAGE_TABLES` entry until HIL-1682. Circle actions are already owned by the
+Circle page, but dispatch does not require a subscription to it, so the
+transitional Angular Overview UI can still send them.
 
 Manual maintenance remains on Overview: its `maintenance_enable` action hands
 entry to the index agent and waits for confirmation
