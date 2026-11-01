@@ -118,183 +118,116 @@ class SuiteTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.state = Path(temporary.name)
-        self.demo = self.state / "demo"
-        self.e2e = self.demo / "tests/e2e"
-        self.last_run = self.e2e / "test-results/main/.last-run.json"
-        self.rows = [
-            {"file": "delivery-window.spec.ts", "selector": "ordinary-test", "id": "ordinary", "flake": None},
-            {"file": "status.spec.ts", "selector": "status-test", "id": "status", "flake": None},
-            {"file": "a11y.spec.ts", "selector": "accessibility-test", "id": "a11y", "flake": None},
-        ]
         self.calls = []
-        self.selection_rc = 0
-        self.phase_rc = {}
+        self.rc = 0
 
     def execute(self, command, **_kwargs):
         self.calls.append(command)
-        if any(arg.endswith("/plan-reporter.mjs") for arg in command):
-            (self.state / "plan.json").write_text(json.dumps({
-                "version": 1, "tests": self.rows,
-                "lastRunFile": "test-results/main/.last-run.json"}))
-            return subprocess.CompletedProcess(command, self.selection_rc)
-        name = next((arg.removeprefix("--output=test-results/") for arg in command
-                     if arg.startswith("--output=")), "")
-        if name:
-            ids = {"main": ["ordinary"], "status-main": ["status", "a11y"]}[name]
-            native = self.e2e / "test-results" / name / ".last-run.json"
-            native.parent.mkdir(parents=True, exist_ok=True)
-            native.write_text(json.dumps({
-                "status": "failed" if self.phase_rc.get(name) else "passed",
-                "failedTests": ids if self.phase_rc.get(name) else []}))
-        return subprocess.CompletedProcess(command, self.phase_rc.get(name, 0))
+        return subprocess.CompletedProcess(command, self.rc)
 
     def run_suite(self, args):
         with patch.object(runner.subprocess, "run", side_effect=self.execute), \
-                patch.object(runner, "cycle") as cycle, \
-                patch.object(runner.Path, "cwd", return_value=self.demo):
+                patch.object(runner, "cycle") as cycle:
             rc = runner.suite(self.state, args)
         return rc, cycle
 
-    def test_full_gate_partitions_every_identity_once_and_retains_standalone(self):
+    def browsers(self):
+        return [call for call in self.calls if runner.ENTRY in call]
+
+    def assert_no_stand_change(self):
+        # The stand runs as it was brought up: nothing is recreated or overlaid.
+        self.assertFalse(any("up" in call for call in self.calls))
+
+    def test_full_gate_is_one_native_run_then_the_standalone_cycle(self):
         rc, cycle = self.run_suite([])
         self.assertEqual(0, rc)
-        self.assertEqual("ordinary-test\n", (self.state / "main.txt").read_text())
-        self.assertEqual("status-test\naccessibility-test\n", (self.state / "status-main.txt").read_text())
+        self.assertEqual(1, len(self.calls))
+        browser = self.calls[0]
+        self.assertEqual([], browser[browser.index(runner.ENTRY) + 1:])
+        self.assertIn("--no-deps", browser)
+        self.assertIn("PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/main", browser)
         cycle.assert_called_once_with(self.state)
-        boots = [call for call in self.calls if "up" in call]
-        self.assertEqual(2, len(boots))
-        self.assertIn("docker/docker-compose.e2e-status-fast.yml", boots[0])
-        self.assertNotIn("docker/docker-compose.e2e-status-fast.yml", boots[1])
-        browsers = [call for call in self.calls if runner.ENTRY in call]
-        self.assertEqual(3, len(browsers))
-        self.assertTrue(all("--no-deps" in call for call in browsers))
+        self.assert_no_stand_change()
 
-    def test_pointed_selection_and_shard_are_applied_once_without_extra_tests(self):
-        self.rows = self.rows[1:2]
+    def test_pointed_selection_reaches_the_entry_verbatim_without_cycle(self):
         args = ["tests/status.spec.ts:25", "--grep", "cold|recovery", "--shard=1/2",
                 "--test-list", "/original/list", "--last-failed", "--repeat-each=2"]
         rc, cycle = self.run_suite(args)
         self.assertEqual(0, rc)
         cycle.assert_not_called()
-        self.assertFalse((self.state / "main.txt").exists())
-        collection = self.calls[0]
-        for arg in args:
-            self.assertIn(arg, collection)
-        execution = next(call for call in self.calls if "--output=test-results/status-main" in call)
-        for arg in ("tests/status.spec.ts:25", "--grep", "cold|recovery", "--repeat-each=2"):
-            self.assertIn(arg, execution)
-        for arg in ("--shard=1/2", "/original/list", "--last-failed"):
-            self.assertNotIn(arg, execution)
-        self.assertIn("--test-list=/status-suite/status-main.txt", execution)
-
-    def test_ordinary_pointed_run_never_restarts_daemon_or_runs_status(self):
-        self.rows = self.rows[:1]
-        rc, cycle = self.run_suite(["--grep=deliberately delayed"])
-        self.assertEqual(0, rc)
-        cycle.assert_not_called()
-        self.assertFalse(any("up" in call for call in self.calls))
-        self.assertFalse((self.state / "status-main.txt").exists())
-
-    def test_works_pointed_run_uses_the_existing_fast_publication_phase(self):
-        self.rows = [{"file": "status-works.spec.ts", "selector": "works-test", "id": "works", "flake": None}]
-        rc, cycle = self.run_suite(["tests/status-works.spec.ts"])
-        self.assertEqual(0, rc)
-        cycle.assert_not_called()
-        self.assertFalse((self.state / "main.txt").exists())
-        self.assertEqual("works-test\n", (self.state / "status-main.txt").read_text())
-        boots = [call for call in self.calls if "up" in call]
-        self.assertEqual(2, len(boots))
-        self.assertIn("docker/docker-compose.e2e-status-fast.yml", boots[0])
-        self.assertNotIn("docker/docker-compose.e2e-status-fast.yml", boots[1])
-
-    def test_original_selection_failure_remains_red_without_any_boot(self):
-        self.selection_rc = 1
-        rc, cycle = self.run_suite(["missing.spec.ts"])
-        self.assertEqual(1, rc)
-        cycle.assert_not_called()
         self.assertEqual(1, len(self.calls))
+        browser = self.calls[0]
+        self.assertEqual(args, browser[browser.index(runner.ENTRY) + 1:])
+        self.assertIn("PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/main", browser)
+        self.assertFalse(any(arg.startswith("--output") for arg in browser))
+        self.assert_no_stand_change()
 
-    def test_main_failure_still_runs_status_and_standalone_and_stays_red(self):
-        self.phase_rc = {"main": 17}
+    def test_list_and_help_run_natively_without_the_stand(self):
+        for args in (["--list", "--grep=Status"], ["--help"], ["-h"], ["--ui-port=9323"]):
+            with self.subTest(args=args):
+                self.calls = []
+                rc, cycle = self.run_suite(args)
+                self.assertEqual(0, rc)
+                cycle.assert_not_called()
+                self.assertEqual(1, len(self.calls))
+                browser = self.calls[0]
+                self.assertEqual(args, browser[browser.index(runner.ENTRY) + 1:])
+                self.assertNotIn("-e", browser)
+                self.assert_no_stand_change()
+
+    def test_red_main_still_runs_the_cycle_and_stays_red(self):
+        self.rc = 17
         rc, cycle = self.run_suite([])
         self.assertEqual(17, rc)
         cycle.assert_called_once_with(self.state)
-        self.assertTrue(any("--output=test-results/status-main" in call for call in self.calls))
 
-    def test_status_failure_stays_red_and_restores_default_environment(self):
-        self.phase_rc = {"status-main": 19}
-        rc, _cycle = self.run_suite([])
+    def test_red_pointed_run_stays_red_without_cycle(self):
+        self.rc = 19
+        rc, cycle = self.run_suite(["tests/status-works.spec.ts"])
         self.assertEqual(19, rc)
-        self.assertIn("up", self.calls[-1])
-        self.assertNotIn("docker/docker-compose.e2e-status-fast.yml", self.calls[-1])
+        cycle.assert_not_called()
 
-    def test_status_exception_restores_default_environment(self):
-        original = self.execute
-
-        def failed(command, **kwargs):
-            if "--output=test-results/status-main" in command:
-                raise RuntimeError("runner lost")
-            return original(command, **kwargs)
-
-        with patch.object(runner.subprocess, "run", side_effect=failed), \
-                patch.object(runner.Path, "cwd", return_value=self.demo), \
-                self.assertRaisesRegex(RuntimeError, "runner lost"):
+    def test_cycle_failure_after_a_green_main_is_not_swallowed(self):
+        with patch.object(runner.subprocess, "run", side_effect=self.execute), \
+                patch.object(runner, "cycle", side_effect=RuntimeError("cycle failed")), \
+                self.assertRaisesRegex(RuntimeError, "cycle failed"):
             runner.suite(self.state, [])
-        self.assertIn("up", self.calls[-1])
-        self.assertNotIn("docker/docker-compose.e2e-status-fast.yml", self.calls[-1])
-        self.assertEqual({"status": "failed", "failedTests": ["a11y", "status"]},
-                         json.loads(self.last_run.read_text()))
+        self.assertEqual(1, len(self.browsers()))
 
-    def test_native_results_retain_either_or_both_phase_failures_and_reset(self):
-        for failures, ids in (({"main": 1}, ["ordinary"]),
-                              ({"status-main": 1}, ["a11y", "status"]),
-                              ({"main": 1, "status-main": 1}, ["a11y", "ordinary", "status"]),
-                              ({}, [])):
-            with self.subTest(failures=failures):
-                self.phase_rc = failures
-                rc, _cycle = self.run_suite(["--grep=selected"])
-                self.assertEqual(bool(failures), bool(rc))
-                self.assertEqual({"status": "failed" if failures else "passed", "failedTests": ids},
-                                 json.loads(self.last_run.read_text()))
+    def test_cycle_photographs_the_running_stand_without_recreating_it(self):
+        demo = self.state / "demo"
+        docker_calls = []
 
-    def test_status_only_replaces_stale_ordinary_state(self):
-        self.phase_rc = {"main": 1}
-        self.run_suite(["--grep=selected"])
-        self.rows = self.rows[1:2]
-        self.phase_rc = {}
-        self.run_suite(["status.spec.ts"])
-        self.assertEqual({"status": "passed", "failedTests": []}, json.loads(self.last_run.read_text()))
+        def docker(*args):
+            docker_calls.append(args)
+            return "" if args[0] == "ps" else args[-1] + "-id"
 
-    def test_cleanup_exception_writes_failed_state_and_propagates(self):
-        original = self.execute
+        def execute(command, **_kwargs):
+            self.calls.append(command)
+            raise RuntimeError("preparation stopped")
 
-        def failed(command, **kwargs):
-            if "up" in command and "docker/docker-compose.e2e-status-fast.yml" not in command:
-                raise RuntimeError("cleanup failed")
-            return original(command, **kwargs)
-
-        with patch.object(runner.subprocess, "run", side_effect=failed), \
-                patch.object(runner.Path, "cwd", return_value=self.demo), \
-                self.assertRaisesRegex(RuntimeError, "cleanup failed"):
-            runner.suite(self.state, ["--grep=selected"])
-        self.assertEqual({"status": "failed", "failedTests": []}, json.loads(self.last_run.read_text()))
-
-    def test_missing_native_result_does_not_reuse_an_old_success(self):
-        self.last_run.parent.mkdir(parents=True)
-        self.last_run.write_text(json.dumps({"status": "passed", "failedTests": []}))
-        original = self.execute
-
-        def missing(command, **kwargs):
-            if "--output=test-results/main" in command:
-                return subprocess.CompletedProcess(command, 0)
-            return original(command, **kwargs)
-
-        with patch.object(runner.subprocess, "run", side_effect=missing), \
-                patch.object(runner.Path, "cwd", return_value=self.demo), \
-                self.assertRaisesRegex(RuntimeError, "did not write"):
-            runner.suite(self.state, ["--grep=selected"])
-        self.assertEqual({"status": "failed", "failedTests": ["a11y", "ordinary", "status"]},
-                         json.loads(self.last_run.read_text()))
+        with patch.object(runner, "docker", side_effect=docker), \
+                patch.object(runner, "inspect", side_effect=lambda container: {
+                    "Id": container, "Created": "first"}), \
+                patch.object(runner, "Control"), \
+                patch.object(runner.subprocess, "run", side_effect=execute), \
+                patch.object(runner.Path, "cwd", return_value=demo), \
+                patch.dict(runner.os.environ, {"HILOS_STAND_SUFFIX": "-s2"}), \
+                self.assertRaisesRegex(RuntimeError, "preparation stopped"):
+            runner.cycle(self.state)
+        manifest = json.loads((self.state / "manifest.json").read_text())
+        self.assertEqual(runner.PROJECT + "-s2", manifest["project"])
+        self.assertEqual(runner.SERVICE + "-id", manifest["daemon"]["id"])
+        self.assertEqual(runner.NGINX + "-id", manifest["nginx"]["id"])
+        lookups = [call for call in docker_calls if "-q" in call and call[0] != "ps"]
+        self.assertEqual(2, len(lookups))
+        for lookup in lookups:
+            self.assertEqual(runner.COMPOSE, list(lookup[:len(runner.COMPOSE)]))
+        self.assertEqual(1, len(self.calls))
+        preparation = self.calls[0]
+        self.assertEqual(runner.COMPOSE, preparation[1:1 + len(runner.COMPOSE)])
+        self.assertIn("prepare.spec.ts", preparation)
+        self.assert_no_stand_change()
 
     def test_main_dispatches_the_e2e_entry_without_shadowing_the_suite(self):
         with patch.object(runner.sys, "argv", ["runner.py", "e2e", "--grep=Status"]), \
@@ -302,14 +235,6 @@ class SuiteTest(unittest.TestCase):
                 patch.object(runner, "suite", return_value=17) as suite:
             self.assertEqual(17, runner.main())
         suite.assert_called_once_with(self.state, ["--grep=Status"])
-
-    def test_list_uses_original_native_selection_without_boot_or_partition(self):
-        rc, cycle = self.run_suite(["--list", "--grep=Status"])
-        self.assertEqual(0, rc)
-        cycle.assert_not_called()
-        self.assertEqual(1, len(self.calls))
-        self.assertNotIn("--hilos-phase=plan", self.calls[0])
-        self.assertIn("--grep=Status", self.calls[0])
 
 
 if __name__ == "__main__":

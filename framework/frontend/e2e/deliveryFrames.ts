@@ -1,6 +1,7 @@
 import type { Expect, Page, WebSocket } from '@playwright/test'
 
 import { watchSocketFrames, type SocketFrame } from './socket.js'
+import { beatStatusHeartbeat } from '../scripts/statusMoments.mjs'
 
 /** A physical delivery, timed once in the observing runner's monotonic clock. */
 export interface DeliveryPacket {
@@ -138,8 +139,9 @@ export async function waitForDeliveryQuiet(
   await expect
     .poll(() => performance.now() - Math.max(...activity()), {
       timeout: timeoutMs,
-      // The next preparation brackets a real heartbeat inside an 8s window;
-      // a 1s polling overshoot would consume its source-write budget.
+      // The quiet ends a real 1 s delivery window and the source writes that
+      // follow must land inside the next one; a 1 s polling overshoot would
+      // consume that whole budget.
       intervals: [20, 50, 100],
       message: 'all physical traffic reached real quiet',
     })
@@ -150,4 +152,62 @@ export async function waitForDeliveryQuiet(
     lastActivity: activity(),
     packetCounts: logs.map(({ packets }) => packets.length),
   }
+}
+
+/**
+ * Beat Status now and observe real quiet after its hint on every socket.
+ *
+ * Status hints every socket at each heartbeat; beating it now puts the next
+ * one a whole interval away, so no publication the spec did not ask for cuts
+ * the quiet, or the measurement after it, short.
+ *
+ * The hint carries no mark of the heartbeat it announces, so any hint after
+ * the command ends the first wait. An own heartbeat or publication of the
+ * Status owner between the packet snapshot and the command is such a hint: it
+ * opens a window on the socket, and the command's hint, sent moments later,
+ * waits out that window and arrives at its end. The quiet's budget therefore
+ * outlasts one window more than the quiet it measures.
+ *
+ * @param expect The calling spec's expect.
+ * @param logs Observers that must all reach quiet.
+ * @param windowMs Delivery window the quiet has to outlast.
+ * @param marginMs What an immediate delivery may take on top of it.
+ * @param options Where to send the command.
+ * @param options.host Command host of the Status owner's node instead of the stand's own.
+ * @returns The published heartbeat on the runner's clock, and the quiet observed.
+ */
+export async function quietAfterHeartbeat(
+  expect: Expect,
+  logs: DeliveryFrameLog[],
+  windowMs: number,
+  marginMs: number,
+  { host }: { host?: string } = {},
+) {
+  const before = logs.map(({ packets }) => packets.length)
+  const { aliveAt } = await beatStatusHeartbeat({ host })
+  for (const [index, log] of logs.entries()) {
+    await expect
+      .poll(() =>
+        log.packets
+          .slice(before[index])
+          .some((packet) =>
+            packet.frames.some(
+              ({ wire }) =>
+                deliveryObject(wire).type === 'status_files_changed',
+            ),
+          ),
+      )
+      .toBe(true)
+  }
+  // The quiet lasts a window plus margin, and polling begins once a hint
+  // arrived: one more margin bounds the poll, and one more window the
+  // command's hint held behind an earlier one.
+  const quiet = await waitForDeliveryQuiet(
+    expect,
+    logs,
+    windowMs,
+    marginMs,
+    (windowMs + marginMs) * 2,
+  )
+  return { beatAt: aliveAt - performance.timeOrigin, ...quiet }
 }

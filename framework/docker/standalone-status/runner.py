@@ -18,7 +18,6 @@ PROJECT = "hilos-binance-btc-tracker-test"
 ENTRY = "../../../../framework/frontend/scripts/playwright-run.mjs"
 COMPOSE = ["compose", "-f", "docker/docker-compose.test.yml", "-f",
            "docker/docker-compose.e2e-status.yml"]
-FAST_COMPOSE = [*COMPOSE, "-f", "docker/docker-compose.e2e-status-fast.yml"]
 # A stopped daemon gets at most 90 real seconds, independently of Playwright.
 STOP_LEASE = 90
 CYCLE_LEASE = 600
@@ -87,8 +86,7 @@ class Control:
                             "restartCount": current["RestartCount"]}
             if role == "daemon":
                 result[role]["environment"] = [value for value in current["Config"]["Env"]
-                                                if value.startswith(("APP_ENV=", "STATUS_POLL_INTERVAL_SECONDS=",
-                                                                     "STATUS_STALE_AFTER_SECONDS="))]
+                                                if value.startswith("APP_ENV=")]
                 result[role]["appMount"] = [mount for mount in current["Mounts"]
                                              if mount["Destination"] == "/app"]
         return result
@@ -156,120 +154,34 @@ def watch_lease(state):
         time.sleep(0.1)
 
 
-def selected_args(args):
-    """The native plan already applied these stateful selection options once."""
-    result = []
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        name = arg.split("=", 1)[0]
-        if name in ("--test-list", "--test-list-invert", "--shard"):
-            index += 1 if "=" in arg else 2
-            continue
-        if arg == "--last-failed":
-            index += 1
-            continue
-        if name == "--only-changed":
-            index += 1
-            if "=" not in arg and index < len(args) and not args[index].startswith("-"):
-                index += 1
-            continue
-        result.append(arg)
-        index += 1
-    return result
-
-
 def suite(state, args):
-    """Partition the real native selection, preserving the shared quarantine entry."""
-    overlay = state / "suite.yml"
-    overlay.write_text(json.dumps({"services": {RUNNER: {
-        "volumes": [f"{state}:/status-suite"],
-    }}}))
+    """One native run of the selection on the stand as it stands, then the standalone cycle."""
 
     def browser(arguments, environment=()):
         return subprocess.run(["docker", *COMPOSE, "-f", "docker/docker-compose.e2e-restart.yml",
-                               "-f", str(overlay), "--profile", "e2e", "run", "--rm", "--no-deps",
+                               "--profile", "e2e", "run", "--rm", "--no-deps",
                                *environment, RUNNER, "node", ENTRY, *arguments]).returncode
 
     # Listing/help/UI retain their native semantics and do not alter the stand.
     if any(arg.split("=", 1)[0] in ("--list", "--help", "-h", "--ui", "--ui-host", "--ui-port")
            for arg in args):
         return browser(args)
-    rc = browser([*args, "--list", "--reporter=../../../../framework/docker/standalone-status/plan-reporter.mjs"],
-                 ["-e", "HILOS_E2E_PLAN_FILE=/status-suite/plan.json"])
-    plan = json.loads((state / "plan.json").read_text())
-    if plan["version"] != 1:
-        raise ValueError("Unexpected Playwright plan version")
-    last_run = Path.cwd() / "tests/e2e" / plan["lastRunFile"]
-    if rc:
-        last_run.parent.mkdir(parents=True, exist_ok=True)
-        write_json(last_run, {"status": "failed", "failedTests": []})
-        return rc  # An empty original selection remains a native failure.
-    status_files = {"status.spec.ts", "status-works.spec.ts", "a11y.spec.ts"}
-    phases = [("main", [row for row in plan["tests"] if Path(row["file"]).name not in status_files]),
-              ("status-main", [row for row in plan["tests"] if Path(row["file"]).name in status_files])]
-    # Native IDs and native result files are run-private tooling state, not RT.
-    # Start with unfinished main tests; replace each phase with its actual native
-    # failures. Quarantine owns separate outputs and never changes main's verdict.
-    failed = {row["id"] for row in plan["tests"] if row["flake"] is None}
-    accelerated = False
-    completed = False
-    try:
-        for name, tests in phases:
-            if not tests:
-                continue
-            selection = state / (name + ".txt")
-            selection.write_text("\n".join(row["selector"] for row in tests) + "\n")
-            native = Path.cwd() / "tests/e2e/test-results" / name / ".last-run.json"
-            native.unlink(missing_ok=True)
-            if name == "status-main":
-                accelerated = True
-                subprocess.run(["docker", *FAST_COMPOSE, "--profile", "e2e", "up", "-d", "--no-deps",
-                                "--force-recreate", SERVICE, NGINX], check=True)
-            print(f"Status publication phase {name}: {len(tests)} selected tests", flush=True)
-            result = browser([*selected_args(args), "--test-list=/status-suite/" + selection.name,
-                              "--output=test-results/" + name],
-                             ["-e", "PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/" + name])
-            main_ids = {row["id"] for row in tests if row["flake"] is None}
-            if native.exists():
-                outcome = json.loads(native.read_text())
-                failed.difference_update(main_ids)
-                # The native main file also owns tagged failures in an explicit
-                # diagnostic --repeat-each run. Quarantine uses another file.
-                failed.update(outcome["failedTests"])
-                if outcome["status"] != "passed":
-                    result = result or 1
-            elif main_ids:
-                raise RuntimeError("Playwright did not write its main last-run result")
-            rc = rc or result
-        if not args:
-            # This retains the pinned lifetime, finally and independent backstop.
-            cycle(state)
-        completed = True
-        return rc
-    finally:
-        try:
-            if accelerated:
-                subprocess.run(["docker", *COMPOSE, "--profile", "e2e", "up", "-d", "--no-deps",
-                                "--force-recreate", SERVICE, NGINX], check=True)
-        except BaseException:
-            completed = False
-            raise
-        finally:
-            last_run.parent.mkdir(parents=True, exist_ok=True)
-            write_json(last_run, {"status": "passed" if completed and not rc else "failed",
-                                  "failedTests": sorted(failed)})
+    # Selection, quarantine and --last-failed stay native to the entry, which
+    # writes this run's last-run state where Playwright reads it next time.
+    rc = browser(args, ["-e", "PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/main"])
+    if not args:
+        # A red main does not cancel the cycle; the step stays red either way.
+        # This retains the pinned lifetime, finally and independent backstop.
+        cycle(state)
+    return rc
 
 
 def cycle(state):
-    # Recreate nginx with its new upstream before photographing either lifetime.
-    subprocess.run(["docker", *FAST_COMPOSE, "--profile", "e2e", "up", "-d", "--no-deps",
-                    "--force-recreate", SERVICE, NGINX], check=True)
     suffix = os.environ.get("HILOS_STAND_SUFFIX", "")
     if suffix and not re.fullmatch(r"-s[1-9]", suffix):
         raise ValueError("Unsupported stand suffix")
     project = PROJECT + suffix
-    compose = FAST_COMPOSE
+    compose = COMPOSE
     run_id = str(uuid.uuid4())
     manifest = {"runId": run_id, "project": project, "demo": str(Path.cwd()),
                 "browserName": "hilos-status-browser-" + run_id}

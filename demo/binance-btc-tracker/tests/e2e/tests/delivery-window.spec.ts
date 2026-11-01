@@ -5,14 +5,16 @@ import {
   clearCustomSetting,
   deliveryObject as object,
   deliverySettingUpdates,
-  saveDeliverySetting,
+  draftCustomSetting,
+  quietAfterHeartbeat,
+  writeDeliverySettings,
   type DeliverySettingUpdate as Update,
-  type DeliverySettingMutation as Mutation,
+  type DeliverySettingWrite as Mutation,
   ROWS,
+  saveSettingEdit,
   setCustomSetting,
   shownByTestId,
   waitDeliveryBoundary,
-  waitForDeliveryQuiet,
   watchDeliveryFrames,
   type DeliveryFrameLog,
   type DeliveryPacket,
@@ -33,21 +35,25 @@ test.describe.configure({ mode: 'default', retries: 0 })
 const WINDOW_KEY = 'websocket.delivery_window_ms'
 const SOURCE_KEY = 'example_string'
 const OTHER_KEY = 'example_integer'
-// Eight seconds accommodates ten keyboard/modal/save round trips on this stand.
-// The burst asserts its actual acknowledged duration; a slow source cannot pass
-// by silently turning into ten quiet deliveries. The second window proves a hot
-// setting change, without replacing either observer's socket.
-const WINDOW_MS = 8_000
-const CHANGED_WINDOW_MS = 4_000
+// The production window (DeliverySettingsCatalog::DEFAULT_WINDOW_MS), left as
+// the stand runs it: a test command drives the source fast enough to fit its
+// writes inside one window, and the burst asserts its actual acknowledged
+// duration, so a slow source cannot pass by silently turning into quiet
+// deliveries. The second window proves a hot setting change, without replacing
+// either observer's socket. The delayed-response grace proof runs on the second
+// window as well, for the geometry of its margin (see there).
+const WINDOW_MS = 1_000
+const CHANGED_WINDOW_MS = 2_000
 const BURST_MUTATIONS = 10
 // Worker/source sync and the master drain cost ticks even for an immediate
-// delivery. One second includes those ticks plus 200 ms transport jitter, and
-// remains much smaller than either configured window. Cadence's lower bound
-// allows only the latter jitter, never the source's UI operation duration.
-const IMMEDIATE_MS = 1_000
+// delivery. 300 ms covers those ticks with 200 ms to spare over a command's
+// write, and stays well inside the window. Cadence's lower bound allows only
+// the transport jitter, never the source's write duration.
+const IMMEDIATE_MS = 300
 const TRANSPORT_JITTER_MS = 200
 const DEADLINE_MARGIN_MS = IMMEDIATE_MS
-const SETTINGS_TIMEOUT_FACTOR = 8
+// A delivery is due within the longest window this spec runs, plus ticks.
+const RECEIVE_TIMEOUT_MS = CHANGED_WINDOW_MS + IMMEDIATE_MS * 2
 
 function settingsUpdates(log: DeliveryFrameLog, key = SOURCE_KEY): Update[] {
   return deliverySettingUpdates(log, key)
@@ -80,21 +86,22 @@ async function receiveValue(
 ): Promise<Update> {
   await expect
     .poll(() => settingsUpdates(log).some((update) => update.value === value), {
-      timeout: WINDOW_MS + IMMEDIATE_MS * 2,
+      timeout: RECEIVE_TIMEOUT_MS,
+      // Writes that follow must stay inside the same 1 s window; a default
+      // polling step would consume it.
+      intervals: [20, 50, 100],
     })
     .toBe(true)
   return settingsUpdates(log).find((update) => update.value === value)!
 }
 
-/** Each operation has a real framesent and a correlated successful server ack. */
+/** Each operation is one real write the settings library accepted. */
 async function mutate(
-  page: Page,
-  log: DeliveryFrameLog,
   mutations: Mutation[],
   value: string,
   key = SOURCE_KEY,
 ): Promise<Mutation> {
-  const mutation = await saveDeliverySetting(expect, page, log, key, value)
+  const [mutation] = await writeDeliverySettings([{ key, value }])
   mutations.push(mutation)
   return mutation
 }
@@ -155,9 +162,12 @@ test(
   'fixed delivery cadence coalesces real writes, quiet and click are immediate, sockets and live settings stay independent',
   { tag: '@quarantine:F-028' },
   async ({ page }) => {
-    // This scenario deliberately crosses multiple 8 s and 4 s boundaries, two
-    // quiet eligibility boundaries and a full response-origin grace period.
-    test.setTimeout(test.info().timeout * SETTINGS_TIMEOUT_FACTOR)
+    // Its own work outlives the base cap: watching three 1 s and three 2 s
+    // windows pass is the proof itself, not a wait for a moment, and it drives
+    // some 160 confirmed writes and the Settings UI. It took 30.1 s against the
+    // 30 s cap at host factor 1.01, and 28.7 s at factor 1.93; a flat triple
+    // keeps ample room.
+    test.slow()
     const writer = watchDeliveryFrames(page)
     const configPage = await page.context().newPage()
     const tabA = await page.context().newPage()
@@ -168,7 +178,7 @@ test(
     const phases: Record<string, unknown> = {}
     let sequence = 0
     const nextValue = () => `delivery-${++sequence}`
-    const write = () => mutate(page, writer, mutations, nextValue())
+    const write = () => mutate(mutations, nextValue())
 
     try {
       await grantAdminToSelf(expect, page)
@@ -196,11 +206,8 @@ test(
         ).toBeVisible()
         await markDocument(tab)
       }
-      // Open every participant before changing the window: this proof measures
+      // Every participant is open before the measurement: this proof measures
       // hot delivery on established sockets, not a new socket's welcome latency.
-      await setCustomSetting(configPage, WINDOW_KEY, String(WINDOW_MS))
-      await expect(configRow).toContainText(String(WINDOW_MS))
-      await expect(configRow).toContainText('custom')
       const aSocket = a.sockets()
       const bSocket = b.sockets()
       const passiveStart = Math.max(
@@ -209,10 +216,9 @@ test(
         a.packets.at(-1)!.at,
         b.packets.at(-1)!.at,
       )
-      await waitDeliveryBoundary(passiveStart + WINDOW_MS + IMMEDIATE_MS)
       phases.steadyEligibility = {
         passiveStart,
-        at: performance.now(),
+        ...(await quietAfterHeartbeat(expect, [a, b], WINDOW_MS, IMMEDIATE_MS)),
         aSocket,
         bSocket,
       }
@@ -228,13 +234,16 @@ test(
       }
       phases.quiet = { quiet, a: quietA.packet.at, b: quietB.packet.at }
 
-      const burst: Mutation[] = []
-      for (let index = 0; index < BURST_MUTATIONS; index++) {
-        burst.push(await write())
-        if (index === 0) {
-          await mutate(page, writer, mutations, '2', OTHER_KEY)
-        }
-      }
+      // One command: the integer, then every source write, each its own write
+      // and delta inside one window.
+      const burst = await writeDeliverySettings([
+        { key: OTHER_KEY, value: '2' },
+        ...Array.from({ length: BURST_MUTATIONS }, () => ({
+          key: SOURCE_KEY,
+          value: nextValue(),
+        })),
+      ])
+      mutations.push(...burst)
       const burstEnd = burst.at(-1)!
       expect(burstEnd.accepted).toBeLessThan(
         quietA.packet.at + WINDOW_MS - DEADLINE_MARGIN_MS,
@@ -270,8 +279,11 @@ test(
         )
         expect(
           rowFrames.map(({ wire }) => object(object(wire).data).rowKey),
-          // The integer's last write precedes the string's final write. Replacing
-          // earlier state preserves that order of the surviving source writes.
+          // The integer precedes every source write, so both layers agree: the
+          // worker folds a row's changes in at its first appearance, the master
+          // orders merged frames by a row's latest one (DeliveryCoalescerTest
+          // holds that rule), and either gives the integer first however the
+          // writes fall across worker ticks.
         ).toEqual([OTHER_KEY, SOURCE_KEY])
         expect(result.packet.raw).toMatch(/^\{"type":"signal_batch"/)
         expect(inners[0]!.data.kind).toBe('row_updated')
@@ -282,7 +294,7 @@ test(
       await sourceVisible(tabA, burstEnd.value)
       await sourceVisible(tabB, burstEnd.value)
       phases.coalescing = {
-        sourceMutations: burst,
+        burst,
         expectedInnerUpdates: 1,
         a: coalescedA.packet,
         b: coalescedB.packet,
@@ -301,10 +313,11 @@ test(
       await sourceVisible(tabB, busyFinal)
 
       // Stop the source and allow both the preceding delivery and grace to expire.
-      await waitDeliveryBoundary(
-        Math.max(lastUpdate(a).packet.at, lastUpdate(b).packet.at) +
-          WINDOW_MS +
-          IMMEDIATE_MS,
+      phases.anchorEligibility = await quietAfterHeartbeat(
+        expect,
+        [a, b],
+        WINDOW_MS,
+        IMMEDIATE_MS,
       )
       const anchor = await write()
       const anchorA = await receiveValue(a, anchor.value)
@@ -376,14 +389,21 @@ test(
         'B has two confirmed pending writes and no action of its own',
       ).toBe(anchor.value)
 
-      const graceWrites: Mutation[] = []
+      // Individually confirmed writes cross almost the whole grace the
+      // response opened, each delivered at once. The loop leaves at its first
+      // receipt at or after response + window - IMMEDIATE; a receipt sees its
+      // packet within one polling step (100 ms), and the packet comes after
+      // the command's answer, so the last packet clears the bound by IMMEDIATE
+      // less that step, however long the command and its delivery took.
+      const graceWrites: Array<{ mutation: Mutation; packet: DeliveryPacket }> =
+        []
       while (performance.now() < response.at + WINDOW_MS - IMMEDIATE_MS) {
         const mutation = await write()
-        graceWrites.push(mutation)
         const update = await receiveValue(a, mutation.value)
         expect(update.packet.at - mutation.sent).toBeLessThan(IMMEDIATE_MS)
+        graceWrites.push({ mutation, packet: update.packet })
       }
-      expect(graceWrites.at(-1)!.sent - response.at).toBeGreaterThan(
+      expect(graceWrites.at(-1)!.packet.at - response.at).toBeGreaterThan(
         WINDOW_MS - IMMEDIATE_MS * 2,
       )
       const bAfterClick = settingsUpdates(b).filter(
@@ -420,7 +440,17 @@ test(
 
       // Hot setting changes preserve the old already-opened boundary, then use
       // the new value for subsequent boundaries on the very same connection.
-      await receiveValue(b, graceWrites.at(-1)!.value)
+      // The new window is the longer one, so a change in force only after the
+      // old boundary would pass a server that recomputes the open boundary and
+      // fail a correct one on cadence: the change must land inside the OLD
+      // window. The dialog is opened and drafted before the anchor, and only
+      // its save runs after it.
+      await receiveValue(b, graceWrites.at(-1)!.mutation.value)
+      await draftCustomSetting(
+        configPage,
+        WINDOW_KEY,
+        String(CHANGED_WINDOW_MS),
+      )
       await waitDeliveryBoundary(
         Math.max(lastUpdate(a).packet.at, lastUpdate(b).packet.at) +
           WINDOW_MS +
@@ -429,10 +459,16 @@ test(
       const oldAnchorMutation = await write()
       const oldAnchor = await receiveValue(b, oldAnchorMutation.value)
       await write()
-      await setCustomSetting(configPage, WINDOW_KEY, String(CHANGED_WINDOW_MS))
+      await saveSettingEdit(configPage)
       await expect(configRow).toContainText(String(CHANGED_WINDOW_MS))
       const changedAt = performance.now()
-      expect(changedAt).toBeLessThan(oldAnchor.packet.at + CHANGED_WINDOW_MS)
+      // Inside the old window by the margin a burst keeps: the server's
+      // boundary lies earlier than the observed anchor plus the window by the
+      // anchor's own delivery, and the worker's report brings the new value to
+      // the master up to a tick after the row shows it.
+      expect(changedAt).toBeLessThan(
+        oldAnchor.packet.at + WINDOW_MS - DEADLINE_MARGIN_MS,
+      )
       while (performance.now() < oldAnchor.packet.at + WINDOW_MS + IMMEDIATE_MS)
         await write()
       const preserved = settingsUpdates(b).find(
@@ -499,6 +535,7 @@ test(
           CHANGED_WINDOW_MS,
           IMMEDIATE_MS,
           TRANSPORT_JITTER_MS,
+          DEADLINE_MARGIN_MS,
           phases,
           mutations,
           writer,
@@ -532,58 +569,6 @@ test(
   },
 )
 
-test('logs overview keeps own state and response in one physical delivery', async ({
-  page,
-}) => {
-  test.slow() // Includes the log owner's normal reporting tick.
-  const log = watchDeliveryFrames(page)
-  try {
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
-    await expect(page.getByTestId('hilos-logs-tile-daemon')).toBeVisible()
-    const overview = log.packets.find((packet) =>
-      packet.frames.some(
-        ({ wire }) =>
-          object(wire).type === 'page_response' &&
-          object(object(wire).data).page === 'hilos_logs',
-      ),
-    )!
-    expect(overview).toBeDefined()
-    expect(
-      overview.frames
-        .map(({ wire }) => object(wire).type)
-        .filter(
-          (type) =>
-            type === 'subscription_page_hilos_logs' || type === 'page_response',
-        ),
-    ).toEqual(['subscription_page_hilos_logs', 'page_response'])
-    expect(overview.raw).toMatch(/^\{"type":"signal_batch"/)
-
-    await expect(page.getByTestId('hilos-logs-tile-daemon')).toHaveText(
-      /^\d+\s+·\s+\d/,
-    )
-    expect(
-      new Set(
-        overview.frames.map(({ socket, message }) => `${socket}:${message}`),
-      ).size,
-    ).toBe(1)
-    expect(overview.frames.every(({ raw }) => raw === overview.raw)).toBe(true)
-    expect(log.packets.map(({ raw }) => raw).join('\n')).not.toContain(
-      'hilos_delivery_complete',
-    )
-  } finally {
-    log.stop()
-    const evidencePath = test
-      .info()
-      .outputPath('initial-logs-physical-deliveries.json')
-    await writeFile(evidencePath, JSON.stringify(log))
-    await test.info().attach('initial-logs-physical-deliveries', {
-      path: evidencePath,
-      contentType: 'application/json',
-    })
-  }
-})
-
 // The lag row is node-wide. Release it before every UI teardown and after a
 // failed test as well; the suite's single worker owns the node for this case.
 const HELD_WINDOW_MS = 60_000
@@ -593,7 +578,6 @@ test(
   'a deliberately delayed window response opens a fresh fixed grace window on its socket',
   { tag: '@quarantine:F-044' },
   async ({ page }) => {
-    test.slow() // Crosses quiet, held-response, response-grace and post-grace boundaries.
     const writer = watchDeliveryFrames(page)
     const configPage = await page.context().newPage()
     const tabA = await page.context().newPage()
@@ -602,8 +586,10 @@ test(
     const b = watchDeliveryFrames(tabB)
     const mutations: Mutation[] = []
     const phases: Record<string, unknown> = {}
+    // This proof's window, set through Settings before any measurement.
+    const windowMs = CHANGED_WINDOW_MS
     let sequence = 0
-    const write = () => mutate(page, writer, mutations, `held-${++sequence}`)
+    const write = () => mutate(mutations, `held-${++sequence}`)
     const windowsAfter = (at: number) =>
       a.packets.filter(
         (packet) =>
@@ -619,6 +605,18 @@ test(
       await clearTableLag()
       await grantAdminToSelf(expect, page)
       await openSettings(configPage, WINDOW_KEY)
+      const configRow = configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`)
+      await expect(configRow).toContainText('1000')
+      await expect(configRow).toContainText('default')
+      // A departure from the production window the rest of this spec keeps: on
+      // 1 s the slot after the grace, where the two writes must land before the
+      // fixed release, holds at most ~225 ms against the 200 ms margin the
+      // bounds keep, and "immediate" (300 ms) does not stretch. By the owner's
+      // decision of 2026-10-31 this proof runs on the second window, set the
+      // way the cadence proof changes it hot, before the observers open, and
+      // cleared in finally.
+      await setCustomSetting(configPage, WINDOW_KEY, String(windowMs))
+      await expect(configRow).toContainText(String(windowMs))
       await openSettings(page, SOURCE_KEY)
       await setCustomSetting(page, SOURCE_KEY, 'held-seed')
       for (const tab of [tabA, tabB]) {
@@ -629,10 +627,6 @@ test(
         ).toBeVisible()
         await markDocument(tab)
       }
-      await setCustomSetting(configPage, WINDOW_KEY, String(WINDOW_MS))
-      await expect(
-        configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
-      ).toContainText(String(WINDOW_MS))
       const aSocket = a.sockets()
       const bSocket = b.sockets()
       const passiveStart = Math.max(
@@ -641,15 +635,13 @@ test(
         a.packets.at(-1)!.at,
         b.packets.at(-1)!.at,
       )
-      // Status keeps publishing at its ordinary cadence. Every physical packet
-      // restarts this preparation, including hints; elapsed time since a request
-      // alone cannot prove quiet. One heartbeat plus the quiet interval bounds it.
-      const quiet = await waitForDeliveryQuiet(
+      // Every physical packet restarts this preparation, including hints;
+      // elapsed time since a request alone cannot prove quiet.
+      const quiet = await quietAfterHeartbeat(
         expect,
         [a, b],
-        WINDOW_MS,
+        windowMs,
         IMMEDIATE_MS,
-        30_000 + WINDOW_MS + IMMEDIATE_MS,
       )
       phases.quiet = quiet
 
@@ -660,7 +652,7 @@ test(
       const anchorB = await receiveValue(b, anchor.value)
       for (const [index, log] of [a, b].entries()) {
         expect(anchor.sent - quiet.lastActivity[index]!).toBeGreaterThanOrEqual(
-          WINDOW_MS + IMMEDIATE_MS,
+          windowMs + IMMEDIATE_MS,
         )
         expect(
           log.packets.filter(({ at }) => at > quiet.at && at < anchor.sent),
@@ -672,7 +664,7 @@ test(
       expect(settingsUpdates(a).at(-1)!.value).toBe(anchor.value)
       expect(settingsUpdates(b).at(-1)!.value).toBe(anchor.value)
       expect(pending.at(-1)!.accepted).toBeLessThan(
-        anchorA.packet.at + WINDOW_MS - IMMEDIATE_MS * 2,
+        anchorA.packet.at + windowMs - IMMEDIATE_MS * 2,
       )
       phases.baseline = { anchor, anchorA, anchorB, pending }
 
@@ -700,14 +692,14 @@ test(
 
       // This is the named request-origin grace boundary, not a UI sleep. The
       // handler still owns its held real response on the server after it passes.
-      await waitDeliveryBoundary(click.at + WINDOW_MS + IMMEDIATE_MS)
+      await waitDeliveryBoundary(click.at + windowMs + IMMEDIATE_MS)
       expect(windowsAfter(click.at)).toEqual([])
       const bRelease = await receiveValue(b, pending.at(-1)!.value)
       expect(bRelease.packet.at - anchorB.packet.at).toBeGreaterThanOrEqual(
-        WINDOW_MS - TRANSPORT_JITTER_MS,
+        windowMs - TRANSPORT_JITTER_MS,
       )
       expect(bRelease.packet.at - anchorB.packet.at).toBeLessThan(
-        WINDOW_MS + IMMEDIATE_MS,
+        windowMs + IMMEDIATE_MS,
       )
       phases.held = { checkedAt: performance.now(), bRelease: bRelease.packet }
 
@@ -715,7 +707,7 @@ test(
       await clearTableLag()
       await expect.poll(() => windowsAfter(click.at).length).toBe(1)
       const response = windowsAfter(click.at)[0]!
-      expect(response.at - click.at).toBeGreaterThan(WINDOW_MS + IMMEDIATE_MS)
+      expect(response.at - click.at).toBeGreaterThan(windowMs + IMMEDIATE_MS)
       expect(response.at - releasedAt).toBeLessThan(IMMEDIATE_MS)
       await expect(tabA.getByTestId('hilos-table-loading')).toHaveCount(0)
       await expect
@@ -738,19 +730,24 @@ test(
       // Requests never go out on either observer during this measurement.
       const graceWrites: Array<{ mutation: Mutation; packet: DeliveryPacket }> =
         []
-      while (performance.now() < response.at + WINDOW_MS - IMMEDIATE_MS) {
+      while (performance.now() < response.at + windowMs - IMMEDIATE_MS) {
         const mutation = await write()
         const update = await receiveValue(a, mutation.value)
         expect(update.packet.at - mutation.sent).toBeLessThan(IMMEDIATE_MS)
-        expect(update.packet.at - response.at).toBeLessThan(WINDOW_MS)
+        expect(update.packet.at - response.at).toBeLessThan(windowMs)
         graceWrites.push({ mutation, packet: update.packet })
       }
       expect(graceWrites.length).toBeGreaterThanOrEqual(4)
       const lastGrace = graceWrites.at(-1)!
-      expect(lastGrace.mutation.sent - response.at).toBeGreaterThan(
-        WINDOW_MS - IMMEDIATE_MS * 2,
+      // The loop leaves at its first receipt at or after response + window -
+      // IMMEDIATE; a receipt sees its packet within one polling step (100 ms),
+      // and the packet comes after the command's answer, so the last packet
+      // clears the bound by IMMEDIATE less that step, however long the command
+      // and its delivery took.
+      expect(lastGrace.packet.at - response.at).toBeGreaterThan(
+        windowMs - IMMEDIATE_MS * 2,
       )
-      expect(lastGrace.packet.at - response.at).toBeLessThan(WINDOW_MS)
+      expect(lastGrace.packet.at - response.at).toBeLessThan(windowMs)
       const actualGrace = settingsUpdates(a).filter(
         ({ packet }) =>
           packet.at > response.at && packet.at <= lastGrace.packet.at,
@@ -768,10 +765,10 @@ test(
       // Stream updates do not renew grace as a debounce: just after the original
       // response's grace ends the next two writes must wait at a fixed busy
       // deadline measured from the last actual delivery, despite the recent write.
-      await waitDeliveryBoundary(response.at + WINDOW_MS + TRANSPORT_JITTER_MS)
+      await waitDeliveryBoundary(response.at + windowMs + TRANSPORT_JITTER_MS)
       const afterGrace = [await write(), await write()]
       expect(afterGrace.at(-1)!.accepted).toBeLessThan(
-        lastGrace.packet.at + WINDOW_MS - IMMEDIATE_MS,
+        lastGrace.packet.at + windowMs - IMMEDIATE_MS,
       )
       expect(
         settingsUpdates(a).filter(
@@ -781,9 +778,9 @@ test(
       const fixedRelease = await receiveValue(a, afterGrace.at(-1)!.value)
       expect(
         fixedRelease.packet.at - lastGrace.packet.at,
-      ).toBeGreaterThanOrEqual(WINDOW_MS - TRANSPORT_JITTER_MS)
+      ).toBeGreaterThanOrEqual(windowMs - TRANSPORT_JITTER_MS)
       expect(fixedRelease.packet.at - lastGrace.packet.at).toBeLessThan(
-        WINDOW_MS + IMMEDIATE_MS,
+        windowMs + IMMEDIATE_MS,
       )
       expect(
         settingsUpdates(a)
@@ -816,7 +813,7 @@ test(
         evidencePath,
         JSON.stringify({
           clock: 'runner performance.now milliseconds',
-          WINDOW_MS,
+          windowMs,
           IMMEDIATE_MS,
           TRANSPORT_JITTER_MS,
           HELD_WINDOW_MS,
@@ -834,9 +831,13 @@ test(
       writer.stop()
       a.stop()
       b.stop()
+      // Restore through the same Settings UI, including after an assertion fails.
       if (await configPage.getByTestId('modal-close').isVisible())
         await configPage.getByTestId('modal-close').click()
       await clearCustomSetting(configPage, WINDOW_KEY)
+      await expect(
+        configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
+      ).toContainText('1000')
       if (await page.getByTestId('modal-close').isVisible())
         await page.getByTestId('modal-close').click()
       await clearCustomSetting(page, SOURCE_KEY)
@@ -848,27 +849,13 @@ test(
 test('a new socket records bootstrap before subscribe separately from immediate page delivery', async ({
   page,
 }) => {
-  test.slow() // A cold application bootstrap may span the deliberately selected 8 s window.
   const coldPage = await page.context().newPage()
   const cold = watchDeliveryFrames(coldPage)
   const phases: Record<string, unknown> = {}
   try {
     await grantAdminToSelf(expect, page)
-    await openSettings(page, WINDOW_KEY)
-    await setCustomSetting(page, WINDOW_KEY, String(WINDOW_MS))
-    await expect(
-      page.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
-    ).toContainText(String(WINDOW_MS))
     const startedAt = performance.now()
-    // Local only: allow two ordinary bootstrap deliveries at the selected window
-    // plus the normal tick/transport allowance. No acceptance budget is raised.
-    await gotoPage(
-      expect,
-      coldPage,
-      '/hilos/settings',
-      PAGE_READY,
-      WINDOW_MS * 2 + IMMEDIATE_MS * 2,
-    )
+    await gotoPage(expect, coldPage, '/hilos/settings', PAGE_READY)
     const subscribe = cold.sent.find(
       ({ wire }) =>
         object(wire).type === 'page_subscribe' &&
@@ -928,7 +915,6 @@ test('a new socket records bootstrap before subscribe separately from immediate 
       path: evidencePath,
       contentType: 'application/json',
     })
-    await clearCustomSetting(page, WINDOW_KEY)
     await coldPage.close()
   }
 })

@@ -1,12 +1,9 @@
-import type { Expect, Page } from '@playwright/test'
-
 import {
   deliveryObject as object,
   type DeliveryFrameLog,
   type DeliveryPacket,
 } from './deliveryFrames.js'
-import { setCustomSetting } from './settings.js'
-import { dismissToasts } from './toasts.js'
+import { writeSettings } from '../scripts/settingsWrites.mjs'
 
 /** One relevant inner delta, retaining its physical delivery and original data. */
 export interface DeliverySettingUpdate {
@@ -15,14 +12,14 @@ export interface DeliverySettingUpdate {
   data: Record<string, unknown>
 }
 
-/** A UI save with a real outgoing request and its correlated server acknowledgement. */
-export interface DeliverySettingMutation {
+/** A real settings write, timed in the observing runner's monotonic clock. */
+export interface DeliverySettingWrite {
   key: string
   value: string
+  /** When the runner sent the write. */
   sent: number
+  /** When the server accepted the write. */
   accepted: number
-  requestId: string
-  ack: unknown
 }
 
 /** Read Settings deltas through the canonical delivery observer without parsing raw again. */
@@ -45,45 +42,28 @@ export function deliverySettingUpdates(
   )
 }
 
-/** Save through the existing modal and prove settle by the actual correlated success frame. */
-export async function saveDeliverySetting(
-  expect: Expect,
-  page: Page,
-  log: DeliveryFrameLog,
-  key: string,
-  value: string,
-): Promise<DeliverySettingMutation> {
-  await dismissToasts(page)
-  const before = log.sent.length
-  await setCustomSetting(page, key, value)
-  const requests = log.sent.slice(before).filter(({ wire }) => {
-    const request = object(wire)
-    // Catalog keys use the existing idempotent add-by-key action for every save.
-    return request.type === 'action' && request.action === 'setting_add'
-  })
-  expect(requests).toHaveLength(1)
-  const request = requests[0]!
-  expect(object(request.wire).data).toEqual({ key, value })
-  const requestId = object(request.wire).requestId
-  expect(typeof requestId).toBe('string')
-  const packet = log.packets.find((packet) =>
-    packet.frames.some(({ wire }) => object(wire).requestId === requestId),
-  )
-  expect(
-    packet,
-    'closing the modal followed the actual server response',
-  ).toBeDefined()
-  const ack = packet!.frames
-    .map(({ wire }) => object(wire))
-    .find((wire) => wire.requestId === requestId)!
-  expect(ack.type).toBe('action_success')
-  expect(ack.outcome).toBe('success')
-  return {
+/**
+ * Write example settings keys by the test command, one real write per pair and
+ * in order, so a source runs at the pace the delivery window is measured at.
+ *
+ * Every pair of one call shares its send moment; the library's acceptance
+ * moment is brought onto the runner's clock, the one delivery packets carry.
+ *
+ * @param writes Pairs to write, 1 to 32 of them.
+ * @param options Where to send the command.
+ * @param options.host Explicit cluster host instead of the stand's own.
+ * @returns Every written pair in order, with its send and acceptance moments.
+ */
+export async function writeDeliverySettings(
+  writes: ReadonlyArray<{ key: string; value: string }>,
+  { host }: { host?: string } = {},
+): Promise<DeliverySettingWrite[]> {
+  const sent = performance.now()
+  const accepted = await writeSettings([...writes], { host })
+  return accepted.map(({ key, value, acceptedAt }) => ({
     key,
     value,
-    sent: request.at,
-    accepted: packet!.at,
-    requestId: String(requestId),
-    ack,
-  }
+    sent,
+    accepted: acceptedAt - performance.timeOrigin,
+  }))
 }

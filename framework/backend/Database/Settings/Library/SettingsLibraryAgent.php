@@ -39,6 +39,7 @@ use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Exception\SettingPresetUnknownException;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
 use Hilos\Database\Settings\Preset\SettingPresetResolver;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\SettingsCommandConstants;
 use Hilos\Database\Settings\SettingValue;
 use Hilos\Hilos;
@@ -48,6 +49,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Users\AskingAdministrator;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -79,7 +81,9 @@ use Hilos\Utils\Logger;
  * gatekeepers and this is the scribe: the screen decides who may ask and says the sentence, this
  * writes and reports back. Nothing on the browser wire changed, and no frontend file was touched.
  * The console is the fourth door (HIL-1514): settings:set and settings:reset arrive straight
- * over the command channel, and the library answers them itself.
+ * over the command channel, and the library answers them itself. So does the test-only batch
+ * test:settings:write (HIL-1856), which writes the catalog's example keys pair by pair for a
+ * stand that needs real settings writes at moments of its choosing.
  *
  * WHY THE ASK ALSO CARRIES THE ASKER. A write is announced with the accept key of the
  * connection behind it, and a viewport uses that to tell the author of a change from a
@@ -150,9 +154,11 @@ final class SettingsLibraryAgent extends AbstractAgent
      * CLI commands owned directly by this library (HIL-1514).
      *
      * The settings library is the single writer of settings, so CLI setting commands route here.
-     * Captures the setting key in the change-log receipt address.
+     * Captures the setting key in the change-log receipt address. The test-only batch
+     * ({@see CliCommands::SETTINGS_TEST_WRITE}, HIL-1856) is a plain route: it carries a list of
+     * keys rather than one, so there is no single key for the receipt to name.
      *
-     * @var array<string, array<string, list<string>>>
+     * @var array<int|string, string|array<string, list<string>>>
      */
     public const array AGENT_COMMANDS = [
         CliCommands::SETTINGS_SET => [
@@ -161,6 +167,7 @@ final class SettingsLibraryAgent extends AbstractAgent
         CliCommands::SETTINGS_RESET => [
             AgentCommandConfigKey::ADDRESS => [SettingsCommandConstants::FIELD_KEY],
         ],
+        CliCommands::SETTINGS_TEST_WRITE,
     ];
 
     /**
@@ -185,6 +192,20 @@ final class SettingsLibraryAgent extends AbstractAgent
 
     /** Texts a yes-or-no setting reads as no, after trimming and lowering ({@see SettingValue::bool()}). */
     private const array OFF_TEXTS = ['0', 'false'];
+
+    /**
+     * Keys a test settings write may carry: the catalog's examples, which no policy reads (HIL-1856).
+     *
+     * @var list<string>
+     */
+    private const array TEST_WRITE_KEYS = [
+        SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
+        SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
+        SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
+    ];
+
+    /** Most key and value pairs one test settings write carries (HIL-1856). */
+    private const int TEST_WRITE_PAIRS_MAX = 32;
 
     /**
      * Nothing is released on stop: this library holds a claim, not a resource.
@@ -306,9 +327,9 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Routes settings CLI commands directly to this library (HIL-1514).
+     * Routes settings CLI commands directly to this library (HIL-1514, HIL-1856).
      *
-     * @param CommandRequestDTO $data Command request carrying key and optional value
+     * @param CommandRequestDTO $data Command request carrying a key and optional value, or the pairs of a test write
      * @param string $source Signal source (unused)
      * @param string $name Signal name (unused)
      * @throws InvalidArgumentException When the reply carries an empty correlation id
@@ -323,6 +344,12 @@ final class SettingsLibraryAgent extends AbstractAgent
 
         if ($data->command === CliCommands::SETTINGS_RESET) {
             $this->handleSettingsResetCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::SETTINGS_TEST_WRITE) {
+            $this->handleSettingsTestWriteCommand($data);
 
             return;
         }
@@ -429,6 +456,109 @@ final class SettingsLibraryAgent extends AbstractAgent
             $impersonationBefore,
             $themeBefore,
         );
+    }
+
+    /**
+     * Runs {@see CliCommands::SETTINGS_TEST_WRITE}: writes example keys pair by pair, then answers once (HIL-1856).
+     *
+     * Every pair goes through {@see storeValue()}, the path the settings screen's add takes, so each
+     * pair is a write of its own and a table change of its own, made in the order the pairs came.
+     * The batch is judged whole before the first write - its size, its shape, its keys - and after
+     * that the first refused write ends it: the answer names the pair and why, and the pairs before
+     * it stay written. Each accepted pair is answered with the moment it was accepted, in epoch
+     * milliseconds, so a stand can line up what it sees with when each write happened.
+     *
+     * Only the example keys of the catalog are let in. The policy keys - the second factor, its
+     * trust term, impersonation - are answered through {@see settle()}, with a deferred answer and
+     * installation-wide frames, and this batch does not repeat that path; the example keys have no
+     * policy behind them, so settle() is not called.
+     *
+     * @param CommandRequestDTO $data Command request carrying the key and value pairs
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleSettingsTestWriteCommand(CommandRequestDTO $data): void
+    {
+        $asks = $this->testWriteAsks($data);
+        if ($asks === null) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'A test settings write carries 1 to ' . self::TEST_WRITE_PAIRS_MAX . ' key and value pairs.',
+            ));
+
+            return;
+        }
+        foreach ($asks as $ask) {
+            if (!in_array($ask->key, self::TEST_WRITE_KEYS, true)) {
+                $this->replyToCommand(CommandReplyDTO::error(
+                    $data->correlationId,
+                    'Only the example settings keys can be written by this test command.',
+                ));
+
+                return;
+            }
+        }
+
+        $accepted = [];
+        foreach ($asks as $index => $ask) {
+            $refusal = $this->storeValue($ask);
+            if ($refusal !== null) {
+                // A placeholder is replaced by the detail it holds back, as settings:set does: the console is read by
+                // whoever runs the stand, and nobody behind it is to be spared the engine's words.
+                $this->replyToCommand(CommandReplyDTO::error(
+                    $data->correlationId,
+                    'Write ' . ($index + 1) . ' was refused: ' . ($refusal->errorDetail ?? $refusal->reason),
+                ));
+
+                return;
+            }
+            $accepted[] = [
+                SettingsCommandConstants::FIELD_KEY => $ask->key,
+                SettingsCommandConstants::FIELD_VALUE => $ask->value,
+                SettingsCommandConstants::FIELD_ACCEPTED_AT => TimeHelper::nowMs(),
+            ];
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [SettingsCommandConstants::FIELD_WRITES => $accepted]));
+    }
+
+    /**
+     * Reads the pairs of a test settings write into the asks {@see storeValue()} takes (HIL-1856).
+     *
+     * Built the way {@see handleSettingsSetCommand()} builds its one ask: no connection to answer,
+     * the command's correlation id as the request id, and the command's name as the action.
+     *
+     * @param CommandRequestDTO $data Command request carrying the key and value pairs
+     * @return ?list<SettingWriteSignalData> Asks in the order of the pairs, or null when the batch is empty,
+     *     too long, or holds something other than a key and a value, both text
+     */
+    private function testWriteAsks(CommandRequestDTO $data): ?array
+    {
+        $writes = $data->payload[SettingsCommandConstants::FIELD_WRITES] ?? null;
+        if (!is_array($writes) || $writes === [] || !array_is_list($writes) || count($writes) > self::TEST_WRITE_PAIRS_MAX) {
+            return null;
+        }
+
+        $asks = [];
+        foreach ($writes as $write) {
+            if (
+                !is_array($write)
+                || !is_string($write[SettingsCommandConstants::FIELD_KEY] ?? null)
+                || !is_string($write[SettingsCommandConstants::FIELD_VALUE] ?? null)
+            ) {
+                return null;
+            }
+            $asks[] = new SettingWriteSignalData(
+                replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+                acceptKey: '',
+                requestId: $data->correlationId,
+                action: $data->command,
+                successMessage: null,
+                key: $write[SettingsCommandConstants::FIELD_KEY],
+                value: $write[SettingsCommandConstants::FIELD_VALUE],
+            );
+        }
+
+        return $asks;
     }
 
     /**

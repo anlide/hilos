@@ -6,17 +6,17 @@ import {
   clearCustomSetting,
   deliveryObject as object,
   deliverySettingUpdates,
+  quietAfterHeartbeat,
   readClusterBrowserStand,
   ROWS,
-  saveDeliverySetting,
   setCustomSetting,
   shownByTestId,
   waitDeliveryBoundary,
-  waitForDeliveryQuiet,
   watchClusterMasterUpgrades,
   watchDeliveryFrames,
+  writeDeliverySettings,
   type DeliveryFrameLog,
-  type DeliverySettingMutation,
+  type DeliverySettingWrite,
   typeInto,
   expectDocumentUnchanged,
   expectPageReady,
@@ -25,6 +25,7 @@ import {
   PAGE_READY,
   grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
+import { beatStatusHeartbeat } from '../../../../../../framework/frontend/scripts/statusMoments.mjs'
 import {
   CLUSTER_FOLLOWER,
   CLUSTER_LEADER,
@@ -48,14 +49,27 @@ test.describe.configure({ mode: 'default', retries: 0 })
 const WINDOW_KEY = 'websocket.delivery_window_ms'
 const SOURCE_KEY = 'example_string'
 const OTHER_KEY = 'example_integer'
-const WINDOW_MS = 8_000
-const CHANGED_WINDOW_MS = 4_000
-const PENDING_WINDOW_MS = 3_000
-const IMMEDIATE_MS = 1_000
+// The production window (DeliverySettingsCatalog::DEFAULT_WINDOW_MS), left as
+// the stand runs it: test commands write the remote source on the settings
+// library's node and beat Status on its owner's node, so every burst fits
+// inside one window. The second window proves a hot setting change on the
+// same sockets.
+const WINDOW_MS = 1_000
+const CHANGED_WINDOW_MS = 2_000
+// An immediate delivery still crosses nodes: the source library's fan-out to
+// the observer's node and its master's drain. Measured at up to 160 ms on a
+// loaded box, so 400 ms keeps over 200 ms to spare and stays well inside the
+// window. Cadence's lower bound allows only the transport jitter.
+const IMMEDIATE_MS = 400
 const JITTER_MS = 200
-const STATUS_HEARTBEAT_MS = 30_000
-// Three independent admin contexts and several real 8 s/4 s delivery boundaries.
-const REMOTE_TIMEOUT_FACTOR = 6
+// A moment counts as inside a window only this long before its end: a batch's
+// last write accepted by then reaches A and B (measured at up to 136 ms) in
+// time for that window's release, and the click's own flush and answer by then
+// cannot be the window's end. The mixed segment accepts its last write up to
+// 574 ms into the window on a loaded box, 200 ms inside the 780 ms this leaves.
+const DEADLINE_MARGIN_MS = 220
+// A delivery is due within the longest window this spec runs, plus ticks.
+const RECEIVE_TIMEOUT_MS = CHANGED_WINDOW_MS + IMMEDIATE_MS * 2
 const control = deliveryClusterControl()
 const stand = readClusterBrowserStand()
 
@@ -72,7 +86,10 @@ function updates(log: DeliveryFrameLog, key = SOURCE_KEY) {
 async function received(log: DeliveryFrameLog, value: string) {
   await expect
     .poll(() => updates(log).some((update) => update.value === value), {
-      timeout: WINDOW_MS + IMMEDIATE_MS * 2,
+      timeout: RECEIVE_TIMEOUT_MS,
+      // Writes that follow must stay inside the same 1 s window; a default
+      // polling step would consume it.
+      intervals: [20, 50, 100],
     })
     .toBe(true)
   return updates(log).find((update) => update.value === value)!
@@ -122,13 +139,28 @@ function noInternalFrames(log: DeliveryFrameLog): void {
   expect(log.sent.map(({ raw }) => raw).join('\n')).not.toContain('deliveryId')
 }
 
+/**
+ * Beat Status now: its owner publishes the heartbeat and hints every socket in
+ * the same step, before it answers.
+ *
+ * @param host Command host of the Status owner's node.
+ * @returns The published moment, also on the runner's clock, and the reply's.
+ */
+async function beatNow(host: string) {
+  const { aliveAt } = await beatStatusHeartbeat({ host })
+  return {
+    aliveAt,
+    at: aliveAt - performance.timeOrigin,
+    replied: performance.now(),
+  }
+}
+
 // FIXME(F-036, 2026-10-26): Extra writer delta in the mixed hint segment · чужой · попытка 1 · HIL-1704.
 // Evidence: full runs 1633 and 1621 fail the same exact-segment assertion.
 test(
   'cluster delivery: remote source coalesces physical packets and keeps follower deadlines independent',
   { tag: '@quarantine:F-036' },
   async ({ browser }) => {
-    test.setTimeout(test.info().timeout * REMOTE_TIMEOUT_FACTOR)
     const followers = CLUSTER_MASTERS.filter((node) => node !== CLUSTER_LEADER)
     expect(followers).toHaveLength(2)
     const writerPage = await newMasterPage(browser, CLUSTER_LEADER)
@@ -143,27 +175,21 @@ test(
       watchClusterMasterUpgrades(expect, tabA, stand, followers[0]!),
       watchClusterMasterUpgrades(expect, tabB, stand, followers[1]!),
     ])
-    const mutations: DeliverySettingMutation[] = []
+    const mutations: DeliverySettingWrite[] = []
     const phases: Record<string, unknown> = {}
     let sequence = 0
-    const write = async (key = SOURCE_KEY, otherValue = '156511') => {
-      const value = key === OTHER_KEY ? otherValue : `remote-${++sequence}`
-      const mutation = await saveDeliverySetting(
-        expect,
-        writerPage,
-        writer,
-        key,
-        value,
-      )
-      mutations.push(mutation)
-      return mutation
-    }
-    let configured = false
+    const pair = (key = SOURCE_KEY, otherValue = '156511') => ({
+      key,
+      value: key === OTHER_KEY ? otherValue : `remote-${++sequence}`,
+    })
     try {
       const before = await clusterInspect(CLUSTER_FOLLOWER)
       for (const page of [writerPage, tabA, tabB])
         await grantAdminToSelf(expect, page)
       await openSettings(configPage, WINDOW_KEY)
+      const configRow = configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`)
+      await expect(configRow).toContainText(String(WINDOW_MS))
+      await expect(configRow).toContainText('default')
       await openSettings(writerPage, SOURCE_KEY)
       await setCustomSetting(writerPage, SOURCE_KEY, 'remote-seed')
       await typeInto(writerPage.getByTestId('hilos-table-search'), 'example_')
@@ -182,39 +208,33 @@ test(
       )
       expect(owner.worker.node).toBe(CLUSTER_LEADER)
       expect(owner.state?.state).not.toMatch(/^[TtZ]$/)
-      phases.topology = {
-        before,
-        owner,
-        sourceLibrary: await placementNode('hilos_settings_library'),
+      const sourceLibrary = await placementNode('hilos_settings_library')
+      const statusOwner = await placementNode('hilos_status')
+      phases.topology = { before, owner, sourceLibrary, statusOwner }
+      // Each command goes to its owner's own node: no peer hop stands between
+      // a send moment and the write or the hint it measures.
+      const settingsHost = nodeHost(sourceLibrary)
+      const statusHost = nodeHost(statusOwner)
+      // One command per call: a batch lands in one turn of the library.
+      const writeBatch = async (...pairs: ReturnType<typeof pair>[]) => {
+        const written = await writeDeliverySettings(pairs, {
+          host: settingsHost,
+        })
+        mutations.push(...written)
+        return written
       }
+      const write = async (key = SOURCE_KEY, otherValue = '156511') =>
+        (await writeBatch(pair(key, otherValue)))[0]!
+      const heartbeatQuiet = (windowMs = WINDOW_MS) =>
+        quietAfterHeartbeat(expect, [a, b], windowMs, IMMEDIATE_MS, {
+          host: statusHost,
+        })
       for (const upgrade of upgrades) await upgrade.assert()
       const sockets = [a.sockets(), b.sockets()]
-      await setCustomSetting(configPage, WINDOW_KEY, String(WINDOW_MS))
-      configured = true
-      await expect(
-        configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
-      ).toContainText(String(WINDOW_MS))
       const passiveAt = performance.now()
-      // Observe a real publication first, then all physical traffic reaching quiet.
-      // This puts the first burst between heartbeats without silencing Status.
-      await expect
-        .poll(
-          () =>
-            [a, b].every((log) =>
-              hints(log).some(({ packet }) => packet.at > passiveAt),
-            ),
-          {
-            timeout: STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
-          },
-        )
-        .toBe(true)
-      phases.quiet = await waitForDeliveryQuiet(
-        expect,
-        [a, b],
-        WINDOW_MS,
-        IMMEDIATE_MS,
-        STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
-      )
+      // The beat puts the first burst a whole heartbeat interval away from the
+      // next publication, without silencing Status.
+      phases.quiet = await heartbeatQuiet()
 
       const anchor = await write()
       const anchors = [
@@ -223,16 +243,13 @@ test(
       ]
       for (const update of anchors)
         expect(update.packet.at - anchor.sent).toBeLessThan(IMMEDIATE_MS)
-      const burst = [
-        await write(),
-        await write(),
-        await write(OTHER_KEY),
-        await write(),
-      ]
+      // One command: the integer, then every source write, each its own write
+      // and delta inside one window.
+      const burst = await writeBatch(pair(OTHER_KEY), pair(), pair(), pair())
       expect(burst.at(-1)!.accepted).toBeLessThan(
         Math.min(...anchors.map(({ packet }) => packet.at)) +
           WINDOW_MS -
-          IMMEDIATE_MS,
+          DEADLINE_MARGIN_MS,
       )
       for (const log of [a, b])
         expect(updates(log).at(-1)!.value).toBe(anchor.value)
@@ -257,6 +274,11 @@ test(
         )
         expect(
           relevant.map(({ wire }) => object(object(wire).data).rowKey),
+          // The integer precedes every source write, so both layers agree: the
+          // worker folds a row's changes in at its first appearance, the master
+          // orders merged frames by a row's latest one (DeliveryCoalescerTest
+          // holds that rule), and either gives the integer first however the
+          // writes fall across worker ticks.
         ).toEqual([OTHER_KEY, SOURCE_KEY])
         // No hint or other unsupported frame occurred inside this merge segment.
         expect(packetEvents(release.packet)).toEqual([
@@ -285,15 +307,9 @@ test(
       }
       phases.coalescing = { anchor, anchors, burst, releases }
 
-      // The next real heartbeat falls inside a new fixed window. Two acknowledged
+      // A hint beaten now falls inside a new fixed window. Two acknowledged
       // source states precede it, and two follow it: latest wins in EACH segment.
-      phases.mixedQuiet = await waitForDeliveryQuiet(
-        expect,
-        [a, b],
-        WINDOW_MS,
-        IMMEDIATE_MS,
-        STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
-      )
+      phases.mixedQuiet = await heartbeatQuiet()
       const mixedAnchor = await write()
       const mixedAnchors = [
         await received(a, mixedAnchor.value),
@@ -301,31 +317,29 @@ test(
       ]
       for (const update of mixedAnchors)
         expect(update.packet.at - mixedAnchor.sent).toBeLessThan(IMMEDIATE_MS)
-      const beforeHint = [await write(), await write()]
-      await expect
-        .poll(
-          () =>
-            hints(writer).filter(({ packet }) => packet.at > mixedAnchor.sent)
-              .length,
-          { timeout: WINDOW_MS },
-        )
-        .toBe(1)
-      const hint = hints(writer).find(
-        ({ packet }) => packet.at > mixedAnchor.sent,
-      )!
-      expect(beforeHint.at(-1)!.accepted).toBeLessThan(hint.packet.at)
+      // The writer is a passive observer like A and B, so the segment's order
+      // rests on the commands' own moments. The two order checks below guard
+      // that construction — every write before the hint accepted before the
+      // Status owner published it, every write after it sent later still —
+      // and prove nothing of the segment: what each release carries, and in
+      // what order, is proven by packetEvents on it.
+      const beforeHint = await writeBatch(pair(), pair())
+      // Keep the independent hint unambiguously after the cross-node writes.
+      await waitDeliveryBoundary(beforeHint.at(-1)!.accepted + JITTER_MS)
+      const hint = await beatNow(statusHost)
+      expect(beforeHint.at(-1)!.accepted).toBeLessThan(hint.at)
       // Keep the cross-node source send unambiguously after the independent hint.
-      await waitDeliveryBoundary(hint.packet.at + JITTER_MS)
-      const afterHint = [
-        await write(OTHER_KEY, '156512'),
-        await write(),
-        await write(),
-      ]
-      expect(afterHint[0]!.sent).toBeGreaterThan(hint.packet.at)
+      await waitDeliveryBoundary(hint.at + JITTER_MS)
+      const afterHint = await writeBatch(
+        pair(OTHER_KEY, '156512'),
+        pair(),
+        pair(),
+      )
+      expect(afterHint[0]!.sent).toBeGreaterThan(hint.at)
       expect(afterHint.at(-1)!.accepted).toBeLessThan(
         Math.min(...mixedAnchors.map(({ packet }) => packet.at)) +
           WINDOW_MS -
-          IMMEDIATE_MS,
+          DEADLINE_MARGIN_MS,
       )
       for (const log of [a, b])
         expect(updates(log).at(-1)!.value).toBe(mixedAnchor.value)
@@ -333,49 +347,6 @@ test(
         await received(a, afterHint.at(-1)!.value),
         await received(b, afterHint.at(-1)!.value),
       ]
-      const sourceEvents = writer.packets
-        .filter(
-          ({ at }) =>
-            at > mixedAnchors[0]!.packet.at &&
-            at <= mixedReleases[0]!.packet.at,
-        )
-        .flatMap(({ frames }) => frames)
-        .filter(
-          ({ wire }) =>
-            object(wire).type === 'status_files_changed' ||
-            (object(wire).type === 'table_viewport_delta' &&
-              object(object(wire).data).tableKey === 'settings'),
-        )
-      // The writer is request-active and sees every own mutation and the genuine
-      // opaque hint. This independent stream proves the exact segment membership.
-      expect(
-        sourceEvents.map(({ wire }) =>
-          object(wire).type === 'status_files_changed'
-            ? { type: 'status_files_changed' }
-            : {
-                type: 'table_viewport_delta',
-                key: object(object(wire).data).rowKey,
-                value: String(
-                  object(
-                    object(object(object(object(wire).data).row).slots)
-                      .settings,
-                  ).value,
-                ),
-              },
-        ),
-      ).toEqual([
-        ...beforeHint.map(({ key, value }) => ({
-          type: 'table_viewport_delta',
-          key,
-          value,
-        })),
-        { type: 'status_files_changed' },
-        ...afterHint.map(({ key, value }) => ({
-          type: 'table_viewport_delta',
-          key,
-          value,
-        })),
-      ])
       for (const [index, log] of [a, b].entries()) {
         const release = mixedReleases[index]!
         expectGap(release.packet.at - mixedAnchors[index]!.packet.at, WINDOW_MS)
@@ -415,23 +386,16 @@ test(
         beforeHint,
         hint,
         afterHint,
-        sourceEvents,
         mixedReleases,
       }
 
-      phases.clickQuiet = await waitForDeliveryQuiet(
-        expect,
-        [a, b],
-        WINDOW_MS,
-        IMMEDIATE_MS,
-        STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
-      )
+      phases.clickQuiet = await heartbeatQuiet()
       const quiet = await write()
       const quietA = await received(a, quiet.value)
       const quietB = await received(b, quiet.value)
       expect(quietA.packet.at - quiet.sent).toBeLessThan(IMMEDIATE_MS)
       expect(quietB.packet.at - quiet.sent).toBeLessThan(IMMEDIATE_MS)
-      const pending = [await write(), await write()]
+      const pending = await writeBatch(pair(), pair())
       for (const log of [a, b])
         expect(updates(log).at(-1)!.value).toBe(quiet.value)
       const sentMark = a.sent.length
@@ -471,6 +435,11 @@ test(
           ),
       )!
       expect(response.at - click.at).toBeLessThan(IMMEDIATE_MS)
+      // Both came well inside A's own window: the click's doing, not its end.
+      for (const { at } of [flushed.packet, response])
+        expect(at).toBeLessThan(
+          quietA.packet.at + WINDOW_MS - DEADLINE_MARGIN_MS,
+        )
       await expect(tabA.getByTestId('hilos-table-loading')).toHaveCount(0)
       expect(updates(b).at(-1)!.value).toBe(quiet.value)
       const bRelease = await received(b, pending.at(-1)!.value)
@@ -487,22 +456,15 @@ test(
       }
 
       await setCustomSetting(configPage, WINDOW_KEY, String(CHANGED_WINDOW_MS))
-      await expect(
-        configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
-      ).toContainText(String(CHANGED_WINDOW_MS))
-      phases.changedQuiet = await waitForDeliveryQuiet(
-        expect,
-        [a, b],
-        WINDOW_MS,
-        IMMEDIATE_MS,
-        STATUS_HEARTBEAT_MS + WINDOW_MS + IMMEDIATE_MS,
-      )
+      await expect(configRow).toContainText(String(CHANGED_WINDOW_MS))
+      // The changed window is now the longer one, so the quiet outlasts it.
+      phases.changedQuiet = await heartbeatQuiet(CHANGED_WINDOW_MS)
       const changedAnchor = await write()
       const changedAnchors = [
         await received(a, changedAnchor.value),
         await received(b, changedAnchor.value),
       ]
-      const changed = [await write(), await write()]
+      const changed = await writeBatch(pair(), pair())
       const changedReleases = [
         await received(a, changed.at(-1)!.value),
         await received(b, changed.at(-1)!.value),
@@ -556,7 +518,14 @@ test(
       a.stop()
       b.stop()
       try {
-        if (configured) await clearCustomSetting(configPage, WINDOW_KEY)
+        // Unconditionally: a save that reached the server while its helper
+        // failed would leave the changed window to the next test.
+        if (await configPage.getByTestId('modal-close').isVisible())
+          await configPage.getByTestId('modal-close').click()
+        await clearCustomSetting(configPage, WINDOW_KEY)
+        await expect(
+          configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
+        ).toContainText(String(WINDOW_MS))
         if (await writerPage.getByTestId('modal-close').isVisible())
           await writerPage.getByTestId('modal-close').click()
         await clearCustomSetting(writerPage, SOURCE_KEY)
@@ -576,7 +545,6 @@ test(
 test('cluster delivery: a pending remote owner loss cancels the hold and recovers on the original socket', async ({
   browser,
 }) => {
-  test.slow() // Includes deliberate pending beyond one window, real worker replacement and log scans.
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   const healthyNode = CLUSTER_MASTERS.find(
     (node) => node !== CLUSTER_LEADER && node !== CLUSTER_FOLLOWER,
@@ -590,12 +558,15 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
     watchClusterMasterUpgrades(expect, healthyPage, stand, healthyNode),
   ])
   const phases: Record<string, unknown> = {}
-  let configured = false
   try {
     const before = await clusterInspect(CLUSTER_FOLLOWER)
     for (const tab of [page, healthyPage, configPage])
       await grantAdminToSelf(expect, tab)
     await openSettings(configPage, WINDOW_KEY)
+    // The pending outlasts the production window the stand runs.
+    const configRow = configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`)
+    await expect(configRow).toContainText(String(WINDOW_MS))
+    await expect(configRow).toContainText('default')
     await openSettings(healthyPage, SOURCE_KEY)
     await gotoPage(expect, page, '/hilos/logs/keys', PAGE_READY)
     await expect
@@ -615,11 +586,6 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
     )
     expect(owner.worker.node).not.toBe(CLUSTER_FOLLOWER)
     for (const upgrade of upgrades) await upgrade.assert()
-    await setCustomSetting(configPage, WINDOW_KEY, String(PENDING_WINDOW_MS))
-    configured = true
-    await expect(
-      configPage.getByTestId(`hilos-table-row-${WINDOW_KEY}`),
-    ).toContainText(String(PENDING_WINDOW_MS))
     await markDocument(page)
     await markDocument(healthyPage)
     const originalSocket = log.sockets()
@@ -656,7 +622,7 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
               object(object(wire).data).page === 'hilos_logs_keys',
           ),
       )
-    await waitDeliveryBoundary(pending.at + PENDING_WINDOW_MS + IMMEDIATE_MS)
+    await waitDeliveryBoundary(pending.at + WINDOW_MS + IMMEDIATE_MS)
     expect(answers()).toEqual([])
     expect(
       log.packets
@@ -857,15 +823,11 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
     })
     log.stop()
     healthy.stop()
-    try {
-      if (configured) await clearCustomSetting(configPage, WINDOW_KEY)
-    } finally {
-      for (const upgrade of upgrades) await upgrade.stop()
-      await Promise.all([
-        page.context().close(),
-        healthyPage.context().close(),
-        configPage.context().close(),
-      ])
-    }
+    for (const upgrade of upgrades) await upgrade.stop()
+    await Promise.all([
+      page.context().close(),
+      healthyPage.context().close(),
+      configPage.context().close(),
+    ])
   }
 })

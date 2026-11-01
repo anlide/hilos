@@ -127,6 +127,21 @@ export async function draftCustomSetting(
 }
 
 /**
+ * Saves the open setting dialog: drives its save control through the
+ * actionable states and settles when the dialog closes.
+ *
+ * @param page Page carrying the open setting dialog.
+ */
+export async function saveSettingEdit(page: Page): Promise<void> {
+  const save = page.getByTestId(SETTING_SAVE)
+  await save.scrollIntoViewIfNeeded()
+  await save.waitFor({ state: 'visible' })
+  await save.focus()
+  await save.click()
+  await save.waitFor({ state: 'detached' })
+}
+
+/**
  * Saves one custom setting and settles when its dialog closes.
  *
  * @param page Page carrying the settings table.
@@ -139,7 +154,7 @@ export async function setCustomSetting(
   value: string | boolean,
 ): Promise<void> {
   await draftCustomSetting(page, key, value)
-  await submitSetting(page)
+  await saveSettingEdit(page)
 }
 
 /**
@@ -161,15 +176,5 @@ export async function clearCustomSetting(
 
   await openSettingEdit(page, key)
   await page.getByTestId(SETTING_CUSTOM).uncheck()
-  await submitSetting(page)
-}
-
-/** Drives the save control through its actionable states and waits for settle. */
-async function submitSetting(page: Page): Promise<void> {
-  const save = page.getByTestId(SETTING_SAVE)
-  await save.scrollIntoViewIfNeeded()
-  await save.waitFor({ state: 'visible' })
-  await save.focus()
-  await save.click()
-  await save.waitFor({ state: 'detached' })
+  await saveSettingEdit(page)
 }

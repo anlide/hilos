@@ -146,16 +146,21 @@ test('prepare an accepted public archive through real loss, publication and reso
     preparation.settledAt = performance.now()
     await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
     await gotoPublicStatus(expect, guest)
-    const initial = await expectPublicStatusPair(expect, guest, log)
-    expect(initial.status.config).toEqual({
-      pollIntervalSeconds: 2,
-      staleAfterSeconds: 6,
-    })
+    await expectPublicStatusPair(expect, guest, log)
     let detectedAt = 0
+    let acceptPublication!: () => void
+    let refusePublication!: (reason: unknown) => void
+    const publicationAccepted = new Promise<void>((resolve, reject) => {
+      acceptPublication = resolve
+      refusePublication = reject
+    })
     // Hold the worker through real loss and the publication's server success.
     // Observe its open HTTP/DOM projection concurrently: reader convergence
     // must not keep the worker stopped until its independent watchdog fires.
-    // Settle both tasks before cleanup, including when either assertion fails.
+    // The open pair's wait starts at that success, not before the loss: the
+    // node's report and the owner's rebuild of the pair are two chains, and
+    // one budget covers one of them. Settle both tasks before cleanup,
+    // including when either assertion fails.
     const publication = await Promise.allSettled([
       withStatusAgentLoss(expect, workers, admin, async () => {
         const expect = pausedExpect
@@ -173,13 +178,22 @@ test('prepare an accepted public archive through real loss, publication and reso
           incident.incidentId,
         )
         preparation.publicationAcceptedAt = Date.now()
-      }).then(() => {
-        preparation.restartSettledAt = performance.now()
-      }),
-      expectPublicStatusPair(expect, guest, log, ({ status }) =>
-        status.outages.some(
-          (outage) =>
-            outage.detectedAt === detectedAt && outage.resolvedAt === null,
+        acceptPublication()
+      }).then(
+        () => {
+          preparation.restartSettledAt = performance.now()
+        },
+        (failure: unknown) => {
+          refusePublication(failure)
+          throw failure
+        },
+      ),
+      publicationAccepted.then(() =>
+        expectPublicStatusPair(expect, guest, log, ({ status }) =>
+          status.outages.some(
+            (outage) =>
+              outage.detectedAt === detectedAt && outage.resolvedAt === null,
+          ),
         ),
       ),
     ])

@@ -81,6 +81,7 @@ export {
 } from './connection.js'
 export {
   deliveryObject,
+  quietAfterHeartbeat,
   waitDeliveryBoundary,
   waitForDeliveryQuiet,
   watchDeliveryFrames,
@@ -90,9 +91,9 @@ export {
 } from './deliveryFrames.js'
 export {
   deliverySettingUpdates,
-  saveDeliverySetting,
+  writeDeliverySettings,
   type DeliverySettingUpdate,
-  type DeliverySettingMutation,
+  type DeliverySettingWrite,
 } from './deliverySettings.js'
 export {
   watchTableAllocation,
@@ -186,6 +187,7 @@ export {
   draftCustomSetting,
   expectSettingsPageHead,
   openSettingEdit,
+  saveSettingEdit,
   setCustomSetting,
 } from './settings.js'
 export {

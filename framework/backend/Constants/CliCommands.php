@@ -160,6 +160,18 @@ final class CliCommands
     /** @var string Command: Delete the example catalog key's override row (test-only) */
     public const string SETTING_OVERRIDE_TEST_DELETE = 'test:setting-override:delete';
 
+    /** @var string Command: Write a batch of example settings keys through the settings library, one write per pair (test-only) */
+    public const string SETTINGS_TEST_WRITE = 'test:settings:write';
+
+    /** @var string Command: Publish a Status heartbeat aged past the reader's stale limit and hold the owner's publication (test-only) */
+    public const string STATUS_TEST_HEARTBEAT_STALE = 'test:status:heartbeat:stale';
+
+    /** @var string Command: Release the Status publication hold and publish a heartbeat now (test-only) */
+    public const string STATUS_TEST_HEARTBEAT_NOW = 'test:status:heartbeat:now';
+
+    /** @var string Command: Move an announced maintenance work's start to now, by its public id (test-only) */
+    public const string STATUS_TEST_WORK_START = 'test:status:work:start';
+
     /** @var string Command: Verify stored backup archives against their recorded checksums */
     public const string BACKUP_VERIFY = 'backup:verify';
 

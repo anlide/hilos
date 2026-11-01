@@ -16,6 +16,7 @@ import {
   dismissToasts,
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
+  expectPublicStatusStale,
   expectStatusHead,
   expectStatusSubscriberCounts,
   expectTableTotal,
@@ -41,6 +42,7 @@ import {
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   STATUS_FAULT_COMPONENT,
+  readPublishedStatus,
   withPrivateStatusFiles,
   withStatusAgentLoss,
 } from '../helpers/status.js'
@@ -49,6 +51,10 @@ import {
   inspectProtectedMode,
   openProtectedModeIfAny,
 } from '../../../../../framework/frontend/scripts/protectedMode.mjs'
+import {
+  beatStatusHeartbeat,
+  staleStatusHeartbeat,
+} from '../../../../../framework/frontend/scripts/statusMoments.mjs'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 
 const expect = baseExpect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
@@ -709,6 +715,7 @@ test('a guest sees a real Checking candidate without adding it to public days or
   const workers = await page.context().newPage()
   const admin = watchStatusFrames(page)
   const log = watchPublicStatus(guest)
+  let recoveryObservedAt: number | undefined
   try {
     await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
     await gotoPublicStatus(expect, guest)
@@ -762,6 +769,18 @@ test('a guest sees a real Checking candidate without adding it to public days or
         ),
       ).toEqual(labels)
     })
+    // The restart reply precedes the collector's next whole node report, and
+    // the owner rebuilds the pair only after it: settle the real recovery
+    // first, so the guest's wait covers only that rebuild.
+    await expect
+      .poll(() => admin.latest())
+      .toMatchObject({
+        healthKnown: true,
+        components: { operationalCount: 1, totalCount: 1 },
+        maintenance: null,
+        incidents: [],
+      })
+    recoveryObservedAt = performance.now()
     await expectPublicStatusPair(
       expect,
       guest,
@@ -785,7 +804,11 @@ test('a guest sees a real Checking candidate without adding it to public days or
     admin.stop()
     try {
       await test.info().attach('public-status-real-candidate', {
-        body: JSON.stringify({ public: log, admin: admin.frames }),
+        body: JSON.stringify({
+          public: log,
+          recoveryObservedAt,
+          admin: admin.frames,
+        }),
         contentType: 'application/json',
       })
     } finally {
@@ -800,7 +823,7 @@ test(
   'published public facts survive lost sockets, real file polling, recovery and a cold guest without handshake',
   { tag: '@quarantine:F-053' },
   async ({ page, browser, baseURL }) => {
-    test.slow() // Real loss/publication, heartbeat polling and two independent guests.
+    test.slow() // Real loss/publication, recovery and two independent guests.
     await grantAdminToSelf(expect, page)
     const guestContext = await browser.newContext({
       baseURL,
@@ -891,9 +914,22 @@ test(
           guest.getByTestId('public-status-component-state'),
         ).toHaveText('Major outage')
       })
+      // The restart reply precedes the collector's next whole node report, and
+      // the owner rebuilds the pair only after it: settle the real recovery
+      // first, so the guest's waits below cover only that rebuild.
+      await expect
+        .poll(() => admin.latest())
+        .toMatchObject({
+          healthKnown: true,
+          components: { operationalCount: 1, totalCount: 1 },
+          maintenance: null,
+          incidents: [],
+        })
+      recovery.observedAt = performance.now()
       // The active coherent pair above must arrive before CONT. The committed
-      // team's text may reach the next file publication during recovery; do not
-      // spend the bounded loss window waiting for that independent publication.
+      // team's text may reach only a later file publication; the bounded loss
+      // window does not wait for it. The open pair shows it among the outages
+      // and the resolved pair in its history, so either one satisfies this.
       const publishedText = guest
         .getByTestId('public-status-outages')
         .or(guest.getByTestId('public-status-history'))
@@ -942,21 +978,10 @@ test(
           ),
       ).toBe(true)
 
-      const beforeDrop = log.reads[0].length
       await socket.drop()
       await expect(guest.getByTestId('public-status-connection')).toHaveText(
         'Your live connection to the site is lost — the system is up',
       )
-      await expect
-        .poll(() => log.reads[0].length)
-        .toBeGreaterThan(beforeDrop + 1)
-      const polled = await expectPublicStatusPair(
-        expect,
-        guest,
-        log,
-        ({ heartbeat }) => heartbeat.aliveAt > resolved.heartbeat.aliveAt,
-      )
-      expect(polled.status.outages).toEqual(resolved.status.outages)
       await expect(guest.getByTestId('public-status-banner')).toHaveText(
         'All systems operational',
       )
@@ -968,8 +993,9 @@ test(
       )
       await expectDocumentUnchanged(expect, guest)
 
-      // Release just after a completed poll. A new GET before that poll's next
-      // eligibility proves the usable-socket transition triggered the reread.
+      // No poll is waited out: the last read came over the live socket. A new
+      // GET within one poll interval of it proves the usable-socket transition
+      // triggered the reread.
       const beforeRelease = log.reads[0].length
       recovery.lastPollAt = log.reads[0].at(-1)!.requestedAt
       recovery.releasedAt = performance.now()
@@ -980,7 +1006,7 @@ test(
         .toBeGreaterThan(beforeRelease)
       recovery.rereadAt = log.reads[0][beforeRelease].requestedAt
       expect(recovery.rereadAt).toBeLessThan(
-        recovery.lastPollAt + polled.status.config.pollIntervalSeconds * 1000,
+        recovery.lastPollAt + resolved.status.config.pollIntervalSeconds * 1000,
       )
       await expect(guest.getByTestId('public-status-connection')).toHaveCount(0)
 
@@ -1035,7 +1061,6 @@ test('an active freeze outlives stale while real heartbeats and cold public read
   browser,
   baseURL,
 }) => {
-  test.slow() // The actual freeze must last longer than the file's six-second stale threshold.
   const otherContext = await browser.newContext({
     baseURL,
     ignoreHTTPSErrors: true,
@@ -1048,9 +1073,24 @@ test('an active freeze outlives stale while real heartbeats and cold public read
   const guardedSocket = await controlSocketReconnect(guarded)
   const guardedLog = watchPublicStatus(guarded)
   const log = watchPublicStatus(page)
+  // The owner's own view of source health, apart from every public reader.
+  const adminContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors: true,
+    colorScheme: 'light',
+    timezoneId: 'Asia/Gaza',
+  })
+  let adminPage = await adminContext.newPage()
+  let admin = watchStatusFrames(adminPage)
   const evidence: Array<Record<string, unknown>> = []
   let enteredAt = 0
   try {
+    await grantAdminToSelf(expect, adminPage)
+    // No admin document lives through the freeze: the lift would reload it.
+    // The context keeps the session, so a page opened after the lift is the
+    // same administrator.
+    admin.stop()
+    await adminPage.close()
     await gotoPublicStatus(expect, page)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     const initial = await expectPublicStatusPair(
@@ -1062,10 +1102,6 @@ test('an active freeze outlives stale while real heartbeats and cold public read
           (component) => component.state === 'operational',
         ),
     )
-    expect(initial.status.config).toEqual({
-      pollIntervalSeconds: 2,
-      staleAfterSeconds: 6,
-    })
     expect(await enterProtectedMode('e2e-public-status-freeze')).toBe('active')
     enteredAt = performance.now()
     const active = await inspectProtectedMode()
@@ -1076,6 +1112,21 @@ test('an active freeze outlives stale while real heartbeats and cold public read
     expect(active.stoppedAgents).toContain('hilos_settings_library')
     expect(active.stoppedAgents).not.toContain('hilos_status')
     evidence.push({ at: enteredAt, phase: active })
+    // The guarded reader below gets no socket and so no hint: its first GET
+    // must already find the Maintenance pair, or its next poll is a whole
+    // interval away. The owner publishes it from its first tick under the
+    // freeze; wait for that file on its disk before the reader opens.
+    await expect
+      .poll(async () =>
+        (await readPublishedStatus())?.components.every(
+          (component) => component.state === 'maintenance',
+        ),
+      )
+      .toBe(true)
+    evidence.push({
+      elapsedMs: performance.now() - enteredAt,
+      maintenanceOnDisk: true,
+    })
 
     await gotoMaintenance(expect, guarded, '/hilos')
     const link = guarded.getByTestId('maintenance-service-status')
@@ -1103,41 +1154,44 @@ test('an active freeze outlives stale while real heartbeats and cold public read
       'Maintenance in progress',
     )
 
-    let aliveAt = initial.heartbeat.aliveAt
-    let samples = 0
-    do {
-      const accepted = await expectPublicStatusPair(
-        expect,
-        page,
-        log,
-        ({ status, heartbeat }) =>
-          heartbeat.aliveAt > aliveAt &&
-          status.components.every(
-            (component) => component.state === 'maintenance',
-          ),
-      )
-      expect(accepted.heartbeat.aliveAt).toBeGreaterThan(aliveAt)
-      aliveAt = accepted.heartbeat.aliveAt
-      samples++
-      await expect(page.getByTestId('public-status-banner')).toHaveText(
-        'Maintenance in progress',
-      )
-      await expect(
-        page.getByTestId('public-status-component-state'),
-      ).toHaveText('Maintenance')
-      evidence.push({ elapsedMs: performance.now() - enteredAt, accepted })
-    } while (
-      performance.now() - enteredAt <=
-        initial.status.config.staleAfterSeconds * 1000 ||
-      samples < 3
+    // The freeze outlives the stale limit by command, not by waiting it out:
+    // the owner publishes the maintenance pair's heartbeat aged past the limit
+    // and holds it, then a heartbeat at now brings Maintenance back.
+    const aged = await staleStatusHeartbeat()
+    const stale = await expectPublicStatusPair(
+      expect,
+      page,
+      log,
+      ({ status, heartbeat }) =>
+        heartbeat.aliveAt === aged.aliveAt &&
+        status.components.every(
+          (component) => component.state === 'maintenance',
+        ),
     )
-    expect(performance.now() - enteredAt).toBeGreaterThan(
-      initial.status.config.staleAfterSeconds * 1000,
+    await expectPublicStatusStale(expect, page, stale)
+    evidence.push({ elapsedMs: performance.now() - enteredAt, stale })
+    const beat = await beatStatusHeartbeat()
+    const accepted = await expectPublicStatusPair(
+      expect,
+      page,
+      log,
+      ({ status, heartbeat }) =>
+        heartbeat.aliveAt > aged.aliveAt &&
+        status.components.every(
+          (component) => component.state === 'maintenance',
+        ),
     )
-    expect(samples).toBeGreaterThanOrEqual(3)
+    expect(accepted.heartbeat.aliveAt).toBeGreaterThanOrEqual(beat.aliveAt)
+    await expect(page.getByTestId('public-status-banner')).toHaveText(
+      'Maintenance in progress',
+    )
+    await expect(page.getByTestId('public-status-component-state')).toHaveText(
+      'Maintenance',
+    )
+    evidence.push({ elapsedMs: performance.now() - enteredAt, accepted })
     expect((await inspectProtectedMode()).phase).toBe('active')
 
-    // Independent, never-welcomed visitor arrives after the stale boundary.
+    // Independent, never-welcomed visitor arrives after the aged heartbeat.
     await coldSocket.hold()
     await gotoPublicStatus(expect, cold)
     await expectPublicStatusPair(
@@ -1161,11 +1215,14 @@ test('an active freeze outlives stale while real heartbeats and cold public read
     expectPublicStatusReadOnly(expect, coldLog)
     expectPublicStatusReadOnly(expect, guardedLog)
   } finally {
-    // An inspect failure must not prevent the owner's unconditional open. The
-    // warm browser must finish its own lift reload before readiness is checked.
+    // The aged heartbeat's hold is released first, or it would keep the lift's
+    // publication out of the files. An inspect failure must not prevent the
+    // owner's unconditional open. The warm browser must finish its own lift
+    // reload before readiness is checked.
     let frozen: boolean
     try {
       try {
+        await beatStatusHeartbeat()
         frozen = (await inspectProtectedMode()).phase !== 'inactive'
         if (frozen) await markDocument(page)
       } finally {
@@ -1174,6 +1231,25 @@ test('an active freeze outlives stale while real heartbeats and cold public read
       if (frozen)
         await expectSelfReload(page, test.info().project.use.navigationTimeout)
       expect((await inspectProtectedMode()).phase).toBe('inactive')
+      // The lift restarts the stopped agents, and the owner trusts health
+      // again only from a fresh whole node report; it rebuilds the pair after
+      // it. Settle that recovery at the owner first, so the reader's wait
+      // covers only the rebuild.
+      adminPage = await adminContext.newPage()
+      admin = watchStatusFrames(adminPage)
+      await gotoPage(expect, adminPage, STATUS_PATH, PAGE_READY)
+      await expect
+        .poll(() => admin.latest())
+        .toMatchObject({
+          healthKnown: true,
+          components: { operationalCount: 1, totalCount: 1 },
+          maintenance: null,
+          incidents: [],
+        })
+      evidence.push({
+        elapsedMs: performance.now() - enteredAt,
+        recovered: admin.latest(),
+      })
       await expectPublicStatusPair(expect, page, log, ({ status }) =>
         status.components.every(
           (component) => component.state === 'operational',
@@ -1183,12 +1259,14 @@ test('an active freeze outlives stale while real heartbeats and cold public read
         'All systems operational',
       )
     } finally {
+      admin.stop()
       const cleanup = await Promise.allSettled([
         log.stop(),
         guardedLog.stop(),
         coldLog.stop(),
         guarded.close(),
         otherContext.close(),
+        adminContext.close(),
       ])
       await guardedSocket.dispose()
       await coldSocket.dispose()
@@ -1199,6 +1277,7 @@ test('an active freeze outlives stale while real heartbeats and cold public read
           warm: log,
           remembered: guardedLog,
           cold: coldLog,
+          admin: admin.overviews,
         }),
         contentType: 'application/json',
       })

@@ -6,6 +6,7 @@ import {
   dropSocket,
   ROWS,
   shownByTestId,
+  type DeliveryPacket,
   type SocketFrame,
   watchDeliveryFrames,
   expectDocumentUnchanged,
@@ -27,14 +28,14 @@ test('logs initial answers keep own state, response and declared facets in one p
   try {
     await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
-    await expect(page.getByTestId('hilos-logs-tile-daemon')).toBeVisible()
-    const overview = log.packets.find((packet) =>
+    const isOverview = (packet: DeliveryPacket) =>
       packet.frames.some(
         ({ wire }) =>
           object(wire).type === 'page_response' &&
           object(object(wire).data).page === 'hilos_logs',
-      ),
-    )!
+      )
+    await expect.poll(() => log.packets.some(isOverview)).toBe(true)
+    const overview = log.packets.find(isOverview)!
     expect(overview).toBeDefined()
     expect(
       overview.frames

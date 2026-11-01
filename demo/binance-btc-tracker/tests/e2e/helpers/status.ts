@@ -9,11 +9,39 @@ import {
   withStoppedRestartWorker,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+import {
+  publicStatusFileSchema,
+  type PublicStatusFile,
+} from '../../../../../framework/frontend/core/src/status/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 
 /** The e2e-only catalog binds this component to the existing isolated worker. */
 export const STATUS_FAULT_COMPONENT = 'settings'
+
+/**
+ * The test stand's real Status disk, data/status-test, as the owner
+ * installs it.
+ */
+export const STATUS_DISK = new URL(
+  '../../../data/status-test/',
+  import.meta.url,
+)
+
+/**
+ * The status file the owner last published to its disk, the one nginx
+ * serves: a reader's first GET from now on reads this or a later one. The
+ * owner renames each file into place whole; undefined means the published
+ * file is not a status file this reader understands.
+ */
+export async function readPublishedStatus(): Promise<
+  PublicStatusFile | undefined
+> {
+  const status = publicStatusFileSchema.safeParse(
+    JSON.parse(await readFile(new URL('status.json', STATUS_DISK), 'utf8')),
+  )
+  return status.success ? status.data : undefined
+}
 
 const sendCommand = createCommandChannel({
   host: process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test',
@@ -96,22 +124,20 @@ export async function withStatusAgentLoss(
 }
 
 /**
- * Private names on the test stand's real Status disk, data/status-test. A
- * genuine cluster marker is preserved; standalone has no marker, so its
- * otherwise absent name gets an isolated sentinel too. Published JSON files
- * are never modified.
+ * Private names on the test stand's real Status disk. A genuine cluster
+ * marker is preserved; standalone has no marker, so its otherwise absent name
+ * gets an isolated sentinel too. Published JSON files are never modified.
  */
 export async function withPrivateStatusFiles(
   run: (names: string[], sentinel: string) => Promise<void>,
 ): Promise<void> {
-  const directory = new URL('../../../data/status-test/', import.meta.url)
   const marker = '.hilos-cluster-directory.json'
   const sentinel = `private-status-e2e-${randomUUID()}`
   const names = [marker, `.${sentinel}.tmp`, `${sentinel}.json`]
   const created: URL[] = []
   try {
     for (const name of names) {
-      const path = new URL(name, directory)
+      const path = new URL(name, STATUS_DISK)
       try {
         await writeFile(path, sentinel, { flag: 'wx' })
         created.push(path)

@@ -2266,6 +2266,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::NOTIFICATION_TEST_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             CliCommands::SETTINGS_SET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             CliCommands::SETTINGS_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            CliCommands::SETTINGS_TEST_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             CliCommands::I18N_TEST_LANGUAGE_CREATE => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_COUNTRY_CREATE => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_LOCALE_CREATE => HilosAgentType::HILOS_I18N_LIBRARY,
@@ -2308,6 +2309,9 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::LOGS_TEST_ROTATE => HilosAgentType::HILOS_LOG_STORE,
             CliCommands::LOGS_TEST_WALK => HilosAgentType::HILOS_LOG_STORE,
             CliCommands::ANALYTICS_TEST_ROTATE => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            CliCommands::STATUS_TEST_HEARTBEAT_STALE => HilosAgentType::HILOS_STATUS,
+            CliCommands::STATUS_TEST_HEARTBEAT_NOW => HilosAgentType::HILOS_STATUS,
+            CliCommands::STATUS_TEST_WORK_START => HilosAgentType::HILOS_STATUS,
             CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([

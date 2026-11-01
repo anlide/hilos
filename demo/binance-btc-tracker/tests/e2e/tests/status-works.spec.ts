@@ -1,4 +1,5 @@
 import { expect as baseExpect, test as base } from '@playwright/test'
+import type { PublicStatusFile } from '../../../../../framework/frontend/core/src/status/index.js'
 import {
   STATUS_PATH,
   STATUS_WORKS_PATH,
@@ -57,6 +58,8 @@ import {
   openProtectedMode,
   openProtectedModeIfAny,
 } from '../../../../../framework/frontend/scripts/protectedMode.mjs'
+import { startStatusWork } from '../../../../../framework/frontend/scripts/statusMoments.mjs'
+import { readPublishedStatus } from '../helpers/status.js'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 
 const expect = baseExpect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
@@ -465,7 +468,7 @@ test('Status Works uses the published announcement during an actual freeze and c
   baseURL,
   statusWorks,
 }) => {
-  // A short future start, confirmation/event mail, actual freeze and owner recovery.
+  // Confirmation/event mail, an actual freeze and owner recovery.
   test.slow()
   const guestContext = await browser.newContext({
     baseURL,
@@ -538,22 +541,37 @@ test('Status Works uses the published announcement during an actual freeze and c
     await expectPublicStatusPair(expect, guest, publicLog, ({ status }) =>
       status.scheduledWorks.some((entry) => entry.id === work.publicId),
     )
-    // The public heartbeat is the observable clock; no past date or fake clock
-    // bypasses the owner's strictly-future schedule guard.
-    if (publicLog.pairs().at(-1)!.heartbeat.aliveAt < startsAt) {
-      await guest.waitForResponse(
-        async (response) =>
-          new URL(response.url()).pathname === '/status-data/heartbeat.json' &&
-          response.ok() &&
-          (deliveryObject(await response.json()).aliveAt as number) >= startsAt,
-      )
-    }
+    // The schedule keeps its strictly-future guard; a command, not a wait,
+    // brings the announced start to now.
+    const started = await startStatusWork(work.publicId)
+    await expectPublicStatusPair(expect, guest, publicLog, ({ status }) =>
+      status.scheduledWorks.some(
+        (entry) =>
+          entry.id === work.publicId && entry.startsAt <= started.startsAt,
+      ),
+    )
     expect(Date.now()).toBeLessThan(draft.endsAt)
     expect(await enterProtectedMode('e2e-status-announced-work')).toBe('active')
     const phase = await inspectProtectedMode()
     expect(phase).toMatchObject({ phase: 'active', agentStartGateClosed: true })
     expect(phase.stoppedAgents).toContain('hilos_settings_library')
     expect(phase.stoppedAgents).not.toContain('hilos_status')
+    // The cold reader below gets no socket and so no hint: its first GET must
+    // already find the period, or its next poll is a whole interval away. The
+    // owner publishes the period from its first tick under the freeze; wait
+    // for that file on its disk before the reader opens.
+    const opened = (status: PublicStatusFile): boolean =>
+      status.maintenancePeriods.some(
+        (period) =>
+          period.workId === work.publicId &&
+          period.completionObservedAt === null,
+      )
+    await expect
+      .poll(async () => {
+        const status = await readPublishedStatus()
+        return status !== undefined && opened(status)
+      })
+      .toBe(true)
     // A never-welcomed document reads nginx files while its first socket is held.
     await coldSocket.hold()
     await gotoPublicStatus(expect, cold)
@@ -561,12 +579,7 @@ test('Status Works uses the published announcement during an actual freeze and c
       expect,
       cold,
       coldLog,
-      ({ status }) =>
-        status.maintenancePeriods.some(
-          (period) =>
-            period.workId === work.publicId &&
-            period.completionObservedAt === null,
-        ),
+      ({ status }) => opened(status),
     )
     expect(
       active.status.components.every(
@@ -583,7 +596,7 @@ test('Status Works uses the published announcement during an actual freeze and c
       endedAt: null,
       completionObservedAt: null,
     })
-    expect(period.startedAt).toBeGreaterThanOrEqual(startsAt)
+    expect(period.startedAt).toBeGreaterThanOrEqual(started.startsAt)
     expect(period.startedAt).toBeLessThan(draft.endsAt)
     await expect(cold.getByTestId('public-status-maintenance')).toContainText(
       draft.title,
@@ -603,6 +616,10 @@ test('Status Works uses the published announcement during an actual freeze and c
     await openProtectedMode()
     await expectSelfReload(page, test.info().project.use.navigationTimeout)
     await expectPageReady(expect, page)
+    // No poll is waited out: the released socket rereads at once, and the
+    // owner's hint carries a completion published after that.
+    await coldSocket.release()
+    await expect(cold.getByTestId('conn-state')).toHaveText('connected')
     const completedPair = await expectPublicStatusPair(
       expect,
       cold,

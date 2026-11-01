@@ -1204,6 +1204,80 @@ required for the cluster guard, not public Status data. Every node's nginx reads
 the same read-only volume. Do not add a backend-fetch endpoint for the
 projection.
 
+### Test-only moments
+
+Three moments in this feature belong to the production clock: the heartbeat
+cadence (30 seconds), the stale limit that turns a silent publisher into “not
+responding” (120 seconds), and the scheduled start of an announced work. A spec
+does not wait one out, and no environment value or compose overlay shortens one
+([Time-based features](../cli/commands.md#time-based-features-no-universal-clock));
+three test-only commands bring each to now (HIL-1856). They are `test:` commands
+that refuse on a production-like environment and on the command socket, and the
+CLI half only sends and prints
+([Status moment and settings write commands](../cli/commands.md#status-moment-and-settings-write-commands)).
+The Status owner (`HILOS_STATUS`, one per cluster) answers all three from
+`onSignalCommand()` and replies once on every path, because it alone publishes the
+public files and writes the announcements.
+
+- **`test:status:heartbeat:stale` ages the heartbeat.** It needs a coherent
+  published pair and otherwise refuses with “No public Status pair is published
+  yet.” The owner atomically publishes `heartbeat.json` carrying the revision of
+  the last published pair and `aliveAt` = now − `staleAfterSeconds` × 1000 − 1000
+  ms, so a reader calls it stale on its first look. It sends
+  `status_files_changed` and **holds its own publication** — heartbeat and
+  `status.json` content — until `test:status:heartbeat:now` or its own restart.
+  Nothing else lifts the hold: a second `stale` and `test:status:work:start` leave
+  it in place. `status.json` is not touched. The reply is the published `aliveAt`.
+- **`test:status:heartbeat:now` releases the hold and beats at once.** The owner
+  lifts the hold, makes the heartbeat due and first does what the tick does before
+  its publication step: it reads the maintenance observation
+  (`advanceMaintenance()`) and the freeze (`refreshFreeze()`). A freeze that began
+  after the last tick is therefore what the pair shows, its period included, and
+  no database read starts under it. Then it runs the publication step the tick
+  runs (`advancePublic()`), so the heartbeat is published at now by the normal
+  path with its hint, and the next natural heartbeat follows a full interval
+  later. That step is the one that already runs under a freeze, and Status
+  is not among the agents a freeze stops, so the command works the same there (see
+  [Freeze And Disconnection](#freeze-and-disconnection)). When the step publishes
+  nothing it refuses with the same sentence as the stale command. The reply is the
+  published `aliveAt`.
+- **`test:status:work:start <publicId>` starts an announced work now.** In an
+  ordinary work write — nothing under a freeze, the maintenance reconciliation
+  first, one transaction, the item's own `change` action — the owner moves the
+  `starts_at` of an unused, uncanceled, unexpired work to the current moment
+  rounded down to a whole second. The version goes up by one only when the start
+  actually moves: a work whose start is already this second is no change to the
+  item's action, which writes nothing and keeps its version, and the reply then
+  carries the version as it was. Either way, after the commit the public
+  projection is marked to be read again, with the same pair of marks an
+  administrator's work write sets. **No mail goes to subscribers:** this moves a test's clock, it does
+  not change what was announced. It skips the rule that a start must lie in the
+  future ([Scheduled Works And Maintenance Periods](#scheduled-works-and-maintenance-periods)),
+  which is why it exists, and keeps the rest. It refuses in the administrator's
+  words: the work no longer exists; it was canceled, started or expired; the new
+  window would overlap another announcement; under a freeze, that Status changes
+  are unavailable. A blank public id is refused with “Name the maintenance
+  announcement by its public id.” The reply is the public id, the new `startsAt`
+  and the version.
+
+**Why the owner holds its publication after the stale command.** The next
+heartbeat is counted from the one last published, so without the hold the owner
+would publish a fresh one on its next tick and the aged moment would be gone
+before a reader looked at it. A stopping daemon is the second reason: `docker
+stop` can still let the owner publish one last genuine pair, which would replace the
+aged one that nginx is meant to keep serving. The hold is a field of the owner's
+instance, not Runtime state: nobody else reads it, and it dies with the instance,
+so a restart releases it. The command that beats at now also clears the one-second
+retry barrier of the heartbeat attempt.
+
+**A spec that ages the heartbeat releases it.** Until `test:status:heartbeat:now`
+or a restart, the owner publishes nothing more, and every later spec on the stand
+would read a stale page. The spec that called the stale command calls the beat in
+its `finally`, as the owned-cleanup canon asks
+([Preconditions — test commands with owned cleanup](../frontend/testing-strategy.md#preconditions--test-commands-with-owned-cleanup)).
+The e2e helpers are `staleStatusHeartbeat`, `beatStatusHeartbeat` and
+`startStatusWork` in `framework/frontend/scripts/statusMoments.mjs`.
+
 ## Reading /status
 
 On entry, always read both nginx files. Render their contents without waiting
@@ -1383,8 +1457,32 @@ Status checks are split across these existing layers:
   demos' `tests/e2e/tests/a11y.spec.ts`. These specs use light color
   scheme and desktop Chrome; they do not claim dark-theme or narrow-viewport
   E2E coverage.
+- The three Status test-only commands ([Test-only moments](#test-only-moments))
+  are covered on the CLI side by
+  `framework/tests/Unit/Core/CLI/Commands/StatusTestHeartbeatStaleCommandTest.php`,
+  `StatusTestHeartbeatNowCommandTest.php` and `StatusTestWorkStartCommandTest.php`,
+  on the publisher side (an aged heartbeat, a heartbeat made due) by
+  `framework/tests/Unit/StatusPublicFilesTest.php`, and on the owner side — the
+  hold, the release under a freeze, the moved start without mail, the refusals — by
+  `framework/tests/Integration/StatusTestCommandsIntegrationTest.php`.
+- The Status e2e specs run on the production clock: a poll every 30 seconds, a
+  stale limit of 120 seconds, a heartbeat every 30 seconds. No environment value
+  or compose overlay shortens them, and the Binance e2e step runs in one native
+  phase on the one stand, with no daemon recreated between phases. The specs bring
+  each moment to now by command: `status.spec.ts` ages and beats the heartbeat,
+  `status-works.spec.ts` starts an announced work, and the standalone
+  `loss.spec.ts` ages the heartbeat before the full daemon stop, so nginx serves
+  the aged pair and the stale verdict needs no real minutes. A spec that ages the
+  heartbeat beats it again in its `finally`. The timeout budget in `status.config.ts`
+  is the convergence of the Daemon picture alone; it carries no term for the poll
+  interval.
 
-The existing standalone public-reader fixture is
+`composer -d demo/binance-btc-tracker run test:e2e` runs the selected specs once,
+natively; filters, quarantine and `--last-failed` keep their native meaning. An
+unfiltered run is followed by the standalone cycle — the prepare spec and the loss
+spec, with the whole daemon container stopped while nginx keeps serving the files.
+A red native run does not cancel that cycle, and the step stays red either way.
+The standalone cycle on its own, from a clean stand, is
 `composer -d demo/binance-btc-tracker run test:e2e-status-full`. Mail tests
 prove MIME content and escaped HTML, not rendering in a real mail client. The
 real-client rendering and plain-text checks in

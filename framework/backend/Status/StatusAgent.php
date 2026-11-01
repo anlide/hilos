@@ -9,6 +9,7 @@ use Closure;
 use DateTimeImmutable;
 use Hilos\Auth\IdentifierMask;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -42,6 +43,7 @@ use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\StatusIncident as EntityStatusIncident;
 use Hilos\Database\View\Item\StatusIncident;
 use Hilos\Database\View\Item\StatusIncidentUpdate;
+use Hilos\Database\View\Item\StatusWork;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -56,6 +58,8 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\State\Item\HilosStatusComponent;
 use Hilos\Runtime\State\Item\HilosStatusMaintenance;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Status\DTO\StatusAddUpdateSignalData;
 use Hilos\Status\DTO\StatusScheduleWorkSignalData;
 use Hilos\Status\DTO\StatusChangeWorkSignalData;
@@ -122,6 +126,20 @@ final class StatusAgent extends AbstractHilosAgent
         HilosSignalConstants::STATUS_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
     ];
 
+    /**
+     * Test-only commands that bring a Status moment to now (HIL-1856).
+     *
+     * Answered here because this owner alone publishes the public pair and writes the
+     * announcements; the test: prefix keeps them off a production-like environment.
+     *
+     * @var list<string>
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::STATUS_TEST_HEARTBEAT_STALE,
+        CliCommands::STATUS_TEST_HEARTBEAT_NOW,
+        CliCommands::STATUS_TEST_WORK_START,
+    ];
+
     public const array OWNS_DB = [
         HilosDbContext::statusIncidents => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusIncidentUpdates => [TruthSourceOperation::Add],
@@ -147,7 +165,11 @@ final class StatusAgent extends AbstractHilosAgent
     private const int SUBSCRIBER_ATTEMPTS_PER_TICK = 32;
     private const float SUBSCRIBER_PORTION_BUDGET_MS = 20.0;
     private const int PUBLIC_REVISION_BYTES = 16;
+    /** How far past the reader's stale limit a test-aged heartbeat lands, so the reader calls it stale on its first look. */
+    private const int TEST_STALE_MARGIN_MS = 1000;
     private const string SUBSCRIPTIONS_UNAVAILABLE = 'Status subscriptions are unavailable. Try again later.';
+    private const string CHANGES_UNAVAILABLE = 'Status changes are unavailable during maintenance or while runtime state is unavailable.';
+    private const string WORK_GONE = 'This maintenance announcement no longer exists. Refresh the list.';
     private const string INVALID_SUBSCRIPTION_LINK = 'This subscription link is invalid or has expired. Request a new link.';
     private const string MAIL_DATE_FORMAT = 'Y-m-d H:i:s P (e)';
 
@@ -194,6 +216,9 @@ final class StatusAgent extends AbstractHilosAgent
     private int $publicDatabaseRetryAt = 0;
     private int $publicAttemptAt = 0;
     private int $publicHeartbeatAttemptAt = 0;
+    // A test-aged heartbeat holds every publication of this owner until test:status:heartbeat:now or a restart
+    // (HIL-1856). Private and meant to die with the instance: nobody else reads it, so it is not Hilos::$rt.
+    private bool $publicHeld = false;
     private ?int $publicHistoryExpiryAt = null;
     private ?string $publicFailure = null;
     private int $publicPollIntervalSeconds;
@@ -244,6 +269,7 @@ final class StatusAgent extends AbstractHilosAgent
         $this->publicDatabaseRetryAt = 0;
         $this->publicAttemptAt = 0;
         $this->publicHeartbeatAttemptAt = 0;
+        $this->publicHeld = false;
         $this->publicHistoryExpiryAt = null;
         $this->publicFailure = null;
         $this->maintenanceStore = new StatusMaintenanceObservationStore();
@@ -439,6 +465,37 @@ final class StatusAgent extends AbstractHilosAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Answers the test-only commands that bring a Status moment to now (HIL-1856), once on every path.
+     *
+     * The names of {@see self::AGENT_COMMANDS}; anything else gets an error reply rather than
+     * silence, because the socket parks the caller until it is answered. A failure the handler did
+     * not word itself is answered with its own text: the console is read by whoever runs the stand.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        try {
+            $reply = match ($data->command) {
+                CliCommands::STATUS_TEST_HEARTBEAT_STALE => $this->ageHeartbeat($data->correlationId),
+                CliCommands::STATUS_TEST_HEARTBEAT_NOW => $this->heartbeatNow($data->correlationId),
+                CliCommands::STATUS_TEST_WORK_START => $this->startWorkNow($data),
+                default => CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"),
+            };
+        } catch (WiringRefusal $failure) {
+            $refusal = $this->statusWriteRefusal($failure);
+            $reply = CommandReplyDTO::error($data->correlationId, $refusal->errorDetail ?? $refusal->reason);
+        } catch (Throwable $failure) {
+            $refusal = $this->statusWriteRefusal($failure);
+            $reply = CommandReplyDTO::error($data->correlationId, $refusal->errorDetail ?? $refusal->reason);
+        }
+        $this->replyToCommand($reply);
     }
 
     /**
@@ -734,7 +791,7 @@ final class StatusAgent extends AbstractHilosAgent
         try {
             $this->refreshFreeze();
             if ($this->wasFrozen || Hilos::$db === null) {
-                return ActionRefusal::said('Status changes are unavailable during maintenance or while runtime state is unavailable.');
+                return ActionRefusal::said(self::CHANGES_UNAVAILABLE);
             }
             $action = match (true) {
                 $ask instanceof StatusScheduleWorkSignalData => HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE,
@@ -762,17 +819,12 @@ final class StatusAgent extends AbstractHilosAgent
                 }
                 if (!isset(Hilos::$db->statusWorks[$ask->workId])
                     || Hilos::$db->statusWorks[$ask->workId]->publicId !== $ask->publicId) {
-                    throw new ValidationException('This maintenance announcement no longer exists. Refresh the list.');
+                    throw new ValidationException(self::WORK_GONE);
                 }
                 if ($ask instanceof StatusCancelWorkSignalData && Hilos::$db->statusWorks[$ask->workId]->canceledAt !== null) {
                     return;
                 }
-                if (Hilos::$db->statusWorks[$ask->workId]->canceledAt !== null
-                    || Hilos::$db->statusWorks[$ask->workId]->consumedAt !== null
-                    || Hilos::$db->statusWorks[$ask->workId]->expiredAt !== null
-                    || Hilos::$db->statusWorks[$ask->workId]->endsAt <= $nowMs) {
-                    throw new ValidationException('This maintenance announcement was canceled, started or expired. Refresh the list.');
-                }
+                $this->assertWorkUnfinished(Hilos::$db->statusWorks[$ask->workId], $nowMs);
                 if (Hilos::$db->statusWorks[$ask->workId]->version !== $ask->expectedVersion) {
                     throw new ValidationException(
                         'This maintenance announcement changed in another window. Review its current values before saving.',
@@ -814,6 +866,58 @@ final class StatusAgent extends AbstractHilosAgent
             return $this->statusWriteRefusal($failure);
         }
         return null;
+    }
+
+    /**
+     * Runs {@see CliCommands::STATUS_TEST_WORK_START}: moves an announced work's start to now (HIL-1856).
+     *
+     * Passes the threshold of an administrator's write ({@see workWrite()}): nothing under a freeze,
+     * the maintenance reconciliation first, then one transaction and the item's own change action,
+     * and the public projection is read again after the commit. The version goes up by one only
+     * when the start actually moves: a work whose start is already this second is no change to
+     * that action, which writes nothing and keeps the version the reply then carries. It
+     * skips the "future start" rule, which is what the command exists for, and the subscribers'
+     * mail: this moves a test's clock, it does not change what was announced. The new start is now
+     * rounded down to a whole second, as every stored work moment is.
+     *
+     * @param CommandRequestDTO $data Command request carrying the work's public id
+     * @return CommandReplyDTO The public id, new start and version, or the refusal in the administrator's words
+     * @throws HilosException When runtime wiring, reconciliation or storage refuses the write
+     * @throws Throwable Whatever the transaction raises, preserved through its rollback
+     */
+    private function startWorkNow(CommandRequestDTO $data): CommandReplyDTO
+    {
+        $publicId = $data->payload[StatusTestCommandConstants::FIELD_PUBLIC_ID] ?? null;
+        if (!is_string($publicId) || $publicId === '') {
+            return CommandReplyDTO::error($data->correlationId, 'Name the maintenance announcement by its public id.');
+        }
+        $this->refreshFreeze();
+        if ($this->wasFrozen || Hilos::$db === null) {
+            return CommandReplyDTO::error($data->correlationId, self::CHANGES_UNAVAILABLE);
+        }
+        $this->reconcileMaintenanceBeforeWrite(TimeHelper::nowMs());
+        $started = Database::transaction(DatabaseNames::PRIMARY, function () use ($publicId): array {
+            $nowMs = TimeHelper::nowMs();
+            $work = Hilos::$db->statusWorks->findByPublicId($publicId);
+            if ($work === null) {
+                throw new ValidationException(self::WORK_GONE);
+            }
+            $this->assertWorkUnfinished($work, $nowMs);
+            $startsAt = intdiv($nowMs, TimeConstants::MS_PER_SECOND) * TimeConstants::MS_PER_SECOND;
+            $this->assertWorkWindowAvailable($startsAt, $work->endsAt, $work->id);
+            $before = StatusPublicWork::fromWork($work);
+            $work->actions->change($before->title, $before->description, $startsAt, $before->endsAt, $nowMs, $before->componentKeys);
+            Database::afterCommit(function (): void {
+                $this->publicReadPending = true;
+            });
+            $this->invalidatePublicAfterCommit();
+            return [
+                StatusTestCommandConstants::FIELD_PUBLIC_ID => $publicId,
+                StatusTestCommandConstants::FIELD_STARTS_AT => Hilos::$db->statusWorks[$work->id]->startsAt,
+                StatusTestCommandConstants::FIELD_VERSION => Hilos::$db->statusWorks[$work->id]->version,
+            ];
+        });
+        return CommandReplyDTO::ok($data->correlationId, $started);
     }
 
     /**
@@ -866,6 +970,18 @@ final class StatusAgent extends AbstractHilosAgent
     {
         if (Hilos::$db->statusWorks->conflictingWindow($startsAt, $endsAt, $excludeId) !== null) {
             throw new ValidationException('This maintenance window overlaps another announcement. Choose a different time.');
+        }
+    }
+
+    /**
+     * @param StatusWork $work Announcement about to be written
+     * @param int $nowMs Server clock in UTC epoch milliseconds
+     * @throws ValidationException When the work was canceled, has started or expired, or its window is over
+     */
+    private function assertWorkUnfinished(StatusWork $work, int $nowMs): void
+    {
+        if ($work->canceledAt !== null || $work->consumedAt !== null || $work->expiredAt !== null || $work->endsAt <= $nowMs) {
+            throw new ValidationException('This maintenance announcement was canceled, started or expired. Refresh the list.');
         }
     }
 
@@ -929,7 +1045,7 @@ final class StatusAgent extends AbstractHilosAgent
         try {
             $this->refreshFreeze();
             if ($this->wasFrozen) {
-                return ActionRefusal::said('Status changes are unavailable during maintenance or while runtime state is unavailable.');
+                return ActionRefusal::said(self::CHANGES_UNAVAILABLE);
             }
             $this->reconcileMaintenanceBeforeWrite(TimeHelper::nowMs());
             Database::transaction(DatabaseNames::PRIMARY, function () use ($ask): void {
@@ -1442,14 +1558,74 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
+     * Runs {@see CliCommands::STATUS_TEST_HEARTBEAT_STALE}: publishes the last pair's heartbeat aged past
+     * the reader's stale limit, sends the hint and holds this owner's publication (HIL-1856).
+     *
+     * The hold is what keeps the aged moment: the next ordinary heartbeat counts from it and would
+     * replace it on the following tick, and a stopping daemon could still publish once. Neither the
+     * heartbeat nor the content is published again until {@see heartbeatNow()} or this owner's restart.
+     *
+     * @param string $correlationId Command correlation id
+     * @return CommandReplyDTO The published aliveAt, or the refusal when no coherent pair is published
+     * @throws InvalidArgumentException When the hint cannot be queued
+     */
+    private function ageHeartbeat(string $correlationId): CommandReplyDTO
+    {
+        try {
+            $receipt = $this->publicFiles->publishAgedHeartbeat(
+                TimeHelper::nowMs() - $this->publicStaleAfterSeconds * TimeConstants::MS_PER_SECOND - self::TEST_STALE_MARGIN_MS,
+            );
+        } catch (StatusException $failure) {
+            return CommandReplyDTO::error($correlationId, $failure->getMessage());
+        }
+        $this->publicHeld = true;
+        $this->sendToAllConnected(HilosSignalConstants::STATUS_FILES_CHANGED, new StatusFilesChangedSignalData());
+        return CommandReplyDTO::ok($correlationId, [StatusTestCommandConstants::FIELD_ALIVE_AT => $receipt->aliveAt]);
+    }
+
+    /**
+     * Runs {@see CliCommands::STATUS_TEST_HEARTBEAT_NOW}: releases the hold and runs the tick's own
+     * publication step at once, with the heartbeat due (HIL-1856).
+     *
+     * The step is preceded by what precedes it in {@see tickAt()}: the maintenance observation and
+     * the freeze are read first, so a freeze that began after the last tick is what the pair
+     * shows, its period included, and no database read starts under it. Nothing beside is special:
+     * it publishes the heartbeat at now by its ordinary path, sends the hint itself, works the same
+     * under a freeze, and the next natural heartbeat follows a full interval later.
+     *
+     * @param string $correlationId Command correlation id
+     * @return CommandReplyDTO The published aliveAt, or the refusal when the step published nothing
+     * @throws HilosException When declarations, source wiring, represented runtime writes or hint delivery are refused
+     */
+    private function heartbeatNow(string $correlationId): CommandReplyDTO
+    {
+        $this->publicHeld = false;
+        $this->publicHeartbeatAttemptAt = 0;
+        $this->publicFiles->makeHeartbeatDue();
+        $nowMs = TimeHelper::nowMs();
+        $this->advanceMaintenance($nowMs);
+        $this->refreshFreeze();
+        $receipt = $this->advancePublic($nowMs);
+        if ($receipt === null) {
+            return CommandReplyDTO::error($correlationId, StatusPublicFiles::NO_PUBLIC_PAIR);
+        }
+        return CommandReplyDTO::ok($correlationId, [StatusTestCommandConstants::FIELD_ALIVE_AT => $receipt->aliveAt]);
+    }
+
+    /**
      * One bounded build and serialization portion, independent of visitors and machine early returns.
      * Read failures retain only sanitized history. A failed write keeps its publisher retry state.
+     * While a test-aged heartbeat holds publication (HIL-1856) it builds, writes and beats nothing.
      *
      * @param int $nowMs Local publication clock
+     * @return ?StatusPublicHeartbeat Receipt of the pair or heartbeat this portion published, or null
      * @throws HilosException When declarations, source wiring or hint delivery are refused
      */
-    private function advancePublic(int $nowMs): void
+    private function advancePublic(int $nowMs): ?StatusPublicHeartbeat
     {
+        if ($this->publicHeld) {
+            return null;
+        }
         $available = !$this->wasFrozen && Hilos::$db !== null && $nowMs >= $this->publicDatabaseRetryAt;
         if ($available !== $this->publicSourceAvailable) {
             $this->publicSourceAvailable = $available;
@@ -1460,8 +1636,9 @@ final class StatusAgent extends AbstractHilosAgent
             $this->publicInvalidated = true;
         }
         if ($nowMs < $this->publicAttemptAt) {
-            return;
+            return null;
         }
+        $receipt = null;
         try {
             if ($this->publicInvalidated) {
                 $this->publicBuilder->reset();
@@ -1530,6 +1707,7 @@ final class StatusAgent extends AbstractHilosAgent
             $this->publicAttemptAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
             $this->reportPublicFailure($failure);
         }
+        return $receipt;
     }
 
     /**

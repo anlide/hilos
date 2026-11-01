@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -17,6 +18,8 @@ use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\State\Item\HilosStatusMaintenance;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Status\Exception\StatusException;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusPublicCandidate;
@@ -30,6 +33,7 @@ use Hilos\Status\StatusPublicSnapshot;
 use Hilos\Status\StatusPublicSnapshotBuilder;
 use Hilos\Status\StatusPublicUpdate;
 use Hilos\Status\StatusSnapshot;
+use Hilos\Status\StatusTestCommandConstants;
 use Hilos\Tests\Unit\Status\StatusReadTestCase;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -235,6 +239,90 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         self::assertNull($files->heartbeat(1667));
         self::assertSame(1668, $files->heartbeat(1668)->aliveAt);
         self::assertSame(['pollIntervalSeconds' => 999, 'staleAfterSeconds' => 1], $this->readStatus()['config']);
+    }
+
+    public function testAgedHeartbeatKeepsTheRevisionNeedsACoherentPairAndCountsTheCadenceFromItself(): void
+    {
+        $files = new StatusPublicFiles();
+        try {
+            $files->publishAgedHeartbeat(1000);
+            self::fail('No heartbeat can be aged before a coherent pair exists');
+        } catch (StatusException $failure) {
+            self::assertSame(StatusPublicFiles::NO_PUBLIC_PAIR, $failure->getMessage());
+        }
+        self::assertFalse(is_file($this->path . '/' . StatusPublicFiles::HEARTBEAT_FILENAME));
+        $this->publish($files, $this->publicSnapshot(), 200000);
+        $statusBytes = Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read();
+        $aged = $files->publishAgedHeartbeat(79000);
+        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 79000], $aged->toArray());
+        self::assertSame($aged->toArray(), $this->readHeartbeat());
+        self::assertSame($statusBytes, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
+        self::assertSame(200000, $files->heartbeat(200000)->aliveAt, 'The ordinary cadence counts from the aged moment');
+    }
+
+    public function testHeartbeatMadeDuePublishesAtOnceAndTheNextOneFollowsAFullInterval(): void
+    {
+        $files = new StatusPublicFiles();
+        $files->makeHeartbeatDue();
+        self::assertNull($files->heartbeat(1000), 'Due is not a pair');
+        $this->publish($files, $this->publicSnapshot(), 100000);
+        self::assertNull($files->heartbeat(100001), 'A whole pair clears the due mark');
+        $files->makeHeartbeatDue();
+        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 100001], $files->heartbeat(100001)->toArray());
+        self::assertNull($files->heartbeat(100001), 'The heartbeat it published spends the due mark');
+        self::assertNull($files->heartbeat(130000));
+        self::assertSame(130001, $files->heartbeat(130001)->aliveAt);
+        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 130001], $this->readHeartbeat());
+    }
+
+    public function testFrozenOwnerAgesItsHeartbeatPastStaleHoldsEveryPublicationAndBeatsAgainWhenAsked(): void
+    {
+        $snapshot = $this->publicSnapshot();
+        $database = Hilos::$db;
+        $settings = Hilos::$setting;
+        Hilos::$db = null;
+        Hilos::$setting = null;
+        try {
+            $this->publish(new StatusPublicFiles(), $snapshot);
+            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
+            $this->owner->onStart();
+            $first = $this->readStatus();
+            $this->drain();
+            $staleMs = Hilos::$env[EnvConstants::STATUS_STALE_AFTER_SECONDS]->int() * 1000 + 1000;
+
+            $before = TimeHelper::nowMs();
+            [$reply, $hints] = $this->command(CliCommands::STATUS_TEST_HEARTBEAT_STALE);
+            $after = TimeHelper::nowMs();
+            self::assertTrue($reply->isOk());
+            $aged = $reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT];
+            self::assertGreaterThanOrEqual($before - $staleMs, $aged);
+            self::assertLessThanOrEqual($after - $staleMs, $aged);
+            self::assertSame(['schemaVersion' => 2, 'revision' => $first['revision'], 'aliveAt' => $aged], $this->readHeartbeat());
+            self::assertSame($first, $this->readStatus());
+            $this->assertOneFilesHint($hints);
+
+            // The aged heartbeat is long past the cadence, so only the hold keeps the next tick from beating.
+            $this->owner->tickAt(TimeHelper::nowMs());
+            self::assertSame($aged, $this->readHeartbeat()['aliveAt'], 'The hold keeps the aged heartbeat');
+            self::assertSame($first, $this->readStatus());
+            self::assertSame([], array_filter($this->drain(), static fn (object $frame): bool =>
+                $frame->signalName->getName() === HilosSignalConstants::STATUS_FILES_CHANGED));
+
+            $before = TimeHelper::nowMs();
+            [$reply, $hints] = $this->command(CliCommands::STATUS_TEST_HEARTBEAT_NOW);
+            $after = TimeHelper::nowMs();
+            self::assertTrue($reply->isOk());
+            $fresh = $reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT];
+            self::assertGreaterThanOrEqual($before, $fresh);
+            self::assertLessThanOrEqual($after, $fresh);
+            self::assertSame($fresh, $this->readHeartbeat()['aliveAt']);
+            self::assertSame($this->readStatus()['revision'], $this->readHeartbeat()['revision']);
+            self::assertSame(['maintenance', 'maintenance'], array_column($this->readStatus()['components'], 'state'));
+            $this->assertOneFilesHint($hints);
+        } finally {
+            Hilos::$db = $database;
+            Hilos::$setting = $settings;
+        }
     }
 
     public function testInvalidEnvironmentNeverEnablesPublisher(): void
@@ -835,6 +923,32 @@ final class StatusPublicFilesTest extends StatusReadTestCase
             Hilos::$setting = $settings;
             Hilos::$rt = $runtime;
         }
+    }
+
+    /**
+     * @param string $command Test-only Status command
+     * @param array<string, mixed> $payload Request payload
+     * @return array{0: CommandReplyDTO, 1: list<object>} The owner's one reply, and every other frame it queued
+     */
+    private function command(string $command, array $payload = []): array
+    {
+        $this->owner->onSignalCommand(new CommandRequestDTO('cid-status', $command, $payload), 'cli', $command);
+        $frames = $this->drain();
+        $replies = array_values(array_filter($frames, static fn (object $frame): bool =>
+            $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY));
+        self::assertCount(1, $replies);
+        self::assertInstanceOf(CommandReplyDTO::class, $replies[0]->data);
+        self::assertSame('cid-status', $replies[0]->data->correlationId);
+        return [$replies[0]->data, array_values(array_filter($frames, static fn (object $frame): bool =>
+            $frame->signalType->getType() !== SignalTypeConstants::COMMAND_REPLY))];
+    }
+
+    /** @param list<object> $frames Frames beside a command reply */
+    private function assertOneFilesHint(array $frames): void
+    {
+        self::assertCount(1, $frames);
+        self::assertSame(HilosSignalConstants::STATUS_FILES_CHANGED, $frames[0]->signalName->getName());
+        self::assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
     }
 
     /**

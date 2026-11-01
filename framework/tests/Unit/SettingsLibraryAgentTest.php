@@ -32,6 +32,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -65,6 +66,9 @@ final class SettingsLibraryAgentTest extends TestCase
 
     /** @var string What the settings table says when it is not registered in the table context */
     private const string NO_TABLE = 'Settings table is not registered in the table context';
+
+    /** @var string Correlation id a test settings write is answered under */
+    private const string TEST_WRITE_CORRELATION_ID = 'corr-test-write';
 
     private string $logFile = '';
 
@@ -426,6 +430,86 @@ final class SettingsLibraryAgentTest extends TestCase
     }
 
     /**
+     * A key outside the catalog's examples refuses the whole batch before its first pair is written (HIL-1856).
+     *
+     * The second key is in the catalog, and that is not enough: only the examples are let in. The
+     * fixture has no table, so a batch that wrote before judging would have been answered with the
+     * table's refusal of its first pair instead.
+     */
+    public function testATestWriteNamingAKeyOtherThanTheExamplesIsRefusedBeforeAnyWrite(): void
+    {
+        $reply = $this->testWrite([
+            [
+                SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
+                SettingsCommandConstants::FIELD_VALUE => 'delivery-1',
+            ],
+            [
+                SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_CHAT_BOT_TIMEOUT_SEC,
+                SettingsCommandConstants::FIELD_VALUE => '3',
+            ],
+        ]);
+
+        $this->assertFalse($reply->isOk());
+        $this->assertSame('Only the example settings keys can be written by this test command.', $reply->payload['message'] ?? null);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}> What a request carries under the pairs field when it is not a batch
+     */
+    public static function unreadableTestWrites(): array
+    {
+        $pair = [
+            SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
+            SettingsCommandConstants::FIELD_VALUE => 'delivery-1',
+        ];
+
+        return [
+            'no field' => [null],
+            'no pairs' => [[]],
+            'thirty-three pairs' => [array_fill(0, 33, $pair)],
+            'pairs not in a list' => [['first' => $pair]],
+            'a pair as one text' => [['example_string=delivery-1']],
+            'a pair without its value' => [[[SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING]]],
+            'a value that is not text' => [[[
+                SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
+                SettingsCommandConstants::FIELD_VALUE => 2,
+            ]]],
+        ];
+    }
+
+    /**
+     * A batch is one to thirty-two key and value pairs, both text, or it is refused before any write (HIL-1856).
+     *
+     * @param mixed $writes What the request carries under the pairs field
+     */
+    #[DataProvider('unreadableTestWrites')]
+    public function testATestWriteThatIsNotOneToThirtyTwoPairsIsRefused(mixed $writes): void
+    {
+        $reply = $this->testWrite($writes);
+
+        $this->assertFalse($reply->isOk());
+        $this->assertSame('A test settings write carries 1 to 32 key and value pairs.', $reply->payload['message'] ?? null);
+    }
+
+    /**
+     * The first refused write ends the batch, and the one answer names its pair and the reason (HIL-1856).
+     *
+     * Thirty-two pairs is a batch the library takes, so the judging lets it through, and the
+     * fixture's missing table refuses the first write. Nothing follows the answer: the batch does
+     * not pass through settle(), so no handover answer and no installation-wide frame is sent.
+     */
+    public function testTheFirstRefusedWriteOfATestWriteIsNamedByItsPair(): void
+    {
+        $reply = $this->testWrite(array_fill(0, 32, [
+            SettingsCommandConstants::FIELD_KEY => SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
+            SettingsCommandConstants::FIELD_VALUE => 'true',
+        ]));
+
+        $this->assertFalse($reply->isOk());
+        $this->assertSame('Write 1 was refused: ' . self::NO_TABLE, $reply->payload['message'] ?? null);
+    }
+
+    /**
      * The library itself stamps nothing: handed an ask outside a receipt, its write runs as
      * nobody's. A second, hand-written stamp here is what the seam exists to retire.
      *
@@ -491,6 +575,29 @@ final class SettingsLibraryAgentTest extends TestCase
         $this->assertInstanceOf(HandoverAnswerSignalData::class, $data->data);
 
         return $data->data;
+    }
+
+    /**
+     * Hands one test settings write to the library the way the command channel would, and reads its one reply.
+     *
+     * @param mixed $writes What the request carries under the pairs field
+     * @return CommandReplyDTO The reply, after which nothing else is queued
+     */
+    private function testWrite(mixed $writes): CommandReplyDTO
+    {
+        new SettingsLibraryAgent()->onSignalCommand(new CommandRequestDTO(
+            correlationId: self::TEST_WRITE_CORRELATION_ID,
+            command: CliCommands::SETTINGS_TEST_WRITE,
+            payload: [SettingsCommandConstants::FIELD_WRITES => $writes],
+        ), 'cli', CliCommands::SETTINGS_TEST_WRITE);
+
+        $signal = $this->queued();
+        $this->assertSame(SignalTypeConstants::COMMAND_REPLY, $signal->signalType->getType());
+        $this->assertInstanceOf(CommandReplyDTO::class, $signal->data);
+        $this->assertSame(self::TEST_WRITE_CORRELATION_ID, $signal->data->correlationId);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'A test write is answered once and sends nothing else');
+
+        return $signal->data;
     }
 }
 

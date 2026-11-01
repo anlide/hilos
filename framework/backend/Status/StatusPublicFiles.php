@@ -26,6 +26,8 @@ final class StatusPublicFiles
     public const string STATUS_FILENAME = 'status.json';
     public const string HEARTBEAT_FILENAME = 'heartbeat.json';
     public const int MAX_HEARTBEAT_INTERVAL_MS = 30000;
+    /** Refusal of a test heartbeat command while no coherent pair is published (HIL-1856). */
+    public const string NO_PUBLIC_PAIR = 'No public Status pair is published yet.';
 
     /** At most this many JSON fragments are visited in one serialization portion. */
     private const int MAX_FRAGMENTS_PER_ADVANCE = 64;
@@ -40,6 +42,8 @@ final class StatusPublicFiles
     private bool $pairCoherent = false;
     private bool $statusInstalled = false;
     private bool $publicationFailed = false;
+    /** Set by a test command so the next heartbeat check answers "due" whatever the cadence (HIL-1856) */
+    private bool $heartbeatDue = false;
     private ?FsFile $statusTemporary = null;
     private ?FsFile $heartbeatTemporary = null;
     /** @var ?Generator<int, string> Bounded serialization cursor over detached values */
@@ -166,6 +170,7 @@ final class StatusPublicFiles
             $this->pairCoherent = true;
             $this->publicationFailed = false;
             $this->lastHeartbeat = $receipt;
+            $this->heartbeatDue = false;
             return $receipt;
         } catch (FsException | JsonException | RandomException | StatusException $exception) {
             // A failed append may have written a prefix. Restart that temp file on the next
@@ -179,6 +184,8 @@ final class StatusPublicFiles
     /**
      * Private staging may take many passes; the last coherent pair stays alive meanwhile.
      * A failed attempt or an installed mismatched status blocks that old heartbeat until repair.
+     * After {@see makeHeartbeatDue()} the cadence is not asked once; the next interval counts
+     * from the heartbeat this publishes.
      *
      * @param int $nowMs Current epoch milliseconds UTC
      * @return ?StatusPublicHeartbeat Successful heartbeat receipt, or null before the deadline/without a coherent pair
@@ -190,16 +197,48 @@ final class StatusPublicFiles
             throw new StatusException('Public Status requires a valid heartbeat moment.');
         }
         if ($this->publicationFailed || !$this->pairCoherent || $this->published === null || $this->lastHeartbeat === null
-            || $nowMs - $this->lastHeartbeat->aliveAt < $this->heartbeatIntervalMs) {
+            || (!$this->heartbeatDue && $nowMs - $this->lastHeartbeat->aliveAt < $this->heartbeatIntervalMs)) {
             return null;
         }
         try {
             $receipt = $this->publishHeartbeat($this->published->revision, $nowMs);
             $this->lastHeartbeat = $receipt;
+            $this->heartbeatDue = false;
             return $receipt;
         } catch (FsException | JsonException | RandomException $exception) {
             throw new StatusException('Cannot publish public Status heartbeat.', 0, $exception);
         }
+    }
+
+    /**
+     * Publishes the last coherent pair's heartbeat at a moment the caller aged (test-only, HIL-1856).
+     *
+     * The heartbeat a reader sees is this one, and so is the one the cadence counts from: the
+     * owner's next ordinary heartbeat would overwrite it at once, which is why the owner holds its
+     * publication after calling this. The status file is not touched.
+     *
+     * @param int $aliveAt Aged publication moment in epoch milliseconds UTC
+     * @return StatusPublicHeartbeat Receipt of the aged heartbeat
+     * @throws StatusException When no coherent pair is published, or the heartbeat cannot be written
+     */
+    public function publishAgedHeartbeat(int $aliveAt): StatusPublicHeartbeat
+    {
+        if ($this->publicationFailed || !$this->pairCoherent || $this->published === null || $this->lastHeartbeat === null) {
+            throw new StatusException(self::NO_PUBLIC_PAIR);
+        }
+        try {
+            $receipt = $this->publishHeartbeat($this->published->revision, $aliveAt);
+        } catch (FsException | JsonException | RandomException $exception) {
+            throw new StatusException('Cannot publish public Status heartbeat.', 0, $exception);
+        }
+        $this->lastHeartbeat = $receipt;
+        return $receipt;
+    }
+
+    /** Makes the next {@see heartbeat()} publish whatever its cadence says; the next pair or heartbeat clears it (HIL-1856). */
+    public function makeHeartbeatDue(): void
+    {
+        $this->heartbeatDue = true;
     }
 
     /**

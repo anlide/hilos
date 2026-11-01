@@ -238,6 +238,80 @@ rotating the session token or sending a registration acknowledgement. Success pr
 with `sessionId` and `userId`; it does not print the session token. It refuses an already
 authenticated session rather than taking it over.
 
+### Status moment and settings write commands
+
+Four commands bring a moment to now, or make a write at a moment the test chooses, so a
+spec waits for no production clock (HIL-1856). Each is the per-feature shape of
+[Time-based features](#time-based-features-no-universal-clock): the CLI sends the request
+and prints the reply, and the agent that owns the state does the work.
+
+| Command | Site | Description |
+|---|---|---|
+| `test:status:heartbeat:stale` | `daemon` | Publish the Status heartbeat aged past the reader's stale limit, and hold the owner's publication |
+| `test:status:heartbeat:now` | `daemon` | Release that hold and publish a heartbeat now |
+| `test:status:work:start` | `daemon` | Move an announced maintenance work's start to now, by its public id |
+| `test:settings:write` | `daemon` | Write example settings keys through the settings library, one write per pair, in order |
+
+```text
+test:status:heartbeat:stale
+test:status:heartbeat:now
+test:status:work:start <publicId>
+test:settings:write <key>=<value> [<key>=<value> ...]
+```
+
+The first three are answered by the Status owner (`HILOS_STATUS`, one per cluster), which
+alone publishes the public files and writes the announcements. What each does there, why the
+owner holds its publication after the stale command, and what the moved start leaves untouched
+is in [status-page.md](../architecture/status-page.md#test-only-moments). Each prints one
+line with the moment it caused, in epoch milliseconds, and exits 0:
+
+```text
+Aged the Status heartbeat: alive at epoch ms <aliveAt>
+Published a Status heartbeat now: alive at epoch ms <aliveAt>
+Started maintenance announcement <publicId>: starts at epoch ms <startsAt>, version <version>
+```
+
+The two heartbeat commands take no argument. `test:status:heartbeat:stale` refuses with
+`No public Status pair is published yet.` (exit 1) when the owner has no coherent pair to age.
+`test:status:heartbeat:now` refuses with the same sentence whenever its publication step
+publishes nothing: no coherent pair is published yet, but also a retry barrier left by a failed
+file write, or a database read that failed in that portion. `test:status:work:start`
+refuses a blank or missing public id itself, with usage and exit 2, and the owner refuses in
+the administrator's words: the announcement no longer exists; it was canceled, started or
+expired; the new window would overlap another announcement; or Status changes are
+unavailable during maintenance.
+
+**A spec that ages the heartbeat owns the release.** The owner keeps the aged moment only by
+publishing nothing more, so the spec that called `test:status:heartbeat:stale` calls
+`test:status:heartbeat:now` in its `finally`
+([Preconditions — test commands with owned cleanup](../frontend/testing-strategy.md#preconditions--test-commands-with-owned-cleanup)).
+The e2e helpers are `staleStatusHeartbeat`, `beatStatusHeartbeat` and `startStatusWork` in
+`framework/frontend/scripts/statusMoments.mjs`, each taking an optional `{host}`.
+
+`test:settings:write` is answered by the settings library, the one writer of settings. Each
+argument is split at its first `=`, so a value may itself carry `=`, and the pairs travel
+in the order given. The library judges the batch whole before the first write:
+1 to 32 pairs of two strings, and only the catalog's example keys `example_string`,
+`example_integer` and `example_boolean`. Then each pair is written by the path the settings
+screen's add takes, so a pair is one transaction and one table change of its own, and the
+first refused write ends the batch: the refusal names the pair's number and why, and the pairs
+before it stay written. Success prints one line per pair, so a spec can line what it sees up
+with when each write happened:
+
+```text
+Wrote <key> = <value>, accepted at epoch ms <acceptedAt>
+```
+
+A foreign key is refused with `Only the example settings keys can be written by this test
+command.` and an empty, longer or malformed batch with `A test settings write carries 1 to 32
+key and value pairs.` — in both cases before anything is written. The policy keys — the
+second factor, its trust term, impersonation — are not let in: they answer through the
+library's own settle path, with a deferred answer and installation-wide frames, which a batch
+does not repeat. The e2e helper is `writeSettings` in
+`framework/frontend/scripts/settingsWrites.mjs`; `writeDeliverySettings` in
+`framework/frontend/e2e/deliverySettings.ts` wraps it for the delivery window specs and times
+each write on the runner's clock.
+
 ### Time-based features: no universal clock
 
 There is deliberately **no injectable clock, `now()` override, or global time-mock** in the
@@ -253,7 +327,10 @@ heartbeat and the threshold that calls it stale, a cooldown or a rate limit, a r
 a delay before an answer. The command ages the one moment the feature reads — or releases what
 it holds — so the logic fires now. For example `test:account:force-purge` writes the deletion
 timestamp into the past so the scheduled purge runs immediately. Write these per-feature and
-carefully; never generalise them into a shared time-travel utility.
+carefully; never generalise them into a shared time-travel utility. The Status heartbeat and
+its stale limit, and an announced maintenance start, have theirs, with a batch of settings
+writes beside them: see
+[Status moment and settings write commands](#status-moment-and-settings-write-commands).
 
 **The command also stamps the moved moment where its reader reads it.** A browser counts down
 from the moment the server sent it, and a pause shortened in advance kills the very state the
@@ -281,10 +358,9 @@ new production action". Waiting a real clock or shortening a stand's clock inste
 deviation the owner approves in the leaf's contract
 ([../../../agents.md](../../../agents.md), "Contract approval gate").
 
-Specs written before this rule still wait clocks: the delivery window, the Status heartbeat and
-staleness with their fast compose overlay and the split binance phases, node reports, cron
-firings, the OAuth agent's request deadline, waited out through a stand gateway delay or hold,
-and socket silence on a shortened stand clock. They are debt, not a pattern to copy.
+Specs written before this rule still wait clocks: node reports, cron firings, the OAuth agent's
+request deadline, waited out through a stand gateway delay or hold, and socket silence on a
+shortened stand clock. They are debt, not a pattern to copy.
 
 ## Database-free commands
 
@@ -312,6 +388,9 @@ beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reaso
 master answers them out of memory, and a partitioned node is exactly where they are worth
 running), `test:notification:emit`, `test:user:create` and `test:session:bind` (the CLI sends
 each to its owning library and prints the reply; database work stays in the daemon),
+`test:status:heartbeat:stale`, `test:status:heartbeat:now`, `test:status:work:start` and
+`test:settings:write` (the same shape: the Status owner or the settings library answers and
+writes, and the CLI process has nothing to read or write — HIL-1856),
 `test:account:force-purge`, `test:verification:sweep`,
 `test:legal:hold`, `test:i18n:language:on <code>`, `test:i18n:language:off <code>`,
 `test:i18n:language:delete <code>`,

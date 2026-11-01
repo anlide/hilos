@@ -1,8 +1,9 @@
 """Real browserless Playwright CLI integration, beside the existing runner units.
 
 Like frontend/scripts/test/playwright-quarantine/run.mjs, only the Docker/stand
-boundary is substituted. Native collection, IDs, reporters, phases and subsequent
---last-failed reads execute for real. Synthetic output never escapes this check.
+boundary is substituted. The runner hands its selection to the native entry in
+one run; collection, IDs, reporters, the quarantine phase and the next
+--last-failed read execute for real. Synthetic output never escapes this check.
 """
 
 import json
@@ -18,15 +19,15 @@ import runner
 
 
 class NativeLastRunTest(unittest.TestCase):
-    def test_logical_invocation_native_state_and_next_selection(self):
+    def test_one_native_run_leaves_the_state_the_next_selection_reads(self):
         here = Path(__file__).resolve().parent
-        entry = here.parents[1] / "frontend/scripts/playwright-run.mjs"
-        reporter = here / "plan-reporter.mjs"
+        scripts = here.parents[1] / "frontend/scripts"
+        entry = scripts / "playwright-run.mjs"
+        reporter = scripts / "quarantine-plan-reporter.mjs"
         execute = subprocess.run
         with tempfile.TemporaryDirectory(prefix="hilos-status-cli-") as temporary:
             root = Path(temporary)
-            demo = root / "demo"
-            e2e = demo / "tests/e2e"
+            e2e = root / "demo/tests/e2e"
             shutil.copytree(here / "fixtures", e2e / "tests")
             shutil.move(e2e / "tests/playwright.config.ts", e2e / "playwright.config.ts")
             (e2e / "package.json").write_text('{"private":true}')
@@ -53,25 +54,20 @@ class NativeLastRunTest(unittest.TestCase):
                 output.append(result.stdout + result.stderr)
                 return result
 
-            def docker_boundary(command, **kwargs):
+            def docker_boundary(command, **_kwargs):
                 if "node" not in command:
                     return subprocess.CompletedProcess(command, 0)
-                arguments = command[command.index("node") + 2:]
-                arguments = [arg.replace("/status-suite/", str(state) + "/")
-                             .replace("../../../../framework/docker/standalone-status/plan-reporter.mjs",
-                                      str(reporter)) for arg in arguments]
                 extra = {}
                 for index, arg in enumerate(command):
                     if arg == "-e":
                         key, value = command[index + 1].split("=", 1)
-                        extra[key] = value.replace("/status-suite/", str(state) + "/")
-                return native(arguments, extra)
+                        extra[key] = value
+                return native(command[command.index("node") + 2:], extra)
 
             def invocation(failures, arguments=()):
                 environment["HILOS_STATUS_FIXTURE_FAIL"] = failures
                 counter.unlink(missing_ok=True)
-                with patch.object(runner.Path, "cwd", return_value=demo), \
-                        patch.object(runner.subprocess, "run", side_effect=docker_boundary), \
+                with patch.object(runner.subprocess, "run", side_effect=docker_boundary), \
                         patch.object(runner, "cycle") as cycle:
                     rc = runner.suite(state, ["--config=playwright.config.ts", *arguments])
                 cycle.assert_not_called()
@@ -108,7 +104,7 @@ class NativeLastRunTest(unittest.TestCase):
                         self.assertEqual(0, rc)
                         self.assertEqual(expected, {event["name"] for event in events})
                         self.assertEqual({"status": "passed", "failedTests": []}, last_run())
-                # A pointed Status invocation must replace the earlier ordinary failure.
+                # A pointed invocation replaces an earlier failure natively.
                 self.assertEqual(1, invocation("ordinary", ["ordinary.spec.ts"])[0])
                 rc, events = invocation("status", ["status.spec.ts"])
                 self.assertEqual(1, rc)
@@ -122,12 +118,13 @@ class NativeLastRunTest(unittest.TestCase):
                 self.assertEqual(1, rc)
                 self.assertEqual({"ordinary", "status", "quarantine"}, {event["name"] for event in events})
                 self.assertEqual({"quarantine"}, next_selection())
+                # A quarantined failure never turns the main verdict or its state red.
                 rc, events = invocation("quarantine")
                 self.assertEqual(0, rc, "\n".join(output))
                 self.assertEqual({"status": "passed", "failedTests": []}, last_run())
                 self.assertEqual({"ordinary", "status", "quarantine"}, next_selection())
                 self.assertTrue(any('"status":"failed"' in text for text in output if "hilos-quarantine:" in text))
-                for name in ("main", "status-main", "quarantine/chromium"):
+                for name in ("main", "quarantine/chromium"):
                     self.assertTrue((e2e / "playwright-report" / name / "index.html").exists())
                     self.assertTrue((e2e / "test-results" / name / ".last-run.json").exists())
                 rc, events = invocation("quarantine", ["--grep=@quarantine:"])
@@ -145,11 +142,9 @@ class NativeLastRunTest(unittest.TestCase):
                 rc, events = invocation("", ["--grep=no-original-test"])
                 self.assertEqual(1, rc)
                 self.assertEqual([], events)
-                self.assertEqual({"status": "failed", "failedTests": []}, last_run())
                 rc, events = invocation("", ["--grep=no-original-test", "--pass-with-no-tests"])
                 self.assertEqual(0, rc)
                 self.assertEqual([], events)
-                self.assertEqual({"status": "passed", "failedTests": []}, last_run())
             except BaseException:
                 print("\n".join("fixture | " + line for text in output for line in text.splitlines()))
                 raise
