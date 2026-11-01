@@ -347,6 +347,11 @@ export class App {
     [HilosPages.LEGAL]: lazyPage(() =>
       import('./views/hilos/legal/legal.js').then((module) => module.Legal),
     ),
+    [HilosPages.LEGAL_DOCUMENTS]: lazyPage(() =>
+      import('./views/hilos/legal/legal-documents.js').then(
+        (module) => module.LegalDocuments,
+      ),
+    ),
     [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
       import('./views/hilos/legal/legal-document.js').then(
         (module) => module.LegalDocument,

@@ -36,6 +36,7 @@ const ACCOUNT_SCREENS = [
   '/hilos/security/oauth',
   '/hilos/security/impersonation',
   '/hilos/legal',
+  '/hilos/legal/documents',
   '/hilos/legal/acceptances',
   '/hilos/legal/settings',
 ]

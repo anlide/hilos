@@ -7,37 +7,54 @@ import {
   signal,
 } from '@angular/core'
 import {
-  createHilosLegalDocumentsTable,
   createHilosLegalChecksTable,
+  createHilosLegalOverview,
   createHilosLegalSettingsTable,
+  describeHilosLegalCheck,
   HilosLegalRowKey,
   HilosLegalSettingKey,
-  HILOS_LEGAL_LAPSED_COPY,
-  LEGAL_CATALOG_REFUSAL_SECTION,
-  describeHilosLegalCheck,
+  HILOS_LEGAL_VALUE_COPY,
   hilosLegalLapsedHref,
   hilosLegalLapsedLabel,
+  LEGAL_CATALOG_REFUSAL_SECTION,
+  type HilosLegalOverview,
+  type HilosLegalSettingRow,
 } from '@hilos/core/admin/legal'
 import {
   HilosPages,
-  HILOS_TABLE_ACTIONS_KEY,
-  hilosLegalDocumentLabel,
-  resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
+  type HilosTableBody,
+  type TableViewportRow,
 } from '@hilos/core/base'
 import {
   HilosAdminPage,
+  HilosHideable,
   HilosLink,
+  HilosSkeleton,
   HilosTableCell,
+  HilosTableEmptyState,
   HilosViewportTable,
+  mirrorHilosSignal,
 } from '@hilos/angular/base'
 
-/** Read-only legal declarations and acceptance tallies. */
+/**
+ * The Legal Overview: the page answer's summary per document, the two
+ * settings read from the settings carrier, and the declaration checks. It
+ * holds no window of the documents table.
+ */
 @Component({
   selector: 'hilos-legal-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
+  imports: [
+    HilosAdminPage,
+    HilosHideable,
+    HilosLink,
+    HilosSkeleton,
+    HilosTableCell,
+    HilosTableEmptyState,
+    HilosViewportTable,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       @if (refusal() !== null) {
@@ -56,72 +73,188 @@ import {
           deploying it. This section records what is declared and who accepted
           it.
         </div>
-        <hilos-viewport-table [controller]="documents().controller">
-          <ng-template [hilosTableCell]="keys.rowKey" let-row
-            ><span
-              data-id="legal-document-row"
-              [attr.data-document]="row.rowKey"
-              class="fw-semibold"
-              >{{ documentLabel(row.rowKey) }}</span
-            >
-            @if (!row.declared) {
-              <span class="badge text-bg-warning ms-2">Not in code</span>
-            }
-          </ng-template>
-          <ng-template [hilosTableCell]="keys.revision" let-row>
-            @if (row.revision) {
-              <div>
-                {{ row.revision.publishedOn }} · {{ row.revision.significance }}
-              </div>
-              <div class="small text-body-secondary">
-                Effective from {{ row.revision.effectiveOn }}
-              </div>
-            } @else {
-              <span class="text-body-secondary">Not in code</span>
-            }
-          </ng-template>
-          <ng-template [hilosTableCell]="keys.covered" let-row
-            ><span data-id="legal-count-covered">{{
-              row.covered
-            }}</span></ng-template
+        <ng-template #noFallback></ng-template>
+        @if (overview(); as summary) {
+          <div
+            class="row row-cols-2 row-cols-lg-3 g-3 mb-3"
+            data-id="legal-overview"
           >
-          <ng-template [hilosTableCell]="keys.window" let-row
-            ><span data-id="legal-count-window">{{
-              row.window
-            }}</span></ng-template
-          >
-          <!-- The count of the people past the deadline opens them in the
-          people list (HIL-945); nobody to open, nothing to follow. -->
-          <ng-template [hilosTableCell]="keys.lapsed" let-row>
-            @if (row.lapsed > 0) {
-              <a
-                [hilosLink]="lapsedHref(row.rowKey)"
-                data-id="legal-count-lapsed-link"
-                [attr.data-document]="row.rowKey"
-                ><span data-id="legal-count-lapsed">{{ row.lapsed }}</span></a
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="legal-overview-documents"
               >
-            } @else {
-              <span data-id="legal-count-lapsed">{{ row.lapsed }}</span>
-            }
-            <span class="small text-body-secondary">{{
-              lapsedLabel()
-            }}</span></ng-template
-          >
-          <ng-template [hilosTableCell]="actionsKey" let-row
-            ><a
-              [hilosLink]="
-                path(pages.LEGAL_DOCUMENT, { documentKey: row.rowKey })
-              "
-              class="btn btn-sm btn-outline-secondary"
-              data-id="legal-document-open"
-              [attr.data-document]="row.rowKey"
-              >Open</a
-            ></ng-template
-          >
-        </hilos-viewport-table>
-        @if (hasDocuments()) {
+                <h2 class="small text-body-secondary fw-normal">Documents</h2>
+                <div class="fs-4 fw-semibold" data-id="legal-document-count">
+                  {{ summary.documentCount }}
+                </div>
+                <div class="small text-body-secondary">
+                  {{ documentLabels(summary) }}
+                </div>
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="legal-overview-window"
+              >
+                <h2 class="small text-body-secondary fw-normal">
+                  Waiting for acceptance
+                </h2>
+                @if (summary.documents.length) {
+                  <dl class="mb-0">
+                    @for (
+                      document of summary.documents;
+                      track document.document
+                    ) {
+                      <div
+                        class="d-flex flex-wrap justify-content-between gap-2"
+                        [attr.data-document]="document.document"
+                      >
+                        <dt class="small fw-normal">
+                          {{ document.documentLabel }}
+                        </dt>
+                        <dd
+                          class="fw-semibold mb-0"
+                          data-id="legal-count-window"
+                        >
+                          {{ document.window }}
+                        </dd>
+                      </div>
+                    }
+                  </dl>
+                } @else {
+                  <div class="fs-4 fw-semibold" data-id="legal-count-window">
+                    0
+                  </div>
+                }
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="legal-overview-lapsed"
+              >
+                <h2 class="small text-body-secondary fw-normal">
+                  {{ lapsedLabel() }}
+                </h2>
+                @if (summary.documents.length) {
+                  <dl class="mb-0">
+                    @for (
+                      document of summary.documents;
+                      track document.document
+                    ) {
+                      <div
+                        class="d-flex flex-wrap justify-content-between gap-2"
+                        [attr.data-document]="document.document"
+                      >
+                        <dt class="small fw-normal">
+                          {{ document.documentLabel }}
+                        </dt>
+                        <dd class="fw-semibold mb-0">
+                          @if (document.lapsed > 0) {
+                            <a
+                              [hilosLink]="lapsedHref(document.document)"
+                              data-id="legal-count-lapsed-link"
+                              ><span data-id="legal-count-lapsed">{{
+                                document.lapsed
+                              }}</span></a
+                            >
+                          } @else {
+                            <span data-id="legal-count-lapsed">{{
+                              document.lapsed
+                            }}</span>
+                          }
+                        </dd>
+                      </div>
+                    }
+                  </dl>
+                } @else {
+                  <div class="fs-4 fw-semibold" data-id="legal-count-lapsed">
+                    0
+                  </div>
+                }
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="legal-overview-newer-sets"
+              >
+                <h2 class="small text-body-secondary fw-normal">
+                  New framework sets
+                </h2>
+                <div class="fs-4 fw-semibold" data-id="legal-newer-set-count">
+                  {{ summary.newerSetCount }}
+                </div>
+                <div class="small text-body-secondary">
+                  Documents with a newer framework set available.
+                </div>
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="legal-overview-consent"
+              >
+                <h2 class="small text-body-secondary fw-normal">Consent</h2>
+                @if (consent(); as setting) {
+                  <div class="fs-4 fw-semibold">
+                    <hilos-hideable [value]="setting.value"
+                      ><ng-template let-shown>{{
+                        valueCopy(shown)
+                      }}</ng-template></hilos-hideable
+                    >
+                  </div>
+                } @else if (settingsBody() === 'unavailable') {
+                  <hilos-table-empty-state
+                    [controller]="carriers().settings.controller"
+                    kind="unavailable"
+                    [fallback]="noFallback"
+                  />
+                } @else {
+                  <hilos-skeleton />
+                }
+                <div class="small text-body-secondary">
+                  How people agree at registration.
+                </div>
+              </section>
+            </div>
+            <div class="col">
+              <section
+                class="border rounded-3 p-3 h-100"
+                data-id="legal-overview-refusal"
+              >
+                <h2 class="small text-body-secondary fw-normal">Refusal</h2>
+                @if (policy(); as setting) {
+                  <div class="fs-4 fw-semibold">
+                    <hilos-hideable [value]="setting.value"
+                      ><ng-template let-shown>{{
+                        valueCopy(shown)
+                      }}</ng-template></hilos-hideable
+                    >
+                  </div>
+                } @else if (settingsBody() === 'unavailable') {
+                  <hilos-table-empty-state
+                    [controller]="carriers().settings.controller"
+                    kind="unavailable"
+                    [fallback]="noFallback"
+                  />
+                } @else {
+                  <hilos-skeleton />
+                }
+                <div class="small text-body-secondary">
+                  What happens after a deadline.
+                </div>
+              </section>
+            </div>
+          </div>
+        } @else {
+          <hilos-skeleton />
+        }
+        @if (checksBody() !== 'empty') {
           <div class="mt-4">
-            <hilos-viewport-table [controller]="checks().controller"
+            <hilos-viewport-table [controller]="carriers().checks.controller"
               ><ng-template [hilosTableCell]="keys.rowKey" let-row>
                 <div data-id="legal-check-row" [attr.data-check]="row.rowKey">
                   <span
@@ -144,52 +277,46 @@ import {
             >
           </div>
         }
-        <section class="mt-4 small text-body-secondary">
-          <h2 class="h6">What this section does not do</h2>
-          <p>
-            There is no text editor, publish button, or acceptance-window
-            setting. Those decisions are declared in the project's code.
-          </p>
-          <h2 class="h6">Why this is under Access &amp; identity</h2>
-          <p class="mb-0">
-            Agreement belongs to a person and an exact revision. Its deadline
-            can affect that person's access.
-          </p>
-        </section>
       }
     </hilos-admin-page>
   `,
 })
 export class HilosLegalPage {
+  /** The project's connection and page scope. */
   readonly context = input.required<HilosLegalContext>()
   protected readonly page = HilosPages.LEGAL
-  protected readonly pages = HilosPages
   protected readonly keys = HilosLegalRowKey
-  protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
-  protected readonly path = resolveHilosPath
-  protected readonly documentLabel = hilosLegalDocumentLabel
   protected readonly lapsedHref = hilosLegalLapsedHref
   protected readonly describeCheck = describeHilosLegalCheck
   protected readonly refusal = signal<string | null>(null)
-  protected readonly lapsedLabel = signal<string>(
-    HILOS_LEGAL_LAPSED_COPY.freeze,
+  protected readonly overview = signal<HilosLegalOverview | null>(null)
+  protected readonly checksBody = signal<HilosTableBody>('loading')
+  protected readonly settingsBody = signal<HilosTableBody>('loading')
+  private readonly settingsRows = signal<
+    readonly TableViewportRow<HilosLegalSettingRow>[]
+  >([])
+  /** The summary of the page answer and the two carriers of the page. */
+  protected readonly carriers = computed(() => {
+    const context = this.context()
+
+    return {
+      overview: createHilosLegalOverview(context),
+      checks: createHilosLegalChecksTable(context),
+      settings: createHilosLegalSettingsTable(context, HilosPages.LEGAL),
+    }
+  })
+  protected readonly consent = computed(() => this.setting('consentForm'))
+  protected readonly policy = computed(() =>
+    this.setting('refusalAfterDeadline'),
   )
-  protected readonly hasDocuments = signal(false)
-  protected readonly documents = computed(() =>
-    createHilosLegalDocumentsTable(this.context()),
-  )
-  protected readonly checks = computed(() =>
-    createHilosLegalChecksTable(this.context()),
-  )
-  private readonly settings = computed(() =>
-    createHilosLegalSettingsTable(this.context(), HilosPages.LEGAL),
+  /** Frozen or Past deadline by the refusal setting; Past deadline when it is hidden. */
+  protected readonly lapsedLabel = computed(() =>
+    hilosLegalLapsedLabel(this.policy()?.value),
   )
 
   constructor() {
     effect((onCleanup) => {
-      const documents = this.documents(),
-        checks = this.checks(),
-        settings = this.settings()
+      const { overview, checks, settings } = this.carriers()
       const source = this.context().scopes.pageDataSignal(
         LEGAL_CATALOG_REFUSAL_SECTION,
       )
@@ -197,36 +324,56 @@ export class HilosLegalPage {
         const value = source.get()
         this.refusal.set(typeof value === 'string' ? value : null)
       }
-      const updateSettings = () =>
-        this.lapsedLabel.set(
-          hilosLegalLapsedLabel(
-            settings.controller.rows
-              .get()
-              .find(
-                ({ row }) =>
-                  row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
-              )?.row?.value,
-          ),
-        )
-      const updateDocuments = () =>
-        this.hasDocuments.set(documents.controller.rows.get().length > 0)
       updateRefusal()
-      updateSettings()
-      updateDocuments()
       const off = [
         subscribeSignal(source, updateRefusal),
-        subscribeSignal(settings.controller.rows, updateSettings),
-        subscribeSignal(documents.controller.rows, updateDocuments),
+        mirrorHilosSignal(overview, this.overview),
+        mirrorHilosSignal(checks.controller.frame.body, this.checksBody),
+        mirrorHilosSignal(settings.controller.frame.body, this.settingsBody),
+        mirrorHilosSignal(settings.controller.rows, this.settingsRows),
       ]
-      documents.start()
       checks.start()
       settings.start()
       onCleanup(() => {
         for (const stop of off) stop()
-        documents.dispose()
         checks.dispose()
         settings.dispose()
       })
     })
+  }
+
+  /**
+   * The names of the declared documents, in the summary's order.
+   *
+   * @param summary The page answer's summary.
+   */
+  protected documentLabels(summary: HilosLegalOverview): string {
+    return summary.documents
+      .map(({ documentLabel }) => documentLabel)
+      .join(' · ')
+  }
+
+  /**
+   * The words of a setting value, or the value itself when it has none.
+   *
+   * @param value The value the server sent, not hidden.
+   */
+  protected valueCopy(value: string): string {
+    return HILOS_LEGAL_VALUE_COPY[value] ?? value
+  }
+
+  /**
+   * The settings carrier's row of one legal setting, absent until it arrives.
+   *
+   * @param key The setting's name in {@link HilosLegalSettingKey}.
+   */
+  private setting(
+    key: keyof typeof HilosLegalSettingKey,
+  ): HilosLegalSettingRow | undefined {
+    return (
+      this.settingsRows().find(
+        ({ row }) => row?.rowKey === HilosLegalSettingKey[key],
+      )?.row ?? undefined
+    )
   }
 }

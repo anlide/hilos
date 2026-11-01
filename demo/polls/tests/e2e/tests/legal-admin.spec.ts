@@ -43,6 +43,27 @@ test('reads the legal catalog, deviations and revision comparison', async ({
 }) => {
   await createTestAdmin(expect, page)
   await gotoPage(expect, page, '/hilos/legal')
+  // The Overview reads the summary the Polls server hands its root (HIL-1853).
+  for (const document of ['terms', 'privacy']) {
+    for (const count of ['window', 'lapsed']) {
+      await expect(
+        page
+          .getByTestId(`legal-overview-${count}`)
+          .locator(`[data-document="${document}"]`)
+          .getByTestId(`legal-count-${count}`),
+      ).toHaveText('0')
+    }
+  }
+  // A lapsed count leads to the people past the deadline only when there are any (HIL-945).
+  await expect(page.getByTestId('legal-count-lapsed-link')).toHaveCount(0)
+  await expect(shownByTestId(page, 'legal-check-row')).toHaveCount(4)
+  // The tab row holds the one Documents link the head offers as a section.
+  const documentsTab = page
+    .getByRole('navigation', { name: 'Page sections' })
+    .getByRole('link', { name: 'Documents' })
+  await clickSubmit(expect, documentsTab)
+  await expect(page).toHaveURL('/hilos/legal/documents')
+  await expectPageReady(expect, page)
   await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
   // The suite keeps earlier accounts; each document now has at least this administrator's acceptance.
   await expect(shownByTestId(page, 'legal-count-covered')).toHaveText([
@@ -51,9 +72,7 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   ])
   await expect(shownByTestId(page, 'legal-count-window')).toHaveText(['0', '0'])
   await expect(shownByTestId(page, 'legal-count-lapsed')).toHaveText(['0', '0'])
-  // A lapsed count leads to the people past the deadline only when there are any (HIL-945).
   await expect(page.getByTestId('legal-count-lapsed-link')).toHaveCount(0)
-  await expect(shownByTestId(page, 'legal-check-row')).toHaveCount(4)
   const documentOpen = shownByTestId(page, 'legal-document-open').and(
     page.locator('[data-document="terms"]'),
   )
@@ -100,8 +119,13 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   })
   await expect(page.getByTestId('legal-set')).toBeVisible()
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
-  await gotoPage(expect, page, '/hilos/legal')
-  await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
+  await test.step('Documents supports direct entry and F5', async () => {
+    await gotoPage(expect, page, '/hilos/legal/documents', PAGE_READY)
+    await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)
+  })
 })
 
 /** Edits one legal setting through its page, leaving a no-op through Cancel. */

@@ -168,34 +168,6 @@ export function hilosLegalLapsedLabel(
     : HILOS_LEGAL_LAPSED_COPY.freeze
 }
 
-/** Static illustrations of the two choices; they perform no account action. */
-export const HILOS_LEGAL_SETTING_PREVIEWS = [
-  {
-    key: 'checkbox',
-    title: 'Checkbox',
-    text: 'I have read the differences and accept the terms.',
-    hint: 'A separate acknowledgement before creating the account.',
-  },
-  {
-    key: 'line',
-    title: 'Line below the button',
-    text: 'By creating an account, you accept the terms and privacy policy.',
-    hint: 'Creating the account also confirms agreement.',
-  },
-  {
-    key: 'freeze',
-    title: 'Freeze access',
-    text: 'Your account is frozen — accept the new terms to continue.',
-    hint: 'Sign-in and personal data access remain available; product access waits for acceptance.',
-  },
-  {
-    key: 'remind',
-    title: 'Keep reminding',
-    text: 'The terms have changed — read the differences.',
-    hint: 'The product stays available and the reminder remains.',
-  },
-] as const
-
 export const legalStandardSetSchema = z.looseObject({
   version: z.number().int(),
   publishedOn: z.string(),
@@ -610,18 +582,6 @@ export function hilosLegalLapsedHref(document: string): string {
   return hilosUsersPath(document)
 }
 
-const DOCUMENT_COLUMNS: HilosTableColumnOf<HilosLegalDocumentRow>[] = [
-  { key: HilosLegalRowKey.rowKey, label: 'Document' },
-  {
-    key: HilosLegalRowKey.revision,
-    label: 'Current revision',
-    reads: [HilosLegalRowKey.declared],
-  },
-  { key: HilosLegalRowKey.covered, label: 'Covered' },
-  { key: HilosLegalRowKey.window, label: 'In the window' },
-  { key: HilosLegalRowKey.lapsed, label: 'Past deadline' },
-  { key: HILOS_TABLE_ACTIONS_KEY, label: '', reads: [HilosLegalRowKey.rowKey] },
-]
 const REVISION_COLUMNS: HilosTableColumnOf<HilosLegalRevisionRow>[] = [
   {
     key: HilosLegalRowKey.rowKey,
@@ -652,66 +612,58 @@ const ACCEPTANCE_COLUMNS: HilosTableColumnOf<HilosLegalAcceptanceRow>[] = [
 ]
 
 /**
- * Document tallies on the dedicated page, with legacy root slots by default.
+ * Document tallies on the dedicated Documents page.
  *
  * @param context The page's shared connection and scopes.
- * @param page The subscribing page, defaulting to the legacy root.
+ * @param page The subscribing page.
  * @param refusal The live refusal policy, including its hidden viewer value.
  */
 export function createHilosLegalDocumentsTable(
   context: HilosLegalContext,
-  page: string = HilosPages.LEGAL,
+  page: string,
   refusal?: ReadonlySignal<Hideable<string> | undefined>,
 ): HilosLegalTable<HilosLegalDocumentRow> {
-  const frame: HilosTableFrame =
-    page === HilosPages.LEGAL_DOCUMENTS
-      ? {
-          search: { placeholder: 'Document or key' },
-          columns: (): HilosTableColumnOf<HilosLegalDocumentRow>[] => [
-            {
-              key: HilosLegalRowKey.documentLabel,
-              label: 'Document',
-              sortable: true,
-              card: 'title',
-              reads: [HilosLegalRowKey.rowKey, HilosLegalRowKey.declared],
-            },
-            {
-              key: HilosLegalRowKey.publishedOn,
-              label: 'Revision',
-              sortable: true,
-              reads: [HilosLegalRowKey.revision, HilosLegalRowKey.declared],
-            },
-            { key: HilosLegalRowKey.covered, label: 'Covered', sortable: true },
-            {
-              key: HilosLegalRowKey.window,
-              label: 'In the window',
-              sortable: true,
-            },
-            {
-              key: HilosLegalRowKey.lapsed,
-              label: hilosLegalLapsedLabel(refusal?.get()),
-              sortable: true,
-              reads: [HilosLegalRowKey.rowKey],
-            },
-            {
-              key: HILOS_TABLE_ACTIONS_KEY,
-              label: '',
-              reads: [HilosLegalRowKey.rowKey],
-            },
-          ],
-          empty: { title: 'The project has not declared any documents.' },
-        }
-      : {
-          title: 'Documents',
-          columns: DOCUMENT_COLUMNS,
-          empty: { title: 'The project has not declared any documents.' },
-        }
   return tableFor(
     context,
     page,
     HilosLegalTableKey.documents,
     resolveHilosLegalDocumentRow,
-    frame,
+    {
+      search: { placeholder: 'Document or key' },
+      columns: (): HilosTableColumnOf<HilosLegalDocumentRow>[] => [
+        {
+          key: HilosLegalRowKey.documentLabel,
+          label: 'Document',
+          sortable: true,
+          card: 'title',
+          reads: [HilosLegalRowKey.rowKey, HilosLegalRowKey.declared],
+        },
+        {
+          key: HilosLegalRowKey.publishedOn,
+          label: 'Revision',
+          sortable: true,
+          reads: [HilosLegalRowKey.revision, HilosLegalRowKey.declared],
+        },
+        { key: HilosLegalRowKey.covered, label: 'Covered', sortable: true },
+        {
+          key: HilosLegalRowKey.window,
+          label: 'In the window',
+          sortable: true,
+        },
+        {
+          key: HilosLegalRowKey.lapsed,
+          label: hilosLegalLapsedLabel(refusal?.get()),
+          sortable: true,
+          reads: [HilosLegalRowKey.rowKey],
+        },
+        {
+          key: HILOS_TABLE_ACTIONS_KEY,
+          label: '',
+          reads: [HilosLegalRowKey.rowKey],
+        },
+      ],
+      empty: { title: 'The project has not declared any documents.' },
+    },
   )
 }
 

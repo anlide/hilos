@@ -16,6 +16,7 @@ use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Demo\Polls\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Polls\Pages\Hilos\Legal\LegalPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
@@ -379,6 +380,7 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityStepUpPage::PAGE => SecurityStepUpPage::class,
         LegalPage::PAGE => LegalPage::class,
+        LegalDocumentsPage::PAGE => LegalDocumentsPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
@@ -828,8 +830,11 @@ final class Hilos extends HilosFacade
             PollsTableContext::hilosSecurityImpersonation => [],
         ],
         LegalPage::PAGE => [
-            PollsTableContext::hilosLegalDocuments => [],
             PollsTableContext::hilosLegalChecks => [],
+            PollsTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentsPage::PAGE => [
+            PollsTableContext::hilosLegalDocuments => [],
             PollsTableContext::hilosLegalSettings => [],
         ],
         LegalDocumentPage::PAGE => [

@@ -58,18 +58,17 @@ belongs to HIL-1718 and HIL-1719.
 Settings uses the shared section head across Vue, React and Angular through the
 framework catalog's opt-in. Its only page is Overview, so the tab row stays
 hidden and no child cards are drawn.
-Legal is opted into the shared section head by Chat's Vue provider and by
-Tasks' React provider. Its Overview / Documents / Acceptances / Settings pages
-share the Legal row.
+Legal is opted into the shared section head by the providers of Chat (Vue),
+Tasks (React) and Polls (Angular). Its Overview / Documents / Acceptances /
+Settings pages share the Legal row; the framework catalog default keeps its
+existing composition.
 Chat's Vue provider also opts Document into the shared entity head. Document is
 an entity child of Documents; its Overview / Standard set / Deviations /
 Revisions pages share one head and link row. Revision remains a separate entity
 child of Document without its own head adoption; that redraw belongs to HIL-1666.
-Tasks adopts only the Legal section: Document and Revision stay entities
-without a head there, and the Document redraw reaches React with HIL-1854.
-The framework catalog default and Polls (Angular) retain their existing
-composition until HIL-1853. The three new Document tabs remain unbuilt in React
-(HIL-1854) and Angular (HIL-1855).
+Tasks and Polls adopt only the Legal section: Document and Revision there are
+entities without a head of their own, and the three new Document tabs remain
+unbuilt in React (HIL-1854) and Angular (HIL-1855).
 
 ## Core Rule And Ownership
 

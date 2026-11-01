@@ -1690,28 +1690,6 @@ describe('legal administration rows and sections', () => {
 })
 
 describe('legal table controllers', () => {
-  it('keeps the documents table on the legacy root page by default', () => {
-    const h = harness()
-    const table = createHilosLegalDocumentsTable(h.context)
-    table.start()
-    table.controller.refresh()
-
-    expect(h.sent.at(-1)).toMatchObject({
-      page: HilosPages.LEGAL,
-      table: HilosLegalTableKey.documents,
-    })
-
-    expect(table.controller.frame.columns.get().map(({ key }) => key)).toEqual([
-      'rowKey',
-      'revision',
-      'covered',
-      'window',
-      'lapsed',
-      'actions',
-    ])
-    table.dispose()
-  })
-
   it('declares the Documents search, sortable scalar keys, rendered reads and live policy header', () => {
     const h = harness()
     const policy = createSignal<Hideable<string> | undefined>('freeze')

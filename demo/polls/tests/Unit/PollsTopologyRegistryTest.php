@@ -24,6 +24,7 @@ use Hilos\Runtime\View\Collection\HilosModerationChecks;
 use Demo\Polls\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Polls\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Demo\Polls\Core\Daemon\PollsWorkerManager;
@@ -57,6 +58,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Demo\Polls\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Polls\Pages\Hilos\Legal\LegalPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
@@ -830,27 +832,39 @@ final class PollsTopologyRegistryTest extends TestCase
         }
     }
 
-    /** Legal administration is bound to its own worker, page routes and tables. */
+    /**
+     * Legal administration is bound to its own worker, page routes and tables, and adopts the
+     * section head while Document and Revision stay entities without a head of their own.
+     */
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
         $this->assertSame(DemoHilosLegalAgent::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::WORKER]);
         $this->assertSame(DemoHilosLegalAgentDaemon::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::DAEMON]);
         $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
         foreach ([
-            LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+            LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
+            LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
+            $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENTS, LegalDocumentsPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        $this->assertSame([], LegalDocumentsPage::ACTIONS);
+        $this->assertSame([], LegalDocumentsPage::SIGNALS);
+        $this->assertSame([], LegalDocumentsPage::READING_ACTIONS);
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame([
-            PollsTableContext::hilosLegalDocuments => [],
             PollsTableContext::hilosLegalChecks => [],
             PollsTableContext::hilosLegalSettings => [],
         ], Hilos::PAGE_TABLES[LegalPage::PAGE]);
+        $this->assertSame([
+            PollsTableContext::hilosLegalDocuments => [],
+            PollsTableContext::hilosLegalSettings => [],
+        ], Hilos::PAGE_TABLES[LegalDocumentsPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
@@ -862,6 +876,16 @@ final class PollsTopologyRegistryTest extends TestCase
         foreach (ThemeSettingsCatalog::KEYS as $key) {
             $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
         }
+        $this->assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Legal',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What the project declares, and who accepted it.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-check',
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Legal',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], PageCatalog::pages()[HilosPageConstants::HILOS_LEGAL]);
+        $this->assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_DOCUMENT, PageCatalog::pages());
+        $this->assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalog::pages());
     }
 
     /** The archive address is answered by the export owner, the address of the acceptances file by the legal agent. */
@@ -1686,6 +1710,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 SecurityStepUpPage::PAGE,
                 SecurityImpersonationPage::PAGE,
                 LegalPage::PAGE,
+                LegalDocumentsPage::PAGE,
                 LegalDocumentPage::PAGE,
                 LegalRevisionPage::PAGE,
                 LegalAcceptancesPage::PAGE,

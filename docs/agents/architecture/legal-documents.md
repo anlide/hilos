@@ -436,13 +436,15 @@ binds `hilosLegalDocumentSet`, Deviations binds `hilosLegalDocumentDeviations`,
 and Revisions binds `hilosLegalRevisions`. The exact Revision page reuses the
 last table with both document and revision filters.
 
-Tasks (React) connects six Legal pages: the root Overview, Documents, Document,
-Revision, Acceptances and Settings. The root binds Checks and Settings;
-Documents binds the Documents and Settings tables, with Settings again a hidden
-carrier for the refusal-policy label. Document and Revision keep their earlier
-views and tables; their redraw reaches React with HIL-1854. React's Overview
-shows the declared-document summary and the four checks without a document
-window; the document coverage table lives on its own Documents page.
+Tasks (React) and Polls (Angular) each connect six backend Legal pages: the
+root Overview, Documents, Document, Revision, Acceptances and Settings. The root
+binds Checks and Settings; Documents binds the Documents and Settings tables,
+with Settings again a hidden carrier for the refusal-policy label. Document and
+Revision keep their earlier views and bind `hilosLegalRevisions`, and
+Acceptances and Settings bind their own tables; their redraw reaches React with
+HIL-1854 and Angular with HIL-1855. The React and Angular roots are the Overview:
+the declared-document summary and the four checks without a document window,
+while the document coverage table lives on its own Documents page.
 
 Each of the four Document pages receives the common `legalDocument` projection,
 page identity and its bound windows in the first ordinary `page_response`.
@@ -696,12 +698,11 @@ row-edit session ([conflict-resolution.md](../frontend/conflict-resolution.md),
 while unchanged, in flight, conflicting or deleted. Incoming changes update a
 pristine draft, and a refused write keeps the modal and draft with its inline
 error. Closing follows the tracked settings-owner reply; the table value
-follows the DB source. Preview controls are disabled illustrations, not a
-second registration flow.
+follows the DB source.
 
-The Chat Vue and Tasks React Settings pages draw each of the two setting rows
-as its own section, with the existing modal editor behind it and no previews. The shared setting
-previews remain only in the Angular view.
+The Chat (Vue), Tasks (React) and Polls (Angular) Settings pages draw each of
+the two setting rows as its own section, with the existing modal editor behind
+it and no previews.
 
 The consent-form value is consumed by registration. The refusal policy is
 consumed by access enforcement, which freezes a person past a deadline under

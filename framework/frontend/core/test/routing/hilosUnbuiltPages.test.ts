@@ -30,11 +30,11 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('serves Legal Documents in Vue and React until Angular parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.LEGAL_DOCUMENTS]).toEqual(['angular'])
+  it('serves Legal Documents in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.LEGAL_DOCUMENTS)
     for (const layer of ['vue', 'react', 'angular'] as const)
       expect(hilosUnbuiltPages(layer).has(HilosPages.LEGAL_DOCUMENTS)).toBe(
-        layer === 'angular',
+        false,
       )
   })
 

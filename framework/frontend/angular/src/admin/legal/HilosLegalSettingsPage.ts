@@ -12,24 +12,22 @@ import {
   createHilosLegalSettingEdit,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
-  HILOS_LEGAL_SETTING_PREVIEWS,
-  HilosLegalRowKey,
   type HilosLegalSettingEditFields,
   type HilosLegalSettingRow,
 } from '@hilos/core/admin/legal'
 import {
   HilosPages,
-  HILOS_TABLE_ACTIONS_KEY,
   hilosRowEditIdle,
   isHiddenValue,
   type HilosLegalContext,
+  type HilosTableBody,
+  type TableViewportRow,
 } from '@hilos/core/base'
 import {
   HilosAdminPage,
-  HilosViewportTable,
-  HilosTableCell,
   HilosHiddenMark,
   HilosHideable,
+  HilosTableEmptyState,
   HilosModal,
   HilosActionError,
   HilosEditNotice,
@@ -47,10 +45,9 @@ let inputSequence = 0
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosViewportTable,
-    HilosTableCell,
     HilosHiddenMark,
     HilosHideable,
+    HilosTableEmptyState,
     HilosModal,
     HilosActionError,
     HilosEditNotice,
@@ -63,96 +60,76 @@ let inputSequence = 0
         Two settings control how consent is given and what happens after a
         deadline. Document texts and deadlines stay in code.
       </p>
-      <hilos-viewport-table [controller]="table().controller">
-        <ng-template [hilosTableCell]="keys.rowKey" let-setting
-          ><strong>{{ copy[setting.rowKey]?.label ?? setting.rowKey }}</strong>
-          <div class="small text-body-secondary">
-            {{ copy[setting.rowKey]?.hint }}
-          </div></ng-template
+      <ng-template #noFallback></ng-template>
+      @if (settingsBody() === 'unavailable') {
+        <hilos-table-empty-state
+          [controller]="table().controller"
+          kind="unavailable"
+          [fallback]="noFallback"
+        />
+      }
+      @for (setting of settings(); track setting.rowKey) {
+        <section
+          class="mt-4"
+          [attr.aria-labelledby]="inputId + '-' + setting.rowKey"
         >
-        <ng-template [hilosTableCell]="keys.value" let-setting
-          ><span [attr.data-id]="'legal-setting-value-' + setting.rowKey"
-            ><hilos-hideable [value]="setting.value"
-              ><ng-template let-shown>{{
-                valueLabel(shown)
-              }}</ng-template></hilos-hideable
-            ></span
+          <h2
+            [id]="inputId + '-' + setting.rowKey"
+            class="h6 text-uppercase text-body-secondary mb-2"
           >
-          <div class="small text-body-secondary">
-            Default:
-            <hilos-hideable [value]="setting.defaultValue"
-              ><ng-template let-shown>{{
-                valueLabel(shown)
-              }}</ng-template></hilos-hideable
-            >
-          </div></ng-template
-        >
-        <ng-template [hilosTableCell]="actionsKey" let-setting
-          ><button
-            type="button"
-            class="btn btn-sm btn-outline-secondary"
-            [attr.data-id]="'legal-setting-edit-' + setting.rowKey"
-            (click)="open(setting.rowKey)"
+            {{ copy[setting.rowKey]?.label ?? setting.rowKey }}
+          </h2>
+          <div
+            class="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom"
           >
-            Edit
-          </button></ng-template
-        >
-      </hilos-viewport-table>
-      <section class="mt-4">
-        <h2 class="h5">Previews</h2>
-        <div class="row g-3">
-          @for (preview of previews; track preview.key) {
-            <div class="col-md-6">
-              <div
-                class="border rounded p-3 h-100"
-                [attr.data-id]="'legal-setting-preview-' + preview.key"
-              >
-                <h3 class="h6">{{ preview.title }}</h3>
-                @if (preview.key === 'checkbox') {
-                  <label class="small d-flex align-items-start gap-2 mb-2"
-                    ><input
-                      type="checkbox"
-                      class="form-check-input flex-shrink-0"
-                      disabled
-                    />{{ preview.text }}</label
-                  >
-                }
-                @if (preview.key === 'checkbox' || preview.key === 'line') {
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-primary w-100 mb-2"
-                    disabled
-                  >
-                    Create account
-                  </button>
-                }
-                @if (preview.key !== 'checkbox') {
-                  <blockquote
-                    [class]="
-                      preview.key === 'freeze'
-                        ? 'small alert alert-info'
-                        : preview.key === 'remind'
-                          ? 'small alert alert-warning'
-                          : 'small'
-                    "
-                  >
-                    {{ preview.text }}
-                  </blockquote>
-                }
-                <p class="small text-body-secondary mb-0">{{ preview.hint }}</p>
+            <div class="flex-grow-1">
+              <div class="fw-semibold small">
+                {{ copy[setting.rowKey]?.label ?? setting.rowKey }}
+              </div>
+              <div class="small text-body-secondary">
+                {{ copy[setting.rowKey]?.hint }}
               </div>
             </div>
-          }
-        </div>
-      </section>
-      <section class="mt-4 small text-body-secondary">
-        <h2 class="h6">What is not a setting</h2>
-        <p class="mb-0">
-          The acceptance window ends on the revision's effective date. There is
-          no global window length, switch to bypass consent, or editor for
-          document text.
-        </p>
-      </section>
+            <div class="d-flex align-items-center gap-3">
+              <div class="text-end small">
+                <div
+                  class="fw-semibold"
+                  [attr.data-id]="'legal-setting-value-' + setting.rowKey"
+                >
+                  <hilos-hideable [value]="setting.value"
+                    ><ng-template let-shown>{{
+                      valueLabel(shown)
+                    }}</ng-template></hilos-hideable
+                  >
+                </div>
+                <dl
+                  class="d-flex flex-wrap justify-content-end gap-1 text-body-secondary mb-0"
+                >
+                  <dt class="fw-normal">Default:</dt>
+                  <dd class="mb-0">
+                    <hilos-hideable [value]="setting.defaultValue"
+                      ><ng-template let-shown>{{
+                        valueLabel(shown)
+                      }}</ng-template></hilos-hideable
+                    >
+                  </dd>
+                </dl>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                [attr.data-id]="'legal-setting-edit-' + setting.rowKey"
+                [attr.aria-label]="
+                  'Edit ' + (copy[setting.rowKey]?.label ?? setting.rowKey)
+                "
+                (click)="open(setting.rowKey)"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        </section>
+      }
       <hilos-modal
         [open]="opened()"
         (openChange)="$event ? undefined : editor().close()"
@@ -242,11 +219,8 @@ let inputSequence = 0
 export class HilosLegalSettingsPage {
   readonly context = input.required<HilosLegalContext>()
   protected readonly page = HilosPages.LEGAL_SETTINGS
-  protected readonly keys = HilosLegalRowKey
-  protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
   protected readonly copy = HILOS_LEGAL_SETTING_COPY
   protected readonly valueCopy = HILOS_LEGAL_VALUE_COPY
-  protected readonly previews = HILOS_LEGAL_SETTING_PREVIEWS
   protected readonly inputId = `legal-setting-input-${++inputSequence}`
   protected readonly table = computed(() =>
     createHilosLegalSettingsTable(this.context()),
@@ -258,6 +232,14 @@ export class HilosLegalSettingsPage {
     createHilosLegalSettingEdit(this.table().controller, this.actions()),
   )
   protected readonly action = createHilosTrackedAction({ toast: false })
+  protected readonly settingsBody = signal<HilosTableBody>('loading')
+  private readonly settingsRows = signal<
+    readonly TableViewportRow<HilosLegalSettingRow>[]
+  >([])
+  /** The settings rows the carrier's window holds, in its order. */
+  protected readonly settings = computed(() =>
+    this.settingsRows().flatMap(({ row }) => (row ? [row] : [])),
+  )
   protected readonly opened = signal(false)
   protected readonly row = signal<HilosLegalSettingRow | null>(null)
   // A value hidden from a viewer of the admin view mode stays the one hidden
@@ -283,6 +265,8 @@ export class HilosLegalSettingsPage {
       const table = this.table(),
         editor = this.editor()
       const off = [
+        mirrorHilosSignal(table.controller.frame.body, this.settingsBody),
+        mirrorHilosSignal(table.controller.rows, this.settingsRows),
         mirrorHilosSignal(editor.opened, this.opened),
         mirrorHilosSignal(editor.row, this.row),
         mirrorHilosSignal(editor.form, this.form),
