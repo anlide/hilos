@@ -353,6 +353,30 @@ Navigation, order, contexts, the host handshake and inode/offset node-log
 observations stay in the demo. The fresh `test:cluster:e2e -- --daemon` phase
 and restoration before the old phases remain documented in [../testing.md](../testing.md).
 
+The Moderation section specs live where its views are mounted: chat (Vue),
+tasks (React) and polls (Angular) each carry `moderation.spec.ts` with one set
+of tests — tests 1–5 have the same titles and steps in all three, the checks
+they share are one copy in `framework/frontend/e2e/moderation.ts`, and each
+file keeps the scenario, its order and its navigation. The file runs in file
+order (`mode: 'default'`) and writes rules of its own only on
+`hilos_profile_photo`, the kind every kit builds in; each test prepares its own
+rules and reserves their removal through `cleanupFixtures` before it opens Add,
+so no test relies on a neighbor having passed. Only chat carries test 6: a rule
+edited on the Rules page is what the model's next photo check carries, read
+from the stand model's requests. Chat's Rules step also keeps two class checks
+on the built-in block, which HIL-1843 decides. Only tasks carries tests 7 and 8:
+test 7 proves on the server that forged rule writes from a view-mode viewer are
+refused with the view-mode reason; test 8 guards the shared cleanup,
+`deleteModerationOwnRules`, which deletes only the reserved rule and keeps a
+neighbor that differs from it only by surrounding spaces. The
+`Moderation accessibility` group of each kit's `a11y.spec.ts` creates one rule
+of its own on `hilos_profile_name` and walks the section, the Add, Edit and
+Delete dialogs and a view-mode viewer through the shared steps. The model's
+check of a profile name — published only after approval, the previous name kept
+after a refusal — is one test of the same title in `profile.spec.ts` of tasks
+and polls. None of these files carries a `spec-owner` line; chat's message and
+message picture moderation specs do (HIL-1638).
+
 The Analytics section did not move either: chat (Vue), tasks (React) and polls
 (Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`
 with the same test titles. The actions the specs look at are the registration of
@@ -481,11 +505,13 @@ Use **one line per file**. No line means the framework's spec; never write
 
 - **demo:** another demo could not carry the spec without this demo's product
   — its entities, screens or domain events. Chat's rooms and messages, bots,
-  moderation and its own Users screen belong here.
+  the moderation of its messages and their pictures, and its own Users screen
+  belong here.
 - **framework:** another demo could carry it by switching the feature on,
   even when the scenario passes through the product. Chat's moderator judges
   a profile photo, but the photo is a framework feature, so `profile-photo`
-  carries no line.
+  carries no line. The Moderation section is the framework's too: its
+  `moderation.spec.ts` carries no line in any kit.
 - **stand:** the spec holds an emulator of the stand to its contract, with no
   product taking part.
 
@@ -731,7 +757,9 @@ demo that reaches the stand: `standGateway.mjs`, `standOAuth.mjs`, `standSms.mjs
 `framework/frontend/scripts/`, and the person at the OAuth consent window in
 `framework/frontend/e2e/standOAuthUser.ts`. A resident's helper is born here with
 its first leaf; a demo does not copy it, and keeps only a wrapper that turns a
-resident's raw answer into its own terms. The addresses — `STAND_GATEWAY_URL` and
+resident's raw answer into its own terms. The framework parses a moderation
+verdict, so its wrapper `dictateModerationVerdict(key, allow, reason)` lives in
+`standModel.mjs` beside `dictateModelAnswer`. The addresses — `STAND_GATEWAY_URL` and
 `MAILPIT_URL` — come from the environment of the demo's runner, and the resident
 itself is described in [stand-services.md](../stand-services.md).
 
@@ -1164,6 +1192,94 @@ The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`; 
 The shared receipt checks remain common across kits; Chat's section-head,
 overview-tile, direct-entry, F5 and Back scenarios are additional to its Vue
 adoption. React and Angular keep the legacy section drawing.
+
+### The Moderation section — names and checks
+
+[`moderation.ts`](../../../framework/frontend/e2e/moderation.ts) owns
+`ModerationKindDeclaration` — what a kind declares as its Overview and Rules
+pages show it: `kind`, `title`, `owner`, `modelLabel`, `model`, `profile`,
+`reasons` and `defaultRules` — and `FRAMEWORK_MODERATION_KINDS`, the
+framework's `hilos_profile_name` and `hilos_profile_photo` with the moderation
+profile defaults they answer to. A project's own kinds, and which rules of its
+own a kind holds, stay in the demo spec. The declaration, the constant and
+every function are re-exported from `framework/frontend/e2e/index.ts`.
+
+The drivers write on the open Rules page and take the closed dialog as the
+acknowledgement. `addModerationRule(expect, page, declared, rule): Promise<number>`
+saves through Add and returns the new row's id, as its Edit opener names it;
+`editModerationRule(expect, page, declared, id, rule)` saves through Edit. Both
+read only `declared.title`, for the dialog's name, and sweep standing toasts
+first. `deleteModerationRule(expect, page, id, rule)` deletes the row `id`
+through the Delete dialog, which names the held `rule`, and waits for the row
+to leave without its data. `deleteModerationOwnRules(expect, page, rules)`
+deletes only the reserved exact texts and passes over one that is absent: a row
+is matched by its complete DOM text, and the rule the Delete dialog holds by
+its `title` attribute. A spec reserves the texts before it opens Add with
+`reserveModerationRules(expect, page, cleanup, declared, rules)`, which defers
+through the test's `cleanup` fixture a visit to the kind's Rules and that
+deletion — every text the test may save, a forged or drafted one included.
+
+`expectModerationKindHead(expect, page, declared, current)` checks the owner's
+one heading, the title, owner and key, the trail Hilos › Moderation › title
+and, through `expectModerationKindTabs(expect, page, kind, current)`, the two
+link tabs Overview and Rules with their addresses and the current one;
+`current` is `'overview' | 'rules'`. `expectModerationKindOverview(expect, page, declared)`
+reads the model, profile and reasons and finds nothing to write with;
+`expectModerationRulesInForce(expect, page, ownRuleCount)` reads the Overview's
+line of rules in force. On Rules, `expectModerationBuiltInRules(expect, page, declared)`
+checks the empty table that names the kind above its built-in rules,
+`expectModerationOwnRules(expect, page, rules)` the own rules in the desktop
+table with the server's count, search, Add and the row openers, and
+`expectModerationBuiltInRulesReturned(expect, page, declared)` the built-in rules
+back after the last own rule left, without a reload and with no Apply pending.
+`expectModerationRulesOpening(expect, log, declared)` reads a `DeliveryFrameLog`
+instead of a page: a cold Rules subscription answers in one `page_response`
+with the head, the tabs and both windows, and no action or `table_viewport`
+request is sent; `declared` is `{ kind, ownRules, defaultRules }`.
+
+The other frame checks take the `DeliveryFrameLog` and the length `log.sent`
+had before the step, and read only what was sent since.
+`expectModerationSortReply(expect, log, sentBefore, declared, direction): Promise<{ answeredOnce(): Promise<void> }>`
+waits for the first `table_window` answering the click on the Rule header,
+then counts exactly one `table_viewport` for the kind's rules, sorted by rule
+in `direction` (`'asc' | 'desc'`), and one answer to it; it is called after the
+rows have settled, because an ascending order equal to the insertion order
+shows nothing in the DOM. A second answer may still be on its way then, so the
+spec calls the returned `answeredOnce()` after the next sort's rows have
+settled: it waits until a later window request of the kind's rules is answered
+— on the one socket that answer comes after any answer to the first — and
+counts exactly one answer to the first.
+
+The two write echoes count the actions of the rules family
+`hilos_moderation_rule_*` sent since `sentBefore`; an action outside the
+family, such as the toast stack reporting its reading, is not counted.
+`expectModerationUpdateEcho(expect, log, sentBefore, declared, saved)` finds
+exactly one action of the family, the update of `saved.id` with `saved.rule`
+and `saved.expectedRule`, answered once with its `action_success`, and no
+window or page request on the one connection.
+`expectModerationDeleteEcho(expect, log, sentBefore, declared, removed)` finds
+exactly one action of the family, the delete of `removed.id` with
+`removed.expectedRule`, answered once with its `action_success`; it does not
+read window or page requests — the removal echo does.
+`expectModerationRemovalEcho(expect, log, sentBefore, id, own)` reads exactly
+one `row_removed` for `id`, tagged `own` only for the tab that deleted it, and
+no window or page request on the one connection.
+
+The accessibility steps take a framework kind's key and find its title in
+`FRAMEWORK_MODERATION_KINDS`. `expectModerationPagesAccessibility(expect, page, kind)`
+starts on the opened `/hilos/moderation` and reaches Overview and Rules by
+keyboard. `expectModerationAddDialogAccessibility(expect, page, kind, rule)`
+ends with the one save that creates `rule`, the row on which
+`expectModerationRowDialogsAccessibility(expect, page, kind, rule)` then opens
+Edit and Delete. `expectModerationViewerAccessibility(expect, viewer, kind, rule): Promise<() => number[]>`
+takes a page of a view-mode context before its first navigation and opens Rules
+itself, because the write frames are counted from the socket's birth; it
+returns a reader of the add, update and delete frames sent so far. The view-mode
+switch and the viewer's context stay with the caller.
+
+Every function takes the spec's `expect` first, then its `Page` — the frame
+checks their log and the count `log.sent` had before the step. The tests, their
+order and navigation stay in the demo spec.
 
 ### Geometry — take a bookmark and ask whether it moved
 

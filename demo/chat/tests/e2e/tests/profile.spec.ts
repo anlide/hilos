@@ -8,8 +8,10 @@ import {
   createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { dictateModerationVerdict } from '../helpers/moderation.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 import {
   countSentFrames,
   expectProfileNameSnapshot,
@@ -29,9 +31,9 @@ async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
 // Success is state-driven — the committed name arrives over the self-connection
 // data and closes the modal. A rename is moderated by the stand's model, so each
 // one first dictates a permitting verdict under a key the new name carries
-// (helpers/moderation.ts). A refused name and an unanswering model are proved by
-// rename-moderation.spec.ts. The push devices page remains here — push devices
-// ride notification delivery.
+// (framework/frontend/scripts/standModel.mjs). A refused name and an
+// unanswering model are proved by rename-moderation.spec.ts. The push devices
+// page remains here — push devices ride notification delivery.
 
 test('the navbar links the current user to the profile page', async ({
   page,

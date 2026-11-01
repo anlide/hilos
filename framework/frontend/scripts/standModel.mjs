@@ -56,6 +56,33 @@ export async function dictateModelAnswer(key, response) {
 }
 
 /**
+ * Dictate the verdict the model gives on the next moderation check that mentions a key.
+ *
+ * The verdict is the raw `{allow, reason}` answer the framework moderator parses
+ * strictly, whatever the kind of the check: approval requires reason `ok`, a
+ * refusal one of the reasons the kind declares. An unknown reason makes the
+ * check unavailable, never rejected.
+ *
+ * Every moderated action calls the model and so needs its own verdict — a
+ * message, a new name, a picture, once for each picture it carries. With none
+ * dictated the model refuses the call with a 503, and the product reports its
+ * moderation as unavailable. Dictate BEFORE the action that calls the model.
+ *
+ * The key is a `modelKey()` the spec puts into what the moderator's prompt
+ * carries verbatim — the moderated text, the new name, a picture's file name or
+ * the name an image prompt carries. Dictations for one key play in order, as
+ * with `dictateModelAnswer`.
+ *
+ * @param {string} key The string the moderated text, name or file name contains.
+ * @param {boolean} allow Whether the model approves the check.
+ * @param {string} reason The model's raw reason; a valid refusal becomes a public product sentence.
+ * @returns {Promise<void>}
+ */
+export async function dictateModerationVerdict(key, allow, reason) {
+  await dictateModelAnswer(key, JSON.stringify({ allow, reason }))
+}
+
+/**
  * @typedef {object} ModelRequest
  * @property {number} ordinal Gateway arrival order within this key.
  * @property {string} key The exact test key under observation.

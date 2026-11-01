@@ -7,8 +7,10 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024

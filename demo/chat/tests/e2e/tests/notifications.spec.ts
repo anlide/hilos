@@ -10,8 +10,10 @@ import {
   createTestUserJoined,
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // spec-owner: demo — notifications raised by chat's own events
 

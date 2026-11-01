@@ -26,6 +26,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import {
+  dictateModerationVerdict,
   modelKey,
   readModelRequests,
   forgetModelKey,
@@ -43,7 +44,6 @@ import {
   UPLOADS_WORKER_AGENT,
   withStoppedUploadWorker,
 } from '../../../../../framework/frontend/scripts/stoppedUploadWorker.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { queuedPicture, pictureControls } from '../helpers/queuedPicture.js'
 import { endSendPause } from '../helpers/sendPause.js'
 import { logout } from '../helpers/session.js'

@@ -7,8 +7,10 @@ import {
   typeInto,
   createTestUserJoined,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { endSendPause } from '../helpers/sendPause.js'
 
 // spec-owner: demo — chat consumes framework moderation verdicts for its messages
@@ -18,9 +20,10 @@ import { endSendPause } from '../helpers/sendPause.js'
 // Invalid answers and unavailable calls return the draft without a content notice.
 //
 // The framework moderator asks the stand gateway's model, which says only what
-// a spec dictated (helpers/moderation.ts). Each test coins its own key and puts it
-// into the text of its message, so it disturbs no other spec. /test/reset is never
-// called here — it would wipe what the other workers dictated.
+// a spec dictated (framework/frontend/scripts/standModel.mjs). Each test coins
+// its own key and puts it into the text of its message, so it disturbs no other
+// spec. /test/reset is never called here — it would wipe what the other workers
+// dictated.
 //
 // Recovery ends the original re-send lockout by command and then waits for the
 // control's state; room.spec.ts holds the lockout itself.

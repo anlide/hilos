@@ -30,8 +30,10 @@ import {
   createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { logout, orphanSessionToken } from '../helpers/session.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { chatUploadPool } from '../helpers/uploadPool.js'
 import {

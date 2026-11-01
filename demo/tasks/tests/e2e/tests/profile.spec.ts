@@ -17,7 +17,7 @@ import {
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import { waitForMailCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 import {
-  dictateModelAnswer,
+  dictateModerationVerdict,
   forgetModelKey,
   modelKey,
   readModelRequests,
@@ -26,8 +26,6 @@ import {
   dictateGatewayBehavior,
   releaseGatewayAnswer,
 } from '../../../../../framework/frontend/scripts/standGateway.mjs'
-
-// spec-owner: demo — tasks' React profile mounts the shared name edit flow.
 
 // The profile root (HIL-1169): the avatar in the header leads to /profile over
 // the live socket. The Name row exposes Change through the shared rename flow.
@@ -95,7 +93,7 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
 })
 
-test('publishes a profile name only after the model approves it', async ({
+test('publishes a profile name only after the model approves it and keeps the previous name after a refusal', async ({
   page,
 }) => {
   const key = modelKey()
@@ -113,7 +111,7 @@ test('publishes a profile name only after the model approves it', async ({
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     const newName = `Updated ${key}`
     await typeInto(page.getByTestId('profile-name-input'), newName)
-    await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+    await dictateModerationVerdict(key, true, 'ok')
     // The gateway holds the provider answer while the published identity is
     // checked; the test releases it afterwards.
     await dictateGatewayBehavior('/model/api/generate', key, {
@@ -185,6 +183,28 @@ test('publishes a profile name only after the model approves it', async ({
     expect(await readModelRequests(key)).toEqual([
       { ordinal: 1, key, imageHashes: [] },
     ])
+
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
+    const refusedName = `Refused ${key}`
+    await typeInto(page.getByTestId('profile-name-input'), refusedName)
+    await dictateModerationVerdict(key, false, 'insult')
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+    await expectProfileNameSnapshot(expect, wire, user.userId, {
+      name: refusedName,
+      phase: 'refused',
+    })
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(
+      'This name was not accepted because it appears to contain an insult.',
+    )
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(
+      refusedName,
+    )
+    await expect(page.getByTestId('profile-name')).toHaveText(newName)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(newName)
+    await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
+      newName,
+    )
+    expect(sends()).toBe(2)
   } finally {
     wire.stop()
     try {

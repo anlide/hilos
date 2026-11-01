@@ -630,14 +630,17 @@ and name it before writing.
    `standMailbox.mjs`), and one function per test handle; for an interlocutor,
    the one function that dictates the answer (`dictateModelAnswer()` in
    `standModel.mjs`), with the key coined by `modelKey()` of the same module.
-   A demo keeps only a wrapper that turns the resident's raw answer into its own
-   terms: a demo whose product PARSES the answer wraps the answer's shape in a
-   helper of its own — chat's is `dictateModerationVerdict()` in
-   `demo/chat/tests/e2e/helpers/moderation.ts` — because the gateway hands back
-   raw text and belongs to no demo. The price is paid by every spec:
-   each chat spec that sends a message or renames a user from the profile
-   dictates a verdict BEFORE the action, and one that does not reads "Moderation
-   unavailable" instead of the outcome it was written for. The
+   A wrapper that turns the resident's raw answer into somebody's terms lives
+   with whoever PARSES the answer, because the gateway hands back raw text and
+   belongs to no demo. The moderation verdict is parsed by the framework's
+   moderator, whichever demo asks, so its wrapper
+   `dictateModerationVerdict(key, allow, reason)` lives in `standModel.mjs`
+   beside `dictateModelAnswer()`. A demo keeps a wrapper of its own only when
+   its own product parses the answer. The price is paid by every spec with a
+   moderated action — a message, a new name, a picture: it dictates a verdict
+   BEFORE the action, one for each check the action starts, and one that does
+   not reads its moderation as unavailable instead of the outcome it was
+   written for. The
    behavior levers are not a test handle of the resident: a spec dictates them
    through `standGateway.mjs`, and the resident brings no helper of its own for
    them.

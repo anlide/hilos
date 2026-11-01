@@ -1,7 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import { test, expect, type Page } from '@playwright/test'
 import { holdLegalRevision } from '../helpers/legalHold.js'
 
 import {
+  cleanupFixtures,
+  type TestCleanup,
+  deleteModerationOwnRules,
+  dismissToasts,
   enterIdentifierAndPassword,
   login,
   logout,
@@ -33,7 +38,12 @@ import {
   expectDaemonNodeTableName,
   expectStandaloneWebsockets,
   watchDaemonWebsocketsFrames,
+  expectModerationAddDialogAccessibility,
+  expectModerationPagesAccessibility,
+  expectModerationRowDialogsAccessibility,
+  expectModerationViewerAccessibility,
   expectPasswordVisibility,
+  ROWS,
   shownByTestId,
   watchClientDocument,
   DAEMON_ROOT_PATH,
@@ -974,4 +984,92 @@ test.describe('Daemon section accessibility', () => {
       await expectDaemonSectionHead(expect, page, 'hilos_daemon')
     })
   }
+})
+
+test.describe('Moderation accessibility', () => {
+  const kind = 'hilos_profile_name'
+  const rulesPath = `/hilos/moderation/${kind}/rules`
+  const moderationTest = test.extend<{
+    cleanup: TestCleanup
+    ownedRule: string
+  }>({
+    cleanup: cleanupFixtures,
+    ownedRule: async ({ page, cleanup }, use) => {
+      // Reserve cleanup before the UI creates this scenario's only rule.
+      const rule = `Allow ordinary names. Accessible policy ${randomUUID()}.`
+      cleanup.defer(async () => {
+        await gotoPage(expect, page, rulesPath)
+        await dismissToasts(page)
+        await deleteModerationOwnRules(expect, page, [rule])
+      })
+      await grantAdminToSelf(expect, page)
+      await use(rule)
+    },
+  })
+
+  moderationTest(
+    'names pages and keeps keyboard dialogs safe for administrators and viewers',
+    async ({ page, browser, ownedRule, cleanup }) => {
+      const row = page
+        .getByTestId('hilos-moderation-rules-table')
+        .locator(ROWS)
+        .filter({ has: page.getByText(ownedRule, { exact: true }) })
+
+      await moderationTest.step(
+        'Section and kind pages expose named tables and keyboard navigation',
+        async () => {
+          await gotoPage(expect, page, '/hilos/moderation')
+          await expectModerationPagesAccessibility(expect, page, kind)
+        },
+      )
+
+      await moderationTest.step(
+        'Add names its field, traps focus and preserves a draft when discard is canceled',
+        async () => {
+          await expectModerationAddDialogAccessibility(
+            expect,
+            page,
+            kind,
+            ownedRule,
+          )
+          await dismissToasts(page)
+        },
+      )
+
+      await moderationTest.step(
+        'Edit and Delete return focus after Escape and explicit keyboard close',
+        () =>
+          expectModerationRowDialogsAccessibility(
+            expect,
+            page,
+            kind,
+            ownedRule,
+          ),
+      )
+
+      await moderationTest.step(
+        'A viewer can read and draft named dialogs while keyboard navigation skips every submit',
+        async () => {
+          const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+          const context = await browser.newContext({
+            baseURL,
+            ignoreHTTPSErrors,
+          })
+          cleanup.defer(() => context.close())
+          cleanup.defer(() => setAdminViewMode(false))
+          await setAdminViewMode(true)
+          const viewer = await context.newPage()
+          const sentWrites = await expectModerationViewerAccessibility(
+            expect,
+            viewer,
+            kind,
+            ownedRule,
+          )
+          await gotoPage(expect, page, rulesPath)
+          await expect(row).toBeVisible()
+          expect(sentWrites()).toEqual([0, 0, 0])
+        },
+      )
+    },
+  )
 })

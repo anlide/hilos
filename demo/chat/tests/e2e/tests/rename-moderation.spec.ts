@@ -18,8 +18,10 @@ import {
   dictateGatewayBehavior,
   releaseGatewayAnswer,
 } from '../../../../../framework/frontend/scripts/standGateway.mjs'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // Framework profile-name moderation on a real call to the stand's model: a
 // content refusal with an approved retry, an unavailable model, and an invalid
@@ -28,7 +30,8 @@ import { dictateModerationVerdict } from '../helpers/moderation.js'
 // Framework ModerationAgent checks the PROFILE_NAME kind through the shared
 // queue. Each test coins a key and puts it into the new name: the framework's
 // name prompt carries that text verbatim, so the key reaches the stand gateway's
-// model, which answers only what the spec dictated (helpers/moderation.ts).
+// model, which answers only what the spec dictated
+// (framework/frontend/scripts/standModel.mjs).
 // /test/reset is never called here — it would wipe other workers' dictations.
 //
 // Refusal words come from the backend. A content reason such as spam produces a

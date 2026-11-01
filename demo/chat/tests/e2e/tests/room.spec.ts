@@ -14,8 +14,10 @@ import {
 
 import { openBotEdit, watchBotSearch } from '../helpers/bots'
 import { logout, signUp } from '../helpers/session.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // spec-owner: demo — chat's main screen: participants, event stream, bots list and messages
 

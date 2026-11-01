@@ -32,7 +32,7 @@ import {
   waitForSmsCode,
 } from '../../../../../framework/frontend/scripts/standSms.mjs'
 import {
-  dictateModelAnswer,
+  dictateModerationVerdict,
   forgetModelKey,
   modelKey,
   readModelRequests,
@@ -110,12 +110,12 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
 })
 
-test('publishes a profile name only after model approval and preserves it after refusal', async ({
+test('publishes a profile name only after the model approves it and keeps the previous name after a refusal', async ({
   page,
 }) => {
+  const key = modelKey()
   const wire = watchProfileRenameFrames(page)
   const sends = countSentFrames(page, 'hilos_profile_name_set')
-  const key = modelKey()
   try {
     const user = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile')
@@ -127,21 +127,39 @@ test('publishes a profile name only after model approval and preserves it after 
     await clickSubmit(expect, page.getByTestId('profile-edit'))
     await confirmStepUp(page, 'profile-name-step-up-confirm')
     const newName = `Updated ${key}`
-    await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+    await typeInto(page.getByTestId('profile-name-input'), newName)
+    await dictateModerationVerdict(key, true, 'ok')
+    // The gateway holds the provider answer while the published identity is
+    // checked; the test releases it afterwards.
     await dictateGatewayBehavior('/model/api/generate', key, {
       awaitRelease: true,
     })
-    await typeInto(page.getByTestId('profile-name-input'), newName)
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
-    await expect.poll(async () => (await readModelRequests(key)).length).toBe(1)
-    await expectProfileNameSnapshot(expect, wire, user.userId, {
-      name: newName,
-      phase: 'checking',
-    })
-    await expect(page.getByTestId('modal')).toBeVisible()
+    const checking = await expectProfileNameSnapshot(
+      expect,
+      wire,
+      user.userId,
+      {
+        name: newName,
+        phase: 'checking',
+      },
+    )
+    await expect
+      .poll(() => readModelRequests(key))
+      .toEqual([{ ordinal: 1, key, imageHashes: [] }])
+    await expect(
+      page
+        .getByTestId('modal')
+        .getByRole('status')
+        .filter({ hasText: 'Checking your name…' }),
+    ).toHaveText('Checking your name…')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
+    await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
+      user.name,
+    )
+
     await releaseGatewayAnswer('/model/api/generate', key)
     const done = await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: newName,
@@ -161,6 +179,9 @@ test('publishes a profile name only after model approval and preserves it after 
       })
     await expect(page.getByTestId('profile-name')).toHaveText(newName)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(newName)
+    await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
+      newName,
+    )
 
     const attempt = wire.snapshots.filter(
       ({ state }) => state.change?.name === newName,
@@ -171,18 +192,19 @@ test('publishes a profile name only after model approval and preserves it after 
     expect([
       ...new Set(attempt.map(({ state }) => state.change?.requestId)),
     ]).toEqual([requestId])
+    expect(requestId).toBe(checking.state.change!.requestId)
     expect(attempt.map(({ state }) => state.change?.phase)).toContain(
       'checking',
     )
     expect(attempt.at(-1)?.state.change?.phase).toBe('done')
+    expect(await readModelRequests(key)).toEqual([
+      { ordinal: 1, key, imageHashes: [] },
+    ])
 
     await clickSubmit(expect, page.getByTestId('profile-edit'))
     const refusedName = `Refused ${key}`
-    await dictateModelAnswer(
-      key,
-      JSON.stringify({ allow: false, reason: 'insult' }),
-    )
     await typeInto(page.getByTestId('profile-name-input'), refusedName)
+    await dictateModerationVerdict(key, false, 'insult')
     await clickSubmit(expect, page.getByTestId('profile-rename-save'))
     await expectProfileNameSnapshot(expect, wire, user.userId, {
       name: refusedName,
@@ -196,14 +218,20 @@ test('publishes a profile name only after model approval and preserves it after 
     )
     await expect(page.getByTestId('profile-name')).toHaveText(newName)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(newName)
+    await expect(page.getByTestId('nav-profile-name')).toHaveAccessibleName(
+      newName,
+    )
     expect(sends()).toBe(2)
   } finally {
-    await test.info().attach('profile-name-wire', {
-      body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
-      contentType: 'application/json',
-    })
     wire.stop()
-    await forgetModelKey(key)
+    try {
+      await test.info().attach('profile-name-wire', {
+        body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
+        contentType: 'application/json',
+      })
+    } finally {
+      await forgetModelKey(key)
+    }
   }
 })
 

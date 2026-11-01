@@ -654,8 +654,8 @@ three lazy wrappers. The section presents the framework's Profile name and
 Profile photo kinds; Add, Edit and Delete remain internal to its Rules page.
 Polls mounts the Angular SDK section through three lazy page wrappers and a
 shared moderation context.
-Profile photos in tasks are separate work. (not in the code yet — HIL-1644)
-Profile photos in polls are separate work. (not in the code yet — HIL-1645)
+Tasks and polls also switch on profile photos, checked through the photo kind
+(HIL-1644, HIL-1645).
 
 ## Anti-Patterns
 
@@ -677,11 +677,14 @@ consumer (HIL-1627). Also built are the kinds/rules browser tables registered
 by Chat (HIL-1628), the Vue Rules Add, Edit and Delete flows, the React/tasks
 mount with three lazy pages and internal Rules forms, and the Angular/polls
 root, kind and rules pages mounted through lazy wrappers and a shared context.
-These activations have focused e2e coverage.
+Profile photos are on in tasks and polls (HIL-1644, HIL-1645). The section's
+e2e runs on all three kits — chat (Vue), tasks (React) and polls (Angular) —
+as one set of tests with shared checks, and each kit's accessibility spec walks
+it too (HIL-1638); where the specs live and what each kit adds is in
+[testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a
+spec".
 
-**Not built yet:** broader moderation
-e2e coverage and cluster coverage (HIL-1638/HIL-1639); enabling profile photos
-in tasks/polls (HIL-1644/HIL-1645).
+**Not built yet:** cluster coverage of moderation (HIL-1639).
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

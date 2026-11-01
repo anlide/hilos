@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { test as base, expect, type Page } from '@playwright/test'
 
 import { logout } from '../helpers/session.js'
@@ -25,7 +26,14 @@ import {
   expectChangeLogTableHead,
   CHANGE_LOG_TABLES_PATH,
   expectHilosUserOverviewAccessibility,
-  expectModerationKindHead,
+  cleanupFixtures,
+  type TestCleanup,
+  deleteModerationOwnRules,
+  expectModerationAddDialogAccessibility,
+  expectModerationPagesAccessibility,
+  expectModerationRowDialogsAccessibility,
+  expectModerationViewerAccessibility,
+  ROWS,
   expectPasswordVisibility,
   expectTableTextControl,
   expectTableTextGeometry,
@@ -99,12 +107,14 @@ import {
 } from '../../../../../framework/frontend/scripts/statusMail.mjs'
 
 import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
 import {
   dictateGatewayBehavior,
   releaseGatewayAnswer,
 } from '../../../../../framework/frontend/scripts/standGateway.mjs'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
@@ -1023,167 +1033,93 @@ test('Node pages expose one entity heading, link tabs and tables named through t
   }
 })
 
-test('the moderation kinds root exposes one heading, named table and keyboard open link', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/moderation')
-  await expectPageReady(expect, page)
-
-  // Exactly one h1 names the page from the shared head.
-  const heading = page.getByRole('heading', { level: 1 })
-  await expect(heading).toHaveCount(1)
-  await expect(heading).toHaveText('Moderation')
-
-  // The page heading is the table's accessible name.
-  await expect(page.getByRole('table', { name: 'Moderation' })).toBeVisible()
-
-  // The Open link is reachable and operable from the keyboard.
-  const openLink = shownByTestId(
-    page,
-    'hilos-moderation-open-hilos_profile_name',
-  )
-  await openLink.focus()
-  await expect(openLink).toBeFocused()
-  await expect(openLink).toHaveAttribute('aria-label', 'Open Profile name')
-})
-
-test('Rules inherits the sole kind heading as its table name and uses keyboard page links', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  const declared = {
-    kind: 'hilos_profile_name',
-    title: 'Profile name',
-    owner: 'Framework',
-  }
-  await gotoPage(expect, page, '/hilos/moderation/hilos_profile_name/rules')
-  await expectModerationKindHead(expect, page, declared, 'rules')
-  const table = page
-    .getByTestId('hilos-moderation-rules-table')
-    .getByRole('table')
-  await expect(table).toBeVisible()
-  await expect(table).toHaveAccessibleName('Profile name')
-  const headingId = await page
-    .getByTestId('hilos-page-head-title')
-    .getAttribute('id')
-  expect(headingId).toBeTruthy()
-  await expect(table).toHaveAttribute('aria-labelledby', headingId!)
-  await expect(page.getByTestId('hilos-table-title')).toHaveCount(0)
-  await expect(shownByTestId(page, 'hilos-table-search')).toHaveAccessibleName(
-    'Search rules…',
-  )
-
-  const overview = page.getByTestId('hilos-page-tab-hilos_moderation_kind')
-  const rules = page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules')
-  await overview.focus()
-  await expect(overview).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(rules).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(overview).toBeFocused()
-  await overview.press('Enter')
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name')
-  await expectModerationKindHead(expect, page, declared, 'overview')
-  await expect(page.getByTestId('hilos-moderation-rules-table')).toHaveCount(0)
-  await overview.focus()
-  await page.keyboard.press('Tab')
-  await expect(rules).toBeFocused()
-  await rules.press('Enter')
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name/rules')
-  await expectModerationKindHead(expect, page, declared, 'rules')
-  await expect(table).toHaveAccessibleName('Profile name')
-})
-
-for (const declared of [
-  { kind: 'hilos_profile_name', title: 'Profile name' },
-  { kind: 'hilos_profile_photo', title: 'Profile photo' },
-]) {
-  test(`Add rule for ${declared.title} names its field and traps and returns keyboard focus through dirty discard`, async ({
-    page,
-  }) => {
-    const sends = countSentFrames(page, 'hilos_moderation_rule_add')
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, `/hilos/moderation/${declared.kind}/rules`)
-    const opener = page.getByTestId('hilos-table-main-action')
-    await expect(opener).toHaveAccessibleName('Add rule')
-    await opener.focus()
-    await expect(opener).toBeFocused()
-    await opener.press('Enter')
-
-    const dialog = page.getByTestId('modal')
-    await expect(dialog).toHaveRole('dialog')
-    await expect(dialog).toHaveAttribute('aria-modal', 'true')
-    await expect(dialog).toHaveAccessibleName(`Add rule · ${declared.title}`)
-    const field = page.getByTestId('hilos-moderation-rule-add-rule')
-    await expect(field).toHaveAccessibleName('Rule')
-    await expect(field).toHaveAttribute('data-autofocus', '')
-    await expect(field).toBeFocused()
-    await expect(field).toHaveValue('')
-    const save = page.getByTestId('hilos-moderation-rule-add-submit')
-    await expect(save).toHaveAccessibleName('Save')
-    await expect(save).toBeDisabled()
-    const cancel = page.getByTestId('hilos-moderation-rule-add-cancel')
-    const close = page.getByTestId('modal-close')
-    await cancel.focus()
-    await cancel.press('Tab')
-    await expect(close).toBeFocused()
-    await close.press('Shift+Tab')
-    await expect(cancel).toBeFocused()
-    await cancel.press('Escape')
-    await expect(dialog).toBeHidden()
-    await expect(opener).toBeFocused()
-
-    await opener.press('Space')
-    await expect(field).toBeFocused()
-    await typeInto(field, 'An unsaved accessible policy')
-    await expect(save).toBeEnabled()
-    await save.focus()
-    await save.press('Tab')
-    await expect(close).toBeFocused()
-    await close.press('Shift+Tab')
-    await expect(save).toBeFocused()
-    await field.focus()
-    await field.press('Escape')
-
-    const confirm = page.getByTestId('modal-confirm')
-    await expect(confirm).toHaveRole('alertdialog')
-    await expect(confirm).toHaveAttribute('aria-modal', 'true')
-    await expect(confirm).toHaveAccessibleName('Discard changes?')
-    await expect(confirm).toBeFocused()
-    const keep = page.getByTestId('modal-confirm-cancel')
-    const discard = page.getByTestId('modal-confirm-discard')
-    await keep.focus()
-    await keep.press('Shift+Tab')
-    await expect(discard).toBeFocused()
-    await discard.press('Tab')
-    await expect(keep).toBeFocused()
-    await keep.press('Enter')
-    await expect(confirm).toBeHidden()
-    await expect(field).toBeFocused()
-    await expect(field).toHaveValue('An unsaved accessible policy')
-
-    await cancel.focus()
-    await cancel.press('Enter')
-    await expect(confirm).toBeFocused()
-    await discard.focus()
-    await discard.press('Enter')
-    await expect(confirm).toBeHidden()
-    await expect(dialog).toBeHidden()
-    await expect(opener).toBeFocused()
-    await opener.press('Enter')
-    await expect(field).toBeFocused()
-    await expect(field).toHaveValue('')
-    await expect(save).toBeDisabled()
-    await field.press('Escape')
-    await expect(dialog).toBeHidden()
-    await expect(opener).toBeFocused()
-    expect(sends()).toBe(0)
-    await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
+test.describe('Moderation accessibility', () => {
+  const kind = 'hilos_profile_name'
+  const rulesPath = `/hilos/moderation/${kind}/rules`
+  const moderationTest = test.extend<{
+    cleanup: TestCleanup
+    ownedRule: string
+  }>({
+    cleanup: cleanupFixtures,
+    ownedRule: async ({ page, cleanup }, use) => {
+      // Reserve cleanup before the UI creates this scenario's only rule.
+      const rule = `Allow ordinary names. Accessible policy ${randomUUID()}.`
+      cleanup.defer(async () => {
+        await gotoPage(expect, page, rulesPath)
+        await dismissToasts(page)
+        await deleteModerationOwnRules(expect, page, [rule])
+      })
+      await grantAdminToSelf(expect, page)
+      await use(rule)
+    },
   })
-}
+
+  moderationTest(
+    'names pages and keeps keyboard dialogs safe for administrators and viewers',
+    async ({ page, browser, ownedRule, cleanup }) => {
+      const row = page
+        .getByTestId('hilos-moderation-rules-table')
+        .locator(ROWS)
+        .filter({ has: page.getByText(ownedRule, { exact: true }) })
+
+      await moderationTest.step(
+        'Section and kind pages expose named tables and keyboard navigation',
+        async () => {
+          await gotoPage(expect, page, '/hilos/moderation')
+          await expectModerationPagesAccessibility(expect, page, kind)
+        },
+      )
+
+      await moderationTest.step(
+        'Add names its field, traps focus and preserves a draft when discard is canceled',
+        async () => {
+          await expectModerationAddDialogAccessibility(
+            expect,
+            page,
+            kind,
+            ownedRule,
+          )
+          await dismissToasts(page)
+        },
+      )
+
+      await moderationTest.step(
+        'Edit and Delete return focus after Escape and explicit keyboard close',
+        () =>
+          expectModerationRowDialogsAccessibility(
+            expect,
+            page,
+            kind,
+            ownedRule,
+          ),
+      )
+
+      await moderationTest.step(
+        'A viewer can read and draft named dialogs while keyboard navigation skips every submit',
+        async () => {
+          const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+          const context = await browser.newContext({
+            baseURL,
+            ignoreHTTPSErrors,
+          })
+          cleanup.defer(() => context.close())
+          cleanup.defer(() => setAdminViewMode(false))
+          await setAdminViewMode(true)
+          const viewer = await context.newPage()
+          const sentWrites = await expectModerationViewerAccessibility(
+            expect,
+            viewer,
+            kind,
+            ownedRule,
+          )
+          await gotoPage(expect, page, rulesPath)
+          await expect(row).toBeVisible()
+          expect(sentWrites()).toEqual([0, 0, 0])
+        },
+      )
+    },
+  )
+})
 
 test.describe('Daemon section accessibility', () => {
   test.afterEach(() => setAdminViewMode(false))

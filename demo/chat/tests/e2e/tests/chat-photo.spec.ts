@@ -7,9 +7,11 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
 import { endSendPause } from '../helpers/sendPause.js'
 

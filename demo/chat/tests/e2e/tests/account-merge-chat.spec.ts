@@ -12,8 +12,10 @@ import {
   createTestAdmin,
   createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
+import {
+  dictateModerationVerdict,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // spec-owner: demo — verifies that the merge reassigns the chat message to the survivor.
 

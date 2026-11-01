@@ -8,7 +8,7 @@ import {
   createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { dictateModerationVerdict } from './moderation.js'
+import { dictateModerationVerdict } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 /** Keep Chat's opaque JPEG and half-transparent PNG recipe for its moderation walk. */
 export async function picture(

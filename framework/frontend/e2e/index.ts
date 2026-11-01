@@ -535,11 +535,29 @@ export {
 } from './security.js'
 
 export {
+  FRAMEWORK_MODERATION_KINDS,
+  addModerationRule,
   deleteModerationOwnRules,
+  deleteModerationRule,
+  editModerationRule,
+  expectModerationAddDialogAccessibility,
+  expectModerationBuiltInRules,
+  expectModerationBuiltInRulesReturned,
+  expectModerationDeleteEcho,
   expectModerationKindHead,
+  expectModerationKindOverview,
   expectModerationKindTabs,
   expectModerationOwnRules,
+  expectModerationPagesAccessibility,
+  expectModerationRemovalEcho,
+  expectModerationRowDialogsAccessibility,
+  expectModerationRulesInForce,
   expectModerationRulesOpening,
+  expectModerationSortReply,
+  expectModerationUpdateEcho,
+  expectModerationViewerAccessibility,
+  reserveModerationRules,
+  type ModerationKindDeclaration,
 } from './moderation.js'
 
 export {

@@ -1,20 +1,35 @@
-import { expect, test } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import { expect, test as base } from '@playwright/test'
 
 import {
+  addModerationRule,
+  cleanupFixtures,
   clickSubmit,
   clickUnavailableControl,
   countSentFrames,
-  deliveryObject,
+  createTestAdmin,
+  deleteModerationRule,
+  dismissToasts,
+  editModerationRule,
   expectDataFreeDeparture,
+  expectModerationBuiltInRules,
+  expectModerationBuiltInRulesReturned,
+  expectModerationDeleteEcho,
   expectModerationKindHead,
-  expectModerationKindTabs,
+  expectModerationKindOverview,
   expectModerationOwnRules,
+  expectModerationRemovalEcho,
+  expectModerationRulesInForce,
   expectModerationRulesOpening,
+  expectModerationSortReply,
+  expectModerationUpdateEcho,
   expectPageReady,
+  FRAMEWORK_MODERATION_KINDS,
   gotoPage,
+  grantAdminToSelf,
   openAndSelectPhoto,
-  PAGE_READY,
   PAGE_REFUSED,
+  reserveModerationRules,
   ROW_PREFIX,
   ROWS,
   shownByTestId,
@@ -22,1012 +37,748 @@ import {
   watchClientDocument,
   watchDeliveryFrames,
   watchPageReplies,
-  createTestAdmin,
-  grantAdminToSelf,
+  type ModerationKindDeclaration,
+  type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
-  dictateModelAnswer,
+  dictateModerationVerdict,
+  forgetModelKey,
   modelKey,
+  readModelRequests,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { picture } from '../helpers/profilePhoto.js'
 
-// Framework moderation kinds, Overview, Rules and mutations, carried by chat.
-// Expectations come from the kind declarations, moderation profile defaults
-// and seed 006_framework_moderation_rules. Only the last test adds, edits and
-// deletes its own photo rule, proving the model request uses the edited policy.
+// The Moderation section on Vue. Tests 1–5 carry the same titles and steps as
+// tasks (React) and polls (Angular); the checks the three share are one copy in
+// framework/frontend/e2e/moderation.ts, and this file keeps the scenario, its
+// order and its navigation. Test 6 is chat's own proof: the rule saved on the
+// Rules page is what the model's next photo check carries. Rules of our own are
+// written only on hilos_profile_photo — seed 006_framework_moderation_rules
+// holds rules of its own on hilos_profile_name and chat_message — and the walk
+// of test 1 does not assert the state of any kind's rules.
+
+const test = base.extend<{ cleanup: TestCleanup }>({
+  cleanup: cleanupFixtures,
+})
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
-// Keep the seeded assertions ahead of the rule that replaces the photo defaults.
+// One worker, file order: every test prepares its own rules, reserves their
+// removal before Add and does not rely on a neighbor having passed.
 test.describe.configure({ mode: 'default' })
 
-const DECLARED_KINDS = [
-  {
-    kind: 'hilos_profile_name',
-    title: 'Profile name',
-    owner: 'Framework',
-    modelLabel: 'Text model',
-    model: 'qwen2.5:0.5b',
-    profile: 'hilos.moderation.text',
-    reasons: [
-      'insult',
-      'threat',
-      'hate_speech',
-      'sexual',
-      'spam',
-      'impersonation',
-    ],
-    rules: '3 rules of your own',
-    ownRules: [
-      'Allow benign display names. Block: insults, threats, hate speech, sexual, spam, impersonation.',
-      'Explicit text only; no inference. Uncertain→allow.',
-      'Reasons: ok, insult, threat, hate_speech, sexual, spam, impersonation.',
-    ],
-    defaultRules: [
-      'Default policy: allow benign display names.',
-      'Block explicit insults, threats, hate speech, sexual content, spam, and impersonation.',
-      'If uncertain, return allow=true.',
-    ],
-  },
-  {
-    kind: 'hilos_profile_photo',
-    title: 'Profile photo',
-    owner: 'Framework',
-    modelLabel: 'Vision model',
-    model: 'qwen2.5vl:3b',
-    profile: 'hilos.moderation.image',
-    reasons: ['nudity', 'violence', 'hate'],
-    rules: 'Built-in until you add a rule of your own',
-    ownRules: [],
-    defaultRules: [
-      'Default policy: allow ordinary photos, drawings and logos.',
-      'Block only nudity or sexual content, graphic violence, and hate symbols.',
-      'If uncertain, return allow=true.',
-    ],
-  },
-  {
-    kind: 'chat_message',
-    title: 'Chat message',
-    owner: 'Project',
-    modelLabel: 'Text model',
-    model: 'qwen2.5:0.5b',
-    profile: 'hilos.moderation.text',
-    reasons: ['insult', 'threat', 'hate_speech', 'sexual', 'spam'],
-    rules: '3 rules of your own',
-    ownRules: [
-      "Allow benign. Block: insults, threats, hate speech, sexual, spam. Don't block greetings, names, neutral.",
-      'Explicit text only; no inference. Uncertain→allow. Attachments never cause a block.',
-      'Reasons: ok, insult, threat, hate_speech, sexual, spam.',
-    ],
-    defaultRules: [
-      'Default policy: allow benign messages.',
-      'Block only explicit insults, threats, hate speech, sexual content, and obvious spam.',
-      'If uncertain, return allow=true.',
-    ],
-  },
-  {
-    kind: 'chat_message_picture',
-    title: 'Chat message picture',
-    owner: 'Project',
-    modelLabel: 'Vision model',
-    model: 'qwen2.5vl:3b',
-    profile: 'hilos.moderation.image',
-    reasons: ['nudity', 'violence', 'hate'],
-    rules: 'Built-in until you add a rule of your own',
-    ownRules: [],
-    defaultRules: [
-      'Default policy: allow ordinary pictures, screenshots and drawings.',
-      'Block only nudity or sexual content, graphic violence, and hate symbols.',
-      'If uncertain, return allow=true.',
-    ],
-  },
-] as const
+// The photo kind is built-in on every kit, so it is the one rules are written on.
+const PHOTO = FRAMEWORK_MODERATION_KINDS.find(
+  ({ kind }) => kind === 'hilos_profile_photo',
+)!
+const OVERVIEW_PATH = `/hilos/moderation/${PHOTO.kind}`
+const RULES_PATH = `${OVERVIEW_PATH}/rules`
+const VIEW_MODE_DESCRIPTION =
+  'View mode · You can look around, but not change anything.'
+
+// The two kinds the chat declares on top of the framework's.
+const CHAT_MESSAGE: ModerationKindDeclaration = {
+  kind: 'chat_message',
+  title: 'Chat message',
+  owner: 'Project',
+  modelLabel: 'Text model',
+  model: 'qwen2.5:0.5b',
+  profile: 'hilos.moderation.text',
+  reasons: ['insult', 'threat', 'hate_speech', 'sexual', 'spam'],
+  defaultRules: [
+    'Default policy: allow benign messages.',
+    'Block only explicit insults, threats, hate speech, sexual content, and obvious spam.',
+    'If uncertain, return allow=true.',
+  ],
+}
+const CHAT_MESSAGE_PICTURE: ModerationKindDeclaration = {
+  kind: 'chat_message_picture',
+  title: 'Chat message picture',
+  owner: 'Project',
+  modelLabel: 'Vision model',
+  model: 'qwen2.5vl:3b',
+  profile: 'hilos.moderation.image',
+  reasons: ['nudity', 'violence', 'hate'],
+  defaultRules: [
+    'Default policy: allow ordinary pictures, screenshots and drawings.',
+    'Block only nudity or sexual content, graphic violence, and hate symbols.',
+    'If uncertain, return allow=true.',
+  ],
+}
+const DECLARED_KINDS: readonly ModerationKindDeclaration[] = [
+  ...FRAMEWORK_MODERATION_KINDS,
+  CHAT_MESSAGE,
+  CHAT_MESSAGE_PICTURE,
+]
 
 test.afterEach(async () => {
   await setAdminViewMode(false)
 })
 
-test('opens moderation kinds from dashboard, supports direct navigation, reload and history', async ({
+test('opens every declared kind from the dashboard through Overview and Rules, with search, cold entry, F5 and history', async ({
   page,
+  cleanup,
 }) => {
+  // Proves: the routes, the page subscription by kind, the restore on F5 and
+  // in history — what a unit test with a fake connection cannot see.
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos')
-  await expectPageReady(expect, page)
-
-  // Navigate to Moderation from the People group on the admin dashboard.
-  const card = page
-    .locator(
-      '[data-id="hilos-admin-child-hilos_moderation"], [data-id="dashboard-card-hilos_moderation"]',
-    )
-    .first()
-  await expect(card).toBeVisible()
-  await card.click()
-  await expectPageReady(expect, page)
-  expect(new URL(page.url()).pathname).toBe('/hilos/moderation')
-
-  // Table and declared kind rows are visible.
-  await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
-  for (const { kind } of DECLARED_KINDS) {
-    await expect(
-      shownByTestId(page, `hilos-moderation-row-${kind}`),
-    ).toBeVisible()
-  }
-
-  // Browser navigation: Back to /hilos, Forward to /hilos/moderation.
-  await page.goBack()
-  await expectPageReady(expect, page)
-  expect(new URL(page.url()).pathname).toBe('/hilos')
-
-  await page.goForward()
-  await expectPageReady(expect, page)
-  expect(new URL(page.url()).pathname).toBe('/hilos/moderation')
-  await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
-
-  // Page reload (F5) keeps table state over the live socket.
-  await page.reload()
-  await expectPageReady(expect, page)
-  expect(new URL(page.url()).pathname).toBe('/hilos/moderation')
-  await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
-
-  // Direct URL navigation.
-  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
-  await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
-})
-
-test('opens each declared kind Overview and keeps its head, data and history in the SPA', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
-  await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
-
   const document = await watchClientDocument(page)
-  try {
-    for (const declared of DECLARED_KINDS) {
-      const { kind, title, owner, modelLabel, model, profile, reasons, rules } =
-        declared
-      const openLink = shownByTestId(page, `hilos-moderation-open-${kind}`)
-      await expect(openLink).toBeVisible()
-      await expect(openLink).toHaveAttribute(
-        'href',
-        `/hilos/moderation/${kind}`,
-      )
-      await expect(openLink).toHaveAttribute('aria-label', `Open ${title}`)
-      await openLink.click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
+  cleanup.defer(() => document.dispose())
+  const kinds = page.getByTestId('hilos-moderation-kinds-table')
+  const rulesTable = page.getByTestId('hilos-moderation-rules-table')
 
-      const heading = page.getByRole('heading', { level: 1 })
-      await expect(heading).toHaveCount(1)
-      await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
-      await expect(heading).toHaveText(title)
-      await expect(page).toHaveTitle(`${title} · Hilos Chat`)
-      await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
-      await expect(page.getByTestId('hilos-moderation-kind-owner')).toHaveText(
-        owner,
-      )
-      await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
-        kind,
-      )
-
-      const crumbs = page.getByTestId('hilos-breadcrumb')
-      await expect(crumbs).toHaveAccessibleName('Breadcrumb')
-      await expect(crumbs.locator('li')).toHaveText([
-        'Hilos',
-        'Moderation',
-        title,
-      ])
-      await expect(crumbs.getByRole('link')).toHaveText(['Hilos', 'Moderation'])
+  await test.step('The dashboard card opens the section with exactly the declared kinds', async () => {
+    await clickSubmit(
+      expect,
+      page.getByTestId('dashboard-card-hilos_moderation'),
+    )
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL('/hilos/moderation')
+    await expect(kinds.locator(ROWS)).toHaveCount(DECLARED_KINDS.length)
+    for (const { kind } of DECLARED_KINDS) {
       await expect(
-        crumbs.getByTestId('hilos-breadcrumb-hilos'),
-      ).toHaveAttribute('href', '/hilos')
-      await expect(
-        crumbs.getByTestId('hilos-breadcrumb-hilos_moderation'),
-      ).toHaveAttribute('href', '/hilos/moderation')
-      const currentCrumb = crumbs.locator('[aria-current="page"]')
-      await expect(currentCrumb).toHaveCount(1)
-      await expect(currentCrumb).toHaveText(title)
-      await expect(currentCrumb.locator('a')).toHaveCount(0)
-
-      const overview = page.getByTestId('hilos-moderation-kind-overview')
-      await expect(overview).toBeVisible()
-      await expect(overview.locator('dl dt')).toHaveText([
-        'Checked by',
-        'Can refuse for',
-        'Rules in force',
-      ])
-      await expect(overview.locator('dl dd')).toHaveCount(3)
-      await expect(page.getByTestId('hilos-moderation-kind-model')).toHaveText(
-        `${modelLabel} · ${model} — profile ${profile}`,
-      )
-      await expect(
-        page.getByTestId('hilos-moderation-kind-profile'),
-      ).toHaveText(profile)
-      await expect(
-        page.getByTestId('hilos-moderation-kind-reasons').locator('.badge'),
-      ).toHaveText([...reasons])
-      await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-        rules,
-      )
-      await expect(
-        page.getByTestId('hilos-moderation-kind-loading'),
-      ).toHaveCount(0)
-      await expectModerationKindTabs(expect, page, kind, 'overview')
-      await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-      await expect(
-        page
-          .getByTestId('hilos-admin-page')
-          .locator('button, input, select, textarea, table, [role="tablist"]'),
-      ).toHaveCount(0)
-      await document.unchanged()
-
-      await page
-        .getByTestId('hilos-page-tab-hilos_moderation_kind_rules')
-        .click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${kind}/rules`)
-      await expectModerationKindHead(expect, page, declared, 'rules')
-      await expect(page).toHaveTitle(`${title} · Hilos Chat`)
-      await expect(
-        page.getByTestId('hilos-moderation-kind-overview'),
-      ).toHaveCount(0)
-      await expect(
-        page.getByTestId('hilos-moderation-rules-table'),
+        shownByTestId(kinds, `hilos-moderation-row-${kind}`),
       ).toBeVisible()
-      if (declared.ownRules.length > 0) {
-        await expectModerationOwnRules(expect, page, declared.ownRules)
-      } else {
-        const empty = shownByTestId(page, 'hilos-table-empty')
-        await expect(empty.locator('p')).toHaveText([
-          'No rules of your own yet',
-          `${title} is checked by its built-in rules below.`,
-        ])
-        const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
-        await expect(builtIn).toBeVisible()
-        await expect(builtIn).toHaveClass(/bg-body-tertiary/)
-        await expect(builtIn.getByRole('heading', { level: 2 })).toHaveText(
-          'Built-in rules',
-        )
-        await expect(builtIn.locator('.badge')).toHaveText('Built-in')
-        await expect(builtIn.locator('p')).toHaveText(
-          'They come with the kind and apply until you add a rule of your own. Your first rule replaces them all.',
-        )
-        await expect(builtIn.locator('ul')).toHaveClass(/text-body-secondary/)
-        await expect(builtIn.locator('li')).toHaveText([
-          ...declared.defaultRules,
-        ])
-        await expect(
-          page.getByTestId('hilos-moderation-rules-table').locator(ROWS),
-        ).toHaveCount(0)
-        await expect(page.getByTestId('hilos-table-no-matches')).toHaveCount(0)
-      }
-      await document.unchanged()
-      await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
-      await expectModerationKindHead(expect, page, declared, 'overview')
-      await expect(overview).toBeVisible()
-      await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-        rules,
+    }
+    await document.unchanged()
+  })
+
+  await test.step('Search narrows the kinds, nonsense finds nothing, reset brings them all back', async () => {
+    const search = shownByTestId(kinds, 'hilos-table-search')
+    await typeInto(search, 'photo')
+    await expect(kinds.locator(ROWS)).toHaveCount(1)
+    await expect(
+      shownByTestId(kinds, `hilos-moderation-row-${PHOTO.kind}`),
+    ).toBeVisible()
+    await typeInto(search, 'no_such_kind')
+    await expect(shownByTestId(kinds, 'hilos-table-no-matches')).toContainText(
+      'Nothing found',
+    )
+    await expect(kinds.locator(ROWS)).toHaveCount(0)
+    await clickSubmit(
+      expect,
+      shownByTestId(kinds, 'hilos-table-no-matches-reset'),
+    )
+    await expect(search).toHaveValue('')
+    await expect(kinds.locator(ROWS)).toHaveCount(DECLARED_KINDS.length)
+  })
+
+  for (const declared of DECLARED_KINDS) {
+    await test.step(`Open ${declared.kind}: Overview, Rules, Overview, back to the section`, async () => {
+      const open = shownByTestId(
+        kinds,
+        `hilos-moderation-open-${declared.kind}`,
       )
-      await expect(
-        page.getByTestId('hilos-moderation-rules-table'),
-      ).toHaveCount(0)
-      await expect(
-        page.getByTestId('hilos-moderation-rules-built-in'),
-      ).toHaveCount(0)
+      await expect(open).toHaveAttribute(
+        'href',
+        `/hilos/moderation/${declared.kind}`,
+      )
+      await expect(open).toHaveAccessibleName(`Open ${declared.title}`)
+      await clickSubmit(expect, open)
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expectModerationKindOverview(expect, page, declared)
       await document.unchanged()
 
-      await crumbs.getByTestId('hilos-breadcrumb-hilos_moderation').click()
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules'),
+      )
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
+      await expectModerationKindHead(expect, page, declared, 'rules')
+      await expect(rulesTable).toBeVisible()
+      await document.unchanged()
+
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-page-tab-hilos_moderation_kind'),
+      )
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expect(rulesTable).toHaveCount(0)
+      await document.unchanged()
+
+      await clickSubmit(
+        expect,
+        page
+          .getByTestId('hilos-breadcrumb')
+          .getByTestId('hilos-breadcrumb-hilos_moderation'),
+      )
       await expectPageReady(expect, page)
       await expect(page).toHaveURL('/hilos/moderation')
-      await expect(
-        page.getByTestId('hilos-moderation-kinds-table'),
-      ).toBeVisible()
-      await expect(
-        page.getByTestId('hilos-moderation-kind-overview'),
-      ).toHaveCount(0)
+      await expect(kinds).toBeVisible()
       await document.unchanged()
-    }
+    })
+  }
 
-    // Back to the last kind, then skip its Rules and Overview history entries:
-    // the same detail component must replace picture data with text data.
+  await test.step('Back and Forward between two kinds swap the data on the same screen', async () => {
     await page.goBack()
     await expectPageReady(expect, page)
-    await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
-      'chat_message_picture',
+    await expect(page).toHaveURL(
+      `/hilos/moderation/${CHAT_MESSAGE_PICTURE.kind}`,
     )
+    await expectModerationKindHead(
+      expect,
+      page,
+      CHAT_MESSAGE_PICTURE,
+      'overview',
+    )
+    // Over the picture kind's Rules and Overview entries and the section visit
+    // between the two kinds: the same detail screen must swap picture data for
+    // text data, and back.
     await page.evaluate(() => window.history.go(-4))
-    await expect(page).toHaveURL('/hilos/moderation/chat_message')
+    await expect(page).toHaveURL(`/hilos/moderation/${CHAT_MESSAGE.kind}`)
     await expectPageReady(expect, page)
-    await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
-      'chat_message',
-    )
-    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
-      'Chat message',
-    )
-    await expect(page).toHaveTitle('Chat message · Hilos Chat')
-    await expect(page.getByTestId('hilos-moderation-kind-model')).toHaveText(
-      'Text model · qwen2.5:0.5b — profile hilos.moderation.text',
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-      '3 rules of your own',
-    )
+    await expectModerationKindHead(expect, page, CHAT_MESSAGE, 'overview')
+    await expectModerationKindOverview(expect, page, CHAT_MESSAGE)
     await document.unchanged()
-
     await page.evaluate(() => window.history.go(4))
-    await expect(page).toHaveURL('/hilos/moderation/chat_message_picture')
+    await expect(page).toHaveURL(
+      `/hilos/moderation/${CHAT_MESSAGE_PICTURE.kind}`,
+    )
     await expectPageReady(expect, page)
-    await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
-      'chat_message_picture',
+    await expectModerationKindHead(
+      expect,
+      page,
+      CHAT_MESSAGE_PICTURE,
+      'overview',
     )
-    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
-      'Chat message picture',
-    )
-    await expect(page).toHaveTitle('Chat message picture · Hilos Chat')
-    await expect(page.getByTestId('hilos-moderation-kind-model')).toHaveText(
-      'Vision model · qwen2.5vl:3b — profile hilos.moderation.image',
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-      'Built-in until you add a rule of your own',
-    )
-
-    await page.getByTestId('hilos-breadcrumb-hilos').click()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL('/hilos')
+    await expectModerationKindOverview(expect, page, CHAT_MESSAGE_PICTURE)
     await document.unchanged()
-  } finally {
-    await document.dispose()
-  }
-})
+  })
 
-test('loads a kind Overview directly and after F5 with the same resolved data', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-
-  for (const {
-    kind,
-    title,
-    owner,
-    modelLabel,
-    model,
-    profile,
-    rules,
-  } of DECLARED_KINDS) {
-    await gotoPage(expect, page, `/hilos/moderation/${kind}`, PAGE_READY)
-    const overview = page.getByTestId('hilos-moderation-kind-overview')
-    await expect(overview).toBeVisible()
-    const directText = await overview.innerText()
-
-    await page.reload()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
-    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(title)
-    await expect(page).toHaveTitle(`${title} · Hilos Chat`)
-    await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(kind)
-    await expect(page.getByTestId('hilos-moderation-kind-owner')).toHaveText(
-      owner,
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-model')).toHaveText(
-      `${modelLabel} · ${model} — profile ${profile}`,
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-      rules,
-    )
-    await expect(overview).toHaveText(directText, { useInnerText: true })
-  }
-})
-
-test('loads Rules directly and after F5 from one reply with both canonical windows', async ({
-  page,
-}) => {
-  const log = watchDeliveryFrames(page)
-  await grantAdminToSelf(expect, page)
-  try {
+  await test.step('Cold entry and F5 on Overview and Rules answer with the same data', async () => {
     for (const declared of DECLARED_KINDS) {
-      await gotoPage(
-        expect,
-        page,
-        `/hilos/moderation/${declared.kind}/rules`,
-        PAGE_READY,
-      )
-      await expectModerationKindHead(expect, page, declared, 'rules')
-      const table = page.getByTestId('hilos-moderation-rules-table')
-      await expect(table).toBeVisible()
-      if (declared.ownRules.length > 0) {
-        await expectModerationOwnRules(expect, page, declared.ownRules)
-      } else {
-        await expect(
-          page.getByTestId('hilos-moderation-rules-built-in').locator('li'),
-        ).toHaveText([...declared.defaultRules])
-      }
-      await expectModerationRulesOpening(expect, log, declared)
-      const directText = await table.innerText()
+      await gotoPage(expect, page, `/hilos/moderation/${declared.kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expectModerationKindOverview(expect, page, declared)
+      await page.reload()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expectModerationKindOverview(expect, page, declared)
 
+      await gotoPage(expect, page, `/hilos/moderation/${declared.kind}/rules`)
+      await expectModerationKindHead(expect, page, declared, 'rules')
+      await expect(rulesTable).toBeVisible()
       await page.reload()
       await expectPageReady(expect, page)
       await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
       await expectModerationKindHead(expect, page, declared, 'rules')
-      await expect(table).toHaveText(directText, { useInnerText: true })
-      await expectModerationRulesOpening(expect, log, declared)
-    }
-  } finally {
-    log.stop()
-  }
-})
-
-for (const declared of [DECLARED_KINDS[0], DECLARED_KINDS[2]]) {
-  test(`reads, searches and sorts ${declared.kind} own rules without showing built-ins`, async ({
-    page,
-  }) => {
-    const log = watchDeliveryFrames(page)
-    await grantAdminToSelf(expect, page)
-    await gotoPage(
-      expect,
-      page,
-      `/hilos/moderation/${declared.kind}/rules`,
-      PAGE_READY,
-    )
-    await expectModerationOwnRules(expect, page, declared.ownRules)
-    const document = await watchClientDocument(page)
-    try {
-      const search = shownByTestId(page, 'hilos-table-search')
-      await typeInto(search, 'Explicit text only')
-      await expectModerationOwnRules(expect, page, [declared.ownRules[1]])
-
-      await typeInto(search, 'no_such_own_rule')
-      const empty = shownByTestId(page, 'hilos-table-no-matches')
-      await expect(empty).toContainText('Nothing found')
-      await expect(
-        shownByTestId(page, 'hilos-table-no-matches-terms'),
-      ).toHaveText('No rows match “no_such_own_rule”')
-      await expect(
-        page.getByTestId('hilos-moderation-rules-built-in'),
-      ).toHaveCount(0)
-      await expect(page.getByTestId('hilos-table-empty')).toHaveCount(0)
-      await expect(
-        page.getByTestId('hilos-moderation-rules-table').locator(ROWS),
-      ).toHaveCount(0)
-      await shownByTestId(page, 'hilos-table-no-matches-reset').click()
-      await expect(search).toHaveValue('')
-      await expectModerationOwnRules(expect, page, declared.ownRules)
-
-      const sort = page.getByTestId('hilos-table-sort-rule')
-      const header = page.locator('th:has([data-id="hilos-table-sort-rule"])')
-      await expect(header).toHaveAttribute('aria-sort', 'none')
-      await sort.click()
-      await expect(header).toHaveAttribute('aria-sort', 'ascending')
-      // Ascending matches the seed order, so DOM text alone cannot prove its reply.
-      await expect
-        .poll(() => {
-          const request = log.sent
-            .map((frame) => deliveryObject(frame.wire))
-            .filter(
-              (wire) =>
-                wire.type === 'table_viewport' &&
-                wire.tableKey === 'hilosModerationRules',
-            )
-            .at(-1)
-          const replies = log.packets
-            .flatMap((packet) => packet.frames)
-            .map((frame) => deliveryObject(frame.wire))
-            .filter((wire) => wire.type === 'table_window')
-            .map((wire) => deliveryObject(wire.data))
-            .filter(
-              (data) =>
-                data.tableKey === 'hilosModerationRules' &&
-                data.requestId === request?.requestId,
-            )
-          return {
-            sort: request?.sort,
-            kind: deliveryObject(request?.filter).kind,
-            replies: replies.length,
-          }
-        })
-        .toEqual({
-          sort: [{ field: 'rule', direction: 'asc' }],
-          kind: declared.kind,
-          replies: 1,
-        })
-      await sort.click()
-      await expect(header).toHaveAttribute('aria-sort', 'descending')
-      await expectModerationOwnRules(
-        expect,
-        page,
-        [...declared.ownRules].reverse(),
-      )
-      await sort.click()
-      await expect(header).toHaveAttribute('aria-sort', 'none')
-      await expectModerationOwnRules(expect, page, declared.ownRules)
-
-      await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
-      await expectPageReady(expect, page)
-      await expectModerationKindHead(expect, page, declared, 'overview')
-      await expect(
-        page.getByTestId('hilos-moderation-rules-table'),
-      ).toHaveCount(0)
-      await page.goBack()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
-      await expectModerationKindHead(expect, page, declared, 'rules')
-      await expectModerationOwnRules(expect, page, declared.ownRules)
-      await page.goForward()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
-      await expectModerationKindHead(expect, page, declared, 'overview')
-      await expect(
-        page.getByTestId('hilos-moderation-rules-table'),
-      ).toHaveCount(0)
-      await document.unchanged()
-    } finally {
-      log.stop()
-      await document.dispose()
+      await expect(rulesTable).toBeVisible()
     }
   })
-}
+})
 
-test('refuses an unknown kind through the server subscription as 404', async ({
+test('refuses an unknown kind on Overview and Rules as 404 from the server subscription', async ({
   page,
 }) => {
+  // Proves: the refusal comes from the server's subscription, not from the
+  // client's router — the one reply per page is the error itself.
   const observed = watchPageReplies(page)
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/moderation/unknown_kind', PAGE_REFUSED)
-  await expect(page).toHaveURL('/hilos/moderation/unknown_kind')
-  await expect(page.getByTestId('page-error')).toHaveAttribute(
-    'data-error-code',
-    '404',
-  )
-  await expect(page.getByTestId('page-error')).toContainText('Page Not Found')
-  expect(
-    observed.replies.filter((reply) => reply.page === 'hilos_moderation_kind'),
-  ).toEqual([
-    expect.objectContaining({
-      type: 'subscription_page_error',
-      httpCode: 404,
-    }),
-  ])
-  await expect(page.getByTestId('hilos-moderation-kind-overview')).toHaveCount(
-    0,
-  )
-  await expect(page.getByTestId('hilos-moderation-kind-loading')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
-})
-
-test('refuses an unknown Rules kind through the server subscription as 404', async ({
-  page,
-}) => {
-  const observed = watchPageReplies(page)
-  await grantAdminToSelf(expect, page)
-  await gotoPage(
-    expect,
-    page,
-    '/hilos/moderation/unknown_kind/rules',
-    PAGE_REFUSED,
-  )
-  await expect(page).toHaveURL('/hilos/moderation/unknown_kind/rules')
-  await expect(page.getByTestId('page-error')).toHaveAttribute(
-    'data-error-code',
-    '404',
-  )
-  await expect(page.getByTestId('page-error')).toContainText('Page Not Found')
-  expect(
-    observed.replies.filter(
-      (reply) => reply.page === 'hilos_moderation_kind_rules',
-    ),
-  ).toEqual([
-    expect.objectContaining({ type: 'subscription_page_error', httpCode: 404 }),
-  ])
-  await expect(page.getByTestId('hilos-page-head-title')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-moderation-rules-table')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-moderation-rules-built-in')).toHaveCount(
-    0,
-  )
-  await expect(page.getByTestId('hilos-moderation-rules-loading')).toHaveCount(
-    0,
-  )
-})
-
-test('filters moderation kinds by search query and shows empty state when no rows match', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
-  await expect(page.getByTestId('hilos-moderation-kinds-table')).toBeVisible()
-
-  const search = shownByTestId(page, 'hilos-table-search')
-
-  // Search filtering by kind prefix.
-  await typeInto(search, 'profile')
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-hilos_profile_name'),
-  ).toBeVisible()
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-hilos_profile_photo'),
-  ).toBeVisible()
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-chat_message'),
-  ).toHaveCount(0)
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-chat_message_picture'),
-  ).toHaveCount(0)
-
-  // Non-matching search displays empty state.
-  await typeInto(search, 'nonexistent_kind')
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-hilos_profile_name'),
-  ).toHaveCount(0)
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-hilos_profile_photo'),
-  ).toHaveCount(0)
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-chat_message'),
-  ).toHaveCount(0)
-  await expect(
-    shownByTestId(page, 'hilos-moderation-row-chat_message_picture'),
-  ).toHaveCount(0)
-
-  const emptyState = shownByTestId(
-    page,
-    /^(hilos-table-no-matches|hilos-table-empty)$/,
-  )
-  await expect(emptyState).toBeVisible()
-  await expect(emptyState).toContainText(
-    /Nothing found|No moderation kinds declared/,
-  )
-
-  // Resetting search restores all declared kinds.
-  await search.fill('')
-  for (const { kind } of DECLARED_KINDS) {
-    await expect(
-      shownByTestId(page, `hilos-moderation-row-${kind}`),
-    ).toBeVisible()
-  }
-})
-
-test('displays moderation kinds in admin view mode with view-mode banner', async ({
-  page,
-}) => {
-  const sends = countSentFrames(page, 'hilos_moderation_rule_add')
-  await setAdminViewMode(true)
-  await gotoPage(expect, page, '/hilos/moderation', PAGE_READY)
-  await expectPageReady(expect, page)
-
-  // View-mode strip is visible.
-  const banner = page.getByTestId('view-mode-banner')
-  await expect(banner).toBeVisible()
-
-  // In demo/chat catalog, moderation settings are open in view mode (ADMIN_VIEW_VISIBLE=true),
-  // so no hilos-hidden badge is rendered for open settings.
-  await expect(
-    shownByTestId(
-      page.getByTestId('hilos-moderation-kinds-table'),
-      'hilos-hidden',
-    ),
-  ).toHaveCount(0)
-
-  // A guest viewer follows the same Open link and sees the catalog's visible
-  // model value on Overview as well as on the root list.
-  const document = await watchClientDocument(page)
-  try {
-    await shownByTestId(
-      page,
-      'hilos-moderation-open-hilos_profile_name',
-    ).click()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL('/hilos/moderation/hilos_profile_name')
-    await expect(banner).toBeVisible()
-    await expect(
-      page.getByTestId('hilos-moderation-kind-overview'),
-    ).toBeVisible()
-    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
-      'Profile name',
-    )
-    await expect(page).toHaveTitle('Profile name · Hilos Chat')
-    await expect(page.getByTestId('hilos-moderation-kind-owner')).toHaveText(
-      'Framework',
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-key')).toHaveText(
-      'hilos_profile_name',
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-model')).toHaveText(
-      'Text model · qwen2.5:0.5b — profile hilos.moderation.text',
-    )
-    await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-      '3 rules of your own',
-    )
-    await expect(
-      page.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
-    ).toHaveCount(0)
-    await expectModerationKindTabs(
-      expect,
-      page,
-      'hilos_profile_name',
-      'overview',
-    )
-    await expect(
-      page
-        .getByTestId('hilos-admin-page')
-        .locator('button, input, select, textarea, table'),
-    ).toHaveCount(0)
-    await document.unchanged()
-
-    await page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules').click()
-    await expectPageReady(expect, page)
-    await expectModerationKindHead(expect, page, DECLARED_KINDS[0], 'rules')
-    await expect(banner).toBeVisible()
-    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
-    const search = shownByTestId(page, 'hilos-table-search')
-    await typeInto(search, 'impersonation')
-    await expectModerationOwnRules(expect, page, [
-      DECLARED_KINDS[0].ownRules[0],
-      DECLARED_KINDS[0].ownRules[2],
-    ])
-    await search.fill('')
-    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
-    await expect(
-      page.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
-    ).toHaveCount(0)
-    await expect(
-      page.getByTestId('hilos-admin-page').locator('input, select, textarea'),
-    ).toHaveCount(1)
-    await expect(
-      page.getByTestId('hilos-admin-page').locator('input'),
-    ).toHaveAttribute('type', 'search')
-
-    // A viewer can inspect the form, but neither Save nor a forged submit writes.
-    await clickSubmit(expect, page.getByTestId('hilos-table-main-action'))
-    const dialog = page.getByTestId('modal')
-    await expect(dialog).toHaveAccessibleName('Add rule · Profile name')
-    const field = page.getByTestId('hilos-moderation-rule-add-rule')
-    await typeInto(field, 'Preview-only moderation rule')
-    const save = page.getByTestId('hilos-moderation-rule-add-submit')
-    await expect(save).toBeDisabled()
-    await expect(save).toHaveAttribute(
-      'aria-describedby',
-      'hilos-view-mode-strip-text',
-    )
-    await clickUnavailableControl(page, save)
-    await field.evaluate((textarea) => {
-      textarea
-        .closest('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  for (const [pageKey, path] of [
+    ['hilos_moderation_kind', '/hilos/moderation/unknown_kind'],
+    ['hilos_moderation_kind_rules', '/hilos/moderation/unknown_kind/rules'],
+  ] as const) {
+    await test.step(`${path} is refused`, async () => {
+      await gotoPage(expect, page, path, PAGE_REFUSED)
+      await expect(page).toHaveURL(path)
+      const error = page.getByTestId('page-error')
+      await expect(error).toHaveAttribute('data-error-code', '404')
+      await expect(error).toContainText('Page Not Found')
+      expect(
+        observed.replies.filter((reply) => reply.page === pageKey),
+      ).toEqual([
+        expect.objectContaining({
+          type: 'subscription_page_error',
+          httpCode: 404,
+        }),
+      ])
+      for (const absent of [
+        'hilos-page-head-title',
+        'hilos-page-tabs',
+        'hilos-moderation-kind-owner',
+        'hilos-moderation-kind-key',
+        'hilos-moderation-kind-overview',
+        'hilos-moderation-kind-loading',
+        'hilos-moderation-rules-table',
+        'hilos-moderation-rules-built-in',
+        'hilos-moderation-rules-loading',
+      ]) {
+        await expect(page.getByTestId(absent)).toHaveCount(0)
+      }
     })
-    await expect(dialog).toBeVisible()
-    await expect(field).toHaveValue('Preview-only moderation rule')
-    await expect(save).not.toHaveAttribute('aria-busy', 'true')
-    expect(sends()).toBe(0)
-    await clickSubmit(
-      expect,
-      page.getByTestId('hilos-moderation-rule-add-cancel'),
-    )
-    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
-    await expect(dialog).toBeHidden()
-    await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
-    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
-    await document.unchanged()
-
-    await page.reload()
-    await expectPageReady(expect, page)
-    await expectModerationOwnRules(expect, page, DECLARED_KINDS[0].ownRules)
-    expect(sends()).toBe(0)
-  } finally {
-    await document.dispose()
   }
 })
 
-test('resolves a photo rule Edit conflict, uses the saved policy after F5, then deletes it with own echo, observer Apply and built-in fallback', async ({
+test('adds, finds, sorts, edits and deletes own rules until the built-in policy returns', async ({
   page,
+  cleanup,
 }) => {
-  const sends = countSentFrames(page, 'hilos_moderation_rule_add')
+  // Proves: the Rules page writes to the server and reads back what it wrote —
+  // the one reply on a cold entry, the count, the search and the sort answered
+  // by the server, the row that leaves without its data, and the built-in
+  // policy that returns once the last own rule is gone.
+  const marker = randomUUID()
+  const firstRule = `Allow ordinary profile photos. Chat policy alpha ${marker}.`
+  const secondRule = `Allow ordinary profile photos. Chat policy beta ${marker}.`
+  const editedRule = `Allow ordinary profile photos and drawings. Chat policy alpha ${marker}.`
+  reserveModerationRules(expect, page, cleanup, PHOTO, [
+    firstRule,
+    secondRule,
+    editedRule,
+  ])
+  const adds = countSentFrames(page, 'hilos_moderation_rule_add')
   const updates = countSentFrames(page, 'hilos_moderation_rule_update')
   const deletes = countSentFrames(page, 'hilos_moderation_rule_delete')
-  await createTestAdmin(expect, page)
-  const initialKey = modelKey()
-  const initialRule = `Allow ordinary profile photos. Policy marker: ${initialKey}.`
-  const editOwn = watchDeliveryFrames(page)
-  await gotoPage(
-    expect,
-    page,
-    '/hilos/moderation/hilos_profile_photo/rules',
-    PAGE_READY,
-  )
-  await expect(
-    page.getByTestId('hilos-moderation-rules-built-in'),
-  ).toBeVisible()
-  await clickSubmit(expect, page.getByTestId('hilos-table-main-action'))
-  const dialog = page.getByTestId('modal')
-  await expect(dialog).toHaveAccessibleName('Add rule · Profile photo')
-  await typeInto(
-    page.getByTestId('hilos-moderation-rule-add-rule'),
-    initialRule,
-  )
-  await clickSubmit(
-    expect,
-    page.getByTestId('hilos-moderation-rule-add-submit'),
-  )
-  // Closing is the tracked DONE settling, before any live-table assertion.
-  await expect(dialog).toBeHidden()
-  const toast = page.getByTestId('hilos-toast-success')
-  await expect(toast).toHaveCount(1)
-  await expect(toast).toContainText('Rule added to "Profile photo".')
-  await expect(toast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
-  expect(sends()).toBe(1)
-  await expectModerationOwnRules(expect, page, [initialRule])
+  await grantAdminToSelf(expect, page)
+  const log = watchDeliveryFrames(page)
+  cleanup.defer(() => log.stop())
   const table = page.getByTestId('hilos-moderation-rules-table')
-  const rowId = await table.locator(ROWS).getAttribute('data-id')
-  expect(rowId).toMatch(/^hilos-table-row-\d+$/)
-  const id = rowId!.slice(ROW_PREFIX.length)
+  const overviewTab = page.getByTestId('hilos-page-tab-hilos_moderation_kind')
+  const rulesTab = page.getByTestId(
+    'hilos-page-tab-hilos_moderation_kind_rules',
+  )
+  let firstId: number
+  let secondId: number
 
-  // Only the edited policy carries the new key: name, picture and file cannot match.
-  const key = modelKey()
-  expect(key).not.toBe(initialKey)
-  const rule = `  Allow ordinary profile photos. Edited policy marker: ${key}.  `
-  const otherRule =
-    'Allow ordinary profile photos and drawings. Another tab saved this.'
+  await test.step('A cold entry shows the built-in rules from one reply; Overview names them', async () => {
+    await gotoPage(expect, page, RULES_PATH)
+    await expectModerationKindHead(expect, page, PHOTO, 'rules')
+    await expectModerationBuiltInRules(expect, page, PHOTO)
+    // K-005 of HIL-1844: the two color checks of the built-in block are carried
+    // over word for word; HIL-1843 decides their fate.
+    const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
+    await expect(builtIn).toHaveClass(/bg-body-tertiary/)
+    await expect(builtIn.locator('ul')).toHaveClass(/text-body-secondary/)
+    await expectModerationRulesOpening(expect, log, { ...PHOTO, ownRules: [] })
+    await clickSubmit(expect, overviewTab)
+    await expectPageReady(expect, page)
+    await expectModerationRulesInForce(expect, page, 0)
+    await clickSubmit(expect, rulesTab)
+    await expectPageReady(expect, page)
+    await expectModerationKindHead(expect, page, PHOTO, 'rules')
+  })
+
+  await test.step('Add two rules: their rows, no built-ins, the count; Overview counts them', async () => {
+    firstId = await addModerationRule(expect, page, PHOTO, firstRule)
+    secondId = await addModerationRule(expect, page, PHOTO, secondRule)
+    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    expect(adds()).toBe(2)
+    await clickSubmit(expect, overviewTab)
+    await expectPageReady(expect, page)
+    await expectModerationRulesInForce(expect, page, 2)
+    await clickSubmit(expect, rulesTab)
+    await expectPageReady(expect, page)
+    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+  })
+
+  await test.step('Search narrows to one row, nonsense finds nothing, reset restores both', async () => {
+    const search = shownByTestId(table, 'hilos-table-search')
+    await typeInto(search, 'policy beta')
+    await expectModerationOwnRules(expect, page, [secondRule])
+    await typeInto(search, 'no_such_own_rule')
+    await expect(shownByTestId(table, 'hilos-table-no-matches')).toContainText(
+      'Nothing found',
+    )
+    await expect(
+      shownByTestId(table, 'hilos-table-no-matches-terms'),
+    ).toHaveText('No rows match “no_such_own_rule”')
+    await expect(
+      page.getByTestId('hilos-moderation-rules-built-in'),
+    ).toHaveCount(0)
+    await expect(table.locator(ROWS)).toHaveCount(0)
+    await clickSubmit(
+      expect,
+      shownByTestId(table, 'hilos-table-no-matches-reset'),
+    )
+    await expect(search).toHaveValue('')
+    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+  })
+
+  await test.step('Sort by Rule: ascending answered by the server, descending reversed, none restored', async () => {
+    const sort = table.getByTestId('hilos-table-sort-rule')
+    const header = table.locator('th:has([data-id="hilos-table-sort-rule"])')
+    await expect(header).toHaveAttribute('aria-sort', 'none')
+    const sentBefore = log.sent.length
+    await clickSubmit(expect, sort)
+    await expect(header).toHaveAttribute('aria-sort', 'ascending')
+    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    // Ascending matches the insertion order, so DOM text alone cannot prove
+    // its reply: the one viewport request and its one answer do.
+    const ascending = await expectModerationSortReply(
+      expect,
+      log,
+      sentBefore,
+      PHOTO,
+      'asc',
+    )
+    await clickSubmit(expect, sort)
+    await expect(header).toHaveAttribute('aria-sort', 'descending')
+    await expectModerationOwnRules(expect, page, [secondRule, firstRule])
+    await ascending.answeredOnce()
+    await clickSubmit(expect, sort)
+    await expect(header).toHaveAttribute('aria-sort', 'none')
+    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+  })
+
+  await test.step('Edit the first rule; F5 reads both from one reply', async () => {
+    await editModerationRule(expect, page, PHOTO, firstId, editedRule)
+    await expectModerationOwnRules(expect, page, [editedRule, secondRule])
+    expect(updates()).toBe(1)
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expectModerationOwnRules(expect, page, [editedRule, secondRule])
+    await expectModerationRulesOpening(expect, log, {
+      ...PHOTO,
+      ownRules: [editedRule, secondRule],
+    })
+  })
+
+  await test.step('Delete one rule: its row leaves without data; delete the last: the built-in policy returns', async () => {
+    await deleteModerationRule(expect, page, secondId, secondRule)
+    await expect(
+      table.locator(ROWS).locator('.hilos-table-text[id]'),
+    ).toHaveText([editedRule])
+    await expect(
+      page.getByTestId('hilos-moderation-rules-built-in'),
+    ).toHaveCount(0)
+    expect(deletes()).toBe(1)
+
+    await deleteModerationRule(expect, page, firstId, editedRule)
+    await expectModerationBuiltInRulesReturned(expect, page, PHOTO)
+    expect(deletes()).toBe(2)
+    await clickSubmit(expect, overviewTab)
+    await expectPageReady(expect, page)
+    await expectModerationRulesInForce(expect, page, 0)
+    await clickSubmit(expect, rulesTab)
+    await expectPageReady(expect, page)
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expectModerationKindHead(expect, page, PHOTO, 'rules')
+    await expectModerationBuiltInRules(expect, page, PHOTO)
+    await expectModerationRulesOpening(expect, log, { ...PHOTO, ownRules: [] })
+  })
+})
+
+test('resolves an Edit conflict from a second tab and shows a Delete there live through Apply', async ({
+  page,
+  cleanup,
+}) => {
+  // Proves: the User-scope fan-out between two tabs of one administrator — the
+  // conflict the first tab is shown, the frames each tab sends and gets back,
+  // the removal the second tab holds until Apply — none of which one fake
+  // connection can show.
+  const marker = randomUUID()
+  const initialRule = `Allow ordinary profile photos. Chat conflict ${marker}.`
+  const otherRule = `Allow ordinary profile photos and drawings. Another tab saved this ${marker}.`
+  const mineRule = `Allow ordinary profile photos. Edited here ${marker}.`
+  reserveModerationRules(expect, page, cleanup, PHOTO, [
+    initialRule,
+    otherRule,
+    mineRule,
+  ])
+  const updates = countSentFrames(page, 'hilos_moderation_rule_update')
+  const deletes = countSentFrames(page, 'hilos_moderation_rule_delete')
+  await grantAdminToSelf(expect, page)
+  const own = watchDeliveryFrames(page)
+  cleanup.defer(() => own.stop())
+  await gotoPage(expect, page, RULES_PATH)
+  const id = await addModerationRule(expect, page, PHOTO, initialRule)
+  await expectModerationOwnRules(expect, page, [initialRule])
+
   const editor = await page.context().newPage()
-  const editForeign = watchDeliveryFrames(editor)
+  cleanup.defer(() => editor.close())
+  const foreign = watchDeliveryFrames(editor)
+  cleanup.defer(() => foreign.stop())
   const otherUpdates = countSentFrames(editor, 'hilos_moderation_rule_update')
-  try {
-    await gotoPage(
+  await gotoPage(expect, editor, RULES_PATH)
+  await expectModerationOwnRules(expect, editor, [initialRule])
+  await expectModerationRulesOpening(expect, foreign, {
+    ...PHOTO,
+    ownRules: [initialRule],
+  })
+  const dialog = page.getByTestId('modal')
+  const ownBefore = own.sent.length
+  const foreignBefore = foreign.sent.length
+
+  await test.step('The second tab saves first; the first tab is shown the conflict and accepts its own text', async () => {
+    await dismissToasts(page)
+    const field = page.getByTestId('hilos-moderation-rule-edit-rule')
+    const save = page.getByTestId('hilos-moderation-rule-edit-submit')
+    await clickSubmit(
+      expect,
+      shownByTestId(page, `hilos-moderation-rule-edit-open-${id}`),
+    )
+    await expect(dialog).toHaveAccessibleName(`Edit rule · ${PHOTO.title}`)
+    await expect(field).toHaveValue(initialRule)
+    await typeInto(field, mineRule)
+    await expect(save).toBeEnabled()
+    expect(updates()).toBe(0)
+
+    await editModerationRule(expect, editor, PHOTO, id, otherRule)
+    expect(otherUpdates()).toBe(1)
+    await expect(page.getByTestId('conflict-choices')).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-moderation-rule-edit-notice'),
+    ).toHaveText(`Rule changed elsewhere to "${otherRule}".`)
+    await expect(field).toHaveValue(mineRule)
+    await expect(save).toBeDisabled()
+    expect(updates()).toBe(0)
+    await expectModerationOwnRules(expect, page, [otherRule])
+    await expectModerationOwnRules(expect, editor, [otherRule])
+
+    await clickSubmit(expect, page.getByTestId('conflict-accept-mine'))
+    await expect(page.getByTestId('conflict-choices')).toHaveCount(0)
+    await expect(
+      page.getByTestId('hilos-moderation-rule-edit-notice'),
+    ).toHaveCount(0)
+    await expect(field).toHaveValue(mineRule)
+    await clickSubmit(expect, save)
+    // Closing follows this tab's correlated acknowledgement, before table checks.
+    await expect(dialog).toBeHidden()
+    expect(updates()).toBe(1)
+    expect(otherUpdates()).toBe(1)
+    await expectModerationOwnRules(expect, page, [mineRule])
+    await expectModerationOwnRules(expect, editor, [mineRule])
+  })
+
+  await test.step('Each tab sent one update with its expectedRule and got its action_success; no refetch, no reconnect', async () => {
+    for (const [log, after, expectedRule, savedRule] of [
+      [foreign, foreignBefore, initialRule, otherRule],
+      [own, ownBefore, otherRule, mineRule],
+    ] as const) {
+      await expectModerationUpdateEcho(expect, log, after, PHOTO, {
+        id,
+        rule: savedRule,
+        expectedRule,
+      })
+    }
+  })
+
+  await test.step('Delete in the first tab: the second holds the removal until Apply; row_removed is own only for the author', async () => {
+    await dismissToasts(page)
+    await dismissToasts(editor)
+    const ownBefore = own.sent.length
+    const foreignBefore = foreign.sent.length
+    const openerId = `hilos-moderation-rule-delete-open-${id}`
+    const retired = [`hilos-moderation-rule-edit-open-${id}`, openerId]
+    await expect(shownByTestId(editor, openerId)).toBeVisible()
+    await clickSubmit(expect, shownByTestId(page, openerId))
+    await expect(dialog).toHaveAccessibleName('Delete rule')
+    await expect(
+      page.getByTestId('hilos-moderation-rule-delete-rule'),
+    ).toHaveText(mineRule)
+    await clickSubmit(
+      expect,
+      page.getByTestId('hilos-moderation-rule-delete-confirm'),
+    )
+    // The tracked acknowledgement closes the modal before we inspect the echo.
+    await expect(dialog).toBeHidden()
+    expect(deletes()).toBe(1)
+    await expectModerationDeleteEcho(expect, own, ownBefore, PHOTO, {
+      id,
+      expectedRule: mineRule,
+    })
+    await expectDataFreeDeparture(expect, page, String(id), 'Removed', retired)
+    await expectModerationBuiltInRulesReturned(expect, page, PHOTO)
+
+    await expect(
+      shownByTestId(editor, `hilos-table-pending-remove-${id}`),
+    ).toBeVisible()
+    await expect(editor.getByTestId(`${ROW_PREFIX}${id}`)).toContainText(
+      mineRule,
+    )
+    await clickSubmit(expect, editor.getByTestId('hilos-table-apply'))
+    await expect(editor.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await expectDataFreeDeparture(
       expect,
       editor,
-      '/hilos/moderation/hilos_profile_photo/rules',
-      PAGE_READY,
+      String(id),
+      'Removed',
+      retired,
     )
-    await expectModerationOwnRules(expect, editor, [initialRule])
-    await expectModerationRulesOpening(expect, editForeign, {
-      ...DECLARED_KINDS[1],
-      ownRules: [initialRule],
-    })
-    await toast.getByTestId('hilos-toast-close').click()
-    await expect(toast).toHaveCount(0)
-    const document = await watchClientDocument(page)
-    const otherDocument = await watchClientDocument(editor)
-    try {
-      const ownBefore = editOwn.sent.length
-      const foreignBefore = editForeign.sent.length
-      const editOpenerId = `hilos-moderation-rule-edit-open-${id}`
-      const field = page.getByTestId('hilos-moderation-rule-edit-rule')
-      const save = page.getByTestId('hilos-moderation-rule-edit-submit')
-      await clickSubmit(expect, shownByTestId(page, editOpenerId))
-      await expect(dialog).toHaveAccessibleName('Edit rule · Profile photo')
-      await expect(field).toHaveValue(initialRule)
-      await typeInto(field, rule)
-      await expect(save).toBeEnabled()
-      expect(updates()).toBe(0)
+    await expectModerationBuiltInRulesReturned(expect, editor, PHOTO)
 
-      await clickSubmit(expect, shownByTestId(editor, editOpenerId))
-      const otherDialog = editor.getByTestId('modal')
-      await expect(otherDialog).toHaveAccessibleName(
-        'Edit rule · Profile photo',
-      )
-      await expect(
-        editor.getByTestId('hilos-moderation-rule-edit-rule'),
-      ).toHaveValue(initialRule)
-      await typeInto(
-        editor.getByTestId('hilos-moderation-rule-edit-rule'),
-        otherRule,
-      )
-      await clickSubmit(
-        expect,
-        editor.getByTestId('hilos-moderation-rule-edit-submit'),
-      )
-      await expect(otherDialog).toBeHidden()
-      const message = 'Rule in "Profile photo" saved.'
-      const otherToast = editor.getByTestId('hilos-toast-success')
-      await expect(otherToast).toHaveCount(1)
-      await expect(otherToast).toContainText(message)
-      await expect(otherToast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
-      expect(otherUpdates()).toBe(1)
-
-      await expect(page.getByTestId('conflict-choices')).toBeVisible()
-      await expect(
-        page.getByTestId('hilos-moderation-rule-edit-notice'),
-      ).toHaveText(`Rule changed elsewhere to "${otherRule}".`)
-      await expect(field).toHaveValue(rule)
-      await expect(save).toBeDisabled()
-      await expect(toast).toHaveCount(0)
-      expect(updates()).toBe(0)
-      await expectModerationOwnRules(expect, page, [otherRule])
-      await expectModerationOwnRules(expect, editor, [otherRule])
-      await test.info().attach('photo-rule-edit-conflict', {
-        body: await dialog.screenshot(),
-        contentType: 'image/png',
-      })
-      await otherToast.getByTestId('hilos-toast-close').click()
-      await expect(otherToast).toHaveCount(0)
-
-      await clickSubmit(expect, page.getByTestId('conflict-accept-mine'))
-      await expect(page.getByTestId('conflict-choices')).toHaveCount(0)
-      await expect(
-        page.getByTestId('hilos-moderation-rule-edit-notice'),
-      ).toHaveCount(0)
-      await expect(field).toHaveValue(rule)
-      await clickSubmit(expect, save)
-      // Closing follows this tab's correlated acknowledgement, before table checks.
-      await expect(dialog).toBeHidden()
-      await expect(toast).toHaveCount(1)
-      await expect(toast).toContainText(message)
-      await expect(toast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
-      expect(updates()).toBe(1)
-      expect(otherUpdates()).toBe(1)
-      expect(sends()).toBe(1)
-      await expectModerationOwnRules(expect, page, [rule])
-      await expectModerationOwnRules(expect, editor, [rule])
-      await expect(otherToast).toHaveCount(0)
-
-      for (const [log, after, expectedRule, savedRule] of [
-        [editForeign, foreignBefore, initialRule, otherRule],
-        [editOwn, ownBefore, otherRule, rule],
-      ] as const) {
-        const requests = log.sent.slice(after).filter(({ wire }) => {
-          const request = deliveryObject(wire)
-          return (
-            request.type === 'action' &&
-            request.action === 'hilos_moderation_rule_update'
-          )
-        })
-        expect(requests).toHaveLength(1)
-        const sent = requests[0]!
-        const request = deliveryObject(sent.wire)
-        expect(request).toMatchObject({
-          action: 'hilos_moderation_rule_update',
-          requestId: expect.any(String),
-          data: {
-            id: Number(id),
-            kind: 'hilos_profile_photo',
-            rule: savedRule,
-            expectedRule,
-          },
-        })
-        expect(
-          log.packets
-            .filter(({ socket, at }) => socket === sent.socket && at >= sent.at)
-            .flatMap(({ frames }) =>
-              frames.map(({ wire }) => deliveryObject(wire)),
-            )
-            .filter((wire) => wire.requestId === request.requestId),
-        ).toEqual([
-          expect.objectContaining({
-            type: 'action_success',
-            outcome: 'success',
-            data: expect.objectContaining({
-              action: 'hilos_moderation_rule_update',
-              message,
-            }),
-          }),
-        ])
-        expect(
-          log.sent
-            .slice(after)
-            .filter(({ wire }) =>
-              ['table_viewport', 'page_subscribe', 'page_resubscribe'].includes(
-                String(deliveryObject(wire).type),
-              ),
-            ),
-        ).toEqual([])
-        expect(log.connections).toHaveLength(1)
-      }
-      await document.unchanged()
-      await otherDocument.unchanged()
-    } finally {
-      await document.dispose()
-      await otherDocument.dispose()
+    // Neither the own echo nor Apply may borrow a later fetched window.
+    for (const [log, after, isOwn] of [
+      [own, ownBefore, true],
+      [foreign, foreignBefore, false],
+    ] as const) {
+      await expectModerationRemovalEcho(expect, log, after, id, isOwn)
     }
-  } finally {
-    editOwn.stop()
-    editForeign.stop()
-    await editor.close()
-  }
+  })
+})
 
-  await page.reload()
-  await expectPageReady(expect, page)
+test('lets an admin view-mode viewer read Moderation and draft rule forms without writing', async ({
+  page,
+  browser,
+  cleanup,
+}) => {
+  // Proves: the view mode's promise on this section — a viewer in a context of
+  // their own reads the kinds, the catalog's model value and the rule, drafts
+  // every form, and no write frame leaves their page.
+  const marker = randomUUID()
+  const rule = `Allow ordinary profile photos. Viewer reads this ${marker}.`
+  // The draft is reserved too: were a submit to slip through, it is what the
+  // Add would create and the Edit would overwrite the rule with.
+  const draft = `Viewer draft only ${marker}.`
+  reserveModerationRules(expect, page, cleanup, PHOTO, [rule, draft])
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, RULES_PATH)
+  const id = await addModerationRule(expect, page, PHOTO, rule)
   await expectModerationOwnRules(expect, page, [rule])
 
-  await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
-  await gotoPage(expect, page, '/profile', PAGE_READY)
-  await expect(page.getByTestId('profile-name')).not.toContainText(key)
+  cleanup.defer(() => setAdminViewMode(false))
+  await setAdminViewMode(true)
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const context = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  cleanup.defer(() => context.close())
+  const viewer = await context.newPage()
+  const writes = ['add', 'update', 'delete'].map((action) =>
+    countSentFrames(viewer, `hilos_moderation_rule_${action}`),
+  )
+  const sentWrites = (): number[] => writes.map((sent) => sent())
+  const banner = viewer.getByTestId('view-mode-banner')
+  const viewerTable = viewer.getByTestId('hilos-moderation-rules-table')
+
+  await test.step('The viewer reads the kinds, the Overview with its model value and the Rules with the rule', async () => {
+    await gotoPage(expect, viewer, '/hilos/moderation')
+    await expect(banner).toBeVisible()
+    const kinds = viewer.getByTestId('hilos-moderation-kinds-table')
+    for (const { kind } of DECLARED_KINDS) {
+      await expect(
+        shownByTestId(kinds, `hilos-moderation-row-${kind}`),
+      ).toBeVisible()
+    }
+    await clickSubmit(
+      expect,
+      shownByTestId(kinds, `hilos-moderation-open-${PHOTO.kind}`),
+    )
+    await expectPageReady(expect, viewer)
+    await expect(viewer).toHaveURL(OVERVIEW_PATH)
+    await expect(banner).toBeVisible()
+    await expectModerationKindHead(expect, viewer, PHOTO, 'overview')
+    // The catalog opens the model setting to a viewer: its value is read, not hidden.
+    await expectModerationKindOverview(expect, viewer, PHOTO)
+    await expect(
+      viewer.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
+    ).toHaveCount(0)
+    await expectModerationRulesInForce(expect, viewer, 1)
+
+    await clickSubmit(
+      expect,
+      viewer.getByTestId('hilos-page-tab-hilos_moderation_kind_rules'),
+    )
+    await expectPageReady(expect, viewer)
+    await expectModerationKindHead(expect, viewer, PHOTO, 'rules')
+    await expect(banner).toBeVisible()
+    await expectModerationOwnRules(expect, viewer, [rule])
+    const search = shownByTestId(viewerTable, 'hilos-table-search')
+    await typeInto(search, marker)
+    await expectModerationOwnRules(expect, viewer, [rule])
+    await typeInto(search, 'no_such_own_rule')
+    await expect(
+      shownByTestId(viewerTable, 'hilos-table-no-matches-terms'),
+    ).toHaveText('No rows match “no_such_own_rule”')
+    await clickSubmit(
+      expect,
+      shownByTestId(viewerTable, 'hilos-table-no-matches-reset'),
+    )
+    await expect(search).toHaveValue('')
+    await expectModerationOwnRules(expect, viewer, [rule])
+  })
+
+  await test.step('Add, Edit and Delete keep their drafts, refuse to submit and send nothing', async () => {
+    const dialog = viewer.getByTestId('modal')
+    for (const action of ['add', 'edit', 'delete'] as const) {
+      await clickSubmit(
+        expect,
+        action === 'add'
+          ? viewerTable.getByTestId('hilos-table-main-action')
+          : shownByTestId(viewer, `hilos-moderation-rule-${action}-open-${id}`),
+      )
+      const submit = viewer.getByTestId(
+        `hilos-moderation-rule-${action}-${action === 'delete' ? 'confirm' : 'submit'}`,
+      )
+      if (action === 'delete') {
+        await expect(dialog).toHaveAccessibleName('Delete rule')
+        await expect(
+          viewer.getByTestId('hilos-moderation-rule-delete-rule'),
+        ).toHaveText(rule)
+        await clickUnavailableControl(viewer, submit)
+      } else {
+        await expect(dialog).toHaveAccessibleName(
+          `${action === 'add' ? 'Add' : 'Edit'} rule · ${PHOTO.title}`,
+        )
+        const field = viewer.getByTestId(`hilos-moderation-rule-${action}-rule`)
+        await expect(field).toHaveValue(action === 'add' ? '' : rule)
+        await typeInto(field, draft)
+        await clickUnavailableControl(viewer, submit)
+        // A forged submit event of the form itself sends nothing either.
+        await field.evaluate((textarea) => {
+          textarea
+            .closest('form')!
+            .dispatchEvent(
+              new Event('submit', { bubbles: true, cancelable: true }),
+            )
+        })
+        await expect(dialog).toBeVisible()
+        await expect(field).toHaveValue(draft)
+        await expect(submit).not.toHaveAttribute('aria-busy', 'true')
+      }
+      await expect(submit).toBeDisabled()
+      await expect(submit).toHaveAccessibleDescription(VIEW_MODE_DESCRIPTION)
+      expect(sentWrites()).toEqual([0, 0, 0])
+      await clickSubmit(
+        expect,
+        viewer.getByTestId(`hilos-moderation-rule-${action}-cancel`),
+      )
+      if (action !== 'delete') {
+        await clickSubmit(expect, viewer.getByTestId('modal-confirm-discard'))
+      }
+      await expect(dialog).toBeHidden()
+    }
+    await expect(viewer.getByTestId('hilos-toast-success')).toHaveCount(0)
+    await expectModerationOwnRules(expect, viewer, [rule])
+    await viewer.reload()
+    await expectPageReady(expect, viewer)
+    await expectModerationOwnRules(expect, viewer, [rule])
+    expect(sentWrites()).toEqual([0, 0, 0])
+  })
+})
+
+test('a rule edited on the Rules page governs the next photo check of the model', async ({
+  page,
+  cleanup,
+}) => {
+  // Proves on the server: the rule saved from the screen is what the model's
+  // request carries — the first key is edited away before the check, so only
+  // the second reaches the model, once, with the one picture.
+  const firstKey = modelKey()
+  const nextKey = modelKey()
+  const firstRule = `Allow ordinary profile photos. Policy marker ${firstKey}.`
+  const nextRule = `Allow ordinary profile photos. Edited policy marker ${nextKey}.`
+  cleanup.defer(() => forgetModelKey(firstKey))
+  cleanup.defer(() => forgetModelKey(nextKey))
+  reserveModerationRules(expect, page, cleanup, PHOTO, [firstRule, nextRule])
+  await createTestAdmin(expect, page)
+  await gotoPage(expect, page, RULES_PATH)
+  const id = await addModerationRule(expect, page, PHOTO, firstRule)
+  await expectModerationOwnRules(expect, page, [firstRule])
+  await editModerationRule(expect, page, PHOTO, id, nextRule)
+  await expectModerationOwnRules(expect, page, [nextRule])
+
+  // Only the edited policy carries the key: the name, the picture and its
+  // file name cannot match it. Dictate BEFORE the action that calls the model.
+  await dictateModerationVerdict(nextKey, true, 'ok')
+  await gotoPage(expect, page, '/profile')
+  await expect(page.getByTestId('profile-name')).not.toContainText(nextKey)
   await openAndSelectPhoto(
     expect,
     page,
@@ -1035,7 +786,7 @@ test('resolves a photo rule Edit conflict, uses the saved policy after F5, then 
     'image/jpeg',
   )
   await clickSubmit(expect, page.getByTestId('profile-photo-save'))
-  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('modal')).toBeHidden()
   // Publication consumes the sole dictated answer through the real photo check.
   await expect(
     page.getByTestId('profile-identity').getByTestId('hilos-avatar-photo'),
@@ -1043,184 +794,7 @@ test('resolves a photo rule Edit conflict, uses the saved policy after F5, then 
   await expect(
     page.getByTestId('nav-profile').getByTestId('hilos-avatar-photo'),
   ).toBeVisible()
-  expect(sends()).toBe(1)
-
-  const own = watchDeliveryFrames(page)
-  const observer = await page.context().newPage()
-  const foreign = watchDeliveryFrames(observer)
-  try {
-    const path = '/hilos/moderation/hilos_profile_photo/rules'
-    await gotoPage(expect, page, path, PAGE_READY)
-    await expectModerationOwnRules(expect, page, [rule])
-    await gotoPage(expect, observer, path, PAGE_READY)
-    await expectModerationOwnRules(expect, observer, [rule])
-    await expectModerationRulesOpening(expect, foreign, {
-      ...DECLARED_KINDS[1],
-      ownRules: [rule],
-    })
-    const openerId = `hilos-moderation-rule-delete-open-${id}`
-    await expect(shownByTestId(observer, openerId)).toBeVisible()
-
-    await clickSubmit(expect, shownByTestId(page, openerId))
-    await expect(dialog).toHaveAccessibleName('Delete rule')
-    await expect(
-      page.getByTestId('hilos-moderation-rule-delete-rule'),
-    ).toHaveText(rule)
-    await test.info().attach('photo-rule-delete', {
-      body: await dialog.screenshot(),
-      contentType: 'image/png',
-    })
-    await clickSubmit(
-      expect,
-      page.getByTestId('hilos-moderation-rule-delete-cancel'),
-    )
-    await expect(dialog).toBeHidden()
-    expect(deletes()).toBe(0)
-    await expectModerationOwnRules(expect, page, [rule])
-    await expectModerationOwnRules(expect, observer, [rule])
-    await expect(toast).toHaveCount(0)
-
-    await clickSubmit(expect, shownByTestId(page, openerId))
-    await expect(dialog).toHaveAccessibleName('Delete rule')
-    await expect(
-      page.getByTestId('hilos-moderation-rule-delete-rule'),
-    ).toHaveText(rule)
-    const ownBefore = own.sent.length
-    const foreignBefore = foreign.sent.length
-    await clickSubmit(
-      expect,
-      page.getByTestId('hilos-moderation-rule-delete-confirm'),
-    )
-    // The tracked acknowledgement closes the modal before we inspect the echo.
-    await expect(dialog).toBeHidden()
-    const message = 'Rule removed from "Profile photo".'
-    await expect(toast).toHaveCount(1)
-    await expect(toast).toContainText(message)
-    await expect(toast.getByTestId('hilos-toast-repeats')).toHaveCount(0)
-    expect(deletes()).toBe(1)
-    const requests = own.sent.slice(ownBefore).filter(({ wire }) => {
-      const request = deliveryObject(wire)
-      return request.type === 'action'
-    })
-    expect(requests).toHaveLength(1)
-    const sent = requests[0]!
-    const request = deliveryObject(sent.wire)
-    expect(request).toMatchObject({
-      action: 'hilos_moderation_rule_delete',
-      requestId: expect.any(String),
-      data: { id: Number(id), kind: 'hilos_profile_photo', expectedRule: rule },
-    })
-    expect(
-      own.packets
-        .filter(({ socket, at }) => socket === sent.socket && at >= sent.at)
-        .flatMap(({ frames }) => frames.map(({ wire }) => deliveryObject(wire)))
-        .filter((wire) => wire.requestId === request.requestId),
-    ).toEqual([
-      expect.objectContaining({
-        type: 'action_success',
-        outcome: 'success',
-        data: expect.objectContaining({
-          action: 'hilos_moderation_rule_delete',
-          message,
-        }),
-      }),
-    ])
-
-    await expectDataFreeDeparture(expect, page, id, 'Removed', [
-      `hilos-moderation-rule-edit-open-${id}`,
-      openerId,
-    ])
-    await expect(table.getByTestId('hilos-table-count')).toHaveText(
-      '0 – 0 of 0',
-    )
-    await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-    await expect(
-      page.getByTestId('hilos-moderation-rules-built-in').locator('li'),
-    ).toHaveText([...DECLARED_KINDS[1].defaultRules])
-
-    await expect(
-      shownByTestId(observer, `hilos-table-pending-remove-${id}`),
-    ).toBeVisible()
-    await expect(observer.getByTestId(`hilos-table-row-${id}`)).toContainText(
-      rule,
-    )
-    await expect(observer.getByTestId('hilos-toast-success')).toHaveCount(0)
-    await clickSubmit(expect, observer.getByTestId('hilos-table-apply'))
-    await expect(observer.getByTestId('hilos-table-apply')).toHaveCount(0)
-    await expectDataFreeDeparture(expect, observer, id, 'Removed', [
-      `hilos-moderation-rule-edit-open-${id}`,
-      openerId,
-    ])
-    await expect(observer.getByTestId('hilos-table-count')).toHaveText(
-      '0 – 0 of 0',
-    )
-    await expect(
-      observer.getByTestId('hilos-moderation-rules-built-in').locator('li'),
-    ).toHaveText([...DECLARED_KINDS[1].defaultRules])
-
-    // Neither the own echo nor Apply may borrow a later fetched window.
-    for (const [log, after, isOwn] of [
-      [own, ownBefore, true],
-      [foreign, foreignBefore, false],
-    ] as const) {
-      const removals = log.packets
-        .flatMap(({ frames }) => frames.map(({ wire }) => deliveryObject(wire)))
-        .filter((wire) => wire.type === 'table_viewport_delta')
-        .map((wire) => deliveryObject(wire.data))
-        .filter(
-          (data) =>
-            data.tableKey === 'hilosModerationRules' &&
-            data.kind === 'row_removed',
-        )
-      expect(removals).toEqual([
-        expect.objectContaining({
-          page: 'hilos_moderation_kind_rules',
-          tableKey: 'hilosModerationRules',
-          kind: 'row_removed',
-          rowKey: Number(id),
-          reason: 'deleted',
-        }),
-      ])
-      // The DTO emits the own tag only for the originating tab.
-      expect(removals[0]!.own).toBe(isOwn ? true : undefined)
-      expect(
-        log.sent
-          .slice(after)
-          .filter(({ wire }) =>
-            ['table_viewport', 'page_subscribe', 'page_resubscribe'].includes(
-              String(deliveryObject(wire).type),
-            ),
-          ),
-      ).toEqual([])
-      expect(log.connections).toHaveLength(1)
-    }
-
-    await page.getByTestId('hilos-page-tab-hilos_moderation_kind').click()
-    await expectPageReady(expect, page)
-    await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-      'Built-in until you add a rule of your own',
-    )
-    await page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules').click()
-    await expectPageReady(expect, page)
-    await page.reload()
-    await expectPageReady(expect, page)
-    await expectModerationRulesOpening(expect, own, DECLARED_KINDS[1])
-    await expect(table.locator(ROWS)).toHaveCount(0)
-    await expect(page.getByTestId(openerId)).toHaveCount(0)
-    await expect(table.getByTestId('hilos-table-count')).toHaveCount(0)
-    await expect(
-      shownByTestId(table, 'hilos-table-empty').locator('p'),
-    ).toHaveText([
-      'No rules of your own yet',
-      'Profile photo is checked by its built-in rules below.',
-    ])
-    await expect(
-      page.getByTestId('hilos-moderation-rules-built-in').locator('li'),
-    ).toHaveText([...DECLARED_KINDS[1].defaultRules])
-    expect(deletes()).toBe(1)
-  } finally {
-    own.stop()
-    foreign.stop()
-    await observer.close()
-  }
+  const arrivals = await readModelRequests(nextKey)
+  expect(arrivals.map(({ imageHashes }) => imageHashes.length)).toEqual([1])
+  expect(await readModelRequests(firstKey)).toEqual([])
 })

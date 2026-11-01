@@ -16,7 +16,7 @@ import {
 import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
-  dictateModelAnswer,
+  dictateModerationVerdict,
   forgetModelKey,
   modelKey,
   readModelRequests,
@@ -100,10 +100,7 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
           await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
         }
       }
-      await dictateModelAnswer(
-        photoKey,
-        JSON.stringify({ allow: true, reason: 'ok' }),
-      )
+      await dictateModerationVerdict(photoKey, true, 'ok')
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('modal')).toBeHidden()
       await expect(
@@ -170,10 +167,7 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
         }
       }
       expect(uploads()).toBe(1)
-      await dictateModelAnswer(
-        photoKey,
-        JSON.stringify({ allow: true, reason: 'ok' }),
-      )
+      await dictateModerationVerdict(photoKey, true, 'ok')
       await dictateGatewayBehavior('/model/api/generate', photoKey, {
         awaitRelease: true,
       })
@@ -229,10 +223,7 @@ test('an EXIF crop is public, replaces the photo in both tabs and removes back t
         await picture(page, 'image/jpeg'),
         'image/jpeg',
       )
-      await dictateModelAnswer(
-        photoKey,
-        JSON.stringify({ allow: false, reason: 'nudity' }),
-      )
+      await dictateModerationVerdict(photoKey, false, 'nudity')
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('profile-photo-error')).toHaveText(
         'This photo was not accepted: it looks like nudity or sexual content.',
@@ -328,10 +319,7 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
         await picture(page, 'image/jpeg'),
         'image/jpeg',
       )
-      await dictateModelAnswer(
-        photoKey,
-        JSON.stringify({ allow: true, reason: 'ok' }),
-      )
+      await dictateModerationVerdict(photoKey, true, 'ok')
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('modal')).toBeHidden()
       const photo = avatar.getByTestId('hilos-avatar-photo')
@@ -385,10 +373,7 @@ test('the admin card follows userPhoto while the viewer receives its personal ph
         await picture(page, 'image/png'),
         'image/png',
       )
-      await dictateModelAnswer(
-        photoKey,
-        JSON.stringify({ allow: true, reason: 'ok' }),
-      )
+      await dictateModerationVerdict(photoKey, true, 'ok')
       await clickSubmit(expect, page.getByTestId('profile-photo-save'))
       await expect(page.getByTestId('modal')).toBeHidden()
       await expect(photo).not.toHaveAttribute('src', src)

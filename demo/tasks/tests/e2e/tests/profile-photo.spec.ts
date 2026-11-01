@@ -17,7 +17,7 @@ import {
 import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePhoto.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
-  dictateModelAnswer,
+  dictateModerationVerdict,
   forgetModelKey,
   modelKey,
   readModelRequests,
@@ -112,7 +112,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
   for (const avatar of avatars) {
     await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
   }
-  await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+  await dictateModerationVerdict(key, true, 'ok')
   await clickSubmit(expect, page.getByTestId('profile-photo-save'))
   await expect(page.getByTestId('modal')).toBeHidden()
   const approved = await readModelRequests(key)
@@ -202,10 +202,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     )
   }
   await test.step('A nudity refusal keeps the old photo and the selected crop', async () => {
-    await dictateModelAnswer(
-      key,
-      JSON.stringify({ allow: false, reason: 'nudity' }),
-    )
+    await dictateModerationVerdict(key, false, 'nudity')
     await clickSubmit(expect, page.getByTestId('profile-photo-save'))
     await expect(page.getByTestId('profile-photo-error')).toHaveText(
       'This photo was not accepted: it looks like nudity or sexual content.',
@@ -224,7 +221,7 @@ test('a real crop is public, follows both tabs and the admin card, and can be re
     expect(refused).toHaveLength(3)
     expect(refused[2].imageHashes).toHaveLength(1)
   })
-  await dictateModelAnswer(key, JSON.stringify({ allow: true, reason: 'ok' }))
+  await dictateModerationVerdict(key, true, 'ok')
   await clickSubmit(expect, page.getByTestId('profile-photo-save'))
   await expect(page.getByTestId('modal')).toBeHidden()
   const replaced = await readModelRequests(key)

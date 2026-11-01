@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { STAND_GATEWAY_URL } from './standGateway.mjs'
 import {
   dictateModelAnswer,
+  dictateModerationVerdict,
   forgetModelKey,
   modelKey,
   readModelRequests,
@@ -34,6 +35,21 @@ it('dictates the answer to the call that mentions the key', async () => {
   expect(JSON.parse(String(init?.body))).toEqual({
     key: 'model-key',
     response: '',
+  })
+})
+
+it('dictates a moderation verdict as the raw {allow, reason} answer', async () => {
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(null, { status: 204 }))
+
+  await dictateModerationVerdict('model-key', false, 'spam')
+
+  const [url, init] = fetch.mock.calls[0]
+  expect(url).toBe(`${STAND_GATEWAY_URL}/model/test/answer`)
+  expect(JSON.parse(String(init?.body))).toEqual({
+    key: 'model-key',
+    response: '{"allow":false,"reason":"spam"}',
   })
 })
 
