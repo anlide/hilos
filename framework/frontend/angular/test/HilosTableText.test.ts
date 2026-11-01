@@ -202,7 +202,7 @@ function layout() {
   vi.stubGlobal('MutationObserver', Observer)
   // Synthetic boxes prove identity, timing and focus. Native layout is proved
   // by the browser suite, which loads the shipped Sass.
-  const sizes = { wide: 120, card: 120, width: 200 }
+  const sizes = { wide: 120, card: 120, tiles: 120, width: 200 }
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     () => new DOMRect(0, 0, sizes.width, 48),
   )
@@ -217,7 +217,11 @@ function layout() {
     ) {
       if (key === 'clientHeight') return 48
       if (key === 'scrollHeight')
-        return this.closest('td') ? sizes.wide : sizes.card
+        return this.closest('td')
+          ? sizes.wide
+          : this.closest('[data-id="hilos-table-tiles"]')
+            ? sizes.tiles
+            : sizes.card
       return sizes.width
     })
   return { frames, history, observers, sizes }
@@ -442,6 +446,72 @@ describe('public Angular parts text through project templates', () => {
     button.blur()
     await settle(m.f)
     expect(button.isConnected).toBe(false)
+  })
+
+  it('shares the expanded intent with Tiles under ids and overflow of its own, and the open text leaves with the departed tile', async () => {
+    const m = await mount({
+      frame: {
+        views: {
+          tableKey: 'parts',
+          order: ['table', 'tiles'],
+          imageColumn: 'plain',
+        },
+      },
+    })
+    const tile = () =>
+      m.root.querySelector<HTMLElement>('[data-id="hilos-table-tile-a"]')!
+    const card = () =>
+      m.root.querySelector<HTMLElement>('[data-id="hilos-table-card-a"]')!
+    const row = () =>
+      m.root.querySelector<HTMLElement>('tr[data-id="hilos-table-row-a"]')!
+    const named = (scope: HTMLElement) =>
+      scope.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-table-text-toggle"][aria-label$=": Name"]',
+      )
+    m.controller.setView('tiles')
+    m.sizes.tiles = 10
+    update(m.controller, 'Longer\nplain text')
+    await settle(m.f)
+    await m.flush()
+
+    // Each projection reads its own overflow: the tile's name fits.
+    expect(named(tile())).toBeNull()
+    expect(named(row())).not.toBeNull()
+    expect(named(card())).not.toBeNull()
+    const windows = [row(), card(), tile()].map(
+      (scope) => scope.querySelector('hilos-table-text [id]')!.id,
+    )
+    expect(new Set(windows).size).toBe(3)
+
+    named(row())!.click()
+    await settle(m.f)
+    await m.flush()
+
+    // One intent, three readings: the tile opens too, under its own id.
+    expect(m.controller.expandedText.get().size).toBe(1)
+    const toggle = named(tile())!
+    expect(toggle.textContent?.trim()).toBe('Collapse')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    const open = tile().querySelector('hilos-table-text .is-open[id]')!
+    expect(toggle.getAttribute('aria-controls')).toBe(open.id)
+    expect(open.id).not.toBe(named(card())!.getAttribute('aria-controls'))
+    expect(m.controller.rows.get()[0]!.expanded).toBe(false)
+
+    m.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    m.controller.apply()
+    await settle(m.f)
+    await m.flush()
+
+    for (const record of [tile(), card(), row()]) {
+      expect(
+        record.querySelector('hilos-table-text, .is-open, button'),
+      ).toBeNull()
+      expect(record.textContent?.trim()).toBe('Removed')
+    }
   })
 
   it('draws Hidden outside the empty minimum reserve without stringifying it, and releases old observers', async () => {

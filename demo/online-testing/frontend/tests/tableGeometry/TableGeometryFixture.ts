@@ -30,6 +30,7 @@ import {
   type HilosTableProgress,
   type HilosTableRowHeight,
   type HilosTableTextRem,
+  type HilosTableView,
   type Hideable,
   type TableRow,
   type TableViewportDescriptor,
@@ -42,6 +43,7 @@ interface RecordValue {
   readonly badge: string
   readonly detail: string
   readonly expandable: boolean
+  readonly picture: string
 }
 
 const KEYS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'] as const
@@ -76,6 +78,11 @@ const READING_SAMPLES = {
   e: 'token',
   g: 'short',
 } as const satisfies Partial<Record<(typeof KEYS)[number], TextSample>>
+// Self-contained pictures exercise native image decoding without a file service.
+const PICTURES = ['circle', 'rect', 'ellipse'].map(
+  (shape) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><${shape} fill="steelblue" x="20" y="20" width="120" height="80" cx="80" cy="60" r="40" rx="60" ry="40"/></svg>`)}`,
+)
 const ARCHIVE_COLUMNS = [
   { key: 'environment', label: 'Environment', value: 'Production' },
   { key: 'scope', label: 'Scope', value: 'Full' },
@@ -349,6 +356,17 @@ function raw(key: string): TableRow {
           />
           Archive columns and icon actions on controller replacement
         </label>
+        <label class="form-check">
+          <input
+            #tilesInput
+            class="form-check-input"
+            type="checkbox"
+            data-id="geometry-tiles"
+            [checked]="tilesEnabled"
+            (change)="setTiles(tilesInput.checked)"
+          />
+          Declare table views and pictures
+        </label>
       </div>
       <div class="d-flex flex-wrap gap-2 mb-3">
         @for (command of commands; track command.id) {
@@ -374,6 +392,7 @@ function raw(key: string): TableRow {
         [attr.data-count]="footer().totalCount"
         [attr.data-range]="footer().firstRow + ':' + footer().lastRow"
         [attr.data-body]="body()"
+        [attr.data-view]="tableView()"
         [attr.data-selected]="json(selected())"
         [attr.data-identities]="identities()"
         [attr.data-requests]="requests().length"
@@ -390,6 +409,16 @@ function raw(key: string): TableRow {
       >
         @if (mounted()) {
           <hilos-viewport-table [controller]="controller()">
+            <ng-template hilosTableCell="picture" let-row let-rowKey="rowKey">
+              @if (row.picture) {
+                <img
+                  class="w-100 h-100 object-fit-cover"
+                  [src]="row.picture"
+                  [alt]="'Test picture ' + rowKey"
+                  [attr.data-id]="'geometry-picture-' + rowKey"
+                />
+              }
+            </ng-template>
             <ng-template hilosTableCell="name" let-row let-rowKey="rowKey">
               <span [attr.data-id]="'geometry-name-' + rowKey">{{
                 archive() ? '2026-10-21 11:13 ' + rowKey : row.name
@@ -577,6 +606,7 @@ export class TableGeometryFixture {
   protected readingMode = false
   protected sample: TextSample = 'short'
   protected iconActions = false
+  protected tilesEnabled = false
   protected readonly archive = signal(false)
   protected readonly mounted = signal(true)
   protected readonly modalOpen = signal(false)
@@ -603,6 +633,9 @@ export class TableGeometryFixture {
   protected readonly rows = signal(this.controller().rows.get())
   protected readonly footer = signal(this.controller().frame.footer.get())
   protected readonly body = signal(this.controller().frame.body.get())
+  protected readonly tableView = signal<HilosTableView>(
+    this.controller().frame.view.get(),
+  )
   protected readonly selected = signal(this.controller().selection.target.get())
   private readonly tableWork = signal(this.controller().progress.table.get())
   private readonly bulkWork = signal(this.controller().progress.bulk.get())
@@ -684,6 +717,11 @@ export class TableGeometryFixture {
       run: () => this.replace(false),
     },
     {
+      id: 'views-alone',
+      label: 'Controller with views alone',
+      run: () => this.replace(false, true),
+    },
+    {
       id: 'old',
       label: 'Old controller reply',
       run: () => this.previous?.ingestRefusal('old'),
@@ -715,6 +753,7 @@ export class TableGeometryFixture {
         mirrorHilosSignal(owner.rows, this.rows),
         mirrorHilosSignal(owner.frame.footer, this.footer),
         mirrorHilosSignal(owner.frame.body, this.body),
+        mirrorHilosSignal(owner.frame.view, this.tableView),
         mirrorHilosSignal(owner.selection.target, this.selected),
         mirrorHilosSignal(owner.progress.table, this.tableWork),
         mirrorHilosSignal(owner.progress.bulk, this.bulkWork),
@@ -757,6 +796,11 @@ export class TableGeometryFixture {
   protected setHeightContent(value: string): void {
     this.heightContent = this.choice(value, this.heightContents)
     this.replaceReading()
+  }
+
+  protected setTiles(enabled: boolean): void {
+    this.tilesEnabled = enabled
+    this.replace(this.searchEnabled)
   }
 
   protected startReading(): void {
@@ -823,10 +867,15 @@ export class TableGeometryFixture {
     ingest(this.scope, { entities: { [SOURCE]: { id: key, ...fields } } })
   }
 
+  // With views alone the bar holds nothing but the order menu of the sortable name
+  // column and the view choice: no search, no filter, no action and no marks, so
+  // in Table the declared views are all that keeps the bar standing above md.
   private makeController(
     search = true,
     archive = false,
     reading = this.readingMode,
+    tiles = this.tilesEnabled,
+    viewsAlone = false,
   ): TableViewportController<RecordValue> {
     const rowHeight: HilosTableRowHeight | undefined =
       !reading || this.heightMode === 'default'
@@ -840,10 +889,22 @@ export class TableGeometryFixture {
       title: 'Geometry records',
       subtitle: 'Synthetic controller ingress; no server delivery is claimed.',
       search: search ? { placeholder: 'Find geometry records' } : undefined,
-      filters: [
-        { kind: 'toggle', key: 'status', label: 'Paused', on: 'paused' },
-      ],
+      filters: viewsAlone
+        ? []
+        : [{ kind: 'toggle', key: 'status', label: 'Paused', on: 'paused' }],
+      ...(tiles
+        ? {
+            views: {
+              tableKey: 'angular-geometry-records',
+              order: ['table', 'tiles'],
+              imageColumn: 'picture',
+            },
+          }
+        : {}),
       columns: [
+        ...(tiles
+          ? [{ key: 'picture', label: 'Picture', source: SOURCE }]
+          : []),
         {
           key: 'name',
           label: 'Name',
@@ -880,16 +941,20 @@ export class TableGeometryFixture {
         },
       ],
       ...(rowHeight ? { rowHeight } : {}),
-      bulkActions: [
-        {
-          key: 'inspect',
-          label: 'Inspect',
-          refusalTitle: 'Could not inspect',
-          run: () => {
-            throw new Error('This fixture does not send bulk actions')
-          },
-        },
-      ],
+      ...(viewsAlone
+        ? {}
+        : {
+            bulkActions: [
+              {
+                key: 'inspect',
+                label: 'Inspect',
+                refusalTitle: 'Could not inspect',
+                run: () => {
+                  throw new Error('This fixture does not send bulk actions')
+                },
+              },
+            ],
+          }),
     }
     return new TableViewportController<RecordValue>({
       frame,
@@ -904,6 +969,7 @@ export class TableGeometryFixture {
           badge: String(fields?.['badge'] ?? ''),
           detail: String(fields?.['detail'] ?? ''),
           expandable: fields?.['expandable'] !== false,
+          picture: String(fields?.['picture'] ?? ''),
         }
       },
       expandable: (row) => row.expandable,
@@ -940,6 +1006,7 @@ export class TableGeometryFixture {
           badge: 'Available',
           detail: `Private detail for ${key}. ${EXPANDED}`,
           expandable: true,
+          picture: key === 'd' ? '' : PICTURES[TARGETS.indexOf(key) % 3]!,
         })
       }
       owner.ingestSubscriptionWindow(
@@ -1206,7 +1273,7 @@ export class TableGeometryFixture {
     )
   }
 
-  private replace(search = true): void {
+  private replace(search = true, viewsAlone = false): void {
     this.previous?.dispose()
     this.previous = this.controller()
     this.searchEnabled = search
@@ -1215,6 +1282,8 @@ export class TableGeometryFixture {
       search,
       this.iconActions,
       this.readingMode,
+      this.tilesEnabled || viewsAlone,
+      viewsAlone,
     )
     this.seed(owner, this.readingMode)
     this.controller.set(owner)

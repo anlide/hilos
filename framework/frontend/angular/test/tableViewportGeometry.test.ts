@@ -3,6 +3,7 @@ import {
   FocusTrap,
   TableViewportGeometry,
   type TableGeometryRegistration,
+  type TableProjection,
 } from '@hilos/core/base'
 import { createTableViewportGeometry } from '../src/tableViewportGeometry.js'
 
@@ -32,6 +33,7 @@ function fixture(
   options: {
     cardVisible?: boolean
     wideVisible?: boolean
+    tilesVisible?: boolean
     zoom?: number
     cardChrome?: boolean
     separateBorders?: boolean
@@ -42,6 +44,7 @@ function fixture(
   owner.replaceWindow(options.empty ? [] : ['a', 'b'])
   const wideVisible = { value: options.wideVisible ?? true }
   const cardVisible = { value: options.cardVisible ?? true }
+  const tilesVisible = { value: options.tilesVisible ?? true }
   const zoom = { value: options.zoom ?? 1 }
   const fallbackHeight = { value: 48 }
   Object.defineProperty(HTMLElement.prototype, 'currentCSSZoom', {
@@ -62,6 +65,15 @@ function fixture(
     ['wide-reason', rect(0, 22)],
     ['wide-shell', rect(0, 23)],
     ['card-reason', rect(0, 18)],
+    // The whole tile card holds its 4:3 image frame and its body.
+    ['tiles-main', rect(600, 300.5, 180)],
+    ['tiles-image', rect(600, 135, 180)],
+    ['tiles-detail', rect(770, 40.25, 180)],
+    ['tiles-work', rect(816.25, 20.5, 180)],
+    ['tiles-reason', rect(0, 20)],
+    ['tiles-probe', rect(0, 120, 180)],
+    ['tiles-column', rect(0, 120, 196)],
+    ['tiles-grid', rect(0, 120, 392)],
   ])
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function (this: HTMLElement) {
@@ -71,7 +83,8 @@ function fixture(
           (id.startsWith('wide') ||
             id.startsWith('header') ||
             id === 'table')) ||
-        (!cardVisible.value && id.startsWith('card'))
+        (!cardVisible.value && id.startsWith('card')) ||
+        (!tilesVisible.value && id.startsWith('tiles'))
       )
         return rect(0, 0, 0)
       const local = boxes.get(id) ?? rect(0, 0, 0)
@@ -113,6 +126,20 @@ function fixture(
         if (property === 'marginBottom' && id === 'card-main') return '8px'
         if (property === 'marginBottom' && id === 'card-detail') return '4px'
         if (property === 'marginTop' && id === 'card-work') return '6px'
+        // A tile card has no margin of its own; its column carries g-3.
+        if (
+          id === 'tiles-main' &&
+          (property === 'borderTopWidth' || property === 'borderBottomWidth')
+        )
+          return '0.5px'
+        if (
+          id === 'tiles-body' &&
+          (property === 'paddingTop' || property === 'paddingBottom')
+        )
+          return '8px'
+        if (property === 'marginTop' && id === 'tiles-col') return '16px'
+        if (property === 'marginBottom' && id === 'tiles-detail') return '4px'
+        if (property === 'marginTop' && id === 'tiles-work') return '6px'
         return Reflect.get(target, property)
       },
     })
@@ -175,6 +202,18 @@ function fixture(
     <div class="hilos-table-room-card">
       <div class="hilos-table-reason-twins" data-box="card-reason"></div>
       <div class="hilos-table-fallback"></div>
+    </div>
+    <div class="hilos-table-room">
+      <div class="row" data-box="tiles-grid">
+        <div class="col" data-box="tiles-column">
+          <div class="card hilos-table-tile hilos-table-room-tiles" data-box="tiles-probe">
+            <div class="card-body">
+              <div class="hilos-table-reason-twins" data-box="tiles-reason"></div>
+              <div class="hilos-table-fallback"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>`
   document.body.append(root)
   const table = root.querySelector('table')!
@@ -203,7 +242,7 @@ function fixture(
   }
   function bind(
     rowKey: string,
-    projection: 'wide' | 'card',
+    projection: TableProjection,
     part: 'main' | 'work' | 'detail',
     element: HTMLElement,
   ): void {
@@ -248,13 +287,39 @@ function fixture(
       node('card-detail', 'div', body, 'detail values'),
     )
     bind('a', 'card', 'work', node('card-work', 'div', body, 'work payload'))
+    const grid = node('tiles-live-grid', 'div', root)
+    grid.className = 'row'
+    const column = node('tiles-col', 'div', grid)
+    column.className = 'col'
+    const tile = node('tiles-main', 'div', column)
+    tile.className = 'card hilos-table-tile'
+    const image = node('tiles-image', 'div', tile)
+    image.className = 'ratio ratio-4x3'
+    const picture = document.createElement('img')
+    picture.alt = 'live picture'
+    image.append(picture)
+    const tileBody = node('tiles-body', 'div', tile, 'live values')
+    tileBody.className = 'card-body'
+    bind('a', 'tiles', 'main', tile)
+    bind(
+      'a',
+      'tiles',
+      'detail',
+      node('tiles-detail', 'div', tileBody, 'detail values'),
+    )
+    bind(
+      'a',
+      'tiles',
+      'work',
+      node('tiles-work', 'div', tileBody, 'work payload'),
+    )
   }
   function commit(): void {
     table.classList.toggle('hilos-table-fixed', adapter.tracks() !== null)
     adapter.commit(root, table, ['name', 'state'])
   }
   function replace(): void {
-    for (const projection of ['wide', 'card'] as const) {
+    for (const projection of ['wide', 'card', 'tiles'] as const) {
       for (const part of ['work', 'detail'] as const) {
         const id = `${projection}-${part}`
         releases.get(id)?.()
@@ -265,8 +330,8 @@ function fixture(
       const body =
         projection === 'wide'
           ? node('cell', 'td', main)
-          : node('card-body', 'div', main)
-      if (projection === 'card') body.className = 'card-body'
+          : node(`${projection}-body`, 'div', main)
+      if (projection !== 'wide') body.className = 'card-body'
       const space = node('space', 'div', body)
       space.className = 'hilos-table-record-space'
       node(`${projection}-reason`, 'span', space, 'Removed')
@@ -281,7 +346,7 @@ function fixture(
   function reserve(): void {
     owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () => {
       owner.reserveWork('a')
-      for (const projection of ['wide', 'card'] as const) {
+      for (const projection of ['wide', 'card', 'tiles'] as const) {
         const work = targets.get(`${projection}-work`)!
         work.textContent = ''
         work.className = 'hilos-table-work-reserve'
@@ -304,6 +369,7 @@ function fixture(
     fallbackHeight,
     wideVisible,
     cardVisible,
+    tilesVisible,
     observed,
     disconnect,
     cancel,
@@ -343,13 +409,27 @@ describe('Angular table geometry (numeric DOM seam)', () => {
         gap: 14,
         total: 218.5,
       })
+      // The tile's main box is its whole card; the image is never added again,
+      // and the surviving column's gutter joins detail and work gaps once.
+      expect(f.registration.record('a', 'tiles')?.live).toEqual({
+        main: 233.75,
+        work: 20.5,
+        detail: 40.25,
+        gap: 22,
+        total: 316.5,
+      })
       expect(f.adapter.tracks()).toEqual({
         columnKeys: ['name', 'state'],
         widths: [125.25, 75.5],
         tableWidth: 200.75,
       })
-      expect(f.adapter.reasonFloors()).toEqual({ wide: 22, card: 18 })
+      expect(f.adapter.reasonFloors()).toEqual({
+        wide: 22,
+        card: 18,
+        tiles: 20,
+      })
       f.boxes.set('wide-detail', rect(78.75, 90.5))
+      f.boxes.set('tiles-main', rect(600, 310.25, 180))
       f.depart()
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'wide'),
@@ -357,9 +437,13 @@ describe('Angular table geometry (numeric DOM seam)', () => {
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
       ).toBe(218.5)
+      expect(
+        f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'tiles'),
+      ).toBe(326.25)
       expect(f.root.textContent).not.toMatch(
         /live values|work payload|detail values/,
       )
+      expect(f.root.querySelector('img')).toBeNull()
     },
   )
 
@@ -415,9 +499,11 @@ describe('Angular table geometry (numeric DOM seam)', () => {
       f.boxes.set('card-work', rect(446.5, 22.25))
       f.commit()
       expect(f.adapter.workPixels('a', 'wide')).toBe(21)
+      expect(f.adapter.workPixels('a', 'tiles')).toBe(22.5)
       f.depart()
       expect(f.registration.record('a', 'wide')?.retained).toBe(125.25)
       expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+      expect(f.registration.record('a', 'tiles')?.retained).toBe(316.5)
     },
   )
 
@@ -832,6 +918,209 @@ describe('Angular table geometry (numeric DOM seam)', () => {
   })
 })
 
+describe('Angular tile geometry (numeric DOM seam)', () => {
+  it('keeps tiles independent of the wide tracks and the card numbers', () => {
+    const f = fixture()
+    const tracks = f.adapter.tracks()
+    const wide = f.registration.record('a', 'wide')?.live
+    const card = f.registration.record('a', 'card')?.live
+    f.boxes.set('tiles-main', rect(600, 340.5, 180))
+    f.resize()
+    f.frame()
+    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(356.5)
+    expect(f.registration.record('a', 'wide')?.live).toBe(wide)
+    expect(f.registration.record('a', 'card')?.live).toBe(card)
+    expect(f.adapter.tracks()).toBe(tracks)
+    f.depart()
+    expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+    expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(356.5)
+  })
+
+  it.each(['zero', 'hidden'] as const)(
+    'reads a %s live tile as no measurement and keeps its valid cache',
+    (state) => {
+      const f = fixture()
+      const tile = f.targets.get('tiles-main')!
+      if (state === 'zero') f.boxes.set('tiles-main', rect(600, 0, 0))
+      else tile.hidden = true
+      f.resize()
+      f.frame()
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
+      f.depart()
+      f.commit()
+      const occurrence = f.owner.record('a')!.occurrence
+      expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(316.5)
+    },
+  )
+
+  it('allocates a never-shown tile its generic numeric floor on first display only', () => {
+    const f = fixture({ tilesVisible: false })
+    f.owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () => {})
+    f.depart()
+    f.commit()
+    const occurrence = f.owner.record('a')!.occurrence
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBeUndefined()
+    f.tilesVisible.value = true
+    // The first commit signs the newly visible grid; the next one measures it.
+    f.commit()
+    f.commit()
+    // The 3rem fallback plus py-2, the card borders and the column gutter once.
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(81)
+    expect(f.root.querySelector('img')).toBeNull()
+    f.fallbackHeight.value = 96
+    f.commit()
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(81)
+    f.boxes.set('tiles-reason', rect(0, 260.25))
+    f.commit()
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(293.25)
+    f.boxes.set('tiles-reason', rect(0, 20))
+    f.commit()
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(293.25)
+  })
+
+  it.each(['tile width', 'columns', 'gutter', 'tile font'] as const)(
+    'releases the tile layout on a %s change read from the DOM grid',
+    (kind) => {
+      const f = fixture()
+      const layout = f.registration.layout('tiles')
+      if (kind === 'tile width') f.boxes.set('tiles-probe', rect(0, 120, 150))
+      // Three columns in the same grid width: no viewport query is involved.
+      if (kind === 'columns') f.boxes.set('tiles-column', rect(0, 120, 130.5))
+      const original = vi
+        .mocked(window.getComputedStyle)
+        .getMockImplementation()!
+      vi.spyOn(window, 'getComputedStyle').mockImplementation(
+        (element) =>
+          new Proxy(original(element), {
+            get(target, property) {
+              const id = (element as HTMLElement).dataset.box
+              if (
+                kind === 'gutter' &&
+                id === 'tiles-column' &&
+                property === 'marginTop'
+              )
+                return '24px'
+              if (
+                kind === 'tile font' &&
+                id === 'tiles-probe' &&
+                property === 'fontSize'
+              )
+                return '18px'
+              return Reflect.get(target, property)
+            },
+          }),
+      )
+      f.resize()
+      f.frame()
+      expect(f.registration.layout('tiles')).not.toBe(layout)
+      expect(f.registration.record('a', 'tiles')?.live).toBeNull()
+      f.commit()
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
+      const measured = f.registration.layout('tiles')
+      f.resize()
+      f.frame()
+      expect(f.registration.layout('tiles')).toBe(measured)
+    },
+  )
+
+  it('measures tiles after a view switch while hidden wide and card keep their numbers', () => {
+    const f = fixture()
+    f.commit()
+    expect(f.table.classList.contains('hilos-table-fixed')).toBe(true)
+    // A departed wide row keeps its allocation through the whole Tiles visit.
+    const row = document.createElement('tr')
+    row.dataset.box = 'wide-b'
+    f.table.tBodies[0]!.append(row)
+    f.boxes.set('wide-b', rect(160, 88.75))
+    f.adapter.bind('b', f.owner.record('b')!.occurrence, 'wide', 'main', row)
+    f.commit()
+    f.owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['b'] }, () =>
+      f.owner.depart('b', 'deleted'),
+    )
+    expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+    f.wideVisible.value = false
+    f.cardVisible.value = false
+    f.adapter.layoutChanged()
+    expect(f.adapter.tracks()).toBeNull()
+    f.commit()
+    expect(f.table.classList.contains('hilos-table-fixed')).toBe(false)
+    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
+    expect(f.registration.record('a', 'wide')?.live).toBeNull()
+    expect(f.registration.record('a', 'card')?.live).toBeNull()
+    expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+    // Zero wide rectangles neither re-sign the layout nor block later frames.
+    const layout = f.registration.layout('tiles')
+    f.commit()
+    expect(f.registration.layout('tiles')).toBe(layout)
+    f.boxes.set('tiles-main', rect(600, 320.5, 180))
+    f.resize()
+    f.frame()
+    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(336.5)
+    expect(f.adapter.tracks()).toBeNull()
+    f.depart()
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(336.5)
+    expect(f.registration.record('a', 'wide')?.retained).toBeNull()
+    expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+  })
+
+  it('invalidates on a tile image load only, and forgets the root on dispose', () => {
+    const f = fixture()
+    const layout = f.registration.layout('tiles')
+    const tracks = f.adapter.tracks()
+    const avatar = document.createElement('img')
+    f.targets.get('wide-main')!.append(avatar)
+    avatar.dispatchEvent(new Event('load'))
+    expect(f.registration.layout('tiles')).toBe(layout)
+    expect(f.adapter.tracks()).toBe(tracks)
+    const picture = f.targets.get('tiles-main')!.querySelector('img')!
+    // Load does not bubble: the adapter captures it on its committed root.
+    picture.dispatchEvent(new Event('load'))
+    expect(f.registration.layout('tiles')).not.toBe(layout)
+    expect(f.registration.record('a', 'tiles')?.live).toBeNull()
+    f.commit()
+    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
+    const remove = vi.spyOn(f.root, 'removeEventListener')
+    f.adapter.dispose()
+    expect(remove).toHaveBeenCalledWith('load', expect.any(Function), true)
+    const read = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    read.mockClear()
+    picture.dispatchEvent(new Event('load'))
+    f.frame()
+    expect(read).not.toHaveBeenCalled()
+  })
+
+  it('does not let an old tile cleanup unbind its successor', () => {
+    const f = fixture()
+    const previous = f.targets.get('tiles-main')!
+    const newer = previous.cloneNode(true) as HTMLElement
+    previous.replaceWith(newer)
+    const occurrence = f.owner.record('a')!.occurrence
+    const release = f.adapter.bind('a', occurrence, 'tiles', 'main', newer)
+    f.releases.get('tiles-main')?.()
+    expect(f.observed.has(newer)).toBe(true)
+    f.depart()
+    expect(f.registration.record('a', 'tiles')?.retained).toBe(316.5)
+    release()
+    expect(f.observed.has(newer)).toBe(false)
+  })
+
+  it('keeps an old tile occurrence and a late frame out of a reused key', () => {
+    const f = fixture()
+    const occurrence = f.owner.record('a')!.occurrence
+    f.boxes.set('tiles-main', rect(600, 330.5, 180))
+    f.resize()
+    f.owner.replaceWindow(['a'])
+    f.frame()
+    expect(f.registration.record('a', 'tiles')?.live).toBeNull()
+    f.owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () =>
+      f.owner.depart('a', 'deleted'),
+    )
+    expect(f.registration.record('a', 'tiles')?.retained).toBeNull()
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBeUndefined()
+  })
+})
+
 /** Reader identities are issued by the existing owner, independently of DOM sizes. */
 function readerFixture() {
   const owner = new TableViewportGeometry()
@@ -883,8 +1172,11 @@ describe('Angular exact text record reader', () => {
       const identity = f.owner.record('a')!
       const wide = f.adapter.recordReader('a', identity.occurrence, 'wide')
       const card = f.adapter.recordReader('a', identity.occurrence, 'card')
+      const tiles = f.adapter.recordReader('a', identity.occurrence, 'tiles')
       expect(wide()).toBe(identity)
       expect(card()).toBe(identity)
+      expect(tiles()).toBe(identity)
+      expect(tiles).not.toBe(card)
       if (change === 'outgoing') f.reject()
       if (change === 'departure') f.owner.depart('a', 'deleted')
       if (change === 'window') f.owner.replaceWindow(['a'])
@@ -892,6 +1184,7 @@ describe('Angular exact text record reader', () => {
       if (change === 'dispose') f.adapter.dispose()
       expect(wide()).toBeNull()
       expect(card()).toBeNull()
+      expect(tiles()).toBeNull()
     },
   )
 

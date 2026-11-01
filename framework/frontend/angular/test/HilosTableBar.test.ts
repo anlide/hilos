@@ -3,12 +3,15 @@
 // title, search, filters, badge, the order menu, main and auxiliary actions, and
 // the filters modal. Every case
 // mounts a host that binds the two inputs.
-import { Component } from '@angular/core'
+import { Component, signal } from '@angular/core'
+import type { WritableSignal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_VIEW_COPY,
   TableViewportController,
+  subscribeSignal,
 } from '@hilos/core'
 import type {
   ActionHandle,
@@ -16,6 +19,7 @@ import type {
   HilosTableColumn,
   HilosTableFrame,
   HilosTableSortOrder,
+  HilosTableViews,
   TableSortOrder,
   TableViewportDescriptor,
 } from '@hilos/core'
@@ -35,6 +39,19 @@ const COLUMNS = [{ key: 'name', label: 'Name' }]
 })
 class BarHost {
   controller!: TableViewportController<unknown>
+}
+
+/** A host whose controller can be replaced while the bar stands. */
+@Component({
+  selector: 'test-table-bar-swap-host',
+  imports: [HilosTableBar],
+  template: `<hilos-table-bar
+    [controller]="controller()"
+    titleId="table-title"
+  />`,
+})
+class SwapHost {
+  controller!: WritableSignal<TableViewportController<unknown>>
 }
 
 afterEach(() => {
@@ -1133,6 +1150,505 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
     expect(strips(fixture)).toEqual({
       controlsVisible: true,
       panelVisible: false,
+    })
+  })
+})
+
+describe('HilosTableBar view group', () => {
+  const PICTURE_VIEWS: HilosTableViews = {
+    tableKey: 'pictures',
+    order: ['table', 'tiles'],
+    imageColumn: 'name',
+  }
+
+  /** One declared operation, never run: the bar only reads that bulk exists. */
+  const BULK_ACTIONS: NonNullable<HilosTableFrame['bulkActions']> = [
+    {
+      key: 'archive',
+      label: 'Archive',
+      refusalTitle: 'Cannot archive',
+      run: () => {
+        throw new Error('Not pressed')
+      },
+    },
+  ]
+
+  /** A table declaring views, with whatever else the case adds around them. */
+  function viewed(
+    extra: Partial<HilosTableFrame> = {},
+    views: HilosTableViews = PICTURE_VIEWS,
+  ): ReturnType<typeof makeController> & { rendered: string[][] } {
+    const rendered: string[][] = []
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<unknown>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: (keys) => rendered.push([...keys]),
+      frame: { title: 'Pictures', columns: COLUMNS, views, ...extra },
+    })
+
+    return { controller, sent, rendered }
+  }
+
+  function withRows(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'A' } },
+        { rowKey: 'b', slots: { name: 'B' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function viewGroup(fixture: ComponentFixture<unknown>): HTMLElement {
+    const group = byId(fixture, 'hilos-table-view')
+    expect(group).not.toBeNull()
+
+    return group as HTMLElement
+  }
+
+  function viewButtons(
+    fixture: ComponentFixture<unknown>,
+  ): HTMLButtonElement[] {
+    return Array.from(viewGroup(fixture).querySelectorAll('button'))
+  }
+
+  /** What a reader meets in the group: each choice's words, and whether it is pressed. */
+  function viewReading(
+    fixture: ComponentFixture<unknown>,
+  ): [string | undefined, string | null][] {
+    return viewButtons(fixture).map((button) => [
+      button.textContent?.trim(),
+      button.getAttribute('aria-pressed'),
+    ])
+  }
+
+  /**
+   * jsdom does not synthesize the click the browser sends for Enter on a native
+   * button, so the key events and that click (detail 0, as a keyboard click
+   * carries) are sent by hand; the bar has no key handler of its own to stand in.
+   */
+  function pressWithKeyboard(
+    fixture: ComponentFixture<unknown>,
+    button: HTMLElement,
+  ): void {
+    button.focus()
+    button.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    )
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    button.dispatchEvent(
+      new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }),
+    )
+    fixture.detectChanges()
+  }
+
+  it.each([false, true])(
+    'keeps one native view group with no other controls, bulk enabled: %s',
+    (bulk) => {
+      const { controller, sent } = viewed(
+        bulk ? { bulkActions: BULK_ACTIONS } : {},
+      )
+      withRows(controller)
+      const fixture = mountBar(controller)
+      try {
+        const group = viewGroup(fixture)
+        expect(group.getAttribute('role')).toBe('group')
+        expect(group.getAttribute('aria-label')).toBe(TABLE_VIEW_COPY.group)
+        expect(
+          Array.from(group.querySelectorAll('button')).map((button) => [
+            button.textContent?.trim(),
+            button.getAttribute('type'),
+            button.getAttribute('aria-pressed'),
+          ]),
+        ).toEqual([
+          ['Table', 'button', 'true'],
+          ['Tiles', 'button', 'false'],
+        ])
+        expect(
+          Array.from(group.querySelectorAll('i')).map((icon) =>
+            icon.getAttribute('aria-hidden'),
+          ),
+        ).toEqual(['true', 'true'])
+        expect(
+          fixture.nativeElement.querySelectorAll(
+            '[data-id="hilos-table-view"]',
+          ),
+        ).toHaveLength(1)
+        if (bulk) {
+          controller.selectRow('a', true)
+          fixture.detectChanges()
+          expect(
+            byId(fixture, 'hilos-table-selection')?.closest(
+              '[aria-hidden="true"], [inert], [hidden]',
+            ),
+          ).toBeNull()
+          // The panel stands in the controls' place, and the group is not one of
+          // the things it hides.
+          expect(
+            group.closest('[aria-hidden="true"], [inert], [hidden]'),
+          ).toBeNull()
+        }
+
+        const tiles = byId(fixture, 'hilos-table-view-tiles') as HTMLElement
+        pressWithKeyboard(fixture, tiles)
+
+        expect(document.activeElement).toBe(tiles)
+        expect(controller.frame.view.get()).toBe('tiles')
+        expect(viewReading(fixture)).toEqual([
+          ['Table', 'false'],
+          ['Tiles', 'true'],
+        ])
+        expect(sent).toEqual([])
+        expect(controller.selection.count.get()).toBe(bulk ? 1 : 0)
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    },
+  )
+
+  it('lists the choices in the order the table declared them and opens on the first', () => {
+    const { controller } = viewed(
+      {},
+      { ...PICTURE_VIEWS, order: ['tiles', 'table'] },
+    )
+    const fixture = mountBar(controller)
+    try {
+      expect(viewReading(fixture)).toEqual([
+        ['Tiles', 'true'],
+        ['Table', 'false'],
+      ])
+      expect(
+        viewButtons(fixture).map((button) => button.dataset['id']),
+      ).toEqual(['hilos-table-view-tiles', 'hilos-table-view-table'])
+    } finally {
+      fixture.destroy()
+      controller.dispose()
+    }
+  })
+
+  it('offers no view group without a views declaration', () => {
+    const { controller } = makeController({ columns: COLUMNS })
+    const fixture = mountBar(controller)
+
+    expect(byId(fixture, 'hilos-table-view')).toBeNull()
+    expect(byId(fixture, 'hilos-table-controls')).toBeNull()
+  })
+
+  it.each([false, true])(
+    'keeps the group next to every other control and over an empty window, bulk enabled: %s',
+    (bulk) => {
+      const main = vi.fn()
+      const { controller, sent } = viewed({
+        search: {},
+        filters: [
+          { kind: 'toggle', key: 'unread', label: 'Unread only', on: true },
+        ],
+        mainAction: { label: 'Create', press: main },
+        ...(bulk ? { bulkActions: BULK_ACTIONS } : {}),
+      })
+      const fixture = mountBar(controller)
+      try {
+        // No window has arrived yet: the controls wait, the layout choice does not.
+        expect(byId(fixture, 'hilos-table-search')).not.toBeNull()
+        expect(byId(fixture, 'hilos-table-main-action')).not.toBeNull()
+        expect(viewReading(fixture)).toEqual([
+          ['Table', 'true'],
+          ['Tiles', 'false'],
+        ])
+
+        click(fixture, 'hilos-table-view-tiles')
+
+        expect(controller.frame.view.get()).toBe('tiles')
+        expect(viewReading(fixture)).toEqual([
+          ['Table', 'false'],
+          ['Tiles', 'true'],
+        ])
+        expect(main).not.toHaveBeenCalled()
+        expect(sent).toEqual([])
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    },
+  )
+
+  it('keeps the group usable while the window controls are unavailable', () => {
+    const controller = new TableViewportController<unknown>({
+      resolve: (row) => row,
+      sendViewport: () => undefined,
+      initialFilter: { unread: true },
+      initialFilterInSubscription: true,
+      frame: {
+        columns: COLUMNS,
+        search: {},
+        filters: [
+          { kind: 'toggle', key: 'unread', label: 'Unread only', on: true },
+        ],
+        views: PICTURE_VIEWS,
+      },
+    })
+    controller.ingestRefusal('internal_error')
+    const fixture = mountBar(controller)
+    try {
+      // The same state the first case of this file holds: the window is unknown,
+      // so the search waits. The layout choice is local and does not.
+      expect(
+        (byId(fixture, 'hilos-table-search') as HTMLInputElement).disabled,
+      ).toBe(true)
+      expect(viewButtons(fixture).map((button) => button.disabled)).toEqual([
+        false,
+        false,
+      ])
+
+      click(fixture, 'hilos-table-view-tiles')
+
+      expect(controller.frame.view.get()).toBe('tiles')
+    } finally {
+      fixture.destroy()
+      controller.dispose()
+    }
+  })
+
+  it.each([false, true])(
+    'changes only the layout: nothing is sent, applied, reordered or reset, and a repeat of the active choice is a no-op, bulk enabled: %s',
+    (bulk) => {
+      const { controller, sent, rendered } = viewed({
+        columns: [{ key: 'name', label: 'Name', sortable: true }],
+        search: {},
+        ...(bulk ? { bulkActions: BULK_ACTIONS } : {}),
+      })
+      withRows(controller)
+      const fixture = mountBar(controller)
+      try {
+        type(fixture, 'hilos-table-search', 'retention')
+        controller.setOrder([{ field: 'name', direction: 'asc' }])
+        if (bulk) {
+          controller.selectRow('b', true)
+        }
+        fixture.detectChanges()
+        const search = byId(fixture, 'hilos-table-search')
+        const before = {
+          search: controller.search.get(),
+          filter: controller.filter.get(),
+          orderLabel: controller.frame.orderLabel.get(),
+          marked: controller.selection.count.get(),
+          sent: sent.length,
+          rendered: rendered.length,
+        }
+        const spies = [
+          vi.spyOn(controller, 'apply'),
+          vi.spyOn(controller, 'setOrder'),
+          vi.spyOn(controller, 'resetOrder'),
+          vi.spyOn(controller, 'setSearch'),
+          vi.spyOn(controller, 'resetFilters'),
+        ]
+        const changes: string[] = []
+        const stop = subscribeSignal(controller.frame.view, (view) =>
+          changes.push(view),
+        )
+
+        click(fixture, 'hilos-table-view-table')
+        click(fixture, 'hilos-table-view-tiles')
+        click(fixture, 'hilos-table-view-tiles')
+        click(fixture, 'hilos-table-view-table')
+        click(fixture, 'hilos-table-view-table')
+        stop()
+
+        expect(changes).toEqual(['tiles', 'table'])
+        expect(viewReading(fixture)).toEqual([
+          ['Table', 'true'],
+          ['Tiles', 'false'],
+        ])
+        for (const spy of spies) {
+          expect(spy).not.toHaveBeenCalled()
+        }
+        expect({
+          search: controller.search.get(),
+          filter: controller.filter.get(),
+          orderLabel: controller.frame.orderLabel.get(),
+          marked: controller.selection.count.get(),
+          sent: sent.length,
+          rendered: rendered.length,
+        }).toEqual(before)
+        expect(byId(fixture, 'hilos-table-search')).toBe(search)
+        expect((search as HTMLInputElement).value).toBe('retention')
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    },
+  )
+
+  it('keeps focus on the pressed choice through both switches', () => {
+    const { controller } = viewed()
+    const fixture = mountBar(controller)
+    try {
+      const tiles = byId(fixture, 'hilos-table-view-tiles') as HTMLElement
+      const table = byId(fixture, 'hilos-table-view-table') as HTMLElement
+
+      pressWithKeyboard(fixture, tiles)
+      expect(document.activeElement).toBe(tiles)
+
+      pressWithKeyboard(fixture, table)
+      expect(document.activeElement).toBe(table)
+      expect(byId(fixture, 'hilos-table-view-table')).toBe(table)
+    } finally {
+      fixture.destroy()
+      controller.dispose()
+    }
+  })
+
+  it('follows a replaced controller and lets the old one go', () => {
+    const first = viewed()
+    const second = viewed({}, { ...PICTURE_VIEWS, order: ['tiles', 'table'] })
+    const plain = makeController({ columns: COLUMNS })
+    const fixture = TestBed.createComponent(SwapHost)
+    const current = signal<TableViewportController<unknown>>(first.controller)
+    fixture.componentInstance.controller = current
+    fixture.detectChanges()
+    try {
+      click(fixture, 'hilos-table-view-tiles')
+      expect(viewReading(fixture)).toEqual([
+        ['Table', 'false'],
+        ['Tiles', 'true'],
+      ])
+
+      current.set(second.controller)
+      fixture.detectChanges()
+      expect(viewReading(fixture)).toEqual([
+        ['Tiles', 'true'],
+        ['Table', 'false'],
+      ])
+      // The old controller is no longer mirrored.
+      first.controller.setView('table')
+      fixture.detectChanges()
+      expect(viewReading(fixture)).toEqual([
+        ['Tiles', 'true'],
+        ['Table', 'false'],
+      ])
+
+      current.set(plain.controller)
+      fixture.detectChanges()
+      expect(byId(fixture, 'hilos-table-view')).toBeNull()
+    } finally {
+      fixture.destroy()
+      first.controller.dispose()
+      second.controller.dispose()
+      plain.controller.dispose()
+    }
+  })
+
+  describe('with sortable columns and no composite order', () => {
+    function sortable(): ReturnType<typeof viewed> {
+      const made = viewed(
+        { columns: ORDERED_COLUMNS },
+        {
+          ...PICTURE_VIEWS,
+          tableKey: 'ordered-pictures',
+          imageColumn: 'channel',
+        },
+      )
+      made.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        20,
+        OPENING_ORDER,
+        [],
+      )
+
+      return made
+    }
+
+    // Which widths an item is offered on is the stylesheet's business, and so is
+    // whether the bar stays above md: the earlier tests of this file read that for
+    // a table without views, and the browser proves that a bar holding the view
+    // choice alone stays on a desktop in Table (table-geometry.spec.ts, the last
+    // step of T01). Here the menu is read as a reader meets it: its items, in
+    // order, with their roles and choice.
+    const EVERY_ORDER = [
+      ['Date ↓', 'option', 'true'],
+      ['Kind ↑', 'option', 'false'],
+      ['Kind ↓', 'option', 'false'],
+      ['Date ↑', 'option', 'false'],
+    ]
+
+    /** The order menu as a reader meets it: each item's words, role and choice. */
+    function orderReading(fixture: ComponentFixture<unknown>): unknown[][] {
+      return orderItems(fixture).map((item) => [
+        item.textContent?.trim(),
+        item.getAttribute('role'),
+        item.getAttribute('aria-selected'),
+      ])
+    }
+
+    /** Whether any of the order menu, or the bar holding it, is withdrawn from a reader. */
+    function anyOrderWithdrawn(fixture: ComponentFixture<unknown>): boolean {
+      return [
+        byId(fixture, 'hilos-table-controls'),
+        byId(fixture, 'hilos-table-order'),
+        ...orderItems(fixture),
+      ].some(
+        (node) =>
+          node === null ||
+          node.closest('[aria-hidden="true"], [inert], [hidden]') !== null,
+      )
+    }
+
+    it('offers every order in Tiles, and in Table the items a table without views offers', () => {
+      const { controller, sent } = sortable()
+      const fixture = mountBar(controller)
+      try {
+        expect(orderReading(fixture)).toEqual(EVERY_ORDER)
+
+        click(fixture, 'hilos-table-view-tiles')
+
+        expect(orderReading(fixture)).toEqual(EVERY_ORDER)
+        expect(anyOrderWithdrawn(fixture)).toBe(false)
+
+        click(fixture, 'hilos-table-view-table')
+
+        expect(orderReading(fixture)).toEqual(EVERY_ORDER)
+        expect(sent).toEqual([])
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    })
+
+    it('runs an order picked in Tiles through the window, as in Table', () => {
+      const { controller, sent } = sortable()
+      const fixture = mountBar(controller)
+      try {
+        click(fixture, 'hilos-table-view-tiles')
+        expect(sent).toEqual([])
+
+        click(fixture, 'hilos-table-order-channel-desc')
+
+        expect(sent.at(-1)).toMatchObject({
+          sort: [{ field: 'channel', direction: 'desc' }],
+        })
+        expect(controller.frame.view.get()).toBe('tiles')
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    })
+
+    it('keeps the order items of a table without views, with no view group', () => {
+      const { controller } = makeOrdered(ORDERED_COLUMNS, [])
+      const fixture = mountBar(controller)
+
+      expect(orderReading(fixture)).toEqual(EVERY_ORDER)
+      expect(byId(fixture, 'hilos-table-view')).toBeNull()
     })
   })
 })

@@ -105,6 +105,15 @@ function verticalChrome(element: HTMLElement): number {
  * One view's DOM lifetime. The controller owns identities, retention and numeric
  * caches; these maps hold only connected targets and CSS box conversions. RT
  * replicates backend state, whereas these handles belong to this browser mount.
+ *
+ * Tiles DOM read here: the inert probe `.hilos-table-room` → grid `.row` →
+ * `.col` → `.card.hilos-table-tile.hilos-table-room-tiles` → `.card-body` with
+ * `.hilos-table-reason-twins` and `.hilos-table-fallback`; each live tile is a
+ * `.card.hilos-table-tile` bound as the `tiles` main, the direct child of its
+ * grid `.col`, its image and `.card-body` inside, work and detail inside that
+ * body; a departed tile keeps that card in its column, holding only
+ * `.card-body > .hilos-table-record-space > span`. An image `load` inside a
+ * `.hilos-table-tile` is observed here; a view switch calls `layoutChanged()`.
  */
 export function createTableViewportGeometry(
   controller: TableViewportGeometryView,
@@ -113,8 +122,9 @@ export function createTableViewportGeometry(
   const revision = signal(0)
   const tracks = signal<TableColumnTracks | null>(null)
   const trackWidths = signal<readonly number[]>([])
-  const reasonFloors = signal({ wide: 0, card: 0 })
+  const reasonFloors = signal({ wide: 0, card: 0, tiles: 0 })
   let root: HTMLElement | null = null
+  let loadRoot: HTMLElement | null = null
   let table: HTMLTableElement | null = null
   let columnKeys: readonly string[] = []
   let awaitingAutoLayout = false
@@ -156,11 +166,15 @@ export function createTableViewportGeometry(
     const style = main ? getComputedStyle(main) : null
     let chrome = 0
     let gap = 0
-    if (record.projection === 'card' && main && style) {
+    if (record.projection !== 'wide' && main && style) {
       chrome = verticalChrome(main)
       const body = main.querySelector<HTMLElement>('.card-body')
       if (body) chrome += verticalChrome(body)
       gap = pixels(style.marginTop) + pixels(style.marginBottom)
+      // The Bootstrap column survives departure. Its vertical gutter belongs to
+      // the occupied extent once, beside the complete image-and-body card box.
+      if (record.projection === 'tiles' && main.parentElement)
+        gap += pixels(getComputedStyle(main.parentElement).marginTop)
     } else if (table && main) {
       const cell = main.querySelector<HTMLElement>('td')
       if (cell) {
@@ -212,7 +226,9 @@ export function createTableViewportGeometry(
       ? registration?.record(rowKey, projection)?.workReserve
       : null
     const workHeight = work ? (reserve?.work ?? work.height) : 0
-    if (projection === 'card') {
+    // A tile's main box is its whole card: image, body, work and detail. Its
+    // total is that box plus the outside gap, never the image added again.
+    if (projection !== 'wide') {
       const detailHeight = detail?.height ?? 0
       const previous = record.work?.previousElementSibling
       const previousBox = previous instanceof HTMLElement ? box(previous) : null
@@ -428,13 +444,26 @@ export function createTableViewportGeometry(
     const wideWidth = box(table?.parentElement)?.width ?? 0
     if (wideWidth > 0) wideContainerWidth = wideWidth
     const style = getComputedStyle(node)
+    // Tiles read their used tile width and column count from the probe's own
+    // grid boxes, never from a breakpoint query; a hidden grid reads as zero.
+    const tile = probe('tiles')
+    const column = tile?.parentElement
+    const columnBox = box(column)
+    const gridBox = box(column?.parentElement)
+    const columnStyle = column ? getComputedStyle(column) : null
     return [
       width,
       wideContainerWidth || width,
+      box(tile)?.width ?? 0,
+      columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
+      columnStyle?.paddingLeft,
+      columnStyle?.paddingRight,
+      columnStyle?.marginTop,
       // Zoom can change wrapping or used border widths even when a fixed
       // container keeps the same local width. Release its old track latch.
       layoutZoom(node),
       table ? layoutZoom(table) : 1,
+      tile ? layoutZoom(tile) : 1,
       style.fontFamily,
       style.fontSize,
       style.lineHeight,
@@ -443,7 +472,7 @@ export function createTableViewportGeometry(
       style.letterSpacing,
       style.wordSpacing,
       getComputedStyle(node.ownerDocument.documentElement).fontSize,
-      ...[table, table?.parentElement].flatMap((element) => {
+      ...[table, table?.parentElement, tile].flatMap((element) => {
         if (!element) return []
         const font = getComputedStyle(element)
         return [
@@ -463,6 +492,7 @@ export function createTableViewportGeometry(
     awaitingAutoLayout = true
     registration?.invalidateLayout('wide')
     registration?.invalidateLayout('card')
+    registration?.invalidateLayout('tiles')
     calibratedLayout = null
   }
 
@@ -490,8 +520,8 @@ export function createTableViewportGeometry(
     bindFocusFallback()
     if (root) observer?.observe(root)
     if (table?.parentElement) observer?.observe(table.parentElement)
-    const floors = { wide: 0, card: 0 }
-    for (const projection of ['wide', 'card'] as const) {
+    const floors = { wide: 0, card: 0, tiles: 0 }
+    for (const projection of ['wide', 'card', 'tiles'] as const) {
       floors[projection] =
         box(
           probe(projection)?.querySelector<HTMLElement>(
@@ -501,7 +531,8 @@ export function createTableViewportGeometry(
     }
     if (
       floors.wide !== reasonFloors().wide ||
-      floors.card !== reasonFloors().card
+      floors.card !== reasonFloors().card ||
+      floors.tiles !== reasonFloors().tiles
     )
       reasonFloors.set(floors)
     for (const record of elements.values()) {
@@ -667,10 +698,10 @@ export function createTableViewportGeometry(
       state.record.occurrence !== occurrence
     )
       return undefined
-    // Card padding and its outside gap are rem-based. Sass subtracts their
-    // current values from the total in the same layout, before an observer
-    // could compensate a font change in a later frame.
-    if (projection === 'card') return state.retained
+    // Card and tile padding and their outside gaps are rem-based. Sass
+    // subtracts their current values from the total in the same layout, before
+    // an observer could compensate a font change in a later frame.
+    if (projection !== 'wide') return state.retained
     return Math.max(0, state.retained - metrics.chrome - metrics.gap)
   }
 
@@ -716,9 +747,9 @@ export function createTableViewportGeometry(
         if (node) observer?.observe(node)
     root?.ownerDocument.addEventListener('visibilitychange', schedule)
     root?.ownerDocument.defaultView?.addEventListener('resize', schedule)
-    root?.ownerDocument.fonts?.addEventListener('loadingdone', fontsChanged)
+    root?.ownerDocument.fonts?.addEventListener('loadingdone', layoutChanged)
     void root?.ownerDocument.fonts?.ready.then(() => {
-      if (!stopped) fontsChanged()
+      if (!stopped) layoutChanged()
     })
     signature = layoutSignature()
   }
@@ -736,6 +767,7 @@ export function createTableViewportGeometry(
       mount()
       revision.update((value) => value + 1)
     }
+    listenLoads(node)
     if (columnKeys.length && columnKeys.join('\0') !== keys.join('\0')) {
       columnKeys = [...keys]
       invalidate()
@@ -751,11 +783,32 @@ export function createTableViewportGeometry(
     measure()
   }
 
-  function fontsChanged(): void {
+  /**
+   * Internal: a view switch, a font completion or a tile image changed the
+   * used layout. The next Angular commit measures it under fresh layout tickets.
+   */
+  function layoutChanged(): void {
     if (!stopped) {
       invalidate()
       schedule()
     }
+  }
+
+  // Image load does not bubble; capture it on the committed root, tiles only,
+  // so a wide row's picture keeps its latched column tracks.
+  function tileLoaded(event: Event): void {
+    const tile =
+      event.target instanceof Element
+        ? event.target.closest('.hilos-table-tile')
+        : null
+    if (tile && root?.contains(tile)) layoutChanged()
+  }
+
+  function listenLoads(node: HTMLElement | null): void {
+    if (loadRoot === node) return
+    loadRoot?.removeEventListener('load', tileLoaded, true)
+    loadRoot = node
+    loadRoot?.addEventListener('load', tileLoaded, true)
   }
 
   function dispose(): void {
@@ -770,7 +823,8 @@ export function createTableViewportGeometry(
     mutations?.disconnect()
     root?.ownerDocument.removeEventListener('visibilitychange', schedule)
     root?.ownerDocument.defaultView?.removeEventListener('resize', schedule)
-    root?.ownerDocument.fonts?.removeEventListener('loadingdone', fontsChanged)
+    root?.ownerDocument.fonts?.removeEventListener('loadingdone', layoutChanged)
+    listenLoads(null)
     unsubscribe()
     registration?.dispose()
     registration = null
@@ -796,6 +850,7 @@ export function createTableViewportGeometry(
     recordReader,
     recordPixels,
     workPixels,
+    layoutChanged,
     commit,
     dispose,
   }

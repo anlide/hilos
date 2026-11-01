@@ -1,4 +1,10 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test'
+import {
+  test,
+  expect,
+  type Locator,
+  type Page,
+  type TestInfo,
+} from '@playwright/test'
 
 import {
   expectDataFreeDeparture,
@@ -11,6 +17,8 @@ import {
   expectTableTextControl,
   expectTableTextGeometry,
   expectTableTextParts,
+  expectTableTileDeparture,
+  expectTableTilePictures,
   expectTableWrappingStress,
   loadLateTableFont,
   markDocument,
@@ -24,6 +32,7 @@ import {
   watchTableAllocation,
   watchTableFirstLive,
   watchTableGeometry,
+  watchTableGeometryCallbacks,
   watchTableHandoff,
   watchTableModalFocus,
   watchTableNativeLifecycle,
@@ -99,12 +108,12 @@ async function watch(page: Page, rowKeys = KEYS) {
 
 // Every observer starts before ingress and is stopped/attached even on failure.
 // Its private browser frames live only for this test, with no DB/RT readers.
-async function observed(
+async function observed<T extends TableGeometryWatch>(
   page: Page,
   info: TestInfo,
   name: string,
-  observation: TableGeometryWatch,
-  run: (observation: TableGeometryWatch) => Promise<void>,
+  observation: T,
+  run: (observation: T) => Promise<void>,
 ): Promise<void> {
   try {
     await run(observation)
@@ -956,6 +965,509 @@ for (const outcome of [
     }
   })
 }
+
+test.describe('declared Tiles view with synthetic ingress', () => {
+  // Rows a, b and c carry a self-contained picture; d has none.
+  const NEIGHBORS = KEYS.filter((key) => key !== 'b')
+
+  // The optional fixture capability replaces the controller with one that
+  // declares the views; the stored choice, if any, comes back by itself.
+  async function declareTiles(page: Page): Promise<void> {
+    const body = page.getByTestId('geometry-body')
+    const previous = (await body.getAttribute('data-controller'))!
+    await page.getByTestId('geometry-tiles').check()
+    await expect(body).not.toHaveAttribute('data-controller', previous)
+    await expect(page.getByTestId('geometry-state')).toContainText('g:live')
+    await settleTableLayout(page)
+  }
+
+  async function chooseTiles(page: Page): Promise<void> {
+    const tiles = shownByTestId(page, 'hilos-table-view-tiles')
+    await tiles.focus()
+    await tiles.press('Enter')
+    await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+      'data-view',
+      'tiles',
+    )
+    await settleTableLayout(page)
+  }
+
+  async function tileGone(page: Page, key: string): Promise<void> {
+    await expectTableTileDeparture(expect, page, key, 'Removed', [
+      `geometry-name-${key}`,
+      `geometry-picture-${key}`,
+      `geometry-text-${key}`,
+      `geometry-badge-${key}`,
+      `geometry-action-${key}`,
+      `geometry-detail-${key}`,
+      `geometry-detail-action-${key}`,
+      `geometry-work-${key}`,
+    ])
+    await expect(page.getByTestId('geometry-state')).toContainText(
+      `${key}:departed`,
+    )
+  }
+
+  async function watchTiles(page: Page, rowKeys = KEYS) {
+    return watchTableGeometry(expect, page, {
+      bodyId: 'geometry-body',
+      projection: 'tiles',
+      rowKeys,
+      lastKey: 'g',
+    })
+  }
+
+  test('T01 keyboard view choice keeps the window and its intent through remount and F5 at the same URL', async ({
+    page,
+  }) => {
+    const state = page.getByTestId('geometry-state')
+    const root = page.getByTestId('hilos-viewport-table')
+    const table = shownByTestId(page, 'hilos-table-view-table')
+    const tiles = shownByTestId(page, 'hilos-table-view-tiles')
+    const textToggle = shownByTestId(
+      page
+        .getByTestId('hilos-table-tile-a')
+        .or(page.getByTestId('hilos-table-row-a')),
+      'hilos-table-text-toggle',
+    )
+    const url = page.url()
+    await declareTiles(page)
+    await page.getByTestId('geometry-height-mode').selectOption('lines')
+    const previous = (await page
+      .getByTestId('geometry-body')
+      .getAttribute('data-controller'))!
+    await press(page, 'geometry-reading')
+    await expect(page.getByTestId('geometry-body')).not.toHaveAttribute(
+      'data-controller',
+      previous,
+    )
+    await expect(state).toContainText('g:live')
+    await settleTableLayout(page)
+
+    await test.step('Tab and Enter choose Tiles without a request or a new address', async () => {
+      await expect(table).toHaveAttribute('aria-pressed', 'true')
+      await table.focus()
+      await table.press('Tab')
+      await expect(tiles).toBeFocused()
+      await tiles.press('Enter')
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await expect(table).toHaveAttribute('aria-pressed', 'false')
+      await expect(tiles).toBeFocused()
+      await expect(state).toHaveAttribute('data-view', 'tiles')
+      await expect(state).toHaveAttribute('data-requests', '0')
+      expect(page.url()).toBe(url)
+      await expect(
+        root.getByRole('list', { name: 'Geometry records', exact: true }),
+      ).toBeVisible()
+      await expect(root.getByRole('table')).toHaveCount(0)
+    })
+
+    await test.step('the order menu takes a new order from the keyboard', async () => {
+      await page.getByTestId('geometry-snapshot').selectOption('initial')
+      const toggle = shownByTestId(page, 'hilos-table-order').getByTestId(
+        'hilos-dropdown-toggle',
+      )
+      await toggle.focus()
+      await toggle.press('ArrowDown')
+      const opening = shownByTestId(page, 'hilos-table-order-opening')
+      await expect(opening).toBeFocused()
+      await opening.press('ArrowDown')
+      const descending = shownByTestId(page, 'hilos-table-order-name-desc')
+      await expect(descending).toBeFocused()
+      await descending.press('Enter')
+      await expect(toggle).toBeFocused()
+      await expect(state).toHaveAttribute('data-body', 'loading')
+      expect(
+        JSON.parse((await state.getAttribute('data-descriptor'))!).sort,
+      ).toEqual([{ field: 'name', direction: 'desc' }])
+      await press(page, 'geometry-deliver')
+      await expect(state).toHaveAttribute('data-body', 'rows')
+      await expect(state).toHaveAttribute('data-requests', '1')
+      await expect(toggle).toContainText('Name ↓')
+      await expect(state).toHaveAttribute('data-view', 'tiles')
+    })
+
+    await test.step('selection, pending move, open detail, work and opened text stand on the tile', async () => {
+      await shownByTestId(page, 'hilos-table-select-a').check()
+      await page.getByTestId('geometry-pending').selectOption('move')
+      await page.getByTestId('geometry-detail').selectOption('expanded')
+      await press(page, 'geometry-configure')
+      await press(page, 'geometry-work')
+      await expect(state).toContainText('a:move')
+      await expect(textToggle).toBeVisible()
+      await textToggle.press('Enter')
+      await expect(textToggle).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    const attributes = [
+      'data-identities',
+      'data-selected',
+      'data-descriptor',
+      'data-requests',
+      'data-range',
+      'data-count',
+      'data-body',
+    ]
+    const before = await Promise.all(
+      attributes.map((name) => state.getAttribute(name)),
+    )
+    expect(before[1]).not.toBe('null')
+    async function keeps(view: 'table' | 'tiles'): Promise<void> {
+      await expect(state).toHaveAttribute('data-view', view)
+      for (const [index, name] of attributes.entries())
+        await expect(state).toHaveAttribute(name, before[index]!)
+      await expect(state).toContainText('a:move')
+      await expect(shownByTestId(page, 'hilos-table-select-a')).toBeChecked()
+      await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+      await expect(shownByTestId(page, 'geometry-work-a')).toBeVisible()
+      await expect(textToggle).toHaveAttribute('aria-expanded', 'true')
+      expect(page.url()).toBe(url)
+    }
+
+    await test.step('Shift+Tab and Space return to the table, Tab and Enter to Tiles, focus staying on the pressed choice', async () => {
+      await tiles.focus()
+      await tiles.press('Shift+Tab')
+      await expect(table).toBeFocused()
+      await table.press('Space')
+      await expect(table).toHaveAttribute('aria-pressed', 'true')
+      await expect(table).toBeFocused()
+      await keeps('table')
+      await table.press('Tab')
+      await expect(tiles).toBeFocused()
+      await tiles.press('Enter')
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await expect(tiles).toBeFocused()
+      await keeps('tiles')
+    })
+
+    await test.step('a remount draws the same tiles and intent with a reachable tile control', async () => {
+      await press(page, 'geometry-unmount')
+      await expect(root).toHaveCount(0)
+      await press(page, 'geometry-mount')
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await keeps('tiles')
+      const action = shownByTestId(
+        page.getByTestId('hilos-table-tile-a'),
+        'geometry-action-a',
+      )
+      await action.focus()
+      await expect(action).toBeFocused()
+    })
+
+    await test.step('F5 at the same URL restores Tiles on the declared table', async () => {
+      await page.reload()
+      await expect(page.getByTestId('geometry-fixture')).toBeVisible()
+      expect(page.url()).toBe(url)
+      // Re-declare the optional fixture capability; the SDK binding restores the choice.
+      await page.getByTestId('geometry-tiles').check()
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await expect(table).toHaveAttribute('aria-pressed', 'false')
+      await expect(state).toHaveAttribute('data-view', 'tiles')
+      await expect(state).toHaveAttribute('data-requests', '0')
+      await expect(
+        root.getByRole('list', { name: 'Geometry records', exact: true }),
+      ).toBeVisible()
+      const action = shownByTestId(
+        page.getByTestId('hilos-table-tile-a'),
+        'geometry-action-a',
+      )
+      await action.focus()
+      await expect(action).toBeFocused()
+    })
+
+    // Sortable columns put the order menu of Table on the narrow screen alone, so
+    // here the declared views are all that keeps the bar on a desktop.
+    await test.step('with the view choice alone in its bar, Table keeps it on the desktop and it switches to Tiles and back without a request', async () => {
+      const body = page.getByTestId('geometry-body')
+      const previous = (await body.getAttribute('data-controller'))!
+      await press(page, 'geometry-views-alone')
+      await expect(body).not.toHaveAttribute('data-controller', previous)
+      await expect(state).toContainText('g:live')
+      for (const absent of [
+        'hilos-table-search',
+        'hilos-table-filters-open',
+        'hilos-table-select-a',
+      ])
+        await expect(page.getByTestId(absent)).toHaveCount(0)
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await press(page, 'hilos-table-view-table')
+      await expect(table).toHaveAttribute('aria-pressed', 'true')
+      await expect(state).toHaveAttribute('data-view', 'table')
+      await press(page, 'hilos-table-view-tiles')
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await expect(state).toHaveAttribute('data-view', 'tiles')
+      await press(page, 'hilos-table-view-table')
+      await expect(table).toHaveAttribute('aria-pressed', 'true')
+      await expect(state).toHaveAttribute('data-view', 'table')
+      await expect(state).toHaveAttribute('data-requests', '0')
+      expect(page.url()).toBe(url)
+    })
+  })
+
+  test('T02 a pictured tile keeps its used place and neighbors; completion, a fresh window and reuse release only their own', async ({
+    page,
+  }, info) => {
+    const state = page.getByTestId('geometry-state')
+    // Real ResizeObserver deliveries are recorded from the first document script.
+    const callbacks = await watchTableGeometryCallbacks(page)
+    await openTableFixture(
+      expect,
+      page,
+      '/__table_geometry/index.html',
+      'geometry-fixture',
+    )
+    await declareTiles(page)
+    await chooseTiles(page)
+
+    await test.step('tile a with a decoded picture opens its detail and live work', async () => {
+      await page.getByTestId('geometry-detail').selectOption('expanded')
+      await page.getByTestId('geometry-text').check()
+      await press(page, 'geometry-configure')
+      await press(page, 'geometry-work')
+      await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+      await expect(shownByTestId(page, 'geometry-work-a')).toBeVisible()
+      await info.attach('tile-picture-frames', {
+        body: await expectTableTilePictures(
+          expect,
+          page,
+          ['a', 'b', 'c'],
+          ['d'],
+        ),
+        contentType: 'application/json',
+      })
+      await settleTableLayout(page)
+    })
+
+    await test.step('foreign removal and Apply keep its used place and every neighbor on each frame', async () => {
+      const identities = (await state.getAttribute('data-identities'))!
+      await observed(
+        page,
+        info,
+        'tiles-grid',
+        await watchTiles(page),
+        async (grid) =>
+          observed(
+            page,
+            info,
+            'tiles-used-allocation',
+            await watchTableAllocation(expect, page, 'a', 'tiles'),
+            async (allocation) => {
+              await press(page, 'geometry-remove')
+              await expect(state).toContainText('a:remove')
+              // Pending removal retires the work payload, keeping its numeric room.
+              await expect(page.getByTestId('geometry-work-a')).toHaveCount(0)
+              await grid.check()
+              await allocation.check()
+              await press(page, 'hilos-table-apply')
+              await tileGone(page, 'a')
+              await expect(state).toHaveAttribute('data-identities', identities)
+              // The departed work completes late and cannot shrink its room.
+              await press(page, 'geometry-complete')
+              await tileGone(page, 'a')
+            },
+          ),
+      )
+    })
+
+    await test.step('work completed before its tile leaves releases only its own room', async () => {
+      await page.getByTestId('geometry-target').selectOption('b')
+      await press(page, 'geometry-work')
+      await expect(shownByTestId(page, 'geometry-work-b')).toBeVisible()
+      await settleTableLayout(page)
+      await observed(
+        page,
+        info,
+        'tiles-neighbors',
+        await watchTiles(page, NEIGHBORS),
+        async () =>
+          observed(
+            page,
+            info,
+            'tiles-finished-work',
+            await watchTableAllocation(expect, page, 'b', 'tiles'),
+            async (working) => {
+              await press(page, 'geometry-complete')
+              await expect(page.getByTestId('geometry-work-b')).toHaveCount(0)
+              await settleTableLayout(page)
+              await working.changed('extent', 'shrank')
+              await press(page, 'geometry-own')
+              await tileGone(page, 'b')
+            },
+          ),
+      )
+    })
+
+    await test.step('a fresh window releases the departed room; late callbacks of the old window leave it alone', async () => {
+      const identities = (await state.getAttribute('data-identities'))!
+      const old = await callbacks.capture()
+      try {
+        await observed(
+          page,
+          info,
+          'tiles-fresh-window-release',
+          await watchTableAllocation(expect, page, 'a', 'tiles'),
+          async (released) => {
+            await press(page, 'geometry-deliver')
+            await expect(shownByTestId(page, 'geometry-name-a')).toHaveText(
+              'Fresh a',
+            )
+            await expect(state).not.toHaveAttribute(
+              'data-identities',
+              identities,
+            )
+            await settleTableLayout(page)
+            await released.changed('extent', 'shrank')
+          },
+        )
+        await observed(
+          page,
+          info,
+          'tiles-old-window-callbacks',
+          await watchTiles(page),
+          () => old.replay(expect),
+        )
+      } finally {
+        await old.dispose()
+      }
+    })
+
+    await test.step('own key reuse leaves the new occurrence to its own geometry and departure', async () => {
+      await page.getByTestId('geometry-target').selectOption('a')
+      const identities = (await state.getAttribute('data-identities'))!
+      const previous = await callbacks.capture()
+      try {
+        await press(page, 'geometry-reuse')
+        await expect(shownByTestId(page, 'geometry-name-a')).toHaveText(
+          'Replacement a',
+        )
+        await expect(state).not.toHaveAttribute('data-identities', identities)
+        await settleTableLayout(page)
+        await observed(
+          page,
+          info,
+          'tiles-old-occurrence-callbacks',
+          await watchTiles(page),
+          () => previous.replay(expect),
+        )
+      } finally {
+        await previous.dispose()
+      }
+      await observed(
+        page,
+        info,
+        'tiles-reused-departure',
+        await watchTableAllocation(expect, page, 'a', 'tiles'),
+        async () => {
+          await press(page, 'geometry-own')
+          await tileGone(page, 'a')
+        },
+      )
+    })
+  })
+
+  test('T03 a modal opened from a tile returns focus to the tile, its replacement, search or the table', async ({
+    page,
+  }, info) => {
+    const modal = page.getByTestId('modal')
+    const action = () =>
+      shownByTestId(page.getByTestId('hilos-table-tile-a'), 'geometry-action-a')
+    await declareTiles(page)
+    await chooseTiles(page)
+
+    // Natively opened from the tile's marked action; the watch only reads focus.
+    async function inspect(
+      name: string,
+      run: (
+        focus: Awaited<ReturnType<typeof watchTableModalFocus>>,
+      ) => Promise<void>,
+    ): Promise<void> {
+      const trigger = action()
+      const focus = await watchTableModalFocus(trigger)
+      try {
+        await trigger.focus()
+        await trigger.press('Enter')
+        await expect(modal).toBeFocused()
+        await expect(modal).toHaveAccessibleName('Inspect geometry record')
+        expect((await focus.read()).openerConnected).toBe(true)
+        await run(focus)
+        expect((await focus.read()).inDialog).toBe(false)
+      } finally {
+        await info.attach(`tiles-modal-${name}`, {
+          body: JSON.stringify(await focus.history(), null, 2),
+          contentType: 'application/json',
+        })
+        await focus.dispose()
+      }
+    }
+
+    // The fixture's own controls inside the dialog and the SDK close control.
+    async function trapped(): Promise<void> {
+      await page.getByTestId('geometry-modal-snapshot').focus()
+      await page.keyboard.press('Tab')
+      await expect(page.getByTestId('modal-close')).toBeFocused()
+      await page.keyboard.press('Shift+Tab')
+      await expect(page.getByTestId('geometry-modal-snapshot')).toBeFocused()
+    }
+
+    async function closed(target: Locator): Promise<void> {
+      await page.keyboard.press('Escape')
+      await expect(modal).toHaveCount(0)
+      await expect(target).toBeVisible()
+      await expect(target).toBeFocused()
+    }
+
+    await test.step('closing over an unchanged tile returns to its opener', async () => {
+      await inspect('connected', async () => {
+        await trapped()
+        await closed(action())
+      })
+    })
+
+    await test.step('a snapshot replacing the tile returns to its marked replacement in Tiles', async () => {
+      await inspect('replacement', async (focus) => {
+        await press(page, 'geometry-modal-snapshot')
+        await expect(shownByTestId(page, 'geometry-name-a')).toHaveText(
+          'Fresh a',
+        )
+        const replaced = await focus.read()
+        expect(replaced.openerConnected).toBe(false)
+        expect(replaced.visibleTriggers).toBe(1)
+        expect(replaced.inDialog).toBe(true)
+        await trapped()
+        await closed(action())
+      })
+    })
+
+    await test.step('a removal from the dialog returns to search', async () => {
+      await inspect('removed', async (focus) => {
+        await press(page, 'geometry-modal-remove')
+        await tileGone(page, 'a')
+        await expect(page.getByTestId('geometry-modal-remove')).toBeFocused()
+        expect((await focus.read()).openerConnected).toBe(false)
+        await trapped()
+        await closed(page.getByTestId('hilos-table-search'))
+      })
+    })
+
+    await test.step('without search a removal returns to the table root', async () => {
+      await press(page, 'geometry-no-search')
+      await expect(page.getByTestId('hilos-table-search')).toHaveCount(0)
+      await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+        'data-view',
+        'tiles',
+      )
+      await expect(page.getByTestId('geometry-state')).toContainText('a:live')
+      await settleTableLayout(page)
+      await inspect('root', async () => {
+        await press(page, 'geometry-modal-remove')
+        await tileGone(page, 'a')
+        await trapped()
+        await closed(page.getByTestId('hilos-viewport-table'))
+      })
+    })
+  })
+})
 
 test.describe('public SDK declared text reading with synthetic ingress', () => {
   async function reading(

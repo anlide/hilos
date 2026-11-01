@@ -19,14 +19,15 @@ const dist = join(packageDir, 'dist')
 const manifest = JSON.parse(await readFile(join(dist, 'package.json'), 'utf8'))
 const graph = new Map()
 const entries = new Map()
+const typeFiles = new Map()
 for (const [subpath, target] of Object.entries(manifest.exports)) {
   if (subpath === './package.json' || subpath.endsWith('.scss')) continue
   await readFile(join(dist, target.types))
   await readFile(join(dist, target.default))
-  entries.set(
-    subpath === '.' ? '@hilos/angular' : `@hilos/angular${subpath.slice(1)}`,
-    target.default.replace(/^\.\//, ''),
-  )
+  const name =
+    subpath === '.' ? '@hilos/angular' : `@hilos/angular${subpath.slice(1)}`
+  entries.set(name, target.default.replace(/^\.\//, ''))
+  typeFiles.set(name, target.types)
 }
 assert.equal(entries.size, 22)
 // Resolve the actual published APF manifest, independently of the workspace's
@@ -78,6 +79,7 @@ assert.equal(
 )
 for (const name of [
   'HilosTableValue',
+  'HilosTableImage',
   'HILOS_TABLE_TEXT',
   'createTableTextReading',
   'createTableTextOverflow',
@@ -304,6 +306,29 @@ assert.equal(
   'Table text and its internal mount modules must share one APF compilation owner',
 )
 assert.equal(owners.get('src/HilosTableEmptyState.ts'), baseName)
+// The picture frame of a tile is internal to HilosViewportTable: one compilation
+// owner (the `compiled twice` loop above), inside the clean base closure, and no
+// public name in any entry, as a value or as a type.
+assert.ok(
+  owners.has('src/HilosTableImage.ts'),
+  'Missing APF compilation owner: src/HilosTableImage.ts',
+)
+assert.ok(
+  baseChunks.has(owners.get('src/HilosTableImage.ts')),
+  'src/HilosTableImage.ts must be compiled in the clean base closure',
+)
+for (const [name, typesFile] of typeFiles) {
+  assert.equal(
+    'HilosTableImage' in (await loadEntry(name)),
+    false,
+    `${name} must not export HilosTableImage`,
+  )
+  assert.doesNotMatch(
+    await readFile(join(dist, typesFile), 'utf8'),
+    /export\s+(?:declare\s+)?(?:class|const|function)\s+HilosTableImage\b|export(?:\s+type)?\s*\{[^}]*\bHilosTableImage\b/,
+    `${name} types must not export HilosTableImage`,
+  )
+}
 for (const name of [
   'HilosModerationPage',
   'HilosModerationKindPage',
@@ -371,5 +396,5 @@ assert.ok(
   ),
 )
 console.log(
-  'Angular dist: 22 APF entries, moderation pages, base ownership, acyclic graph, lazy defaults and singleton injection verified',
+  'Angular dist: 22 APF entries, moderation pages, base ownership, internal table image, acyclic graph, lazy defaults and singleton injection verified',
 )

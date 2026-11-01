@@ -11,6 +11,7 @@
 // purpose: it is not exported from index.ts, because a bar has no meaning away from
 // the table it sits on (mockups/components/table section 7). The Angular port of the
 // Vue reference (vue/src/HilosTableBar.vue), under the same names and words.
+import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -24,6 +25,7 @@ import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   TABLE_STALENESS_COPY,
+  TABLE_VIEW_COPY,
   hilosTableOrderMenuNarrowOnly,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -31,6 +33,7 @@ import type {
   HilosTableFilterView,
   HilosTableOrderView,
   HilosTableSelectionTarget,
+  HilosTableView,
   ReadonlySignal,
   TableViewportController,
 } from '@hilos/core/base'
@@ -50,9 +53,46 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
     HilosModal,
     HilosTableFilterControl,
     HilosTableSelection,
+    NgTemplateOutlet,
   ],
   template: `
     <div>
+      <!-- The Table / Tiles choice, drawn once and placed by both variants of the
+      strip below. It stands outside the controls the selection panel hides: which
+      layout the rows take is a local choice that stays open whatever the window
+      holds, an empty one, a marked one, or the only control the table declares. -->
+      <ng-template #viewGroup>
+        @if (views(); as declared) {
+          <div
+            class="btn-group btn-group-sm ms-auto flex-shrink-0"
+            role="group"
+            [attr.aria-label]="viewGroupLabel"
+            data-id="hilos-table-view"
+          >
+            @for (choice of declared.order; track choice) {
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                [class.active]="tableView() === choice"
+                [attr.aria-pressed]="tableView() === choice"
+                [attr.data-id]="'hilos-table-view-' + choice"
+                (click)="controller().setView(choice)"
+              >
+                <i
+                  [class]="
+                    choice === 'table'
+                      ? 'bi me-1 bi-list-ul'
+                      : 'bi me-1 bi-grid-3x2-gap'
+                  "
+                  aria-hidden="true"
+                ></i>
+                {{ viewCopy[choice] }}
+              </button>
+            }
+          </div>
+        }
+      </ng-template>
+
       <!-- No declared title, no heading: the page heading above names the table
       then, and an empty h2 would be a heading with nothing to say. -->
       @if (title(); as title) {
@@ -72,218 +112,226 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
       }
 
       @if (selectionEnabled()) {
-        <div
-          class="hilos-stack align-items-center mb-3"
-          data-id="hilos-table-bar-slot"
-        >
-          @if (
-            searchBox() ||
-            filters().length > 0 ||
-            mainAction() ||
-            auxiliaryActions().length > 0 ||
-            orders().length > 0
-          ) {
-            <div
-              class="d-flex flex-wrap align-items-center gap-2"
-              [class.invisible]="selectionPanel()"
-              [class.d-md-none]="controlsNarrowOnly()"
-              [attr.aria-hidden]="selectionPanel() ? 'true' : null"
-              data-id="hilos-table-controls"
-            >
-              @if (searchBox()) {
-                <div
-                  class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
-                >
-                  <span class="input-group-text">
-                    <i class="bi bi-search" aria-hidden="true"></i>
-                  </span>
-                  <input
-                    type="search"
-                    [disabled]="!controlsAvailable()"
-                    class="form-control"
-                    [placeholder]="searchPlaceholder()"
-                    [attr.aria-label]="searchPlaceholder()"
-                    [value]="search()"
-                    [attr.data-autofocus]="autofocusSearch() ? '' : null"
-                    data-id="hilos-table-search"
-                    (input)="onSearchInput($event)"
-                  />
-                  @if (search() !== '') {
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary"
-                      aria-label="Clear search"
-                      data-id="hilos-table-search-clear"
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+          <div
+            class="hilos-stack align-items-center flex-grow-1 min-w-0"
+            data-id="hilos-table-bar-slot"
+          >
+            @if (
+              searchBox() ||
+              filters().length > 0 ||
+              mainAction() ||
+              auxiliaryActions().length > 0 ||
+              orders().length > 0
+            ) {
+              <div
+                class="d-flex flex-wrap align-items-center gap-2"
+                [class.invisible]="selectionPanel()"
+                [class.d-md-none]="controlsNarrowOnly()"
+                [attr.aria-hidden]="selectionPanel() ? 'true' : null"
+                data-id="hilos-table-controls"
+              >
+                @if (searchBox()) {
+                  <div
+                    class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
+                  >
+                    <span class="input-group-text">
+                      <i class="bi bi-search" aria-hidden="true"></i>
+                    </span>
+                    <input
+                      type="search"
                       [disabled]="!controlsAvailable()"
-                      (click)="controller().setSearch('')"
-                    >
-                      <i class="bi bi-x-lg" aria-hidden="true"></i>
-                    </button>
-                  }
-                </div>
-              }
+                      class="form-control"
+                      [placeholder]="searchPlaceholder()"
+                      [attr.aria-label]="searchPlaceholder()"
+                      [value]="search()"
+                      [attr.data-autofocus]="autofocusSearch() ? '' : null"
+                      data-id="hilos-table-search"
+                      (input)="onSearchInput($event)"
+                    />
+                    @if (search() !== '') {
+                      <button
+                        type="button"
+                        class="btn btn-outline-secondary"
+                        aria-label="Clear search"
+                        data-id="hilos-table-search-clear"
+                        [disabled]="!controlsAvailable()"
+                        (click)="controller().setSearch('')"
+                      >
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                      </button>
+                    }
+                  </div>
+                }
 
-              <!-- Below md the controls leave the bar for the modal below, and the
+                <!-- Below md the controls leave the bar for the modal below, and the
               button that opens it takes their place. The search does not go with
               them: it is the main way to narrow a set, and hiding it behind a button
               would hide exactly what the table was opened for. -->
-              @if (filters().length > 0) {
-                <div
-                  class="d-none d-md-flex flex-wrap align-items-center gap-2"
-                >
-                  @for (view of filters(); track filterKey(view)) {
-                    <hilos-table-filter-control
-                      [view]="view"
+                @if (filters().length > 0) {
+                  <div
+                    class="d-none d-md-flex flex-wrap align-items-center gap-2"
+                  >
+                    @for (view of filters(); track filterKey(view)) {
+                      <hilos-table-filter-control
+                        [view]="view"
+                        [disabled]="!controlsAvailable()"
+                        [controller]="controller()"
+                        placement="bar"
+                      />
+                    }
+                  </div>
+                }
+
+                @if (activeFilterCount() > 0) {
+                  <span
+                    class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+                    data-id="hilos-table-filter-badge"
+                  >
+                    {{ filterCountLabel() }}
+                    <button
+                      type="button"
+                      class="btn-close ms-1"
+                      aria-label="Reset filters"
+                      data-id="hilos-table-filter-reset"
                       [disabled]="!controlsAvailable()"
-                      [controller]="controller()"
-                      placement="bar"
-                    />
-                  }
-                </div>
-              }
+                      (click)="controller().resetFilters()"
+                    ></button>
+                  </span>
+                }
 
-              @if (activeFilterCount() > 0) {
-                <span
-                  class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-                  data-id="hilos-table-filter-badge"
-                >
-                  {{ filterCountLabel() }}
-                  <button
-                    type="button"
-                    class="btn-close ms-1"
-                    aria-label="Reset filters"
-                    data-id="hilos-table-filter-reset"
-                    [disabled]="!controlsAvailable()"
-                    (click)="controller().resetFilters()"
-                  ></button>
-                </span>
-              }
-
-              <!-- Outside the row that leaves the bar below md: the menu is the only
+                <!-- Outside the row that leaves the bar below md: the menu is the only
               way to change the order on a narrow screen, where the header of a column
               is out of reach, so hiding it behind the Filters button would remove
               it. Below md it carries every sortable column in both directions as
               well; above md those items hide, and a menu of nothing else hides with
               them. -->
-              @if (orders().length > 0) {
-                <div
-                  class="w-auto"
-                  [class.d-md-none]="orderMenuNarrowOnly()"
-                  data-id="hilos-table-order"
-                >
-                  <hilos-dropdown
-                    [options]="orderOptions()"
-                    [value]="activeOrderKey()"
-                    [disabled]="!controlsAvailable()"
-                    [menuAriaLabel]="orderMenuLabel"
-                    (valueChange)="onOrder($event)"
+                @if (orders().length > 0) {
+                  <div
+                    class="w-auto"
+                    [class.d-md-none]="orderMenuNarrowOnly()"
+                    data-id="hilos-table-order"
                   >
-                    <ng-template #toggle>
-                      <span class="text-truncate"
-                        >{{ orderMenuLabel }}: {{ orderLabel() }}</span
-                      >
-                    </ng-template>
-                    <ng-template
-                      #option
-                      let-option
-                      let-selected="selected"
-                      let-select="select"
+                    <hilos-dropdown
+                      [options]="orderOptions()"
+                      [value]="activeOrderKey()"
+                      [disabled]="!controlsAvailable()"
+                      [menuAriaLabel]="orderMenuLabel"
+                      (valueChange)="onOrder($event)"
                     >
-                      <button
-                        type="button"
-                        class="dropdown-item d-flex align-items-center justify-content-between gap-2"
-                        [class.active]="selected"
-                        [class.d-md-none]="narrowOrderKeys().has(option.value)"
-                        role="option"
-                        [attr.aria-selected]="selected"
-                        [attr.data-id]="'hilos-table-order-' + option.value"
-                        (click)="select()"
+                      <ng-template #toggle>
+                        <span class="text-truncate"
+                          >{{ orderMenuLabel }}: {{ orderLabel() }}</span
+                        >
+                      </ng-template>
+                      <ng-template
+                        #option
+                        let-option
+                        let-selected="selected"
+                        let-select="select"
                       >
-                        <span class="text-truncate">{{ option.label }}</span>
-                        @if (staleOrderKeys().has(option.value)) {
-                          <i
-                            class="bi bi-snow"
-                            [attr.data-id]="
-                              'hilos-table-order-stale-' + option.value
-                            "
-                            aria-hidden="true"
-                          ></i>
-                          <span class="visually-hidden">{{ sortWarning }}</span>
-                        }
-                        @if (selected) {
-                          <i
-                            class="bi bi-check2 flex-shrink-0"
-                            aria-hidden="true"
-                          ></i>
-                        }
-                      </button>
-                    </ng-template>
-                  </hilos-dropdown>
-                </div>
-              }
+                        <button
+                          type="button"
+                          class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+                          [class.active]="selected"
+                          [class.d-md-none]="
+                            narrowOrderKeys().has(option.value)
+                          "
+                          role="option"
+                          [attr.aria-selected]="selected"
+                          [attr.data-id]="'hilos-table-order-' + option.value"
+                          (click)="select()"
+                        >
+                          <span class="text-truncate">{{ option.label }}</span>
+                          @if (staleOrderKeys().has(option.value)) {
+                            <i
+                              class="bi bi-snow"
+                              [attr.data-id]="
+                                'hilos-table-order-stale-' + option.value
+                              "
+                              aria-hidden="true"
+                            ></i>
+                            <span class="visually-hidden">{{
+                              sortWarning
+                            }}</span>
+                          }
+                          @if (selected) {
+                            <i
+                              class="bi bi-check2 flex-shrink-0"
+                              aria-hidden="true"
+                            ></i>
+                          }
+                        </button>
+                      </ng-template>
+                    </hilos-dropdown>
+                  </div>
+                }
 
-              <!-- The button says only its word: the number of filters holding a
+                <!-- The button says only its word: the number of filters holding a
               value is said once, on the badge above, which stays on a narrow screen
               because the reset lives nowhere else. -->
-              @if (filters().length > 0) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary d-md-none"
-                  data-id="hilos-table-filters-open"
-                  [disabled]="!controlsAvailable()"
-                  (click)="filtersOpen.set(true)"
-                >
-                  Filters
-                </button>
-              }
+                @if (filters().length > 0) {
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary d-md-none"
+                    data-id="hilos-table-filters-open"
+                    [disabled]="!controlsAvailable()"
+                    (click)="filtersOpen.set(true)"
+                  >
+                    Filters
+                  </button>
+                }
 
-              @if (auxiliaryActions().length > 0) {
-                <div
-                  class="d-flex flex-wrap gap-2 ms-auto"
-                  role="group"
-                  aria-label="List actions"
-                  data-id="hilos-table-actions"
-                >
-                  @for (action of auxiliaryActions(); track action.key) {
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-secondary"
-                      [attr.data-id]="'hilos-table-action-' + action.key"
-                      (click)="action.press()"
-                    >
-                      @if (action.icon; as icon) {
-                        <i [class]="'bi me-1 ' + icon" aria-hidden="true"></i>
-                      }
-                      {{ action.label }}
-                    </button>
-                  }
-                </div>
-              }
+                @if (auxiliaryActions().length > 0) {
+                  <div
+                    class="d-flex flex-wrap gap-2 ms-auto"
+                    role="group"
+                    aria-label="List actions"
+                    data-id="hilos-table-actions"
+                  >
+                    @for (action of auxiliaryActions(); track action.key) {
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        [attr.data-id]="'hilos-table-action-' + action.key"
+                        (click)="action.press()"
+                      >
+                        @if (action.icon; as icon) {
+                          <i [class]="'bi me-1 ' + icon" aria-hidden="true"></i>
+                        }
+                        {{ action.label }}
+                      </button>
+                    }
+                  </div>
+                }
 
-              @if (mainAction(); as mainAction) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-primary ms-auto"
-                  data-id="hilos-table-main-action"
-                  (click)="mainAction.press()"
-                >
-                  {{ mainAction.label }}
-                </button>
-              }
-            </div>
-          }
+                @if (mainAction(); as mainAction) {
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary ms-auto"
+                    data-id="hilos-table-main-action"
+                    (click)="mainAction.press()"
+                  >
+                    {{ mainAction.label }}
+                  </button>
+                }
+              </div>
+            }
 
-          <hilos-table-selection
-            [controller]="controller()"
-            [shown]="selectionPanel()"
-          />
+            <hilos-table-selection
+              [controller]="controller()"
+              [shown]="selectionPanel()"
+            />
+          </div>
+          <ng-container [ngTemplateOutlet]="viewGroup" />
         </div>
       } @else if (
         searchBox() ||
         filters().length > 0 ||
         mainAction() ||
         auxiliaryActions().length > 0 ||
-        orders().length > 0
+        orders().length > 0 ||
+        views()
       ) {
         <div
           class="d-flex flex-wrap align-items-center gap-2 mb-3"
@@ -435,6 +483,8 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
             </button>
           }
 
+          <ng-container [ngTemplateOutlet]="viewGroup" />
+
           @if (auxiliaryActions().length > 0) {
             <div
               class="d-flex flex-wrap gap-2 ms-auto"
@@ -530,6 +580,7 @@ export class HilosTableBar<R> {
   protected readonly auxiliaryActions = computed(
     () => this.declaration().auxiliaryActions ?? [],
   )
+  protected readonly views = computed(() => this.declaration().views)
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.
@@ -544,11 +595,16 @@ export class HilosTableBar<R> {
   protected readonly activeFilterCount = signal(0)
   protected readonly orders = signal<readonly HilosTableOrderView[]>([])
   protected readonly orderLabel = signal('')
+  // The layout the rows take now; only a table that declared `views` can leave
+  // 'table', and choosing is a call into the controller alone (tableFrame.ts, view).
+  protected readonly tableView = signal<HilosTableView>('table')
 
-  // The template reads no module imports, so the two words the menu takes from the
-  // core are handed to it as fields.
+  // The template reads no module imports, so the words the menu and the view group
+  // take from the core are handed to it as fields.
   protected readonly orderMenuLabel = TABLE_ORDER_COPY.menu
   protected readonly sortWarning = TABLE_STALENESS_COPY.sortWarning
+  protected readonly viewGroupLabel = TABLE_VIEW_COPY.group
+  protected readonly viewCopy = TABLE_VIEW_COPY
 
   // The badge counts the declared filters holding a value; the search box is not
   // one of them and has its own field (tableFrame.ts, activeFilterCount).
@@ -594,6 +650,7 @@ export class HilosTableBar<R> {
       this.filters().length === 0 &&
       !this.mainAction() &&
       this.auxiliaryActions().length === 0 &&
+      !this.views() &&
       this.orderMenuNarrowOnly(),
   )
 
@@ -654,6 +711,7 @@ export class HilosTableBar<R> {
         bind(controller.frame.activeFilterCount, this.activeFilterCount),
         bind(controller.frame.orders, this.orders),
         bind(controller.frame.orderLabel, this.orderLabel),
+        bind(controller.frame.view, this.tableView),
         bind(controller.frame.searchPlaceholder, this.resolvedPlaceholder),
         bind(controller.selection.target, this.selectionTarget),
       ]

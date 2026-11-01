@@ -38,6 +38,7 @@ try {
       type HilosProfilePageContext,
       type HilosTableColumn,
       type HilosTableFrame,
+      type HilosTableViews,
     } from '@hilos/core/base'
     import type { HilosModerationRulesContext } from '@hilos/core/admin/moderation'
     import * as coreRoot from '@hilos/core'
@@ -86,6 +87,50 @@ try {
         resolve: (row) => ({ name: row.slots['name'] as Hideable<string> }),
         sendViewport: () => undefined,
         frame: tableTextFrame,
+      })
+    }
+    // A table that declared views: the picture is an ordinary column with an
+    // ordinary cell template. The tile frame behind it is the SDK's internal
+    // stamp; the consumer imports nothing for it.
+    const tableTilesViews = {
+      tableKey: 'consumer-tiles',
+      order: ['table', 'tiles'],
+      imageColumn: 'picture',
+    } as const satisfies HilosTableViews
+    const tableTilesFrame: HilosTableFrame = {
+      title: 'Table tiles consumer',
+      rowHeight: { mode: 'lines', count: 3 },
+      columns: [
+        { key: 'picture', label: 'Picture' } satisfies HilosTableColumn,
+        {
+          key: 'name',
+          label: 'Name',
+          card: 'title',
+          heightContent: 'parts',
+        } satisfies HilosTableColumn,
+      ],
+      views: tableTilesViews,
+    }
+    @Component({
+      selector: 'hilos-table-tiles-consumer',
+      standalone: true,
+      imports: [HilosViewportTable, HilosTableCell, HilosTableText],
+      template: \`
+        <hilos-viewport-table [controller]="controller">
+          <ng-template hilosTableCell="picture" let-row let-rowKey="rowKey">
+            <img [src]="'/consumer/' + rowKey + '.png'" [alt]="'Picture of ' + rowKey" />
+          </ng-template>
+          <ng-template hilosTableCell="name" let-row>
+            <hilos-table-text [value]="row.name"></hilos-table-text>
+          </ng-template>
+        </hilos-viewport-table>
+      \`,
+    })
+    class HilosTableTilesConsumer {
+      readonly controller = new TableViewportController<TableTextRow>({
+        resolve: (row) => ({ name: row.slots['name'] as Hideable<string> }),
+        sendViewport: () => undefined,
+        frame: tableTilesFrame,
       })
     }
     @Component({
@@ -213,6 +258,7 @@ try {
       moderationHost: HilosModerationConsumer,
       tableEmptyStateHost: HilosTableEmptyStateConsumer,
       tableTextHost: HilosTableTextConsumer,
+      tableTilesHost: HilosTableTilesConsumer,
       profileHeadHost: HilosProfileHeadConsumer,
       headTypes: sameHead && headContext && headStore,
     } })
@@ -296,6 +342,10 @@ try {
     styles.includes('.hilos-table-text-lines-3'),
     'Consumer build must load the shipped Angular Sass asset',
   )
+  assert.ok(
+    styles.includes('.hilos-table-tile'),
+    'Shipped Angular Sass asset must carry the tile rules',
+  )
   await import(pathToFileURL(join(browser, main)).href)
   const result = globalThis.hilosAngularIdentity
   assert.equal(result.sameCore, true)
@@ -321,6 +371,9 @@ try {
   )
   assert.equal(result.tableTextHost.ɵcmp.standalone, true)
   assert.equal(typeof result.tableTextHost.ɵcmp.template, 'function')
+  assert.ok(result.tableTilesHost.ɵcmp, 'AOT table tiles host must be emitted')
+  assert.equal(result.tableTilesHost.ɵcmp.standalone, true)
+  assert.equal(typeof result.tableTilesHost.ɵcmp.template, 'function')
   assert.ok(
     result.profileHeadHost.ɵcmp,
     'AOT profile head host must remain emitted',
@@ -333,7 +386,7 @@ try {
   if (process.argv[3])
     await cp(output, resolve(process.argv[3]), { recursive: true })
   console.log(
-    'Angular CLI dist consumer: AOT table text host, shipped Sass, singleton identities and lazy defaults verified',
+    'Angular CLI dist consumer: AOT table text and tiles hosts, shipped Sass, singleton identities and lazy defaults verified',
   )
 } finally {
   await rm(temporary, { recursive: true, force: true })
