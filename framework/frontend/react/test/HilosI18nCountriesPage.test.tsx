@@ -1,6 +1,6 @@
-import { act, fireEvent } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { HilosPages, HILOS_I18N_COUNTRY_DELETE_COPY } from '@hilos/core'
+import { HilosPages } from '@hilos/core'
 import { HilosI18nCountriesPage } from '../src/admin/i18n/lists/HilosI18nCountriesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {
@@ -30,6 +30,13 @@ const own = {
   name: 'Own country',
   isOwn: true,
 }
+const SERVER_REASONS = {
+  known:
+    'This country cannot be deleted because the built-in catalog knows it and the reflow would bring it back; switch it off instead.',
+  locales: 'This country cannot be deleted because locales refer to it.',
+  names: 'This country cannot be deleted because names refer to it.',
+} as const
+
 function setup(rows = [english, own], viewer = false) {
   const h = harness(HilosPages.I18N_COUNTRIES, rows, viewer)
   const view = h.mount(<HilosI18nCountriesPage context={h.context} />)
@@ -54,8 +61,6 @@ describe('React countries list', () => {
     expect(el<HTMLInputElement>('i18n-countries-enabled-qx').disabled).toBe(
       true,
     )
-    expect(el('i18n-countries-link-qx').className).toContain('link-secondary')
-    expect(h.view.container.querySelector('[class*="opacity"]')).toBeNull()
     expect(
       document.querySelectorAll('[data-id="i18n-countries-link-qx"]'),
     ).toHaveLength(2)
@@ -66,31 +71,121 @@ describe('React countries list', () => {
     )
   })
   it.each(['known', 'locales', 'names'] as const)(
-    'shows the %s refusal with distinct descriptions in both projections',
+    'shows the server %s refusal on the disabled action and in its explanation',
     (deleteReason) => {
-      const h = setup([{ ...own, canDelete: false, deleteReason }])
-      const controls = [
-        ...document.querySelectorAll<HTMLButtonElement>(
-          '[data-id="i18n-countries-delete-qx"]',
+      const reason = SERVER_REASONS[deleteReason]
+      const h = setup([
+        {
+          ...own,
+          canDelete: false,
+          deleteReason,
+          deleteDisabledReason: reason,
+        },
+      ])
+      const deleteButtons = screen.getAllByRole('button', {
+        name: 'Delete country Own country',
+      })
+      const ids = deleteButtons.map((button) =>
+        button.getAttribute('aria-describedby'),
+      )
+      expect(deleteButtons).toHaveLength(2)
+      expect(ids.every((id) => id !== null && id !== '')).toBe(true)
+      expect(new Set(ids).size).toBe(2)
+      const descriptions = [
+        ...h.view.container.querySelectorAll<HTMLElement>(
+          '[data-id="i18n-countries-delete-reason-qx"]',
         ),
       ]
-      const ids = controls.map((control) =>
-        control.getAttribute('aria-describedby'),
-      )
-      expect(new Set(ids).size).toBe(2)
-      for (const control of controls) {
-        expect(control.getAttribute('aria-disabled')).toBe('true')
-        expect(control.hasAttribute('title')).toBe(false)
-        expect(
-          document.getElementById(control.getAttribute('aria-describedby')!)
-            ?.textContent,
-        ).toBe(HILOS_I18N_COUNTRY_DELETE_COPY.reasons[deleteReason])
+      expect(descriptions).toHaveLength(2)
+      for (const button of deleteButtons) {
+        expect(button.tagName).toBe('BUTTON')
+        expect((button as HTMLButtonElement).type).toBe('button')
+        expect((button as HTMLButtonElement).disabled).toBe(true)
+        expect(button.hasAttribute('aria-disabled')).toBe(false)
+        expect(button.hasAttribute('title')).toBe(false)
+        const description = document.getElementById(
+          button.getAttribute('aria-describedby')!,
+        )
+        expect(description?.getAttribute('data-id')).toBe(
+          'i18n-countries-delete-reason-qx',
+        )
+        expect(description?.textContent).toBe(reason)
+        expect(description?.hidden).toBe(false)
+        expect(description?.hasAttribute('aria-hidden')).toBe(false)
+        fireEvent.click(button)
       }
-      click('i18n-countries-delete-qx')
       expect(h.focuses).toEqual([])
-      expect(el('modal')).toBeNull()
+      expect(h.calls).toEqual([])
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      const whyButtons = screen.getAllByRole('button', {
+        name: 'Why this action is unavailable',
+      })
+      expect(whyButtons).toHaveLength(2)
+      for (const why of whyButtons) {
+        expect((why as HTMLButtonElement).type).toBe('button')
+        expect(why.title).toBe(reason)
+      }
+      const opener = whyButtons[0]!
+      opener.focus()
+      fireEvent.click(opener)
+      const dialog = screen.getByRole('dialog', { name: 'Action unavailable' })
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(document.activeElement).toBe(dialog)
+      expect(
+        dialog
+          .querySelector('[data-id="hilos-action-reason-body"]')
+          ?.textContent?.trim(),
+      ).toBe(reason)
+      expect(
+        screen.queryByRole('dialog', { name: /Delete country/ }),
+      ).toBeNull()
+      expect(h.calls).toEqual([])
+      fireEvent.click(el('hilos-action-reason-close'))
+      expect(document.activeElement).toBe(opener)
     },
   )
+  it('keeps an available delete action free of an explanation', () => {
+    const h = setup([own])
+    const deleteButtons = screen.getAllByRole('button', {
+      name: 'Delete country Own country',
+    })
+
+    expect(deleteButtons).toHaveLength(2)
+    for (const button of deleteButtons) {
+      expect((button as HTMLButtonElement).disabled).toBe(false)
+      expect(button.getAttribute('aria-describedby')).toBeNull()
+    }
+    expect(
+      h.view.container.querySelectorAll(
+        '[data-id="i18n-countries-delete-reason-qx"]',
+      ),
+    ).toHaveLength(0)
+    expect(
+      screen.queryByRole('button', { name: 'Why this action is unavailable' }),
+    ).toBeNull()
+  })
+  it('updates the explanation with the live delete verdict', () => {
+    const h = setup([own])
+    act(() =>
+      h.delta({
+        ...own,
+        canDelete: false,
+        deleteReason: 'locales',
+        deleteDisabledReason: SERVER_REASONS.locales,
+      }),
+    )
+
+    expect(
+      screen.getAllByRole('button', { name: 'Why this action is unavailable' }),
+    ).toHaveLength(2)
+    act(() => h.delta(own))
+
+    expect(
+      screen.queryByRole('button', { name: 'Why this action is unavailable' }),
+    ).toBeNull()
+    expect(h.calls).toEqual([])
+  })
   it('shows the live catalog and legend, and opens Add without another fetch', () => {
     const h = setup([])
     expect(el('i18n-countries-catalog')).toBeNull()

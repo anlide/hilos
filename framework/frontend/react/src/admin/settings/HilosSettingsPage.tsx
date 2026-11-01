@@ -18,7 +18,11 @@
 // as a toast and leaves the dialog open with the entered value (toasts.md).
 // Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
-import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  type Hideable,
+} from '@hilos/core/base'
 import {
   SETTING_KEY_FIELD,
   SETTING_VALUE_FIELD,
@@ -36,6 +40,7 @@ import type {
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
+import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -65,6 +70,10 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
 
 function inputStep(type: string | undefined): 'any' | undefined {
   return type === 'float' ? 'any' : undefined
+}
+
+function resetReason(row: HilosSettingRow): Hideable<string | null> {
+  return hasCustomValue(row) ? null : row.resetDisabledReason
 }
 
 /**
@@ -265,20 +274,23 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                 />
               </button>
               {!isOrphanSetting(row) ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  title="Reset to default"
-                  aria-label="Reset to default"
-                  disabled={!hasCustomValue(row)}
-                  data-id={`hilos-settings-reset-${row.key}`}
-                  onClick={() => openReset(row)}
-                >
-                  <i
-                    className="bi bi-arrow-counterclockwise"
-                    aria-hidden="true"
-                  />
-                </button>
+                <>
+                  <HilosActionReason reason={resetReason(row)} />
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    title="Reset to default"
+                    aria-label="Reset to default"
+                    disabled={!hasCustomValue(row)}
+                    data-id={`hilos-settings-reset-${row.key}`}
+                    onClick={() => openReset(row)}
+                  >
+                    <i
+                      className="bi bi-arrow-counterclockwise"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </>
               ) : null}
               {isOrphanSetting(row) ? (
                 <button

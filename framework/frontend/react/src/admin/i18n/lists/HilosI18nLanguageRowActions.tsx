@@ -2,7 +2,7 @@ import { useId } from 'react'
 import {
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
   HILOS_I18N_LANGUAGE_DELETE_COPY,
-  hilosI18nLanguageDelete,
+  hilosI18nLanguageRowDelete,
   type HilosI18nLanguageRow,
 } from '@hilos/core/admin/i18n'
 
@@ -19,7 +19,8 @@ export function HilosI18nLanguageRowActions({
   onDelete: () => void
 }) {
   const copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
-  const verdict = hilosI18nLanguageDelete(row)
+  const verdict = hilosI18nLanguageRowDelete(row)
+  const reason = verdict.disabled ? verdict.reason : null
   const reasonId = useId()
   return (
     <span className="hilos-button-group d-md-inline-flex gap-1">
@@ -46,25 +47,25 @@ export function HilosI18nLanguageRowActions({
           <i className="bi bi-pencil" aria-hidden="true" />
         </button>
       )}
-      <HilosActionReason reason={verdict.reason} />
+      <HilosActionReason reason={reason} />
       <button
         type="button"
         className={`btn btn-sm ${verdict.disabled ? 'btn-outline-secondary' : 'btn-outline-danger'}`}
         disabled={verdict.disabled}
         aria-label={HILOS_I18N_LANGUAGE_DELETE_COPY.rowLabel(row.nativeName)}
-        aria-describedby={verdict.reason ? reasonId : undefined}
+        aria-describedby={reason ? reasonId : undefined}
         data-id={`i18n-languages-delete-${row.code}`}
         onClick={onDelete}
       >
         <i className="bi bi-trash" aria-hidden="true" />
       </button>
-      {verdict.reason && (
+      {reason && (
         <span
           id={reasonId}
           className="visually-hidden"
           data-id={`i18n-languages-delete-reason-${row.code}`}
         >
-          {verdict.reason}
+          {reason}
         </span>
       )}
     </span>

@@ -46,6 +46,7 @@ import type {
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
+import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
@@ -148,6 +149,11 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
    */
   function isLocked(row: HilosTwoFactorSettingRow): boolean {
     return locked.includes(row.rowKey)
+  }
+
+  /** Why a locked setting cannot be edited, or null while it is available. */
+  function editReason(row: HilosTwoFactorSettingRow) {
+    return isLocked(row) ? row.editDisabledReason : null
   }
 
   // Turning the factor off opens its window and leaves the switch where it is;
@@ -258,17 +264,20 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             ),
           actions: (row) =>
             isHilosSecondFactorSwitch(row.rowKey) ? null : (
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-primary"
-                title={`Edit ${labelOf(row)}`}
-                aria-label={`Edit ${labelOf(row)}`}
-                disabled={isLocked(row)}
-                data-id={`hilos-2fa-edit-${row.rowKey}`}
-                onClick={() => openEdit(row)}
-              >
-                <i className="bi bi-pencil" aria-hidden="true"></i>
-              </button>
+              <>
+                <HilosActionReason reason={editReason(row)} />
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  title={`Edit ${labelOf(row)}`}
+                  aria-label={`Edit ${labelOf(row)}`}
+                  disabled={isLocked(row)}
+                  data-id={`hilos-2fa-edit-${row.rowKey}`}
+                  onClick={() => openEdit(row)}
+                >
+                  <i className="bi bi-pencil" aria-hidden="true"></i>
+                </button>
+              </>
             ),
         }}
       />

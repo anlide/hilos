@@ -207,7 +207,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
             />
           ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-            <div className="d-flex align-items-start gap-2">
+            <span className="hilos-button-group d-md-inline-flex gap-1">
               <button
                 type="button"
                 className={`btn btn-sm ${row.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'}`}
@@ -227,7 +227,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
                 row={row}
                 onDelete={() => openDelete(row.rowKey)}
               />
-            </div>
+            </span>
           ),
         }}
       />

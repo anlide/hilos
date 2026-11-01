@@ -585,6 +585,51 @@ describe('HilosSecurity2faPage switches', () => {
     expect(inTable(`hilos-2fa-edit-${REQUIRED}`)).not.toBeNull()
   })
 
+  it('explains a locked dependent edit and follows the live server verdict', () => {
+    const world = seededContext()
+    mountPage(world.context)
+
+    const edit = inTable<HTMLButtonElement>(`hilos-2fa-edit-${REQUIRED}`)
+    const editRow = edit.closest('tr')
+    expect(edit.disabled).toBe(false)
+    expect(editRow?.querySelector('[data-id="hilos-action-reason"]')).toBeNull()
+    for (const key of [ENABLED, FORGET]) {
+      const switchInput = inTable(`hilos-2fa-switch-${key}`)
+      expect(
+        switchInput
+          .closest('tr')
+          ?.querySelector('[data-id="hilos-action-reason"]'),
+      ).toBeNull()
+    }
+
+    act(() => world.pushUpdate(ENABLED, 'false'))
+
+    const explanation = editRow?.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-action-reason"]',
+    )
+    expect(edit.disabled).toBe(true)
+    expect(explanation?.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(explanation?.title).toBe(LOCKED_WHILE_OFF)
+
+    fireEvent.click(explanation as HTMLButtonElement)
+
+    expect(byId('modal')?.getAttribute('aria-label')).toBe('Action unavailable')
+    expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      LOCKED_WHILE_OFF,
+    )
+    expect(byId('hilos-2fa-input')).toBeNull()
+    expect(world.sent).toEqual([])
+
+    fireEvent.click(byId('hilos-action-reason-close') as HTMLElement)
+    act(() => world.pushUpdate(ENABLED, 'true'))
+
+    expect(edit.disabled).toBe(false)
+    expect(editRow?.querySelector('[data-id="hilos-action-reason"]')).toBeNull()
+    expect(world.sent).toEqual([])
+  })
+
   it('sets the second switch by one write and moves it only with the row', async () => {
     const world = seededContext()
     mountPage(world.context)

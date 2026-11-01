@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   waitFor,
+  within,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -26,6 +27,8 @@ import { HilosDaemonAgentsPage } from '../src/admin/daemon/HilosDaemonAgentsPage
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 const releases: Array<() => void> = []
+const UNAVAILABLE_REASON =
+  'This node cannot currently confirm whether its agents can be restarted.'
 
 function harness(showLogLinks?: boolean) {
   let resolve: (value: ActionResult) => void = () => {}
@@ -178,6 +181,8 @@ function agent(
     rowKey: 'room:12',
     agentId: 'room:12',
     restarting: false,
+    restartDisabledReason: null,
+    restartUnavailableReason: UNAVAILABLE_REASON,
     workerIndex: 0,
     workerKind: 'regular',
     placement: 'node',
@@ -206,6 +211,31 @@ function button(
   id = 'hilos-daemon-restart-confirm',
 ) {
   return h.find(id) as HTMLButtonElement
+}
+
+/** Deliver a value change without replacing the row's mounted controls. */
+function updateAgent(
+  h: ReturnType<typeof harness>,
+  overrides: Record<string, unknown>,
+): void {
+  h.emit('tableViewportDelta', {
+    page: HilosPages.DAEMON_AGENTS,
+    tableKey: 'hilosDaemonAgents',
+    kind: 'row_updated',
+    rowKey: 'room:12',
+    row: { rowKey: 'room:12', slots: { agent: agent(overrides) } },
+  })
+}
+
+/** Read the same action surface in the table and the narrow-screen card. */
+function actions(h: ReturnType<typeof harness>, projection = 'row') {
+  return within(h.find(`hilos-table-${projection}-room:12`)!)
+}
+
+function reasonButton(h: ReturnType<typeof harness>, projection = 'row') {
+  return actions(h, projection).queryByRole<HTMLButtonElement>('button', {
+    name: 'Why this action is unavailable',
+  })
 }
 
 describe('HilosDaemonAgentsPage', () => {
@@ -344,14 +374,14 @@ describe('HilosDaemonAgentsPage', () => {
       '',
     )
   })
-  it('locks the confirmation for its own restart without turning it off, and turns it off at once for an independent reason', async () => {
+  it('disables confirmation while the core refuses another submit, including an independent unavailability', async () => {
     const h = ready()
     open(h)
     expect(button(h).disabled).toBe(false)
     expect(button(h).hasAttribute('aria-disabled')).toBe(false)
     fireEvent.click(button(h))
     expect(button(h).getAttribute('aria-disabled')).toBe('true')
-    expect(button(h).disabled).toBe(false)
+    expect(button(h).disabled).toBe(true)
     fireEvent.click(button(h))
     expect(h.dispatch).toHaveBeenCalledTimes(1)
     h.heading(SILENT)
@@ -429,14 +459,166 @@ describe('HilosDaemonAgentsPage', () => {
   )
   it('only shows a restarting mark from a real window and re-enables the live row', () => {
     const h = ready()
-    h.window([agent({ restarting: true, workerIndex: null, workerKind: null })])
+    const reason = 'This agent is already restarting.'
+    h.window([
+      agent({
+        restarting: true,
+        restartDisabledReason: reason,
+        workerIndex: null,
+        workerKind: null,
+      }),
+    ])
     expect(h.find('hilos-daemon-agent-restarting-room:12')?.textContent).toBe(
       'Restarting',
     )
     expect(button(h, 'hilos-daemon-agent-restart-room:12').disabled).toBe(true)
+    fireEvent.click(reasonButton(h)!)
+    expect(h.find('hilos-action-reason-body')?.textContent).toBe(reason)
+    expect(h.find('hilos-daemon-restart-agent')).toBeNull()
+    expect(h.dispatch).not.toHaveBeenCalled()
+    fireEvent.click(h.find('hilos-action-reason-close')!)
     h.window([agent()])
     expect(h.find('hilos-daemon-agent-restarting-room:12')).toBeNull()
     expect(button(h, 'hilos-daemon-agent-restart-room:12').disabled).toBe(false)
+    expect(reasonButton(h)).toBeNull()
+  })
+  it.each(['row', 'card'])(
+    'explains a server refusal from the %s without requesting a restart',
+    (projection) => {
+      const h = ready()
+      expect(reasonButton(h, projection)).toBeNull()
+      const reason = 'Restart is refused until <approval> is recorded.'
+      updateAgent(h, { restartDisabledReason: reason })
+      const restart = actions(h, projection).getByRole<HTMLButtonElement>(
+        'button',
+        { name: 'Restart' },
+      )
+      expect(restart.disabled).toBe(true)
+      fireEvent.click(restart)
+      expect(h.find('modal')).toBeNull()
+
+      const opener = reasonButton(h, projection)!
+      expect(opener.type).toBe('button')
+      expect(opener.disabled).toBe(false)
+      opener.focus()
+      fireEvent.click(opener)
+      const dialog = h.view.getByRole('dialog', { name: 'Action unavailable' })
+      expect(document.activeElement).toBe(dialog)
+      expect(h.find('hilos-action-reason-body')?.textContent).toBe(reason)
+      expect(
+        h.find('hilos-action-reason-body')?.querySelector('approval'),
+      ).toBeNull()
+      fireEvent.keyDown(dialog, { key: 'Enter' })
+      expect(h.find('hilos-daemon-restart-agent')).toBeNull()
+      expect(h.dispatch).not.toHaveBeenCalled()
+
+      const close = h.find('hilos-action-reason-close')!
+      close.focus()
+      fireEvent.keyDown(close, { key: 'Tab' })
+      expect(dialog.contains(document.activeElement)).toBe(true)
+      fireEvent.keyDown(dialog, { key: 'Escape' })
+      expect(h.view.queryByRole('dialog')).toBeNull()
+      expect(document.activeElement).toBe(opener)
+    },
+  )
+  it('follows live refusal changes and keeps the opened reason snapshot', () => {
+    const h = ready()
+    const first = 'This agent is waiting for the leader.'
+    const next = 'Restart is temporarily refused by the node.'
+    updateAgent(h, { restartDisabledReason: first })
+    fireEvent.click(reasonButton(h)!)
+    updateAgent(h, { restartDisabledReason: next })
+    expect(reasonButton(h)?.title).toBe(next)
+    expect(h.find('hilos-action-reason-body')?.textContent).toBe(first)
+
+    updateAgent(h, { restartDisabledReason: null })
+    for (const projection of ['row', 'card']) {
+      expect(reasonButton(h, projection)).toBeNull()
+      expect(
+        actions(h, projection).getByRole<HTMLButtonElement>('button', {
+          name: 'Restart',
+        }).disabled,
+      ).toBe(false)
+    }
+    expect(h.find('hilos-action-reason-body')?.textContent).toBe(first)
+    fireEvent.click(h.find('hilos-action-reason-close')!)
+
+    updateAgent(h, { restartDisabledReason: next })
+    expect(button(h, 'hilos-daemon-agent-restart-room:12').disabled).toBe(true)
+    fireEvent.click(reasonButton(h)!)
+    expect(h.find('hilos-action-reason-body')?.textContent).toBe(next)
+    expect(h.dispatch).not.toHaveBeenCalled()
+  })
+  it.each(['unknown', 'silent', 'frozen'])(
+    'uses the delivered unavailable reason when the table is %s',
+    async (state) => {
+      const h = ready()
+      updateAgent(h, { restartDisabledReason: 'A stale row refusal.' })
+      if (state === 'unknown') h.heading(null)
+      if (state === 'silent') h.heading(SILENT)
+      if (state === 'frozen')
+        h.emit('tableViewportFrozen', {
+          page: HilosPages.DAEMON_AGENTS,
+          tableKey: 'hilosDaemonAgents',
+          since: 1700000000,
+        })
+      await waitFor(() =>
+        expect(reasonButton(h)?.title).toBe(UNAVAILABLE_REASON),
+      )
+      expect(button(h, 'hilos-daemon-agent-restart-room:12').disabled).toBe(
+        true,
+      )
+      fireEvent.click(reasonButton(h)!)
+      expect(h.find('hilos-action-reason-body')?.textContent).toBe(
+        UNAVAILABLE_REASON,
+      )
+      expect(h.find('hilos-daemon-restart-agent')).toBeNull()
+      expect(h.dispatch).not.toHaveBeenCalled()
+    },
+  )
+  it('clears the unavailable explanation when a live heading returns', () => {
+    const h = ready()
+    h.heading(SILENT)
+    expect(reasonButton(h)?.title).toBe(UNAVAILABLE_REASON)
+    h.heading(LIVE)
+    expect(reasonButton(h)).toBeNull()
+    expect(button(h, 'hilos-daemon-agent-restart-room:12').disabled).toBe(false)
+  })
+  it('uses a spinner without inventing a reason during its own request and retains an independent server reason', async () => {
+    const h = ready()
+    open(h)
+    fireEvent.click(button(h))
+    expect(button(h).getAttribute('aria-busy')).toBe('true')
+    expect(button(h, 'hilos-daemon-agent-restart-room:12').disabled).toBe(true)
+    expect(reasonButton(h)).toBeNull()
+    expect(h.find('hilos-daemon-agent-restarting-room:12')).toBeNull()
+
+    const reason = 'Another restart has been reported by the node.'
+    updateAgent(h, { restarting: true, restartDisabledReason: reason })
+    expect(reasonButton(h)?.title).toBe(reason)
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
+    await h.success()
+  })
+  it('follows a server refusal in an already open confirmation and permits submission only after it clears', async () => {
+    const h = ready()
+    open(h)
+    expect(button(h).disabled).toBe(false)
+    updateAgent(h, {
+      restartDisabledReason: 'Restart is refused by the current node policy.',
+    })
+    expect(button(h).disabled).toBe(true)
+    fireEvent.click(button(h))
+    expect(h.dispatch).not.toHaveBeenCalled()
+    expect(h.find('hilos-daemon-restart-agent')?.textContent).toBe('room:12')
+
+    updateAgent(h, { restartDisabledReason: null })
+    expect(button(h).disabled).toBe(false)
+    fireEvent.click(button(h))
+    expect(h.dispatch).toHaveBeenCalledExactlyOnceWith(
+      'hilos_daemon_agent_restart',
+      { agentId: 'room:12', nodeId: 'n1' },
+    )
+    await h.success()
   })
   it('blocks viewer opening and a confirmation already open when access becomes view-only', async () => {
     const h = ready()
@@ -446,6 +628,7 @@ describe('HilosDaemonAgentsPage', () => {
     expect(opener.getAttribute('aria-describedby')).toBe(
       'hilos-view-mode-strip-text',
     )
+    expect(reasonButton(h)).toBeNull()
     fireEvent.click(opener)
     expect(h.find('modal')).toBeNull()
     h.viewer(false)

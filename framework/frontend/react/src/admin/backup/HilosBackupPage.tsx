@@ -80,6 +80,7 @@ import type {
 } from '@hilos/core/admin/backup'
 
 import { HilosActionError } from '../../HilosActionError.js'
+import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosHideable } from '../../HilosHideable.js'
@@ -301,17 +302,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     setDetailsOpen(false)
   }
 
-  // Blocked-restore dialog: the sentence behind the "why" button of a dark restore
-  // button. It shows whatever restoreBlockedReason() returns rather than knowing the
-  // cases, so a reason added there is shown here without a word changed.
-  const [blockedOpen, setBlockedOpen] = useState(false)
-  const [blockedRow, setBlockedRow] = useState<HilosBackupRow | null>(null)
-
-  function openBlocked(row: HilosBackupRow): void {
-    setBlockedRow(row)
-    setBlockedOpen(true)
-  }
-
   // Copy-failure dialog: why the last copy of an archive off the machine did not make
   // it. The word stays in the cell; the reason is one click away rather than in a title
   // no phone and no screen reader reaches.
@@ -380,11 +370,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   }
 
   /**
-   * Why an archive cannot be restored right now, or null when it can. The button
-   * stays visible and a live "why" button beside it opens this sentence, so the
-   * answer arrives before the click rather than as a toast after it. It is not the
-   * button's title: a disabled button gets no mouse events, so its title never shows
-   * (docs/agents/frontend/accessibility.md).
+   * Why an archive cannot be restored right now, or null when it can.
    *
    * @param row The backup row the button belongs to.
    */
@@ -688,76 +674,80 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               )}
             </div>
           ),
-          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-            <>
-              {hasBackupFailureDetail(row) ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  title="Show failure reason"
-                  aria-label="Show failure reason"
-                  data-id={`hilos-backup-details-${row.id}`}
-                  onClick={() => openDetails(row)}
-                >
-                  <i className="bi bi-exclamation-circle" aria-hidden="true" />
-                </button>
-              ) : null}
-              {offersBackupRestore(row) && restoreGate.uiEnabled ? (
-                <>
-                  {restoreBlockedReason(row) !== null ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary"
-                      title="Why this backup cannot be restored"
-                      aria-label="Why this backup cannot be restored"
-                      data-id={`hilos-backup-blocked-why-${row.id}`}
-                      onClick={() => openBlocked(row)}
-                    >
-                      <i className="bi bi-question-circle" aria-hidden="true" />
-                    </button>
-                  ) : null}
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => {
+            const restoreOffered = offersBackupRestore(row)
+            const showRestore = restoreOffered && restoreGate.uiEnabled
+            const restoreReason = showRestore ? restoreBlockedReason(row) : null
+
+            return (
+              <>
+                {hasBackupFailureDetail(row) ? (
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline-warning"
-                    disabled={restoreBlockedReason(row) !== null}
-                    title="Restore this backup"
-                    aria-label="Restore this backup"
-                    data-id={`hilos-backup-restore-${row.id}`}
-                    onClick={() => openRestore(row)}
+                    className="btn btn-sm btn-outline-secondary"
+                    title="Show failure reason"
+                    aria-label="Show failure reason"
+                    data-id={`hilos-backup-details-${row.id}`}
+                    onClick={() => openDetails(row)}
                   >
                     <i
-                      className="bi bi-arrow-counterclockwise"
+                      className="bi bi-exclamation-circle"
                       aria-hidden="true"
                     />
                   </button>
-                </>
-              ) : null}
-              {offersBackupRestore(row) && !restoreGate.uiEnabled ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  title="How to restore this backup"
-                  aria-label="How to restore this backup"
-                  data-id={`hilos-backup-restore-cli-${row.id}`}
-                  onClick={() => openCli(row)}
-                >
-                  <i className="bi bi-terminal" aria-hidden="true" />
-                </button>
-              ) : null}
-              {isBackupDeletable(row) ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-danger"
-                  title="Delete backup"
-                  aria-label="Delete backup"
-                  data-id={`hilos-backup-delete-${row.id}`}
-                  onClick={() => openDelete(row)}
-                >
-                  <i className="bi bi-trash" aria-hidden="true" />
-                </button>
-              ) : null}
-            </>
-          ),
+                ) : null}
+                {showRestore ? (
+                  <>
+                    {/* A disabled action never shows its title. The shared opener
+                  reads this helper's sentence without knowing its cases. */}
+                    <HilosActionReason
+                      reason={restoreReason}
+                      label="Why this backup cannot be restored"
+                      title={`Cannot restore · ${row.id}`}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-warning"
+                      disabled={restoreReason !== null}
+                      title="Restore this backup"
+                      aria-label="Restore this backup"
+                      data-id={`hilos-backup-restore-${row.id}`}
+                      onClick={() => openRestore(row)}
+                    >
+                      <i
+                        className="bi bi-arrow-counterclockwise"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </>
+                ) : null}
+                {restoreOffered && !restoreGate.uiEnabled ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    title="How to restore this backup"
+                    aria-label="How to restore this backup"
+                    data-id={`hilos-backup-restore-cli-${row.id}`}
+                    onClick={() => openCli(row)}
+                  >
+                    <i className="bi bi-terminal" aria-hidden="true" />
+                  </button>
+                ) : null}
+                {isBackupDeletable(row) ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger"
+                    title="Delete backup"
+                    aria-label="Delete backup"
+                    data-id={`hilos-backup-delete-${row.id}`}
+                    onClick={() => openDelete(row)}
+                  >
+                    <i className="bi bi-trash" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </>
+            )
+          },
         }}
       />
 
@@ -865,36 +855,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               kind="prose"
               text={value}
               dataId="hilos-backup-details-text"
-            />
-          )}
-        </HilosHideable>
-      </HilosModal>
-
-      <HilosModal
-        open={blockedOpen}
-        title={
-          blockedRow ? `Cannot restore · ${blockedRow.id}` : 'Cannot restore'
-        }
-        initialFocus="dialog"
-        onClose={() => setBlockedOpen(false)}
-        actions={({ requestClose }) => (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={requestClose}
-          >
-            Close
-          </button>
-        )}
-      >
-        <HilosHideable
-          value={blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''}
-        >
-          {(value) => (
-            <HilosLongText
-              kind="prose"
-              text={value}
-              dataId="hilos-backup-blocked-reason-text"
             />
           )}
         </HilosHideable>

@@ -1,11 +1,18 @@
+// Keep the primitive mounted when the source reason clears: an open explanation
+// belongs to its reader until they close it. Only the native opener follows the
+// current reason; HilosModal owns focus, closing, and unmount cleanup. A reason
+// hidden by the server still gives the opener, but its words reach neither the
+// title nor a string: the dialog draws the mark through HilosHideable.
+import { type Hideable, isHiddenValue } from '@hilos/core/base'
 import { useState } from 'react'
 
+import { HilosHideable } from './HilosHideable.js'
 import { HilosModal } from './HilosModal.js'
 
 /** Props for {@link HilosActionReason}. */
 export interface HilosActionReasonProps {
-  /** The current reason; `null` hides only the opener. */
-  reason: string | null
+  /** The current reason or hidden mark; `null` hides only the opener. */
+  reason: Hideable<string | null>
   /** Accessible name of the native explanation button. */
   label?: string
   /** Visible and accessible name of the explanation dialog. */
@@ -19,7 +26,7 @@ export function HilosActionReason({
   title = 'Action unavailable',
 }: HilosActionReasonProps) {
   const [open, setOpen] = useState(false)
-  const [explanation, setExplanation] = useState('')
+  const [explanation, setExplanation] = useState<Hideable<string>>('')
 
   /** Read the current reason once for this visit to the dialog. */
   function showReason(): void {
@@ -34,7 +41,7 @@ export function HilosActionReason({
         <button
           type="button"
           className="btn btn-sm btn-outline-secondary"
-          title={reason}
+          title={isHiddenValue(reason) ? undefined : reason}
           aria-label={label}
           data-id="hilos-action-reason"
           onClick={showReason}
@@ -59,7 +66,7 @@ export function HilosActionReason({
         )}
       >
         <p className="mb-0 text-break" data-id="hilos-action-reason-body">
-          {explanation}
+          <HilosHideable value={explanation} />
         </p>
       </HilosModal>
     </>

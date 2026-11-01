@@ -404,7 +404,8 @@ test('language.life', async ({ page, i18n }) => {
     const remove = blocked.getByTestId('i18n-languages-delete-pt')
     const reason = blocked.getByTestId('i18n-languages-delete-reason-pt')
     const why = blocked.getByTestId('hilos-action-reason')
-    const description = 'Cannot delete: the language has locales.'
+    const description =
+      'This language cannot be deleted because it has locales.'
     await expect(remove).toBeDisabled()
     await expect(remove).toHaveAccessibleName('Delete language Português')
     await expect(remove).toHaveAttribute(

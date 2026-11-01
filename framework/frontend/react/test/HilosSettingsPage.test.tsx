@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { z } from 'zod'
+import { HIDDEN_VALUE } from '@hilos/core/base'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -75,6 +76,7 @@ interface SettingSlot {
   defaultValue: unknown
   defaultReferenceKey: string | null
   valueSource: string
+  resetDisabledReason?: unknown
 }
 
 // Build one inline settings slot, defaulting the catalog fields a test does not
@@ -1794,6 +1796,7 @@ describe('HilosSettingsPage reset dialog', () => {
     overrideValue: 'Mine',
     defaultValue: 'Hilos',
   })
+  const ON_DEFAULT_REASON = 'The setting already holds its catalog default.'
 
   function byId(id: string): HTMLElement | null {
     return document.querySelector(`[data-id="${id}"]`)
@@ -1802,6 +1805,14 @@ describe('HilosSettingsPage reset dialog', () => {
   function resetButton(key: string): HTMLButtonElement | null {
     return document.querySelector(
       `table [data-id="hilos-settings-reset-${key}"]`,
+    )
+  }
+
+  function reasonOpener(key: string): HTMLButtonElement | null {
+    return (
+      resetButton(key)?.parentElement?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      ) ?? null
     )
   }
 
@@ -1852,6 +1863,97 @@ describe('HilosSettingsPage reset dialog', () => {
     expect(
       document.querySelector('table [data-id="hilos-settings-delete-orphan"]'),
     ).not.toBeNull()
+  })
+
+  it('explains a locked ↺ with the server reason, without a reset action dialog', () => {
+    const { context, sent, focus } = seededContext([
+      CUSTOM,
+      slot({
+        key: 'on_default',
+        valueSource: 'default',
+        resetDisabledReason: ON_DEFAULT_REASON,
+      }),
+      slot({
+        key: 'orphan',
+        valueSource: 'orphan',
+        resetDisabledReason: ON_DEFAULT_REASON,
+      }),
+    ])
+    renderPage(context)
+
+    expect(reasonOpener('site_name')).toBeNull()
+    expect(reasonOpener('orphan')).toBeNull()
+    const opener = reasonOpener('on_default') as HTMLButtonElement
+    expect(opener.type).toBe('button')
+    expect(opener.disabled).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(opener.title).toBe(ON_DEFAULT_REASON)
+    expect(resetButton('on_default')?.disabled).toBe(true)
+    opener.focus()
+    expect(document.activeElement).toBe(opener)
+
+    fireEvent.click(opener)
+
+    expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      ON_DEFAULT_REASON,
+    )
+    expect(byId('hilos-settings-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([])
+  })
+
+  it('follows the live setting row as reset becomes available and unavailable', () => {
+    const onDefault = slot({
+      key: 'on_default',
+      valueSource: 'default',
+      resetDisabledReason: ON_DEFAULT_REASON,
+    })
+    const { context, pushUpdate } = seededContext([onDefault])
+    renderPage(context)
+    expect(reasonOpener('on_default')).not.toBeNull()
+
+    act(() => {
+      pushUpdate({
+        ...onDefault,
+        valueSource: 'override',
+        value: 'Mine',
+        overrideValue: 'Mine',
+        resetDisabledReason: null,
+      })
+    })
+    expect(resetButton('on_default')?.disabled).toBe(false)
+    expect(reasonOpener('on_default')).toBeNull()
+
+    act(() => {
+      pushUpdate(onDefault)
+    })
+    expect(resetButton('on_default')?.disabled).toBe(true)
+    expect(reasonOpener('on_default')).not.toBeNull()
+  })
+
+  it('shows a hidden reset reason without putting it in a title or string', () => {
+    const { context, sent } = seededContext([
+      slot({
+        key: 'on_default',
+        valueSource: 'default',
+        resetDisabledReason: HIDDEN_VALUE,
+      }),
+    ])
+    renderPage(context)
+    const opener = reasonOpener('on_default') as HTMLButtonElement
+
+    expect(opener.hasAttribute('title')).toBe(false)
+    fireEvent.click(opener)
+
+    const body = byId('hilos-action-reason-body')
+    expect(body?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body?.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object Object]')
+    expect(byId('hilos-settings-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
   })
 
   it('opens on ↺ with the row in focus and sends nothing', () => {

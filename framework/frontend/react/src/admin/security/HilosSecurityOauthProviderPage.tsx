@@ -39,6 +39,7 @@ import type {
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
+import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosHideable } from '../../HilosHideable.js'
@@ -174,6 +175,17 @@ export function HilosSecurityOauthProviderPage({
   const reset = useTrackedAction()
   const resetShown = liveRow ?? resetRow
   const resetGone = liveRow === undefined || liveRow.source !== 'db'
+
+  /** Whether a stored value is in force — the only one a reset removes. */
+  function canReset(row: HilosOAuthFieldRow): boolean {
+    return row.source === 'db'
+  }
+
+  /** Why the reset is unavailable, or null while it is available. */
+  function resetReason(row: HilosOAuthFieldRow) {
+    return canReset(row) ? null : row.resetDisabledReason
+  }
+
   // A provider without both its client id and its secret is not offered at
   // sign-in, so resetting either of them may take the provider off the sign-in page.
   const resetStopsSignIn =
@@ -300,12 +312,13 @@ export function HilosSecurityOauthProviderPage({
                       aria-hidden="true"
                     />
                   </button>
+                  <HilosActionReason reason={resetReason(row)} />
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-secondary"
                     title="Reset to default"
                     aria-label="Reset to default"
-                    disabled={row.source !== 'db'}
+                    disabled={!canReset(row)}
                     data-id={`hilos-oauth-field-reset-${row.field}`}
                     onClick={() => openReset(row)}
                   >

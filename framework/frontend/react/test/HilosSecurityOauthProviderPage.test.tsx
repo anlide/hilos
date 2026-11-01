@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { HIDDEN_VALUE } from '@hilos/core/base'
 import {
   ActionError,
   ActionLifecycle,
@@ -536,6 +537,7 @@ function fieldSlot(
         : '',
     defaultSource: 'default',
     defaultSetState: field === 'scope',
+    resetDisabledReason: null,
   }
 }
 
@@ -1271,6 +1273,80 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     })
 
     expect(resetButton('client_id').disabled).toBe(true)
+  })
+
+  it('explains a disabled reset from the live row without opening its action modal', () => {
+    const reason = 'This field is supplied by the environment.'
+    const { context, pushFieldUpdate, sent } = seededContext('Iv1.a')
+    renderPage(context)
+
+    act(() => {
+      pushFieldUpdate('client_id', {
+        source: 'env',
+        resetDisabledReason: reason,
+      })
+    })
+
+    const reset = resetButton('client_id')
+    const row = reset.closest('tr')
+    const explanation = row?.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-action-reason"]',
+    )
+    expect(reset.disabled).toBe(true)
+    expect(explanation?.type).toBe('button')
+    expect(explanation?.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(explanation?.title).toBe(reason)
+
+    fireEvent.click(explanation as HTMLButtonElement)
+
+    expect(byId('modal')?.getAttribute('aria-label')).toBe('Action unavailable')
+    expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(reason)
+    expect(byId('hilos-oauth-field-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+
+    fireEvent.click(byId('hilos-action-reason-close') as HTMLElement)
+    expect(byId('modal')).toBeNull()
+
+    act(() => {
+      pushFieldUpdate('client_id', {
+        source: 'db',
+        resetDisabledReason: null,
+      })
+    })
+
+    expect(reset.disabled).toBe(false)
+    expect(row?.querySelector('[data-id="hilos-action-reason"]')).toBeNull()
+  })
+
+  it('keeps a hidden reset reason out of the title and draws its standard mark', () => {
+    const { context, pushFieldUpdate, sent } = seededContext('Iv1.a')
+    renderPage(context)
+
+    act(() => {
+      pushFieldUpdate('client_id', {
+        source: 'env',
+        resetDisabledReason: HIDDEN_VALUE,
+      })
+    })
+
+    const reset = resetButton('client_id')
+    const explanation = reset
+      .closest('tr')
+      ?.querySelector<HTMLButtonElement>('[data-id="hilos-action-reason"]')
+    expect(reset.disabled).toBe(true)
+    expect(explanation?.hasAttribute('title')).toBe(false)
+
+    fireEvent.click(explanation as HTMLButtonElement)
+
+    const body = byId('hilos-action-reason-body')
+    expect(body?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body?.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object Object]')
+    expect(byId('hilos-oauth-field-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
   })
 })
 

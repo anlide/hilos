@@ -40,7 +40,10 @@ export const language: HilosI18nLanguageRow = {
   isOwn: false,
   canDelete: true,
   deleteReason: null,
-  deleteDisabledReason: null,
+  // A stale server hint on an available row verifies that the question mark
+  // follows the live canDelete verdict.
+  deleteDisabledReason:
+    'This language cannot be deleted because it is the default language.',
 }
 export const languageCard: HilosI18nLanguageCard = {
   languageId: 19,
@@ -74,7 +77,10 @@ export const country: HilosI18nCountryRow = {
   catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
-  deleteDisabledReason: null,
+  // A stale server hint on an available row verifies that the question mark
+  // follows the live canDelete verdict.
+  deleteDisabledReason:
+    'This country cannot be deleted because the built-in catalog knows it and the reflow would bring it back; switch it off instead.',
 }
 export const countryCard: HilosI18nCountryCard = {
   countryId: 143,

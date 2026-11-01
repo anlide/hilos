@@ -4,6 +4,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+  type Hideable,
 } from '@hilos/core/base'
 import {
   createHilosChannelFieldEdit,
@@ -19,6 +20,7 @@ import type {
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
+import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
@@ -54,6 +56,14 @@ const SOURCE_LABEL: Record<string, string> = {
   settings: 'Override',
   env: 'From env',
   default: 'Default',
+}
+
+function canReset(row: HilosChannelFieldRow): boolean {
+  return row.valueSource === 'settings'
+}
+
+function resetReason(row: HilosChannelFieldRow): Hideable<string | null> {
+  return canReset(row) ? null : row.resetDisabledReason
 }
 
 /** The channel Configuration tab, with resources scoped to its route and context. */
@@ -260,12 +270,13 @@ function ChannelConfiguration({
                 >
                   <i className="bi bi-pencil" aria-hidden="true" />
                 </button>
+                <HilosActionReason reason={resetReason(row)} />
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary"
                   title="Reset to default"
                   aria-label="Reset to default"
-                  disabled={row.valueSource !== 'settings'}
+                  disabled={!canReset(row)}
                   data-id={`hilos-channel-field-reset-${row.field}`}
                   onClick={() => openReset(row)}
                 >

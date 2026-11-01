@@ -5,6 +5,7 @@
 // and the ↺ that resets only through a confirm dialog (HIL-1147).
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { HIDDEN_VALUE } from '@hilos/core/base'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -68,6 +69,7 @@ interface FieldSlot {
   defaultValueSource: 'env' | 'default'
   secret: boolean
   editable: boolean
+  resetDisabledReason?: unknown
 }
 
 /** The `from` field of the sms channel, with the given effective value and source. */
@@ -489,6 +491,16 @@ describe('HilosCommunicationsChannelConfigurationPage reset dialog', () => {
     ) as HTMLButtonElement
   }
 
+  function reasonOpener(): HTMLButtonElement | null {
+    return (
+      resetButton().parentElement?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      ) ?? null
+    )
+  }
+
+  const ENV_REASON = 'The value comes from the environment, not from settings.'
+
   function confirmButton(): HTMLButtonElement {
     return byId('hilos-channel-reset-confirm') as HTMLButtonElement
   }
@@ -649,6 +661,75 @@ describe('HilosCommunicationsChannelConfigurationPage reset dialog', () => {
     renderPage(context)
 
     expect(resetButton().disabled).toBe(true)
+  })
+
+  it('explains a locked ↺ with the server reason and sends no reset action', () => {
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+env', 'env'), resetDisabledReason: ENV_REASON },
+    ])
+    renderPage(context)
+
+    const opener = reasonOpener() as HTMLButtonElement
+    expect(opener.type).toBe('button')
+    expect(opener.disabled).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(opener.title).toBe(ENV_REASON)
+    expect(resetButton().disabled).toBe(true)
+    opener.focus()
+    expect(document.activeElement).toBe(opener)
+
+    fireEvent.click(opener)
+
+    expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      ENV_REASON,
+    )
+    expect(byId('hilos-channel-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([])
+  })
+
+  it('follows the live field row as reset becomes unavailable and available', () => {
+    const live = { ...fromField('+1000'), resetDisabledReason: null }
+    const { context, pushUpdate } = seededContext([live])
+    renderPage(context)
+    expect(resetButton().disabled).toBe(false)
+    expect(reasonOpener()).toBeNull()
+
+    act(() => {
+      pushUpdate({
+        ...fromField('+env', 'env'),
+        resetDisabledReason: ENV_REASON,
+      })
+    })
+    expect(resetButton().disabled).toBe(true)
+    expect(reasonOpener()).not.toBeNull()
+
+    act(() => {
+      pushUpdate({ ...fromField('+2000'), resetDisabledReason: null })
+    })
+    expect(resetButton().disabled).toBe(false)
+    expect(reasonOpener()).toBeNull()
+  })
+
+  it('shows a hidden reset reason without putting it in a title or string', () => {
+    const { context, sent } = seededContext([
+      { ...fromField('+env', 'env'), resetDisabledReason: HIDDEN_VALUE },
+    ])
+    renderPage(context)
+    const opener = reasonOpener() as HTMLButtonElement
+
+    expect(opener.hasAttribute('title')).toBe(false)
+    fireEvent.click(opener)
+
+    const body = byId('hilos-action-reason-body')
+    expect(body?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body?.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object Object]')
+    expect(byId('hilos-channel-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
   })
 })
 

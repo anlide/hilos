@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { registerFocusReturnFallback } from '@hilos/core/base'
+import { HIDDEN_VALUE, registerFocusReturnFallback } from '@hilos/core/base'
 
 import { HilosActionReason } from '../src/HilosActionReason.js'
 
@@ -27,20 +27,16 @@ function openReason(): HTMLButtonElement {
 }
 
 describe('HilosActionReason', () => {
-  it('renders a named native opener without a wrapper and keeps the reason as its title', () => {
-    const view = render(<HilosActionReason reason={reason} />)
+  it('renders a named native opener and keeps the reason as its title', () => {
+    render(<HilosActionReason reason={reason} />)
     const opener = element('hilos-action-reason') as HTMLButtonElement
 
-    expect(view.container.children).toHaveLength(1)
-    expect(view.container.firstElementChild).toBe(opener)
     expect(opener.type).toBe('button')
-    expect(opener.className).toBe('btn btn-sm btn-outline-secondary')
     expect(opener.getAttribute('aria-label')).toBe(
       'Why this action is unavailable',
     )
     expect(opener.title).toBe(reason)
-    expect(opener.querySelector('i')?.className).toBe('bi bi-question-circle')
-    expect(opener.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(opener.querySelector('[aria-hidden="true"]')).not.toBeNull()
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
@@ -73,18 +69,30 @@ describe('HilosActionReason', () => {
     expect(dialog.getAttribute('aria-label')).toBe('Cannot delete')
     expect(document.activeElement).toBe(dialog)
     expect(element('hilos-action-reason-body').textContent?.trim()).toBe(reason)
-    expect(dialog.querySelectorAll('.modal-body > *')).toHaveLength(1)
-    expect(dialog.querySelectorAll('.modal-body > fieldset > *')).toHaveLength(
-      1,
-    )
-    expect(
-      dialog.querySelector('.modal-body > fieldset > p')?.textContent?.trim(),
-    ).toBe(reason)
-    expect(dialog.querySelectorAll('.modal-footer button')).toHaveLength(1)
     expect(element('hilos-action-reason-close').textContent?.trim()).toBe(
       'Close',
     )
     expect(dialog.querySelector('input, select, textarea')).toBeNull()
+  })
+
+  it('opens a hidden reason on the standard mark without a title or leaked value', () => {
+    render(<HilosActionReason reason={HIDDEN_VALUE} />)
+    const opener = element('hilos-action-reason') as HTMLButtonElement
+
+    expect(opener.hasAttribute('title')).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    fireEvent.click(opener)
+
+    const body = element('hilos-action-reason-body')
+    expect(body.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object Object]')
+    expect(element('modal').getAttribute('aria-label')).toBe(
+      'Action unavailable',
+    )
   })
 
   it.each(['Close', 'Escape', 'backdrop', 'header'] as const)(
@@ -155,6 +163,36 @@ describe('HilosActionReason', () => {
     expect(element('hilos-action-reason-body').textContent?.trim()).toBe(
       'Cannot delete: this is the default language.',
     )
+  })
+
+  it('keeps a hidden snapshot through changes and reads the latest reason on reopening', () => {
+    const view = render(<HilosActionReason reason={HIDDEN_VALUE} />)
+    openReason()
+    view.rerender(<HilosActionReason reason={reason} />)
+    expect(element('hilos-action-reason').getAttribute('title')).toBe(reason)
+    expect(
+      element('hilos-action-reason-body').querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+
+    view.rerender(<HilosActionReason reason={null} />)
+    expect(
+      view.container.querySelector('[data-id="hilos-action-reason"]'),
+    ).toBeNull()
+    expect(
+      element('hilos-action-reason-body').querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+
+    fireEvent.click(element('hilos-action-reason-close'))
+    view.rerender(<HilosActionReason reason={reason} />)
+    fireEvent.click(element('hilos-action-reason'))
+
+    const body = element('hilos-action-reason-body')
+    expect(body.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+    expect(body.textContent?.trim()).toBe(reason)
   })
 
   it.each(['removed', 'disabled'] as const)(

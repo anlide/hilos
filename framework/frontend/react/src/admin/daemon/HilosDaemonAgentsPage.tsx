@@ -22,6 +22,7 @@ import {
 } from '@hilos/core/admin/daemon'
 import { HilosPages } from '@hilos/core/base'
 import { HilosActionError } from '../../HilosActionError.js'
+import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -87,20 +88,14 @@ function Agents({
     useMemo(() => readDaemonProcessesReported(context.scopes), [context]),
   )
   const rows = useSignal(agents.controller.rows)
-  const tableBody = useSignal(agents.controller.frame.body)
-  const frozenSince = useSignal(agents.controller.frozenSince)
+  const unavailable = useSignal(restart.unavailable)
+  const canRestart = useSignal(restart.canSubmit)
   const restartOpen = useSignal(restart.opened)
   const restartTarget = useSignal(restart.target)
   const restartAction = useTrackedAction()
   const { busy } = restartAction
   const [identity, setIdentity] = useState<HilosDaemonAgentRow | null>(null)
   const lookOnly = useLookOnly()
-  const unavailable =
-    heading === null ||
-    heading.state === 'silent' ||
-    tableBody === 'loading' ||
-    tableBody === 'unavailable' ||
-    frozenSince !== null
   const restartUnavailable =
     unavailable || restartTarget === undefined || restartTarget.restarting
   const policyWarning =
@@ -122,8 +117,19 @@ function Agents({
     }
   }, [agents, restart])
 
+  /** Read the core's current reason on every render, including availability changes. */
+  function restartReason(row: HilosDaemonAgentRow): string | null {
+    return restart.reasonFor(row)
+  }
+
   function openRestart(row: HilosDaemonAgentRow): void {
-    if (lookOnly.locked || busy || row.restarting || unavailable) return
+    if (
+      lookOnly.locked ||
+      busy ||
+      row.restarting ||
+      restartReason(row) !== null
+    )
+      return
     restart.open(row.rowKey)
     if (restart.opened.get()) {
       setIdentity(restart.target.get() ?? null)
@@ -206,9 +212,10 @@ function Agents({
                   Log
                 </HilosLink>
               )}
+              <HilosActionReason reason={restartReason(row)} />
               <LoadingButton
                 className="btn-sm btn-outline-secondary"
-                disabled={busy || row.restarting || unavailable}
+                disabled={busy || row.restarting || restartReason(row) !== null}
                 data-id={`hilos-daemon-agent-restart-${row.rowKey}`}
                 onClick={() => openRestart(row)}
               >
@@ -263,7 +270,7 @@ function Agents({
             <LoadingButton
               className="btn-primary"
               loading={busy}
-              disabled={restartUnavailable}
+              disabled={!canRestart}
               data-id="hilos-daemon-restart-confirm"
               onClick={() => void submitRestart()}
             >
