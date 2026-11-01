@@ -11,6 +11,7 @@ import {
   HilosLink,
   HilosMagicLinkPage,
   HilosOAuthCallbackPage,
+  HilosI18nPage,
   HilosI18nLanguagesPage,
   HilosI18nLanguagePage,
   HilosI18nLanguageNamesPage,
@@ -45,6 +46,7 @@ import {
 } from '../src/index.js'
 
 import type {
+  HilosI18nPageProps,
   HilosI18nLanguagesPageProps,
   HilosI18nLanguagePageProps,
   HilosI18nLanguageNamesPageProps,
@@ -87,6 +89,7 @@ it('exports the @hilos/react public surface', () => {
   expect(HilosAuthSurface).toBeTypeOf('function')
   expect(HilosMagicLinkPage).toBeTypeOf('function')
   expect(HilosOAuthCallbackPage).toBeTypeOf('function')
+  expect(HilosI18nPage).toBeTypeOf('function')
   expect(HilosI18nLanguagesPage).toBeTypeOf('function')
   expect(HilosI18nLanguagePage).toBeTypeOf('function')
   expect(HilosI18nLanguageNamesPage).toBeTypeOf('function')
@@ -98,7 +101,10 @@ it('exports the @hilos/react public surface', () => {
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.I18N_LANGUAGE_LOCALES)
 })
 
-it('exports the props of all seven context-bound i18n pages', () => {
+it('exports the props of all eight context-bound i18n pages', () => {
+  expectTypeOf<
+    Parameters<typeof HilosI18nPage>[0]
+  >().toEqualTypeOf<HilosI18nPageProps>()
   expectTypeOf<
     Parameters<typeof HilosI18nLanguagesPage>[0]
   >().toEqualTypeOf<HilosI18nLanguagesPageProps>()

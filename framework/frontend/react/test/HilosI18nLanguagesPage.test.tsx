@@ -47,6 +47,35 @@ function setup(rows = [english, own], viewer = false) {
 }
 
 describe('React languages list', () => {
+  it('names the section row Internationalization pages and keeps Languages current', () => {
+    const h = setup()
+    act(() => {
+      h.scope.data.set('pageLabel', 'Languages')
+      h.scope.data.set('pageHeadOwner', {
+        page: HilosPages.I18N,
+        label: 'Internationalization',
+        lead: 'Languages, countries, locales, and translation screens.',
+        icon: 'bi-translate',
+      })
+      h.scope.data.set('pageBreadcrumb', [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.I18N, label: 'Internationalization' },
+      ])
+      h.scope.data.set('pageTabs', [
+        { page: HilosPages.I18N, label: 'Overview' },
+        { page: HilosPages.I18N_LANGUAGES, label: 'Languages' },
+        { page: HilosPages.I18N_COUNTRIES, label: 'Countries' },
+      ])
+      h.scope.data.set('pageChildren', [])
+    })
+    const tabs = screen.getByRole('navigation', {
+      name: 'Internationalization pages',
+    })
+    expect(tabs.querySelector('[aria-current="page"]')?.textContent).toBe(
+      'Languages',
+    )
+  })
+
   it('uses the declared table and card projections, links codes, marks default/custom and ticks direction/state', () => {
     const h = setup()
     expect(h.view.container.querySelector('table')).not.toBeNull()

@@ -581,10 +581,11 @@ whole with its table (HIL-1475), the catalog tally callout above it
 table's own fan-out. It has an Add country main action with the own-country
 confirmation (HIL-1495). The callout and legend are the shared components of
 the languages and countries lists. React also serves all eight reference pages
-(HIL-1502); its section root remains the context-free default shell, with
-overview tiles and their context in HIL-1726. Angular serves the same eight
-pages (HIL-1503), with its section root also the context-free default shell;
-overview tiles and their context are HIL-1727.
+(HIL-1502); its section root draws two live tiles and requires
+`HilosI18nOverviewContext`. Tasks and ecommerce-shop mount thin wrappers, and
+`hilosAdminViews()` does not supply the React section-root key. Angular serves
+the same eight pages (HIL-1503), with its section root also the context-free
+default shell; overview tiles and their context are HIL-1727.
 
 | Page key | Route |
 |---|---|

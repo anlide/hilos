@@ -78,6 +78,9 @@ const pages: Record<string, PageView<ComponentType>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.I18N]: lazyPage(() =>
+    import('./views/Hilos/I18n/I18n.js').then((m) => m.default),
+  ),
   [HilosPages.I18N_LANGUAGES]: lazyPage(() =>
     import('./views/Hilos/I18n/Languages/Languages.js').then((m) => m.default),
   ),

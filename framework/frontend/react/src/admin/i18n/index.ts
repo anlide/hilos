@@ -1,4 +1,4 @@
-export { HilosI18nPage } from './HilosI18nPage.js'
+export { type HilosI18nPageProps, HilosI18nPage } from './HilosI18nPage.js'
 export { HilosI18nActionPage } from './details/HilosI18nActionPage.js'
 export {
   type HilosI18nCountryNamesPageProps,

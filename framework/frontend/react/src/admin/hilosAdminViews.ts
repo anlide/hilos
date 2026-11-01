@@ -13,7 +13,7 @@
 // HilosCommunicationsPage / HilosCommunicationsChannelPage / HilosChangeLogPage /
 // HilosChangeLogTablesPage / HilosChangeLogTablePage / HilosLogsPage /
 // HilosLogsKeysPage / HilosLogsWorkersPage / HilosLogsRotationsPage /
-// HilosLogsViewPage / HilosLogsSettingsPage) that require a project-supplied context,
+// HilosLogsViewPage / HilosLogsSettingsPage / HilosI18nPage) that require a project-supplied context,
 // so a project mounts them directly rather than through this default map.
 // HilosAnalyticsPage, HilosAnalyticsPeoplePage,
 // HilosAnalyticsBrowserSessionsPage, HilosAnalyticsBrowserSessionPage and
@@ -47,9 +47,9 @@ export function hilosAdminViews(): Record<string, PageView<ComponentType>> {
     [HilosPages.ROLES]: lazyPage(() =>
       import('@hilos/react/admin/roles').then((m) => m.HilosRolesPage),
     ),
-    [HilosPages.I18N]: lazyPage(() =>
-      import('@hilos/react/admin/i18n').then((m) => m.HilosI18nPage),
-    ),
+    // I18N Overview, I18N_LANGUAGES and I18N_COUNTRIES need project context:
+    // the overview reads page scopes, and the lists use a live connection and
+    // action lifecycle. Projects mount thin views that provide these contexts.
     [HilosPages.I18N_ENTITIES]: lazyPage(() =>
       import('@hilos/react/admin/i18n').then((m) => m.HilosI18nEntitiesPage),
     ),

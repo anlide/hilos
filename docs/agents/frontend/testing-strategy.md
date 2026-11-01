@@ -1185,6 +1185,13 @@ stay in the demo spec. Beside them, `settleRemovedRow` (`table.ts`) waits a
 removed row out through the table's Apply gate, and `countSentFrames`
 (`socket.ts`) counts the frames a page sends that carry a text, armed before the
 socket opens.
+`expectI18nOverview(expect, page, overview)` and `watchI18nOverview(page)`
+live in `framework/frontend/e2e/i18nOverview.ts` and are exported from
+`framework/frontend/e2e/index.ts`. The first compares both tiles with one
+wire summary; the second collects summaries from the `page_response` of the
+`hilos_i18n` root. Binance's and Tasks' overview specs call them:
+`demo/binance-btc-tracker/tests/e2e/tests/i18n-overview.spec.ts` and
+`demo/tasks/tests/e2e/tests/i18n-overview.spec.ts`.
 
 ### The Change Log section — names and checks
 

@@ -1,17 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
-  I18N_OVERVIEW_DATA,
-  i18nOverviewSchema,
-  type HilosI18nOverview,
-} from '../../../../../framework/frontend/core/src/admin/i18n/index.js'
-import {
   countSentFrames,
   dismissToasts,
+  expectI18nOverview,
   expectI18nPageHead,
   holdPageReply,
   watchClientDocument,
   watchI18nLivePages,
-  watchSocketFrames,
+  watchI18nOverview,
   typeInto,
   expectPageReady,
   gotoPage,
@@ -21,9 +17,9 @@ import {
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { switchLanguageOff } from '../../../../../framework/frontend/scripts/i18n.mjs'
 
-// The Vue overview's two tiles, first complete answer and live summary. Section
-// navigation in React and Angular stays in their list/card specs until their
-// overview tiles land in HIL-1726 and HIL-1727.
+// The Vue overview's tiles, first complete answer and live summary stay the
+// subject of this spec. The React overview is checked by its own spec in
+// tasks. Angular tiles are HIL-1727.
 
 // One administrator per worker attempt; every test still opens its own context.
 test.describe.configure({ mode: 'default' })
@@ -78,70 +74,6 @@ async function expectHead(page: Page, currentPage = ROOT): Promise<void> {
   })
 }
 
-/** Compare both complete tiles together, including their names and breakdown. */
-async function expectOverview(
-  page: Page,
-  overview: HilosI18nOverview,
-): Promise<void> {
-  const { languages, countries } = overview
-  await expect(
-    page.getByTestId(/^i18n-overview-(languages|countries)-count$/),
-  ).toHaveText([
-    `${languages.enabledCount} of ${languages.totalCount}`,
-    `${countries.enabledCount} of ${countries.totalCount}`,
-  ])
-  for (const [subject, counts, caption] of [
-    [
-      'languages',
-      languages,
-      `Enabled · default ${languages.defaultLanguageName}`,
-    ],
-    [
-      'countries',
-      countries,
-      `Enabled · ${countries.builtInCount} built-in, ${countries.ownCount} custom`,
-    ],
-  ] as const) {
-    const tile = page.getByTestId(`i18n-overview-${subject}`)
-    await expect(tile).toContainText(caption)
-    const count = tile.getByTestId(`i18n-overview-${subject}-count`)
-    await expect(count).toHaveRole('link')
-    await expect(count).toHaveAttribute('href', `${ROOT_PATH}/${subject}`)
-    await expect(count).toHaveAccessibleName(
-      `${subject === 'languages' ? 'Languages' : 'Countries'}: ${counts.enabledCount} of ${counts.totalCount} enabled`,
-    )
-  }
-  await expect(page.getByTestId('i18n-overview').getByRole('link')).toHaveCount(
-    2,
-  )
-}
-
-/** Observe every real root reply; a missing or partial overview stays evidence. */
-function watchOverview(page: Page) {
-  const replies: unknown[] = []
-  const observer = watchSocketFrames(page, ({ wire }) => {
-    // The socket is a JSON boundary. The schema below judges the whole overview,
-    // including a root reply that omitted it, rather than filtering bad ones out.
-    const message = wire as
-      | {
-          type?: unknown
-          data?: {
-            page?: unknown
-            payload?: { data?: Record<string, unknown> }
-          }
-        }
-      | undefined
-    if (message?.type === 'page_response' && message.data?.page === ROOT) {
-      replies.push(message.data.payload?.data?.[I18N_OVERVIEW_DATA])
-    }
-  })
-  return {
-    replies,
-    read: () => replies.map((reply) => i18nOverviewSchema.parse(reply)),
-    stop: () => observer.stop(),
-  }
-}
-
 test('waits for the first whole response without invented zero tiles', async ({
   page,
 }) => {
@@ -180,7 +112,7 @@ test('updates the whole overview in its existing window after language and custo
   context,
 }) => {
   await switchLanguageOff('de')
-  const frames = watchOverview(page)
+  const frames = watchI18nOverview(page)
   await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expectHead(page)
   await expect.poll(() => frames.replies.length).toBeGreaterThan(0)
@@ -189,7 +121,7 @@ test('updates the whole overview in its existing window after language and custo
   expect(initial.languages.totalCount).toBeGreaterThan(0)
   expect(initial.countries.totalCount).toBeGreaterThan(0)
   expect(initial.languages.defaultLanguageCode).toBe('en')
-  await expectOverview(page, initial)
+  await expectI18nOverview(expect, page, initial)
   const document = await watchClientDocument(page)
   const live = await watchI18nLivePages(expect, [page])
   const editor = await context.newPage()
@@ -212,7 +144,7 @@ test('updates the whole overview in its existing window after language and custo
         enabledCount: initial.languages.enabledCount + 1,
       },
     }
-    await expectOverview(page, enabled)
+    await expectI18nOverview(expect, page, enabled)
     expect(frames.read().at(-1)).toEqual(enabled)
     await live.unchanged()
     await document.unchanged()
@@ -225,7 +157,7 @@ test('updates the whole overview in its existing window after language and custo
     await expect(editor.getByTestId('language-card-enabled')).toHaveText(
       'Language switched off',
     )
-    await expectOverview(page, initial)
+    await expectI18nOverview(expect, page, initial)
     expect(frames.read().at(-1)).toEqual(initial)
     await live.unchanged()
     await document.unchanged()
@@ -254,7 +186,7 @@ test('updates the whole overview in its existing window after language and custo
         ownCount: initial.countries.ownCount + 1,
       },
     }
-    await expectOverview(page, added)
+    await expectI18nOverview(expect, page, added)
     expect(frames.read().at(-1)).toEqual(added)
     await live.unchanged()
     await document.unchanged()
@@ -272,7 +204,7 @@ test('updates the whole overview in its existing window after language and custo
     await expect(editor.getByTestId('hilos-toast-success')).toContainText(
       'Country qx deleted.',
     )
-    await expectOverview(page, initial)
+    await expectI18nOverview(expect, page, initial)
     expect(frames.read().at(-1)).toEqual(initial)
     // Other flushes may publish the same complete snapshot again. Every frame
     // still passes the schema; only the changes must follow these UI actions.
@@ -344,11 +276,11 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
   page,
   browser,
 }) => {
-  const frames = watchOverview(page)
+  const frames = watchI18nOverview(page)
   await gotoPage(expect, page, ROOT_PATH, PAGE_READY)
   await expect.poll(() => frames.replies.length).toBeGreaterThan(0)
   const initial = frames.read()[0]!
-  await expectOverview(page, initial)
+  await expectI18nOverview(expect, page, initial)
   await setAdminViewMode(true)
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const viewerContext = await browser.newContext({
@@ -366,7 +298,7 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
     )
     await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
     await expectHead(viewer)
-    await expectOverview(viewer, initial)
+    await expectI18nOverview(expect, viewer, initial)
     const document = await watchClientDocument(viewer)
     try {
       for (const tab of SECTION.slice(1)) {
@@ -380,7 +312,7 @@ test('a viewer reads the same whole summary and follows both tiles without a wri
         await submit(viewer.getByTestId(`hilos-page-tab-${ROOT}`))
         await expectPageReady(expect, viewer)
         await expectHead(viewer)
-        await expectOverview(viewer, initial)
+        await expectI18nOverview(expect, viewer, initial)
         await document.unchanged()
       }
     } finally {

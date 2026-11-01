@@ -40,7 +40,11 @@ export function HilosI18nCountriesPage({
   if (binding.context !== context)
     setBinding({ context, revision: binding.revision + 1 })
   return (
-    <HilosAdminPage page={HilosPages.I18N_COUNTRIES}>
+    <HilosAdminPage
+      page={HilosPages.I18N_COUNTRIES}
+      headKind="section"
+      tabsLabel="Internationalization pages"
+    >
       <CountriesList key={binding.revision} context={context} />
     </HilosAdminPage>
   )

@@ -411,6 +411,7 @@ export {
   selectI18nLocaleFormats,
   watchI18nLivePages,
 } from './i18n.js'
+export { expectI18nOverview, watchI18nOverview } from './i18nOverview.js'
 export {
   watchPageErrorFrames,
   type PageErrorFrameLog,

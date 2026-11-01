@@ -19,6 +19,7 @@ it('describes all defaults lazily and keeps contextual pages project-owned', () 
     HilosPages.SETTINGS,
     HilosPages.DAEMON_WEBSOCKETS,
     HilosPages.BACKUP,
+    HilosPages.I18N,
     HilosPages.COMMUNICATIONS,
     HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
     HilosPages.ANALYTICS,
@@ -49,6 +50,6 @@ it('loads every default as a real React component', async () => {
     hilosAdminViews(),
   ) as LazyPageView<ComponentType>[]
   const loaded = await Promise.all(views.map((view) => view.load()))
-  expect(loaded).toHaveLength(30)
+  expect(loaded).toHaveLength(29)
   for (const component of loaded) expect(component).toBeTypeOf('function')
 })

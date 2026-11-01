@@ -38,7 +38,11 @@ export function HilosI18nLanguagesPage({
   if (binding.context !== context)
     setBinding({ context, revision: binding.revision + 1 })
   return (
-    <HilosAdminPage page={HilosPages.I18N_LANGUAGES}>
+    <HilosAdminPage
+      page={HilosPages.I18N_LANGUAGES}
+      headKind="section"
+      tabsLabel="Internationalization pages"
+    >
       <LanguagesList key={binding.revision} context={context} />
     </HilosAdminPage>
   )
