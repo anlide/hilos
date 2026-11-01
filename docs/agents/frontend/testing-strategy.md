@@ -952,7 +952,8 @@ The parked test's host phases, cleanup and artifacts are described in
 [testing.md](../testing.md). `expectClusterOverview` and
 `expectClusterDaemonNodePage` wait for real node reports; the latter also accepts
 a reported empty roster. `expectDaemonWorkerAgent` expands visible worker rows
-as they arrive until the requested agent is visible. The parked scenario's
+as they arrive until the requested agent is visible. Given the node's command
+host, these checks bring its report to now (below). The parked scenario's
 `expectClusterLeaderPlacement` checks the `Leader-hosted` label, exactly one
 instance in the new leader's cell and `?` in the dead member's cell.
 `expectClusterEnvironmentMismatch` checks remote digests and unknown silent cells.
@@ -1010,6 +1011,61 @@ attaches the captured Cron frames to its report. A reported empty roster cannot
 satisfy this case, though it remains valid for other nodes. Do not add a daemon
 rule to produce a notice or wait for the rotation to fire or for an exact time;
 the positive notice and reserved-room cases stay in the core and SDK unit tests.
+
+**A node report and a cron run are brought to now, never waited for.** A Daemon
+page draws what its node agent last reported, and the node agent reports a
+change only after its change throttle, behind the master's own windows for the
+connection count and the process roster; a cron row moves only when its rule
+fires. A spec waits out none of it: it calls the commands of
+[Daemon node report and cron firing commands](../cli/commands.md#daemon-node-report-and-cron-firing-commands),
+and the stand keeps the production timers. There are two kinds of wait, and the
+cause decides which:
+
+- **The master already knows the cause** — the page is subscribed, a restart was
+  answered, a rule was fired. Call `reportDaemonNode()` once, then wait for the
+  frame or the screen it brings in the ordinary `expect` budget. It lives in
+  `framework/frontend/scripts/daemonMoments.mjs`, is exported from the toolbox
+  index, and returns `{ nodeId, reportedAt }`.
+- **The cause reaches the master by itself** — a browser opened or closed, a
+  restart clicked on a page, a worker stopped or created — so one report may
+  leave before the master knows of it. Call
+  `reportDaemonNodeUntil(expect, check)` from `daemonReport.ts`: it repeats
+  "report, then check" through `poll` of the `expect` it is given, in that
+  expect's timeout — the project's, or the one `expect.configure({ timeout })`
+  gave it — and lets the last failed check out. `toPass()` is not the form: it
+  reads neither timeout and repeats until the test's own deadline. `check` reads
+  what has already been delivered — frames, a journal, the screen — and waits by
+  itself no longer than the collector's fan-out window. A refused command is not
+  repeated: it comes out at once.
+
+Inside the toolbox, `reportDaemonNodeWhileFalse(predicate)` is the second kind
+for a helper that is handed a waiter instead of `expect`. `readMonopolisticWorker`
+wraps its Workers-window waits in it, so it brings the report by itself, and so
+does `readRestartWorker` through it. Binance's `withStatusAgentLoss`
+(`tests/e2e/helpers/status.ts`) holds both kinds: the agent's loss reaches the
+master by itself, so `run` is handed `untilReported(check)`, that repeat under
+the helper's paused `expect`, whose timeout ends within the pause window; once
+the restart is answered the helper sends one report for the waits on recovery.
+
+`fireCronRule('<owner>/<rule>')`, in the same module and imported from it
+directly (the toolbox index does not export it), runs one rule once now by its
+ordinary path — `daemon/<rule>` for a rule of the daemon,
+`<agentId>/<rule>` for an agent's — and returns `{ firedAt }`, the `lastRunAt`
+its row then carries; the rule's schedule does not move. Fire a rule whose own
+schedule will not move its row during the test: binance's Cron zone test fires
+the 15-minute `hilos_sessions_library/hilos_sessions_expire`, not the minute
+`hilos_account_deletion_sweep`, because the test checks that a zone change
+leaves the row alone and a minute rule moves its row every minute.
+
+On a cluster, name the node. The report and firing helpers and
+`readMonopolisticWorker` take `{ host }`, because the command asks the node
+whose socket it reaches, and the cluster runner's default `COMMAND_HOST` is a
+follower's container. So the cluster checks take the host of the node they read
+— `host`, or `hosts` by node id for `expectClusterOverview` and
+`expectClusterEnvironmentMismatch` — and a silent member is not asked. Without a
+host they bring no report and only wait: for one the caller has brought already,
+or for the node's own. The options no running spec passes yet, kept for the
+parked scenario, carry a `SCAFFOLD` note.
 
 ### Theme and Appearance — choices, rows and the built first frame
 

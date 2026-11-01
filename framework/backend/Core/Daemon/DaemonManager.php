@@ -55,6 +55,8 @@ use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\ApiEndpoint;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -73,6 +75,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
+use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Master\DaemonStatus;
@@ -243,6 +246,7 @@ use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
 
 /**
  * Abstract base for daemon processes. run() owns the main loop: it drains ready
@@ -278,6 +282,8 @@ abstract class DaemonManager extends BaseManager implements
     AbandonedCommandSink,
     AgentRestartDoor,
     TestOrmForgetDoor,
+    DaemonNodeReportTestDoor,
+    CronFireTestDoor,
     ConnectionLivenessTestDoor,
     PageAgentRestartDoor,
     AgentSignalSink,
@@ -526,6 +532,21 @@ abstract class DaemonManager extends BaseManager implements
     /** Connection-bound test-only ORM waits owned by this master. */
     private readonly TestOrmForgetRequests $testOrmForgetRequests;
 
+    /** Held test-only asks for this node's Daemon report, each waiting for a fresh process roster. */
+    private readonly DaemonNodeReportTestRequests $daemonNodeReportTestRequests;
+
+    /** Held test-only asks to fire an agent's cron rule now, each waiting for the worker running the agent. */
+    private readonly CronFireTestRequests $cronFireTestRequests;
+
+    /**
+     * @var float Start of the main-loop pass now running, as the loop read it.
+     *
+     * Kept for the one entrance that arrives inside a pass without its time: an ask for a node
+     * report is measured against the roster's send stamp, which is a pass start too, so the
+     * ask has to be stamped on the same clock to be answered by a roster of its own pass.
+     */
+    private float $loopPassStartedAt = 0.0;
+
     /** Browser waiters, separate from the restart records and console connections. */
     private readonly PageAgentRestarts $pageAgentRestarts;
 
@@ -640,6 +661,21 @@ abstract class DaemonManager extends BaseManager implements
             fn (): ?PeerServer => $this->findPeerServer(),
         );
         $this->testOrmForgetRequests = new TestOrmForgetRequests(
+            fn (): ?WorkerServer => $this->findWorkerServer(),
+            function (CommandReplyDTO $reply): void {
+                $this->findCommandServer()?->deliver($reply->correlationId, $reply);
+            },
+        );
+        $this->daemonNodeReportTestRequests = new DaemonNodeReportTestRequests(
+            $this->agentManagerDaemon,
+            $this,
+            $this->forceDaemonNodeFrames(...),
+            function (CommandReplyDTO $reply): void {
+                $this->findCommandServer()?->deliver($reply->correlationId, $reply);
+            },
+        );
+        $this->cronFireTestRequests = new CronFireTestRequests(
+            $this->agentManagerDaemon,
             fn (): ?WorkerServer => $this->findWorkerServer(),
             function (CommandReplyDTO $reply): void {
                 $this->findCommandServer()?->deliver($reply->correlationId, $reply);
@@ -992,6 +1028,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function runGuardedIteration(float $loopStartTime): void
     {
+        $this->loopPassStartedAt = $loopStartTime;
         try {
             // If shutdown requested but not started yet, initiate shutdown
             if ($this->shouldExit && $this->shutdownStartTime === null) {
@@ -1045,11 +1082,16 @@ abstract class DaemonManager extends BaseManager implements
             $this->tickProcessRoster($loopStartTime);
             $this->agentRestarts->tick($loopStartTime);
             $this->testOrmForgetRequests->tick($loopStartTime);
+            $this->daemonNodeReportTestRequests->tick($loopStartTime);
+            $this->cronFireTestRequests->tick($loopStartTime);
             $this->pageAgentRestarts->tick($loopStartTime);
             $this->tickCronFrame($loopStartTime);
             $this->tickStanding($loopStartTime);
             $this->tickHttpFrame($loopStartTime);
             $this->tickMeasurements($loopStartTime);
+            // After every master frame of this pass, so the node agent asked to report has them
+            // already: they leave over the same link to its worker ahead of the ask.
+            $this->daemonNodeReportTestRequests->dispatchDue($this->processRosterLastSentAt);
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
@@ -1180,6 +1222,22 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Has every master frame for this node's Daemon agent go out whole at its next tick.
+     *
+     * One set for both callers: the node agent that just started, and the test-only ask for a
+     * report now ({@see requestNodeReport()}); a frame forgotten in one of two copies would leave
+     * that caller's picture without it.
+     */
+    private function forceDaemonNodeFrames(): void
+    {
+        $this->processRosterForce = true;
+        $this->cronFrameForce = true;
+        $this->standingForce = true;
+        $this->httpFrameForce = true;
+        $this->measurementsForce = true;
+    }
+
+    /**
      * Advances one bounded roster build, discarding it whenever an input revision changes.
      *
      * @param float $now Start time of this main-loop pass
@@ -1293,6 +1351,7 @@ abstract class DaemonManager extends BaseManager implements
                 Logger::error('Daemon process roster build failed: ' . $problem);
                 $this->processRosterBuildProblem = $problem;
             }
+            $this->daemonNodeReportTestRequests->fail("The node could not build its process roster: {$problem}");
             $this->processRosterBuilding = false;
             $this->processRosterForce = false;
             $this->processRosterRetryAt = $now + self::PROCESS_ROSTER_REANNOUNCE_SECONDS;
@@ -1854,6 +1913,8 @@ abstract class DaemonManager extends BaseManager implements
             // that in a cluster may be answering from another node entirely.
             $server->setDaemonStatusSource($this);
             $server->setTestOrmForgetDoor($this);
+            $server->setDaemonNodeReportTestDoor($this);
+            $server->setCronFireTestDoor($this);
             $server->setAgentRestartDoor($this);
             $server->setUploadMemoryTestDoor($this);
             // And the test-only door to the sockets' liveness: the sockets and their clocks are
@@ -1883,6 +1944,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($server instanceof WorkerServer) {
             $server->setLiveConnectionRoster($this);
             $server->setTestOrmForgetDoor($this);
+            $server->setCronFireTestDoor($this);
             $server->setPageAgentRestartDoor($this);
         }
     }
@@ -1974,11 +2036,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         $this->agentRestarts->onAgentStarted($agentId);
         if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
-            $this->processRosterForce = true;
-            $this->cronFrameForce = true;
-            $this->standingForce = true;
-            $this->httpFrameForce = true;
-            $this->measurementsForce = true;
+            $this->forceDaemonNodeFrames();
         }
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
@@ -2149,6 +2207,8 @@ abstract class DaemonManager extends BaseManager implements
     public function onCommandAbandoned(string $correlationId): void
     {
         $this->testOrmForgetRequests->abandon($correlationId);
+        $this->daemonNodeReportTestRequests->abandon($correlationId);
+        $this->cronFireTestRequests->abandon($correlationId);
         $this->agentRestarts->onCommandAbandoned($correlationId);
         $this->dropParkedCommandSignals($correlationId);
     }
@@ -2172,6 +2232,64 @@ abstract class DaemonManager extends BaseManager implements
     public function ormForgetWorkerGone(WorkerClient $worker): void
     {
         $this->testOrmForgetRequests->workerGone($worker);
+    }
+
+    /**
+     * Admits a held ask for this node's Daemon report now, stamped with the pass it arrived in.
+     *
+     * The master frames are forced on admission, and the ask waits for a process roster sent in
+     * this pass or a later one ({@see DaemonNodeReportTestRequests}).
+     *
+     * @param CommandRequestDTO $request Held test-only request for a node report
+     */
+    public function requestNodeReport(CommandRequestDTO $request): void
+    {
+        $this->daemonNodeReportTestRequests->request($request, $this->loopPassStartedAt);
+    }
+
+    /**
+     * Fires one cron rule once now for a held test ask, by the path its schedule would take.
+     *
+     * A rule of this daemon (no agent named) fires here and the console is answered at once
+     * ({@see fireDaemonCronRuleForTest()}). A rule of an agent is armed by the worker running the
+     * agent, which answers after the agent's tick fired it ({@see CronFireTestRequests}).
+     *
+     * @param CommandRequestDTO $request Held test-only request naming the rule and its owner
+     */
+    public function requestCronFire(CommandRequestDTO $request): void
+    {
+        $agentId = $request->payload[CommandConstants::FIELD_AGENT_ID] ?? null;
+        $ruleName = $request->payload[CommandConstants::FIELD_RULE_NAME] ?? null;
+        if (!is_string($ruleName) || ($agentId !== null && !is_string($agentId))) {
+            $this->findCommandServer()?->deliver(
+                $request->correlationId,
+                CommandReplyDTO::error($request->correlationId, CronFireTestRequests::INVALID_PAYLOAD),
+            );
+            return;
+        }
+        if ($agentId !== null) {
+            $this->cronFireTestRequests->request($request, $agentId, $ruleName);
+            return;
+        }
+        $this->findCommandServer()?->deliver(
+            $request->correlationId,
+            $this->fireDaemonCronRuleForTest($request->correlationId, $ruleName),
+        );
+    }
+
+    /**
+     * @param WorkerClient $worker Connection that delivered the outcome
+     * @param WorkerTestCronFiredDTO $ack Parsed acknowledgement
+     */
+    public function acceptCronFired(WorkerClient $worker, WorkerTestCronFiredDTO $ack): void
+    {
+        $this->cronFireTestRequests->accept($worker, $ack);
+    }
+
+    /** @param WorkerClient $worker Closed worker connection */
+    public function cronFireWorkerGone(WorkerClient $worker): void
+    {
+        $this->cronFireTestRequests->workerGone($worker);
     }
 
     /** @param CommandRequestDTO $request Held operator request for an agent restart */
@@ -8993,6 +9111,9 @@ abstract class DaemonManager extends BaseManager implements
      * Optimized: first checks if minute changed, only then checks rules.
      * Cron jobs are only executed after workers are ready.
      * Checks happen at the start of each minute for precise timing.
+     *
+     * @throws EnvException When the project time zone cannot be read
+     * @throws InvalidArgumentException When a cron rule carries an empty name
      */
     private function checkCronJobs(): void
     {
@@ -9014,11 +9135,64 @@ abstract class DaemonManager extends BaseManager implements
 
         // Check each cron rule when minute changed
         foreach ($this->cronRules as $rule) {
-            if ($rule->shouldRun()) {
-                $this->onCron($rule);
-                $this->cronFrameDirty = true;
-            }
+            $this->runCronRuleIfDue($rule);
         }
+    }
+
+    /**
+     * Checks one cron rule and runs it when due: the step of {@see checkCronJobs()} for each rule.
+     *
+     * @param CronRule $rule Rule to check
+     * @throws EnvException When the project time zone cannot be read
+     * @throws InvalidArgumentException When the cron rule carries an empty name
+     */
+    private function runCronRuleIfDue(CronRule $rule): void
+    {
+        if ($rule->shouldRun()) {
+            $this->onCron($rule);
+            $this->cronFrameDirty = true;
+        }
+    }
+
+    /**
+     * Fires a rule of this daemon once now, for test:cron:fire, and words the console's answer.
+     *
+     * Refused where its schedule would not run either: a rule this daemon does not hold, a node
+     * that is not the leader, workers not ready yet. Otherwise the rule is armed and checked at
+     * once by the step {@see checkCronJobs()} takes for each rule, past that method's minute guard,
+     * which is the scheduler's and not the rule's: only the armed rule is checked, and its own
+     * guard keeps the schedule from firing it again in the same minute.
+     *
+     * @param string $correlationId Held console correlation
+     * @param string $ruleName Name of the daemon's rule to fire
+     * @return CommandReplyDTO The moment it fired, in epoch milliseconds, or the refusal
+     */
+    private function fireDaemonCronRuleForTest(string $correlationId, string $ruleName): CommandReplyDTO
+    {
+        if (!NonProductionGate::admitted()) {
+            return CommandReplyDTO::error($correlationId, TestOnlyCommandOnProductionException::message(CliCommands::CRON_TEST_FIRE));
+        }
+        $rule = $this->cronRules[$ruleName] ?? null;
+        if ($rule === null) {
+            return CommandReplyDTO::error($correlationId, "The daemon has no cron rule {$ruleName}.");
+        }
+        if (!$this->amLeader()) {
+            return CommandReplyDTO::error($correlationId, 'Daemon cron rules run on the leader; this node is not the leader.');
+        }
+        if (!$this->workersReady) {
+            return CommandReplyDTO::error($correlationId, "The daemon's workers are not ready yet.");
+        }
+
+        try {
+            $rule->fireOnNextCheck();
+            $this->runCronRuleIfDue($rule);
+        } catch (Throwable $failure) {
+            return CommandReplyDTO::error($correlationId, $failure->getMessage());
+        }
+
+        return CommandReplyDTO::ok($correlationId, [
+            CommandConstants::FIELD_FIRED_AT => $rule->lastFiredAt === null ? null : $rule->lastFiredAt * TimeConstants::MS_PER_SECOND,
+        ]);
     }
 
     /**

@@ -312,6 +312,75 @@ does not repeat. The e2e helper is `writeSettings` in
 `framework/frontend/e2e/deliverySettings.ts` wraps it for the delivery window specs and times
 each write on the runner's clock.
 
+### Daemon node report and cron firing commands
+
+Two commands bring the Daemon section's own waits to now, so a spec sits out neither a node
+agent's reporting interval nor a cron schedule (HIL-1857). Each is the per-feature shape of
+[Time-based features](#time-based-features-no-universal-clock): the CLI sends the request and
+prints the reply, and the daemon does the work — the master and its node agent for the report,
+the master or the worker running the agent for the rule.
+
+| Command | Site | Description |
+|---|---|---|
+| `test:daemon:node:report` | `daemon` | Have this node's Daemon agent publish its picture now, with fresh master frames |
+| `test:cron:fire` | `daemon` | Fire one cron rule once now by its ordinary path; the schedule does not move |
+
+```text
+test:daemon:node:report
+test:cron:fire <owner>/<rule>
+```
+
+`test:daemon:node:report` takes no argument. The master raises every frame it owes its node
+agent — the set the node agent is sent when it starts: processes, cron, standing, HTTP and
+measurements — waits until its process roster has gone out, and only then asks the node agent
+(`HILOS_DAEMON_NODE`) to publish its picture at once, past its change throttle; the next change
+waits the throttle counted from this report. So the answer says that the report has left and
+carries everything the master knew when it was asked; the collector's fan-out to open pages
+follows it. Where that report sits in the node's circulation is in
+[daemon-section.md](../architecture/daemon-section.md#the-circulation).
+
+`test:cron:fire` takes one argument, cut at its first `/`, so a rule name may carry `/` itself.
+The owner is `daemon` for a rule of the daemon itself, sent as no agent on the wire, or the id
+of the agent that holds the rule. A daemon rule is fired by the leader's master at once. An
+agent's rule is armed by the worker running the agent and fires at the agent's next check; the
+answer leaves after that tick's cron report, so the node agent is sent the new run before the
+console has its answer. Only a rule the agent returns from `cronRules()` — the set the Cron page
+shows — can be armed. Either way the rule runs by the path its schedule takes: the expression and
+the next scheduled run stay as they were, and the schedule does not fire it again in the same
+minute ([daemon-section.md](../architecture/daemon-section.md#the-schedule)).
+
+Both ask the node whose command socket they reach: the report is that node's; a daemon rule
+fires there only if that node is the leader, and an agent's rule only if the agent runs there.
+Each prints one line with the moment, in epoch milliseconds, and exits 0:
+
+```text
+Reported node <nodeId>: at epoch ms <reportedAt>
+Fired <owner>/<rule>: ran at epoch ms <firedAt>
+```
+
+An argument given to the report, or a firing argument with no owner or no rule, is refused by
+the command itself, with usage and exit 2. The daemon refuses the report with
+`No Daemon node report during protected mode.` while the node's freeze holds,
+`The Daemon node agent is not running on this node.`,
+`The node could not build its process roster: <problem>` and
+`The Daemon node agent did not report in time.` when the roster has not gone out within the
+agent's window (`CommandChannelWindows::AGENT_WAIT_SECONDS`). A daemon rule is refused where its
+schedule would not run it either: `The daemon has no cron rule <rule>.`,
+`Daemon cron rules run on the leader; this node is not the leader.` and
+`The daemon's workers are not ready yet.` An agent's rule is refused with
+`No agent <agentId> runs on this node.` by the master, `No agent <agentId> runs on this worker.`
+and `Agent <agentId> holds no cron rule <rule>.` by the worker, and with
+`Agent <agentId> did not check cron rule <rule> in time.`,
+`The worker running agent <agentId> went down before the rule fired.` or
+`Agent <agentId> stopped before the rule fired.` when it was armed but never fired. Every
+refusal exits 1.
+
+The e2e helpers are `reportDaemonNode` and `fireCronRule` in
+`framework/frontend/scripts/daemonMoments.mjs`, each taking an optional `{host}`; `fireCronRule`
+takes the same `<owner>/<rule>` key. Which one a spec calls, and when it repeats the report, is in
+[The Daemon section](../frontend/testing-strategy.md#the-daemon-section--names-and-checks) of the
+testing strategy.
+
 ### Time-based features: no universal clock
 
 There is deliberately **no injectable clock, `now()` override, or global time-mock** in the
@@ -330,7 +399,11 @@ timestamp into the past so the scheduled purge runs immediately. Write these per
 carefully; never generalise them into a shared time-travel utility. The Status heartbeat and
 its stale limit, and an announced maintenance start, have theirs, with a batch of settings
 writes beside them: see
-[Status moment and settings write commands](#status-moment-and-settings-write-commands).
+[Status moment and settings write commands](#status-moment-and-settings-write-commands). A
+Daemon node report and a cron rule's run have theirs in
+[Daemon node report and cron firing commands](#daemon-node-report-and-cron-firing-commands).
+Running a rule once is not a time machine: `test:cron:fire` serves every cron rule, yet it runs
+the one rule now by its ordinary path, and the schedule does not move.
 
 **The command also stamps the moved moment where its reader reads it.** A browser counts down
 from the moment the server sent it, and a pause shortened in advance kills the very state the
@@ -358,9 +431,8 @@ new production action". Waiting a real clock or shortening a stand's clock inste
 deviation the owner approves in the leaf's contract
 ([../../../agents.md](../../../agents.md), "Contract approval gate").
 
-Specs written before this rule still wait clocks: node reports, cron firings, and the OAuth
-agent's request deadline, waited out through a stand gateway delay or hold. They are debt, not a
-pattern to copy.
+Specs written before this rule still wait one clock: the OAuth agent's request deadline, waited
+out through a stand gateway delay or hold. It is debt, not a pattern to copy.
 
 ## Database-free commands
 
@@ -399,6 +471,9 @@ the agent that answers them, so the CLI process itself has nothing to read or wr
 `test:connection:liveness` (the master answers it out of memory, from the browser sockets
 it holds, and the flag it may cause is written by the owner of the connections collection,
 so the CLI process has nothing to read or write either — HIL-1860),
+`test:daemon:node:report` and `test:cron:fire` (the master, its node agent and the worker
+running an agent answer them, and whatever a fired rule writes it writes in the daemon, so the
+CLI process has nothing to read or write either — HIL-1857),
 `test:table:lag` (the master answers it out of memory and writes its own node's lag row,
 so the CLI process has nothing to read or write either — HIL-1020), `test:table:refuse`
 (the same shape: the master answers it out of memory and writes its own node's refusal row

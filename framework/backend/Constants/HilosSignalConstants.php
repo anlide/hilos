@@ -3263,6 +3263,9 @@ final class HilosSignalConstants
     /** Master's latest process and node measurement for its node agent. */
     public const string DAEMON_MASTER_MEASUREMENTS = 'daemon_master_measurements';
 
+    /** Test-only: a master asks its own Daemon node agent to report now, answering the held command (HIL-1857). */
+    public const string DAEMON_MASTER_REPORT_NOW = 'daemon_master_report_now';
+
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENTS = 'subscription_page_hilos_legal_documents';

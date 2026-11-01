@@ -12,6 +12,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
+use Hilos\Core\Daemon\CronFireTestRequests;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
@@ -342,6 +343,56 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 $this->heldCommand = $request->command;
                 $this->server->hold($request->correlationId, $this);
                 $door->requestOrmForget($request);
+                return;
+            }
+
+            if ($request->command === CliCommands::DAEMON_TEST_NODE_REPORT) {
+                // Test-only: held rather than parked for an agent, because the master forces its own
+                // frames first and asks its node agent only once the process roster has gone out.
+                $door = $this->server->daemonNodeReportTestDoor();
+                if ($door === null) {
+                    $this->writeBuffer .= CommandReplyDTO::error(
+                        $request->correlationId,
+                        'This daemon has no Daemon node report door',
+                    )->toJson() . "\n";
+                    continue;
+                }
+                $this->heldCorrelationId = $request->correlationId;
+                $this->heldSince = microtime(true);
+                $this->heldCommand = $request->command;
+                $this->server->hold($request->correlationId, $this);
+                $door->requestNodeReport($request);
+                return;
+            }
+
+            if ($request->command === CliCommands::CRON_TEST_FIRE) {
+                // Test-only: held rather than parked for an agent, because the master answers for its
+                // own rule at once and hands an agent's rule to the worker running the agent, whose
+                // answer comes after the tick that fired it.
+                $door = $this->server->cronFireTestDoor();
+                if ($door === null) {
+                    $this->writeBuffer .= CommandReplyDTO::error(
+                        $request->correlationId,
+                        'This daemon has no cron fire door',
+                    )->toJson() . "\n";
+                    continue;
+                }
+                $agentId = $request->payload[CommandConstants::FIELD_AGENT_ID] ?? null;
+                $ruleName = $request->payload[CommandConstants::FIELD_RULE_NAME] ?? null;
+                if (!array_key_exists(CommandConstants::FIELD_AGENT_ID, $request->payload)
+                    || ($agentId !== null && (!is_string($agentId) || $agentId === ''))
+                    || !is_string($ruleName) || $ruleName === '') {
+                    $this->writeBuffer .= CommandReplyDTO::error(
+                        $request->correlationId,
+                        CronFireTestRequests::INVALID_PAYLOAD,
+                    )->toJson() . "\n";
+                    continue;
+                }
+                $this->heldCorrelationId = $request->correlationId;
+                $this->heldSince = microtime(true);
+                $this->heldCommand = $request->command;
+                $this->server->hold($request->correlationId, $this);
+                $door->requestCronFire($request);
                 return;
             }
 

@@ -10,6 +10,8 @@ use Hilos\Core\Daemon\AgentRestartDoor;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ConnectionLivenessTestDoor;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\CronFireTestDoor;
+use Hilos\Core\Daemon\DaemonNodeReportTestDoor;
 use Hilos\Core\Daemon\DaemonStatusSource;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Environment\Exception\EnvException;
@@ -63,6 +65,12 @@ class CommandServer extends AbstractServer
 
     /** Master seam for the test-only ORM command. */
     private ?TestOrmForgetDoor $testOrmForgetDoor = null;
+
+    /** Master seam for the test-only command that has this node's Daemon agent report now. */
+    private ?DaemonNodeReportTestDoor $daemonNodeReportTestDoor = null;
+
+    /** Master seam for the test-only command that fires one cron rule once now. */
+    private ?CronFireTestDoor $cronFireTestDoor = null;
 
     private ?UploadMemoryTestDoor $uploadMemoryTestDoor = null;
 
@@ -292,6 +300,30 @@ class CommandServer extends AbstractServer
     public function testOrmForgetDoor(): ?TestOrmForgetDoor
     {
         return $this->testOrmForgetDoor;
+    }
+
+    /** @param DaemonNodeReportTestDoor $door Master handling the asks for a node report now */
+    public function setDaemonNodeReportTestDoor(DaemonNodeReportTestDoor $door): void
+    {
+        $this->daemonNodeReportTestDoor = $door;
+    }
+
+    /** @return ?DaemonNodeReportTestDoor Master entrance, or null before wiring */
+    public function daemonNodeReportTestDoor(): ?DaemonNodeReportTestDoor
+    {
+        return $this->daemonNodeReportTestDoor;
+    }
+
+    /** @param CronFireTestDoor $door Master handling the asks to fire a cron rule now */
+    public function setCronFireTestDoor(CronFireTestDoor $door): void
+    {
+        $this->cronFireTestDoor = $door;
+    }
+
+    /** @return ?CronFireTestDoor Master entrance, or null before wiring */
+    public function cronFireTestDoor(): ?CronFireTestDoor
+    {
+        return $this->cronFireTestDoor;
     }
 
     /** @param AgentRestartDoor $door Master handling the restart request */

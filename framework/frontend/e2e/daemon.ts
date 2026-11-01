@@ -5,6 +5,7 @@ import { fitsInScrollport } from './geometry.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 import { deliveryObject } from './deliveryFrames.js'
 import { nextClientPaint, watchClientDocument } from './lazyBundles.js'
+import { reportDaemonNode, reportDaemonNodeUntil } from './daemonReport.js'
 import type { DeliveryFrameLog } from './deliveryFrames.js'
 import type { watchTableSearch } from './tableFocus.js'
 import {
@@ -51,9 +52,6 @@ export const DAEMON_PLACEMENT_TOTALS = [
   'cluster-types',
   'unplaced',
 ] as const
-
-// A changed connection is coalesced, reported within 5 s and fanned out within 0.5 s.
-const DAEMON_SOURCE_TIMEOUT_MS = 10_000
 
 /** The outlet must have mounted the destination before its ready mark counts. */
 export async function expectDaemonPage(
@@ -834,11 +832,11 @@ export async function expectStandaloneWebsockets(
     'standalone',
     options,
   )
-  await expect
-    .poll(() => readDaemonWebsocketsCount(frames), {
-      timeout: DAEMON_SOURCE_TIMEOUT_MS,
-    })
-    .not.toBeNull()
+  // The count arrives with a node report; bring it to now instead of waiting
+  // for the node's own, and repeat until the fan-out has delivered a count.
+  await reportDaemonNodeUntil(expect, () => {
+    expect(readDaemonWebsocketsCount(frames)).not.toBeNull()
+  })
   const tile = page.getByTestId('hilos-daemon-websockets-tile')
   await expect(tile).toHaveCount(1)
   await expect(tile).toContainText('WebSocket connections now')
@@ -1002,15 +1000,57 @@ interface ClusterOverview {
   leaderId: string
   term: number
   silentNodeIds: readonly string[]
+  /**
+   * Command host by node id. Given, each live member's report is brought to now
+   * until the page draws that member as expected; a silent member is not asked.
+   * SCAFFOLD: no running spec passes it yet — the parked cluster Daemon
+   * scenario (F-023) still sits out the node's own report in its own budget.
+   */
+  hosts?: Readonly<Record<string, string>>
 }
 
 /** Wait for the complete cluster picture, including silent members after leader loss. */
 export async function expectClusterOverview(
   expect: Expect,
   page: Page,
-  { masters, slaves, leaderId, term, silentNodeIds }: ClusterOverview,
+  { masters, slaves, leaderId, term, silentNodeIds, hosts }: ClusterOverview,
 ): Promise<void> {
   await expectDaemonPage(expect, page, 'hilos_daemon')
+  const nodes = page.getByTestId('hilos-daemon-nodes')
+  const stateOf = (nodeId: string) =>
+    silentNodeIds.includes(nodeId)
+      ? 'silent'
+      : nodeId === leaderId
+        ? 'leader'
+        : masters.includes(nodeId)
+          ? 'standby'
+          : 'data'
+  if (hosts !== undefined) {
+    for (const nodeId of [...masters, ...slaves]) {
+      const state = stateOf(nodeId)
+      if (state === 'silent') continue
+      const host = hosts[nodeId]
+      if (!host) throw new Error(`No command host for cluster node ${nodeId}`)
+      // A member's state and roster travel with its own report, and a change of
+      // either reaches its master by itself: repeat that member's report until
+      // this page draws it as expected.
+      const node = nodes.getByTestId(`hilos-daemon-node-${nodeId}`)
+      await reportDaemonNodeUntil(
+        expect,
+        async () => {
+          expect(
+            await node.evaluateAll((links) =>
+              links.map((link) => link.getAttribute('data-state')),
+            ),
+          ).toEqual([state])
+          expect(
+            await node.getByTestId(/^hilos-daemon-worker-/).count(),
+          ).toBeGreaterThan(0)
+        },
+        { host },
+      )
+    }
+  }
   await expect(page.getByTestId('hilos-daemon-overview-waiting')).toHaveCount(0)
   for (const id of [
     'hilos-daemon-inspector',
@@ -1022,19 +1062,12 @@ export async function expectClusterOverview(
   ]) {
     await expect(page.getByTestId(id)).toHaveCount(0)
   }
-  const nodes = page.getByTestId('hilos-daemon-nodes')
   await expect(nodes.getByTestId(/^hilos-daemon-node-/)).toHaveCount(
     masters.length + slaves.length,
   )
   for (const nodeId of [...masters, ...slaves]) {
     const node = nodes.getByTestId(`hilos-daemon-node-${nodeId}`)
-    const state = silentNodeIds.includes(nodeId)
-      ? 'silent'
-      : nodeId === leaderId
-        ? 'leader'
-        : masters.includes(nodeId)
-          ? 'standby'
-          : 'data'
+    const state = stateOf(nodeId)
     await expect(node).toBeVisible()
     await expect(node).toHaveRole('link')
     await expect(node).toHaveAccessibleName(`Node ${nodeId}`)
@@ -1072,12 +1105,30 @@ export async function expectClusterOverview(
 export async function expectClusterDaemonNodePage(
   expect: Expect,
   page: Page,
-  { pageKey, nodeId }: { pageKey: string; nodeId: string },
+  {
+    pageKey,
+    nodeId,
+    host,
+  }: {
+    pageKey: string
+    nodeId: string
+    /**
+     * Command host of the addressed node. Given, its report is brought to now
+     * once the page is subscribed; Environment is answered by the node agent
+     * itself and asks for none.
+     * SCAFFOLD: no running spec passes it yet — the parked cluster Daemon
+     * scenario (F-023) still sits out the node's own report in its own budget.
+     */
+    host?: string
+  },
 ): Promise<void> {
   await expectDaemonPage(expect, page, pageKey)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText(nodeId)
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   const section = pageKey.replace('hilos_daemon_', '')
+  // The subscribed page is known to the master: one report brought to now
+  // carries the node's picture, and its fan-out is an ordinary wait.
+  if (host !== undefined && section !== 'env') await reportDaemonNode({ host })
   if (section !== 'env') {
     await expect(page.getByTestId('hilos-daemon-node-state')).toHaveText(
       /^(Leader|Standby|Data)$/,
@@ -1125,10 +1176,19 @@ export async function expectClusterDaemonNodeOverview(
     nodeId,
     state,
     role,
+    host,
   }: {
     nodeId: string
     state: 'Leader' | 'Standby' | 'Data' | 'Silent'
     role: 'master' | 'slave' | null
+    /**
+     * Command host of the addressed live node. Given, its report is brought to
+     * now until the latest delivered answer carries the expected state; a
+     * Silent node has no report to bring.
+     * SCAFFOLD: no running spec passes it yet — the parked cluster Daemon
+     * scenario (F-023) still sits out the node's own report in its own budget.
+     */
+    host?: string
   },
 ): Promise<void> {
   await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', nodeId)
@@ -1136,10 +1196,6 @@ export async function expectClusterDaemonNodeOverview(
   await expect(page.getByTestId('hilos-daemon-node-overview')).toHaveAttribute(
     'data-node-id',
     nodeId,
-  )
-  await expect(page.getByTestId('hilos-daemon-node-state')).toHaveText(state)
-  await expect(page.getByTestId('hilos-daemon-node-role')).toHaveText(
-    `Role: ${role ?? '—'}`,
   )
   const read = (frame: DaemonPageFrame) =>
     (
@@ -1156,6 +1212,27 @@ export async function expectClusterDaemonNodeOverview(
         }
       }
     ).data.payload.data
+  const latestState = () => {
+    const latest = read(frames.at(-1)!)
+    return { state: latest.node.state, online: latest.overview.online }
+  }
+  const reported = { state: state.toLowerCase(), online: state !== 'Silent' }
+  if (host !== undefined) {
+    // A changed state reaches the master by itself and travels with the node's
+    // report: repeat the report until the latest delivered answer carries it.
+    await reportDaemonNodeUntil(
+      expect,
+      () => {
+        expect(frames.length).toBeGreaterThan(0)
+        expect(latestState()).toEqual(reported)
+      },
+      { host },
+    )
+  }
+  await expect(page.getByTestId('hilos-daemon-node-state')).toHaveText(state)
+  await expect(page.getByTestId('hilos-daemon-node-role')).toHaveText(
+    `Role: ${role ?? '—'}`,
+  )
   await expect.poll(() => frames.length).toBeGreaterThan(0)
   const first = read(frames[0])
   expect(first.pageHeadOwner).toBeDefined()
@@ -1166,12 +1243,7 @@ export async function expectClusterDaemonNodeOverview(
     expect(data.overview.nodeId).toBe(nodeId)
     expect(data.node).toHaveProperty('role', role)
   }
-  await expect
-    .poll(() => {
-      const latest = read(frames.at(-1)!)
-      return { state: latest.node.state, online: latest.overview.online }
-    })
-    .toEqual({ state: state.toLowerCase(), online: state !== 'Silent' })
+  await expect.poll(latestState).toEqual(reported)
   await expect(page.getByTestId('hilos-page-head-action')).toHaveAttribute(
     'href',
     DAEMON_ROOT_PATH,
@@ -1278,7 +1350,21 @@ export async function expectClusterDaemonCronSchedule(
   expect: Expect,
   page: Page,
   frames: readonly DaemonPageFrame[],
-  { agentId, ruleName }: { agentId: string; ruleName: string },
+  {
+    agentId,
+    ruleName,
+    host,
+  }: {
+    agentId: string
+    ruleName: string
+    /**
+     * Command host of the node the page addresses. Given, its report is brought
+     * to now until the delivered schedule carries the rule.
+     * SCAFFOLD: no running spec passes it yet — the parked cluster Daemon
+     * scenario (F-023) still sits out the node's own report in its own budget.
+     */
+    host?: string
+  },
 ): Promise<void> {
   interface CronRow {
     rowKey: string
@@ -1322,7 +1408,7 @@ export async function expectClusterDaemonCronSchedule(
       daemonRows: rows.filter((row) => row.slots.rule.agentId === null),
     }
   }
-  await expect.poll(snapshot).toMatchObject({
+  const scheduled = {
     cronReported: true,
     rule: {
       agentId,
@@ -1331,7 +1417,21 @@ export async function expectClusterDaemonCronSchedule(
       idleReason: null,
     },
     daemonRows: [],
-  })
+  }
+  if (host === undefined) {
+    await expect.poll(snapshot).toMatchObject(scheduled)
+  } else {
+    // The agent's rule reaches its node agent by itself after the agent's tick,
+    // and travels on with the node's report: repeat the report until the
+    // delivered schedule carries it.
+    await reportDaemonNodeUntil(
+      expect,
+      () => {
+        expect(snapshot()).toMatchObject(scheduled)
+      },
+      { host },
+    )
+  }
   const rowKey = `${agentId}/${ruleName}`
   await expect(
     shownByTestId(page, `hilos-table-row-${rowKey}`).or(
@@ -1353,27 +1453,47 @@ export async function expectClusterDaemonCronSchedule(
   }
 }
 
-/** Expand incoming worker rows until the reported agent instance is visible. */
+/**
+ * Expand incoming worker rows until the reported agent instance is visible.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page A Workers page of the node that runs the agent.
+ * @param agentId The agent instance to find among the worker rows.
+ * @param options Where to bring the node report from.
+ * @param options.host Command host of the node the page addresses. Given, its
+ *   report is brought to now until the instance is shown: an agent started on a
+ *   worker reaches the master by itself and travels on with the node's report.
+ */
 export async function expectDaemonWorkerAgent(
   expect: Expect,
   page: Page,
   agentId: string,
+  { host }: { host?: string } = {},
 ): Promise<void> {
-  await expect
-    .poll(async () => {
-      const collapsed = await shownByTestId(page, /^hilos-table-expand-/)
-        .and(page.locator('[aria-expanded="false"]'))
-        .evaluateAll((buttons) =>
-          buttons.map((button) => button.getAttribute('data-id')),
-        )
-      for (const id of collapsed) {
-        if (id !== null) await shownByTestId(page, id).click()
-      }
-      return shownByTestId(page, /^hilos-daemon-worker-agents-/)
-        .filter({ hasText: agentId })
-        .isVisible()
-    })
-    .toBe(true)
+  const shown = async () => {
+    const collapsed = await shownByTestId(page, /^hilos-table-expand-/)
+      .and(page.locator('[aria-expanded="false"]'))
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('data-id')),
+      )
+    for (const id of collapsed) {
+      if (id !== null) await shownByTestId(page, id).click()
+    }
+    return shownByTestId(page, /^hilos-daemon-worker-agents-/)
+      .filter({ hasText: agentId })
+      .isVisible()
+  }
+  if (host === undefined) {
+    await expect.poll(shown).toBe(true)
+    return
+  }
+  await reportDaemonNodeUntil(
+    expect,
+    async () => {
+      expect(await shown()).toBe(true)
+    },
+    { host },
+  )
 }
 
 /** Check LEADER rows against a new owner while retaining the dead member's unknown column. */
@@ -1421,15 +1541,30 @@ export async function expectClusterEnvironmentMismatch(
     silentNodeId,
     frames,
     after = 0,
+    hosts,
   }: {
     key: string
     remoteNodeId: string
     silentNodeId?: string
     frames?: readonly DaemonMismatchFrame[]
     after?: number
+    /**
+     * Command host by node id of the members whose environments are compared.
+     * Given, each one's report is brought to now once the page is subscribed;
+     * the silent node is not asked.
+     */
+    hosts?: Readonly<Record<string, string>>
   },
 ): Promise<void> {
   await expectDaemonPage(expect, page, 'hilos_daemon_env_mismatch')
+  // The subscribed page is known to the master, and each fingerprint travels
+  // with its own node's report: one report per member brought to now, then the
+  // collector's fan-out is an ordinary wait.
+  await Promise.all(
+    Object.entries(hosts ?? {})
+      .filter(([nodeId]) => nodeId !== silentNodeId)
+      .map(([, host]) => reportDaemonNode({ host })),
+  )
   await expect(
     page.getByTestId('hilos-daemon-env-mismatch-waiting'),
   ).toHaveCount(0)
@@ -1523,22 +1658,19 @@ export async function expectDaemonNodeLive(
   frames: readonly DaemonPageFrame[],
   after: number,
 ): Promise<void> {
-  // The existing node source coalesces for 0.5 s, reports within 5 s and fans
-  // out within 0.5 s; use the same source bound as daemonSource.ts.
-  await expect
-    .poll(
-      () =>
-        frames.slice(after).some((frame) => {
-          const data = (
-            frame.wire as { data: { payload: Record<string, unknown> } }
-          ).data
-          return (
-            Object.keys(data.payload).length === 1 && 'data' in data.payload
-          )
-        }),
-      { timeout: 10_000 },
-    )
-    .toBe(true)
+  // The changed count reaches the master by itself, and a node report carries it
+  // on: bring the report to now and repeat until the collector's fan-out has
+  // delivered a data-only answer after `after`.
+  await reportDaemonNodeUntil(expect, () => {
+    expect(
+      frames.slice(after).some((frame) => {
+        const data = (
+          frame.wire as { data: { payload: Record<string, unknown> } }
+        ).data
+        return Object.keys(data.payload).length === 1 && 'data' in data.payload
+      }),
+    ).toBe(true)
+  })
   await expect(page.getByTestId('hilos-daemon-node-overview')).toHaveAttribute(
     'data-node-id',
     'standalone',
@@ -1693,9 +1825,11 @@ export async function expectDaemonPlacementSourceReady(
   page: Page,
 ): Promise<void> {
   await expectDaemonPage(expect, page, 'hilos_daemon_placement')
+  // The page is subscribed, so the master knows its reader: one report brought
+  // to now carries the first full picture, and its fan-out is an ordinary wait.
+  await reportDaemonNode()
   await expect(page.getByTestId('hilos-daemon-placement-view')).toContainText(
     'All placed',
-    { timeout: DAEMON_SOURCE_TIMEOUT_MS },
   )
   await expect(shownByTestId(page, DAEMON_PLACEMENT_CELL)).toBeVisible()
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
@@ -2038,10 +2172,12 @@ export async function watchDaemonPlacementLive(
       })
       .at(-1)!
   // Reload and previous tests can leave a last report from before sockets closed.
-  // Establish the real source baseline before the independent visitor opens.
-  await expect
-    .poll(() => connections(latest()), { timeout: DAEMON_SOURCE_TIMEOUT_MS })
-    .toBe(expectedConnections)
+  // Establish the real source baseline before the independent visitor opens; a
+  // closed socket reaches the master by itself, so the report repeats until the
+  // delivered count agrees.
+  await reportDaemonNodeUntil(expect, () => {
+    expect(connections(latest())).toBe(expectedConnections)
+  })
   const handles = await Promise.all(
     [
       'hilos-viewport-table',
@@ -2057,24 +2193,24 @@ export async function watchDaemonPlacementLive(
   const sent = log.sent.length
   return {
     async changed(): Promise<void> {
-      await expect
-        .poll(
-          () =>
-            log.packets
-              .slice(start)
-              .flatMap((packet) => packet.frames)
-              .some((frame) => {
-                const wire = deliveryObject(frame.wire)
-                if (
-                  wire.type !== 'page_response' ||
-                  deliveryObject(wire.data).page !== 'hilos_daemon_placement'
-                )
-                  return false
-                return connections(frame) === expectedConnections + 1
-              }),
-          { timeout: DAEMON_SOURCE_TIMEOUT_MS },
-        )
-        .toBe(true)
+      // The visitor's socket reaches the master by itself: repeat the report
+      // until the delivered count has grown by that one connection.
+      await reportDaemonNodeUntil(expect, () => {
+        expect(
+          log.packets
+            .slice(start)
+            .flatMap((packet) => packet.frames)
+            .some((frame) => {
+              const wire = deliveryObject(frame.wire)
+              if (
+                wire.type !== 'page_response' ||
+                deliveryObject(wire.data).page !== 'hilos_daemon_placement'
+              )
+                return false
+              return connections(frame) === expectedConnections + 1
+            }),
+        ).toBe(true)
+      })
       // Observe retention after socket dispatch and the SDK's render have run.
       await nextClientPaint(page)
       const frames = log.packets.slice(start).flatMap((packet) => packet.frames)

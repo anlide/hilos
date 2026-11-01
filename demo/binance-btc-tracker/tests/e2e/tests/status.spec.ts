@@ -387,9 +387,11 @@ test(
       await gotoPage(expect, other, STATUS_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
       await markDocument(other)
-      await withStatusAgentLoss(expect, workers, log, async () => {
+      await withStatusAgentLoss(expect, workers, log, async (untilReported) => {
         const expect = pausedExpect
-        await expect.poll(() => log.latest()?.incidents?.length).toBe(1)
+        await untilReported(() => {
+          expect(log.latest()?.incidents?.length).toBe(1)
+        })
         const incident = log.latest()!.incidents![0]
         savedIncident = incident
         expect(incident).toMatchObject({
@@ -585,9 +587,11 @@ test(
           maintenance: null,
           incidents: [],
         })
-      await withStatusAgentLoss(expect, workers, log, async () => {
+      await withStatusAgentLoss(expect, workers, log, async (untilReported) => {
         const expect = pausedExpect
-        await expect.poll(() => log.latest()?.incidents?.length).toBe(1)
+        await untilReported(() => {
+          expect(log.latest()?.incidents?.length).toBe(1)
+        })
         incidentId = log.latest()!.incidents![0].incidentId
         expect(log.latest()!.incidents![0]).toMatchObject({
           componentKey: STATUS_FAULT_COMPONENT,
@@ -736,9 +740,11 @@ test('a guest sees a real Checking candidate without adding it to public days or
     const labels = await days.evaluateAll((buttons) =>
       buttons.map((button) => button.getAttribute('aria-label')),
     )
-    await withStatusAgentLoss(expect, workers, admin, async () => {
+    await withStatusAgentLoss(expect, workers, admin, async (untilReported) => {
       const expect = pausedExpect
-      await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
+      await untilReported(() => {
+        expect(admin.latest()?.incidents?.length).toBe(1)
+      })
       const incident = admin.latest()!.incidents![0]
       const candidate = await expectPublicStatusPair(
         expect,
@@ -866,57 +872,65 @@ test(
       )
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
       await markDocument(guest)
-      await withStatusAgentLoss(expect, workers, admin, async () => {
-        const expect = pausedExpect
-        await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
-        const incident = admin.latest()!.incidents![0]
-        detectedAt = incident.detectedAt
-        await page
-          .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
-          .click()
-        await submitStatusIncident(
-          expect,
-          page,
-          admin,
-          'hilos_status_publish_now',
-          incident.incidentId,
-        )
-        await dismissToasts(page)
-        await page
-          .getByTestId(`hilos-status-add-update-${incident.incidentId}`)
-          .click()
-        const field = page.getByTestId('hilos-status-update-text')
-        await typeInto(field, text)
-        await submitStatusIncident(
-          expect,
-          page,
-          admin,
-          'hilos_status_add_update',
-          incident.incidentId,
-        )
-        const published = await expectPublicStatusPair(
-          expect,
-          guest,
-          log,
-          ({ status }) =>
-            status.outages.some(
-              (outage) =>
-                outage.detectedAt === detectedAt && outage.resolvedAt === null,
-            ),
-        )
-        const outage = published.status.outages.find(
-          (item) => item.detectedAt === detectedAt,
-        )!
-        expect(outage).toMatchObject({
-          componentKey: STATUS_FAULT_COMPONENT,
-          severity: 'major_outage',
-          publishedAt: incident.publishedAt ?? expect.any(Number),
-          resolvedAt: null,
-        })
-        await expect(
-          guest.getByTestId('public-status-component-state'),
-        ).toHaveText('Major outage')
-      })
+      await withStatusAgentLoss(
+        expect,
+        workers,
+        admin,
+        async (untilReported) => {
+          const expect = pausedExpect
+          await untilReported(() => {
+            expect(admin.latest()?.incidents?.length).toBe(1)
+          })
+          const incident = admin.latest()!.incidents![0]
+          detectedAt = incident.detectedAt
+          await page
+            .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
+            .click()
+          await submitStatusIncident(
+            expect,
+            page,
+            admin,
+            'hilos_status_publish_now',
+            incident.incidentId,
+          )
+          await dismissToasts(page)
+          await page
+            .getByTestId(`hilos-status-add-update-${incident.incidentId}`)
+            .click()
+          const field = page.getByTestId('hilos-status-update-text')
+          await typeInto(field, text)
+          await submitStatusIncident(
+            expect,
+            page,
+            admin,
+            'hilos_status_add_update',
+            incident.incidentId,
+          )
+          const published = await expectPublicStatusPair(
+            expect,
+            guest,
+            log,
+            ({ status }) =>
+              status.outages.some(
+                (outage) =>
+                  outage.detectedAt === detectedAt &&
+                  outage.resolvedAt === null,
+              ),
+          )
+          const outage = published.status.outages.find(
+            (item) => item.detectedAt === detectedAt,
+          )!
+          expect(outage).toMatchObject({
+            componentKey: STATUS_FAULT_COMPONENT,
+            severity: 'major_outage',
+            publishedAt: incident.publishedAt ?? expect.any(Number),
+            resolvedAt: null,
+          })
+          await expect(
+            guest.getByTestId('public-status-component-state'),
+          ).toHaveText('Major outage')
+        },
+      )
       // The restart reply precedes the collector's next whole node report, and
       // the owner rebuilds the pair only after it: settle the real recovery
       // first, so the guest's waits below cover only that rebuild.

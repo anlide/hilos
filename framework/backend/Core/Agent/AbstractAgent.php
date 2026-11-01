@@ -1236,6 +1236,27 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Arms the current rule of this name to fire at its next check, through {@see CronRule::fireOnNextCheck()}.
+     * The rule is looked up in {@see cronRules()}, the set the Cron page shows, so a rule left out
+     * of it is not armed.
+     *
+     * @internal Called by WorkerManager on the test:cron:fire path, never by application code.
+     * @param string $ruleName Name of the rule to arm
+     * @return CronRule|null The armed rule, or null when this agent holds no rule of that name
+     */
+    final public function armCronRuleForTest(string $ruleName): ?CronRule
+    {
+        foreach ($this->cronRules() as $rule) {
+            if ($rule->name === $ruleName) {
+                $rule->fireOnNextCheck();
+                return $rule;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * An agent checking its own CronRule in onTick() returns every rule it currently holds here.
      * A rule left out still runs, but cannot enter the node's Daemon picture. Rebuild or null the
      * property as usual; this hook reads the current set instead of manually registering changes.

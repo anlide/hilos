@@ -76,6 +76,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsSink;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
+use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 
 /**
@@ -284,6 +285,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 => $this->handleWorkerPageAccessReassessConnectionsMessage($workerDTO),
             $workerDTO instanceof WorkerTestOrmForgottenDTO && $this->isRegistered
                 => $this->workerServer->testOrmForgetDoor()?->acceptOrmForgotten($this, $workerDTO),
+            $workerDTO instanceof WorkerTestCronFiredDTO && $this->isRegistered
+                => $this->workerServer->cronFireTestDoor()?->acceptCronFired($this, $workerDTO),
             $workerDTO instanceof WorkerDbReHydratedDTO => $this->handleWorkerDbReHydratedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
@@ -1011,6 +1014,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     protected function onClose(): void
     {
         $this->workerServer->testOrmForgetDoor()?->ormForgetWorkerGone($this);
+        $this->workerServer->cronFireTestDoor()?->cronFireWorkerGone($this);
 
         // No upload receipt is released here: EOF does not prove the process has exited.
         // Delete transport payloads before WorkerServer records the queue-deletion fact.

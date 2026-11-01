@@ -336,9 +336,11 @@ test(
     try {
       await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
       await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
-      await withStatusAgentLoss(expect, workers, log, async () => {
+      await withStatusAgentLoss(expect, workers, log, async (untilReported) => {
         const expect = pausedExpect
-        await expect.poll(() => log.latest()?.incidents?.length).toBe(1)
+        await untilReported(() => {
+          expect(log.latest()?.incidents?.length).toBe(1)
+        })
         const id = log.latest()!.incidents![0].incidentId
         await expect(
           page.getByTestId(`hilos-status-incident-${id}`),

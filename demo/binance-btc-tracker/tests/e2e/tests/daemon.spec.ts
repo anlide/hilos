@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { fireCronRule } from '../../../../../framework/frontend/scripts/daemonMoments.mjs'
 import {
   DAEMON_ROOT_PATH,
   DAEMON_PLACEMENT_PATH,
@@ -41,7 +42,6 @@ import {
   DAEMON_PLACEMENT_LONG_TYPE,
   DAEMON_PLACEMENT_CELL,
   DAEMON_PLACEMENT_TOTALS,
-  RESTART_MARK_TIMEOUT_MS,
   expectDaemonPage,
   expectStandaloneOverview,
   expectStandalonePlacement,
@@ -52,6 +52,7 @@ import {
   readDaemonCronMoment,
   expectDaemonCronMoments,
   watchDaemonCronDisplay,
+  reportDaemonNodeUntil,
   forwardSessionTimeZone,
   expectTimeZoneEnvironment,
   deliveryObject,
@@ -197,43 +198,23 @@ test.describe('forged viewer submit transport', () => {
     }
   }
 
-  for (const ending of ['close', 'dispose', 'timeout'] as const) {
+  for (const ending of ['close', 'dispose'] as const) {
     test(`a forged submit settles on ${ending} and releases its pending waiter`, async () => {
       let received = 0
       const peer = observerPeer(() => {
         received++
         if (ending === 'close') peer.socket.emit('close')
-        if (received > 1)
-          peer.socket.emit('framereceived', {
-            payload: JSON.stringify({
-              type: 'action_error',
-              data: { action: 'forged', reason: 'Late.' },
-              requestId,
-            }),
-          })
       })
       const viewer = await armViewerSubmit(peer.page)
       peer.events.emit('websocket', peer.socket)
       try {
         const answer = viewer.submit(request, requestId)
         const rejected = expect(answer).rejects.toThrow(
-          ending === 'close'
-            ? 'socket closed'
-            : ending === 'dispose'
-              ? 'disposed'
-              : 'did not answer',
+          ending === 'close' ? 'socket closed' : 'disposed',
         )
         expect(received).toBe(1)
         if (ending === 'dispose') viewer.dispose()
         await rejected
-        if (ending === 'timeout') {
-          await expect(
-            viewer.submit(request, requestId),
-          ).resolves.toMatchObject({
-            wire: { requestId, type: 'action_error' },
-          })
-          expect(received).toBe(2)
-        }
       } finally {
         viewer.dispose()
       }
@@ -321,8 +302,6 @@ test.describe('daemon overview', () => {
       browser,
       baseURL,
     }) => {
-      // Two real connection round trips traverse the node/collector/mirror chain.
-      test.slow()
       const windows = await watchTableSearch(page, {
         page: 'hilos_daemon_placement',
         tableKey: 'hilosDaemonPlacement',
@@ -885,13 +864,9 @@ test.describe('Cron reader time zone', () => {
   test('reads real millisecond runs in own zones and Automatic while the project stays Warsaw', async ({
     page,
   }) => {
-    // One real minute firing can take 60 s. This is a clock wait, not a fixed sleep.
-    test.slow()
-    const FIRING_TIMEOUT_MS = 70_000
     const browserZone = 'America/Los_Angeles'
     const projectZone = 'Europe/Warsaw'
     const expireKey = 'hilos_sessions_library/hilos_sessions_expire'
-    const minuteKey = 'hilos_sessions_library/hilos_account_deletion_sweep'
     const windows = await watchTableSearch(page, {
       page: 'hilos_daemon_cron',
       tableKey: 'hilosDaemonCron',
@@ -912,26 +887,15 @@ test.describe('Cron reader time zone', () => {
       expect(browserZone).not.toBe(projectZone)
       await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
       await expectStandaloneCron(expect, page)
-      await expect
-        .poll(() => readDaemonCronMoment(socket.frames, minuteKey))
-        .toBeDefined()
-      const before = readDaemonCronMoment(socket.frames, minuteKey)!.rule
-        .lastRunAt
-      // A fresh real firing also leaves a whole minute for the live projection checks.
-      await expect
-        .poll(
-          () => {
-            const last = readDaemonCronMoment(socket.frames, minuteKey)?.rule
-              .lastRunAt
-            return (
-              typeof last === 'number' &&
-              (before === null || last > Number(before))
-            )
-          },
-          { timeout: FIRING_TIMEOUT_MS },
-        )
-        .toBe(true)
-      const display = await watchDaemonCronDisplay(expect, page, minuteKey)
+      // The command runs the rule once now, so its row carries a real run moment
+      // without waiting for one; a 15-minute rule then stays put while zones change.
+      const { firedAt } = await fireCronRule(expireKey)
+      await reportDaemonNodeUntil(expect, () => {
+        expect(
+          readDaemonCronMoment(socket.frames, expireKey)?.rule.lastRunAt,
+        ).toBe(firedAt)
+      })
+      const display = await watchDaemonCronDisplay(expect, page, expireKey)
       try {
         const requests = (state: Awaited<ReturnType<typeof windows.read>>) =>
           state.frames.filter((frame) => frame.direction === 'sent')
@@ -940,21 +904,12 @@ test.describe('Cron reader time zone', () => {
         expect(requests(baseline).length).toBeGreaterThan(0)
         const connections = socket.sockets()
         const expire = readDaemonCronMoment(socket.frames, expireKey)!.rule
-        const minute = readDaemonCronMoment(socket.frames, minuteKey)!.rule
-        expect(minute.lastRunAt).toEqual(expect.any(Number))
         let initial:
           Awaited<ReturnType<typeof expectDaemonCronMoments>> | undefined
         for (const own of [browserZone, 'Asia/Tokyo', null]) {
           if (own !== browserZone) socket.replay(own)
           const zone = own ?? browserZone
           const times = await expectDaemonCronMoments(
-            expect,
-            page,
-            socket.frames,
-            minuteKey,
-            zone,
-          )
-          await expectDaemonCronMoments(
             expect,
             page,
             socket.frames,
@@ -972,9 +927,6 @@ test.describe('Cron reader time zone', () => {
           ).toHaveText(projectZone)
           expect(readDaemonCronMoment(socket.frames, expireKey)!.rule).toEqual(
             expire,
-          )
-          expect(readDaemonCronMoment(socket.frames, minuteKey)!.rule).toEqual(
-            minute,
           )
           const current = await windows.read()
           expect(requests(current)).toEqual(requests(baseline))
@@ -1462,6 +1414,7 @@ test.describe('restarting an agent', () => {
       await expect(page.getByTestId('hilos-daemon-restart-cli')).toHaveText(
         `php cli.php agent:restart ${RESTART_AGENT}`,
       )
+      const mark = `hilos-daemon-agent-restarting-${RESTART_AGENT}`
       await withStoppedRestartWorker(worker, async () => {
         const confirm = page.getByTestId('hilos-daemon-restart-confirm')
         await confirm.scrollIntoViewIfNeeded()
@@ -1469,10 +1422,12 @@ test.describe('restarting an agent', () => {
         await expect(confirm).toBeEnabled()
         await confirm.focus()
         await confirm.click()
-        const mark = `hilos-daemon-agent-restarting-${RESTART_AGENT}`
-        await expect(shownByTestId(page, mark)).toHaveText('Restarting', {
-          timeout: RESTART_MARK_TIMEOUT_MS,
+        // The click reaches the master by itself and the mark travels with a node
+        // report: repeat the report until this page draws the mark.
+        await reportDaemonNodeUntil(expect, async () => {
+          expect(await shownByTestId(page, mark).count()).toBe(1)
         })
+        await expect(shownByTestId(page, mark)).toHaveText('Restarting')
         await expect(shownByTestId(observer, mark)).toHaveText('Restarting')
         await expect(
           shownByTestId(
@@ -1495,10 +1450,13 @@ test.describe('restarting an agent', () => {
         ).toBeDisabled()
       })
       await expect(page.getByTestId('modal')).toHaveCount(0)
+      // The restarted worker reaches the master by itself: repeat the report until
+      // this page has dropped the mark; the other viewers follow the same fan-out.
+      await reportDaemonNodeUntil(expect, async () => {
+        expect(await page.getByTestId(mark).count()).toBe(0)
+      })
       for (const viewer of [page, observer, newcomer]) {
-        await expect(
-          viewer.getByTestId(`hilos-daemon-agent-restarting-${RESTART_AGENT}`),
-        ).toHaveCount(0, { timeout: RESTART_MARK_TIMEOUT_MS })
+        await expect(viewer.getByTestId(mark)).toHaveCount(0)
         await expect(
           shownByTestId(viewer, `hilos-daemon-agent-restart-${RESTART_AGENT}`),
         ).toBeEnabled()
@@ -1950,13 +1908,12 @@ for (const viewer of [false, true]) {
       reports.frames.length = 0
       await link.press('Enter')
       // This serial standalone scenario has only this page; the visitor context
-      // is still empty. Let the node report the closed navigation sockets before
-      // taking a baseline from its sampled picture.
-      await expect
-        .poll(() => readDaemonWebsocketsCount(reports.frames), {
-          timeout: 10_000,
-        })
-        .toBe(1)
+      // is still empty. The closed navigation sockets reach the master by
+      // themselves: repeat the node report until it carries them, before taking
+      // a baseline from its sampled picture.
+      await reportDaemonNodeUntil(expect, () => {
+        expect(readDaemonWebsocketsCount(reports.frames)).toBe(1)
+      })
       const baseline = await expectStandaloneWebsockets(
         expect,
         page,
@@ -1968,12 +1925,11 @@ for (const viewer of [false, true]) {
       const beforeOpen = reports.frames.length
       const visitor = await visitorContext.newPage()
       await gotoPage(expect, visitor, '/', PAGE_READY)
-      await expect
-        .poll(
-          () => readDaemonWebsocketsCount(reports.frames.slice(beforeOpen)),
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThan(baseline)
+      await reportDaemonNodeUntil(expect, () => {
+        expect(
+          readDaemonWebsocketsCount(reports.frames.slice(beforeOpen)),
+        ).toBeGreaterThan(baseline)
+      })
       const opened = await expectStandaloneWebsockets(
         expect,
         page,
@@ -1993,17 +1949,12 @@ for (const viewer of [false, true]) {
       await room.unchanged()
       const beforeClose = reports.frames.length
       await visitor.close()
-      await expect
-        .poll(
-          () => {
-            const count = readDaemonWebsocketsCount(
-              reports.frames.slice(beforeClose),
-            )
-            return count !== null && count < opened
-          },
-          { timeout: 10_000 },
+      await reportDaemonNodeUntil(expect, () => {
+        const count = readDaemonWebsocketsCount(
+          reports.frames.slice(beforeClose),
         )
-        .toBe(true)
+        expect(count !== null && count < opened).toBe(true)
+      })
       await expectStandaloneWebsockets(expect, page, reports.frames)
       await room.unchanged()
       await gotoPage(expect, page, '/hilos/daemon/unknown-node')

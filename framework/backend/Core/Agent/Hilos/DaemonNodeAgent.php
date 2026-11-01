@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Cluster\NodeRole;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
@@ -28,6 +29,7 @@ use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterReportNowSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\LocalNodeEnvironment;
@@ -39,8 +41,15 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 
-/** Per-node owner of the Daemon picture, reporting it whole and without an acknowledgement. */
+/**
+ * Per-node owner of the Daemon picture, reporting it whole and without an acknowledgement.
+ *
+ * Reports follow the change throttle and the minute's repair ({@see reportIfDue()}); the one
+ * report out of turn is the test-only ask from this node's master, which the held command
+ * `test:daemon:node:report` raises and this agent answers.
+ */
 final class DaemonNodeAgent extends AbstractHilosAgent
 {
     use DirectoryWatchTrait;
@@ -54,6 +63,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         HilosSignalConstants::DAEMON_MASTER_HTTP => DaemonMasterHttpSignalData::class,
         HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS => DaemonMasterMeasurementsSignalData::class,
         HilosSignalConstants::DAEMON_AGENT_CRON => DaemonAgentCronSignalData::class,
+        HilosSignalConstants::DAEMON_MASTER_REPORT_NOW => DaemonMasterReportNowSignalData::class,
     ];
 
     private const float CHANGE_INTERVAL_SECONDS = 5.0;
@@ -116,9 +126,9 @@ final class DaemonNodeAgent extends AbstractHilosAgent
      * @param string $sender Full sender address
      * @param string $name Signal name
      * @throws InvalidAgentSignalPayloadException When the declared payload was not hydrated
-     * @throws AgentException When the frame is not from this node's master
+     * @throws AgentException When the frame or the report-now ask is not from this node's master
      * @throws AgentUnknownSignalException When the signal is not this agent's
-     * @throws InvalidArgumentException When the replacement names another node
+     * @throws InvalidArgumentException When the replacement names another node, or a report or its answer cannot be routed
      * @throws InvalidFormatException When a cron section cannot be built
      * @throws EnvException When the project time zone of a next run cannot be read
      */
@@ -204,6 +214,25 @@ final class DaemonNodeAgent extends AbstractHilosAgent
                 $this->agentCron = array_intersect_key($this->agentCron, $liveAgents);
                 $this->updatePicture($this->picture->withProcesses($roster->roster));
                 $this->rebuildCron(time());
+                return;
+
+            case HilosSignalConstants::DAEMON_MASTER_REPORT_NOW:
+                $ask = $data->data;
+                if (!$ask instanceof DaemonMasterReportNowSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonMasterReportNowSignalData::class, $ask);
+                }
+                if ($sender !== SignalSource::DAEMON || $ask->nodeId !== $this->picture->nodeId) {
+                    throw new AgentException('Daemon report-now ask must come from this node\'s master');
+                }
+                // Past the throttle on purpose: the master sent its frames ahead of this ask, so the
+                // picture published here already carries them, and the next change waits its full
+                // interval from this report like after any other.
+                $now = microtime(true);
+                $this->report($now);
+                $this->replyToCommand(CommandReplyDTO::ok($ask->correlationId, [
+                    CommandConstants::FIELD_NODE_ID => $this->picture->nodeId,
+                    CommandConstants::FIELD_REPORTED_AT => (int)round($now * TimeConstants::MS_PER_SECOND),
+                ]));
                 return;
 
             default:

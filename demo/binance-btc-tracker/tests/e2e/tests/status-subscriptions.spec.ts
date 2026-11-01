@@ -284,38 +284,45 @@ test(
         `Mailpit after removal ${Date.now()}`,
       ]
       for (const [cycle, marker] of markers.entries()) {
-        await withStatusAgentLoss(expect, workers, admin, async () => {
-          const duringLoss = expect.configure({
-            timeout: Math.min(
-              STATUS_EXPECT_TIMEOUT_MS,
-              RESTART_MARK_TIMEOUT_MS,
-            ),
-          })
-          await duringLoss.poll(() => admin.latest()?.incidents?.length).toBe(1)
-          const incidentId = admin.latest()!.incidents![0].incidentId
-          await page
-            .getByTestId(`hilos-status-publish-now-${incidentId}`)
-            .click()
-          await submitStatusIncident(
-            duringLoss,
-            page,
-            admin,
-            'hilos_status_publish_now',
-            incidentId,
-          )
-          await dismissToasts(page)
-          await page
-            .getByTestId(`hilos-status-add-update-${incidentId}`)
-            .click()
-          await typeInto(page.getByTestId('hilos-status-update-text'), marker)
-          await submitStatusIncident(
-            duringLoss,
-            page,
-            admin,
-            'hilos_status_add_update',
-            incidentId,
-          )
-        })
+        await withStatusAgentLoss(
+          expect,
+          workers,
+          admin,
+          async (untilReported) => {
+            const duringLoss = expect.configure({
+              timeout: Math.min(
+                STATUS_EXPECT_TIMEOUT_MS,
+                RESTART_MARK_TIMEOUT_MS,
+              ),
+            })
+            await untilReported(() => {
+              duringLoss(admin.latest()?.incidents?.length).toBe(1)
+            })
+            const incidentId = admin.latest()!.incidents![0].incidentId
+            await page
+              .getByTestId(`hilos-status-publish-now-${incidentId}`)
+              .click()
+            await submitStatusIncident(
+              duringLoss,
+              page,
+              admin,
+              'hilos_status_publish_now',
+              incidentId,
+            )
+            await dismissToasts(page)
+            await page
+              .getByTestId(`hilos-status-add-update-${incidentId}`)
+              .click()
+            await typeInto(page.getByTestId('hilos-status-update-text'), marker)
+            await submitStatusIncident(
+              duringLoss,
+              page,
+              admin,
+              'hilos_status_add_update',
+              incidentId,
+            )
+          },
+        )
         await expect(page.getByTestId('hilos-status-operational')).toBeVisible()
         const pair = await expectPublicStatusPair(
           expect,

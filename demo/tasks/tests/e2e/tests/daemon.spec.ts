@@ -40,7 +40,6 @@ import {
   DAEMON_PLACEMENT_LONG_TYPE,
   DAEMON_PLACEMENT_CELL,
   DAEMON_PLACEMENT_TOTALS,
-  RESTART_MARK_TIMEOUT_MS,
   expectDaemonPage,
   expectStandaloneOverview,
   expectStandalonePlacement,
@@ -51,6 +50,7 @@ import {
   readDaemonCronMoment,
   expectDaemonCronMoments,
   watchDaemonCronDisplay,
+  reportDaemonNodeUntil,
   forwardSessionTimeZone,
   expectTimeZoneEnvironment,
   deliveryObject,
@@ -1070,6 +1070,7 @@ test.describe('restarting an agent', () => {
       await expect(page.getByTestId('hilos-daemon-restart-cli')).toHaveText(
         `php cli.php agent:restart ${RESTART_AGENT}`,
       )
+      const mark = `hilos-daemon-agent-restarting-${RESTART_AGENT}`
       await withStoppedRestartWorker(worker, async () => {
         const confirm = page.getByTestId('hilos-daemon-restart-confirm')
         await confirm.scrollIntoViewIfNeeded()
@@ -1077,10 +1078,12 @@ test.describe('restarting an agent', () => {
         await expect(confirm).toBeEnabled()
         await confirm.focus()
         await confirm.click()
-        const mark = `hilos-daemon-agent-restarting-${RESTART_AGENT}`
-        await expect(shownByTestId(page, mark)).toHaveText('Restarting', {
-          timeout: RESTART_MARK_TIMEOUT_MS,
+        // The click reaches the master by itself and the mark travels with a node
+        // report: repeat the report until this page draws the mark.
+        await reportDaemonNodeUntil(expect, async () => {
+          expect(await shownByTestId(page, mark).count()).toBe(1)
         })
+        await expect(shownByTestId(page, mark)).toHaveText('Restarting')
         await expect(shownByTestId(observer, mark)).toHaveText('Restarting')
         await expect(
           shownByTestId(
@@ -1111,10 +1114,13 @@ test.describe('restarting an agent', () => {
         ).toBeDisabled()
       })
       await expect(page.getByTestId('modal')).toHaveCount(0)
+      // The restarted worker reaches the master by itself: repeat the report until
+      // this page has dropped the mark; the other viewers follow the same fan-out.
+      await reportDaemonNodeUntil(expect, async () => {
+        expect(await page.getByTestId(mark).count()).toBe(0)
+      })
       for (const viewer of [page, observer, newcomer]) {
-        await expect(
-          viewer.getByTestId(`hilos-daemon-agent-restarting-${RESTART_AGENT}`),
-        ).toHaveCount(0, { timeout: RESTART_MARK_TIMEOUT_MS })
+        await expect(viewer.getByTestId(mark)).toHaveCount(0)
         await expect(
           shownByTestId(viewer, `hilos-daemon-agent-restart-${RESTART_AGENT}`),
         ).toBeEnabled()
@@ -1487,13 +1493,12 @@ for (const viewer of [false, true]) {
       reports.frames.length = 0
       await link.press('Enter')
       // This serial standalone scenario has only this page; the visitor context
-      // is still empty. Let the node report the closed navigation sockets before
-      // taking a baseline from its sampled picture.
-      await expect
-        .poll(() => readDaemonWebsocketsCount(reports.frames), {
-          timeout: 10_000,
-        })
-        .toBe(1)
+      // is still empty. The closed navigation sockets reach the master by
+      // themselves: repeat the node report until it carries them, before taking
+      // a baseline from its sampled picture.
+      await reportDaemonNodeUntil(expect, () => {
+        expect(readDaemonWebsocketsCount(reports.frames)).toBe(1)
+      })
       const baseline = await expectStandaloneWebsockets(
         expect,
         page,
@@ -1505,12 +1510,11 @@ for (const viewer of [false, true]) {
       const beforeOpen = reports.frames.length
       const visitor = await visitorContext.newPage()
       await gotoPage(expect, visitor, '/', PAGE_READY)
-      await expect
-        .poll(
-          () => readDaemonWebsocketsCount(reports.frames.slice(beforeOpen)),
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThan(baseline)
+      await reportDaemonNodeUntil(expect, () => {
+        expect(
+          readDaemonWebsocketsCount(reports.frames.slice(beforeOpen)),
+        ).toBeGreaterThan(baseline)
+      })
       const opened = await expectStandaloneWebsockets(
         expect,
         page,
@@ -1530,17 +1534,12 @@ for (const viewer of [false, true]) {
       await room.unchanged()
       const beforeClose = reports.frames.length
       await visitor.close()
-      await expect
-        .poll(
-          () => {
-            const count = readDaemonWebsocketsCount(
-              reports.frames.slice(beforeClose),
-            )
-            return count !== null && count < opened
-          },
-          { timeout: 10_000 },
+      await reportDaemonNodeUntil(expect, () => {
+        const count = readDaemonWebsocketsCount(
+          reports.frames.slice(beforeClose),
         )
-        .toBe(true)
+        expect(count !== null && count < opened).toBe(true)
+      })
       await expectStandaloneWebsockets(expect, page, reports.frames)
       await room.unchanged()
       await gotoPage(expect, page, '/hilos/daemon/unknown-node')

@@ -6,6 +6,8 @@ import {
   RESTART_AGENT,
   RESTART_MARK_TIMEOUT_MS,
   readRestartWorker,
+  reportDaemonNode,
+  reportDaemonNodeUntil,
   withStoppedRestartWorker,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -55,12 +57,29 @@ const sendCommand = createCommandChannel({
  * A real stop/start through the master's ordinary restart path. The helper
  * never changes a roster, incident, clock or websocket frame. Its existing
  * settings-only pause guard and independent watchdog remain unchanged.
+ *
+ * The loss reaches the master by itself, after the restart is sent, and travels
+ * on with a node report. So `run` is handed `untilReported(check)`, which
+ * repeats a node report and the check in the pause window's budget; a caller
+ * wraps its first wait for the loss in it. The check reads what has already
+ * been delivered and does not wait by itself. Once the restart is answered the
+ * master knows the new worker, and the helper brings one node report for the
+ * callers' waits for recovery.
+ *
+ * That report resolves the loss within the collector's fan-out window, while
+ * the owner writes a pair over several of its ticks: a recovery that comes
+ * first replaces the open pair before any reader can get it. A caller that
+ * reads the open pair after the worker resumes hands that read as
+ * `recoverAfter`, and the report waits for it to settle.
  */
 export async function withStatusAgentLoss(
   expect: Expect,
   workers: Page,
   log: ReturnType<typeof watchStatusFrames>,
-  run: () => Promise<void>,
+  run: (
+    untilReported: (check: () => Promise<void> | void) => Promise<void>,
+  ) => Promise<void>,
+  recoverAfter?: Promise<unknown>,
 ): Promise<void> {
   const worker = await readRestartWorker(expect, workers)
   // Operational is meaningful only with known, fresh Status observations. The
@@ -102,7 +121,7 @@ export async function withStatusAgentLoss(
         () => undefined,
         (error: Error) => error,
       )
-      await run()
+      await run((check) => reportDaemonNodeUntil(pausedExpect, check))
       evidence.finalState = (
         await readFile(`/proc/${worker.pid}/status`, 'utf8')
       ).match(/^State:\s+(\S)/m)?.[1]
@@ -121,6 +140,12 @@ export async function withStatusAgentLoss(
   })
   if (failure !== undefined) throw failure
   if (restartError) throw restartError
+  // The caller's read of the open loss goes first; its failure is the
+  // caller's own to report, so only its settling is awaited here.
+  await Promise.allSettled([recoverAfter])
+  // The answered restart is known to the master: one node report carries the
+  // new worker to the callers' waits for recovery.
+  await reportDaemonNode()
 }
 
 /**

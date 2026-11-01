@@ -11,11 +11,11 @@ import { gotoPage, PAGE_READY } from './page.js'
 export const RESTART_AGENT = 'hilos_settings_library'
 const WATCHDOG_MS = 10_000
 
-// The roster needs up to 0.5s (DaemonManager::PROCESS_ROSTER_COALESCE_SECONDS),
-// then 5s (DaemonNodeAgent::CHANGE_INTERVAL_SECONDS) and 0.5s
-// (DaemonCollectorAgent::FANOUT_WINDOW_SECONDS), plus ticks and delivery.
-// Seeing the mark is still bounded by the WATCHDOG_MS pause: a missed mark
-// cannot turn green by waiting past the worker's resumption (HIL-1542).
+// The ceiling of a wait made while the restart worker is paused, not a reporting
+// interval: the Status helpers and specs that pause it cap their `expect` at the
+// smaller of this and their Status budget, so a check under the pause — the
+// "report, then check" repeat of reportDaemonNodeUntil among them — ends within
+// the WATCHDOG_MS pause instead of running on after the worker resumes.
 export const RESTART_MARK_TIMEOUT_MS = 10_000
 
 export type RestartWorker = MonopolisticWorker

@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { reportDaemonNodeWhileFalse } from './daemonReport.js'
 import { watchSocketFrames } from './socket.js'
 
 export interface MonopolisticWorker {
@@ -24,16 +25,24 @@ function record(value: unknown): Record<string, unknown> {
  * for its rows, and Next may first echo the page it leaves, so only a window
  * with rows that starts no earlier than the last one counts.
  *
+ * The worker may have just been created or restarted, and the Workers window
+ * carries what the node agent last reported. So while a wait finds nothing new,
+ * a node report brought to now stays in flight, instead of the wait sitting out
+ * the node's reporting interval.
+ *
  * @param page An administrator's page, before navigation to Workers.
  * @param agentId The one agent whose monopolistic worker is selected.
  * @param gotoWorkers Navigate through the consumer's existing page helper.
  * @param waitFor Wait for the predicate using the consumer's Playwright runtime.
+ * @param options Where to send the node report.
+ * @param options.host Explicit cluster host instead of COMMAND_HOST.
  */
 export async function readMonopolisticWorker(
   page: Page,
   agentId: string,
   gotoWorkers: (page: Page) => Promise<void>,
   waitFor: (predicate: () => boolean) => Promise<void>,
+  { host }: { host?: string } = {},
 ): Promise<MonopolisticWorker> {
   let worker: MonopolisticWorker | undefined
   // Rows of the set before the latest page shown, or -1 until one arrives.
@@ -94,11 +103,20 @@ export async function readMonopolisticWorker(
   })
   try {
     await gotoWorkers(page)
-    await waitFor(() => worker !== undefined || pageStart >= 0)
+    await waitFor(
+      reportDaemonNodeWhileFalse(() => worker !== undefined || pageStart >= 0, {
+        host,
+      }),
+    )
     while (worker === undefined && morePages) {
       const left = pageStart
       await page.getByTestId('hilos-table-next').click()
-      await waitFor(() => worker !== undefined || pageStart > left)
+      await waitFor(
+        reportDaemonNodeWhileFalse(
+          () => worker !== undefined || pageStart > left,
+          { host },
+        ),
+      )
     }
     if (worker === undefined)
       throw new Error('The selected monopolistic worker never arrived')

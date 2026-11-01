@@ -85,6 +85,8 @@ final class CommandClientTestOnlyGateTest extends TestCase
             [CliCommands::TABLE_TEST_LAG],
             [CliCommands::TABLE_TEST_REFUSE],
             [CliCommands::ADMIN_VIEW_MODE_TEST],
+            [CliCommands::DAEMON_TEST_NODE_REPORT],
+            [CliCommands::CRON_TEST_FIRE],
         ];
     }
 

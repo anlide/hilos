@@ -1,7 +1,23 @@
 import type { Expect, Page } from '@playwright/test'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { reportDaemonNode } from '../../scripts/daemonMoments.mjs'
 import { watchDaemonSource } from '../daemonSource.js'
 import type { watchTableSearch } from '../tableFocus.js'
+
+vi.mock('../../scripts/daemonMoments.mjs', () => ({
+  reportDaemonNode: vi.fn(),
+}))
+
+beforeEach(() => {
+  vi.mocked(reportDaemonNode).mockResolvedValue({
+    nodeId: 'standalone',
+    reportedAt: 1,
+  })
+})
+
+afterEach(() => {
+  vi.resetAllMocks()
+})
 
 const mark = { documentStarted: 1, socket: 1, cursor: 1 }
 const pageReply = (connections: number, windows?: unknown) => ({
@@ -72,6 +88,8 @@ async function journal(connectionCount = 1) {
       }
     },
   } as unknown as Page
+  // Judge a poll once: a wrong frame must fail at once, without spending a real
+  // Playwright budget in this unit test.
   const checks = Object.assign(
     (value: unknown, message?: string) => {
       if (value && typeof value === 'object' && 'node' in value)
@@ -82,6 +100,7 @@ async function journal(connectionCount = 1) {
     },
     {
       poll: (read: () => Promise<unknown>) => ({
+        toBe: async (wanted: unknown) => expect(await read()).toBe(wanted),
         toEqual: async (wanted: unknown) =>
           expect(await read()).toEqual(wanted),
       }),
@@ -112,6 +131,27 @@ describe('Daemon source proof classification', () => {
     b.receive(pageReply(2))
     await b.source.connectionOpened(b.checks, mark)
     expect(b.source.read()).toHaveLength(1)
+    expect(reportDaemonNode).toHaveBeenCalledOnce()
+  })
+
+  it('brings the node report to now before it reads the journal', async () => {
+    const b = await journal()
+    vi.mocked(reportDaemonNode).mockImplementationOnce(async () => {
+      b.receive(pageReply(2))
+      return { nodeId: 'standalone', reportedAt: 1 }
+    })
+    await b.source.connectionOpened(b.checks, mark)
+  })
+
+  it('lets a refused node report out instead of reading the journal', async () => {
+    const b = await journal()
+    b.receive(pageReply(2))
+    vi.mocked(reportDaemonNode).mockRejectedValueOnce(
+      new Error('No Daemon node report during protected mode.'),
+    )
+    await expect(b.source.connectionOpened(b.checks, mark)).rejects.toThrow(
+      'No Daemon node report during protected mode.',
+    )
   })
 
   it.each([

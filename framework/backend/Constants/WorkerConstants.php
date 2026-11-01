@@ -50,6 +50,12 @@ final class WorkerConstants
     /** Test-only ORM forget outcome on the same worker connection. */
     public const string MESSAGE_TEST_ORM_FORGOTTEN = 'test_orm_forgotten';
 
+    /** Test-only request to arm one cron rule of an agent for its next check, master to the agent's worker. */
+    public const string MESSAGE_TEST_CRON_FIRE = 'test_cron_fire';
+
+    /** Test-only outcome of an armed cron rule, sent after the tick it fired in, on the same worker connection. */
+    public const string MESSAGE_TEST_CRON_FIRED = 'test_cron_fired';
+
     /** Effective upload memory budget reported by a registered worker. */
     public const string MESSAGE_UPLOAD_SETTINGS = 'worker_upload_settings';
 

@@ -164,6 +164,22 @@ agent rows return on the agents' next changed or minute repair report, which can
 take up to a minute. The master forces its part as soon as the node agent
 starts.
 
+A test fires one rule once now with `test:cron:fire`
+([../cli/commands.md](../cli/commands.md#daemon-node-report-and-cron-firing-commands)),
+and the arming is one-shot: `CronRule::fireOnNextCheck()`, called on that path
+only, makes the rule's next `shouldRun()` fire it whatever the expression says,
+once, and mark the run as a scheduled run is marked. So `lastRunAt` is the
+armed run, the schedule does not fire the rule again in that minute, and the
+expression and `nextRunAt` stay as they were. A daemon rule is armed and checked
+on the leader's master at once, by the step `checkCronJobs()` takes for each
+rule. An agent's rule is armed by the worker running the agent, through
+`AbstractAgent::armCronRuleForTest()`, which looks only among the rules
+`cronRules()` returns, and fires when the agent next checks it in its tick. The
+worker learns that the armed check came from `CronRule::isArmedForNextCheck()`
+turning false, not from the run's moment, which a run earlier in the same second
+leaves unchanged, and answers after that tick's signals: the agent's cron report
+with the new run leaves first.
+
 ## The HTTP Counters
 
 The master counts each completed HTTP request on its registered method and path,
@@ -199,7 +215,13 @@ been reported. Neither waiting nor silence invents zero counts.
 
 Use the whole-copy chain in [logs.md](logs.md), *The Circulation*:
 
-- The node agent sends its whole picture on its own tick, unasked.
+- The node agent sends its whole picture on its own tick, unasked. The one
+  exception is the test-only `test:daemon:node:report`: the master raises every
+  frame it owes the node agent, waits until its process roster has gone out, and
+  then asks over `daemon_master_report_now`; the node agent publishes at once,
+  past its change throttle, and the next change waits the throttle counted from
+  that report ([../cli/commands.md](../cli/commands.md#daemon-node-report-and-cron-firing-commands)).
+  Nothing else asks for a report, and production refuses the command.
 - The collector is one cluster instance, placed by `POLICY`, not monopolistic.
   It holds one slot per node and replaces that slot with the whole incoming
   frame.

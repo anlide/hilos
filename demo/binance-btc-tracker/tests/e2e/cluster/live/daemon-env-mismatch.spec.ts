@@ -10,7 +10,13 @@ import {
   PAGE_READY,
   watchDaemonMismatchFrames,
 } from '../../../../../../framework/frontend/e2e/index.js'
-import { CLUSTER_FOLLOWER, newMasterPage } from '../../helpers/cluster.js'
+import {
+  CLUSTER_FOLLOWER,
+  CLUSTER_MASTERS,
+  CLUSTER_SLAVES,
+  newMasterPage,
+  nodeHost,
+} from '../../helpers/cluster.js'
 
 test('cluster env mismatch: one diverged table survives reload and reconnect', async ({
   browser,
@@ -30,10 +36,18 @@ test('cluster env mismatch: one diverged table survives reload and reconnect', a
     await armSocketDrop(page)
     await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos/daemon/env-mismatch', PAGE_READY)
+    // Every member's fingerprint travels with its own report: bring each one
+    // to now. After the reload and the reconnect the collector holds them all.
     await expectClusterEnvironmentMismatch(expect, page, {
       key,
       remoteNodeId,
       frames: log.frames,
+      hosts: Object.fromEntries(
+        [...CLUSTER_MASTERS, ...CLUSTER_SLAVES].map((node) => [
+          node,
+          nodeHost(node),
+        ]),
+      ),
     })
 
     const reload = log.frames.length

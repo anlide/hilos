@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\API\Router\HttpRouteTally;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -24,6 +25,7 @@ use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterReportNowSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
@@ -46,6 +48,7 @@ use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Hilos;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
@@ -119,6 +122,91 @@ final class DaemonNodePictureTest extends TestCase
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
         $agent->reportIfDue($now + 67.0);
         self::assertNotNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** The master's ask inside the change interval publishes at once and answers the held command. */
+    public function testReportNowInsideTheChangeIntervalReportsAndAnswersAtOnce(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $measurements = new DaemonMeasurements(100, null, null, null, null, null,
+            null, 0, 0, null, null, null);
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterMeasurementsSignalData('standalone', $measurements)),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
+        );
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $before = microtime(true);
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterReportNowSignalData('standalone', 'c-17')),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_REPORT_NOW,
+        );
+        $after = microtime(true);
+
+        $report = Hilos::$sr?->getNextQueuedSignal();
+        self::assertSame(HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT, $report?->signalName->getName());
+        $picture = $report?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $picture);
+        self::assertEquals($measurements, $picture->picture->measurements);
+
+        $reply = Hilos::$sr?->getNextQueuedSignal()?->data;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply);
+        self::assertSame('c-17', $reply->correlationId);
+        self::assertTrue($reply->isOk());
+        self::assertSame(
+            [CommandConstants::FIELD_NODE_ID, CommandConstants::FIELD_REPORTED_AT],
+            array_keys($reply->payload),
+        );
+        self::assertSame('standalone', $reply->payload[CommandConstants::FIELD_NODE_ID]);
+        $reportedAt = $reply->payload[CommandConstants::FIELD_REPORTED_AT];
+        self::assertIsInt($reportedAt);
+        self::assertGreaterThanOrEqual((int)floor($before * 1000), $reportedAt);
+        self::assertLessThanOrEqual((int)ceil($after * 1000), $reportedAt);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $at = $reportedAt / 1000;
+        $agent->updatePicture(new NodeDaemonPicture('standalone', NodeRole::Slave, 1));
+        $agent->reportIfDue($at + 4.0);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $agent->reportIfDue($at + 6.0);
+        $changed = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $changed);
+        self::assertSame(NodeRole::Slave, $changed->picture->role);
+    }
+
+    /** An ask from an agent, or naming another node, neither reports nor answers. */
+    public function testForeignReportNowIsRefused(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        foreach ([[SignalSource::AGENT, 'standalone'], [SignalSource::DAEMON, 'other-node']] as [$sender, $nodeId]) {
+            try {
+                $agent->onSignalAgent(
+                    new AgentSignalData(data: new DaemonMasterReportNowSignalData($nodeId, 'c-18')),
+                    $sender,
+                    HilosSignalConstants::DAEMON_MASTER_REPORT_NOW,
+                );
+                self::fail('A foreign report-now ask was accepted');
+            } catch (AgentException $refusal) {
+                self::assertSame('Daemon report-now ask must come from this node\'s master', $refusal->getMessage());
+            }
+        }
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testReportNowWireCarriesNodeAndCorrelation(): void
+    {
+        $ask = new DaemonMasterReportNowSignalData('n1', 'c-19');
+        self::assertSame(['nodeId' => 'n1', 'correlationId' => 'c-19'], $ask->toArray());
+        self::assertEquals($ask, DaemonMasterReportNowSignalData::fromArray($ask->toArray()));
+
+        $this->expectException(InvalidFormatException::class);
+        DaemonMasterReportNowSignalData::fromArray(['nodeId' => 'n1', 'correlationId' => '']);
     }
 
     /** A local measurement changes the next report and survives other section updates. */

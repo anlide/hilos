@@ -1,15 +1,12 @@
 import type { Expect, Page } from '@playwright/test'
 import type { watchTableSearch } from './tableFocus.js'
 import { deliveryObject } from './deliveryFrames.js'
+import { reportDaemonNodeUntil } from './daemonReport.js'
 
 type TableWatch = Awaited<ReturnType<typeof watchTableSearch>>
 type TableMark = Awaited<ReturnType<TableWatch['mark']>>
 type TableState = Awaited<ReturnType<TableWatch['read']>>
 type Frame = TableState['frames'][number]
-
-// The real chain coalesces a roster for 0.5s, publishes a node picture within
-// 5s, then fans it out within 0.5s. This bounds a changed fact, never a quiet tick.
-const SOURCE_TIMEOUT_MS = 10_000
 
 function connections(frame: Frame): number | undefined {
   const data = deliveryObject(deliveryObject(frame.wire.data).payload).data
@@ -91,61 +88,56 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
     let selected: Frame | undefined
     let condition: unknown
     try {
-      await expect
-        .poll(
-          async () => {
-            const state = await windows.read()
-            const frames = state.frames.filter(
-              (frame) =>
-                frame.socket === mark.socket && frame.index >= mark.cursor,
-            )
-            selected = frames.find(
-              (frame) =>
-                frame.direction === 'received' &&
-                !frame.failure &&
-                select(frame),
-            )
-            const replacements = frames.filter((frame) => {
-              const wire = frame.wire
-              const payload = deliveryObject(deliveryObject(wire.data).payload)
-              return (
-                (frame.direction === 'sent' &&
-                  [
-                    'page_subscribe',
-                    'page_update_subscription',
-                    'table_viewport',
-                  ].includes(String(wire.type))) ||
-                [
-                  'table_window',
-                  'table_window_refused',
-                  'table_viewport_frozen',
-                  'subscription_page_error',
-                  'page_resubscribe',
-                ].includes(String(wire.type)) ||
-                (wire.type === 'page_response' &&
-                  (payload.windows !== undefined ||
-                    payload.refusedWindows !== undefined))
-              )
-            })
-            const actual = {
-              sameDocument: state.documentStarted === mark.documentStarted,
-              sameSocket: state.socket === mark.socket,
-              open: state.readyState === 1,
-              changed: selected !== undefined,
-              replacements: replacements.map((frame) => frame.wire),
-            }
-            condition = { mark, initialConnections, selected, actual }
-            return actual
-          },
-          { timeout: SOURCE_TIMEOUT_MS },
+      // The fact reaches the master by itself — a browser opened or closed, an
+      // owner created — so the node report is brought to now and repeated until
+      // the journal holds the delivered change.
+      await reportDaemonNodeUntil(expect, async () => {
+        const state = await windows.read()
+        const frames = state.frames.filter(
+          (frame) => frame.socket === mark.socket && frame.index >= mark.cursor,
         )
-        .toEqual({
+        selected = frames.find(
+          (frame) =>
+            frame.direction === 'received' && !frame.failure && select(frame),
+        )
+        const replacements = frames.filter((frame) => {
+          const wire = frame.wire
+          const payload = deliveryObject(deliveryObject(wire.data).payload)
+          return (
+            (frame.direction === 'sent' &&
+              [
+                'page_subscribe',
+                'page_update_subscription',
+                'table_viewport',
+              ].includes(String(wire.type))) ||
+            [
+              'table_window',
+              'table_window_refused',
+              'table_viewport_frozen',
+              'subscription_page_error',
+              'page_resubscribe',
+            ].includes(String(wire.type)) ||
+            (wire.type === 'page_response' &&
+              (payload.windows !== undefined ||
+                payload.refusedWindows !== undefined))
+          )
+        })
+        const actual = {
+          sameDocument: state.documentStarted === mark.documentStarted,
+          sameSocket: state.socket === mark.socket,
+          open: state.readyState === 1,
+          changed: selected !== undefined,
+          replacements: replacements.map((frame) => frame.wire),
+        }
+        condition = { mark, initialConnections, selected, actual }
+        expect(actual).toEqual({
           sameDocument: true,
           sameSocket: true,
           open: true,
           changed: true,
           replacements: [],
         })
+      })
       const data = deliveryObject(selected!.wire.data)
       expect(data).not.toHaveProperty('requestId')
       expect(selected!.wire).not.toHaveProperty('requestId')
@@ -161,19 +153,15 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
     read: () => evidence,
     /** Establish the one live test client, including withdrawal of an earlier test's client. */
     async singleConnection(expect: Expect) {
-      await expect
-        .poll(
-          async () => {
-            initial = await windows.read()
-            initialConnections = latestConnections(initial)
-            return initialConnections
-          },
-          { timeout: SOURCE_TIMEOUT_MS },
-        )
-        .toEqual(1)
-      await expect
-        .poll(committedConnections, { timeout: SOURCE_TIMEOUT_MS })
-        .toEqual(1)
+      // An earlier test's client withdraws by itself; repeat the report until
+      // the delivered count is down to this one client.
+      await reportDaemonNodeUntil(expect, async () => {
+        initial = await windows.read()
+        initialConnections = latestConnections(initial)
+        expect(initialConnections).toEqual(1)
+      })
+      // The count is delivered; its render is the browser's own ordinary step.
+      await expect.poll(committedConnections).toEqual(1)
     },
     async connectionOpened(expect: Expect, mark: TableMark) {
       expect(typeof initialConnections).toBe('number')
@@ -184,9 +172,7 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
           frame.wire.type === 'page_response' &&
           connections(frame) === initialConnections! + 1,
       )
-      await expect
-        .poll(committedConnections, { timeout: SOURCE_TIMEOUT_MS })
-        .toEqual(initialConnections! + 1)
+      await expect.poll(committedConnections).toEqual(initialConnections! + 1)
       return frame
     },
     async connectionClosed(expect: Expect, mark: TableMark) {
@@ -198,9 +184,7 @@ export async function watchDaemonSource(windows: TableWatch, page: Page) {
           frame.wire.type === 'page_response' &&
           connections(frame) === initialConnections,
       )
-      await expect
-        .poll(committedConnections, { timeout: SOURCE_TIMEOUT_MS })
-        .toEqual(initialConnections)
+      await expect.poll(committedConnections).toEqual(initialConnections)
       return frame
     },
     async workerAdded(expect: Expect, mark: TableMark, userId: number) {

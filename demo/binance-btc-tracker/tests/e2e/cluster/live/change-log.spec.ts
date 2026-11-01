@@ -15,6 +15,7 @@ import {
   expectDaemonWorkerAgent,
   expectFreshChangeLogReceiptWriter,
   readMonopolisticWorker,
+  reportDaemonNode,
   watchSocketFrames,
   type MonopolisticWorker,
   type SocketFrame,
@@ -32,6 +33,7 @@ import {
   clusterInspect,
   expectLeaderUnmoved,
   newMasterPage,
+  nodeHost,
   onMaster,
   placementNode,
   type ClusterView,
@@ -123,6 +125,11 @@ test(
               deliveryObject(deliveryObject(frame.wire).data).payload,
             ).data
           })
+      // The subscribed page is known to the master: one leader report brought
+      // to now carries its roster, and the fan-out is an ordinary wait. The
+      // runner's default command host is the follower, so the leader is named.
+      const leaderHost = nodeHost(CLUSTER_LEADER)
+      await reportDaemonNode({ host: leaderHost })
       await expect
         .poll(() => processReports().at(-1))
         .toMatchObject({
@@ -140,7 +147,9 @@ test(
         pageKey: 'hilos_daemon_workers',
         nodeId: CLUSTER_LEADER,
       })
-      await expectDaemonWorkerAgent(expect, adminPage, 'hilos_change_log')
+      await expectDaemonWorkerAgent(expect, adminPage, 'hilos_change_log', {
+        host: leaderHost,
+      })
       bootstrap.agentReported = true
       bootstrap.worker = await readMonopolisticWorker(
         adminPage,
@@ -149,6 +158,7 @@ test(
         async (predicate) => {
           await expect.poll(predicate).toBe(true)
         },
+        { host: leaderHost },
       )
 
       personPage = await newMasterPage(browser, CLUSTER_FOLLOWER)

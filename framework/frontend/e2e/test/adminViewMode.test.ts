@@ -89,11 +89,11 @@ describe('armViewerSubmit', () => {
     expect(currentSocket.eventNames()).toEqual([])
   })
 
-  it('bounds a missing reply at five seconds', async () => {
+  it('bounds a missing reply at five seconds and leaves the late one to the next submit', async () => {
     vi.useFakeTimers()
     const f = browser()
     const viewer = await armViewerSubmit(f.page)
-    f.connect()
+    const socket = f.connect()
     const submission = viewer.submit('forged frame', 'wanted')
     const refused = expect(submission).rejects.toThrow(
       'The server did not answer the forged submit',
@@ -101,6 +101,16 @@ describe('armViewerSubmit', () => {
 
     await vi.advanceTimersByTimeAsync(5_000)
     await refused
+    f.evaluate.mockImplementationOnce(async () => {
+      reply(socket, 'wanted')
+    })
+    await expect(
+      viewer.submit('forged frame', 'wanted'),
+    ).resolves.toMatchObject({
+      socket: 1,
+      wire: { type: 'action_error', data: { requestId: 'wanted' } },
+    })
+    expect(f.evaluate).toHaveBeenCalledTimes(2)
     viewer.dispose()
     expect(vi.getTimerCount()).toBe(0)
   })

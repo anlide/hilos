@@ -159,27 +159,45 @@ test('prepare an accepted public archive through real loss, publication and reso
     // must not keep the worker stopped until its independent watchdog fires.
     // The open pair's wait starts at that success, not before the loss: the
     // node's report and the owner's rebuild of the pair are two chains, and
-    // one budget covers one of them. Settle both tasks before cleanup,
-    // including when either assertion fails.
+    // one budget covers one of them. The helper's recovery report waits for
+    // that read, or it would replace the open pair before the owner has
+    // written it. Settle both tasks before cleanup, including when either
+    // assertion fails.
+    const openPair = publicationAccepted.then(() =>
+      expectPublicStatusPair(expect, guest, log, ({ status }) =>
+        status.outages.some(
+          (outage) =>
+            outage.detectedAt === detectedAt && outage.resolvedAt === null,
+        ),
+      ),
+    )
     const publication = await Promise.allSettled([
-      withStatusAgentLoss(expect, workers, admin, async () => {
-        const expect = pausedExpect
-        await expect.poll(() => admin.latest()?.incidents?.length).toBe(1)
-        const incident = admin.latest()!.incidents![0]
-        detectedAt = incident.detectedAt
-        await page
-          .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
-          .click()
-        await submitStatusIncident(
-          expect,
-          page,
-          admin,
-          'hilos_status_publish_now',
-          incident.incidentId,
-        )
-        preparation.publicationAcceptedAt = Date.now()
-        acceptPublication()
-      }).then(
+      withStatusAgentLoss(
+        expect,
+        workers,
+        admin,
+        async (untilReported) => {
+          const expect = pausedExpect
+          await untilReported(() => {
+            expect(admin.latest()?.incidents?.length).toBe(1)
+          })
+          const incident = admin.latest()!.incidents![0]
+          detectedAt = incident.detectedAt
+          await page
+            .getByTestId(`hilos-status-publish-now-${incident.incidentId}`)
+            .click()
+          await submitStatusIncident(
+            expect,
+            page,
+            admin,
+            'hilos_status_publish_now',
+            incident.incidentId,
+          )
+          preparation.publicationAcceptedAt = Date.now()
+          acceptPublication()
+        },
+        openPair,
+      ).then(
         () => {
           preparation.restartSettledAt = performance.now()
         },
@@ -188,14 +206,7 @@ test('prepare an accepted public archive through real loss, publication and reso
           throw failure
         },
       ),
-      publicationAccepted.then(() =>
-        expectPublicStatusPair(expect, guest, log, ({ status }) =>
-          status.outages.some(
-            (outage) =>
-              outage.detectedAt === detectedAt && outage.resolvedAt === null,
-          ),
-        ),
-      ),
+      openPair,
     ])
     for (const result of publication) {
       if (result.status === 'rejected') throw result.reason

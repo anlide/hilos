@@ -13,6 +13,7 @@ import {
   expectDaemonPlacementRequests,
   expectDaemonPlacementOwnership,
   readDaemonSectionOverview,
+  reportDaemonNode,
   watchDeliveryFrames,
   gotoPage,
   PAGE_READY,
@@ -24,6 +25,7 @@ import {
   clusterInspect,
   expectLeaderUnmoved,
   newMasterPage,
+  nodeHost,
 } from '../../helpers/cluster.js'
 
 // Live browser proof of the section on a follower, independent of the parked
@@ -53,6 +55,10 @@ test('daemon section navigation: follower entry points name the live leader and 
             deliveryObject(wire.data).page === 'hilos_daemon'
           )
         })
+    // The entry points are the leader's own listeners and travel with its
+    // report; the subscribed page is known to the master, so one leader report
+    // brought to now is followed by an ordinary wait for its fan-out.
+    await reportDaemonNode({ host: nodeHost(CLUSTER_LEADER) })
     await expect
       .poll(() => {
         const last = rootReplies().at(-1)

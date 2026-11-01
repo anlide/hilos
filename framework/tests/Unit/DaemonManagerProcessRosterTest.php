@@ -17,6 +17,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -31,11 +32,15 @@ use ReflectionProperty;
 /** The master builds only when due and never sends from a frozen node. */
 final class DaemonManagerProcessRosterTest extends TestCase
 {
+    private const array FORCE_FLAGS = ['processRosterForce', 'cronFrameForce', 'standingForce', 'httpFrameForce', 'measurementsForce'];
+
     /** @var class-string<Hilos> */
     private string $previousAppClass;
     private ?RtContext $previousRt;
     private ?ClusterContext $previousCluster;
     private ?SignalRouter $previousRouter;
+    private ?EnvAccessor $previousEnv;
+    private string|false $previousAppEnv;
 
     protected function setUp(): void
     {
@@ -43,6 +48,8 @@ final class DaemonManagerProcessRosterTest extends TestCase
         $this->previousRt = Hilos::$rt;
         $this->previousCluster = Hilos::$cluster;
         $this->previousRouter = Hilos::$sr;
+        $this->previousEnv = Hilos::$env;
+        $this->previousAppEnv = getenv('APP_ENV');
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, ProcessRosterManagerTestHilos::class);
         Hilos::$rt = null;
         Hilos::$cluster = null;
@@ -54,6 +61,8 @@ final class DaemonManagerProcessRosterTest extends TestCase
         Hilos::$rt = $this->previousRt;
         Hilos::$cluster = $this->previousCluster;
         Hilos::$sr = $this->previousRouter;
+        Hilos::$env = $this->previousEnv;
+        putenv($this->previousAppEnv === false ? 'APP_ENV' : 'APP_ENV=' . $this->previousAppEnv);
         parent::tearDown();
     }
 
@@ -144,6 +153,34 @@ final class DaemonManagerProcessRosterTest extends TestCase
         $manager->tickRosterAt(102.0);
         $manager->tickRosterAt(102.6);
         self::assertSame([], $server->delivered[2]->signal->data->data->roster->restartingAgents);
+    }
+
+    /** The test-only report door forces exactly the frames a node agent's start forces. */
+    public function testTheReportDoorForcesTheSameFramesAsANodeAgentStart(): void
+    {
+        putenv('APP_ENV=test');
+        Hilos::$env = new EnvAccessor();
+        $started = new ProcessRosterTestDaemonManager();
+        $asked = new ProcessRosterTestDaemonManager();
+        self::assertSame([false, false, false, false, false], $this->forceFlags($asked));
+
+        $started->onAgentStarted(HilosAgentType::HILOS_DAEMON_NODE);
+        $asked->requestNodeReport(new CommandRequestDTO('c1', CliCommands::DAEMON_TEST_NODE_REPORT, []));
+
+        self::assertSame([true, true, true, true, true], $this->forceFlags($started));
+        self::assertSame($this->forceFlags($started), $this->forceFlags($asked));
+    }
+
+    /**
+     * @param DaemonManager $manager Master under test
+     * @return list<bool> Its frame force flags, in a fixed order
+     */
+    private function forceFlags(DaemonManager $manager): array
+    {
+        return array_map(
+            static fn (string $flag): bool => new ReflectionProperty(DaemonManager::class, $flag)->getValue($manager),
+            self::FORCE_FLAGS,
+        );
     }
 }
 

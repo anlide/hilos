@@ -199,6 +199,12 @@ final class CliCommands
     /** @var string Command: Bring a liveness moment of one browser's sockets on this node to now (test-only) */
     public const string CONNECTION_TEST_LIVENESS = 'test:connection:liveness';
 
+    /** @var string Command: Publish this node's Daemon picture now, with fresh master frames (test-only) */
+    public const string DAEMON_TEST_NODE_REPORT = 'test:daemon:node:report';
+
+    /** @var string Command: Fire one cron rule once now by its ordinary path; the schedule does not move (test-only) */
+    public const string CRON_TEST_FIRE = 'test:cron:fire';
+
     /** @var string Command: Hold table windows and facet counts back by an artificial lag (test-only) */
     public const string TABLE_TEST_LAG = 'test:table:lag';
 

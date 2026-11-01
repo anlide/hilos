@@ -122,8 +122,17 @@ final class CommandConstants
     /** @var string Request and reply payload key: node hosting an agent */
     public const string FIELD_NODE_ID = 'nodeId';
 
-    /** @var string Reply payload key: restarted agent id */
+    /** @var string Reply payload key: moment a node agent published its picture, in epoch milliseconds */
+    public const string FIELD_REPORTED_AT = 'reportedAt';
+
+    /** @var string Request and reply payload key: agent a restart answers with, or whose rule a test firing names */
     public const string FIELD_AGENT_ID = 'agentId';
+
+    /** @var string Request payload key: name of the cron rule a test firing names */
+    public const string FIELD_RULE_NAME = 'ruleName';
+
+    /** @var string Reply payload key: moment a cron rule fired, in epoch milliseconds */
+    public const string FIELD_FIRED_AT = 'firedAt';
 
     /**
      * The prefix every test-only command name carries on the wire.

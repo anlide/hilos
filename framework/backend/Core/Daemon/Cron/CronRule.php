@@ -20,6 +20,9 @@ use Hilos\Hilos;
  * Every expression is read on the project clock, HILOS_PROJECT_TIME_ZONE, and never on the
  * process zone, which is UTC: "0 3 * * *" in Europe/Warsaw fires at 02:00Z in winter and at
  * 01:00Z in summer. The zone is read per calculation and kept nowhere.
+ *
+ * A test command may arm a rule once with {@see fireOnNextCheck()}: the next check fires it
+ * whatever the expression says, and the schedule stays as it was.
  */
 class CronRule
 {
@@ -82,6 +85,9 @@ class CronRule
 
     /** Unix time of the last matching run, distinct from the seeded minute in $lastRun. */
     public ?int $lastFiredAt = null;
+
+    /** Armed by {@see fireOnNextCheck()} and taken by the next {@see shouldRun()}. */
+    private bool $fireOnNextCheck = false;
 
     /**
      * Creates cron rule with name and expression.
@@ -266,11 +272,22 @@ class CronRule
      * The minute guard is absolute and the five fields are read on the project clock, so the
      * repeated autumn hour fires once per absolute minute and the skipped spring hour not at all.
      *
+     * A rule armed by {@see fireOnNextCheck()} fires at this check before either test, once, and
+     * its run is marked as a scheduled one is, so the schedule does not fire again that minute.
+     *
      * @return bool True if should run
      * @throws EnvException When the project time zone cannot be read
      */
     public function shouldRun(): bool
     {
+        if ($this->fireOnNextCheck) {
+            $this->fireOnNextCheck = false;
+            $now = $this->currentTimestamp();
+            $this->lastRun = floor($now / self::SECONDS_PER_MINUTE);
+            $this->lastFiredAt = $now;
+            return true;
+        }
+
         $currentTime = $this->currentTimestamp();
 
         // Don't run if already executed in current minute
@@ -312,6 +329,35 @@ class CronRule
         }
 
         return false;
+    }
+
+    /**
+     * Arm the rule so that the next {@see shouldRun()} fires it, once.
+     *
+     * Nothing about the schedule changes: the expression stays, and so does the next scheduled
+     * run. The armed check marks its run as a scheduled one does, the minute in $lastRun and the
+     * moment in $lastFiredAt.
+     *
+     * @internal Called only on the test:cron:fire path, never by application code.
+     */
+    public function fireOnNextCheck(): void
+    {
+        $this->fireOnNextCheck = true;
+    }
+
+    /**
+     * Whether the arm of {@see fireOnNextCheck()} still waits for its check.
+     *
+     * The armed check is the owner's own {@see shouldRun()}, so whoever armed the rule learns
+     * that it fired from this turning false, not from the moment in $lastFiredAt, which a run
+     * earlier in the same second leaves unchanged.
+     *
+     * @internal Read only on the test:cron:fire path, never by application code.
+     * @return bool True from the arming until the next check takes it
+     */
+    public function isArmedForNextCheck(): bool
+    {
+        return $this->fireOnNextCheck;
     }
 
     /**

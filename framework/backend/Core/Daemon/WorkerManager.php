@@ -183,6 +183,10 @@ use Hilos\Environment\NonProductionGate;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Constants\CliCommands;
 
 /**
@@ -234,6 +238,15 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** @var array<int|string, string> Deduplicated terminal ids, private to this worker's current daemon channel */
     private array $pendingUploadReceiptIds = [];
+
+    /**
+     * @var array<string, array<string, CronRule>> Rules armed for test:cron:fire and not fired yet, by agent id and
+     *     then by console correlation; a correlation of digits only is stored under an int key
+     */
+    private array $cronFireWaits = [];
+
+    /** @var list<WorkerTestCronFiredDTO> Outcomes of rules fired in this pass, sent after its signals */
+    private array $cronFiredAcks = [];
 
     /** Pid of the daemon that forked this worker, or null before the loop starts. */
     protected ?int $daemonPid = null;
@@ -466,6 +479,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 } catch (Throwable $failure) {
                     $this->endUnit(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
                 }
+
+                // Behind the signals, so the cron report of the tick that fired an armed rule
+                // reaches the master ahead of the outcome the console is answered with.
+                $this->sendCronFiredAcks();
 
                 Database::handlerStart();
                 try {
@@ -757,6 +774,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     break;
                 }
                 $this->handleTestOrmForget($data);
+                break;
+
+            case WorkerConstants::MESSAGE_TEST_CRON_FIRE:
+                if (!$data instanceof WorkerTestCronFireDTO) {
+                    Logger::error('handleTestCronFire - unexpected type: ' . get_class($data));
+                    break;
+                }
+                $this->handleTestCronFire($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_REHYDRATE:
@@ -3428,6 +3453,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             RtTruthSourceRegistry::unregisterAgent($agent->getId());
             $this->releaseSourceInterest(SourceConsumer::agent($agent->getId()));
             $this->notifyRtSourcesReleased($agent->getId());
+            $this->refuseCronFireWaits($agent->getId());
         }
     }
 
@@ -3472,6 +3498,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 if ($agent instanceof AbstractAgent) {
                     $agent->reportCronRulesIfDue(microtime(true));
                 }
+                $this->collectFiredCronRules($agentId);
                 $this->releaseDeferredWork($agentId);
 
                 // Check if agent requested stop
@@ -4097,5 +4124,104 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
         }
         $this->daemonClient->send(new WorkerTestOrmForgottenDTO($request->correlationId, $error === null, $error));
+    }
+
+    /**
+     * Arms the named cron rule of an agent on this worker for test:cron:fire, or answers why it cannot.
+     *
+     * The gate is asked again here, on the process that holds the agent. An armed rule is answered
+     * for after the agent's tick in which it fired ({@see collectFiredCronRules()}), or once the
+     * agent stops first ({@see refuseCronFireWaits()}).
+     *
+     * @param WorkerTestCronFireDTO $request Master request to answer once
+     * @throws HilosException When the acknowledgement refuses its correlation or outcome
+     */
+    private function handleTestCronFire(WorkerTestCronFireDTO $request): void
+    {
+        try {
+            $agent = $this->agentManager->getAgent($request->agentId);
+            if (!NonProductionGate::admitted()) {
+                $error = TestOnlyCommandOnProductionException::message(CliCommands::CRON_TEST_FIRE);
+            } elseif ($agent === null) {
+                $error = "No agent {$request->agentId} runs on this worker.";
+            } else {
+                $rule = $agent instanceof AbstractAgent ? $agent->armCronRuleForTest($request->ruleName) : null;
+                if ($rule !== null) {
+                    $this->cronFireWaits[$request->agentId][$request->correlationId] = $rule;
+                    return;
+                }
+                $error = "Agent {$request->agentId} holds no cron rule {$request->ruleName}.";
+            }
+        } catch (Throwable $failure) {
+            $error = $failure->getMessage();
+            if ($error === '') {
+                $error = "Agent {$request->agentId} could not arm cron rule {$request->ruleName}.";
+            }
+        }
+        $this->sendCronFired(new WorkerTestCronFiredDTO($request->correlationId, false, null, $error));
+    }
+
+    /**
+     * Takes every armed rule of this agent that its tick has fired, to be answered after this pass's signals.
+     *
+     * Called after the agent's cron report, which is queued as a signal: the outcome waits for
+     * {@see sendCronFiredAcks()}, so the report leaves first.
+     *
+     * @param string $agentId Agent whose tick has just run
+     * @throws InvalidFormatException When a fired rule carries no moment of its run
+     */
+    private function collectFiredCronRules(string $agentId): void
+    {
+        foreach ($this->cronFireWaits[$agentId] ?? [] as $correlationId => $rule) {
+            if ($rule->isArmedForNextCheck()) {
+                continue;
+            }
+            unset($this->cronFireWaits[$agentId][$correlationId]);
+            $this->cronFiredAcks[] = new WorkerTestCronFiredDTO(
+                (string)$correlationId,
+                true,
+                $rule->lastFiredAt === null ? null : $rule->lastFiredAt * TimeConstants::MS_PER_SECOND,
+                null,
+            );
+        }
+        if (($this->cronFireWaits[$agentId] ?? null) === []) {
+            unset($this->cronFireWaits[$agentId]);
+        }
+    }
+
+    /** Sends the outcomes of the rules fired in this pass, behind the signals the pass dispatched. */
+    private function sendCronFiredAcks(): void
+    {
+        $acks = $this->cronFiredAcks;
+        $this->cronFiredAcks = [];
+        foreach ($acks as $ack) {
+            $this->sendCronFired($ack);
+        }
+    }
+
+    /**
+     * Answers every armed rule of a stopping agent that has not fired yet.
+     *
+     * @param string $agentId Agent being stopped
+     * @throws InvalidFormatException When a refusal cannot be built for a pending correlation
+     */
+    private function refuseCronFireWaits(string $agentId): void
+    {
+        $waits = $this->cronFireWaits[$agentId] ?? [];
+        unset($this->cronFireWaits[$agentId]);
+        foreach (array_keys($waits) as $correlationId) {
+            $this->sendCronFired(
+                new WorkerTestCronFiredDTO((string)$correlationId, false, null, "Agent {$agentId} stopped before the rule fired."),
+            );
+        }
+    }
+
+    /** @param WorkerTestCronFiredDTO $ack Outcome to send, dropped when the master link is gone */
+    private function sendCronFired(WorkerTestCronFiredDTO $ack): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+        $this->daemonClient->send($ack);
     }
 }

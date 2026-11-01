@@ -376,6 +376,7 @@ export {
   watchDaemonMismatchFrames,
   watchDaemonCronFrames,
 } from './daemon.js'
+export { reportDaemonNode, reportDaemonNodeUntil } from './daemonReport.js'
 export {
   RESTART_AGENT,
   RESTART_MARK_TIMEOUT_MS,

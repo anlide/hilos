@@ -83,7 +83,10 @@ use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
 use LogicException;
+use Hilos\Core\Daemon\CronFireTestDoor;
 use Hilos\Core\Daemon\TestOrmForgetDoor;
+use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 
 /**
@@ -245,6 +248,9 @@ abstract class WorkerServer extends AbstractServer implements
     /** Master owning the test-only ORM waits on this server. */
     private ?TestOrmForgetDoor $testOrmForgetDoor = null;
 
+    /** Master owning the test-only cron firing waits on this server. */
+    private ?CronFireTestDoor $cronFireTestDoor = null;
+
     /** @var ?float Last time worker processes were ticked (null = never) */
     private ?float $lastWorkerProcessesTick = null;
 
@@ -338,12 +344,31 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function sendTestOrmForget(int $workerId, WorkerTestOrmForgetDTO $request): ?WorkerClient
     {
-        $worker = $this->findWorkerClientById($workerId);
-        if ($worker === null || !$worker->isRegistered() || $worker->shouldClose()) {
-            return null;
-        }
-        $worker->send($request->toJson());
-        return $worker;
+        return $this->sendToLiveWorker($workerId, $request);
+    }
+
+    /** @param CronFireTestDoor $door Master owning the cron firing waits */
+    public function setCronFireTestDoor(CronFireTestDoor $door): void
+    {
+        $this->cronFireTestDoor = $door;
+    }
+
+    /** @return ?CronFireTestDoor Master entrance, or null before wiring */
+    public function cronFireTestDoor(): ?CronFireTestDoor
+    {
+        return $this->cronFireTestDoor;
+    }
+
+    /**
+     * Queues only on an existing registered channel; it never starts a worker.
+     *
+     * @param int $workerId Signed id of the worker the master's roster names for the agent
+     * @param WorkerTestCronFireDTO $request Request to queue
+     * @return ?WorkerClient Exact channel used, or null when no live target exists
+     */
+    public function sendTestCronFire(int $workerId, WorkerTestCronFireDTO $request): ?WorkerClient
+    {
+        return $this->sendToLiveWorker($workerId, $request);
     }
 
     /** @param PageAgentRestartDoor $door This server's master entrance for admitted page requests */
@@ -2200,6 +2225,23 @@ abstract class WorkerServer extends AbstractServer implements
 
         // Return random worker from minimum load candidates
         return $minLoadCandidates[array_rand($minLoadCandidates)];
+    }
+
+    /**
+     * Queues a test-only control frame on a registered worker that is not closing.
+     *
+     * @param int $workerId Signed regular or monopolistic worker id
+     * @param WorkerDTO $frame Frame to queue
+     * @return ?WorkerClient Exact channel used, or null when no live target exists
+     */
+    private function sendToLiveWorker(int $workerId, WorkerDTO $frame): ?WorkerClient
+    {
+        $worker = $this->findWorkerClientById($workerId);
+        if ($worker === null || !$worker->isRegistered() || $worker->shouldClose()) {
+            return null;
+        }
+        $worker->send($frame->toJson());
+        return $worker;
     }
 
     /**

@@ -14,7 +14,10 @@ use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
-/** Agent schedules are reported whole after a tick and repaired only while non-empty. */
+/**
+ * Agent schedules are reported whole after a tick and repaired only while non-empty; a rule armed
+ * by name for a test fires at its next check and its run enters the next report.
+ */
 final class AgentCronReportTest extends TestCase
 {
     /** @var class-string<Hilos> */
@@ -78,6 +81,30 @@ final class AgentCronReportTest extends TestCase
         self::assertSame([], $this->takeReport()->rules);
         $agent->reportCronRulesIfDue(300.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testArmingFindsTheRuleByNameAndTheReportCarriesItsRun(): void
+    {
+        $agent = new CronReportProbeAgent();
+        $nightly = new CronReportFixedClockRule('nightly', '0 3 * * *');
+        $hourly = new CronReportFixedClockRule('hourly', '30 * * * *');
+        $agent->rules = [$nightly, $hourly];
+        $agent->reportCronRulesIfDue(100.0);
+        self::assertNull($this->takeReport()->rules[1]->lastRunAt);
+
+        self::assertNull($agent->armCronRuleForTest('weekly'));
+        self::assertFalse($nightly->shouldRun());
+        self::assertFalse($hourly->shouldRun());
+
+        self::assertSame($nightly, $agent->armCronRuleForTest('nightly'));
+        self::assertFalse($hourly->shouldRun());
+        self::assertTrue($nightly->shouldRun());
+        $agent->reportCronRulesIfDue(101.0);
+        $fired = $this->takeReport();
+        self::assertSame(['hourly', 'nightly'], array_map(static fn ($rule): string => $rule->name, $fired->rules));
+        self::assertNull($fired->rules[0]->lastRunAt);
+        self::assertSame('0 3 * * *', $fired->rules[1]->expression);
+        self::assertSame(1_767_225_600_000, $fired->rules[1]->lastRunAt);
     }
 
     public function testAProjectWithoutDaemonFeatureSendsNothing(): void
