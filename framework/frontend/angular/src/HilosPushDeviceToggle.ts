@@ -8,21 +8,28 @@
 // browser cannot subscribe, so the switch is disabled with a hint rather than
 // retrying. Enabling prompts for permission, subscribes with the channel's VAPID
 // public key, and registers the subscription server-side; disabling unsubscribes
-// and drops the row. Mirrors the Vue toggle. Bootstrap classes only.
+// and drops the row. With `channelRow` the same switch renders as a
+// delivery-channel row — a decorative icon, the label and this browser's status
+// on the left, the switch and its loader on the right — still one input and one
+// action flow. Mirrors the Vue toggle. Bootstrap classes only.
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   input,
+  signal,
   type OnInit,
 } from '@angular/core'
 import {
+  HILOS_NOTIFICATION_PREFERENCES_COPY as COPY,
   hilosPushSubscription,
   type HilosConnection,
+  type HilosPushPermission,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
 
-import { hilosSignal } from './hilosSignal.js'
+import { mirrorHilosSignal } from './hilosSignal.js'
 
 // Distinct id bases so two toggles on one page never share a label `for`.
 let pushToggleSeq = 0
@@ -33,39 +40,116 @@ let pushToggleSeq = 0
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
-      class="form-check form-switch mb-2"
+      [class]="
+        channelRow()
+          ? 'd-flex align-items-center gap-3 py-3 border-bottom'
+          : 'mb-2'
+      "
       [attr.data-id]="'hilos-notification-preference-' + channel()"
     >
-      <input
-        [id]="baseId"
-        class="form-check-input"
-        type="checkbox"
-        role="switch"
-        [checked]="subscribed()"
-        [disabled]="hint() !== '' || busy()"
-        [attr.aria-describedby]="hint() ? baseId + '-hint' : null"
-        [attr.aria-busy]="busy()"
-        [attr.data-id]="'hilos-notification-preference-toggle-' + channel()"
-        (change)="toggle($event)"
-      />
-      <label class="form-check-label" [attr.for]="baseId">{{ label() }}</label>
-      @if (busy()) {
-        <span
-          class="spinner-border spinner-border-sm ms-2 align-middle"
-          role="status"
-          [attr.data-id]="'hilos-notification-preference-pending-' + channel()"
-          ><span class="visually-hidden">Saving…</span></span
-        >
-      }
-      @if (hint()) {
-        <div
-          [id]="baseId + '-hint'"
-          class="form-text mt-0"
-          [attr.data-id]="'hilos-notification-preference-hint-' + channel()"
-        >
-          {{ hint() }}
+      @if (channelRow()) {
+        <i
+          class="bi {{ rowIcon() }} fs-5 text-body-secondary flex-shrink-0"
+          aria-hidden="true"
+          [attr.data-id]="'hilos-notification-preference-icon-' + channel()"
+        ></i>
+        <div class="flex-grow-1 overflow-hidden">
+          <label class="fw-semibold small" [attr.for]="baseId">{{
+            label()
+          }}</label>
+          <div
+            class="hilos-stack small text-body-secondary text-break"
+            [attr.data-id]="
+              'hilos-notification-preference-subtitle-' + channel()
+            "
+          >
+            <span class="invisible" aria-hidden="true" inert>{{
+              copy.pushSubscribed
+            }}</span>
+            <span class="invisible" aria-hidden="true" inert>{{
+              copy.pushNotSubscribed
+            }}</span>
+            <span class="invisible" aria-hidden="true" inert>{{
+              copy.pushUnsupported
+            }}</span>
+            <span class="invisible" aria-hidden="true" inert>{{
+              copy.pushBlocked
+            }}</span>
+            @if (hint()) {
+              <div
+                [id]="baseId + '-hint'"
+                [attr.data-id]="
+                  'hilos-notification-preference-hint-' + channel()
+                "
+              >
+                {{ hint() }}
+              </div>
+            } @else {
+              <div [id]="baseId + '-subtitle'">
+                {{
+                  subscribed() ? copy.pushSubscribed : copy.pushNotSubscribed
+                }}
+              </div>
+            }
+          </div>
         </div>
       }
+      <div [class]="channelRow() ? 'flex-shrink-0 text-nowrap' : null">
+        <div class="form-check form-switch mb-0">
+          <input
+            [id]="baseId"
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+            [checked]="subscribed()"
+            [disabled]="hint() !== '' || busy()"
+            [attr.aria-describedby]="describedBy()"
+            [attr.aria-busy]="busy()"
+            [attr.data-id]="'hilos-notification-preference-toggle-' + channel()"
+            (change)="toggle($event)"
+          />
+          @if (!channelRow()) {
+            <label class="form-check-label" [attr.for]="baseId">{{
+              label()
+            }}</label>
+          }
+          <span
+            [class]="
+              channelRow()
+                ? 'hilos-stack d-inline-grid ms-2 align-middle'
+                : null
+            "
+          >
+            @if (channelRow()) {
+              <span
+                class="spinner-border spinner-border-sm invisible"
+                aria-hidden="true"
+                inert
+              ></span>
+            }
+            @if (busy()) {
+              <span
+                class="spinner-border spinner-border-sm align-middle"
+                [class.ms-2]="!channelRow()"
+                role="status"
+                [attr.data-id]="
+                  'hilos-notification-preference-pending-' + channel()
+                "
+                ><span class="visually-hidden">Saving…</span></span
+              >
+            }
+          </span>
+          @if (!channelRow() && hint()) {
+            <div
+              [id]="baseId + '-hint'"
+              class="form-text mt-0"
+              [attr.data-id]="'hilos-notification-preference-hint-' + channel()"
+            >
+              {{ hint() }}
+            </div>
+          }
+        </div>
+      </div>
     </div>
   `,
 })
@@ -78,32 +162,71 @@ export class HilosPushDeviceToggle implements OnInit {
   readonly label = input.required<string>()
   /** The channel's VAPID public key (base64url) the browser subscribes with. */
   readonly vapidPublicKey = input.required<string>()
-  /**
-   * The store the toggle renders; defaults to the shared framework store. Read
-   * once at construction, so an override is for a test or second window.
-   */
+  /** The store the toggle renders; defaults to the shared framework store. */
   readonly store = input<HilosPushSubscriptionStore>(hilosPushSubscription)
+  /** Render a delivery-channel row instead of the compact device switch. */
+  readonly channelRow = input<boolean>(false)
+  /** Decorative Bootstrap Icons token for the delivery-channel row. */
+  readonly icon = input<string | undefined>(undefined)
 
-  private readonly boundStore = this.store()
-  protected readonly supported = hilosSignal(this.boundStore.supported)
-  protected readonly permission = hilosSignal(this.boundStore.permission)
-  protected readonly subscribed = hilosSignal(this.boundStore.subscribed)
-  protected readonly busy = hilosSignal(this.boundStore.busy)
+  protected readonly copy = COPY
+  protected readonly supported = signal(this.boundStore.supported.get())
+  protected readonly permission = signal<HilosPushPermission>(
+    this.boundStore.permission.get(),
+  )
+  protected readonly subscribed = signal(this.boundStore.subscribed.get())
+  protected readonly busy = signal(this.boundStore.busy.get())
   protected readonly baseId = `hilos-push-device-toggle-${pushToggleSeq++}`
+  protected readonly rowIcon = computed(() => this.icon() ?? 'bi-broadcast')
 
   // `denied` is terminal — the browser will not re-prompt — and an unsupported
   // browser cannot subscribe at all; both disable the switch and show a hint
   // instead of retrying.
   protected readonly hint = computed(() => {
     if (!this.supported()) {
-      return 'Push notifications are not supported on this device.'
+      return COPY.pushUnsupported
     }
     if (this.permission() === 'denied') {
-      return 'Push notifications are blocked in your browser settings.'
+      return COPY.pushBlocked
     }
 
     return ''
   })
+
+  // The hint when there is one; otherwise the row's status line, and nothing
+  // for the compact switch.
+  protected readonly describedBy = computed(() => {
+    if (this.hint()) {
+      return `${this.baseId}-hint`
+    }
+
+    return this.channelRow() ? `${this.baseId}-subtitle` : null
+  })
+
+  constructor() {
+    // Mirror the store the input holds now, and follow a new one: the fields
+    // above start from the default store, and this puts the passed store's
+    // values in before the first render and on every change after it.
+    effect((onCleanup) => {
+      const store = this.boundStore
+      const unsubscribes = [
+        mirrorHilosSignal(store.supported, this.supported),
+        mirrorHilosSignal(store.permission, this.permission),
+        mirrorHilosSignal(store.subscribed, this.subscribed),
+        mirrorHilosSignal(store.busy, this.busy),
+      ]
+      onCleanup(() => {
+        for (const unsubscribe of unsubscribes) {
+          unsubscribe()
+        }
+      })
+    })
+  }
+
+  /** The store the input holds now — the one the view reads and calls. */
+  private get boundStore(): HilosPushSubscriptionStore {
+    return this.store()
+  }
 
   /**
    * Read the live browser state (support, permission, subscription) so the switch
@@ -116,7 +239,13 @@ export class HilosPushDeviceToggle implements OnInit {
   // Per-device: subscribe or unsubscribe THIS browser rather than setting a
   // shared preference. The store owns the browser dance and the server round-trip.
   protected toggle(event: Event): void {
-    if ((event.target as HTMLInputElement).checked) {
+    const target = event.target as HTMLInputElement
+    const enabled = target.checked
+    // The channel row keeps the store's position while the browser operation runs.
+    if (this.channelRow()) {
+      target.checked = this.subscribed()
+    }
+    if (enabled) {
       void this.boundStore.enable(this.connection(), this.vapidPublicKey())
     } else {
       void this.boundStore.disable(this.connection())

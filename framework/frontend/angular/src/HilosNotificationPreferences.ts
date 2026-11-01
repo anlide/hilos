@@ -13,11 +13,20 @@
 // with no address for it is shown disabled with a hint to add one rather than
 // hidden, so the user sees the whole channel set; where the mounting page names
 // the profile section that adds an address (HIL-1166), the hint links there.
+// Each channel is a row as in Vue (HIL-1658): a decorative icon, the name and
+// under it the public address or that hint, the switch on the right.
 // Mandatory types carry no toggle
 // — a switch that cannot be turned off is worse than none — only the note. Sparse
 // opt-out: no muted row means allowed. Mirrors the Vue section. Bootstrap classes
 // only.
-import { ChangeDetectionStrategy, Component, input } from '@angular/core'
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  input,
+  signal,
+} from '@angular/core'
 import {
   HILOS_NOTIFICATION_PREFERENCES_COPY,
   hilosNotificationPreferences,
@@ -31,7 +40,7 @@ import {
 } from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
-import { hilosSignal } from './hilosSignal.js'
+import { mirrorHilosSignal } from './hilosSignal.js'
 import { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 import { HilosSwitch } from './HilosSwitch.js'
 
@@ -51,7 +60,12 @@ let preferencesSeq = 0
       [attr.aria-labelledby]="baseId + '-heading'"
       data-id="hilos-notification-preferences"
     >
-      <h2 [id]="baseId + '-heading'" class="h5">Delivery channels</h2>
+      <h2
+        [id]="baseId + '-heading'"
+        class="h6 text-uppercase text-body-secondary mb-2"
+      >
+        Delivery channels
+      </h2>
       @if (channels().length === 0) {
         <p
           class="text-body-secondary mb-0"
@@ -62,7 +76,8 @@ let preferencesSeq = 0
       }
       @for (row of channels(); track row.channel) {
         <!-- A web-push channel ships its VAPID public key as the row's config;
-        it renders the per-device toggle rather than the preference switch. -->
+        it renders the per-device toggle, drawn as this same kind of row, rather
+        than the preference switch. -->
         @if (row.config?.['vapid_public']; as vapidPublicKey) {
           <hilos-push-device-toggle
             [connection]="connection()"
@@ -70,48 +85,94 @@ let preferencesSeq = 0
             [label]="row.label"
             [vapidPublicKey]="vapidPublicKey"
             [store]="pushStore()"
+            [channelRow]="true"
+            [icon]="row.icon"
           />
         } @else {
-          <div [attr.data-id]="'hilos-notification-preference-' + row.channel">
-            <hilos-switch
-              class="mb-2"
-              [checked]="row.allowed"
-              [busy]="isPending(row.channel)"
-              [disabled]="!row.hasAddress"
-              [label]="row.label"
-              [aria-describedby]="
-                row.hasAddress ? undefined : rowId(row.channel) + '-hint'
+          <div
+            class="d-flex align-items-center gap-3 py-3 border-bottom"
+            [attr.data-id]="'hilos-notification-preference-' + row.channel"
+          >
+            <i
+              class="bi fs-5 text-body-secondary flex-shrink-0"
+              [class]="row.icon ?? 'bi-bell'"
+              aria-hidden="true"
+              [attr.data-id]="
+                'hilos-notification-preference-icon-' + row.channel
               "
-              [dataId]="'hilos-notification-preference-toggle-' + row.channel"
-              (toggle)="toggle(row, $event)"
-            />
-            @if (!row.hasAddress) {
+            ></i>
+            <div class="flex-grow-1 overflow-hidden">
+              <div class="fw-semibold small">{{ row.label }}</div>
               <div
-                [id]="rowId(row.channel) + '-hint'"
-                class="form-text mt-0"
+                class="hilos-stack small text-body-secondary text-break"
                 [attr.data-id]="
-                  'hilos-notification-preference-hint-' + row.channel
+                  'hilos-notification-preference-subtitle-' + row.channel
                 "
               >
-                @if (addressSection(); as section) {
-                  @if (addressTo(); as to) {
-                    {{ copy.noAddressBefore }}
-                    <a
-                      [hilosLink]="to"
-                      [attr.data-id]="
-                        'hilos-notification-preference-address-' + row.channel
-                      "
-                      >{{ section.label }}</a
-                    >
+                <!-- The no-address hint, hidden, holds the line's room whether
+                the row shows its address or the hint. -->
+                <span class="invisible" aria-hidden="true" inert>
+                  @if (addressLink(); as link) {
+                    {{ copy.noAddressBefore }} {{ link.label }}
                     {{ copy.noAddressAfter }}
                   } @else {
                     {{ copy.noAddress }}
                   }
+                </span>
+                @if (row.hasAddress) {
+                  <div [id]="rowId(row.channel) + '-subtitle'">
+                    {{ row.address }}
+                  </div>
                 } @else {
-                  {{ copy.noAddress }}
+                  <div
+                    [id]="rowId(row.channel) + '-hint'"
+                    [attr.data-id]="
+                      'hilos-notification-preference-hint-' + row.channel
+                    "
+                  >
+                    @if (addressLink(); as link) {
+                      {{ copy.noAddressBefore }}
+                      <a
+                        [hilosLink]="link.to"
+                        [attr.data-id]="
+                          'hilos-notification-preference-address-' + row.channel
+                        "
+                        >{{ link.label }}</a
+                      >
+                      {{ copy.noAddressAfter }}
+                    } @else {
+                      {{ copy.noAddress }}
+                    }
+                  </div>
                 }
               </div>
-            }
+            </div>
+            <div class="hilos-stack flex-shrink-0 text-nowrap">
+              <!-- The switch with its loader, hidden, holds the room the
+              loader takes while a toggle is in flight. -->
+              <div
+                class="form-check form-switch mb-0 invisible"
+                aria-hidden="true"
+                inert
+              >
+                <span class="form-check-input"></span>
+                <span
+                  class="spinner-border spinner-border-sm ms-2 align-middle"
+                ></span>
+              </div>
+              <hilos-switch
+                class="mb-0"
+                [checked]="row.allowed"
+                [busy]="isPending(row.channel)"
+                [disabled]="!row.hasAddress"
+                [aria-label]="row.label"
+                [aria-describedby]="
+                  rowId(row.channel) + (row.hasAddress ? '-subtitle' : '-hint')
+                "
+                [dataId]="'hilos-notification-preference-toggle-' + row.channel"
+                (toggle)="toggle(row, $event)"
+              />
+            </div>
           </div>
         }
       }
@@ -129,11 +190,7 @@ let preferencesSeq = 0
 export class HilosNotificationPreferences {
   /** The connection the toggle action is sent over. */
   readonly connection = input.required<HilosConnection>()
-  /**
-   * The store the section renders; defaults to the shared framework store. Read
-   * once at construction (like the bell captures its store), so an override is
-   * for a test or second window, not a runtime rebind.
-   */
+  /** The store the section renders; defaults to the shared framework store. */
   readonly store = input<HilosNotificationPreferencesStore>(
     hilosNotificationPreferences,
   )
@@ -145,11 +202,47 @@ export class HilosNotificationPreferences {
   readonly addressTo = input<string | undefined>(undefined)
   protected readonly copy = HILOS_NOTIFICATION_PREFERENCES_COPY
 
-  private readonly boundStore = this.store()
-  protected readonly channels = hilosSignal(this.boundStore.channels)
-  protected readonly mandatoryNote = hilosSignal(this.boundStore.mandatoryNote)
-  protected readonly pending = hilosSignal(this.boundStore.pending)
+  protected readonly channels = signal<
+    readonly HilosNotificationChannelState[]
+  >(this.boundStore.channels.get())
+  protected readonly mandatoryNote = signal(this.boundStore.mandatoryNote.get())
+  protected readonly pending = signal<ReadonlySet<string>>(
+    this.boundStore.pending.get(),
+  )
   protected readonly baseId = `hilos-notification-preferences-${preferencesSeq++}`
+
+  // The no-address hint links into the address section only when the page
+  // names both the section and its path; otherwise it stays plain text.
+  protected readonly addressLink = computed(() => {
+    const section = this.addressSection()
+    const to = this.addressTo()
+
+    return section && to ? { label: section.label, to } : null
+  })
+
+  constructor() {
+    // Mirror the store the input holds now, and follow a new one: the fields
+    // above start from the default store, and this puts the passed store's
+    // values in before the first render and on every change after it.
+    effect((onCleanup) => {
+      const store = this.boundStore
+      const unsubscribes = [
+        mirrorHilosSignal(store.channels, this.channels),
+        mirrorHilosSignal(store.mandatoryNote, this.mandatoryNote),
+        mirrorHilosSignal(store.pending, this.pending),
+      ]
+      onCleanup(() => {
+        for (const unsubscribe of unsubscribes) {
+          unsubscribe()
+        }
+      })
+    })
+  }
+
+  /** The store the input holds now — the one the view reads and calls. */
+  private get boundStore(): HilosNotificationPreferencesStore {
+    return this.store()
+  }
 
   protected rowId(channel: string): string {
     return `${this.baseId}-${channel}`

@@ -3,8 +3,6 @@
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
 SHELL-PARITY framework/frontend/vue/src/HilosMaintenance.vue 1 # HIL-1696
-SHELL-PARITY framework/frontend/vue/src/HilosNotificationPreferences.vue 2 # HIL-1658
-SHELL-PARITY framework/frontend/vue/src/HilosPushDeviceToggle.vue 2 # HIL-1658
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsBrowserSessionPage.vue 3 # HIL-1744
 SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablePage.vue 3 # HIL-1724
 SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTableShell.vue 3 # HIL-1724
