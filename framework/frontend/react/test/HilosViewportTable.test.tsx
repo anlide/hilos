@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { StrictMode, type ReactNode } from 'react'
+import { Fragment, StrictMode, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   FocusTrap,
   ScopeManager,
+  TABLE_VIEW_BROWSER_VALUE,
+  TABLE_VIEW_STORAGE_KEY,
   TableViewportController,
   bindTableViewport,
+  eraseBrowserValues,
+  hilosTablePlaceholder,
   registerFocusReturnFallback,
   subscribeSignal,
 } from '@hilos/core'
@@ -3141,6 +3145,989 @@ describe('HilosViewportTable rows with nothing to expand and wide fields', () =>
 
 // These synthetic boxes prove production ref wiring and commit timing. Actual
 // browser layout, Sass and first-paint stability belong to the browser slice.
+describe('HilosViewportTable Tiles mount', () => {
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  // A picture column, a labelled field, a field the tile opens into and the
+  // controls: every place of a tile, read back through the markup the view writes.
+  const TILE_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'picture', label: 'Picture' },
+    { key: 'size', label: 'Size' },
+    { key: 'note', label: 'Note', detail: true },
+    { key: 'actions', label: '' },
+  ]
+
+  function tileFrame(
+    overrides: Partial<HilosTableFrame> = {},
+    tableKey = 'pictures',
+  ): HilosTableFrame {
+    return {
+      title: 'Pictures',
+      columns: TILE_COLUMNS,
+      views: { tableKey, order: ['table', 'tiles'], imageColumn: 'picture' },
+      ...overrides,
+    }
+  }
+
+  const TILE_CELLS = {
+    name: (r: Row) => <span className="named">{r.name}</span>,
+    picture: (r: Row) => (
+      <img className="picture" src={`/pictures/${r.name}.png`} alt={r.name} />
+    ),
+    size: () => <span className="sized">1.2 MB</span>,
+    actions: (_r: Row, rowKey: string) => (
+      <button type="button" data-id={`project-action-${rowKey}`}>
+        Open
+      </button>
+    ),
+  }
+
+  function fixture(
+    frame: HilosTableFrame = tileFrame(),
+    options: {
+      refused?: (row: Row) => boolean
+      rowMessage?: (row: Row) => HilosTableRowMessage | null
+    } = {},
+  ) {
+    const sent: TableViewportDescriptor[] = []
+    const rendered = vi.fn()
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots.name) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: rendered,
+      frame,
+      ...options,
+    })
+
+    return { controller, sent, rendered }
+  }
+
+  function rows(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'b', slots: { name: 'Second' } },
+        { rowKey: 'a', slots: { name: 'First' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function tiles(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-tiles"]',
+    )!
+  }
+
+  function tileOf(container: HTMLElement, rowKey: string): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      `[data-id="hilos-table-tile-${rowKey}"]`,
+    )!
+  }
+
+  function choose(container: HTMLElement, view: 'table' | 'tiles'): void {
+    fireEvent.click(
+      container.querySelector(`[data-id="hilos-table-view-${view}"]`)!,
+    )
+  }
+
+  function shown(element: Element | null): boolean {
+    return element !== null && !element.classList.contains('d-none')
+  }
+
+  it('draws one ordered window as tiles and switches only which branch is shown', () => {
+    const f = fixture()
+    rows(f.controller)
+    const { container } = render(
+      <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+    )
+    const original = f.controller.rows.get()
+    const renderedCalls = f.rendered.mock.calls.length
+    const grid = tiles(container).querySelector('[role="list"]')!
+    expect(grid.getAttribute('aria-labelledby')).toBe(
+      container.querySelector('table')?.getAttribute('aria-labelledby'),
+    )
+    expect(grid.getAttribute('aria-labelledby')).toBe(
+      container.querySelector('[data-id="hilos-table-title"]')?.id,
+    )
+    expect(
+      Array.from(grid.querySelectorAll(':scope > [role="listitem"]')).map(
+        (item) => item.querySelector('.card')?.getAttribute('data-id'),
+      ),
+    ).toEqual(['hilos-table-tile-b', 'hilos-table-tile-a'])
+    // The item of the list is the column; the tile inside it takes no role.
+    expect(tileOf(container, 'a').getAttribute('role')).toBeNull()
+    const wide = container.querySelector('.table-responsive')!
+    const cards = container.querySelector('[data-id="hilos-table-cards"]')!
+    expect(shown(tiles(container))).toBe(false)
+    expect(wide.classList.contains('d-md-block')).toBe(true)
+    expect(cards.classList.contains('d-md-none')).toBe(true)
+
+    choose(container, 'tiles')
+    expect(f.controller.frame.view.get()).toBe('tiles')
+    expect(shown(tiles(container))).toBe(true)
+    expect(shown(wide)).toBe(false)
+    expect(wide.classList.contains('d-md-block')).toBe(false)
+    expect(shown(cards)).toBe(false)
+    expect(cards.classList.contains('d-md-none')).toBe(false)
+    // One window, one bar, one room of live messages, one footer.
+    expect(f.controller.rows.get()).toBe(original)
+    expect(f.rendered.mock.calls).toHaveLength(renderedCalls)
+    expect(f.sent).toEqual([])
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-title"]'),
+    ).toHaveLength(1)
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-live-slot"]'),
+    ).toHaveLength(1)
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-count"]'),
+    ).toHaveLength(1)
+
+    choose(container, 'table')
+    expect(shown(tiles(container))).toBe(false)
+    expect(wide.classList.contains('d-md-block')).toBe(true)
+    expect(cards.classList.contains('d-md-none')).toBe(true)
+    expect(f.sent).toEqual([])
+    f.controller.dispose()
+  })
+
+  it('keeps the plain table and its cards, with no tiles, where no views were declared', () => {
+    const f = fixture({ title: 'Pictures', columns: TILE_COLUMNS })
+    rows(f.controller)
+    const read = vi.spyOn(Storage.prototype, 'getItem')
+    const { container } = render(
+      <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+    )
+
+    expect(tiles(container)).toBeNull()
+    expect(container.querySelector('[data-id^="hilos-table-tile-"]')).toBeNull()
+    expect(container.querySelector('[data-id="hilos-table-view"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-card-a"] .picture'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-row-a"] .picture'),
+    ).not.toBeNull()
+    expect(read).not.toHaveBeenCalled()
+    f.controller.dispose()
+  })
+
+  it('draws the picture once in its frame, and keeps it a column of the table and the card', () => {
+    const f = fixture()
+    rows(f.controller)
+    const { container } = render(
+      <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+    )
+    const tile = tileOf(container, 'a')
+    const frame = tile.querySelector(
+      '[data-id="hilos-table-tile-image-a"]',
+    ) as HTMLElement
+
+    expect(tile.querySelectorAll('.picture')).toHaveLength(1)
+    // The page's own image, as the page drew it, straight in the frame: not a text
+    // value, so nothing caps it and nothing wraps it.
+    expect(frame.firstElementChild?.matches('img.picture')).toBe(true)
+    expect(frame.querySelector('img')?.getAttribute('alt')).toBe('First')
+    expect(frame.textContent).not.toContain('No image')
+    // The picture's column is neither the title nor a labelled line of the tile.
+    expect(tile.querySelector('.named')?.textContent).toBe('First')
+    expect(
+      Array.from(tile.querySelectorAll('dt')).map((label) => label.textContent),
+    ).toEqual(['Size'])
+    expect(
+      container.querySelector('[data-id="hilos-table-row-a"] .picture'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-card-a"] .picture'),
+    ).not.toBeNull()
+    expect(
+      f.controller.frame.columns.get().map((column) => column.key),
+    ).toContain('picture')
+    f.controller.dispose()
+  })
+
+  const NOTHING: [string, ((row: Row) => ReactNode) | undefined][] = [
+    ['no renderer', undefined],
+    ['null', () => null],
+    ['undefined', () => undefined],
+    ['false', () => false],
+    ['an empty fragment', () => <></>],
+    ['an empty array', () => []],
+    ['nested empties', () => [null, <Fragment key="f">{[false]}</Fragment>]],
+  ]
+
+  it.each(NOTHING)(
+    'says No image in the same frame for %s',
+    (_name, picture) => {
+      const f = fixture()
+      rows(f.controller)
+      const { container } = render(
+        <HilosViewportTable
+          controller={f.controller}
+          cells={{ ...TILE_CELLS, picture }}
+        />,
+      )
+      const frame = tileOf(container, 'a').querySelector(
+        '[data-id="hilos-table-tile-image-a"]',
+      )!
+
+      expect(frame.textContent).toBe('No image')
+      expect(
+        frame
+          .querySelector('i.bi-file-earmark-text')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true')
+      f.controller.dispose()
+    },
+  )
+
+  it('treats 0 and the page own component as content without running the component itself', () => {
+    const f = fixture()
+    rows(f.controller)
+    const Picture = vi.fn(() => null)
+    const { container } = render(
+      <HilosViewportTable
+        controller={f.controller}
+        cells={{
+          ...TILE_CELLS,
+          picture: (row) => (row.name === 'First' ? 0 : <Picture />),
+        }}
+      />,
+    )
+    const frame = (rowKey: string) =>
+      tileOf(container, rowKey).querySelector(
+        `[data-id="hilos-table-tile-image-${rowKey}"]`,
+      )!
+
+    expect(frame('a').textContent).toBe('0')
+    // The component drew nothing, but only React ran it to find that out: the
+    // frame holds what it drew rather than words of its own.
+    expect(frame('b').textContent).toBe('')
+    expect(Picture).toHaveBeenCalled()
+    f.controller.dispose()
+  })
+
+  it('asks for a new layout when a picture loads inside the tiles', () => {
+    const f = fixture()
+    rows(f.controller)
+    const invalidate = vi.fn()
+    const source = f.controller.geometry
+    Object.defineProperty(f.controller, 'geometry', {
+      value: {
+        register(capture: Parameters<typeof source.register>[0]) {
+          const owner = source.register(capture)
+          return {
+            ...owner,
+            invalidateLayout: (
+              projection: Parameters<typeof owner.invalidateLayout>[0],
+            ) => {
+              if (projection === 'wide') invalidate()
+              owner.invalidateLayout(projection)
+            },
+          }
+        },
+      },
+    })
+    const { container } = render(
+      <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+    )
+    invalidate.mockClear()
+
+    fireEvent.load(tileOf(container, 'a').querySelector('img')!)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    fireEvent.load(
+      container.querySelector('[data-id="hilos-table-card-a"] img')!,
+    )
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    choose(container, 'tiles')
+    expect(invalidate).toHaveBeenCalledTimes(2)
+    f.controller.dispose()
+  })
+
+  it('carries marks, waiting, refusal, work, panels and row messages into the tiles across view changes', () => {
+    const f = fixture(
+      tileFrame({
+        // A row message runs to the end of the row, and the controls are never
+        // part of it: they stand before the field the message takes over.
+        columns: [
+          TILE_COLUMNS[0]!,
+          TILE_COLUMNS[1]!,
+          TILE_COLUMNS[4]!,
+          TILE_COLUMNS[2]!,
+          TILE_COLUMNS[3]!,
+        ],
+        bulkActions: [
+          {
+            key: 'delete',
+            label: 'Delete',
+            refusalTitle: "Couldn't delete",
+            run: () => {
+              throw new Error('the declaration is only read here')
+            },
+          },
+        ],
+      }),
+      {
+        refused: (row) => row.name === 'First',
+        rowMessage: (row) =>
+          row.name === 'Third'
+            ? { fromColumn: 'size', text: 'Size not known yet' }
+            : null,
+      },
+    )
+    f.controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'First' } },
+        { rowKey: 'b', slots: { name: 'Second' } },
+        { rowKey: 'c', slots: { name: 'Third' } },
+      ],
+      3,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = render(
+      <HilosViewportTable
+        controller={f.controller}
+        cells={TILE_CELLS}
+        details={{ note: (row) => <span className="noted">{row.name}</span> }}
+        rowProgress={(_bar, rowKey) => (
+          <span className="work-words">Packing {rowKey}</span>
+        )}
+      />,
+    )
+    act(() => {
+      f.controller.selectRow('a', true)
+      f.controller.expandRow('a', true)
+      f.controller.ingestProgress({
+        scope: 'row',
+        progressKey: 'pack-a',
+        rowKey: 'a',
+        current: 1,
+        total: 2,
+      })
+      f.controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b',
+        row: { rowKey: 'b', slots: { name: 'Second moved' } },
+      })
+    })
+    choose(container, 'tiles')
+    const check = () => {
+      const a = tileOf(container, 'a')
+      expect(
+        a.querySelector<HTMLInputElement>('[data-id="hilos-table-select-a"]')
+          ?.checked,
+      ).toBe(true)
+      expect(a.classList.contains('border-danger')).toBe(true)
+      expect(a.querySelector('.noted')?.textContent).toBe('First')
+      expect(a.querySelector('.work-words')?.textContent).toBe('Packing a')
+      expect(a.querySelector('[role="progressbar"]')).not.toBeNull()
+      expect(a.querySelector('[data-id="project-action-a"]')?.textContent).toBe(
+        'Open',
+      )
+      const b = tileOf(container, 'b')
+      expect(
+        b.querySelector('[data-id="hilos-table-pending-move-b"]'),
+      ).not.toBeNull()
+      expect(b.classList.contains('border-warning')).toBe(true)
+      const c = tileOf(container, 'c')
+      expect(
+        c.querySelector('[data-id="hilos-table-row-message"]')?.textContent,
+      ).toBe('Size not known yet')
+      expect(c.querySelector('.sized')).toBeNull()
+    }
+    check()
+    fireEvent.click(
+      tileOf(container, 'b').querySelector<HTMLInputElement>(
+        '[data-id="hilos-table-select-b"]',
+      )!,
+    )
+    expect(f.controller.selection.count.get()).toBe(2)
+    choose(container, 'table')
+    choose(container, 'tiles')
+    check()
+    expect(
+      container.querySelector<HTMLInputElement>(
+        '[data-id="hilos-table-card-b"] [data-id="hilos-table-select-b"]',
+      )?.checked,
+    ).toBe(true)
+    expect(f.sent).toEqual([])
+    f.controller.dispose()
+  })
+
+  // Three live rows, the third one carrying a message from the given column — the
+  // columns are the whole row's, and it is the row's own list the message is placed
+  // over, whatever a tile or a card drew from it.
+  function messageTable(columns: HilosTableColumn[], fromColumn: string) {
+    const f = fixture(tileFrame({ columns }), {
+      rowMessage: (row) =>
+        row.name === 'Third' ? { fromColumn, text: 'Not known yet' } : null,
+    })
+    f.controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'First' } },
+        { rowKey: 'b', slots: { name: 'Second' } },
+        { rowKey: 'c', slots: { name: 'Third' } },
+      ],
+      3,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = render(
+      <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+    )
+
+    return { f, container }
+  }
+
+  function messageOf(scope: Element | null): string[] {
+    return Array.from(
+      scope?.querySelectorAll('[data-id="hilos-table-row-message"]') ?? [],
+      (node) => node.textContent ?? '',
+    )
+  }
+
+  it('lets a row message start at the picture column in a tile, a card and the table', () => {
+    // The tile's layout never holds the picture's column, yet the row does.
+    const { f, container } = messageTable(
+      [TILE_COLUMNS[0]!, TILE_COLUMNS[1]!, TILE_COLUMNS[2]!],
+      'picture',
+    )
+    const check = () => {
+      const tile = tileOf(container, 'c')
+      expect(messageOf(tile)).toEqual(['Not known yet'])
+      expect(tile.querySelector('.named')?.textContent).toBe('Third')
+      expect(tile.querySelector('.sized')).toBeNull()
+      expect(tile.querySelectorAll('dt')).toHaveLength(0)
+      const card = container.querySelector('[data-id="hilos-table-card-c"]')!
+      expect(messageOf(card)).toEqual(['Not known yet'])
+      expect(card.querySelector('.sized')).toBeNull()
+      expect(card.querySelectorAll('dt')).toHaveLength(0)
+      const row = container.querySelector(
+        'tbody [data-id="hilos-table-row-c"]',
+      )!
+      expect(messageOf(row)).toEqual(['Not known yet'])
+      expect(
+        row
+          .querySelector('[data-id="hilos-table-row-message"]')
+          ?.getAttribute('colspan'),
+      ).toBe('2')
+      // The rows without a message keep their labelled line.
+      expect(
+        Array.from(tileOf(container, 'a').querySelectorAll('dt')).map(
+          (label) => label.textContent,
+        ),
+      ).toEqual(['Size'])
+      expect(messageOf(tileOf(container, 'a'))).toEqual([])
+    }
+
+    check()
+    choose(container, 'tiles')
+    check()
+    choose(container, 'table')
+    check()
+    f.controller.dispose()
+  })
+
+  it('lets a row message start at the column a tile is titled by, not the card', () => {
+    // No column asked for the head: the card falls to the picture, the tile to the
+    // name, and the message starts at a column only the card holds as a field.
+    const { f, container } = messageTable(
+      [TILE_COLUMNS[1]!, TILE_COLUMNS[0]!, TILE_COLUMNS[2]!],
+      'name',
+    )
+    const check = () => {
+      const tile = tileOf(container, 'c')
+      expect(messageOf(tile)).toEqual(['Not known yet'])
+      expect(tile.querySelector('.named')?.textContent).toBe('Third')
+      expect(tile.querySelector('.sized')).toBeNull()
+      expect(tile.querySelectorAll('dt')).toHaveLength(0)
+      const card = container.querySelector('[data-id="hilos-table-card-c"]')!
+      expect(messageOf(card)).toEqual(['Not known yet'])
+      expect(card.querySelector('.sized')).toBeNull()
+      expect(card.querySelectorAll('dt')).toHaveLength(0)
+      expect(
+        messageOf(
+          container.querySelector('tbody [data-id="hilos-table-row-c"]'),
+        ),
+      ).toEqual(['Not known yet'])
+      expect(
+        Array.from(tileOf(container, 'b').querySelectorAll('dt')).map(
+          (label) => label.textContent,
+        ),
+      ).toEqual(['Size'])
+    }
+
+    check()
+    choose(container, 'tiles')
+    check()
+    choose(container, 'table')
+    check()
+    f.controller.dispose()
+  })
+
+  it('opens a tile into a panel of its own id, apart from the row and the card', () => {
+    const f = fixture()
+    rows(f.controller)
+    const { container } = render(
+      <HilosViewportTable
+        controller={f.controller}
+        cells={TILE_CELLS}
+        details={{ note: (row) => <span className="noted">{row.name}</span> }}
+      />,
+    )
+    const control = tileOf(container, 'a').querySelector<HTMLButtonElement>(
+      '[data-id="hilos-table-expand-a"]',
+    )!
+    expect(control.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(control)
+    expect(control.getAttribute('aria-expanded')).toBe('true')
+    const panel = (scope: Element) =>
+      scope.querySelector('[data-id="hilos-table-row-detail-a"]')!
+    const tilePanel = panel(tileOf(container, 'a'))
+    const cardPanel = panel(
+      container.querySelector('[data-id="hilos-table-card-a"]')!,
+    )
+    const rowPanel = container.querySelector(
+      'tbody [data-id="hilos-table-row-detail-a"]',
+    )!
+    expect(control.getAttribute('aria-controls')).toBe(tilePanel.id)
+    expect(new Set([tilePanel.id, cardPanel.id, rowPanel.id]).size).toBe(3)
+    expect(tilePanel.querySelector('.noted')?.textContent).toBe('First')
+    const ids = Array.from(
+      container.querySelectorAll('[id]'),
+      (node) => node.id,
+    )
+    expect(new Set(ids).size).toBe(ids.length)
+    const controls = container.querySelectorAll(
+      '[data-id="hilos-table-expand-a"]',
+    )
+    expect(controls).toHaveLength(3)
+    controls.forEach((owner) => {
+      const branch = owner.closest(
+        '[data-id="hilos-table-tiles"], [data-id="hilos-table-cards"], .table-responsive',
+      )!
+      expect(
+        branch.querySelector(`[id="${owner.getAttribute('aria-controls')}"]`),
+      ).toBeTruthy()
+    })
+    choose(container, 'tiles')
+    choose(container, 'table')
+    expect(
+      f.controller.rows.get().find((row) => row.rowKey === 'a')?.expanded,
+    ).toBe(true)
+    f.controller.dispose()
+  })
+
+  it('keeps the trace of a departed record a list item with only its reason', () => {
+    const f = fixture()
+    rows(f.controller)
+    const { container } = render(
+      <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+    )
+    act(() =>
+      f.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      }),
+    )
+    const tile = tileOf(container, 'a')
+    const item = tile.parentElement!
+
+    expect(item.getAttribute('role')).toBe('listitem')
+    expect(
+      tile.querySelector('[data-id="hilos-table-placeholder"]')?.textContent,
+    ).toContain(hilosTablePlaceholder('deleted').text)
+    expect(tile.textContent).not.toContain('First')
+    expect(
+      tile.querySelector(
+        'img, button, input, [data-id^="hilos-table-tile-image-"], [data-id^="hilos-table-row-detail-"]',
+      ),
+    ).toBeNull()
+    expect(tile.querySelector('.hilos-table-record-space')).not.toBeNull()
+    f.controller.dispose()
+  })
+
+  it.each([
+    'empty',
+    'empty_filtered',
+    'page_filtered',
+    'empty_page',
+    'unavailable',
+    'loading',
+  ] as const)(
+    'draws the %s state of the body inside the tiles without a list',
+    (state) => {
+      vi.useFakeTimers()
+      const press = vi.fn()
+      const f = fixture(
+        tileFrame({
+          search: {},
+          empty: {
+            title: 'No pictures yet',
+            hint: 'Your pictures will appear here.',
+          },
+          mainAction: { label: 'Add picture', press },
+          ...(state === 'page_filtered'
+            ? { filteredEmpty: 'page' as const }
+            : {}),
+        }),
+      )
+      const { container } = render(
+        <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+      )
+      act(() => f.controller.setView('tiles'))
+      if (state === 'empty_page') {
+        act(() => {
+          f.controller.ingestWindow(
+            [{ rowKey: 'a', slots: { name: 'Earlier row' } }],
+            30,
+            true,
+            null,
+            null,
+            10,
+          )
+          f.controller.setPage(2)
+        })
+        f.sent.splice(0)
+      }
+      if (state === 'empty_filtered' || state === 'page_filtered')
+        act(() => f.controller.setSearch('needle'))
+      if (state === 'loading') {
+        act(() => {
+          rows(f.controller)
+          f.controller.setSort('name')
+          vi.advanceTimersByTime(399)
+        })
+        expect(
+          tiles(container).querySelector('[data-id="hilos-table-loading"]'),
+        ).toBeNull()
+        act(() => vi.advanceTimersByTime(1))
+      } else if (state === 'unavailable')
+        act(() => f.controller.ingestRefusal('internal_error'))
+      else
+        act(() =>
+          f.controller.ingestWindow(
+            [],
+            state === 'empty_page' ? 20 : 0,
+            true,
+            null,
+            null,
+            10,
+          ),
+        )
+      const root = tiles(container)
+      expect(shown(root)).toBe(true)
+      expect(root.querySelector('[role="list"], [role="listitem"]')).toBeNull()
+      if (state === 'empty' || state === 'page_filtered') {
+        expect(
+          root.querySelector('[data-id="hilos-table-empty-title"]')
+            ?.textContent,
+        ).toBe('No pictures yet')
+        fireEvent.click(
+          root.querySelector('[data-id="hilos-table-empty-action"]')!,
+        )
+        expect(press).toHaveBeenCalledTimes(1)
+      } else if (state === 'empty_filtered') {
+        expect(
+          root.querySelector('[data-id="hilos-table-no-matches-terms"]')
+            ?.textContent,
+        ).toBe('No rows match “needle”')
+        fireEvent.click(
+          root.querySelector('[data-id="hilos-table-no-matches-reset"]')!,
+        )
+        expect(f.sent.at(-1)?.filter).toEqual({})
+      } else if (state === 'empty_page') {
+        expect(
+          root.querySelector('[data-id="hilos-table-empty-page"]')?.textContent,
+        ).toContain('Nothing on this page')
+        fireEvent.click(
+          root.querySelector('[data-id="hilos-table-empty-page-back"]')!,
+        )
+        expect(f.sent).toHaveLength(1)
+      } else if (state === 'unavailable') {
+        expect(
+          root.querySelector('[data-id="hilos-table-unavailable-title"]')
+            ?.textContent,
+        ).toBe('List unavailable')
+        expect(root.querySelector('button')).toBeNull()
+      } else {
+        const loading = root.querySelector('[data-id="hilos-table-loading"]')!
+        expect(loading.getAttribute('aria-busy')).toBe('true')
+        expect(loading.querySelector('[role="status"]')?.textContent).toBe(
+          'Loading…',
+        )
+        expect(
+          loading.querySelectorAll('[data-id="hilos-table-skeleton-row"]'),
+        ).toHaveLength(2)
+      }
+      f.controller.dispose()
+    },
+  )
+
+  it('says the page own empty words inside the tiles', () => {
+    const f = fixture()
+    const { container } = render(
+      <HilosViewportTable
+        controller={f.controller}
+        cells={TILE_CELLS}
+        empty={<span className="none-yet">No pictures yet</span>}
+      />,
+    )
+    act(() => f.controller.ingestWindow([], 0, true, null, null, 10))
+
+    expect(tiles(container).querySelector('.none-yet')?.textContent).toBe(
+      'No pictures yet',
+    )
+    f.controller.dispose()
+  })
+
+  describe('remembering the view in this browser', () => {
+    function seed(views: Record<string, string>): void {
+      localStorage.setItem(
+        TABLE_VIEW_STORAGE_KEY,
+        JSON.stringify({ version: 1, views }),
+      )
+    }
+
+    function stored(): unknown {
+      const raw = localStorage.getItem(TABLE_VIEW_STORAGE_KEY)
+
+      return raw === null ? null : JSON.parse(raw)
+    }
+
+    it('restores after the first commit and writes only the reader own choice', () => {
+      seed({ pictures: 'tiles', other: 'table' })
+      const read = vi.spyOn(Storage.prototype, 'getItem')
+      const write = vi.spyOn(Storage.prototype, 'setItem')
+      const f = fixture()
+      rows(f.controller)
+      const readsAtRender: number[] = []
+      const { container } = render(
+        <HilosViewportTable
+          controller={f.controller}
+          cells={{
+            ...TILE_CELLS,
+            name: (row) => {
+              readsAtRender.push(read.mock.calls.length)
+              return row.name
+            },
+          }}
+        />,
+      )
+
+      expect(readsAtRender[0]).toBe(0)
+      expect(read).toHaveBeenCalled()
+      expect(f.controller.frame.view.get()).toBe('tiles')
+      expect(
+        container
+          .querySelector('[data-id="hilos-table-view-tiles"]')
+          ?.getAttribute('aria-pressed'),
+      ).toBe('true')
+      expect(shown(tiles(container))).toBe(true)
+      expect(write).not.toHaveBeenCalled()
+      choose(container, 'table')
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(stored()).toEqual({
+        version: 1,
+        views: { pictures: 'table', other: 'table' },
+      })
+      expect(f.sent).toEqual([])
+      f.controller.dispose()
+    })
+
+    it('opens on the first declared view without writing it', () => {
+      const write = vi.spyOn(Storage.prototype, 'setItem')
+      const f = fixture(
+        tileFrame({
+          views: {
+            tableKey: 'pictures',
+            order: ['tiles', 'table'],
+            imageColumn: 'picture',
+          },
+        }),
+      )
+      rows(f.controller)
+      const { container } = render(
+        <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+      )
+
+      expect(f.controller.frame.view.get()).toBe('tiles')
+      expect(shown(tiles(container))).toBe(true)
+      expect(write).not.toHaveBeenCalled()
+      f.controller.dispose()
+    })
+
+    it('releases the former table on a new controller and on unmount', () => {
+      seed({ pictures: 'tiles' })
+      const first = fixture()
+      const second = fixture(tileFrame({}, 'other'))
+      const { container, rerender, unmount } = render(
+        <HilosViewportTable controller={first.controller} cells={TILE_CELLS} />,
+      )
+      expect(first.controller.frame.view.get()).toBe('tiles')
+      const write = vi.spyOn(Storage.prototype, 'setItem')
+      rerender(
+        <HilosViewportTable
+          controller={second.controller}
+          cells={TILE_CELLS}
+        />,
+      )
+      act(() => first.controller.setView('table'))
+      expect(write).not.toHaveBeenCalled()
+      choose(container, 'tiles')
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(stored()).toEqual({
+        version: 1,
+        views: { pictures: 'tiles', other: 'tiles' },
+      })
+      unmount()
+      act(() => second.controller.setView('table'))
+      expect(write).toHaveBeenCalledTimes(1)
+      first.controller.dispose()
+      second.controller.dispose()
+    })
+
+    it('binds once per StrictMode replay and leaves no listener behind', () => {
+      seed({ pictures: 'tiles' })
+      const add = vi.spyOn(globalThis, 'addEventListener')
+      const remove = vi.spyOn(globalThis, 'removeEventListener')
+      const write = vi.spyOn(Storage.prototype, 'setItem')
+      const f = fixture()
+      rows(f.controller)
+      const { container, unmount } = render(
+        <StrictMode>
+          <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />
+        </StrictMode>,
+      )
+      const storageListeners = (spy: typeof add) =>
+        spy.mock.calls.filter(([type]) => type === 'storage').length
+
+      expect(f.controller.frame.view.get()).toBe('tiles')
+      expect(write).not.toHaveBeenCalled()
+      choose(container, 'table')
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(storageListeners(add) - storageListeners(remove)).toBe(1)
+      unmount()
+      expect(storageListeners(add)).toBe(storageListeners(remove))
+      act(() => f.controller.setView('tiles'))
+      expect(write).toHaveBeenCalledTimes(1)
+      f.controller.dispose()
+    })
+
+    it.each(['corrupt', 'denied'] as const)(
+      'keeps a working choice in memory over %s storage',
+      (kind) => {
+        if (kind === 'corrupt')
+          localStorage.setItem(TABLE_VIEW_STORAGE_KEY, '{"version":1,')
+        else {
+          const denied = () => {
+            throw new DOMException('Access denied', 'SecurityError')
+          }
+          vi.spyOn(Storage.prototype, 'getItem').mockImplementation(denied)
+          vi.spyOn(Storage.prototype, 'setItem').mockImplementation(denied)
+        }
+        const f = fixture()
+        rows(f.controller)
+        const { container } = render(
+          <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+        )
+
+        expect(f.controller.frame.view.get()).toBe('table')
+        choose(container, 'tiles')
+        expect(f.controller.frame.view.get()).toBe('tiles')
+        expect(shown(tiles(container))).toBe(true)
+        if (kind === 'corrupt')
+          expect(stored()).toEqual({ version: 1, views: { pictures: 'tiles' } })
+        f.controller.dispose()
+      },
+    )
+
+    it.each(['privacy erase', 'storage removal', 'storage clear'] as const)(
+      'goes back to the first declared view on %s without writing it back',
+      (kind) => {
+        const f = fixture()
+        rows(f.controller)
+        const { container, unmount } = render(
+          <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+        )
+        choose(container, 'tiles')
+        const write = vi.spyOn(Storage.prototype, 'setItem')
+        const erase = () => {
+          if (kind === 'privacy erase') {
+            eraseBrowserValues([TABLE_VIEW_BROWSER_VALUE], {
+              sessionCookieName: undefined,
+            })
+            return
+          }
+          localStorage.removeItem(TABLE_VIEW_STORAGE_KEY)
+          globalThis.dispatchEvent(
+            new StorageEvent('storage', {
+              key: kind === 'storage clear' ? null : TABLE_VIEW_STORAGE_KEY,
+              newValue: null,
+              storageArea: localStorage,
+            }),
+          )
+        }
+        act(erase)
+
+        expect(f.controller.frame.view.get()).toBe('table')
+        expect(shown(tiles(container))).toBe(false)
+        expect(write).not.toHaveBeenCalled()
+        expect(stored()).toBeNull()
+        act(() => f.controller.setView('tiles'))
+        unmount()
+        act(erase)
+        expect(f.controller.frame.view.get()).toBe('tiles')
+        f.controller.dispose()
+      },
+    )
+
+    it('leaves an open mount on its view when another tab chooses, and the next mount reads it', () => {
+      const f = fixture()
+      rows(f.controller)
+      const { unmount } = render(
+        <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
+      )
+      seed({ pictures: 'tiles' })
+      act(() => {
+        globalThis.dispatchEvent(
+          new StorageEvent('storage', {
+            key: TABLE_VIEW_STORAGE_KEY,
+            newValue: localStorage.getItem(TABLE_VIEW_STORAGE_KEY),
+            storageArea: localStorage,
+          }),
+        )
+      })
+      expect(f.controller.frame.view.get()).toBe('table')
+      unmount()
+      const next = fixture()
+      render(
+        <HilosViewportTable controller={next.controller} cells={TILE_CELLS} />,
+      )
+      expect(next.controller.frame.view.get()).toBe('tiles')
+      f.controller.dispose()
+      next.controller.dispose()
+    })
+  })
+})
+
 function tableGeometryDOM() {
   const layout = {
     width: 600,
@@ -3151,23 +4138,47 @@ function tableGeometryDOM() {
     font: 16,
     cardHidden: false,
     wideHidden: false,
+    // A tile: its whole box with the picture, the departure words of its own
+    // room, and the vertical gutter of the Bootstrap column it stands in.
+    tile: 410.5,
+    tileReason: 20,
+    gutter: 16,
+    tilesHidden: false,
   }
   const reads: string[] = []
   const firstPlaceholders: { projection: string; pixels: string }[] = []
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function (this: HTMLElement) {
       const card = this.closest('[data-id="hilos-table-cards"]') !== null
+      const tiles = this.closest('[data-id="hilos-table-tiles"]') !== null
       if (
         (layout.cardHidden && card) ||
-        (layout.wideHidden && this.closest('.table-responsive'))
+        (layout.wideHidden && this.closest('.table-responsive')) ||
+        (layout.tilesHidden && tiles)
       )
         return new DOMRect()
-      const projection = card ? 'card' : 'wide'
+      const projection = tiles ? 'tiles' : card ? 'card' : 'wide'
       const rect = (top: number, height: number, width = layout.width, x = 0) =>
         new DOMRect(x, top, width, height)
       const id = this.dataset.id ?? ''
-      if (/^hilos-table-(row|card|progress-row|row-detail)-/.test(id))
+      if (/^hilos-table-(row|card|tile|progress-row|row-detail)-/.test(id))
         reads.push(`${projection}:${id}`)
+      if (/^hilos-table-tile-[ab]$/.test(id)) return rect(500, layout.tile)
+      if (
+        tiles &&
+        this.matches(
+          '.hilos-table-reason-twins, .hilos-table-record-space > span',
+        )
+      ) {
+        if (this.matches('.hilos-table-record-space > span'))
+          firstPlaceholders.push({
+            projection,
+            pixels: this.parentElement!.style.getPropertyValue(
+              '--hilos-table-record-px',
+            ),
+          })
+        return rect(0, layout.tileReason)
+      }
       if (/^hilos-table-(row|card)-[ab]$/.test(id))
         return rect(card ? 300 : 40, card ? layout.card : layout.main)
       if (
@@ -3219,9 +4230,12 @@ function tableGeometryDOM() {
         '.card-body > [data-id^="hilos-table-progress-row-"]',
       )
         ? '4px'
-        : '0px',
+        : node.classList.contains('col')
+          ? `${layout.gutter}px`
+          : '0px',
+      // A tile has no mb-2: the gutter of its column separates it instead.
       marginBottom:
-        card ||
+        (card && !node.classList.contains('hilos-table-tile')) ||
         node.matches('.card-body > [data-id^="hilos-table-row-detail-"]')
           ? '8px'
           : '0px',
@@ -3277,6 +4291,7 @@ describe('HilosViewportTable connected geometry', () => {
     cleanup()
     targets.splice(0).forEach((target) => target.dispose())
     extras.splice(0).forEach((element) => element.remove())
+    localStorage.clear()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -3288,6 +4303,7 @@ describe('HilosViewportTable connected geometry', () => {
       bulk?: boolean
       names?: string[]
       text?: 'text' | 'parts'
+      views?: boolean
     } = {},
   ) {
     const { controller } = makeController({
@@ -3295,6 +4311,15 @@ describe('HilosViewportTable connected geometry', () => {
       search: options.search ? {} : undefined,
       ...(options.text
         ? { rowHeight: { mode: 'lines', count: 2 } as const }
+        : {}),
+      ...(options.views
+        ? {
+            views: {
+              tableKey: 'geometry',
+              order: ['table', 'tiles'] as const,
+              imageColumn: 'picture',
+            },
+          }
         : {}),
       columns: [
         {
@@ -3306,6 +4331,7 @@ describe('HilosViewportTable connected geometry', () => {
         },
         { key: 'badge', label: 'Status', card: 'badge' },
         { key: 'actions', label: '' },
+        ...(options.views ? [{ key: 'picture', label: 'Picture' }] : []),
         ...(options.detail === false
           ? []
           : [{ key: 'detail', label: 'Detail', detail: true }]),
@@ -3794,6 +4820,162 @@ describe('HilosViewportTable connected geometry', () => {
       offer()
     },
   )
+
+  it('binds each tile under its own projection and retires all three projections data-free', () => {
+    const dom = textDOM()
+    const { controller, captures } = make({
+      text: 'parts',
+      names: ['a'],
+      views: true,
+    })
+    work(controller)
+    const renderers = content()
+    const picture = vi.fn((row: Row) => <img src="/a.png" alt={row.name} />)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        {...renderers}
+        cells={{
+          ...renderers.cells,
+          name: (row) => <HilosTableText value={row.name} />,
+          picture,
+        }}
+      />,
+    )
+    dom.flush()
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-table-tile-a"] [data-id="hilos-table-expand-a"]',
+      )!,
+    )
+    // The tile reads its text through a reader of its own projection, under
+    // an id of its own.
+    const [wideText, cardText, tileText] = textControls(container)
+    expect(tileText.closest('[data-id="hilos-table-tile-a"]')).not.toBeNull()
+    expect(
+      new Set(
+        [wideText, cardText, tileText].map((button) =>
+          button.getAttribute('aria-controls'),
+        ),
+      ).size,
+    ).toBe(3)
+    fireEvent.click(tileText)
+    expect(textControls(container).map((button) => button.textContent)).toEqual(
+      ['Collapse', 'Collapse', 'Collapse'],
+    )
+    dom.flush()
+    act(() => depart(controller, 'a', false))
+    captures.mockClear()
+    picture.mockClear()
+    act(() => controller.apply())
+    expect(captures).toHaveBeenCalledTimes(1)
+    expect(
+      captures.mock.calls[0][0].records.map(
+        (sample: { measurement: { layout: { projection: string } } }) =>
+          sample.measurement.layout.projection,
+      ),
+    ).toEqual(expect.arrayContaining(['wide', 'card', 'tiles']))
+    const tile = container.querySelector('[data-id="hilos-table-tile-a"]')!
+    expect(tile.parentElement?.getAttribute('role')).toBe('listitem')
+    expect(
+      tile.querySelector('[data-id="hilos-table-placeholder"]'),
+    ).not.toBeNull()
+    expect(container.textContent).not.toContain('Private')
+    expect(
+      container.querySelector(
+        'img, .hilos-table-text, [data-id="hilos-table-text-toggle"], [data-id^="project-action-"], [data-id^="hilos-table-row-detail-"], [data-id^="hilos-table-tile-image-"], [role="progressbar"]',
+      ),
+    ).toBeNull()
+    expect(picture).not.toHaveBeenCalled()
+  })
+
+  it('sizes a departed tile from its own room and full footprint, in a data-free twin of its column', () => {
+    const dom = tableGeometryDOM()
+    const { controller, captures } = make({ names: ['a', 'b'], views: true })
+    const picture = vi.fn((row: Row) => <img src="/a.png" alt={row.name} />)
+    const renderers = content()
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        {...renderers}
+        cells={{ ...renderers.cells, picture }}
+      />,
+    )
+    act(() => controller.setView('tiles'))
+    dom.flush()
+    const tile = () =>
+      container.querySelector<HTMLElement>('[data-id="hilos-table-tile-a"]')!
+    // The measured floor of the departure words is the tile's own, not the card's.
+    expect(
+      tile()
+        .querySelector<HTMLElement>(':scope > .card-body')
+        ?.style.getPropertyValue('--hilos-table-reason-px'),
+    ).toBe('20')
+    expect(
+      container
+        .querySelector<HTMLElement>(
+          '[data-id="hilos-table-card-a"] > .card-body',
+        )
+        ?.style.getPropertyValue('--hilos-table-reason-px'),
+    ).toBe('18')
+
+    // The twin stands in a column of the same grid, framework-only and inert.
+    const twin = container.querySelector<HTMLElement>(
+      '.hilos-table-room-tiles',
+    )!
+    const room = twin.closest<HTMLElement>('.hilos-table-room')!
+    expect(room.closest('[data-id="hilos-table-tiles"]')).not.toBeNull()
+    expect(room.getAttribute('aria-hidden')).toBe('true')
+    expect(room.hasAttribute('inert')).toBe(true)
+    expect(twin.classList.contains('hilos-table-tile')).toBe(true)
+    expect(twin.parentElement?.classList.contains('col')).toBe(true)
+    expect(twin.parentElement?.parentElement?.className).toBe(
+      container.querySelector('[data-id="hilos-table-tiles"] [role="list"]')
+        ?.className,
+    )
+    expect(
+      room.querySelectorAll('.hilos-table-reason-twins > span'),
+    ).toHaveLength(3)
+    expect(twin.querySelector('.hilos-table-fallback')).not.toBeNull()
+    expect(
+      room.querySelector(
+        '[id], [data-id], [role], img, button, input, a, select, textarea',
+      ),
+    ).toBeNull()
+    expect(room.textContent).not.toContain('Private')
+
+    captures.mockClear()
+    picture.mockClear()
+    act(() => depart(controller))
+    expect(captures).toHaveBeenCalledTimes(1)
+    // The whole picture and body, plus the surviving column gutter once.
+    expect(
+      tile()
+        .querySelector<HTMLElement>('.hilos-table-record-space')
+        ?.style.getPropertyValue('--hilos-table-record-px'),
+    ).toBe('426.5')
+    expect(
+      dom.firstPlaceholders.find((read) => read.projection === 'tiles')?.pixels,
+    ).toBe('426.5')
+    expect(tile().parentElement?.classList.contains('col')).toBe(true)
+    expect(tile().textContent).not.toContain('Private')
+    expect(
+      tile().querySelector('img, button, [data-id^="hilos-table-tile-image-"]'),
+    ).toBeNull()
+    // The record that stayed draws its picture again; the departed one never.
+    expect(picture.mock.calls.map(([row]) => row.name)).not.toContain(
+      'Private a',
+    )
+    // A tile that is not shown measures nothing and keeps its number.
+    dom.layout.tilesHidden = true
+    dom.resizes.forEach((observer) => observer.fire())
+    dom.flush()
+    expect(
+      tile()
+        .querySelector<HTMLElement>('.hilos-table-record-space')
+        ?.style.getPropertyValue('--hilos-table-record-px'),
+    ).toBe('426.5')
+  })
 
   it('captures every connected record before a destructive batch and sizes the first replacement in both projections', () => {
     const dom = tableGeometryDOM()
@@ -4406,6 +5588,7 @@ describe('HilosViewportTable modal focus lifetime', () => {
     cleanup()
     releases.splice(0).forEach((release) => release())
     targets.splice(0).forEach((target) => target.dispose())
+    localStorage.clear()
     vi.restoreAllMocks()
   })
 
@@ -4416,7 +5599,7 @@ describe('HilosViewportTable modal focus lifetime', () => {
     strict = false,
   }: {
     search?: boolean
-    projection?: 'wide' | 'card'
+    projection?: 'wide' | 'card' | 'tiles'
     marked?: boolean
     strict?: boolean
   } = {}) {
@@ -4427,12 +5610,26 @@ describe('HilosViewportTable modal focus lifetime', () => {
           : new DOMRect(0, 0, 400, 40)
       },
     )
+    // Tiles stand only for a table that declared its views, with the picture.
+    const tiles = projection === 'tiles'
     function make() {
       const { controller } = makeController({
         title: 'People',
-        columns: COLUMNS,
+        columns: tiles
+          ? [...COLUMNS, { key: 'picture', label: 'Picture' }]
+          : COLUMNS,
         ...(search ? { search: {} } : {}),
+        ...(tiles
+          ? {
+              views: {
+                tableKey: 'people',
+                order: ['table', 'tiles'] as const,
+                imageColumn: 'picture',
+              },
+            }
+          : {}),
       })
+      if (tiles) controller.setView('tiles')
       targets.push(controller)
       controller.ingestWindow(
         [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -4497,17 +5694,27 @@ describe('HilosViewportTable modal focus lifetime', () => {
     function redraw() {
       view.rerender(tree())
     }
-    function show(next: 'wide' | 'card') {
+    function show(next: 'wide' | 'card' | 'tiles') {
       view.container.querySelector<HTMLElement>('.table-responsive')!.hidden =
         next !== 'wide'
       view.container.querySelector<HTMLElement>(
         '[data-id="hilos-table-cards"]',
       )!.hidden = next !== 'card'
+      const grid = view.container.querySelector<HTMLElement>(
+        '[data-id="hilos-table-tiles"]',
+      )
+      if (grid !== null) grid.hidden = next !== 'tiles'
     }
     show(projection)
     function control(target = projection): HTMLElement {
+      const scope =
+        target === 'wide'
+          ? 'tr'
+          : target === 'card'
+            ? '[data-id="hilos-table-cards"] [role="list"]'
+            : '[data-id="hilos-table-tiles"] [role="list"]'
       return view.container.querySelector<HTMLElement>(
-        `${target === 'wide' ? 'tr' : '[role="list"]'} [data-id="open-person"]`,
+        `${scope} [data-id="open-person"]`,
       )!
     }
     const opener = control()
@@ -4630,7 +5837,7 @@ describe('HilosViewportTable modal focus lifetime', () => {
   })
 
   describe.each([false, true])('StrictMode=%s', (strict) => {
-    it.each(['wide', 'card'] as const)(
+    it.each(['wide', 'card', 'tiles'] as const)(
       'returns to the fresh marked logical control in %s',
       (projection) => {
         const f = fixture({ projection, strict })
@@ -4729,6 +5936,34 @@ describe('HilosViewportTable modal focus lifetime', () => {
       if (foreign) expect(document.activeElement).not.toBe(foreign.control())
       // Restore externally moved React children before their normal cleanup.
       if (row) parent!.append(row)
+    },
+  )
+
+  it.each([
+    'placeholder',
+    'hidden tiles',
+    'duplicate marker',
+    'disabled control',
+  ] as const)(
+    'returns a tile opener to search when its fresh tile is unavailable: %s',
+    (change) => {
+      const f = fixture({ projection: 'tiles' })
+      f.activate()
+      const modal = f.modal()
+      if (change === 'placeholder') f.remove()
+      else {
+        if (change === 'duplicate marker') f.duplicate()
+        f.snapshot()
+      }
+      if (change === 'hidden tiles') f.show('card')
+      if (change === 'disabled control')
+        f.control().setAttribute('disabled', '')
+      expect(f.opener.isConnected).toBe(false)
+      expect(document.activeElement).toBe(modal)
+      f.close()
+      expect(document.activeElement).toBe(f.search())
+      // The card's control with the same marker is another projection's.
+      expect(document.activeElement).not.toBe(f.control('card'))
     },
   )
 

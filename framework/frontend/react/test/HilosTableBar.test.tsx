@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_VIEW_COPY,
   TableViewportController,
+  subscribeSignal,
 } from '@hilos/core'
 import type {
   ActionHandle,
@@ -10,6 +12,7 @@ import type {
   HilosTableColumn,
   HilosTableFrame,
   HilosTableSortOrder,
+  HilosTableViews,
   TableSortOrder,
   TableViewportDescriptor,
 } from '@hilos/core'
@@ -724,6 +727,533 @@ describe('HilosTableBar', () => {
     renderBar(controller)
 
     expect(byId('hilos-table-main-action')).toBeNull()
+  })
+})
+
+// The Table/Tiles choice of a table that declares views (HIL-1761). The bar only
+// draws it and calls the controller; what the window does with the layout is the
+// table body's, tested beside it.
+const BULK_ARCHIVE = {
+  bulkActions: [
+    {
+      key: 'archive',
+      label: 'Archive',
+      refusalTitle: 'Cannot archive',
+      run: () => {
+        throw new Error('Not pressed')
+      },
+    },
+  ],
+} satisfies Partial<HilosTableFrame>
+
+function viewsFrame(
+  extra: Partial<HilosTableFrame> = {},
+  order: HilosTableViews['order'] = ['table', 'tiles'],
+): HilosTableFrame {
+  return {
+    title: 'Pictures',
+    columns: COLUMNS,
+    views: { tableKey: 'pictures', order, imageColumn: 'name' },
+    ...extra,
+  }
+}
+
+function viewGroup(): HTMLElement {
+  return screen.getByRole('group', { name: TABLE_VIEW_COPY.group })
+}
+
+function viewButtons(): HTMLButtonElement[] {
+  return Array.from(viewGroup().querySelectorAll('button'))
+}
+
+describe('HilosTableBar views', () => {
+  it.each([false, true])(
+    'keeps one native view group with no other controls, bulk enabled: %s',
+    (bulk) => {
+      const { controller, sent } = makeController(
+        viewsFrame(bulk ? BULK_ARCHIVE : {}),
+      )
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: { name: 'A' } }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      const rendered = renderBar(controller)
+
+      const group = viewGroup()
+      expect(group.getAttribute('data-id')).toBe('hilos-table-view')
+      expect(group.getAttribute('aria-label')).toBe(TABLE_VIEW_COPY.group)
+      expect(
+        viewButtons().map((button) => [
+          button.textContent,
+          button.type,
+          button.getAttribute('aria-pressed'),
+          button.getAttribute('data-id'),
+          button.disabled,
+        ]),
+      ).toEqual([
+        ['Table', 'button', 'true', 'hilos-table-view-table', false],
+        ['Tiles', 'button', 'false', 'hilos-table-view-tiles', false],
+      ])
+      expect(screen.getByRole('button', { name: TABLE_VIEW_COPY.tiles })).toBe(
+        byId('hilos-table-view-tiles'),
+      )
+      expect(
+        Array.from(group.querySelectorAll('i')).map((icon) => [
+          icon.classList.contains('bi-list-ul'),
+          icon.classList.contains('bi-grid-3x2-gap'),
+          icon.getAttribute('aria-hidden'),
+        ]),
+      ).toEqual([
+        [true, false, 'true'],
+        [false, true, 'true'],
+      ])
+      if (bulk) {
+        // With rows marked the controls go invisible and aria-hidden, and the
+        // choice must not go with them: it stands beside the stack, not in it.
+        act(() => controller.selectRow('a', true))
+        expect(byId('hilos-table-selection')?.classList).not.toContain(
+          'invisible',
+        )
+        expect(group.closest('.invisible, [aria-hidden="true"], [inert]')).toBe(
+          null,
+        )
+        expect(byId('hilos-table-bar-slot')?.contains(group)).toBe(false)
+        expect(byId('hilos-table-controls')).toBeNull()
+      } else {
+        expect(byId('hilos-table-controls')?.contains(group)).toBe(true)
+      }
+
+      const tiles = byId('hilos-table-view-tiles') as HTMLButtonElement
+      tiles.focus()
+      fireEvent.click(tiles)
+      // The same button, not a remounted one: the focus stays where it was.
+      expect(byId('hilos-table-view-tiles')).toBe(tiles)
+      expect(document.activeElement).toBe(tiles)
+      expect(controller.frame.view.get()).toBe('tiles')
+      expect(tiles.getAttribute('aria-pressed')).toBe('true')
+      expect(byId('hilos-table-view-table')?.getAttribute('aria-pressed')).toBe(
+        'false',
+      )
+      expect(
+        document.querySelectorAll('[data-id="hilos-table-view"]'),
+      ).toHaveLength(1)
+      expect(sent).toEqual([])
+      expect(controller.selection.count.get()).toBe(bulk ? 1 : 0)
+      rendered.unmount()
+      controller.dispose()
+    },
+  )
+
+  it.each([
+    {
+      order: ['table', 'tiles'] as HilosTableViews['order'],
+      words: ['Table', 'Tiles'],
+    },
+    {
+      order: ['tiles', 'table'] as HilosTableViews['order'],
+      words: ['Tiles', 'Table'],
+    },
+  ])(
+    'follows the declared order $order and opens on its first view',
+    ({ order, words }) => {
+      const { controller, sent } = makeController(viewsFrame({}, order))
+      const rendered = renderBar(controller)
+
+      const state = () =>
+        viewButtons().map((button) => [
+          button.textContent,
+          button.getAttribute('aria-pressed'),
+        ])
+      expect(state()).toEqual([
+        [words[0], 'true'],
+        [words[1], 'false'],
+      ])
+
+      fireEvent.click(viewButtons()[1] as HTMLElement)
+      expect(controller.frame.view.get()).toBe(order[1])
+      expect(state()).toEqual([
+        [words[0], 'false'],
+        [words[1], 'true'],
+      ])
+
+      fireEvent.click(viewButtons()[0] as HTMLElement)
+      expect(controller.frame.view.get()).toBe(order[0])
+      expect(state()).toEqual([
+        [words[0], 'true'],
+        [words[1], 'false'],
+      ])
+      expect(sent).toEqual([])
+      rendered.unmount()
+      controller.dispose()
+    },
+  )
+
+  it('does nothing when the view already shown is pressed again', () => {
+    const { controller, sent } = makeController(viewsFrame())
+    const rendered = renderBar(controller)
+    const changes: string[] = []
+    const stop = subscribeSignal(controller.frame.view, () =>
+      changes.push(controller.frame.view.get()),
+    )
+
+    fireEvent.click(byId('hilos-table-view-table') as HTMLElement)
+    expect(changes).toEqual([])
+    expect(byId('hilos-table-view-table')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+    expect(changes).toEqual(['tiles'])
+    expect(byId('hilos-table-view-tiles')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    expect(sent).toEqual([])
+    stop()
+    rendered.unmount()
+    controller.dispose()
+  })
+
+  it('leaves search, filter, order and marks alone, and asks the server for nothing', () => {
+    const { controller, sent } = makeController(
+      viewsFrame({
+        ...BULK_ARCHIVE,
+        search: {},
+        filters: [{ kind: 'toggle', key: 'unread', label: 'Unread', on: true }],
+      }),
+    )
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'A' } },
+        { rowKey: 'b', slots: { name: 'B' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    const rendered = renderBar(controller)
+    act(() => controller.setSearch('needle'))
+    act(() => controller.selectRow('b', true))
+    const asked = sent.length
+    const filter = controller.filter.get()
+    const orderLabel = controller.frame.orderLabel.get()
+
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+    fireEvent.click(byId('hilos-table-view-table') as HTMLElement)
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+
+    expect(sent).toHaveLength(asked)
+    expect(controller.search.get()).toBe('needle')
+    expect(controller.filter.get()).toEqual(filter)
+    expect(controller.frame.orderLabel.get()).toBe(orderLabel)
+    expect(controller.selection.count.get()).toBe(1)
+    expect(controller.frame.view.get()).toBe('tiles')
+    rendered.unmount()
+    controller.dispose()
+  })
+
+  it.each(['empty', 'empty_filtered'] as const)(
+    'keeps the choice available when the body is %s',
+    (body) => {
+      const { controller, sent } = makeController(
+        viewsFrame({ search: {} }),
+        body === 'empty_filtered' ? { search: 'missing' } : undefined,
+      )
+      controller.ingestWindow([], 0, true, null, null, 10)
+      expect(controller.frame.body.get()).toBe(body)
+      const rendered = renderBar(controller)
+
+      expect(viewButtons().map((button) => button.disabled)).toEqual([
+        false,
+        false,
+      ])
+      fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+      expect(controller.frame.view.get()).toBe('tiles')
+      expect(sent).toEqual([])
+      rendered.unmount()
+      controller.dispose()
+    },
+  )
+
+  it('keeps the choice enabled while the window controls wait for recovery', () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<unknown>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      initialFilter: { unread: true },
+      initialFilterInSubscription: true,
+      frame: viewsFrame({
+        search: {},
+        filters: [
+          { kind: 'toggle', key: 'unread', label: 'Unread only', on: true },
+        ],
+      }),
+    })
+    controller.ingestRefusal('internal_error')
+    const rendered = renderBar(controller)
+
+    expect((byId('hilos-table-search') as HTMLInputElement).disabled).toBe(true)
+    expect(viewButtons().map((button) => button.disabled)).toEqual([
+      false,
+      false,
+    ])
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+    expect(controller.frame.view.get()).toBe('tiles')
+    expect(sent).toEqual([])
+    rendered.unmount()
+    controller.dispose()
+  })
+
+  it.each([false, true])(
+    'offers no view group without a views declaration, bulk enabled: %s',
+    (bulk) => {
+      const { controller } = makeController({
+        columns: COLUMNS,
+        search: {},
+        ...(bulk ? BULK_ARCHIVE : {}),
+      })
+      const rendered = renderBar(controller)
+
+      expect(byId('hilos-table-view')).toBeNull()
+      expect(
+        document.querySelector('[data-id^="hilos-table-view-"]'),
+      ).toBeNull()
+      expect(
+        screen.queryByRole('group', { name: TABLE_VIEW_COPY.group }),
+      ).toBeNull()
+      expect(byId('hilos-table-search')).not.toBeNull()
+      expect(byId('hilos-table-bar-slot') !== null).toBe(bulk)
+      rendered.unmount()
+      controller.dispose()
+    },
+  )
+
+  it('draws neither controls nor group for a bare table', () => {
+    const { controller } = makeController({ columns: COLUMNS })
+    renderBar(controller)
+
+    expect(byId('hilos-table-view')).toBeNull()
+    expect(byId('hilos-table-controls')).toBeNull()
+  })
+
+  it('shows all core order options at every width in Tiles and restores narrow-only items in Table', () => {
+    const { controller, sent } = makeController(
+      {
+        columns: ORDERED_COLUMNS,
+        views: {
+          tableKey: 'ordered-pictures',
+          order: ['table', 'tiles'],
+          imageColumn: 'channel',
+        },
+      },
+      undefined,
+      [],
+    )
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      20,
+      OPENING_ORDER,
+      [],
+    )
+    const rendered = renderBar(controller)
+    const narrowOnly = () =>
+      orderItems().map((item) => item.classList.contains('d-md-none'))
+
+    expect(narrowOnly()).toEqual([true, true, true, true])
+    // The choice of view keeps the strip on display above md: it is a control
+    // there, where a bar of the order menu alone would hide with it.
+    expect(byId('hilos-table-controls')?.classList.contains('d-md-none')).toBe(
+      false,
+    )
+
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+    expect(orderItems().map((item) => item.textContent)).toEqual([
+      'Date ↓',
+      'Kind ↑',
+      'Kind ↓',
+      'Date ↑',
+    ])
+    expect(narrowOnly()).toEqual([false, false, false, false])
+    expect(byId('hilos-table-order')?.classList.contains('d-md-none')).toBe(
+      false,
+    )
+
+    // An order picked in Tiles is the ordinary one: the common window is
+    // re-sorted by a request, the same as from the table.
+    fireEvent.click(byId('hilos-table-order-channel-asc') as HTMLElement)
+    expect(sent.at(-1)).toMatchObject({
+      sort: [{ field: 'channel', direction: 'asc' }],
+    })
+
+    fireEvent.click(byId('hilos-table-view-table') as HTMLElement)
+    expect(narrowOnly()).toEqual([true, true, true, true])
+    rendered.unmount()
+    controller.dispose()
+  })
+
+  it('still hides a bar of the narrow-only order menu above md without views', () => {
+    const { controller } = makeController(
+      { columns: ORDERED_COLUMNS },
+      undefined,
+      [],
+    )
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      20,
+      OPENING_ORDER,
+      [],
+    )
+    renderBar(controller)
+
+    expect(byId('hilos-table-controls')?.classList.contains('d-md-none')).toBe(
+      true,
+    )
+    expect(byId('hilos-table-view')).toBeNull()
+  })
+})
+
+/** A table declaring views beside list actions, a main action and a search box. */
+function makeBoth(bulk: boolean) {
+  const copy = vi.fn()
+  const download = vi.fn()
+  const main = vi.fn()
+  const { controller, sent } = makeController(
+    viewsFrame({
+      search: {},
+      auxiliaryActions: [
+        { key: 'copy', label: 'Copy the list', press: copy },
+        { key: 'download', label: 'Download as a file', press: download },
+      ],
+      mainAction: { label: 'Create', press: main },
+      ...(bulk ? BULK_ARCHIVE : {}),
+    }),
+  )
+  controller.ingestWindow(
+    [{ rowKey: 'a', slots: { name: 'A' } }],
+    1,
+    true,
+    null,
+    null,
+    10,
+  )
+
+  return { controller, sent, copy, download, main }
+}
+
+describe.each([false, true])(
+  'HilosTableBar views next to list actions, bulk enabled: %s',
+  (bulk) => {
+    it('keeps both named groups, each in its own place', () => {
+      const { controller, copy, download, main } = makeBoth(bulk)
+      const rendered = renderBar(controller)
+
+      const views = viewGroup()
+      const actions = screen.getByRole('group', { name: 'List actions' })
+      const mainAction = byId('hilos-table-main-action') as HTMLElement
+      expect(actions.getAttribute('data-id')).toBe('hilos-table-actions')
+      const follows = (first: HTMLElement, second: HTMLElement) =>
+        (first.compareDocumentPosition(second) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0
+      if (bulk) {
+        // The choice stands beside the stack that holds the controls, after it.
+        expect(follows(actions, views)).toBe(true)
+        expect(follows(mainAction, views)).toBe(true)
+      } else {
+        // In the bar alone the choice comes after the filters and before the
+        // list actions and the main action.
+        expect(follows(views, actions)).toBe(true)
+      }
+      expect(follows(actions, mainAction)).toBe(true)
+      expect(views.contains(actions) || actions.contains(views)).toBe(false)
+      expect(
+        Array.from(actions.querySelectorAll('button')).map(
+          (button) => button.textContent,
+        ),
+      ).toEqual(['Copy the list', 'Download as a file'])
+      expect(viewButtons().map((button) => button.textContent)).toEqual([
+        'Table',
+        'Tiles',
+      ])
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+      expect(main).not.toHaveBeenCalled()
+      rendered.unmount()
+      controller.dispose()
+    })
+
+    it('presses only its own group', () => {
+      const { controller, sent, copy, download, main } = makeBoth(bulk)
+      const rendered = renderBar(controller)
+
+      fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+      expect(controller.frame.view.get()).toBe('tiles')
+      expect(copy).not.toHaveBeenCalled()
+      expect(download).not.toHaveBeenCalled()
+      expect(main).not.toHaveBeenCalled()
+
+      fireEvent.click(byId('hilos-table-action-copy') as HTMLElement)
+      fireEvent.click(byId('hilos-table-main-action') as HTMLElement)
+      expect(copy).toHaveBeenCalledTimes(1)
+      expect(download).not.toHaveBeenCalled()
+      expect(main).toHaveBeenCalledTimes(1)
+      expect(controller.frame.view.get()).toBe('tiles')
+      expect(byId('hilos-table-view-tiles')?.getAttribute('aria-pressed')).toBe(
+        'true',
+      )
+      expect(sent).toEqual([])
+      rendered.unmount()
+      controller.dispose()
+    })
+
+    it('keeps the view choice when list actions are declared empty', () => {
+      const { controller } = makeController(
+        viewsFrame({ auxiliaryActions: [], ...(bulk ? BULK_ARCHIVE : {}) }),
+      )
+      const rendered = renderBar(controller)
+
+      expect(byId('hilos-table-actions')).toBeNull()
+      expect(viewButtons()).toHaveLength(2)
+      rendered.unmount()
+      controller.dispose()
+    })
+  },
+)
+
+describe('HilosTableBar views while rows are marked', () => {
+  it('keeps the view choice reachable while the marked rows hide the controls and list actions', () => {
+    const { controller, sent } = makeBoth(true)
+    const rendered = renderBar(controller)
+
+    act(() => controller.selectRow('a', true))
+
+    const controls = byId('hilos-table-controls') as HTMLElement
+    expect(controls.getAttribute('aria-hidden')).toBe('true')
+    expect(controls.contains(byId('hilos-table-actions'))).toBe(true)
+    expect(controls.contains(viewGroup())).toBe(false)
+    expect(
+      viewGroup().closest('.invisible, [aria-hidden="true"], [inert]'),
+    ).toBeNull()
+    fireEvent.click(byId('hilos-table-view-tiles') as HTMLElement)
+    expect(controller.frame.view.get()).toBe('tiles')
+    expect(controller.selection.count.get()).toBe(1)
+    expect(sent).toEqual([])
+    rendered.unmount()
+    controller.dispose()
   })
 })
 

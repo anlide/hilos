@@ -3,7 +3,9 @@ import { flushSync } from 'react-dom'
 import {
   HIDDEN_VALUE,
   Scope,
+  TABLE_VIEW_BROWSER_VALUE,
   TableViewportController,
+  eraseBrowserValues,
   hilosTableRemovalReason,
   ingest,
   isHiddenValue,
@@ -12,6 +14,7 @@ import {
   type HilosTableFrame,
   type HilosTableLineCount,
   type HilosTableRowHeight,
+  type HilosTableSortOrder,
   type HilosTableTextRem,
   type Hideable,
   type TableRow,
@@ -35,6 +38,7 @@ interface RecordValue {
   readonly badge: string
   readonly detail: string
   readonly expandable: boolean
+  readonly picture: string
 }
 const KEYS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'] as const
 const TARGETS = [...KEYS, 'h', 'i', 'j']
@@ -64,6 +68,28 @@ const READING_SAMPLES = {
   e: 'token',
   g: 'short',
 } as const satisfies Partial<Record<(typeof KEYS)[number], TextSample>>
+// Self-contained pictures exercise native image decoding without a file service.
+const PICTURES = ['circle', 'rect', 'ellipse'].map(
+  (shape) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><${shape} fill="steelblue" x="20" y="20" width="120" height="80" cx="80" cy="60" r="40" rx="60" ry="40"/></svg>`)}`,
+)
+// Offered beside the single-column orders once Tiles hides every header.
+const DECLARED_ORDERS: readonly HilosTableSortOrder[] = [
+  {
+    key: 'name-status',
+    components: [
+      { field: 'name', direction: 'asc' },
+      { field: 'badge', direction: 'desc' },
+    ],
+  },
+  {
+    key: 'status-name',
+    components: [
+      { field: 'badge', direction: 'asc' },
+      { field: 'name', direction: 'desc' },
+    ],
+  },
+]
 const ARCHIVE_COLUMNS = [
   ['environment', 'Environment', 'Production'],
   ['scope', 'Scope', 'Full'],
@@ -148,6 +174,7 @@ export function TableGeometryFixture() {
   const [syncSeen, setSyncSeen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [actionLog, setActionLog] = useState<string[]>([])
+  const [tiles, setTiles] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
   const previous = useRef<TableViewportController<RecordValue> | null>(null)
 
@@ -159,6 +186,7 @@ export function TableGeometryFixture() {
     archive = false,
     reading = readingSamples,
     readingContent = heightContent,
+    withTiles = tiles,
   ) {
     const rowHeight: HilosTableRowHeight | undefined =
       !reading || heightMode === 'default'
@@ -175,7 +203,19 @@ export function TableGeometryFixture() {
       filters: [
         { kind: 'toggle', key: 'status', label: 'Paused', on: 'paused' },
       ],
+      ...(withTiles
+        ? {
+            views: {
+              tableKey: 'geometry-records',
+              order: ['table', 'tiles'],
+              imageColumn: 'picture',
+            },
+          }
+        : {}),
       columns: [
+        ...(withTiles
+          ? [{ key: 'picture', label: 'Picture', source: SOURCE }]
+          : []),
         {
           key: 'name',
           label: 'Name',
@@ -190,7 +230,13 @@ export function TableGeometryFixture() {
           ...(reading ? { heightContent: readingContent } : {}),
           progress: true,
         },
-        { key: 'badge', label: 'Status', source: SOURCE, card: 'badge' },
+        {
+          key: 'badge',
+          label: 'Status',
+          source: SOURCE,
+          card: 'badge',
+          ...(withTiles ? { sortable: true } : {}),
+        },
         ...(archive
           ? ARCHIVE_COLUMNS.map(([key, label]) => ({
               key,
@@ -226,6 +272,7 @@ export function TableGeometryFixture() {
     }
     return new TableViewportController<RecordValue>({
       frame,
+      declaredOrders: withTiles ? DECLARED_ORDERS : undefined,
       resolve: (row) => {
         const fields = scope.entities
           .signal(row.slots[SOURCE] as EntityRef)
@@ -237,6 +284,7 @@ export function TableGeometryFixture() {
           badge: String(fields?.badge ?? ''),
           detail: String(fields?.detail ?? ''),
           expandable: fields?.expandable !== false,
+          picture: String(fields?.picture ?? ''),
         }
       },
       expandable: (row) => row.expandable,
@@ -247,6 +295,7 @@ export function TableGeometryFixture() {
     owner: TableViewportController<RecordValue>,
     reading = readingSamples,
     readingContent = mountedHeightContent,
+    withTiles = tiles,
   ): void {
     for (const key of TARGETS) {
       const sample: TextSample | undefined = reading
@@ -273,9 +322,22 @@ export function TableGeometryFixture() {
         badge: 'Available',
         detail: `Private detail for ${key}. ${EXPANDED}`,
         expandable: true,
+        picture: key === 'd' ? '' : PICTURES[TARGETS.indexOf(key) % 3]!,
       })
     }
     owner.ingestWindow(KEYS.map(raw), KEYS.length, true, null, null, 10)
+    // The opening order names the menu's first item once headers can be hidden.
+    if (withTiles)
+      owner.ingestSubscriptionWindow(
+        KEYS.map(raw),
+        KEYS.length,
+        true,
+        null,
+        null,
+        10,
+        [{ field: 'name', direction: 'asc' }],
+        [],
+      )
   }
   const [controller, setController] = useState(() => {
     const owner = makeController()
@@ -290,11 +352,14 @@ export function TableGeometryFixture() {
   const bulkWork = useSignal(controller.progress.bulk)
   const report = useSignal(controller.bulk.report)
   const textIntent = useSignal(controller.expandedText)
+  const tableView = useSignal(controller.frame.view)
 
   useEffect(() => () => controller.dispose(), [controller])
   // Expose an existing projection at the configured desktop viewport. No product
   // prop, stylesheet or viewport override is needed for this test-only control.
+  // A chosen Tiles view hides both branches itself and is left as the SDK drew it.
   useLayoutEffect(() => {
+    if (tableView === 'tiles') return
     const wide = bodyRef.current?.querySelector('.table-responsive')
     const cards = bodyRef.current?.querySelector(
       '[data-id="hilos-table-cards"]',
@@ -309,7 +374,7 @@ export function TableGeometryFixture() {
     cards?.classList.remove('d-md-none')
     wide?.classList.toggle('d-none', projection !== 'wide')
     cards?.classList.toggle('d-none', projection !== 'card')
-  }, [projection, mounted, controller, edge, readingSamples])
+  }, [projection, mounted, controller, edge, readingSamples, tableView])
 
   function reset(): void {
     seed(controller)
@@ -507,12 +572,18 @@ export function TableGeometryFixture() {
       )
     }
   }
-  function replace(search = true): void {
+  function replace(search = true, withTiles = tiles): void {
     previous.current = controller
     const reading = readingSamples
     const readingContent = reading ? heightContent : mountedHeightContent
-    const owner = makeController(search, icons, reading, readingContent)
-    seed(owner, reading, readingContent)
+    const owner = makeController(
+      search,
+      icons,
+      reading,
+      readingContent,
+      withTiles,
+    )
+    seed(owner, reading, readingContent, withTiles)
     setController(owner)
     if (reading) setMountedHeightContent(readingContent)
   }
@@ -672,6 +743,15 @@ export function TableGeometryFixture() {
         controller.ingestAnnounce('j', 'inside', footer.totalCount + 1, true),
     ],
     ['churn', 'Append/delete churn', () => void churn()],
+    // The privacy sweep's own erase and same-tab announcement, for one value.
+    [
+      'erase',
+      'Erase table views',
+      () =>
+        void eraseBrowserValues([TABLE_VIEW_BROWSER_VALUE], {
+          sessionCookieName: undefined,
+        }),
+    ],
   ]
   function select(
     id: string,
@@ -715,6 +795,19 @@ export function TableGeometryFixture() {
     >
       <h1 className="h4">React table geometry fixture</h1>
       <div className="d-flex flex-wrap gap-2 align-items-end mb-3">
+        <label className="form-check">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            data-id="geometry-tiles"
+            checked={tiles}
+            onChange={(event) => {
+              setTiles(event.target.checked)
+              replace(true, event.target.checked)
+            }}
+          />
+          Declare table views and pictures
+        </label>
         {select('target', 'Target', target, TARGETS, setTarget)}
         {select(
           'reason',
@@ -874,6 +967,10 @@ export function TableGeometryFixture() {
         data-range={`${footer.firstRow}:${footer.lastRow}`}
         data-body={body}
         data-selected={JSON.stringify(selected)}
+        data-view={tableView}
+        data-expanded={JSON.stringify(
+          rows.filter((row) => row.expanded).map((row) => row.rowKey),
+        )}
         data-text-intent={JSON.stringify(
           [...textIntent].map(([occurrence, columns]) => [
             occurrence,
@@ -902,6 +999,15 @@ export function TableGeometryFixture() {
             <HilosViewportTable
               controller={controller}
               cells={{
+                picture: (row, key) =>
+                  row.picture ? (
+                    <img
+                      src={row.picture}
+                      alt={`Test picture ${key}`}
+                      className="w-100 h-100 object-fit-cover"
+                      data-id={`geometry-picture-${key}`}
+                    />
+                  ) : null,
                 name: (row, key) => (
                   <span data-id={`geometry-name-${key}`}>
                     {icons ? `2026-10-21 11:13 ${key}` : row.name}

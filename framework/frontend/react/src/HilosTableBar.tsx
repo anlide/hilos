@@ -1,10 +1,12 @@
 // HilosTableBar — the strip above a table, drawn from what the page DECLARED
 // (HilosTableFrame) and never from props of its own: the title and subtitle, the
-// search box, the declared filters, and the one main action pinned right. Under the
+// search box, the declared filters, the Table/Tiles choice of a table that declares
+// views, and the main and list actions pinned right. Under the
 // title it holds the bar's controls and the selection panel in one room stacked in
 // one cell (.hilos-stack), sized to the taller of the two so that marking rows never
 // moves the table below (Design D2). Under the title it shows EITHER those controls
-// OR the selection panel, the inactive one invisible (Flow F1). It holds
+// OR the selection panel, the inactive one invisible (Flow F1); the view choice
+// stands beside that room and not in it, so no marked row hides it. It holds
 // NO table logic — the controller owns the descriptor, and every control here is a
 // call into it (multiframework-core.md). Internal to the React view layer on purpose:
 // it is not exported from index.ts, because a bar has no meaning away from the
@@ -15,6 +17,7 @@ import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   TABLE_STALENESS_COPY,
+  TABLE_VIEW_COPY,
   hilosTableOrderMenuNarrowOnly,
 } from '@hilos/core/base'
 import type {
@@ -71,6 +74,8 @@ export function HilosTableBar<R>({
   const searchBox = declaration.search
   const mainAction = declaration.mainAction
   const auxiliaryActions = declaration.auxiliaryActions ?? []
+  const views = declaration.views
+  const tableView = useSignal(controller.frame.view)
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.
@@ -128,6 +133,7 @@ export function HilosTableBar<R>({
     filters.length === 0 &&
     mainAction === undefined &&
     auxiliaryActions.length === 0 &&
+    views === undefined &&
     orderMenuNarrowOnly
 
   // Below md an order a header click gave is offered, and its item is the active
@@ -160,6 +166,37 @@ export function HilosTableBar<R>({
     mainAction !== undefined ||
     auxiliaryActions.length > 0 ||
     orders.length > 0
+
+  // The choice of layout is local to the screen: pressing it asks the server for
+  // nothing, so it stays enabled while the window's own controls wait for recovery
+  // (tableView.ts, TableViewportController.setView). The core ignores a press on the
+  // layout already shown, so nothing here guards it.
+  const renderViewButtons = () =>
+    views ? (
+      <div
+        className="btn-group btn-group-sm ms-auto flex-shrink-0"
+        role="group"
+        aria-label={TABLE_VIEW_COPY.group}
+        data-id="hilos-table-view"
+      >
+        {views.order.map((choice) => (
+          <button
+            key={choice}
+            type="button"
+            className={`btn btn-outline-secondary${tableView === choice ? ' active' : ''}`}
+            aria-pressed={tableView === choice}
+            data-id={`hilos-table-view-${choice}`}
+            onClick={() => controller.setView(choice)}
+          >
+            <i
+              className={`bi me-1 ${choice === 'table' ? 'bi-list-ul' : 'bi-grid-3x2-gap'}`}
+              aria-hidden="true"
+            />
+            {TABLE_VIEW_COPY[choice]}
+          </button>
+        ))}
+      </div>
+    ) : null
 
   const renderControls = (inStack: boolean) => (
     <div
@@ -306,6 +343,11 @@ export function HilosTableBar<R>({
         </button>
       ) : null}
 
+      {/* Inside the controls only when they are the whole strip. With the
+          selection panel stacked over them they would go invisible and
+          aria-hidden with the controls, and the choice has to stay reachable. */}
+      {inStack ? null : renderViewButtons()}
+
       {auxiliaryActions.length > 0 ? (
         <div
           className="d-flex flex-wrap gap-2 ms-auto"
@@ -364,15 +406,22 @@ export function HilosTableBar<R>({
       ) : null}
 
       {selectionEnabled ? (
-        <div
-          className="hilos-stack align-items-center mb-3"
-          data-id="hilos-table-bar-slot"
-        >
-          {hasControls ? renderControls(true) : null}
+        <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+          <div
+            className="hilos-stack align-items-center flex-grow-1 min-w-0"
+            data-id="hilos-table-bar-slot"
+          >
+            {hasControls ? renderControls(true) : null}
 
-          <HilosTableSelection controller={controller} shown={selectionPanel} />
+            <HilosTableSelection
+              controller={controller}
+              shown={selectionPanel}
+            />
+          </div>
+
+          {renderViewButtons()}
         </div>
-      ) : hasControls ? (
+      ) : hasControls || views !== undefined ? (
         renderControls(false)
       ) : null}
 

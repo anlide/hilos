@@ -1,8 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import {
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
+  clickSubmit,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
   expectStandaloneWebsockets,
@@ -13,6 +14,7 @@ import {
   tableTextToggle,
   expectTableTextControl,
   expectTableTextGeometry,
+  expectTableTileDeparture,
   settleTableLayout,
   shownByTestId,
   watchTableModalFocus,
@@ -259,4 +261,216 @@ test.describe('SDK reading accessibility, synthetic fixture ingress', () => {
       await focus.dispose()
     }
   })
+})
+
+test.describe('SDK Tiles accessibility, synthetic fixture ingress', () => {
+  test.beforeEach(async ({ page }) => {
+    await openTableFixture(
+      expect,
+      page,
+      '/__table_geometry/index.html',
+      'geometry-fixture',
+    )
+    await page.getByTestId('geometry-tiles').check()
+    await expect(page.getByTestId('geometry-state')).toContainText('g:live')
+    await expect(page.getByTestId('hilos-table-view-table')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  async function expectUniqueIds(page: Page): Promise<void> {
+    const ids = await page
+      .locator('[id]')
+      .evaluateAll((nodes) => nodes.map((node) => node.id))
+    expect(new Set(ids).size).toBe(ids.length)
+  }
+
+  test('T01 Tab, Enter and Space switch the view on buttons that keep focus; a tile reads and opens through unique targets of a named list', async ({
+    page,
+  }) => {
+    const state = page.getByTestId('geometry-state')
+    const root = page.getByTestId('hilos-viewport-table')
+    const table = page.getByTestId('hilos-table-view-table')
+    const tiles = page.getByTestId('hilos-table-view-tiles')
+    const list = root.getByRole('list', {
+      name: 'Geometry records',
+      exact: true,
+    })
+    const tile = page.getByTestId('hilos-table-tile-a')
+    const text = tableTextToggle(page, 'a')
+    const detail = shownByTestId(page, 'hilos-table-expand-a')
+    await page.getByTestId('geometry-height-mode').selectOption('lines')
+    await page.getByTestId('geometry-lines').selectOption('3')
+    await page.getByTestId('geometry-height-content').selectOption('parts')
+    await page.getByTestId('geometry-reading').click()
+    await expectTableTextControl(expect, page, 'a', false)
+    const sent = (await state.getAttribute('data-requests'))!
+    const url = page.url()
+
+    await test.step('Tab reaches Tiles and Enter chooses it on the same focused button', async () => {
+      const group = page.getByTestId('hilos-table-view')
+      await expect(group).toHaveRole('group')
+      await expect(group).toHaveAccessibleName('Table view')
+      await table.focus()
+      await table.press('Tab')
+      await expect(tiles).toBeFocused()
+      await tiles.press('Enter')
+      await expect(state).toHaveAttribute('data-view', 'tiles')
+      await expect(tiles).toHaveAttribute('aria-pressed', 'true')
+      await expect(table).toHaveAttribute('aria-pressed', 'false')
+      await expect(tiles).toBeFocused()
+      await settleTableLayout(page)
+      await expect(state).toHaveAttribute('data-requests', sent)
+      expect(page.url()).toBe(url)
+    })
+
+    await test.step('the tiles are one named list and the hidden Table offers no control', async () => {
+      await expect(list).toHaveCount(1)
+      await expect(list.getByRole('listitem')).toHaveCount(7)
+      await expect(root.getByRole('table')).toHaveCount(0)
+      await expect(
+        page
+          .getByTestId('hilos-table-row-a')
+          .getByTestId('hilos-table-text-toggle'),
+      ).toBeHidden()
+      await expectTableTextControl(expect, page, 'a', false)
+    })
+
+    await test.step("a tile's reading and detail controls keep their own states and targets", async () => {
+      await text.focus()
+      await text.press('Space')
+      await expectTableTextControl(expect, page, 'a', true)
+      await expect(text).toBeFocused()
+      await expect(detail).toHaveAttribute('aria-expanded', 'false')
+      await detail.focus()
+      await detail.press('Enter')
+      await expect(detail).toHaveAttribute('aria-expanded', 'true')
+      await expect(detail).toBeFocused()
+      await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+      await expectTableTextControl(expect, page, 'a', true)
+      const reading = (await text.getAttribute('aria-controls'))!
+      const panel = (await detail.getAttribute('aria-controls'))!
+      expect(reading).not.toBe(panel)
+      await expect(tile.locator(`[id="${reading}"]`)).toBeVisible()
+      await expect(tile.locator(`[id="${panel}"]`)).toBeVisible()
+      // The copies in the hidden Table and cards stay out of the tree.
+      await expect(page.getByRole('button', { expanded: true })).toHaveCount(2)
+      await expectUniqueIds(page)
+      await text.press('Enter')
+      await expectTableTextControl(expect, page, 'a', false)
+      await expect(text).toBeFocused()
+      await expect(detail).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    await test.step('Shift+Tab and Space bring Table back on its focused button with the same states', async () => {
+      await tiles.focus()
+      await tiles.press('Shift+Tab')
+      await expect(table).toBeFocused()
+      await table.press('Space')
+      await expect(state).toHaveAttribute('data-view', 'table')
+      await expect(table).toHaveAttribute('aria-pressed', 'true')
+      await expect(tiles).toHaveAttribute('aria-pressed', 'false')
+      await expect(table).toBeFocused()
+      await settleTableLayout(page)
+      await expect(list).toHaveCount(0)
+      await expect(tile.getByTestId('hilos-table-expand-a')).toBeHidden()
+      await expectTableTextControl(expect, page, 'a', false)
+      await expect(detail).toHaveAttribute('aria-expanded', 'true')
+      await expect(page.getByRole('button', { expanded: true })).toHaveCount(1)
+      await expectUniqueIds(page)
+      await expect(state).toHaveAttribute('data-requests', sent)
+      expect(page.url()).toBe(url)
+    })
+  })
+
+  for (const outcome of ['replacement', 'view', 'removed', 'root'] as const) {
+    test(`T06 marked modal focus: ${outcome}`, async ({ page }, info) => {
+      const state = page.getByTestId('geometry-state')
+      await clickSubmit(expect, page.getByTestId('hilos-table-view-tiles'))
+      await expect(state).toHaveAttribute('data-view', 'tiles')
+      if (outcome === 'root') {
+        await clickSubmit(expect, page.getByTestId('geometry-no-search'))
+        await expect(page.getByTestId('hilos-table-search')).toHaveCount(0)
+        await expect(state).toHaveAttribute('data-view', 'tiles')
+      }
+      await settleTableLayout(page)
+      const tileAction = page
+        .getByTestId('hilos-table-tile-a')
+        .getByTestId('geometry-action-a')
+      const focus = await watchTableModalFocus(tileAction)
+      try {
+        await tileAction.focus()
+        await tileAction.press('Enter')
+        const modal = page.getByTestId('modal')
+        await expect(modal).toBeFocused()
+        await expect(modal).toHaveAccessibleName('Inspect geometry record')
+        if (outcome === 'view') {
+          // Table work behind the open dialog, as a view change from code.
+          await page
+            .getByTestId('hilos-table-view-table')
+            .evaluate((button: HTMLButtonElement) => button.click())
+          await expect(state).toHaveAttribute('data-view', 'table')
+          await settleTableLayout(page)
+          await expect(modal).toBeFocused()
+        } else {
+          const delivery = page.getByTestId(
+            outcome === 'replacement'
+              ? 'geometry-modal-snapshot'
+              : 'geometry-modal-remove',
+          )
+          await delivery.focus()
+          await delivery.press('Enter')
+          if (outcome === 'replacement')
+            await expect(shownByTestId(page, 'geometry-name-a')).toHaveText(
+              'Fresh a',
+            )
+          else
+            await expectTableTileDeparture(expect, page, 'a', 'Removed', [
+              'geometry-name-a',
+              'geometry-picture-a',
+              'geometry-text-a',
+              'geometry-badge-a',
+              'geometry-action-a',
+              'geometry-detail-a',
+              'geometry-work-a',
+            ])
+          await settleTableLayout(page)
+          await expect(delivery).toBeFocused()
+        }
+        expect((await focus.read()).inDialog).toBe(true)
+        await page.getByTestId('geometry-modal-snapshot').focus()
+        await page.getByTestId('geometry-modal-snapshot').press('Tab')
+        await expect(page.getByTestId('modal-close')).toBeFocused()
+        await page.getByTestId('modal-close').press('Shift+Tab')
+        await expect(page.getByTestId('geometry-modal-snapshot')).toBeFocused()
+        await modal.press('Escape')
+        await expect(modal).toHaveCount(0)
+        const target =
+          outcome === 'replacement'
+            ? tileAction
+            : page.getByTestId(
+                outcome === 'root'
+                  ? 'hilos-viewport-table'
+                  : 'hilos-table-search',
+              )
+        await expect(target).toBeVisible()
+        await expect(target).toBeFocused()
+        if (outcome === 'replacement') {
+          await expect(state).toHaveAttribute('data-view', 'tiles')
+          await expect(target).toHaveAttribute(
+            'data-hilos-focus-return',
+            'inspect-geometry',
+          )
+          expect((await focus.read()).openerConnected).toBe(false)
+        }
+        await info.attach(`tiles-modal-${outcome}`, {
+          body: JSON.stringify(await focus.history(), null, 2),
+          contentType: 'application/json',
+        })
+      } finally {
+        await focus.dispose()
+      }
+    })
+  }
 })

@@ -91,8 +91,9 @@ const EMPTY_REVISION: ReadonlySignal<number> = { get: () => 0 }
  * mount only, so backend Hilos::$rt replication (runtime/rt-context.md and
  * architecture/truth-source.md) and durable DB storage have no reader here.
  * Registration and measurement happen only after commit; render is read-only.
- * Main refs identify the whole card or main tr; wide work/detail refs identify
- * adjacent rows, card work/detail refs identify blocks inside that card's body.
+ * Main refs identify the main tr, the whole card, or the whole tile with its
+ * picture and body; wide work/detail refs identify adjacent rows, card and tile
+ * work/detail refs identify blocks inside that card's body.
  * Static room-<projection> probes provide fallback/reason/replacement chrome.
  * The caller keeps a stable root with tabindex=-1 and keys rows by occurrence.
  */
@@ -168,7 +169,7 @@ export function useTableViewportGeometry(
     revision,
     tracks: current?.tracks ?? null,
     trackWidths: current?.trackWidths ?? [],
-    reasonFloors: current?.reasonFloors ?? { wide: 0, card: 0 },
+    reasonFloors: current?.reasonFloors ?? { wide: 0, card: 0, tiles: 0 },
     bind,
     recordPixels: (
       rowKey: string,
@@ -204,7 +205,7 @@ function createMount(
   let snapshots = new Map<string, TableRecordGeometry>()
   let tracks: TableColumnTracks | null = null
   let trackWidths: readonly number[] = []
-  let reasonFloors = { wide: 0, card: 0 }
+  let reasonFloors = { wide: 0, card: 0, tiles: 0 }
   let columnKeys: readonly string[] = []
   let frame: number | null = null
   let stopped = false
@@ -236,11 +237,15 @@ function createMount(
     const style = main ? getComputedStyle(main) : null
     let chrome = 0
     let gap = 0
-    if (record.projection === 'card' && main && style) {
+    if (record.projection !== 'wide' && main && style) {
       chrome = verticalChrome(main)
       const body = main.querySelector<HTMLElement>('.card-body')
       if (body) chrome += verticalChrome(body)
       gap = pixels(style.marginTop) + pixels(style.marginBottom)
+      // The Bootstrap column survives departure. Its vertical gutter belongs to
+      // the occupied extent once, beside the complete image-and-body card box.
+      if (record.projection === 'tiles' && main.parentElement)
+        gap += pixels(getComputedStyle(main.parentElement).marginTop)
     } else if (table.current && main) {
       const cell = main.querySelector<HTMLElement>('td')
       if (cell) {
@@ -303,7 +308,9 @@ function createMount(
       ? registration?.record(rowKey, projection)?.workReserve
       : null
     const workHeight = work ? (reserve?.work ?? work.height) : 0
-    if (projection === 'card') {
+    // A card and a tile hold their work and detail inside the measured main box:
+    // a tile's main is its whole picture and body, so each part counts once.
+    if (projection !== 'wide') {
       const detailHeight = detail?.height ?? 0
       const previous = record.work?.previousElementSibling
       const previousBox = previous instanceof HTMLElement ? box(previous) : null
@@ -546,8 +553,27 @@ function createMount(
     const style = getComputedStyle(node)
     const header = table.current?.querySelector('thead th')
     const headerStyle = header ? getComputedStyle(header) : null
+    // The tile probe stands in a Bootstrap column of the real grid: its width,
+    // the number of columns in a row and their gutter change a tile's wrapping
+    // while the root keeps its width.
+    const tile = probe('tiles')
+    const tileBox = box(tile)
+    const column = tile?.parentElement
+    const grid = column?.parentElement
+    const columnBox = box(column)
+    const gridBox = box(grid)
+    const tileStyle = tile ? getComputedStyle(tile) : null
+    const columnStyle = column ? getComputedStyle(column) : null
     return [
       width,
+      tileBox?.width ?? 0,
+      columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
+      tile ? layoutZoom(tile) : 1,
+      tileStyle?.fontSize,
+      tileStyle?.lineHeight,
+      columnStyle?.paddingLeft,
+      columnStyle?.paddingRight,
+      columnStyle?.marginTop,
       wideContainerWidth || width,
       // Zoom can change wrapping or used border widths even when a fixed
       // container keeps the same local width. Release its old track latch.
@@ -579,6 +605,7 @@ function createMount(
     releasingTracks = true
     registration?.invalidateLayout('wide')
     registration?.invalidateLayout('card')
+    registration?.invalidateLayout('tiles')
     calibratedLayout = null
     refresh()
   }
@@ -620,8 +647,8 @@ function createMount(
     if (root.current) observer?.observe(root.current)
     if (table.current?.parentElement)
       observer?.observe(table.current.parentElement)
-    const floors = { wide: 0, card: 0 }
-    for (const projection of ['wide', 'card'] as const) {
+    const floors = { wide: 0, card: 0, tiles: 0 }
+    for (const projection of ['wide', 'card', 'tiles'] as const) {
       floors[projection] =
         box(
           probe(projection)?.querySelector<HTMLElement>(
@@ -631,7 +658,8 @@ function createMount(
     }
     if (
       floors.wide !== reasonFloors.wide ||
-      floors.card !== reasonFloors.card
+      floors.card !== reasonFloors.card ||
+      floors.tiles !== reasonFloors.tiles
     ) {
       reasonFloors = floors
       refresh()
@@ -718,10 +746,10 @@ function createMount(
       state.retained == null
     )
       return undefined
-    // Card padding and its outside gap are rem-based. Sass subtracts their
-    // current values from the total in the same layout, before an observer
+    // Card and tile padding and their outside gap are rem-based. Sass subtracts
+    // their current values from the total in the same layout, before an observer
     // could compensate a font change in a later frame.
-    if (projection === 'card') return state.retained
+    if (projection !== 'wide') return state.retained
     return Math.max(0, state.retained - metrics.chrome - metrics.gap)
   }
 

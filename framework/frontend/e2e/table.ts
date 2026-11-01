@@ -119,7 +119,8 @@ export function tableTextToggle(page: Page, rowKey: string): Locator {
   return shownByTestId(
     page
       .getByTestId(`hilos-table-row-${rowKey}`)
-      .or(page.getByTestId(`hilos-table-card-${rowKey}`)),
+      .or(page.getByTestId(`hilos-table-card-${rowKey}`))
+      .or(page.getByTestId(`hilos-table-tile-${rowKey}`)),
     'hilos-table-text-toggle',
   )
 }

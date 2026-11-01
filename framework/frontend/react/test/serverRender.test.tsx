@@ -103,6 +103,137 @@ describe('React server rendering', () => {
     }
   })
 
+  it('renders the declared Table and Tiles choice of a table bar without DOM globals', () => {
+    const controller = new TableViewportController<unknown>({
+      resolve: (row) => row.slots,
+      sendViewport: () => {},
+      frame: {
+        title: 'Pictures',
+        columns: [{ key: 'name', label: 'Name' }],
+        views: {
+          tableKey: 'pictures',
+          order: ['table', 'tiles'],
+          imageColumn: 'name',
+        },
+      },
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'A' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const setView = vi.spyOn(controller, 'setView')
+    try {
+      expect(typeof window).toBe('undefined')
+      expect(typeof document).toBe('undefined')
+      const html = renderToStaticMarkup(
+        <HilosViewportTable
+          controller={controller}
+          cells={{ name: () => 'A' }}
+        />,
+      )
+      const opening = (choice: string) =>
+        html.match(
+          new RegExp(`<button[^>]*data-id="hilos-table-view-${choice}"[^>]*>`),
+        )?.[0] ?? ''
+      expect(html).toContain('aria-label="Table view"')
+      expect(html.match(/data-id="hilos-table-view"/g)).toHaveLength(1)
+      expect(opening('table')).toContain('aria-pressed="true"')
+      expect(opening('tiles')).toContain('aria-pressed="false"')
+      expect(html.indexOf('hilos-table-view-table')).toBeLessThan(
+        html.indexOf('hilos-table-view-tiles'),
+      )
+      expect(setView).not.toHaveBeenCalled()
+    } finally {
+      controller.dispose()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('renders declared tiles on their opening view without storage, effects or geometry, under ids of their own', () => {
+    const controller = new TableViewportController<{ name: string }>({
+      resolve: (row) => ({ name: String(row.slots.name) }),
+      sendViewport: () => {},
+      frame: {
+        title: 'Pictures',
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'picture', label: 'Picture' },
+          { key: 'note', label: 'Note', detail: true },
+        ],
+        views: {
+          tableKey: 'pictures',
+          order: ['tiles', 'table'],
+          imageColumn: 'picture',
+        },
+      },
+    })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'A' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.expandRow('a', true)
+    const register = vi.fn(controller.geometry.register)
+    Object.defineProperty(controller, 'geometry', { value: { register } })
+    const storage = {
+      getItem: vi.fn(() =>
+        JSON.stringify({ version: 1, views: { pictures: 'table' } }),
+      ),
+      setItem: vi.fn(),
+    }
+    vi.stubGlobal('localStorage', storage)
+    const setView = vi.spyOn(controller, 'setView')
+    try {
+      expect(typeof window).toBe('undefined')
+      expect(typeof document).toBe('undefined')
+      const html = renderToStaticMarkup(
+        <StrictMode>
+          <HilosViewportTable
+            controller={controller}
+            cells={{
+              name: (row) => row.name,
+              picture: (row) => <img src="/a.png" alt={row.name} />,
+            }}
+            details={{ note: () => 'Noted' }}
+          />
+        </StrictMode>,
+      )
+      const tiles =
+        html.match(/<div class="([^"]*)" data-id="hilos-table-tiles"/)?.[1] ??
+        ''
+      expect(tiles.split(' ')).not.toContain('d-none')
+      expect(html).toContain('data-id="hilos-table-tile-a"')
+      expect(html).toContain('data-id="hilos-table-tile-image-a"')
+      expect(html).toContain('data-id="hilos-table-card-a"')
+      const panels = [
+        ...html.matchAll(
+          /id="([^"]+)"[^>]*data-id="hilos-table-row-detail-a"/g,
+        ),
+      ].map((match) => match[1])
+      const controls = [...html.matchAll(/aria-controls="([^"]+)"/g)].map(
+        (match) => match[1],
+      )
+      expect(panels).toHaveLength(3)
+      expect(new Set(panels).size).toBe(3)
+      expect(new Set(controls)).toEqual(new Set(panels))
+      expect(storage.getItem).not.toHaveBeenCalled()
+      expect(storage.setItem).not.toHaveBeenCalled()
+      expect(setView).not.toHaveBeenCalled()
+      expect(register).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      controller.dispose()
+      vi.restoreAllMocks()
+    }
+  })
+
   it('renders text context and reading hooks without browser APIs or committed registrations', () => {
     const controller = new TableViewportController<unknown>({
       resolve: (row) => row.slots,

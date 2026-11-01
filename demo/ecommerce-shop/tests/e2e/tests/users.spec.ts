@@ -5,6 +5,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test'
+import { TABLE_VIEW_STORAGE_KEY } from '../../../../../framework/frontend/core/src/table/tableViewPreference.js'
 import {
   createTestUser,
   expectDataFreeDeparture,
@@ -28,6 +29,9 @@ import {
   watchTableNativeLifecycle,
   expectTableNativeLifecycle,
   watchTableModalFocus,
+  expectTableTilePictures,
+  expectTableTileDeparture,
+  watchTableGeometryCallbacks,
   tableTextRegion,
   tableTextToggle,
   expectTableTextControl,
@@ -39,6 +43,7 @@ import {
   type TableTextPolicy,
   type TableEnvironment,
   type TableGeometryWatch,
+  type TableGeometryProjection,
   dismissToasts,
   expectHilosUserBlockSettled,
   leaveSecondAdmin,
@@ -392,7 +397,7 @@ async function press(page: Page, id: string): Promise<void> {
 async function observeAllocation(
   page: Page,
   key: string,
-  projection: 'wide' | 'card',
+  projection: TableGeometryProjection,
   generic = false,
 ) {
   const observation = await watchTableAllocation(
@@ -457,6 +462,7 @@ async function evidence(
   page: Page,
   info: TestInfo,
   name: string,
+  layout = true,
 ): Promise<void> {
   // Keep recording through observer/font work; checking every captured frame
   // preserves a transient drift even when the final layout recovers.
@@ -467,10 +473,13 @@ async function evidence(
     contentType: 'application/json',
   })
   // Include the fixture's controls and layout conditions beside the SDK surface.
-  await info.attach(`${name}-layout`, {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: 'image/png',
-  })
+  // The full-page capture lays the page out for one frame at a 1x1 viewport, so
+  // a caller whose other observation still records skips the picture.
+  if (layout)
+    await info.attach(`${name}-layout`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    })
   await watch.check()
 }
 
@@ -1673,6 +1682,339 @@ for (const projection of ['wide', 'card'] as const) {
     }
   })
 }
+
+// The third projection of the same React mount. Vue's control census adds no
+// browser seam here, and the marked-modal outcomes belong to the keyboard spec.
+test.describe('React Tiles: public SDK at desktop width with synthetic ingress', () => {
+  test.beforeEach(async ({ page }) => {
+    await openTableFixture(
+      expect,
+      page,
+      '/__table_geometry/index.html',
+      'geometry-fixture',
+    )
+    await page.getByTestId('geometry-tiles').check()
+    await expect(page.getByTestId('geometry-state')).toContainText('g:live')
+    await expect(page.getByTestId('hilos-table-view-table')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  test.afterEach(async ({ page }, info) => {
+    for (const [index, observation] of (
+      observations.get(page) ?? []
+    ).entries()) {
+      await observation.stop()
+      if (info.status !== info.expectedStatus) {
+        await info.attach(`tiles-failure-${index}-bounds`, {
+          body: await observation.evidence(),
+          contentType: 'application/json',
+        })
+      }
+    }
+    observations.delete(page)
+    if (info.status !== info.expectedStatus) {
+      await info.attach('tiles-failure-layout', {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      })
+    }
+  })
+
+  async function tiles(page: Page): Promise<void> {
+    await press(page, 'hilos-table-view-tiles')
+    await expect(page.getByTestId('geometry-state')).toHaveAttribute(
+      'data-view',
+      'tiles',
+    )
+    await settleTableLayout(page)
+  }
+
+  async function tileGone(page: Page, key: string): Promise<void> {
+    await expectTableTileDeparture(expect, page, key, 'Removed', [
+      `geometry-name-${key}`,
+      `geometry-picture-${key}`,
+      `geometry-text-${key}`,
+      `geometry-badge-${key}`,
+      `geometry-action-${key}`,
+      `geometry-detail-${key}`,
+      `geometry-work-${key}`,
+    ])
+  }
+
+  async function watchTiles(page: Page) {
+    const watch = await watchTableGeometry(expect, page, {
+      bodyId: 'geometry-body',
+      projection: 'tiles',
+      rowKeys: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+      lastKey: 'g',
+    })
+    observations.set(page, [...(observations.get(page) ?? []), watch])
+    return watch
+  }
+
+  async function storedViews(page: Page): Promise<string | null> {
+    return page.evaluate(
+      (key) => localStorage.getItem(key),
+      TABLE_VIEW_STORAGE_KEY,
+    )
+  }
+
+  test('T02 Tiles and back keep the one window, marks, pending, work, detail and text intent without a send; the Tiles order menu changes that window', async ({
+    page,
+  }) => {
+    await tiles(page)
+    await page.getByTestId('geometry-height-mode').selectOption('lines')
+    await press(page, 'geometry-reading')
+    const state = page.getByTestId('geometry-state')
+    await expect(state).toHaveAttribute('data-view', 'tiles')
+    await page.getByTestId('geometry-snapshot').selectOption('initial')
+    await typeInto(page.getByTestId('hilos-table-search'), 'needle')
+    await expect(state).toHaveAttribute('data-body', 'loading')
+    await press(page, 'geometry-deliver')
+    await expect(state).toContainText('g:live')
+    await page.getByTestId('hilos-table-filter-status').check()
+    await expect(state).toHaveAttribute('data-body', 'loading')
+    await press(page, 'geometry-deliver')
+    await expect(state).toContainText('g:live')
+    // Without headers the single-column orders join the menu at desktop width.
+    const order = page.getByTestId('hilos-table-order')
+    const toggle = order.getByTestId('hilos-dropdown-toggle')
+    await clickSubmit(expect, toggle)
+    await clickSubmit(expect, order.getByTestId('hilos-table-order-name-desc'))
+    await expect(state).toHaveAttribute('data-body', 'loading')
+    await press(page, 'geometry-deliver')
+    await expect(state).toContainText('g:live')
+    await expect(toggle).toContainText('Name ↓')
+    await page.getByTestId('geometry-snapshot').selectOption('capacity')
+    await press(page, 'geometry-deliver')
+    await page.getByTestId('geometry-navigation').selectOption('page')
+    await press(page, 'geometry-window')
+    await expect(state).toHaveAttribute('data-body', 'loading')
+    await press(page, 'geometry-deliver')
+    await expect(state).toContainText('c:live')
+    await shownByTestId(page, 'hilos-table-select-a').check()
+    await shownByTestId(page, 'hilos-table-expand-a').click()
+    const textToggle = shownByTestId(
+      page
+        .getByTestId('hilos-table-tile-a')
+        .or(page.getByTestId('hilos-table-row-a')),
+      'hilos-table-text-toggle',
+    )
+    await textToggle.click()
+    await page.getByTestId('geometry-pending').selectOption('move')
+    await page.getByTestId('geometry-detail').selectOption('expanded')
+    await press(page, 'geometry-configure')
+    await press(page, 'geometry-work')
+    await expect(state).toContainText('a:move')
+    await expect(state).toHaveAttribute('data-expanded', '["a"]')
+    // Reading intent belongs to the current occurrence.
+    const identities = (await state.getAttribute('data-identities'))!
+    const occurrence = Number(identities.match(/^a:(\d+),/)![1])
+    expect(occurrence).toBeGreaterThan(0)
+    await expect(state).toHaveAttribute(
+      'data-text-intent',
+      JSON.stringify([[occurrence, ['paragraph']]]),
+    )
+    const attributes = [
+      'data-identities',
+      'data-selected',
+      'data-expanded',
+      'data-text-intent',
+      'data-descriptor',
+      'data-requests',
+      'data-range',
+      'data-count',
+      'data-body',
+    ]
+    const before = await Promise.all(
+      attributes.map((name) => state.getAttribute(name)),
+    )
+    const descriptor = JSON.parse(before[4]!)
+    expect(descriptor.filter).toEqual({ search: 'needle', status: 'paused' })
+    expect(descriptor.sort).toEqual([{ field: 'name', direction: 'desc' }])
+    expect(descriptor.pageIndex).toBe(1)
+    const url = page.url()
+    for (const view of ['table', 'tiles']) {
+      await press(page, `hilos-table-view-${view}`)
+      await expect(state).toHaveAttribute('data-view', view)
+      for (const [index, name] of attributes.entries())
+        await expect(state).toHaveAttribute(name, before[index]!)
+      await expect(state).toContainText('a:move')
+      await expect(shownByTestId(page, 'hilos-table-apply')).toBeVisible()
+      await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+      await expect(shownByTestId(page, 'geometry-work-a')).toBeVisible()
+      await expect(shownByTestId(page, 'hilos-table-select-a')).toBeChecked()
+      await expect(textToggle).toHaveAttribute('aria-expanded', 'true')
+      expect(page.url()).toBe(url)
+    }
+    // The pending change shown in Table is the one Tiles applies.
+    await press(page, 'hilos-table-apply')
+    await expect(state).not.toContainText('a:move')
+    await expect(state).toContainText('a:live')
+    await expect(state).toHaveAttribute('data-requests', before[5]!)
+  })
+
+  test('T03 the view returns on a fresh mount and F5 at the same URL; the privacy erase reopens the default without writing it back', async ({
+    page,
+  }) => {
+    await tiles(page)
+    const stored = JSON.stringify({
+      version: 1,
+      views: { 'geometry-records': 'tiles' },
+    })
+    expect(await storedViews(page)).toBe(stored)
+    await press(page, 'geometry-unmount')
+    await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+    await press(page, 'geometry-mount')
+    await expect(page.getByTestId('hilos-table-view-tiles')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await press(page, 'geometry-replace')
+    await expect(page.getByTestId('hilos-table-view-tiles')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    const url = page.url()
+    await page.reload()
+    await expect(page.getByTestId('geometry-fixture')).toBeVisible()
+    // Re-declare the optional fixture capability; the production binding restores it.
+    await page.getByTestId('geometry-tiles').check()
+    await expect(page.getByTestId('hilos-table-view-tiles')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(page.getByTestId('hilos-table-tiles')).toBeVisible()
+    const state = page.getByTestId('geometry-state')
+    await expect(state).toHaveAttribute('data-requests', '0')
+    expect(page.url()).toBe(url)
+    expect(await storedViews(page)).toBe(stored)
+    await press(page, 'geometry-erase')
+    await expect(state).toHaveAttribute('data-view', 'table')
+    await expect(page.getByTestId('hilos-table-view-table')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(page.getByTestId('hilos-table-tiles')).toBeHidden()
+    expect(await storedViews(page)).toBeNull()
+    await press(page, 'geometry-unmount')
+    await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+    await press(page, 'geometry-mount')
+    await expect(page.getByTestId('hilos-table-view-table')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await settleTableLayout(page)
+    await expect(state).toHaveAttribute('data-view', 'table')
+    expect(await storedViews(page)).toBeNull()
+    await expect(state).toHaveAttribute('data-requests', '0')
+    expect(page.url()).toBe(url)
+  })
+
+  test('T04 foreign: a full picture/detail/text/work tile keeps its occurrence and grid footprint until Apply, then retires its data', async ({
+    page,
+  }, info) => {
+    await tiles(page)
+    await page.getByTestId('geometry-detail').selectOption('expanded')
+    await page.getByTestId('geometry-text').check()
+    await press(page, 'geometry-configure')
+    await press(page, 'geometry-work')
+    await expect(shownByTestId(page, 'geometry-detail-a')).toBeVisible()
+    await expect(shownByTestId(page, 'geometry-work-a')).toBeVisible()
+    await info.attach('tiles-picture-frames', {
+      body: await expectTableTilePictures(expect, page, ['a', 'b', 'c'], ['d']),
+      contentType: 'application/json',
+    })
+    await settleTableLayout(page)
+    const grid = await watchTiles(page)
+    const allocation = await observeAllocation(page, 'a', 'tiles')
+    const state = page.getByTestId('geometry-state')
+    const identities = await state.getAttribute('data-identities')
+    await press(page, 'geometry-remove')
+    await expect(state).toContainText('a:remove')
+    await expect(page.getByTestId('geometry-work-a')).toHaveCount(0)
+    await grid.check()
+    await allocation.check()
+    await press(page, 'hilos-table-apply')
+    await tileGone(page, 'a')
+    await expect(state).toHaveAttribute('data-identities', identities!)
+    await press(page, 'geometry-complete')
+    // The grid still records; its own evidence below carries the picture.
+    await evidence(
+      allocation,
+      page,
+      info,
+      'tiles-foreign-used-allocation',
+      false,
+    )
+    await evidence(grid, page, info, 'tiles-foreign-grid')
+  })
+
+  test('T05 completed work is released; fresh windows, reuse and stale observer callbacks keep their own geometry', async ({
+    page,
+  }, info) => {
+    const callbacks = await watchTableGeometryCallbacks(page)
+    await openTableFixture(
+      expect,
+      page,
+      '/__table_geometry/index.html',
+      'geometry-fixture',
+    )
+    await page.getByTestId('geometry-tiles').check()
+    await tiles(page)
+    await page.getByTestId('geometry-detail').selectOption('expanded')
+    await press(page, 'geometry-configure')
+    await press(page, 'geometry-work')
+    await settleTableLayout(page)
+    const working = await observeAllocation(page, 'a', 'tiles')
+    await press(page, 'geometry-complete')
+    await expect(page.getByTestId('geometry-work-a')).toHaveCount(0)
+    await settleTableLayout(page)
+    await working.changed('extent', 'shrank')
+    const completed = await observeAllocation(page, 'a', 'tiles')
+    const old = await callbacks.capture()
+    const state = page.getByTestId('geometry-state')
+    const identities = await state.getAttribute('data-identities')
+    await press(page, 'geometry-own')
+    await tileGone(page, 'a')
+    // The working allocation records on through the fresh window.
+    await evidence(
+      completed,
+      page,
+      info,
+      'tiles-finished-work-departure',
+      false,
+    )
+    await press(page, 'geometry-deliver')
+    await expect(shownByTestId(page, 'geometry-name-a')).toHaveText('Fresh a')
+    await expect(state).not.toHaveAttribute('data-identities', identities!)
+    await settleTableLayout(page)
+    await working.changed('extent', 'shrank')
+    await evidence(working, page, info, 'tiles-fresh-window-release')
+    const fresh = await watchTiles(page)
+    await old.replay(expect)
+    await evidence(fresh, page, info, 'tiles-old-window-callbacks')
+    const beforeReuse = await state.getAttribute('data-identities')
+    const previous = await callbacks.capture()
+    await press(page, 'geometry-reuse')
+    await expect(shownByTestId(page, 'geometry-name-a')).toHaveText(
+      'Replacement a',
+    )
+    await expect(state).not.toHaveAttribute('data-identities', beforeReuse!)
+    await settleTableLayout(page)
+    const reused = await watchTiles(page)
+    await previous.replay(expect)
+    await evidence(reused, page, info, 'tiles-old-occurrence-callbacks')
+    await old.dispose()
+    await previous.dispose()
+    const own = await observeAllocation(page, 'a', 'tiles')
+    await press(page, 'geometry-own')
+    await tileGone(page, 'a')
+    await evidence(own, page, info, 'tiles-reused-own-allocation')
+  })
+})
 
 test.describe('React public SDK text reading with synthetic ingress', () => {
   test.beforeEach(async ({ page }) => {

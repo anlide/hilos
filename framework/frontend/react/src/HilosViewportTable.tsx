@@ -24,13 +24,27 @@
 // (HilosTableBody): rows, a skeleton of rows while a window change is late, or one
 // of the four worded states drawn by HilosTableEmptyState — the page's own "nothing
 // here yet", the framework's "Nothing found", and "List unavailable" (mockups/components/table section
-// 10). Bootstrap classes only.
-import { Fragment, useContext, useId, useLayoutEffect, useRef } from 'react'
+// 10). A table that declared `views` also stands a grid of tiles beside both
+// branches: the same window and the same record renderer as the card, with the
+// picture of its declared column on top (mockups/components/table section 10).
+// Bootstrap classes only.
+import {
+  Children,
+  Fragment,
+  isValidElement,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+} from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
+  TABLE_VIEW_COPY,
   HILOS_TABLE_ACTIONS_KEY,
+  bindTableViewPreference,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
@@ -113,6 +127,23 @@ export interface HilosViewportTableProps<R> {
 type ProgressCell = { span: number; covered: boolean }
 
 /**
+ * Whether what a renderer returned draws anything. React draws nothing for null,
+ * undefined, a boolean, or a fragment or an array holding only those, while text
+ * and numbers — 0 included — are content. An element of the page's own component
+ * is content too: its function runs when React renders it, never here.
+ *
+ * @param node What the renderer returned.
+ */
+function drawsContent(node: ReactNode): boolean {
+  return Children.toArray(node).some(
+    (child) =>
+      !isValidElement<{ children?: ReactNode }>(child) ||
+      child.type !== Fragment ||
+      drawsContent(child.props.children),
+  )
+}
+
+/**
  * The framework-owned table chrome over a headless {@link TableViewportController}.
  *
  * @param props The controller, cell and detail renderers, the empty words, and the
@@ -179,6 +210,24 @@ export function HilosViewportTable<R>({
   // has no arithmetic of its own about it; like the declaration it follows from, it
   // changes with the resolved columns.
   const card = useSignal(controller.frame.card)
+  // Which of the two declared layouts this mount shows, and what the tiles are drawn
+  // from: the card of the same columns without the picture's, and the column whose
+  // cell is the picture. Both are null for a table that declared no views, which
+  // draws no tiles at all.
+  const tableView = useSignal(controller.frame.view)
+  const tileCard = useSignal(controller.frame.tileCard)
+  const imageColumn = useSignal(controller.frame.imageColumn)
+  // The remembered choice is a browser effect of this mount, run after commit and so
+  // never on the server: the core restores before it subscribes, writes only a
+  // choice the reader made, and resets on erase; a replaced controller releases its
+  // own table key before the next one binds.
+  useEffect(() => {
+    if (controller.frame.declaration.views === undefined) {
+      return undefined
+    }
+
+    return bindTableViewPreference(controller)
+  }, [controller])
   // State always has its own track, including before the first mark arrives.
   // Every full-row cell counts this same permanent room and optional selection.
   const bodyColspan = rowColumns.length + 1 + (selectionEnabled ? 1 : 0)
@@ -192,6 +241,9 @@ export function HilosViewportTable<R>({
   // so a card borrowing the row's id would put that id in twice and break the tie
   // between control and panel on both.
   const cardDetailBaseId = useId()
+  // And a third for the panel inside a TILE, for the same reason: all three branches
+  // stand in the document, and a control must never point at a hidden one's panel.
+  const tileDetailBaseId = useId()
   // Which edge the checkbox column sits on — one choice for the whole installation
   // and not a prop of this table, because two tables of one product disagreeing
   // about it is the very thing the rule forbids (Design D5). A project that
@@ -220,13 +272,16 @@ export function HilosViewportTable<R>({
     columnKeys,
     (record) => controller.isTextRecordCurrent(record),
   )
-  const previousColumns = useRef(frameColumns)
+  // A change of columns or of the view shown is a new layout to measure, once it is
+  // committed.
+  const previousLayout = useRef({ columns: frameColumns, view: tableView })
   useLayoutEffect(() => {
-    if (previousColumns.current !== frameColumns) {
-      previousColumns.current = frameColumns
+    const previous = previousLayout.current
+    if (previous.columns !== frameColumns || previous.view !== tableView) {
+      previousLayout.current = { columns: frameColumns, view: tableView }
       geometry.layoutChanged()
     }
-  }, [frameColumns, geometry.layoutChanged])
+  }, [frameColumns, tableView, geometry.layoutChanged])
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
@@ -286,6 +341,11 @@ export function HilosViewportTable<R>({
   /** The same for the panel inside the card of that row, off its own base. */
   function cardDetailId(rowKey: string): string {
     return `${cardDetailBaseId}-${rowKey}`
+  }
+
+  /** The same for the panel inside the tile of that row, off its own base. */
+  function tileDetailId(rowKey: string): string {
+    return `${tileDetailBaseId}-${rowKey}`
   }
 
   // The value of one field of a panel. A field the page declared but drew nothing
@@ -529,11 +589,14 @@ export function HilosViewportTable<R>({
 
   // The body of the card of one live row, in the order the mockup stacks it: the
   // head, the labelled lines, the controls, and the bar of the work running over
-  // the record (Flow F1).
+  // the record (Flow F1). A tile is the same body under its picture, drawn from its
+  // own layout and opening into a panel off its own id.
   function cardBody(
     layout: HilosTableCard,
     view: TableViewportRow<R>,
     record: R,
+    projection: 'card' | 'tiles',
+    panelId: string,
   ): ReactNode {
     const rowKey = view.rowKey
     // The mark sits on the edge the installation chose, the same edge it sits on
@@ -549,13 +612,25 @@ export function HilosViewportTable<R>({
         onChange={(event) => controller.selectRow(rowKey, event.target.checked)}
       />
     ) : null
-    const fields = layout.fields.filter(hasCell)
-    const cardCells =
-      view.rowMessage !== null &&
-      view.rowMessage !== undefined &&
-      fields.length > 0
-        ? hilosTableRowMessageCells(fields, view.rowMessage)
-        : null
+    // The message is placed over the columns of the whole row, as the row places
+    // it: a tile's layout leaves out the picture's column and may title itself with
+    // another column than the card does, so the column a message starts from may
+    // stand outside the layout drawn here and still be a column of the row.
+    const projected =
+      view.rowMessage === null || view.rowMessage === undefined
+        ? undefined
+        : hilosTableRowMessageCells(rowColumns, view.rowMessage)
+    const messageCell = projected?.find((cell) => cell.text !== null)
+    const ordinaryKeys = new Set(
+      projected?.filter((cell) => cell.text === null).map((cell) => cell.key),
+    )
+    // The labelled lines are the layout's own fields the message left alone, in
+    // the layout's order, and the phrase follows them.
+    const declaredFields = layout.fields.filter(hasCell)
+    const fields =
+      messageCell === undefined
+        ? declaredFields
+        : declaredFields.filter((field) => ordinaryKeys.has(field.key))
     const bar = rowBar(rowKey)
 
     return (
@@ -563,7 +638,9 @@ export function HilosViewportTable<R>({
         className="card-body py-2 px-3"
         style={
           {
-            '--hilos-table-reason-px': geometry.reasonFloors.card,
+            // The measured floor of a departure's words, each projection its
+            // own: a tile's body is narrower than a card's and wraps them anew.
+            '--hilos-table-reason-px': geometry.reasonFloors[projection],
           } as CSSProperties
         }
       >
@@ -571,7 +648,7 @@ export function HilosViewportTable<R>({
           {selectionEdge === 'start' ? selectBox : null}
           {hasCell(layout.title) ? (
             <div className="fw-medium">
-              {cellValue(layout.title, view, record, 'card')}
+              {cellValue(layout.title, view, record, projection)}
             </div>
           ) : null}
           {hasCell(layout.badge) ? (
@@ -580,7 +657,7 @@ export function HilosViewportTable<R>({
             </span>
           ) : null}
           <span className="hilos-table-card-marks d-flex justify-content-end align-items-center gap-1">
-            {frameworkMarks(view, cardDetailId(rowKey))}
+            {frameworkMarks(view, panelId)}
             {selectionEdge === 'end' ? selectBox : null}
           </span>
         </div>
@@ -589,47 +666,26 @@ export function HilosViewportTable<R>({
             value, and a description list is the one markup that says so to a
             screen reader (Flow F10). A merged tail message replaces tail
             fields with a single phrase (mockups/admin/maintenance). */}
-        {fields.length > 0 ? (
+        {fields.length > 0 || messageCell !== undefined ? (
           <dl className="row mb-2 small g-0">
-            {cardCells !== null
-              ? cardCells.map((cell) => {
-                  if (cell.text !== null) {
-                    return (
-                      <dd
-                        key={cell.key}
-                        className="col-12 mb-0 text-body-secondary fst-italic"
-                        data-id="hilos-table-row-message"
-                      >
-                        {cell.text}
-                      </dd>
-                    )
-                  }
-                  const field = fields.find((f) => f.key === cell.key)
-                  if (field === undefined) {
-                    return null
-                  }
-
-                  return (
-                    <Fragment key={cell.key}>
-                      <dt className="col-5 fw-normal text-body-secondary">
-                        {field.label}
-                      </dt>
-                      <dd className="col-7 mb-0">
-                        {cellValue(field, view, record, 'card')}
-                      </dd>
-                    </Fragment>
-                  )
-                })
-              : fields.map((field) => (
-                  <Fragment key={field.key}>
-                    <dt className="col-5 fw-normal text-body-secondary">
-                      {field.label}
-                    </dt>
-                    <dd className="col-7 mb-0">
-                      {cellValue(field, view, record, 'card')}
-                    </dd>
-                  </Fragment>
-                ))}
+            {fields.map((field) => (
+              <Fragment key={field.key}>
+                <dt className="col-5 fw-normal text-body-secondary">
+                  {field.label}
+                </dt>
+                <dd className="col-7 mb-0">
+                  {cellValue(field, view, record, projection)}
+                </dd>
+              </Fragment>
+            ))}
+            {messageCell !== undefined ? (
+              <dd
+                className="col-12 mb-0 text-body-secondary fst-italic"
+                data-id="hilos-table-row-message"
+              >
+                {messageCell.text}
+              </dd>
+            ) : null}
           </dl>
         ) : null}
 
@@ -639,9 +695,9 @@ export function HilosViewportTable<R>({
             the bottom block and the panel belongs with the body. */}
         {view.expanded ? (
           <div
-            id={cardDetailId(rowKey)}
+            id={panelId}
             ref={(node) =>
-              geometry.bind(rowKey, view.occurrence, 'card', 'detail', node)
+              geometry.bind(rowKey, view.occurrence, projection, 'detail', node)
             }
             className="mb-2"
             data-id={`hilos-table-row-detail-${rowKey}`}
@@ -683,7 +739,7 @@ export function HilosViewportTable<R>({
         {bar !== undefined ? (
           <div
             ref={(node) =>
-              geometry.bind(rowKey, view.occurrence, 'card', 'work', node)
+              geometry.bind(rowKey, view.occurrence, projection, 'work', node)
             }
             className="mt-2"
             data-id={`hilos-table-progress-row-${rowKey}`}
@@ -695,22 +751,145 @@ export function HilosViewportTable<R>({
             ) : null}
             <HilosTableProgress progress={bar} label="Work on this row" />
           </div>
-        ) : geometry.workPixels(rowKey, 'card') > 0 ? (
+        ) : geometry.workPixels(rowKey, projection) > 0 ? (
           <div
             ref={(node) =>
-              geometry.bind(rowKey, view.occurrence, 'card', 'work', node)
+              geometry.bind(rowKey, view.occurrence, projection, 'work', node)
             }
             className="hilos-table-work-space hilos-table-work-reserve"
             aria-hidden="true"
             inert
             style={
               {
-                '--hilos-table-work-px': geometry.workPixels(rowKey, 'card'),
+                '--hilos-table-work-px': geometry.workPixels(
+                  rowKey,
+                  projection,
+                ),
               } as CSSProperties
             }
           />
         ) : null}
       </div>
+    )
+  }
+
+  // The picture on top of a tile: the page's own content of the image column, in a
+  // 4:3 frame of the same size whether or not there is a picture, so the grid does
+  // not jump. The page owns the img, its source, its alternative text and its load
+  // error; where it has no renderer for the column, or the renderer drew nothing,
+  // the frame says so in words. The picture is not a text value, so no text cap
+  // shortens it.
+  function tilePicture(rowKey: string, record: R): ReactNode {
+    const picture =
+      imageColumn === null ? null : cells?.[imageColumn.key]?.(record, rowKey)
+
+    return (
+      <div
+        className="ratio ratio-4x3 bg-body-tertiary rounded-top border-bottom"
+        data-id={`hilos-table-tile-image-${rowKey}`}
+      >
+        {drawsContent(picture) ? (
+          picture
+        ) : (
+          <div className="d-flex flex-column align-items-center justify-content-center text-body-secondary gap-1">
+            <i className="bi bi-file-earmark-text" aria-hidden="true" />
+            <span className="small">{TABLE_VIEW_COPY.noImage}</span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // One record drawn as a card of the narrow list or as a tile of the grid — one
+  // shell for both, keyed by the occurrence of the record. A record that left keeps
+  // only the reason and the numeric room of its full record: no picture, no value,
+  // no control. In the grid the item of the list is the column around the tile, so
+  // the tile itself takes no role.
+  function recordCard(
+    view: TableViewportRow<R>,
+    projection: 'card' | 'tiles',
+    layout: HilosTableCard,
+  ): ReactNode {
+    const tint = cardClass(view)
+    const placeholder = hilosTablePlaceholder(view.removal)
+    const shell = projection === 'tiles' ? 'card hilos-table-tile' : 'card mb-2'
+
+    return (
+      <div
+        key={view.occurrence}
+        ref={(node) =>
+          geometry.bind(view.rowKey, view.occurrence, projection, 'main', node)
+        }
+        className={tint === undefined ? shell : `${shell} ${tint}`}
+        role={projection === 'tiles' ? undefined : 'listitem'}
+        data-id={
+          projection === 'tiles'
+            ? `hilos-table-tile-${view.rowKey}`
+            : `hilos-table-card-${view.rowKey}`
+        }
+      >
+        {/* Only a reason and the numeric full record allocation survive. */}
+        {view.placeholder || view.row === null ? (
+          <div
+            className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
+            data-id="hilos-table-placeholder"
+          >
+            <div
+              className="hilos-table-record-space"
+              style={
+                {
+                  '--hilos-table-record-px': geometry.recordPixels(
+                    view.rowKey,
+                    view.occurrence,
+                    projection,
+                  ),
+                } as CSSProperties
+              }
+            >
+              <span>
+                <i
+                  className={`bi ${placeholder.icon} me-1`}
+                  aria-hidden="true"
+                />
+                {placeholder.text}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <>
+            {projection === 'tiles' ? tilePicture(view.rowKey, view.row) : null}
+            {cardBody(
+              layout,
+              view,
+              view.row,
+              projection,
+              projection === 'tiles'
+                ? tileDetailId(view.rowKey)
+                : cardDetailId(view.rowKey),
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // The worded state of a body with no rows to draw, the same in every branch: the
+  // page's own "nothing here yet", "Nothing found", the empty page past the end, and
+  // "List unavailable".
+  function emptyState(): ReactNode {
+    return (
+      <HilosTableEmptyState
+        controller={controller}
+        kind={
+          (body === 'empty_filtered' && declaration.filteredEmpty !== 'page') ||
+          body === 'empty_page' ||
+          body === 'unavailable'
+            ? body
+            : 'empty'
+        }
+      >
+        {empty ?? 'No rows.'}
+      </HilosTableEmptyState>
     )
   }
 
@@ -835,8 +1014,11 @@ export function HilosViewportTable<R>({
       />
 
       {/* The scroll wrapper belongs to the wide table: once the columns became
-          lines of a card, there is nothing left to scroll sideways. */}
-      <div className="table-responsive d-none d-md-block position-relative">
+          lines of a card, there is nothing left to scroll sideways. Tiles hide it
+          at every width. */}
+      <div
+        className={`table-responsive ${tableView === 'tiles' ? 'd-none' : 'd-none d-md-block'} position-relative`}
+      >
         <div
           className="table hilos-table-room hilos-table-room-wide invisible"
           aria-hidden="true"
@@ -1180,21 +1362,7 @@ export function HilosViewportTable<R>({
               })}
               {body !== 'rows' ? (
                 <tr>
-                  <td colSpan={bodyColspan}>
-                    <HilosTableEmptyState
-                      controller={controller}
-                      kind={
-                        (body === 'empty_filtered' &&
-                          declaration.filteredEmpty !== 'page') ||
-                        body === 'empty_page' ||
-                        body === 'unavailable'
-                          ? body
-                          : 'empty'
-                      }
-                    >
-                      {empty ?? 'No rows.'}
-                    </HilosTableEmptyState>
-                  </td>
+                  <td colSpan={bodyColspan}>{emptyState()}</td>
                 </tr>
               ) : null}
             </tbody>
@@ -1215,8 +1383,12 @@ export function HilosViewportTable<R>({
           than a second one, and never both at once — the branch that is hidden
           leaves the accessibility tree with its display (Flow F9). The list holds
           the cards and nothing else; what the table says in words when it has no
-          rows stands BESIDE it, a sentence not being an item of a list. */}
-      <div className="d-md-none position-relative" data-id="hilos-table-cards">
+          rows stands BESIDE it, a sentence not being an item of a list. Tiles
+          hide it at every width. */}
+      <div
+        className={`${tableView === 'tiles' ? 'd-none' : 'd-md-none'} position-relative`}
+        data-id="hilos-table-cards"
+      >
         <div
           className="hilos-table-room hilos-table-room-card invisible card mb-2"
           aria-hidden="true"
@@ -1229,61 +1401,7 @@ export function HilosViewportTable<R>({
         </div>
         {body === 'rows' ? (
           <div role="list" aria-labelledby={nameId}>
-            {rows.map((view) => {
-              const tint = cardClass(view)
-              const placeholder = hilosTablePlaceholder(view.removal)
-
-              return (
-                <div
-                  key={view.occurrence}
-                  ref={(node) =>
-                    geometry.bind(
-                      view.rowKey,
-                      view.occurrence,
-                      'card',
-                      'main',
-                      node,
-                    )
-                  }
-                  className={
-                    tint === undefined ? 'card mb-2' : `card mb-2 ${tint}`
-                  }
-                  role="listitem"
-                  data-id={`hilos-table-card-${view.rowKey}`}
-                >
-                  {/* Only a reason and the numeric full record allocation survive. */}
-                  {view.placeholder || view.row === null ? (
-                    <div
-                      className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
-                      data-id="hilos-table-placeholder"
-                    >
-                      <div
-                        className="hilos-table-record-space"
-                        style={
-                          {
-                            '--hilos-table-record-px': geometry.recordPixels(
-                              view.rowKey,
-                              view.occurrence,
-                              'card',
-                            ),
-                          } as CSSProperties
-                        }
-                      >
-                        <span>
-                          <i
-                            className={`bi ${placeholder.icon} me-1`}
-                            aria-hidden="true"
-                          />
-                          {placeholder.text}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    cardBody(card, view, view.row)
-                  )}
-                </div>
-              )
-            })}
+            {rows.map((view) => recordCard(view, 'card', card))}
           </div>
         ) : body === 'loading' ? (
           // The skeleton and the four states a table says in words live inside
@@ -1309,21 +1427,82 @@ export function HilosViewportTable<R>({
             ))}
           </div>
         ) : (
-          <HilosTableEmptyState
-            controller={controller}
-            kind={
-              (body === 'empty_filtered' &&
-                declaration.filteredEmpty !== 'page') ||
-              body === 'empty_page' ||
-              body === 'unavailable'
-                ? body
-                : 'empty'
-            }
-          >
-            {empty ?? 'No rows.'}
-          </HilosTableEmptyState>
+          emptyState()
         )}
       </div>
+
+      {/* The same window once more as a grid of tiles — only for a table that
+          declared its views, and shown at every width while Tiles is the view, with
+          both branches above hidden. A tile is the card of its record under a
+          picture; the grid is a list named as the table is, and every column of it
+          is one item, a record that left included. A picture that finishes loading
+          changes the height of its tile, so it is a new layout to measure. */}
+      {tileCard !== null ? (
+        <div
+          className={`position-relative${tableView === 'tiles' ? '' : ' d-none'}`}
+          data-id="hilos-table-tiles"
+          onLoadCapture={geometry.layoutChanged}
+        >
+          {/* A framework-only twin in a Bootstrap column of the same grid, so it
+              is as wide as a real tile and wraps the departure words as one
+              would. It never holds a picture, a row value or an interactive
+              clone, and takes no id. */}
+          <div className="hilos-table-room invisible" aria-hidden="true" inert>
+            <div className="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3">
+              <div className="col">
+                <div className="card hilos-table-tile hilos-table-room-tiles">
+                  <div className="card-body py-2 px-3 small">
+                    {reasonTwins()}
+                    <div className="hilos-table-fallback" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {body === 'rows' ? (
+            <div
+              className="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3"
+              role="list"
+              aria-labelledby={nameId}
+            >
+              {rows.map((view) => (
+                <div key={view.occurrence} className="col" role="listitem">
+                  {recordCard(view, 'tiles', tileCard)}
+                </div>
+              ))}
+            </div>
+          ) : body === 'loading' ? (
+            // A tile of the skeleton keeps the picture frame of a real one, so
+            // the grid does not change height when the rows arrive.
+            <div aria-busy="true" data-id="hilos-table-loading">
+              <span className="visually-hidden" role="status">
+                Loading…
+              </span>
+              <div
+                className="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3"
+                aria-hidden="true"
+              >
+                {Array.from({ length: skeletonRows }, (_unused, index) => (
+                  <div
+                    key={index}
+                    className="col"
+                    data-id="hilos-table-skeleton-row"
+                  >
+                    <div className="card">
+                      <div className="ratio ratio-4x3 bg-body-tertiary rounded-top border-bottom" />
+                      <div className="card-body py-2 px-3 placeholder-glow">
+                        <span className="placeholder col-12" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            emptyState()
+          )}
+        </div>
+      ) : null}
 
       <HilosTableFooter controller={controller} />
     </div>

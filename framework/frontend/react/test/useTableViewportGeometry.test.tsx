@@ -17,6 +17,7 @@ import {
   type HilosConnection,
   type TableGeometryRecord,
   type TableGeometryRegistration,
+  type TableProjection,
   type TableViewportGeometryView,
 } from '@hilos/core/base'
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
@@ -88,6 +89,7 @@ function Harness({
   facade = target.geometry,
   keys = KEYS,
   search = 'visible',
+  tiles = false,
   onCommit,
   onRender,
   onPlaceholder,
@@ -96,6 +98,8 @@ function Harness({
   facade?: TableViewportGeometryView
   keys?: readonly string[]
   search?: 'visible' | 'hidden' | 'disabled' | 'absent'
+  /** Stand the third projection — a grid of tiles — beside the row and the card. */
+  tiles?: boolean
   onCommit?: (geometry: Geometry) => void
   onRender?: (geometry: Geometry) => void
   onPlaceholder?: (pixels: number | undefined) => void
@@ -118,7 +122,7 @@ function Harness({
   const placeholder = (
     rowKey: string,
     occurrence: number,
-    projection: 'wide' | 'card',
+    projection: TableProjection,
   ) => {
     const pixels = geometry.recordPixels(rowKey, occurrence, projection)
     if (projection === 'wide') onPlaceholder?.(pixels)
@@ -128,6 +132,82 @@ function Harness({
         style={{ '--hilos-table-record-px': pixels } as CSSProperties}
       >
         <span>Removed</span>
+      </div>
+    )
+  }
+  // A card and a tile hold the same body; only the tile has a picture above it.
+  const recordBody = (
+    row: (typeof rows)[number],
+    projection: 'card' | 'tiles',
+  ) => {
+    return (
+      <div className="card-body">
+        {row.placeholder ? (
+          placeholder(row.rowKey, row.occurrence, projection)
+        ) : (
+          <>
+            <div>
+              <button
+                data-id={
+                  projection === 'tiles'
+                    ? `tile-control-${row.rowKey}`
+                    : undefined
+                }
+                data-hilos-focus-return="open"
+              >
+                {row.row}
+              </button>
+            </div>
+            {row.expanded && (
+              <div
+                data-record={row.rowKey}
+                data-part="detail"
+                ref={(node) =>
+                  geometry.bind(
+                    row.rowKey,
+                    row.occurrence,
+                    projection,
+                    'detail',
+                    node,
+                  )
+                }
+              >
+                Private detail
+              </div>
+            )}
+            {(progress.has(row.rowKey) ||
+              geometry.workPixels(row.rowKey, projection) > 0) && (
+              <div
+                data-record={row.rowKey}
+                data-part="work"
+                className={
+                  progress.has(row.rowKey)
+                    ? ''
+                    : 'hilos-table-work-reserve hilos-table-work-space'
+                }
+                style={
+                  {
+                    '--hilos-table-work-px': geometry.workPixels(
+                      row.rowKey,
+                      projection,
+                    ),
+                  } as CSSProperties
+                }
+                ref={(node) =>
+                  geometry.bind(
+                    row.rowKey,
+                    row.occurrence,
+                    projection,
+                    'work',
+                    node,
+                  )
+                }
+              >
+                {progress.has(row.rowKey) ? 'Work payload' : ''}
+              </div>
+            )}
+          </>
+        )}
       </div>
     )
   }
@@ -273,65 +353,7 @@ function Harness({
               geometry.bind(row.rowKey, row.occurrence, 'card', 'main', node)
             }
           >
-            <div className="card-body">
-              {row.placeholder ? (
-                placeholder(row.rowKey, row.occurrence, 'card')
-              ) : (
-                <>
-                  <div>
-                    <button>{row.row}</button>
-                  </div>
-                  {row.expanded && (
-                    <div
-                      data-record={row.rowKey}
-                      data-part="detail"
-                      ref={(node) =>
-                        geometry.bind(
-                          row.rowKey,
-                          row.occurrence,
-                          'card',
-                          'detail',
-                          node,
-                        )
-                      }
-                    >
-                      Private detail
-                    </div>
-                  )}
-                  {(progress.has(row.rowKey) ||
-                    geometry.workPixels(row.rowKey, 'card') > 0) && (
-                    <div
-                      data-record={row.rowKey}
-                      data-part="work"
-                      className={
-                        progress.has(row.rowKey)
-                          ? ''
-                          : 'hilos-table-work-reserve hilos-table-work-space'
-                      }
-                      style={
-                        {
-                          '--hilos-table-work-px': geometry.workPixels(
-                            row.rowKey,
-                            'card',
-                          ),
-                        } as CSSProperties
-                      }
-                      ref={(node) =>
-                        geometry.bind(
-                          row.rowKey,
-                          row.occurrence,
-                          'card',
-                          'work',
-                          node,
-                        )
-                      }
-                    >
-                      {progress.has(row.rowKey) ? 'Work payload' : ''}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+            {recordBody(row, 'card')}
           </div>
         ))}
         <div className="hilos-table-room-card" inert aria-hidden="true">
@@ -339,6 +361,45 @@ function Harness({
           <div className="hilos-table-fallback" />
         </div>
       </div>
+      {tiles && (
+        <div className="tiles-projection">
+          <div className="hilos-table-room" inert aria-hidden="true">
+            <div className="row">
+              <div className="col">
+                <div className="card hilos-table-tile hilos-table-room-tiles">
+                  <div className="card-body">
+                    <span className="hilos-table-reason-twins">Removed</span>
+                    <div className="hilos-table-fallback" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="row">
+            {rows.map((row) => (
+              <div className="col" key={row.occurrence}>
+                <div
+                  className="card hilos-table-tile"
+                  data-record={row.rowKey}
+                  data-part="main"
+                  ref={(node) =>
+                    geometry.bind(
+                      row.rowKey,
+                      row.occurrence,
+                      'tiles',
+                      'main',
+                      node,
+                    )
+                  }
+                >
+                  {!row.placeholder && <div>Private picture</div>}
+                  {recordBody(row, 'tiles')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -357,6 +418,14 @@ function numericDOM() {
     cardHidden: false,
     wideHidden: false,
     spacing: 0,
+    // A tile: its whole box with the picture, the reason twins of its own room,
+    // and the Bootstrap grid it stands in.
+    tile: 410.5,
+    tileReason: 20,
+    column: 216.5,
+    grid: 866,
+    gutter: 16,
+    tilesHidden: false,
   }
   const reads: string[] = []
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
@@ -371,12 +440,43 @@ function numericDOM() {
       if (
         this.closest('[hidden]') ||
         (layout.cardHidden && this.closest('.card-projection')) ||
-        (layout.wideHidden && this.closest('.wide-projection'))
+        (layout.wideHidden && this.closest('.wide-projection')) ||
+        (layout.tilesHidden && this.closest('.tiles-projection'))
       )
         return new DOMRect()
-      const projection = this.closest('.card-projection') ? 'card' : 'wide'
+      const projection = this.closest('.tiles-projection')
+        ? 'tiles'
+        : this.closest('.card-projection')
+          ? 'card'
+          : 'wide'
       if (this.dataset.record)
         reads.push(`${projection}:${this.dataset.record}:${this.dataset.part}`)
+      if (projection === 'tiles') {
+        const tileWidth = layout.column - layout.gutter
+        if (this.dataset.part === 'main')
+          return rect(500, layout.tile, tileWidth)
+        if (this.dataset.part === 'detail') return rect(708, 70.5, tileWidth)
+        // Work follows the detail's 8px margin, or the head directly, by 4px.
+        if (this.dataset.part === 'work')
+          return rect(
+            this.previousElementSibling?.getAttribute('data-part') === 'detail'
+              ? 790.5
+              : 712,
+            20.25,
+            tileWidth,
+          )
+        if (this.matches('.card-body > div') && this.querySelector('button'))
+          return rect(658, 50, tileWidth)
+        if (
+          this.classList.contains('hilos-table-reason-twins') ||
+          this.matches('.hilos-table-record-space > span')
+        )
+          return rect(0, layout.tileReason, tileWidth)
+        if (this.classList.contains('hilos-table-room-tiles'))
+          return rect(0, 120, tileWidth)
+        if (this.classList.contains('col')) return rect(0, 120, layout.column)
+        if (this.classList.contains('row')) return rect(0, 120, layout.grid)
+      }
       if (this.dataset.part === 'main')
         return rect(
           projection === 'card' ? 300 : 40,
@@ -436,9 +536,13 @@ function numericDOM() {
       marginTop:
         node.getAttribute('data-part') === 'work' && node.tagName !== 'TR'
           ? '4px'
-          : '0px',
+          : node.classList.contains('col')
+            ? `${layout.gutter}px`
+            : '0px',
+      // A tile keeps no mb-2: its column's gutter separates it instead.
       marginBottom:
-        node.classList.contains('card') ||
+        (node.classList.contains('card') &&
+          !node.classList.contains('hilos-table-tile')) ||
         (node.getAttribute('data-part') === 'detail' && node.tagName !== 'TR')
           ? '8px'
           : '0px',
@@ -618,6 +722,135 @@ describe('React table geometry commit boundary', () => {
     expect(view.container.textContent).not.toContain('Private detail')
     expect(view.container.textContent).not.toContain('Work payload')
     stop()
+  })
+
+  it.each([1, 1.25, 1.5])(
+    'captures the whole tile, its chrome and the surviving column gutter once, before departure, at zoom %s',
+    (zoom) => {
+      const { layout, reads } = numericDOM()
+      const events = observers()
+      layout.zoom = zoom
+      const target = controller()
+      const source = instrument(target)
+      target.expandRow('a', true)
+      target.ingestProgress({
+        scope: 'row',
+        rowKey: 'a',
+        progressKey: 'job',
+        current: 1,
+        total: 2,
+      })
+      let geometry!: Geometry
+      const view = render(
+        <Harness
+          target={target}
+          facade={source.facade}
+          tiles
+          onCommit={(value) => {
+            geometry = value
+          }}
+        />,
+      )
+      const owner = source.registrations[0]!
+      // Picture and body are one main box; detail, work and their own margins
+      // inside it count once, and the column gutter joins the card's chrome.
+      expect(owner.record('a', 'tiles')?.live).toEqual({
+        main: 307.75,
+        work: 20.25,
+        detail: 70.5,
+        gap: 28,
+        total: 426.5,
+      })
+      expect(owner.record('a', 'card')?.live?.total).toBe(268.75)
+      expect(geometry.reasonFloors).toEqual({ wide: 18, card: 18, tiles: 20 })
+      // The tile grows with no observer pass before the record leaves.
+      layout.tile = 448.25
+      reads.length = 0
+      act(() => depart(target))
+      expect(source.captures).toHaveBeenCalledTimes(1)
+      expect(reads).toEqual(
+        expect.arrayContaining([
+          'tiles:a:main',
+          'tiles:a:detail',
+          'tiles:a:work',
+        ]),
+      )
+      expect(owner.record('a', 'tiles')?.retained).toBe(464.25)
+      expect(owner.record('a', 'card')?.retained).toBe(268.75)
+      const occurrence = target.rows.get()[0]!.occurrence
+      expect(geometry.recordPixels('a', occurrence, 'tiles')).toBe(464.25)
+      const tile = view.container.querySelector<HTMLElement>(
+        '.tiles-projection [data-record="a"]',
+      )!
+      expect(
+        tile
+          .querySelector<HTMLElement>('.hilos-table-record-space')
+          ?.style.getPropertyValue('--hilos-table-record-px'),
+      ).toBe('464.25')
+      expect(tile.textContent).toBe('Removed')
+      expect(
+        tile.querySelector('[data-part="detail"], [data-part="work"]'),
+      ).toBeNull()
+      // A hidden tile reads no box and keeps the number it has.
+      layout.tilesHidden = true
+      events.resizes[0]!.fire()
+      events.flush()
+      expect(owner.record('a', 'tiles')?.retained).toBe(464.25)
+      layout.tilesHidden = false
+      events.resizes[0]!.fire()
+      events.flush()
+      expect(owner.record('a', 'tiles')?.retained).toBe(464.25)
+    },
+  )
+
+  it('holds a tile work room before Apply and keeps the complete footprint once work ends', () => {
+    numericDOM()
+    const target = controller()
+    const source = instrument(target)
+    target.expandRow('a', true)
+    target.ingestProgress({
+      scope: 'row',
+      rowKey: 'a',
+      progressKey: 'job',
+      current: 1,
+      total: 2,
+    })
+    let geometry!: Geometry
+    const view = render(
+      <Harness
+        target={target}
+        facade={source.facade}
+        tiles
+        onCommit={(value) => {
+          geometry = value
+        }}
+      />,
+    )
+    act(() => depart(target, 'a', false))
+    // A tile's work room is its block and its own margin, with no row gap.
+    expect(geometry.workPixels('a', 'tiles')).toBe(24.25)
+    expect(
+      view.container.querySelectorAll(
+        '.tiles-projection .hilos-table-work-reserve',
+      ),
+    ).toHaveLength(1)
+    expect(view.container.textContent).not.toContain('Work payload')
+    act(() => target.apply())
+    const owner = source.registrations[0]!
+    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+    act(() =>
+      target.ingestProgress({
+        scope: 'row',
+        rowKey: 'a',
+        progressKey: 'job',
+        current: 2,
+        ended: true,
+      }),
+    )
+    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+    expect(
+      view.container.querySelectorAll('.hilos-table-work-reserve'),
+    ).toHaveLength(0)
   })
 
   it('preserves work removed before Apply once and lets later work-end stay gone', () => {
@@ -840,7 +1073,11 @@ describe('React table geometry layout lifetime', () => {
 
     act(() => events.fonts.dispatchEvent(completion('GeometryText')))
     events.flush()
-    expect(owner.invalidateLayout).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(owner.invalidateLayout).mock.calls).toEqual([
+      ['wide'],
+      ['card'],
+      ['tiles'],
+    ])
     expect(owner.tracks()).not.toBe(tracks)
   })
 
@@ -955,6 +1192,81 @@ describe('React table geometry layout lifetime', () => {
     expect(owner.record('a', 'card')?.retained).toBe(126)
   })
 
+  it('allocates a never-shown tile from its own room on first display, then grows only for its reason', () => {
+    const { layout } = numericDOM()
+    const events = observers()
+    layout.tilesHidden = true
+    const target = controller(['a'])
+    const source = instrument(target)
+    let geometry!: Geometry
+    render(
+      <Harness
+        target={target}
+        facade={source.facade}
+        tiles
+        onCommit={(value) => {
+          geometry = value
+        }}
+      />,
+    )
+    act(() => depart(target))
+    const owner = source.registrations[0]!
+    expect(owner.record('a', 'tiles')?.retained).toBeNull()
+    expect(owner.record('a', 'card')?.retained).toBe(268.75)
+    expect(geometry.reasonFloors.tiles).toBe(0)
+    layout.tilesHidden = false
+    events.resizes[0]!.fire()
+    events.flush()
+    // The Sass fallback with the tile's chrome and its column gutter, once.
+    expect(owner.record('a', 'tiles')?.retained).toBe(82)
+    expect(geometry.reasonFloors.tiles).toBe(20)
+    expect(owner.record('a', 'card')?.retained).toBe(268.75)
+    layout.font = 32
+    layout.fallback = 96
+    act(() => events.fonts.dispatchEvent(new Event('loadingdone')))
+    events.flush()
+    expect(owner.record('a', 'tiles')?.retained).toBe(82)
+    layout.tileReason = 100
+    events.resizes[0]!.fire()
+    events.flush()
+    expect(owner.record('a', 'tiles')?.retained).toBe(134)
+    expect(owner.record('a', 'card')?.retained).toBe(268.75)
+    layout.tileReason = 20
+    events.resizes[0]!.fire()
+    events.flush()
+    expect(owner.record('a', 'tiles')?.retained).toBe(134)
+  })
+
+  it('invalidates the tile layout from its column width and count while the root keeps its width and every allocation', () => {
+    const { layout } = numericDOM()
+    const events = observers()
+    const target = controller()
+    const source = instrument(target)
+    render(<Harness target={target} facade={source.facade} tiles />)
+    act(() => depart(target))
+    const owner = source.registrations[0]!
+    const previous = owner.layout('tiles')
+    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+    // Three columns instead of four in the same grid width.
+    layout.column = 288.75
+    events.resizes[0]!.fire()
+    events.flush()
+    expect(owner.layout('tiles')).not.toBe(previous)
+    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+    expect(owner.record('a', 'card')?.retained).toBe(268.75)
+    expect(owner.record('b', 'tiles')?.live?.total).toBe(426.5)
+    const settled = owner.layout('tiles')
+    events.resizes[0]!.fire()
+    events.flush()
+    expect(owner.layout('tiles')).toBe(settled)
+    // The gutter alone is a new layout too.
+    layout.gutter = 24
+    events.resizes[0]!.fire()
+    events.flush()
+    expect(owner.layout('tiles')).not.toBe(settled)
+    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+  })
+
   it('keeps captured allocation while typography and spacing change repeatedly', () => {
     const { layout } = numericDOM()
     const events = observers()
@@ -987,6 +1299,7 @@ describe('React exact geometry record readers', () => {
       <Harness
         target={target}
         facade={source.facade}
+        tiles
         onRender={(value) => {
           readers.push(value.recordReader('a', occurrence, 'wide'))
         }}
@@ -1002,15 +1315,20 @@ describe('React exact geometry record readers', () => {
     expect(readers.at(-1)!()).toBe(identity)
     const wide = geometry.recordReader('a', occurrence, 'wide')
     const card = geometry.recordReader('a', occurrence, 'card')
-    expect(wide).not.toBe(card)
+    const tile = geometry.recordReader('a', occurrence, 'tiles')
+    expect(new Set([wide, card, tile]).size).toBe(3)
     expect(wide()).toBe(identity)
     expect(card()).toBe(owner.measurement('a', 'card')!.record)
+    expect(tile()).toBe(owner.measurement('a', 'tiles')!.record)
     expect(geometry.recordReader('a', occurrence + 1, 'wide')()).toBeNull()
     expect(geometry.recordReader('absent', occurrence, 'card')()).toBeNull()
+    expect(geometry.recordReader('a', occurrence + 1, 'tiles')()).toBeNull()
 
     act(() => owner.invalidateLayout('wide'))
+    act(() => owner.invalidateLayout('tiles'))
     expect(wide()).toBe(identity)
     expect(card()).toBe(identity)
+    expect(tile()).toBe(identity)
     expect(readers[0]!()).toBeNull()
   })
 
@@ -1043,7 +1361,7 @@ describe('React exact geometry record readers', () => {
     expect(source.registrations).toHaveLength(1)
   })
 
-  it('keeps both readers through live updates, reorder and pending departure until Apply', () => {
+  it('keeps every projection reader through live updates, reorder and pending departure until Apply', () => {
     numericDOM()
     const target = controller()
     const source = instrument(target)
@@ -1052,13 +1370,14 @@ describe('React exact geometry record readers', () => {
       <Harness
         target={target}
         facade={source.facade}
+        tiles
         onCommit={(value) => {
           geometry = value
         }}
       />,
     )
     const occurrence = target.rows.get()[0]!.occurrence
-    const readers = (['wide', 'card'] as const).map((projection) =>
+    const readers = (['wide', 'card', 'tiles'] as const).map((projection) =>
       geometry.recordReader('a', occurrence, projection),
     )
     const identity = readers[0]!()!
@@ -1068,7 +1387,11 @@ describe('React exact geometry record readers', () => {
         rowKey: 'a',
         row: { rowKey: 'a', slots: { name: 'updated' } },
       })
-      expect(readers.map((read) => read())).toEqual([identity, identity])
+      expect(readers.map((read) => read())).toEqual([
+        identity,
+        identity,
+        identity,
+      ])
       target.ingestDelta({
         kind: 'row_moved',
         rowKey: 'a',
@@ -1086,7 +1409,7 @@ describe('React exact geometry record readers', () => {
     act(() => {
       target.apply()
       // The DOM has not flushed: the readers already refuse final departure.
-      expect(readers.map((read) => read())).toEqual([null, null])
+      expect(readers.map((read) => read())).toEqual([null, null, null])
     })
     expect(target.expandedText.get().size).toBe(0)
     expect(source.registrations).toHaveLength(1)
@@ -1111,6 +1434,7 @@ describe('React exact geometry record readers', () => {
         <Harness
           target={target}
           facade={source.facade}
+          tiles
           onRender={renders}
           onCommit={(value) => {
             geometry = value
@@ -1120,7 +1444,9 @@ describe('React exact geometry record readers', () => {
       const occurrence = target.rows.get()[0]!.occurrence
       const wide = geometry.recordReader('a', occurrence, 'wide')
       const card = geometry.recordReader('a', occurrence, 'card')
+      const tile = geometry.recordReader('a', occurrence, 'tiles')
       const identity = wide()
+      expect(tile()).toBe(identity)
       expect(identity).not.toBeNull()
       const intent = target.expandedText.get()
       const before = renders.mock.calls.length
@@ -1142,6 +1468,7 @@ describe('React exact geometry record readers', () => {
         expect(renders).toHaveBeenCalledTimes(before)
         expect(wide()).toBeNull()
         expect(card()).toBeNull()
+        expect(tile()).toBeNull()
       })
       expect(target.expandedText.get()).toBe(intent)
       expect(renders.mock.calls.length).toBeGreaterThan(before)
@@ -1156,6 +1483,7 @@ describe('React exact geometry record readers', () => {
         else expect(outgoing).not.toBe(identity)
         expect(geometry.recordReader('a', occurrence, 'wide')()).toBeNull()
         expect(geometry.recordReader('a', occurrence, 'card')()).toBeNull()
+        expect(geometry.recordReader('a', occurrence, 'tiles')()).toBeNull()
       }
       act(() => snapshot(target, ['a']))
       const next = geometry.recordReader(
@@ -1167,8 +1495,12 @@ describe('React exact geometry record readers', () => {
         source.registrations[0]!.measurement('a', 'wide')!.record,
       )
       expect(next()).not.toBe(identity)
+      expect(
+        geometry.recordReader('a', target.rows.get()[0]!.occurrence, 'tiles')(),
+      ).toBe(next())
       expect(wide()).toBeNull()
       expect(card()).toBeNull()
+      expect(tile()).toBeNull()
     },
   )
 
@@ -1184,15 +1516,21 @@ describe('React exact geometry record readers', () => {
       geometry = value
     }
     const view = render(
-      <Harness target={first} facade={old.facade} onCommit={committed} />,
+      <Harness target={first} facade={old.facade} tiles onCommit={committed} />,
     )
     const previous = geometry.recordReader(
       'a',
       first.rows.get()[0]!.occurrence,
       'wide',
     )
+    const previousTile = geometry.recordReader(
+      'a',
+      first.rows.get()[0]!.occurrence,
+      'tiles',
+    )
     const previousIdentity = previous()
     expect(previousIdentity).not.toBeNull()
+    expect(previousTile()).toBe(previousIdentity)
     events.resizes[0]!.fire()
     const late = [...events.queued.values()]
     const replacementRenders: (() => TableGeometryRecord | null)[] = []
@@ -1200,6 +1538,7 @@ describe('React exact geometry record readers', () => {
       <Harness
         target={second}
         facade={next.facade}
+        tiles
         onCommit={committed}
         onRender={(value) => {
           replacementRenders.push(
@@ -1215,18 +1554,30 @@ describe('React exact geometry record readers', () => {
     )
     expect(replacement()).not.toBe(previousIdentity)
     expect(previous()).toBeNull()
+    expect(previousTile()).toBeNull()
     view.unmount()
     expect(replacement()).toBeNull()
     render(
-      <Harness target={second} facade={next.facade} onCommit={committed} />,
+      <Harness
+        target={second}
+        facade={next.facade}
+        tiles
+        onCommit={committed}
+      />,
     )
     const remounted = geometry.recordReader(
       'a',
       second.rows.get()[0]!.occurrence,
       'card',
     )
+    const remountedTile = geometry.recordReader(
+      'a',
+      second.rows.get()[0]!.occurrence,
+      'tiles',
+    )
     const identity = next.registrations[1]!.measurement('a', 'card')!.record
     expect(remounted()).toBe(identity)
+    expect(remountedTile()).toBe(identity)
     await act(async () => {
       late.forEach((callback) => callback(0))
       events.resizes[0]!.fire()
@@ -1235,62 +1586,71 @@ describe('React exact geometry record readers', () => {
       await Promise.resolve()
     })
     expect(previous()).toBeNull()
+    expect(previousTile()).toBeNull()
     expect(replacement()).toBeNull()
     expect(remounted()).toBe(identity)
+    expect(remountedTile()).toBe(identity)
     expect(old.registrations).toHaveLength(1)
     expect(next.registrations).toHaveLength(2)
   })
 
-  it('keeps StrictMode replay and late callbacks inside their registration lifetime', async () => {
-    numericDOM()
-    const events = observers()
-    const target = controller(['a'])
-    const source = instrument(target)
-    const readers: (() => TableGeometryRecord | null)[] = []
-    const tree = (
-      <StrictMode>
-        <Harness
-          target={target}
-          facade={source.facade}
-          onCommit={(geometry) => {
-            readers.push(
-              geometry.recordReader(
-                'a',
-                target.rows.get()[0]!.occurrence,
-                'wide',
-              ),
-            )
-          }}
-        />
-      </StrictMode>
-    )
-    const view = render(tree)
-    expect(source.registrations).toHaveLength(2)
-    expect(source.registrations[0]!.dispose).toHaveBeenCalledTimes(1)
-    const replayed = readers.at(-1)!
-    expect(readers[0]!()).toBeNull()
-    expect(replayed()).toBe(
-      source.registrations[1]!.measurement('a', 'wide')!.record,
-    )
-    events.resizes[1]!.fire()
-    const late = [...events.queued.values()]
-    view.unmount()
-    expect(readers.every((read) => read() === null)).toBe(true)
-    render(tree)
-    const remounted = readers.at(-1)!
-    const identity = source.registrations[3]!.measurement('a', 'wide')!.record
-    await act(async () => {
-      late.forEach((callback) => callback(0))
+  it.each(['wide', 'tiles'] as const)(
+    'keeps StrictMode replay and late %s callbacks inside their registration lifetime',
+    async (projection) => {
+      numericDOM()
+      const events = observers()
+      const target = controller(['a'])
+      const source = instrument(target)
+      const readers: (() => TableGeometryRecord | null)[] = []
+      const tree = (
+        <StrictMode>
+          <Harness
+            target={target}
+            facade={source.facade}
+            tiles
+            onCommit={(geometry) => {
+              readers.push(
+                geometry.recordReader(
+                  'a',
+                  target.rows.get()[0]!.occurrence,
+                  projection,
+                ),
+              )
+            }}
+          />
+        </StrictMode>
+      )
+      const view = render(tree)
+      expect(source.registrations).toHaveLength(2)
+      expect(source.registrations[0]!.dispose).toHaveBeenCalledTimes(1)
+      const replayed = readers.at(-1)!
+      expect(readers[0]!()).toBeNull()
+      expect(replayed()).toBe(
+        source.registrations[1]!.measurement('a', projection)!.record,
+      )
       events.resizes[1]!.fire()
-      events.mutations[1]!.fire()
-      events.ready()
-      await Promise.resolve()
-    })
-    expect(readers[0]!()).toBeNull()
-    expect(replayed()).toBeNull()
-    expect(remounted()).toBe(identity)
-    expect(source.registrations).toHaveLength(4)
-  })
+      const late = [...events.queued.values()]
+      view.unmount()
+      expect(readers.every((read) => read() === null)).toBe(true)
+      render(tree)
+      const remounted = readers.at(-1)!
+      const identity = source.registrations[3]!.measurement(
+        'a',
+        projection,
+      )!.record
+      await act(async () => {
+        late.forEach((callback) => callback(0))
+        events.resizes[1]!.fire()
+        events.mutations[1]!.fire()
+        events.ready()
+        await Promise.resolve()
+      })
+      expect(readers[0]!()).toBeNull()
+      expect(replayed()).toBeNull()
+      expect(remounted()).toBe(identity)
+      expect(source.registrations).toHaveLength(4)
+    },
+  )
 })
 
 describe('React table geometry lifecycle and focus', () => {
@@ -1307,12 +1667,15 @@ describe('React table geometry lifecycle and focus', () => {
     const source = instrument(target)
     const view = render(
       <StrictMode>
-        <Harness target={target} facade={source.facade} />
+        <Harness target={target} facade={source.facade} tiles />
       </StrictMode>,
     )
     expect(source.registrations).toHaveLength(2)
     expect(source.registrations[0]!.dispose).toHaveBeenCalledTimes(1)
     expect(source.registrations[1]!.tracks()?.tableWidth).toBe(400)
+    expect(source.registrations[1]!.record('a', 'tiles')?.live?.total).toBe(
+      426.5,
+    )
     events.resizes.at(-1)!.fire()
     const late = [...events.queued.values()]
     view.unmount()
@@ -1374,7 +1737,9 @@ describe('React table geometry lifecycle and focus', () => {
       await Promise.resolve()
     })
     expect(old.registrations[0]!.invalidateLayout).not.toHaveBeenCalled()
-    expect(next.registrations[0]!.invalidateLayout).toHaveBeenCalledTimes(2)
+    expect(
+      vi.mocked(next.registrations[0]!.invalidateLayout).mock.calls,
+    ).toEqual([['wide'], ['card'], ['tiles']])
     expect(next.registrations[0]!.tracks()?.tableWidth).toBe(400)
   })
 
@@ -1385,11 +1750,12 @@ describe('React table geometry lifecycle and focus', () => {
     const old = instrument(first)
     const second = controller(['a'])
     const next = instrument(second)
-    const view = render(<Harness target={first} facade={old.facade} />)
+    const view = render(<Harness target={first} facade={old.facade} tiles />)
     events.resizes[0]!.fire()
     const late = [...events.queued.values()]
     layout.main = 66.5
-    view.rerender(<Harness target={second} facade={next.facade} />)
+    layout.tile = 300.25
+    view.rerender(<Harness target={second} facade={next.facade} tiles />)
     expect(old.registrations[0]!.dispose).toHaveBeenCalledTimes(1)
     act(() => {
       late.forEach((callback) => callback(0))
@@ -1398,12 +1764,15 @@ describe('React table geometry lifecycle and focus', () => {
     })
     expect(old.captures).not.toHaveBeenCalled()
     expect(next.registrations[0]!.record('a', 'wide')?.retained).toBe(66.5)
+    expect(next.registrations[0]!.record('a', 'tiles')?.retained).toBe(316.25)
     view.unmount()
     snapshot(second, ['a'])
     layout.main = 20.5
-    render(<Harness target={second} facade={next.facade} />)
+    layout.tile = 200.5
+    render(<Harness target={second} facade={next.facade} tiles />)
     act(() => depart(second))
     expect(next.registrations[1]!.record('a', 'wide')?.retained).toBe(20.5)
+    expect(next.registrations[1]!.record('a', 'tiles')?.retained).toBe(216.5)
   })
 
   it.each(['visible', 'hidden', 'disabled', 'absent'] as const)(
@@ -1426,6 +1795,42 @@ describe('React table geometry lifecycle and focus', () => {
       )
     },
   )
+
+  it('returns a gone tile control to search and a marked tile opener to its own fresh tile', () => {
+    numericDOM()
+    const target = controller(['a'])
+    const view = render(<Harness target={target} tiles />)
+    const tileControl = () =>
+      view.container.querySelector<HTMLElement>('[data-id="tile-control-a"]')!
+    const search = view.container.querySelector(
+      '[data-id="hilos-table-search"]',
+    )
+    tileControl().focus()
+    act(() => depart(target))
+    expect(document.activeElement).toBe(search)
+    act(() => snapshot(target, ['a']))
+    const modal = document.createElement('div')
+    modal.tabIndex = -1
+    document.body.append(modal)
+    const trap = new FocusTrap()
+    const opener = tileControl()
+    opener.focus()
+    trap.activate(modal, 'dialog')
+    act(() => snapshot(target, ['a']))
+    // The card's control carries the same marker; the tile's own projection wins.
+    const fresh = tileControl()
+    expect(fresh).not.toBe(opener)
+    expect(document.activeElement).toBe(modal)
+    trap.release()
+    expect(document.activeElement).toBe(fresh)
+    // A fresh tile that is hidden is not a target.
+    trap.activate(modal, 'dialog')
+    act(() => snapshot(target, ['a']))
+    view.container.querySelector<HTMLElement>('.tiles-projection')!.hidden =
+      true
+    trap.release()
+    expect(document.activeElement).toBe(search)
+  })
 
   it('preserves another explicit focus choice and an active modal trap', () => {
     numericDOM()
