@@ -1,31 +1,71 @@
 import { useEffect, useMemo } from 'react'
 import {
-  createHilosLegalDocumentsTable,
   createHilosLegalChecksTable,
+  createHilosLegalOverview,
   createHilosLegalSettingsTable,
-  HilosLegalRowKey,
-  HilosLegalSettingKey,
-  LEGAL_CATALOG_REFUSAL_SECTION,
   describeHilosLegalCheck,
   hilosLegalLapsedHref,
   hilosLegalLapsedLabel,
+  HilosLegalRowKey,
+  HilosLegalSettingKey,
+  HILOS_LEGAL_VALUE_COPY,
+  LEGAL_CATALOG_REFUSAL_SECTION,
+  type HilosLegalSettingRow,
 } from '@hilos/core/admin/legal'
 import {
   HilosPages,
-  HILOS_TABLE_ACTIONS_KEY,
-  hilosLegalDocumentLabel,
-  resolveHilosPath,
   type HilosLegalContext,
+  type TableViewportController,
 } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosSkeleton } from '../../HilosSkeleton.js'
+import { HilosTableEmptyState } from '../../HilosTableEmptyState.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'
 
-/** Read-only legal declarations and acceptance tallies. */
+/**
+ * One legal setting in its Overview tile: the value (or the hidden mark), the
+ * settings window's refusal, or the skeleton until its row arrives.
+ *
+ * @param props The setting's row, the settings window and whether it refused.
+ */
+function HilosLegalSettingValue({
+  setting,
+  settings,
+  unavailable,
+}: {
+  setting: HilosLegalSettingRow | null | undefined
+  settings: TableViewportController<HilosLegalSettingRow>
+  unavailable: boolean
+}) {
+  if (setting) {
+    return (
+      <div className="fs-4 fw-semibold">
+        <HilosHideable value={setting.value}>
+          {(shown) => HILOS_LEGAL_VALUE_COPY[shown] ?? shown}
+        </HilosHideable>
+      </div>
+    )
+  }
+
+  return unavailable ? (
+    <HilosTableEmptyState controller={settings} kind="unavailable" />
+  ) : (
+    <HilosSkeleton />
+  )
+}
+
+/**
+ * The legal root: a nonpersonal overview of the declared documents, the two
+ * legal settings and the catalog checks.
+ *
+ * @param props The project's legal page context.
+ */
 export function HilosLegalPage({ context }: { context: HilosLegalContext }) {
-  const documents = useMemo(
-    () => createHilosLegalDocumentsTable(context),
+  const overviewSource = useMemo(
+    () => createHilosLegalOverview(context),
     [context],
   )
   const checks = useMemo(() => createHilosLegalChecksTable(context), [context])
@@ -33,26 +73,29 @@ export function HilosLegalPage({ context }: { context: HilosLegalContext }) {
     () => createHilosLegalSettingsTable(context, HilosPages.LEGAL),
     [context],
   )
+  const overview = useSignal(overviewSource)
   const refusal = useSignal(
     context.scopes.pageDataSignal(LEGAL_CATALOG_REFUSAL_SECTION),
   )
-  const settingRows = useSignal(settings.controller.rows)
-  const documentRows = useSignal(documents.controller.rows)
-  const lapsedLabel = hilosLegalLapsedLabel(
-    settingRows.find(
-      ({ row }) => row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
-    )?.row?.value,
-  )
+  const settingsRows = useSignal(settings.controller.rows)
+  const settingsBody = useSignal(settings.controller.frame.body)
+  const checksBody = useSignal(checks.controller.frame.body)
+  const consent = settingsRows.find(
+    ({ row }) => row?.rowKey === HilosLegalSettingKey.consentForm,
+  )?.row
+  const policy = settingsRows.find(
+    ({ row }) => row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
+  )?.row
+  const lapsedLabel = hilosLegalLapsedLabel(policy?.value)
   useEffect(() => {
-    documents.start()
     checks.start()
     settings.start()
     return () => {
-      documents.dispose()
       checks.dispose()
       settings.dispose()
     }
-  }, [documents, checks, settings])
+  }, [checks, settings])
+
   return (
     <HilosAdminPage page={HilosPages.LEGAL}>
       {typeof refusal === 'string' ? (
@@ -72,79 +115,181 @@ export function HilosLegalPage({ context }: { context: HilosLegalContext }) {
             revision means deploying it. This section records what is declared
             and who accepted it.
           </div>
-          <HilosViewportTable
-            controller={documents.controller}
-            cells={{
-              [HilosLegalRowKey.rowKey]: (row) => (
-                <>
-                  <span
-                    data-id="legal-document-row"
-                    data-document={row.rowKey}
-                    className="fw-semibold"
-                  >
-                    {hilosLegalDocumentLabel(row.rowKey)}
-                  </span>
-                  {!row.declared && (
-                    <span className="badge text-bg-warning ms-2">
-                      Not in code
-                    </span>
-                  )}
-                </>
-              ),
-              [HilosLegalRowKey.revision]: (row) =>
-                row.revision ? (
-                  <>
-                    <div>
-                      {row.revision.publishedOn} · {row.revision.significance}
-                    </div>
-                    <div className="small text-body-secondary">
-                      Effective from {row.revision.effectiveOn}
-                    </div>
-                  </>
-                ) : (
-                  <span className="text-body-secondary">Not in code</span>
-                ),
-              [HilosLegalRowKey.covered]: (row) => (
-                <span data-id="legal-count-covered">{row.covered}</span>
-              ),
-              [HilosLegalRowKey.window]: (row) => (
-                <span data-id="legal-count-window">{row.window}</span>
-              ),
-              // The count of the people past the deadline opens them in the
-              // people list (HIL-945); nobody to open, nothing to follow.
-              [HilosLegalRowKey.lapsed]: (row) => (
-                <>
-                  {row.lapsed > 0 ? (
-                    <HilosLink
-                      to={hilosLegalLapsedHref(row.rowKey)}
-                      data-id="legal-count-lapsed-link"
-                      data-document={row.rowKey}
-                    >
-                      <span data-id="legal-count-lapsed">{row.lapsed}</span>
-                    </HilosLink>
-                  ) : (
-                    <span data-id="legal-count-lapsed">{row.lapsed}</span>
-                  )}{' '}
-                  <span className="small text-body-secondary">
-                    {lapsedLabel}
-                  </span>
-                </>
-              ),
-              [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-                <HilosLink
-                  to={resolveHilosPath(HilosPages.LEGAL_DOCUMENT, {
-                    documentKey: row.rowKey,
-                  })}
-                  className="btn btn-sm btn-outline-secondary"
-                  data-id="legal-document-open"
-                  data-document={row.rowKey}
+          {overview ? (
+            <div
+              className="row row-cols-2 row-cols-lg-3 g-3 mb-3"
+              data-id="legal-overview"
+            >
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-overview-documents"
                 >
-                  Open
-                </HilosLink>
-              ),
-            }}
-          />
-          {documentRows.length > 0 && (
+                  <h2 className="small text-body-secondary fw-normal">
+                    Documents
+                  </h2>
+                  <div
+                    className="fs-4 fw-semibold"
+                    data-id="legal-document-count"
+                  >
+                    {overview.documentCount}
+                  </div>
+                  <div className="small text-body-secondary">
+                    {overview.documents
+                      .map(({ documentLabel }) => documentLabel)
+                      .join(' · ')}
+                  </div>
+                </section>
+              </div>
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-overview-window"
+                >
+                  <h2 className="small text-body-secondary fw-normal">
+                    Waiting for acceptance
+                  </h2>
+                  {overview.documents.length > 0 ? (
+                    <dl className="mb-0">
+                      {overview.documents.map((document) => (
+                        <div
+                          key={document.document}
+                          className="d-flex flex-wrap justify-content-between gap-2"
+                          data-document={document.document}
+                        >
+                          <dt className="small fw-normal">
+                            {document.documentLabel}
+                          </dt>
+                          <dd
+                            className="fw-semibold mb-0"
+                            data-id="legal-count-window"
+                          >
+                            {document.window}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <div
+                      className="fs-4 fw-semibold"
+                      data-id="legal-count-window"
+                    >
+                      0
+                    </div>
+                  )}
+                </section>
+              </div>
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-overview-lapsed"
+                >
+                  <h2 className="small text-body-secondary fw-normal">
+                    {lapsedLabel}
+                  </h2>
+                  {overview.documents.length > 0 ? (
+                    <dl className="mb-0">
+                      {overview.documents.map((document) => (
+                        <div
+                          key={document.document}
+                          className="d-flex flex-wrap justify-content-between gap-2"
+                          data-document={document.document}
+                        >
+                          <dt className="small fw-normal">
+                            {document.documentLabel}
+                          </dt>
+                          <dd className="fw-semibold mb-0">
+                            {/* The count of the people past the deadline opens
+                                them in the people list (HIL-945); nobody to
+                                open, nothing to follow. */}
+                            {document.lapsed > 0 ? (
+                              <HilosLink
+                                to={hilosLegalLapsedHref(document.document)}
+                                data-id="legal-count-lapsed-link"
+                              >
+                                <span data-id="legal-count-lapsed">
+                                  {document.lapsed}
+                                </span>
+                              </HilosLink>
+                            ) : (
+                              <span data-id="legal-count-lapsed">
+                                {document.lapsed}
+                              </span>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <div
+                      className="fs-4 fw-semibold"
+                      data-id="legal-count-lapsed"
+                    >
+                      0
+                    </div>
+                  )}
+                </section>
+              </div>
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-overview-newer-sets"
+                >
+                  <h2 className="small text-body-secondary fw-normal">
+                    New framework sets
+                  </h2>
+                  <div
+                    className="fs-4 fw-semibold"
+                    data-id="legal-newer-set-count"
+                  >
+                    {overview.newerSetCount}
+                  </div>
+                  <div className="small text-body-secondary">
+                    Documents with a newer framework set available.
+                  </div>
+                </section>
+              </div>
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-overview-consent"
+                >
+                  <h2 className="small text-body-secondary fw-normal">
+                    Consent
+                  </h2>
+                  <HilosLegalSettingValue
+                    setting={consent}
+                    settings={settings.controller}
+                    unavailable={settingsBody === 'unavailable'}
+                  />
+                  <div className="small text-body-secondary">
+                    How people agree at registration.
+                  </div>
+                </section>
+              </div>
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-overview-refusal"
+                >
+                  <h2 className="small text-body-secondary fw-normal">
+                    Refusal
+                  </h2>
+                  <HilosLegalSettingValue
+                    setting={policy}
+                    settings={settings.controller}
+                    unavailable={settingsBody === 'unavailable'}
+                  />
+                  <div className="small text-body-secondary">
+                    What happens after a deadline.
+                  </div>
+                </section>
+              </div>
+            </div>
+          ) : (
+            <HilosSkeleton />
+          )}
+          {checksBody !== 'empty' && (
             <div className="mt-4">
               <HilosViewportTable
                 controller={checks.controller}
@@ -172,18 +317,6 @@ export function HilosLegalPage({ context }: { context: HilosLegalContext }) {
               />
             </div>
           )}
-          <section className="mt-4 small text-body-secondary">
-            <h2 className="h6">What this section does not do</h2>
-            <p>
-              There is no text editor, publish button, or acceptance-window
-              setting. Those decisions are declared in the project's code.
-            </p>
-            <h2 className="h6">Why this is under Access &amp; identity</h2>
-            <p className="mb-0">
-              Agreement belongs to a person and an exact revision. Its deadline
-              can affect that person's access.
-            </p>
-          </section>
         </>
       )}
     </HilosAdminPage>

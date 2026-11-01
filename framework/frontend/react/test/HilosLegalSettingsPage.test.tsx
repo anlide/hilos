@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HilosLegalSettingsPage } from '../src/admin/legal/HilosLegalSettingsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -16,10 +16,15 @@ import {
   type ProjectSignal,
 } from '@hilos/core'
 
-/** The live window is real; only its transport and the rejected action are replaced. */
-function harness() {
-  const listeners: Array<(frame: never) => void> = []
+/**
+ * The live window is real; only its transport and the rejected action are replaced.
+ *
+ * @param initialRefusal Refuse the carrier in the first page response.
+ */
+function harness(initialRefusal = false) {
+  const listeners = new Map<string, Set<(frame: never) => void>>()
   const calls: Array<{ action: string; payload: unknown }> = []
+  const focus: string[] = []
   const pending: Array<{
     resolve: (result: { message?: string }) => void
     reject: (error: ActionError) => void
@@ -30,14 +35,33 @@ function harness() {
     scopes,
     connection: {
       on(event: string, listener: (frame: never) => void) {
-        if (event === 'tableWindow') listeners.push(listener)
-        return () => {}
+        const group = listeners.get(event) ?? new Set()
+        listeners.set(event, group)
+        group.add(listener)
+        if (event === 'projectSignal' && initialRefusal)
+          listener({
+            type: 'page_response',
+            data: {
+              page: HilosPages.LEGAL_SETTINGS,
+              payload: {
+                data: {},
+                refusedWindows: {
+                  hilosLegalSettings: { errorCode: 'internal_error' },
+                },
+              },
+            },
+          } as never)
+        return () => {
+          group.delete(listener)
+        }
       },
       registerTableWindow() {},
       unregisterTableWindow() {},
       sendTableViewport() {},
       sendTableRendered() {},
-      sendTableRowFocus() {},
+      sendTableRowFocus(_page: string, _tableKey: string, rowKey: string) {
+        focus.push(rowKey)
+      },
     },
     actions: {
       dispatch(action: string, payload: unknown) {
@@ -66,6 +90,7 @@ function harness() {
     context,
     router,
     calls,
+    focus,
     answer(outcome: 'success' | 'fail') {
       const action = pending[pending.length - 1]
       if (!action) throw new Error('No legal settings action is pending.')
@@ -81,8 +106,30 @@ function harness() {
         ),
       )
     },
-    push(value: unknown) {
-      for (const listener of listeners)
+    refuse() {
+      for (const listener of listeners.get('tableWindowRefused') ?? [])
+        listener({
+          type: 'table_window_refused',
+          data: {
+            page: HilosPages.LEGAL_SETTINGS,
+            tableKey: 'hilosLegalSettings',
+            errorCode: 'internal_error',
+          },
+        } as never)
+    },
+    push(
+      value: unknown,
+      {
+        refusal = 'freeze',
+        consentDefault = 'checkbox',
+        refusalDefault = 'freeze',
+      }: {
+        refusal?: unknown
+        consentDefault?: unknown
+        refusalDefault?: unknown
+      } = {},
+    ) {
+      for (const listener of listeners.get('tableWindow') ?? [])
         listener({
           data: {
             page: HilosPages.LEGAL_SETTINGS,
@@ -90,10 +137,16 @@ function harness() {
             rows: [
               {
                 rowKey: 'legal.consent_form',
-                slots: { setting: { value, defaultValue: 'checkbox' } },
+                slots: { setting: { value, defaultValue: consentDefault } },
+              },
+              {
+                rowKey: 'legal.refusal_after_deadline',
+                slots: {
+                  setting: { value: refusal, defaultValue: refusalDefault },
+                },
               },
             ],
-            totalCount: 1,
+            totalCount: 2,
             totalExact: true,
             firstAnchor: null,
             lastAnchor: null,
@@ -102,6 +155,55 @@ function harness() {
         } as never)
     },
   }
+}
+
+/**
+ * Mount the settings page under the harness router.
+ *
+ * @param h The harness whose context and router the page reads.
+ */
+function mountPage(h: ReturnType<typeof harness>) {
+  return render(
+    <HilosRouterContext.Provider value={h.router}>
+      <HilosLegalSettingsPage context={h.context} />
+    </HilosRouterContext.Provider>,
+  )
+}
+
+/**
+ * The settings sections by their accessible name.
+ *
+ * @param container The rendered page.
+ */
+function sections(container: HTMLElement): Map<string, HTMLElement> {
+  return new Map(
+    within(container)
+      .queryAllByRole('region')
+      .map((section) => [
+        within(section).getByRole('heading', { level: 2 }).textContent ?? '',
+        section,
+      ]),
+  )
+}
+
+/**
+ * The value shown for one setting.
+ *
+ * @param key The setting's row key.
+ */
+function value(key: string): string | undefined {
+  return document
+    .querySelector(`[data-id="legal-setting-value-${key}"]`)
+    ?.textContent?.trim()
+}
+
+/**
+ * The default shown inside one section.
+ *
+ * @param section The setting's section.
+ */
+function defaultValue(section: HTMLElement): string | undefined {
+  return within(section).getByRole('definition').textContent?.trim()
 }
 
 function input(): HTMLSelectElement {
@@ -125,6 +227,173 @@ function bodyFieldset(): HTMLFieldSetElement {
   ) as HTMLFieldSetElement
 }
 afterEach(cleanup)
+describe('legal setting React sections', () => {
+  it('names both settings sections and draws their live values, defaults and edit controls', async () => {
+    const h = harness()
+    const view = mountPage(h)
+    act(() => h.push('line', { refusal: 'remind' }))
+
+    expect(view.container.textContent).toContain(
+      'Two settings control how consent is given and what happens after a deadline. Document texts and deadlines stay in code.',
+    )
+    const named = sections(view.container)
+    expect(named.size).toBe(2)
+    for (const [key, title, hint, shown, fallback] of [
+      [
+        'legal.consent_form',
+        'Consent at registration',
+        'How a person agrees when creating an account.',
+        'Line below the button',
+        'Checkbox',
+      ],
+      [
+        'legal.refusal_after_deadline',
+        'Refusal after the deadline',
+        'What happens when the acceptance window ends.',
+        'Keep reminding',
+        'Freeze access',
+      ],
+    ] as const) {
+      const section = named.get(title)!
+      expect(within(view.container).getByRole('region', { name: title })).toBe(
+        section,
+      )
+      expect(section.textContent).toContain(hint)
+      expect(
+        section
+          .querySelector(`[data-id="legal-setting-value-${key}"]`)
+          ?.textContent?.trim(),
+      ).toBe(shown)
+      expect(within(section).getByRole('term').textContent?.trim()).toBe(
+        'Default:',
+      )
+      expect(defaultValue(section)).toBe(fallback)
+      const edit = within(section).getByRole<HTMLButtonElement>('button', {
+        name: `Edit ${title}`,
+      })
+      expect(edit.getAttribute('data-id')).toBe(`legal-setting-edit-${key}`)
+      expect(edit.disabled).toBe(false)
+    }
+
+    act(() =>
+      h.push('checkbox', {
+        refusal: 'freeze',
+        consentDefault: 'line',
+        refusalDefault: 'remind',
+      }),
+    )
+    expect(value('legal.consent_form')).toBe('Checkbox')
+    expect(defaultValue(named.get('Consent at registration')!)).toBe(
+      'Line below the button',
+    )
+    expect(value('legal.refusal_after_deadline')).toBe('Freeze access')
+    expect(defaultValue(named.get('Refusal after the deadline')!)).toBe(
+      'Keep reminding',
+    )
+
+    const edit = within(view.container).getByRole('button', {
+      name: 'Edit Refusal after the deadline',
+    })
+    edit.focus()
+    await act(async () => {
+      fireEvent.click(edit)
+    })
+    const modal = document.querySelector('[role="dialog"]')!
+    expect(modal.getAttribute('aria-modal')).toBe('true')
+    expect(modal.getAttribute('aria-label')).toBe('Refusal after the deadline')
+    expect(h.focus).toEqual(['legal.refusal_after_deadline'])
+    expect(input().value).toBe('freeze')
+    expect(
+      Array.from(input().options, (option) => option.textContent?.trim()),
+    ).toEqual(['Freeze access', 'Keep reminding'])
+    expect(document.activeElement).toBe(input())
+    await act(async () => {
+      fireEvent.click(cancel())
+    })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(h.focus).toEqual(['legal.refusal_after_deadline', ''])
+    expect(document.activeElement).toBe(edit)
+  })
+
+  it.each([true, false])(
+    'shows a carrier refusal separately from mutation errors and restores the sections and editor (first response: %s)',
+    async (firstResponse) => {
+      const h = harness(firstResponse)
+      const view = mountPage(h)
+      if (!firstResponse) {
+        act(() => h.push('checkbox'))
+        expect(sections(view.container).size).toBe(2)
+        act(() => h.refuse())
+      }
+      const unavailable = view.container.querySelector(
+        '[data-id="hilos-table-unavailable"]',
+      )
+      expect(unavailable?.getAttribute('role')).toBe('status')
+      expect(
+        unavailable
+          ?.querySelector('[data-id="hilos-table-unavailable-title"]')
+          ?.textContent?.trim(),
+      ).toBe('List unavailable')
+      expect(sections(view.container).size).toBe(0)
+      expect(
+        view.container.querySelector('[data-id="hilos-hidden"]'),
+      ).toBeNull()
+      expect(view.container.textContent).toContain(
+        'Two settings control how consent is given',
+      )
+      expect(view.container.textContent).not.toContain(
+        'Server refused this choice',
+      )
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(h.calls).toHaveLength(0)
+
+      act(() => h.push('line', { refusal: 'remind' }))
+      expect(
+        view.container.querySelector('[data-id="hilos-table-unavailable"]'),
+      ).toBeNull()
+      const named = sections(view.container)
+      expect(named.size).toBe(2)
+      expect(value('legal.consent_form')).toBe('Line below the button')
+      expect(value('legal.refusal_after_deadline')).toBe('Keep reminding')
+      expect(defaultValue(named.get('Consent at registration')!)).toBe(
+        'Checkbox',
+      )
+      expect(defaultValue(named.get('Refusal after the deadline')!)).toBe(
+        'Freeze access',
+      )
+      const edit = within(view.container).getByRole('button', {
+        name: 'Edit Consent at registration',
+      })
+      edit.focus()
+      await act(async () => {
+        fireEvent.click(edit)
+      })
+      expect(input().value).toBe('line')
+      expect(document.activeElement).toBe(input())
+      expect(save().disabled).toBe(true)
+      fireEvent.change(input(), { target: { value: 'checkbox' } })
+      expect(save().disabled).toBe(false)
+      await act(async () => {
+        fireEvent.click(save())
+      })
+      expect(h.calls).toEqual([
+        {
+          action: 'legal_setting_set',
+          payload: { key: 'legal.consent_form', value: 'checkbox' },
+        },
+      ])
+      await act(async () => {
+        h.answer('fail')
+        await Promise.resolve()
+      })
+      expect(input().value).toBe('checkbox')
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        'Server refused this choice',
+      )
+    },
+  )
+})
+
 describe('legal setting React modal', () => {
   it('merges a pristine incoming value, locks an unchanged save and keeps a refused draft', async () => {
     const h = harness()
@@ -240,21 +509,40 @@ describe('legal setting React modal', () => {
 })
 
 describe('legal setting React modal with the value hidden (HIL-1260)', () => {
-  it('draws the mark in the cell and in the modal, with no list and nothing to discard', () => {
+  it('draws the mark in the section and in the modal, with no list and nothing to discard', () => {
     const h = harness()
-    const view = render(
-      <HilosRouterContext.Provider value={h.router}>
-        <HilosLegalSettingsPage context={h.context} />
-      </HilosRouterContext.Provider>,
+    const view = mountPage(h)
+    act(() =>
+      h.push(
+        { _hidden: true },
+        {
+          refusal: { _hidden: true },
+          consentDefault: { _hidden: true },
+          refusalDefault: { _hidden: true },
+        },
+      ),
     )
-    act(() => h.push({ _hidden: true }))
 
-    const cell = view.container.querySelector(
+    const shown = view.container.querySelector(
       '[data-id="legal-setting-value-legal.consent_form"]',
     )
     expect(
-      cell?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+      shown?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
     ).toBe('Hidden')
+    for (const key of ['legal.consent_form', 'legal.refusal_after_deadline']) {
+      expect(value(key)).toBe('Hidden')
+    }
+    const named = sections(view.container)
+    expect(named.size).toBe(2)
+    for (const section of named.values()) {
+      expect(within(section).getByRole('term').textContent?.trim()).toBe(
+        'Default:',
+      )
+      expect(defaultValue(section)).toBe('Hidden')
+    }
+    expect(
+      view.container.querySelectorAll('[data-id="hilos-hidden"]'),
+    ).toHaveLength(4)
 
     fireEvent.click(
       view.container.querySelector(

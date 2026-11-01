@@ -5,19 +5,16 @@ import {
   createHilosLegalSettingEdit,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
-  HILOS_LEGAL_SETTING_PREVIEWS,
-  HilosLegalRowKey,
 } from '@hilos/core/admin/legal'
 import {
   HilosPages,
-  HILOS_TABLE_ACTIONS_KEY,
   isHiddenValue,
   type HilosLegalContext,
 } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosHideable } from '../../HilosHideable.js'
+import { HilosTableEmptyState } from '../../HilosTableEmptyState.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
@@ -49,6 +46,12 @@ export function HilosLegalSettingsPage({
   const editor = useMemo(
     () => createHilosLegalSettingEdit(table.controller, actions),
     [table, actions],
+  )
+  const settingsRows = useSignal(table.controller.rows)
+  const settingsBody = useSignal(table.controller.frame.body)
+  const settings = useMemo(
+    () => settingsRows.flatMap(({ row }) => (row ? [row] : [])),
+    [settingsRows],
   )
   const opened = useSignal(editor.opened),
     row = useSignal(editor.row),
@@ -84,97 +87,68 @@ export function HilosLegalSettingsPage({
         Two settings control how consent is given and what happens after a
         deadline. Document texts and deadlines stay in code.
       </p>
-      <HilosViewportTable
-        controller={table.controller}
-        cells={{
-          [HilosLegalRowKey.rowKey]: (setting) => (
-            <>
-              <strong>
-                {HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.label ??
-                  setting.rowKey}
-              </strong>
-              <div className="small text-body-secondary">
-                {HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.hint}
-              </div>
-            </>
-          ),
-          [HilosLegalRowKey.value]: (setting) => (
-            <>
-              <span data-id={`legal-setting-value-${setting.rowKey}`}>
-                <HilosHideable value={setting.value}>
-                  {legalValueLabel}
-                </HilosHideable>
-              </span>
-              <div className="small text-body-secondary">
-                Default:{' '}
-                <HilosHideable value={setting.defaultValue}>
-                  {legalValueLabel}
-                </HilosHideable>
-              </div>
-            </>
-          ),
-          [HILOS_TABLE_ACTIONS_KEY]: (setting) => (
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              data-id={`legal-setting-edit-${setting.rowKey}`}
-              onClick={() => open(setting.rowKey)}
+      {settingsBody === 'unavailable' && (
+        <HilosTableEmptyState
+          controller={table.controller}
+          kind="unavailable"
+        />
+      )}
+      {settings.map((setting) => {
+        const label =
+          HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.label ?? setting.rowKey
+        const headingId = `${inputId}-${setting.rowKey}`
+        return (
+          <section
+            key={setting.rowKey}
+            className="mt-4"
+            aria-labelledby={headingId}
+          >
+            <h2
+              id={headingId}
+              className="h6 text-uppercase text-body-secondary mb-2"
             >
-              Edit
-            </button>
-          ),
-        }}
-      />
-      <section className="mt-4">
-        <h2 className="h5">Previews</h2>
-        <div className="row g-3">
-          {HILOS_LEGAL_SETTING_PREVIEWS.map((preview) => (
-            <div key={preview.key} className="col-md-6">
-              <div
-                className="border rounded p-3 h-100"
-                data-id={`legal-setting-preview-${preview.key}`}
-              >
-                <h3 className="h6">{preview.title}</h3>
-                {preview.key === 'checkbox' && (
-                  <label className="small d-flex align-items-start gap-2 mb-2">
-                    <input
-                      type="checkbox"
-                      className="form-check-input flex-shrink-0"
-                      disabled
-                    />
-                    {preview.text}
-                  </label>
-                )}
-                {(preview.key === 'checkbox' || preview.key === 'line') && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary w-100 mb-2"
-                    disabled
+              {label}
+            </h2>
+            <div className="d-flex flex-wrap align-items-center gap-3 py-3 border-bottom">
+              <div className="flex-grow-1">
+                <div className="fw-semibold small">{label}</div>
+                <div className="small text-body-secondary">
+                  {HILOS_LEGAL_SETTING_COPY[setting.rowKey]?.hint}
+                </div>
+              </div>
+              <div className="d-flex align-items-center gap-3">
+                <div className="text-end small">
+                  <div
+                    className="fw-semibold"
+                    data-id={`legal-setting-value-${setting.rowKey}`}
                   >
-                    Create account
-                  </button>
-                )}
-                {preview.key !== 'checkbox' && (
-                  <blockquote
-                    className={`small ${preview.key === 'freeze' ? 'alert alert-info' : preview.key === 'remind' ? 'alert alert-warning' : ''}`}
-                  >
-                    {preview.text}
-                  </blockquote>
-                )}
-                <p className="small text-body-secondary mb-0">{preview.hint}</p>
+                    <HilosHideable value={setting.value}>
+                      {legalValueLabel}
+                    </HilosHideable>
+                  </div>
+                  <dl className="d-flex flex-wrap justify-content-end gap-1 text-body-secondary mb-0">
+                    <dt className="fw-normal">Default:</dt>
+                    <dd className="mb-0">
+                      <HilosHideable value={setting.defaultValue}>
+                        {legalValueLabel}
+                      </HilosHideable>
+                    </dd>
+                  </dl>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  data-id={`legal-setting-edit-${setting.rowKey}`}
+                  aria-label={`Edit ${label}`}
+                  onClick={() => open(setting.rowKey)}
+                >
+                  Edit
+                </button>
               </div>
             </div>
-          ))}
-        </div>
-      </section>
-      <section className="mt-4 small text-body-secondary">
-        <h2 className="h6">What is not a setting</h2>
-        <p className="mb-0">
-          The acceptance window ends on the revision's effective date. There is
-          no global window length, switch to bypass consent, or editor for
-          document text.
-        </p>
-      </section>
+          </section>
+        )
+      })}
       <HilosModal
         open={opened}
         busy={saving}

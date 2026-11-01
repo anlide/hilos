@@ -7,6 +7,7 @@ namespace Demo\Tasks;
 use Demo\Tasks\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Tasks\Pages\Hilos\Legal\LegalPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
@@ -375,6 +376,7 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityStepUpPage::PAGE => SecurityStepUpPage::class,
         LegalPage::PAGE => LegalPage::class,
+        LegalDocumentsPage::PAGE => LegalDocumentsPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
@@ -803,8 +805,11 @@ final class Hilos extends HilosFacade
             TasksTableContext::hilosSecurityImpersonation => [],
         ],
         LegalPage::PAGE => [
-            TasksTableContext::hilosLegalDocuments => [],
             TasksTableContext::hilosLegalChecks => [],
+            TasksTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentsPage::PAGE => [
+            TasksTableContext::hilosLegalDocuments => [],
             TasksTableContext::hilosLegalSettings => [],
         ],
         LegalDocumentPage::PAGE => [

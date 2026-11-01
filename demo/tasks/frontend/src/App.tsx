@@ -289,6 +289,9 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.LEGAL]: lazyPage(() =>
     import('./views/Hilos/Legal/Legal.js').then((m) => m.default),
   ),
+  [HilosPages.LEGAL_DOCUMENTS]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalDocuments.js').then((m) => m.default),
+  ),
   [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalDocument.js').then((m) => m.default),
   ),

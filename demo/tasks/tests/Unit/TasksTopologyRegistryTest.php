@@ -67,6 +67,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Demo\Tasks\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Tasks\Pages\Hilos\Legal\LegalPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
@@ -771,20 +772,29 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(DemoHilosLegalAgentDaemon::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::DAEMON]);
         $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
         foreach ([
-            LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+            LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class, LegalRevisionPage::class,
+            LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
+            $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENTS, LegalDocumentsPage::BROWSER[BrowserConfigKey::SIGNAL]);
+        $this->assertSame([], LegalDocumentsPage::ACTIONS);
+        $this->assertSame([], LegalDocumentsPage::SIGNALS);
+        $this->assertSame([], LegalDocumentsPage::READING_ACTIONS);
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame([
-            TasksTableContext::hilosLegalDocuments => [],
             TasksTableContext::hilosLegalChecks => [],
             TasksTableContext::hilosLegalSettings => [],
         ], Hilos::PAGE_TABLES[LegalPage::PAGE]);
+        $this->assertSame([
+            TasksTableContext::hilosLegalDocuments => [],
+            TasksTableContext::hilosLegalSettings => [],
+        ], Hilos::PAGE_TABLES[LegalDocumentsPage::PAGE]);
         $this->assertSame([TasksTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
         $this->assertSame([TasksTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
         $this->assertSame([TasksTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
@@ -1738,6 +1748,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 SecurityStepUpPage::PAGE,
                 SecurityImpersonationPage::PAGE,
                 LegalPage::PAGE,
+                LegalDocumentsPage::PAGE,
                 LegalDocumentPage::PAGE,
                 LegalRevisionPage::PAGE,
                 LegalAcceptancesPage::PAGE,

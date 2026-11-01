@@ -70,40 +70,32 @@ final class PageCatalogResolverTest extends TestCase
         parent::tearDown();
     }
 
+    /** Chat and Tasks adopt the same Legal head: one owner, one breadcrumb, four tabs. */
     public function testLegalOptInHasFourTabsAndKeepsDocumentAndRevisionAsSeparateOwners(): void
     {
-        ChatLegalPageHeadTestHilos::initBrowser();
-        foreach ([HilosPageConstants::HILOS_LEGAL, HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
-            HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, HilosPageConstants::HILOS_LEGAL_SETTINGS] as $page) {
-            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
-            self::assertNotNull($head);
-            self::assertSame([
-                'page' => HilosPageConstants::HILOS_LEGAL,
-                'label' => 'Legal',
-                'lead' => 'What the project declares, and who accepted it.',
-                'icon' => 'bi-file-earmark-check',
-            ], $head->pageHeadOwner);
-            self::assertSame([
-                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
-                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Legal'],
-            ], $head->pageBreadcrumb);
-            self::assertSame([
-                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Overview'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENTS, 'label' => 'Documents'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
-            ], $head->pageTabs);
+        foreach ([ChatLegalPageHeadTestHilos::class, TasksLegalPageHeadTestHilos::class] as $facade) {
+            Hilos::$sr = new PageHeadTestSignalRouter();
+            $facade::initBrowser();
+            $this->assertLegalHeadWithFourTabs($facade);
         }
-        self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_LEGAL_REVISION));
-        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION, new PageRouteParams([])));
+    }
 
-        Hilos::$sr = $this->createStub(SignalRouter::class);
-        Hilos::$sr->method('servesPage')->willReturnCallback(static fn (string $page): bool => $page !== HilosPageConstants::HILOS_LEGAL_DOCUMENTS);
-        self::assertSame([
-            ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Overview'],
-            ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
-            ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
-        ], PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL, new PageRouteParams([]))->pageTabs);
+    /** Tasks adopts only the Legal entry: Document and Revision stay entities without a head. */
+    public function testTasksAdoptsLegalAloneAndLeavesDocumentAndRevisionWithoutHead(): void
+    {
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            TasksPageCatalog::pages()[HilosPageConstants::HILOS_LEGAL],
+        );
+        self::assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_DOCUMENT, TasksPageCatalog::pages());
+        TasksLegalPageHeadTestHilos::initBrowser();
+        foreach ([HilosPageConstants::HILOS_LEGAL_DOCUMENT, HilosPageConstants::HILOS_LEGAL_REVISION] as $page) {
+            self::assertSame($page, PageCatalogResolver::rowOwner($page));
+            self::assertNull(PageCatalogResolver::head($page, new PageRouteParams(['documentKey' => 'terms'])), $page);
+        }
     }
 
     /** Chat adopts only the Document owner and its four pages beside the Legal section. */
@@ -152,8 +144,7 @@ final class PageCatalogResolverTest extends TestCase
 
     public function testLegalFrameworkAndExistingProvidersKeepTheirLegacyHead(): void
     {
-        foreach ([LegacyLegalPageHeadTestHilos::class, TasksLegalPageHeadTestHilos::class,
-            PollsLegalPageHeadTestHilos::class] as $facade) {
+        foreach ([LegacyLegalPageHeadTestHilos::class, PollsLegalPageHeadTestHilos::class] as $facade) {
             $facade::initBrowser();
             foreach ([HilosPageConstants::HILOS_LEGAL, HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
                 HilosPageConstants::HILOS_LEGAL_DOCUMENT, HilosPageConstants::HILOS_LEGAL_REVISION,
@@ -2223,6 +2214,46 @@ final class PageCatalogResolverTest extends TestCase
             array_column(PageCatalogResolver::dashboardSections(), PageCatalogConstants::SECTION_TITLE),
         );
     }
+
+    /**
+     * Asserts the adopted Legal head on its four tab pages for the facade already initialized.
+     *
+     * @param class-string<Hilos> $facade Facade under test, named in failure messages
+     */
+    private function assertLegalHeadWithFourTabs(string $facade): void
+    {
+        foreach ([HilosPageConstants::HILOS_LEGAL, HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
+            HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, HilosPageConstants::HILOS_LEGAL_SETTINGS] as $page) {
+            $head = PageCatalogResolver::head($page, new PageRouteParams([]));
+            self::assertNotNull($head, $facade . ': ' . $page);
+            self::assertSame([
+                'page' => HilosPageConstants::HILOS_LEGAL,
+                'label' => 'Legal',
+                'lead' => 'What the project declares, and who accepted it.',
+                'icon' => 'bi-file-earmark-check',
+            ], $head->pageHeadOwner);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Legal'],
+            ], $head->pageBreadcrumb);
+            self::assertSame([
+                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Overview'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENTS, 'label' => 'Documents'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
+                ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
+            ], $head->pageTabs);
+        }
+        self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_LEGAL_REVISION));
+        self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION, new PageRouteParams([])));
+
+        Hilos::$sr = $this->createStub(SignalRouter::class);
+        Hilos::$sr->method('servesPage')->willReturnCallback(static fn (string $page): bool => $page !== HilosPageConstants::HILOS_LEGAL_DOCUMENTS);
+        self::assertSame([
+            ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Overview'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, 'label' => 'Acceptances'],
+            ['page' => HilosPageConstants::HILOS_LEGAL_SETTINGS, 'label' => 'Settings'],
+        ], PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL, new PageRouteParams([]))->pageTabs);
+    }
 }
 
 /**
@@ -3115,7 +3146,7 @@ abstract class LegacyLegalPageHeadTestHilos extends Hilos
     ];
 }
 
-/** Existing React provider remains unadopted. */
+/** Tasks adopts Legal while Document and Revision keep their legacy head. */
 abstract class TasksLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = TasksPageCatalog::class;
