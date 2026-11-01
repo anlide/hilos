@@ -148,9 +148,17 @@ The Cron page carries `cronReported`: while the section is null it says the node
 has not reported its schedule, or is silent and never reported it; only a
 reported empty list says there are no rules. Its non-leader notice comes from
 daemon rows with `idleReason`, and only a standby node gets the second sentence
-about starting here if leadership moves to this node. The view keeps the picture's
-original order, with no search or sort controls; adding them is the shared D-219
-debt outside the Angular port.
+about starting here if leadership moves to this node. When a node's reported
+rules change while its held Cron window is empty, the window is owed whole, so
+newly matching rules appear in a complete window without a reload; this catch-up
+follows the rule diff, not a `cronReported` transition ([Coming Back Without A
+Reload](browser-source-fanout.md#coming-back-without-a-reload)). When picture
+publication marks this debt, the worker catches it up once at the end of the
+tick from the final picture, so portions published before one send produce one
+whole window. Search matches
+`name` or `agentId`, and sorting is available on `name` and `nextRunAt`; without
+an explicit sort, rows keep the picture's original order. HIL-1709 closes the
+shared D-219 debt.
 The node agent does not expire a report by elapsed time: after its own restart,
 agent rows return on the agents' next changed or minute repair report, which can
 take up to a minute. The master forces its part as soon as the node agent
@@ -310,8 +318,12 @@ while DB/RT changes keep their existing origin. If a row leaves a search
 but remains in the subject, an update followed by `containsRow() === false`
 becomes `left_set`; a row that leaves the subject is deleted. When an unordered
 new row has no declared place, the count may change without inventing a
-position. No row-body history is cached, and derived pictures remain outside
-RT. See
+position. The empty Cron window is the exception: when its node's rule diff is
+non-empty, the whole window is owed rather than changing only the count. No
+row-body history is cached, and derived pictures remain outside RT. A window
+owed by picture publication is caught up once at the end of the worker tick from
+the final picture, so portions published before one send produce one whole
+window. See
 [`AbstractHilosDaemonAgent`](../../../framework/backend/Core/Agent/Hilos/AbstractHilosDaemonAgent.php),
 [`DaemonPictureRowChanges`](../../../framework/backend/DaemonSection/DaemonPictureRowChanges.php),
 [`DaemonPictureViewportTable`](../../../framework/backend/DaemonSection/DaemonPictureViewportTable.php),

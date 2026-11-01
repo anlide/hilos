@@ -352,6 +352,7 @@ export {
   expectUnfilteredTotals,
   expectStandaloneWorkers,
   expectStandaloneCron,
+  expectDaemonCronQuery,
   readDaemonCronMoment,
   expectDaemonCronMoments,
   watchDaemonCronDisplay,

@@ -348,7 +348,9 @@ drops these frames; that is a defense, not the rule's enforcement.
    For a page owed whole, the fact is the
    next eligible delivery to it: a change of its own DB/RT source or a window
    it asked for, once the page guards allow it. A source fact tries the whole
-   page even when the failed first answer left it without any viewport.
+   page even when the failed first answer left it without any viewport. For a
+   picture table, this fact is a portion published by `publishTableMutations`;
+   the flush tries its owed window.
 2. The database came back: the worker's first successful query after it lost its
    database connection tries all that worker's debts — windows and pages — once
    each, in the next flush. The fact stays inside the worker that saw it; it is
@@ -375,6 +377,11 @@ not be built for the rest of that flush; this already holds for a frozen
 window. A window the try sent whole is set aside for the rest of that flush
 too: it was built from the table as it is, so it holds the flush's later
 changes already, and a delta of one of them would count it twice (P-588).
+Picture publication through `publishTableMutations` marks an owed window instead
+of trying it with each portion: the mirror changes in portions within a worker
+tick, so a window built on the first portion would not hold the later ones. The
+flush tries the marked window once after those changes, from the table as the
+tick left it.
 A page tried whole is set aside for the rest of that flush too:
 another row fact sends neither a second full answer nor a partial delta or
 progress frame. Once a full answer pays the debt, the next flush can deliver

@@ -4,6 +4,7 @@ import type { Expect, Page } from '@playwright/test'
 import {
   DAEMON_NODE_TABS,
   expectDaemonNodeAnswer,
+  expectDaemonCronQuery,
   readDaemonCronMoment,
   readDaemonNodeOverview,
   readDaemonSectionOverview,
@@ -33,6 +34,416 @@ const initial = {
     },
   },
 }
+
+describe('Cron query evidence and ordering', () => {
+  const mark = { documentStarted: 1, socket: 2, cursor: 10, rendered: [] }
+  const browser = {
+    url: () => 'http://localhost/hilos/daemon/standalone/cron',
+  } as Page
+  const checks = Object.assign(
+    (value: unknown, message?: string) => expect(value, message),
+    {
+      any: expect.any,
+      // One observation makes absence fail immediately, without a timer budget.
+      poll: (read: () => Promise<unknown>) => ({
+        toEqual: async (wanted: unknown) =>
+          expect(await read()).toEqual(wanted),
+      }),
+    },
+  ) as unknown as Expect
+  const filter = { node: 'standalone' }
+  const rules = [
+    { rowKey: 'z', name: 'zeta', agentId: null, nextRunAt: 1_800_000_120_000 },
+    { rowKey: 'nb', name: 'gamma', agentId: null, nextRunAt: null },
+    {
+      rowKey: 'b',
+      name: 'alpha',
+      agentId: 'worker',
+      nextRunAt: 1_800_000_060_000,
+    },
+    { rowKey: 'na', name: 'gamma', agentId: null, nextRunAt: null },
+    {
+      rowKey: 'a',
+      name: 'alpha',
+      agentId: 'worker',
+      nextRunAt: 1_800_000_060_000,
+    },
+    {
+      rowKey: 'x',
+      name: 'beta',
+      agentId: 'alpha-worker',
+      nextRunAt: 1_800_000_000_000,
+    },
+  ]
+  type Sort = Parameters<typeof expectDaemonCronQuery>[5]
+  const rowsFor = (
+    keys: readonly string[],
+    source: readonly Record<string, unknown>[] = rules,
+  ) =>
+    keys.map((key) => ({
+      rowKey: key,
+      slots: { rule: source.find((rule) => rule.rowKey === key)! },
+    }))
+  function request(sort: Sort = null, query = filter) {
+    return {
+      direction: 'sent' as const,
+      socket: 2,
+      index: 10,
+      wire: {
+        type: 'table_viewport',
+        page: 'hilos_daemon_cron',
+        tableKey: 'hilosDaemonCron',
+        requestId: 'current',
+        filter: query,
+        sort,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: null,
+      },
+    }
+  }
+  function response(
+    keys: readonly string[] = [],
+    source: readonly Record<string, unknown>[] = rules,
+  ) {
+    return {
+      direction: 'received' as const,
+      socket: 2,
+      index: 11,
+      wire: {
+        type: 'table_window',
+        data: {
+          page: 'hilos_daemon_cron',
+          tableKey: 'hilosDaemonCron',
+          requestId: 'current',
+          rows: rowsFor(keys, source),
+        },
+      },
+    }
+  }
+  const observe = (frames: unknown[]) =>
+    ({
+      read: async () => ({ frames }),
+    }) as Parameters<typeof expectDaemonCronQuery>[2]
+
+  it.each([
+    ['before mark', { index: 8 }, {}],
+    ['another socket', { socket: 3 }, {}],
+    ['another page', {}, { page: 'hilos_daemon_workers' }],
+    ['another table', {}, { tableKey: 'hilosDaemonWorkers' }],
+    ['another node', {}, { filter: { node: 'elsewhere' } }],
+    ['another sort', {}, { sort: [{ field: 'name', direction: 'asc' }] }],
+    ['another type', {}, { type: 'page_subscribe' }],
+    ['missing request id', {}, { requestId: undefined }],
+  ])('does not accept a request %s', async (_label, envelope, wire) => {
+    const sent = request()
+    const wrong = { ...sent, ...envelope, wire: { ...sent.wire, ...wire } }
+    const reply = response()
+    const frames = [wrong, reply]
+    await expect(
+      expectDaemonCronQuery(
+        checks,
+        browser,
+        observe(frames),
+        mark,
+        filter,
+        null,
+        [],
+      ),
+    ).rejects.toThrow()
+    frames.splice(1, 0, sent)
+    const accepted = await expectDaemonCronQuery(
+      checks,
+      browser,
+      observe(frames),
+      mark,
+      filter,
+      null,
+      [],
+    )
+    expect(accepted.sent).toBe(sent)
+    expect(accepted.reply).toBe(reply)
+  })
+
+  it.each([
+    ['before the request', { index: 9 }, {}],
+    ['same physical position', { index: 10 }, {}],
+    ['another socket', { socket: 3 }, {}],
+    ['another request id', {}, { requestId: 'previous' }],
+    ['another page', {}, { page: 'hilos_daemon_workers' }],
+    ['another table', {}, { tableKey: 'hilosDaemonWorkers' }],
+  ])('ignores an empty window from %s', async (_label, envelope, data) => {
+    const sent = request()
+    const reply = response()
+    const wrong = {
+      ...reply,
+      ...envelope,
+      wire: { ...reply.wire, data: { ...reply.wire.data, ...data } },
+    }
+    const frames = [sent, wrong]
+    await expect(
+      expectDaemonCronQuery(
+        checks,
+        browser,
+        observe(frames),
+        mark,
+        filter,
+        null,
+        [],
+      ),
+    ).rejects.toThrow()
+    frames.push(reply)
+    const accepted = await expectDaemonCronQuery(
+      checks,
+      browser,
+      observe(frames),
+      mark,
+      filter,
+      null,
+      [],
+    )
+    expect(accepted.reply).toBe(reply)
+    expect(accepted.rows).toEqual([])
+    expect(accepted.keys).toEqual([])
+  })
+
+  it('waits for the newest matching request instead of accepting an older own reply', async () => {
+    const previous = request()
+    const sent = {
+      ...previous,
+      index: 12,
+      wire: { ...previous.wire, requestId: 'latest' },
+    }
+    const frames = [previous, response(), sent]
+    await expect(
+      expectDaemonCronQuery(
+        checks,
+        browser,
+        observe(frames),
+        mark,
+        filter,
+        null,
+        [],
+      ),
+    ).rejects.toThrow()
+    const reply = response()
+    reply.index = 13
+    reply.wire.data.requestId = 'latest'
+    frames.push(reply)
+    const accepted = await expectDaemonCronQuery(
+      checks,
+      browser,
+      observe(frames),
+      mark,
+      filter,
+      null,
+      [],
+    )
+    expect(accepted.sent).toBe(sent)
+    expect(accepted.reply).toBe(reply)
+  })
+
+  it.each(['alpha', 'ALPHA', ' \tAlPhA\r\n\0\v'])(
+    'matches name OR agentId without case and trims search edges: %j',
+    async (search) => {
+      const query = { ...filter, search }
+      const frames = [request(null, query), response(['b', 'a', 'x'])]
+      const accepted = await expectDaemonCronQuery(
+        checks,
+        browser,
+        observe(frames),
+        mark,
+        query,
+        null,
+        rules,
+      )
+      expect(accepted.keys).toEqual(['b', 'a', 'x'])
+      frames[1] = response(['a', 'b', 'x'])
+      await expect(
+        expectDaemonCronQuery(
+          checks,
+          browser,
+          observe(frames),
+          mark,
+          query,
+          null,
+          rules,
+        ),
+      ).rejects.toThrow()
+      for (const keys of [[], ['b', 'a'], ['x'], ['b', 'a', 'x', 'z']]) {
+        frames[1] = response(keys)
+        await expect(
+          expectDaemonCronQuery(
+            checks,
+            browser,
+            observe(frames),
+            mark,
+            query,
+            null,
+            rules,
+          ),
+        ).rejects.toThrow()
+      }
+    },
+  )
+
+  it.each([
+    [' \t\r\n\0\v', ['z', 'nb', 'b', 'na', 'a', 'x']],
+    ['alpha worker', []],
+    ['\falpha\f', []],
+    ['\u00a0alpha\u00a0', []],
+  ] as const)(
+    'normalizes only PHP search edge characters: %j',
+    async (search, keys) => {
+      const query = { ...filter, search }
+      const accepted = await expectDaemonCronQuery(
+        checks,
+        browser,
+        observe([request(null, query), response(keys)]),
+        mark,
+        query,
+        null,
+        rules,
+      )
+      expect(accepted.keys).toEqual(keys)
+    },
+  )
+
+  it('accepts a current empty search result but refuses an empty answer for matching rules', async () => {
+    const query = { ...filter, search: 'missing' }
+    const reply = response()
+    const accepted = await expectDaemonCronQuery(
+      checks,
+      browser,
+      observe([request(null, query), reply]),
+      mark,
+      query,
+      null,
+      rules,
+    )
+    expect(accepted.reply).toBe(reply)
+    expect(accepted.keys).toEqual([])
+    await expect(
+      expectDaemonCronQuery(
+        checks,
+        browser,
+        observe([request(), reply]),
+        mark,
+        filter,
+        null,
+        rules,
+      ),
+    ).rejects.toThrow()
+  })
+
+  it.each([
+    ['numeric suffixes', ['rule-10', 'rule-2']],
+    ['case-insensitive ties with binary keys', ['RULE-2', 'rule-2']],
+    ['embedded leading zeros', ['rule-02', 'rule-010']],
+    ['leading numeric zeros', ['02', '2']],
+    ['ASCII punctuation', ['rule_2', 'ruleA2']],
+    ['whitespace before digits', ['rule 10', 'rule2']],
+    ['non-ASCII bytes', ['é2', 'É2']],
+    ['large digit runs', ['rule-9007199254740993', 'rule-9007199254740992']],
+  ] as const)(
+    'orders %s naturally in both directions',
+    async (_label, names) => {
+      const initialRules = [
+        { ...rules[0]!, rowKey: 'a', name: names[0] },
+        { ...rules[0]!, rowKey: 'B', name: names[1] },
+      ]
+      for (const [direction, keys] of [
+        ['asc', ['B', 'a']],
+        ['desc', ['a', 'B']],
+      ] as const) {
+        const sort = [{ field: 'name', direction }] as const
+        const frames = [request(sort), response(keys, initialRules)]
+        const accepted = await expectDaemonCronQuery(
+          checks,
+          browser,
+          observe(frames),
+          mark,
+          filter,
+          sort,
+          initialRules,
+        )
+        expect(accepted.keys).toEqual(keys)
+        frames[1] = response([...keys].reverse(), initialRules)
+        await expect(
+          expectDaemonCronQuery(
+            checks,
+            browser,
+            observe(frames),
+            mark,
+            filter,
+            sort,
+            initialRules,
+          ),
+        ).rejects.toThrow()
+      }
+    },
+  )
+
+  it.each([
+    ['name', 'asc', ['a', 'b', 'x', 'na', 'nb', 'z']],
+    ['name', 'desc', ['z', 'nb', 'na', 'x', 'b', 'a']],
+    ['nextRunAt', 'asc', ['x', 'a', 'b', 'z', 'na', 'nb']],
+    ['nextRunAt', 'desc', ['z', 'b', 'a', 'x', 'nb', 'na']],
+  ] as const)(
+    'checks %s %s, ties and trailing nulls using the received values',
+    async (field, direction, keys) => {
+      const sort = [{ field, direction }]
+      // The original moments would demand a different order; only the reply is current.
+      const initialRules = rules.map((rule, index) => ({
+        ...rule,
+        nextRunAt: 1_800_000_000_000 + index,
+      }))
+      const frames = [request(sort), response(keys)]
+      const accepted = await expectDaemonCronQuery(
+        checks,
+        browser,
+        observe(frames),
+        mark,
+        filter,
+        sort,
+        initialRules,
+      )
+      expect(accepted.keys).toEqual(keys)
+      expect(accepted.rows).toEqual(rowsFor(keys))
+      frames[1] = response([...keys].reverse())
+      await expect(
+        expectDaemonCronQuery(
+          checks,
+          browser,
+          observe(frames),
+          mark,
+          filter,
+          sort,
+          initialRules,
+        ),
+      ).rejects.toThrow()
+    },
+  )
+
+  it.each([
+    ['reversed equal moments', ['x', 'b', 'a', 'z', 'na', 'nb']],
+    ['null before a moment', ['na', 'x', 'a', 'b', 'z', 'nb']],
+    ['reversed null ties', ['x', 'a', 'b', 'z', 'nb', 'na']],
+  ])('refuses %s', async (_label, keys) => {
+    const sort = [{ field: 'nextRunAt', direction: 'asc' }] as const
+    await expect(
+      expectDaemonCronQuery(
+        checks,
+        browser,
+        observe([request(sort), response(keys)]),
+        mark,
+        filter,
+        sort,
+        rules,
+      ),
+    ).rejects.toThrow()
+  })
+})
 
 describe('real Cron moment evidence', () => {
   it('keeps data-only page updates, then replaces the entire window including an absent row', () => {

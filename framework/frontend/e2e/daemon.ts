@@ -465,6 +465,177 @@ export async function expectStandaloneCron(
   await expect(page.getByTestId('hilos-daemon-cron-not-leader')).toHaveCount(0)
 }
 
+/** Independent strnatcasecmp oracle: ASCII case folding and natural digit runs. */
+function compareCronNames(left: string, right: string): number {
+  const bytes = (value: string) =>
+    Buffer.from(value.replace(/[a-z]/g, (letter) => letter.toUpperCase()))
+  const a = bytes(left)
+  const b = bytes(right)
+  if (a.length === 0 || b.length === 0) return a.length - b.length
+  const digit = (byte: number | undefined) =>
+    byte !== undefined && byte >= 48 && byte <= 57
+  const space = (byte: number | undefined) =>
+    byte === 32 || (byte !== undefined && byte >= 9 && byte <= 13)
+  let ai = 0
+  let bi = 0
+  // Only zeros at the very start are discarded; embedded zeros align digits left.
+  while (a[ai] === 48 && digit(a[ai + 1])) ai++
+  while (b[bi] === 48 && digit(b[bi + 1])) bi++
+  for (;;) {
+    while (space(a[ai])) ai++
+    while (space(b[bi])) bi++
+    if (digit(a[ai]) && digit(b[bi])) {
+      let aEnd = ai
+      let bEnd = bi
+      while (digit(a[aEnd])) aEnd++
+      while (digit(b[bEnd])) bEnd++
+      const byWidth = a[ai] === 48 || b[bi] === 48 ? 0 : aEnd - ai - (bEnd - bi)
+      const byDigits =
+        byWidth || Buffer.compare(a.subarray(ai, aEnd), b.subarray(bi, bEnd))
+      if (byDigits !== 0) return byDigits
+      ai = aEnd
+      bi = bEnd
+      if (ai === a.length || bi === b.length)
+        return Number(ai < a.length) - Number(bi < b.length)
+    }
+    const byByte = (a[ai] ?? 0) - (b[bi] ?? 0)
+    if (byByte !== 0) return byByte
+    ai++
+    bi++
+    if (ai >= a.length || bi >= b.length)
+      return Number(ai < a.length) - Number(bi < b.length)
+  }
+}
+
+/**
+ * Check one user-issued Cron query against the original roster and its real reply.
+ * The caller owns the action and its framework's DOM/application settle proof.
+ */
+export async function expectDaemonCronQuery(
+  expect: Expect,
+  page: Page,
+  windows: Pick<Awaited<ReturnType<typeof watchTableSearch>>, 'read'>,
+  mark: Awaited<
+    ReturnType<Awaited<ReturnType<typeof watchTableSearch>>['mark']>
+  >,
+  filter: { readonly node: string; readonly search?: string },
+  sort:
+    | readonly {
+        readonly field: 'name' | 'nextRunAt'
+        readonly direction: 'asc' | 'desc'
+      }[]
+    | null,
+  initialRules: readonly Record<string, unknown>[],
+) {
+  type Frame = Awaited<ReturnType<typeof windows.read>>['frames'][number]
+  let sent: Frame | undefined
+  let reply: Frame | undefined
+  await expect
+    .poll(
+      async () => {
+        const state = await windows.read()
+        sent = state.frames
+          .filter(
+            (frame) =>
+              frame.direction === 'sent' &&
+              frame.socket === mark.socket &&
+              frame.index >= mark.cursor &&
+              frame.wire.type === 'table_viewport' &&
+              frame.wire.page === 'hilos_daemon_cron' &&
+              frame.wire.tableKey === 'hilosDaemonCron' &&
+              typeof frame.wire.requestId === 'string' &&
+              JSON.stringify(frame.wire.filter) === JSON.stringify(filter) &&
+              JSON.stringify(frame.wire.sort ?? null) === JSON.stringify(sort),
+          )
+          .at(-1)
+        reply = state.frames.find(
+          (frame) =>
+            sent !== undefined &&
+            frame.direction === 'received' &&
+            frame.socket === sent.socket &&
+            frame.index > sent.index &&
+            frame.wire.type === 'table_window' &&
+            deliveryObject(frame.wire.data).page === 'hilos_daemon_cron' &&
+            deliveryObject(frame.wire.data).tableKey === 'hilosDaemonCron' &&
+            deliveryObject(frame.wire.data).requestId === sent.wire.requestId,
+        )
+        return deliveryObject(reply?.wire.data).rows
+      },
+      { message: `Cron query reply at ${page.url()}` },
+    )
+    .toEqual(expect.any(Array))
+
+  expect(sent!.wire).toMatchObject({
+    page: 'hilos_daemon_cron',
+    tableKey: 'hilosDaemonCron',
+    filter,
+    anchor: null,
+    anchorDirection: 'after',
+  })
+  expect(sent!.wire.sort ?? null).toEqual(sort)
+  expect(sent!.wire.pageIndex ?? null).toBeNull()
+  const rows = deliveryObject(reply!.wire.data).rows as unknown[]
+  const rules = rows.map((row) =>
+    deliveryObject(deliveryObject(deliveryObject(row).slots).rule),
+  )
+  const keys = rows.map((row) => String(deliveryObject(row).rowKey))
+  expect(rules.map((rule) => rule.rowKey)).toEqual(keys)
+  // PHP trim's default edge characters; inner spaces and other whitespace stay literal.
+  const search = filter.search ?? ''
+  const trimCharacters = ' \t\n\r\0\v'
+  let start = 0
+  let end = search.length
+  while (start < end && trimCharacters.includes(search[start]!)) start++
+  while (end > start && trimCharacters.includes(search[end - 1]!)) end--
+  const term = search.slice(start, end).toLowerCase()
+  const matching = initialRules.filter(
+    (rule) =>
+      term === '' ||
+      [rule.name, rule.agentId].some(
+        (value) =>
+          typeof value === 'string' && value.toLowerCase().includes(term),
+      ),
+  )
+  expect([...keys].sort()).toEqual(
+    matching.map((rule) => String(rule.rowKey)).sort(),
+  )
+  if (sort === null) {
+    expect(keys).toEqual(matching.map((rule) => rule.rowKey))
+  } else {
+    expect(sort).toHaveLength(1)
+    const { field, direction } = sort[0]!
+    if (field === 'nextRunAt') {
+      for (const rule of rules) {
+        if (rule.nextRunAt !== null) {
+          expect(Number.isSafeInteger(rule.nextRunAt)).toBe(true)
+        }
+      }
+    }
+    // Oracle over the accepted answer: Cron moments may move since initialRules.
+    const ordered = [...rules].sort((left, right) => {
+      const a = left[field]
+      const b = right[field]
+      if (a === null && b !== null) return 1
+      if (b === null && a !== null) return -1
+      const comparison =
+        a === b
+          ? 0
+          : field === 'nextRunAt'
+            ? Number(a) - Number(b)
+            : compareCronNames(String(a), String(b))
+      const byKey =
+        left.rowKey === right.rowKey
+          ? 0
+          : String(left.rowKey) < String(right.rowKey)
+            ? -1
+            : 1
+      return (direction === 'asc' ? 1 : -1) * (comparison || byKey)
+    })
+    expect(keys).toEqual(ordered.map((rule) => rule.rowKey))
+  }
+  return { sent: sent!, reply: reply!, rows, keys }
+}
+
 /** Read one row from the latest real Cron window and its subsequent live edits. */
 export function readDaemonCronMoment(
   frames: readonly SocketFrame[],

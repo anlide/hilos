@@ -47,6 +47,8 @@ import {
   expectUnfilteredTotals,
   expectStandaloneWorkers,
   expectStandaloneCron,
+  expectDaemonCronQuery,
+  deliveryObject,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
   expectStandaloneEnvOrphans,
@@ -70,6 +72,182 @@ import {
 // Kit unit tests cover Cron idle/empty and cluster mismatches (P-572);
 // cluster coverage lives in binance-btc-tracker's tests/e2e/cluster/daemon/daemon.spec.ts.
 const DATABASE_HOST = 'polls-mysql-test'
+
+test.describe('Cron search and ordering', () => {
+  test.use({ colorScheme: 'light' })
+  test.afterEach(() => setAdminViewMode(false))
+
+  for (const viewer of [false, true]) {
+    test(`searches real rules and cycles both orders as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+      page,
+    }) => {
+      const windows = await watchTableSearch(page, {
+        page: 'hilos_daemon_cron',
+        tableKey: 'hilosDaemonCron',
+      })
+      const proof: unknown[] = []
+      try {
+        await setAdminViewMode(viewer)
+        if (!viewer) await grantAdminToSelf(expect, page)
+        await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
+        await expectStandaloneCron(expect, page)
+        await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+        if (viewer) {
+          await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+          await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+            'data-access',
+            'view',
+          )
+        }
+
+        const search = shownByTestId(page, 'hilos-table-search')
+        await expect(search).toHaveAccessibleName('Find by rule or agent')
+        const initial = await windows.read()
+        const initialRows = initial.frames
+          .filter(
+            (frame) =>
+              frame.socket === initial.socket && frame.direction === 'received',
+          )
+          .flatMap((frame) => {
+            const data = deliveryObject(frame.wire.data)
+            const window =
+              frame.wire.type === 'page_response'
+                ? deliveryObject(
+                    deliveryObject(deliveryObject(data.payload).windows)
+                      .hilosDaemonCron,
+                  )
+                : frame.wire.type === 'table_window'
+                  ? data
+                  : undefined
+            return Array.isArray(window?.rows) ? [window.rows] : []
+          })
+          .at(-1) as unknown[]
+        expect(initialRows.length).toBeGreaterThan(1)
+        const initialRules = initialRows.map((row) =>
+          deliveryObject(deliveryObject(deliveryObject(row).slots).rule),
+        )
+        const target = initialRules.find(
+          (rule) =>
+            typeof rule.name === 'string' &&
+            typeof rule.agentId === 'string' &&
+            !rule.name.includes(rule.agentId) &&
+            initialRules.filter((other) => other.agentId === rule.agentId)
+              .length > 1,
+        )!
+        expect(target).toBeDefined()
+        const name = String(target.name)
+        const agentId = String(target.agentId)
+        for (const field of ['name', 'nextRunAt']) {
+          await expect(
+            page.getByTestId(`hilos-table-sort-${field}`).locator('..'),
+          ).toHaveAttribute('aria-sort', 'none')
+        }
+
+        const missing = 'no-such-cron-rule-or-agent'
+        const steps: {
+          search: string
+          control: string
+          field?: 'name' | 'nextRunAt'
+          direction?: 'asc' | 'desc'
+          key?: 'Enter' | 'Space'
+        }[] = [
+          { search: name, control: 'hilos-table-search' },
+          { search: '', control: 'hilos-table-search-clear' },
+          { search: agentId, control: 'hilos-table-search' },
+          ...(['name', 'nextRunAt'] as const).flatMap((field) => [
+            // Rule cycles inside the agent search; Next run uses all rules.
+            ...(field === 'nextRunAt'
+              ? [{ search: '', control: 'hilos-table-search-clear' }]
+              : []),
+            ...(['asc', 'desc', undefined] as const).map(
+              (direction, index) => ({
+                search: field === 'name' ? agentId : '',
+                control: `hilos-table-sort-${field}`,
+                field,
+                direction,
+                key: (['Enter', 'Space', undefined] as const)[index],
+              }),
+            ),
+          ]),
+          { search: missing, control: 'hilos-table-search' },
+          { search: '', control: 'hilos-table-no-matches-reset' },
+        ]
+
+        for (const step of steps) {
+          const outcome = step.direction ?? (step.search || 'default')
+          await test.step(`${step.control}: ${outcome}`, async () => {
+            const mark = await windows.mark()
+            const control = shownByTestId(page, step.control)
+            if (step.control === 'hilos-table-search') {
+              await typeInto(control, step.search)
+            } else {
+              await control.focus()
+              if (step.key) await control.press(step.key)
+              else await control.click()
+            }
+            const filter = {
+              node: 'standalone',
+              ...(step.search === '' ? {} : { search: step.search }),
+            }
+            const sort = step.direction
+              ? [{ field: step.field!, direction: step.direction }]
+              : null
+            const { keys } = await expectDaemonCronQuery(
+              expect,
+              page,
+              windows,
+              mark,
+              filter,
+              sort,
+              initialRules,
+            )
+            proof.push(
+              await windows.renderedSettled(expect, mark, filter, keys),
+            )
+            if (step.key) await expect(control).toBeFocused()
+
+            for (const field of ['name', 'nextRunAt']) {
+              await expect(
+                page.getByTestId(`hilos-table-sort-${field}`).locator('..'),
+              ).toHaveAttribute(
+                'aria-sort',
+                step.field === field && step.direction
+                  ? step.direction === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none',
+              )
+            }
+            if (step.search === missing) {
+              await expect(
+                shownByTestId(page, 'hilos-table-no-matches'),
+              ).toContainText('Nothing found')
+              await expect(
+                shownByTestId(page, 'hilos-table-no-matches-terms'),
+              ).toContainText(missing)
+            } else {
+              await expect(
+                page.getByTestId('hilos-table-no-matches'),
+              ).toHaveCount(0)
+            }
+          })
+        }
+        await expect(search).toHaveValue('')
+        await expectStandaloneCron(expect, page)
+        await expect(page).toHaveURL(new RegExp(`${DAEMON_NODE_PATH}/cron$`))
+      } finally {
+        await test.info().attach('cron-search-order-frames', {
+          body: JSON.stringify(
+            { frames: await windows.read(), proof },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+      }
+    })
+  }
+})
 
 test.describe('daemon overview', () => {
   test.afterEach(() => setAdminViewMode(false))

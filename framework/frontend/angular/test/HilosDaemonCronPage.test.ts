@@ -1,10 +1,17 @@
 import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
+  DAEMON_CRON_NAME_FIELD,
+  DAEMON_CRON_NEXT_RUN_FIELD,
   DAEMON_CRON_REPORTED_DATA,
   DAEMON_NODE_DATA,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  hilosAdminAccess,
+  ingest,
   type HilosConnection,
+  type TableRow,
+  type TableSortOrder,
 } from '@hilos/core'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +26,53 @@ function harness(projectTimeZone?: string) {
     undefined,
     projectTimeZone,
   )
+}
+
+/** Check each user action's transport request and retain its response id. */
+function expectQuery(
+  h: ReturnType<typeof harness>,
+  filter: Record<string, string>,
+  sort: TableSortOrder | null,
+): void {
+  expect(h.sendViewport).toHaveBeenCalledTimes(1)
+  expect(h.sendViewport).toHaveBeenLastCalledWith(
+    HilosPages.DAEMON_CRON,
+    'hilosDaemonCron',
+    expect.objectContaining({
+      filter,
+      sort,
+      anchor: null,
+      pageIndex: null,
+      requestId: expect.stringMatching(/\S/),
+    }),
+  )
+}
+
+/** Answer the tracked request before starting the next action's call count. */
+function answerQuery(
+  h: ReturnType<typeof harness>,
+  rows: readonly TableRow[],
+): void {
+  h.window('hilosDaemonCron', rows)
+  h.sendViewport.mockClear()
+}
+
+/** Type through the real table input without reaching into its controller. */
+function enterSearch(h: ReturnType<typeof harness>, value: string): void {
+  const input = h.el('hilos-table-search') as HTMLInputElement
+  expect(input.tagName).toBe('INPUT')
+  expect(input.type).toBe('search')
+  expect(input.getAttribute('aria-label')).toBe('Find by rule or agent')
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  h.detect()
+}
+
+function button(h: ReturnType<typeof harness>, id: string): HTMLButtonElement {
+  const control = h.el(id) as HTMLButtonElement
+  expect(control.tagName).toBe('BUTTON')
+  expect(control.type).toBe('button')
+  return control
 }
 
 function handshakeConnection(
@@ -144,6 +198,204 @@ describe('HilosDaemonCronPage', () => {
     expect(h.listeners()).toBe(0)
   })
 
+  it.each([
+    [DAEMON_CRON_NAME_FIELD, 'Rule', DAEMON_CRON_NEXT_RUN_FIELD],
+    [DAEMON_CRON_NEXT_RUN_FIELD, 'Next run', DAEMON_CRON_NAME_FIELD],
+  ])(
+    'sends the %s sort cycle with search and preserves node and sort on every search clear',
+    (field, label, otherField) => {
+      const h = harness()
+      try {
+        h.window('hilosDaemonCron', [rule('cleanup', 'room:7')])
+        h.sendViewport.mockClear()
+        enterSearch(h, 'cleanup')
+        expectQuery(h, { node: 'n1', search: 'cleanup' }, null)
+        answerQuery(h, [rule('cleanup', 'room:7')])
+
+        const sortButton = button(h, `hilos-table-sort-${field}`)
+        const otherButton = button(h, `hilos-table-sort-${otherField}`)
+        expect(sortButton.textContent?.trim()).toBe(label)
+        for (const [direction, ariaSort] of [
+          ['asc', 'ascending'],
+          ['desc', 'descending'],
+          [null, 'none'],
+        ] as const) {
+          sortButton.click()
+          h.detect()
+          expectQuery(
+            h,
+            { node: 'n1', search: 'cleanup' },
+            direction === null ? null : [{ field, direction }],
+          )
+          expect(sortButton.closest('th')?.getAttribute('aria-sort')).toBe(
+            ariaSort,
+          )
+          expect(otherButton.closest('th')?.getAttribute('aria-sort')).toBe(
+            'none',
+          )
+          answerQuery(h, [rule('cleanup', 'room:7')])
+        }
+
+        otherButton.click()
+        h.detect()
+        expectQuery(h, { node: 'n1', search: 'cleanup' }, [
+          { field: otherField, direction: 'asc' },
+        ])
+        expect(otherButton.closest('th')?.getAttribute('aria-sort')).toBe(
+          'ascending',
+        )
+        expect(sortButton.closest('th')?.getAttribute('aria-sort')).toBe('none')
+        answerQuery(h, [rule('cleanup', 'room:7')])
+        sortButton.click()
+        h.detect()
+        const sort: TableSortOrder = [{ field, direction: 'asc' }]
+        expectQuery(h, { node: 'n1', search: 'cleanup' }, sort)
+        expect(sortButton.closest('th')?.getAttribute('aria-sort')).toBe(
+          'ascending',
+        )
+        expect(otherButton.closest('th')?.getAttribute('aria-sort')).toBe(
+          'none',
+        )
+        answerQuery(h, [rule('cleanup', 'room:7')])
+
+        for (const clear of ['input', 'button', 'whitespace'] as const) {
+          enterSearch(h, 'room:7')
+          expectQuery(h, { node: 'n1', search: 'room:7' }, sort)
+          answerQuery(h, [rule('cleanup', 'room:7')])
+          if (clear === 'button') {
+            const clearButton = button(h, 'hilos-table-search-clear')
+            expect(clearButton.getAttribute('aria-label')).toBe('Clear search')
+            clearButton.click()
+            h.detect()
+          } else {
+            enterSearch(h, clear === 'input' ? '' : '   ')
+          }
+          expectQuery(h, { node: 'n1' }, sort)
+          expect(h.el('hilos-table-search-clear')).toBeNull()
+          answerQuery(h, [rule('cleanup', 'room:7')])
+          expect((h.el('hilos-table-search') as HTMLInputElement).value).toBe(
+            '',
+          )
+        }
+      } finally {
+        h.fixture.destroy()
+      }
+      expect(h.listeners()).toBe(0)
+    },
+  )
+
+  it('waits for an empty server window before showing Nothing found and resets to the route node', () => {
+    vi.useFakeTimers()
+    const h = harness()
+    try {
+      h.scope.data.set(DAEMON_CRON_REPORTED_DATA, true)
+      h.window('hilosDaemonCron', [rule('cleanup', 'room:7')])
+      h.sendViewport.mockClear()
+      enterSearch(h, 'no-such-rule-or-agent')
+      expectQuery(h, { node: 'n1', search: 'no-such-rule-or-agent' }, null)
+      expect(h.el('hilos-table-row-room:7/cleanup')).not.toBeNull()
+      expect(h.el('hilos-table-no-matches')).toBeNull()
+
+      answerQuery(h, [])
+      vi.advanceTimersByTime(400)
+      h.detect()
+      expect(h.el('hilos-table-loading')).toBeNull()
+      const emptyStates = h.root.querySelectorAll(
+        '[data-id="hilos-table-no-matches"]',
+      )
+      expect(emptyStates).toHaveLength(2)
+      for (const empty of emptyStates) {
+        expect(empty.textContent).toContain('Nothing found')
+        expect(
+          empty
+            .querySelector('[data-id="hilos-table-no-matches-terms"]')
+            ?.textContent?.trim(),
+        ).toBe('No rows match “no-such-rule-or-agent”')
+      }
+      for (const state of ['waiting', 'silent', 'none']) {
+        expect(h.el(`hilos-daemon-cron-empty-${state}`)).toBeNull()
+      }
+      const reset = button(h, 'hilos-table-no-matches-reset')
+      expect(reset.textContent?.trim()).toBe('Reset filters')
+      reset.click()
+      h.detect()
+      expectQuery(h, { node: 'n1' }, null)
+      expect((h.el('hilos-table-search') as HTMLInputElement).value).toBe('')
+      answerQuery(h, [rule('restored')])
+      vi.advanceTimersByTime(400)
+      h.detect()
+      expect(h.el('hilos-table-loading')).toBeNull()
+      expect(h.el('hilos-table-no-matches')).toBeNull()
+      expect(h.el('hilos-table-row-/restored')).not.toBeNull()
+      expect(h.el('hilos-table-row-room:7/cleanup')).toBeNull()
+    } finally {
+      h.fixture.destroy()
+      vi.useRealTimers()
+    }
+    expect(h.listeners()).toBe(0)
+  })
+
+  it.each([true, false])(
+    'preserves sort when resetting filters and restores reported-empty for admin=%s',
+    (admin) => {
+      vi.useFakeTimers()
+      const h = harness()
+      ingest(h.scopes.session, {
+        entities: { currentUser: { id: 3, admin } },
+        data: { adminViewMode: true },
+      })
+      const releaseAccess = bindAdminAccess(h.scopes)
+      try {
+        h.detect()
+        expect(hilosAdminAccess.get()).toBe(admin ? 'full' : 'view')
+        h.scope.data.set(DAEMON_CRON_REPORTED_DATA, true)
+        h.window('hilosDaemonCron', [rule('cleanup', 'room:7')])
+        h.sendViewport.mockClear()
+        const sortButton = button(h, 'hilos-table-sort-name')
+        sortButton.click()
+        h.detect()
+        const sort: TableSortOrder = [{ field: 'name', direction: 'asc' }]
+        expectQuery(h, { node: 'n1' }, sort)
+        answerQuery(h, [rule('cleanup', 'room:7')])
+
+        enterSearch(h, 'no-such-rule-or-agent')
+        expectQuery(h, { node: 'n1', search: 'no-such-rule-or-agent' }, sort)
+        answerQuery(h, [])
+        vi.advanceTimersByTime(400)
+        h.detect()
+        expect(h.el('hilos-table-loading')).toBeNull()
+        expect(h.el('hilos-table-no-matches')?.textContent).toContain(
+          'Nothing found',
+        )
+        expect(h.el('hilos-daemon-cron-empty-none')).toBeNull()
+        expect(sortButton.closest('th')?.getAttribute('aria-sort')).toBe(
+          'ascending',
+        )
+
+        button(h, 'hilos-table-no-matches-reset').click()
+        h.detect()
+        expectQuery(h, { node: 'n1' }, sort)
+        expect((h.el('hilos-table-search') as HTMLInputElement).value).toBe('')
+        expect(sortButton.closest('th')?.getAttribute('aria-sort')).toBe(
+          'ascending',
+        )
+        answerQuery(h, [])
+        vi.advanceTimersByTime(400)
+        h.detect()
+        expect(h.el('hilos-table-loading')).toBeNull()
+        expect(h.el('hilos-daemon-cron-empty-none')?.textContent?.trim()).toBe(
+          'The node reports no cron rules',
+        )
+        expect(h.el('hilos-table-no-matches')).toBeNull()
+      } finally {
+        h.fixture.destroy()
+        releaseAccess()
+        vi.useRealTimers()
+      }
+      expect(h.listeners()).toBe(0)
+    },
+  )
+
   it('rebinds on node and context changes and releases the old heading watchers', () => {
     const h = harness()
     h.route.set({
@@ -157,10 +409,18 @@ describe('HilosDaemonCronPage', () => {
     expect(h.register.mock.calls.at(-1)?.[1].descriptor().filter).toEqual({
       node: 'n2',
     })
+    h.sendViewport.mockClear()
+    enterSearch(h, 'cleanup')
+    expectQuery(h, { node: 'n2', search: 'cleanup' }, null)
     const scopes = new ScopeManager()
     const replacement = openNodePage(scopes, HilosPages.DAEMON_CRON)
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()
+    expect(h.unregister).toHaveBeenCalledTimes(2)
+    h.window('hilosDaemonCron', [rule('replacement')])
+    h.sendViewport.mockClear()
+    enterSearch(h, 'replacement')
+    expectQuery(h, { node: 'n2', search: 'replacement' }, null)
     replacement.data.set(DAEMON_NODE_DATA, {
       clustered: true,
       role: null,

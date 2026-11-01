@@ -12,8 +12,10 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonPictureViewportTable;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -38,13 +40,31 @@ abstract class AbstractHilosDaemonCronPage extends AbstractHilosDaemonNodePage
     public const string CRON_REPORTED = 'cronReported';
 
     /**
+     * Empty held windows catch up whole when their node's rules change.
+     *
      * @param ?ClusterDaemonPicture $before Immutable picture before this portion
      * @throws HilosException When node page data cannot be projected
      * @throws EnvException When cluster mode cannot be read
      */
     public static function onPictureChanged(?ClusterDaemonPicture $before): void
     {
-        static::publishNodePicture($before, HilosDaemonCronTable::TABLE);
+        static::publishChangedNodePages();
+        foreach (Hilos::$sr?->getAcceptKeysForPage(static::PAGE) ?? [] as $acceptKey) {
+            Hilos::$browser?->publishTableMutations(
+                static::PAGE,
+                $acceptKey,
+                HilosDaemonCronTable::TABLE,
+                static function (DaemonPictureViewportTable $table, TableQueryDTO $query) use ($before, $acceptKey): array {
+                    $mutations = $table->pictureMutations($before, $query);
+                    $viewport = Hilos::$sr?->getTableViewport($acceptKey, HilosDaemonCronTable::TABLE);
+                    if ($mutations !== [] && $viewport !== null && $viewport->firstAnchor() === null) {
+                        Hilos::$sr->oweTableWindow($acceptKey, HilosDaemonCronTable::TABLE);
+                    }
+
+                    return $mutations;
+                },
+            );
+        }
     }
 
     /** Forgets the comparison state when the page agent stops. */

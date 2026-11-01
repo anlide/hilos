@@ -48,6 +48,7 @@ import {
   expectUnfilteredTotals,
   expectStandaloneWorkers,
   expectStandaloneCron,
+  expectDaemonCronQuery,
   readDaemonCronMoment,
   expectDaemonCronMoments,
   watchDaemonCronDisplay,
@@ -800,54 +801,19 @@ test.describe('Cron search and ordering', () => {
             ...(step.search === '' ? {} : { search: step.search }),
           }
           const sort = step.direction
-            ? [{ field: step.field, direction: step.direction }]
+            ? [{ field: step.field!, direction: step.direction }]
             : null
-          let sent: (typeof initial.frames)[number] | undefined
-          let reply: (typeof initial.frames)[number] | undefined
-          await expect
-            .poll(async () => {
-              const state = await windows.read()
-              sent = state.frames
-                .filter(
-                  (frame) =>
-                    frame.direction === 'sent' &&
-                    frame.index >= mark.cursor &&
-                    frame.wire.type === 'table_viewport' &&
-                    JSON.stringify(frame.wire.filter) ===
-                      JSON.stringify(filter) &&
-                    JSON.stringify(frame.wire.sort ?? null) ===
-                      JSON.stringify(sort),
-                )
-                .at(-1)
-              reply = state.frames.find(
-                (frame) =>
-                  sent !== undefined &&
-                  frame.direction === 'received' &&
-                  frame.socket === sent.socket &&
-                  frame.index > sent.index &&
-                  frame.wire.type === 'table_window' &&
-                  deliveryObject(frame.wire.data).requestId ===
-                    sent.wire.requestId,
-              )
-              return deliveryObject(reply?.wire.data).rows
-            })
-            .toEqual(expect.any(Array))
-
-          const rows = deliveryObject(reply!.wire.data).rows as unknown[]
-          const rules = rows.map((row) =>
-            deliveryObject(deliveryObject(deliveryObject(row).slots).rule),
+          const { sent, rows, keys } = await expectDaemonCronQuery(
+            expect,
+            page,
+            windows,
+            mark,
+            filter,
+            sort,
+            initialRules,
           )
-          const keys = rows.map((row) => String(deliveryObject(row).rowKey))
           proof.push(await windows.settled(expect, mark, step.search, keys))
           const applied = (await windows.read()).application[0]!
-          expect(sent!.wire).toMatchObject({
-            page: 'hilos_daemon_cron',
-            tableKey: 'hilosDaemonCron',
-            filter,
-            anchor: null,
-            anchorDirection: 'after',
-          })
-          expect(sent!.wire.sort ?? null).toEqual(sort)
           expect(applied.descriptor).toMatchObject({
             filter,
             sort,
@@ -856,43 +822,16 @@ test.describe('Cron search and ordering', () => {
             anchorDirection: 'after',
           })
           expect(applied.filter).toEqual(filter)
-          expect(applied.appliedRequestId).toBe(sent!.wire.requestId)
-          expect(rules.map((rule) => rule.rowKey)).toEqual(keys)
+          expect(applied.appliedRequestId).toBe(sent.wire.requestId)
           if (step.key) await expect(control).toBeFocused()
 
-          const matching = initialRules.filter((rule) =>
-            [rule.name, rule.agentId].some(
-              (value) =>
-                typeof value === 'string' && value.includes(step.search),
-            ),
-          )
-          expect([...keys].sort()).toEqual(
-            matching.map((rule) => String(rule.rowKey)).sort(),
-          )
           if (step.direction) {
-            const field = step.field!
-            const ordered = [...rules].sort((left, right) => {
-              const a = left[field]
-              const b = right[field]
-              if (a === null && b !== null) return 1
-              if (b === null && a !== null) return -1
-              const comparison =
-                a === b
-                  ? 0
-                  : field === 'nextRunAt'
-                    ? Number(a) - Number(b)
-                    : String(a) < String(b)
-                      ? -1
-                      : 1
-              const byKey = String(left.rowKey) < String(right.rowKey) ? -1 : 1
-              return (step.direction === 'asc' ? 1 : -1) * (comparison || byKey)
-            })
-            expect(keys).toEqual(ordered.map((rule) => rule.rowKey))
+            const rules = rows.map((row) =>
+              deliveryObject(deliveryObject(deliveryObject(row).slots).rule),
+            )
             expect(
-              new Set(rules.map((rule) => rule[field])).size,
+              new Set(rules.map((rule) => rule[step.field!])).size,
             ).toBeGreaterThan(1)
-          } else {
-            expect(keys).toEqual(matching.map((rule) => rule.rowKey))
           }
           for (const field of ['name', 'nextRunAt']) {
             await expect(

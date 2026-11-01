@@ -487,6 +487,7 @@ final class LegalAdminAudienceTest extends LegalAdminTestCase
         Hilos::$db->legalAcceptances = $collection;
         $this->acceptanceChanges();
         LegalAdminAudience::onAgentTick($agent);
+        Hilos::$browser->flushToSignalRouter();
         self::assertSame([SignalTypeConstants::TABLE_WINDOW], array_column($this->frames(), 0));
         self::assertFalse(Hilos::$sr->isTableWindowOwed('documents', HilosLegalDocumentsTable::TABLE));
     }

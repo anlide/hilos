@@ -47,6 +47,7 @@ import {
   expectUnfilteredTotals,
   expectStandaloneWorkers,
   expectStandaloneCron,
+  expectDaemonCronQuery,
   readDaemonCronMoment,
   expectDaemonCronMoments,
   watchDaemonCronDisplay,
@@ -242,70 +243,22 @@ test.describe('Cron search and ordering', () => {
               ...(step.search === '' ? {} : { search: step.search }),
             }
             const sort = step.direction
-              ? [{ field: step.field, direction: step.direction }]
+              ? [{ field: step.field!, direction: step.direction }]
               : null
-            let sent: (typeof initial.frames)[number] | undefined
-            let reply: (typeof initial.frames)[number] | undefined
-            await expect
-              .poll(async () => {
-                const state = await windows.read()
-                sent = state.frames
-                  .filter(
-                    (frame) =>
-                      frame.direction === 'sent' &&
-                      frame.socket === mark.socket &&
-                      frame.index >= mark.cursor &&
-                      frame.wire.type === 'table_viewport' &&
-                      JSON.stringify(frame.wire.filter) ===
-                        JSON.stringify(filter) &&
-                      JSON.stringify(frame.wire.sort ?? null) ===
-                        JSON.stringify(sort),
-                  )
-                  .at(-1)
-                reply = state.frames.find(
-                  (frame) =>
-                    sent !== undefined &&
-                    frame.direction === 'received' &&
-                    frame.socket === sent.socket &&
-                    frame.index > sent.index &&
-                    frame.wire.type === 'table_window' &&
-                    deliveryObject(frame.wire.data).requestId ===
-                      sent.wire.requestId,
-                )
-                return deliveryObject(reply?.wire.data).rows
-              })
-              .toEqual(expect.any(Array))
-
-            const rows = deliveryObject(reply!.wire.data).rows as unknown[]
-            const keys = rows.map((row) => String(deliveryObject(row).rowKey))
+            const { keys } = await expectDaemonCronQuery(
+              expect,
+              page,
+              windows,
+              mark,
+              filter,
+              sort,
+              initialRules,
+            )
             proof.push(
               await windows.renderedSettled(expect, mark, filter, keys),
             )
-            expect(sent!.wire).toMatchObject({
-              page: 'hilos_daemon_cron',
-              tableKey: 'hilosDaemonCron',
-              filter,
-              anchor: null,
-              anchorDirection: 'after',
-            })
-            expect(sent!.wire.sort ?? null).toEqual(sort)
-            expect(sent!.wire.pageIndex ?? null).toBeNull()
             if (step.key) await expect(control).toBeFocused()
 
-            const matching = initialRules.filter((rule) =>
-              [rule.name, rule.agentId].some(
-                (value) =>
-                  typeof value === 'string' && value.includes(step.search),
-              ),
-            )
-            expect([...keys].sort()).toEqual(
-              matching.map((rule) => String(rule.rowKey)).sort(),
-            )
-            // The server owns sorting; the DOM must keep its delivered order.
-            // Completing either cycle restores the original picture's order.
-            if (!step.direction) {
-              expect(keys).toEqual(matching.map((rule) => rule.rowKey))
-            }
             for (const field of ['name', 'nextRunAt']) {
               await expect(
                 page.getByTestId(`hilos-table-sort-${field}`).locator('..'),

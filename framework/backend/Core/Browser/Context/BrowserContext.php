@@ -207,11 +207,23 @@ abstract class BrowserContext
      * is not to be touched again before the flush ends — not by a later change, and not by the
      * catch-up: a delivery built in the same flush as the failure is no proof the road is back.
      * A window the catch-up sent whole in this flush is here too: it holds the flush's changes
-     * already ({@see self::catchUpOwedWindow()}).
+     * already ({@see self::catchUpOwedWindow()}). Picture publication defers an owed window's
+     * build to the flush, so that window also holds every portion of the tick.
      *
      * @var array<string, array<string, true>>
      */
     private array $setAsideThisFlush = [];
+
+    /**
+     * Owed windows touched by publication, built once after the tick's picture portions and source facts.
+     *
+     * Each mark holds the page, subscription identity and current viewport, by accept key and table key.
+     * Private to this worker's flush: no other process reads it, and the registry keeps the debt
+     * when a mark cannot be tried. The flush's finally drops the marks with its other work.
+     *
+     * @var array<string, array<string, array{string, PageSubscription, TableViewportSubscription}>>
+     */
+    private array $catchUpAtFlush = [];
 
     /**
      * Unbuilt changes some window skipped in this flush, by browser table key and source address.
@@ -1633,6 +1645,7 @@ abstract class BrowserContext
         if ($this->changes->isEmpty() && $this->staleness === [] && !$this->databaseBack
             && $this->totalRecounts === [] && $this->facetRecounts === []
             && $this->setAsideThisFlush === [] && $this->publishedWholeThisFlush === []
+            && $this->catchUpAtFlush === []
         ) {
             return [];
         }
@@ -1650,6 +1663,7 @@ abstract class BrowserContext
             $this->totalRecounts = [];
             $this->facetRecounts = [];
             $this->setAsideThisFlush = [];
+            $this->catchUpAtFlush = [];
             $this->skippedThisFlush = [];
             $this->skippedForDeletedResource = [];
             $this->publishedWholeThisFlush = [];
@@ -2079,6 +2093,8 @@ abstract class BrowserContext
             }
         }
 
+        $this->catchUpMarkedWindows($failedSubscriptions, $contained);
+
         // Counts are page data: publishing them must not rebuild a held table window and
         // apply another reader's pending membership changes. One projection per flush.
         $subscriberCountsChanged = array_any($this->changes->all(),
@@ -2218,6 +2234,9 @@ abstract class BrowserContext
      * These are final-set facts: a mirror's first picture after restart may name rows already held,
      * so create arithmetic cannot establish the total. DB/RT callers keep mutation arithmetic.
      * The callback runs synchronously; no picture or row-body cache is retained.
+     * An owed window is marked for one catch-up at the flush: a mirror changes in portions within
+     * a tick, and the whole window must hold them all. Later portions still run the callback until
+     * the window is set aside, so a later projection failure can prevent that flush's catch-up.
      *
      * @param string $page Subscribed page
      * @param string $acceptKey Connection receiving the changes
@@ -2264,7 +2283,7 @@ abstract class BrowserContext
                 Hilos::$sr->setTableViewport($acceptKey, $current);
             }
             if (Hilos::$sr->isTableWindowOwed($acceptKey, $tableKey)) {
-                $this->catchUpOwedWindow($table, $current, $page, $acceptKey, $tableKey);
+                $this->catchUpAtFlush[$acceptKey][$tableKey] = [$page, $subscription, $current];
 
                 return;
             }
@@ -4597,8 +4616,9 @@ abstract class BrowserContext
      * from the table as it is now, so it already holds every change of this flush, the later ones
      * included, and the delta of a later change on top of it would move its count of rows a second
      * time. That holds whatever caught the window up — a change, a staleness, or the database fact,
-     * where it costs nothing because that try comes after the flush's changes. The rule is the
-     * page's own: a page re-sent whole is not sent this flush's changes on top of it
+     * where it costs nothing because that try comes after the flush's changes. Picture publication
+     * also comes here at the flush, after the mirror has applied every portion of the tick. The
+     * rule is the page's own: a page re-sent whole is not sent this flush's changes on top of it
      * ({@see self::addBrowserChange()}). Nothing is lost by it: a progress bar is not part of the
      * window and still goes out, the counts beside the filters went with the window, and a dialog
      * open over a row is given its fresh body when the tab names its focus again with the window
@@ -4629,6 +4649,64 @@ abstract class BrowserContext
         $this->setAsideThisFlush[$acceptKey][$browserKey] = true;
         Hilos::$sr?->clearTableWindowDebt($acceptKey, $browserKey);
         $this->sendTableFacetCounts($page, $acceptKey, $viewport);
+    }
+
+    /**
+     * Builds publication debts from the final table state, after source changes and database recovery.
+     * Only the marked subscription and viewport may receive the window, through the publication guards.
+     * A window that froze or was already tried in this flush waits for the next fact.
+     *
+     * @param array<string, true> $failedSubscriptions Subscriptions whose fan-out failed during this flush
+     * @param list<ContainedFailure> $contained Failures to hand to the worker's tick, in the order they failed
+     */
+    private function catchUpMarkedWindows(array &$failedSubscriptions, array &$contained): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        foreach ($this->catchUpAtFlush as $acceptKey => $tables) {
+            $subscriber = (string) $acceptKey;
+            foreach ($tables as $tableKey => [$page, $subscription, $viewport]) {
+                $browserKey = (string) $tableKey;
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource($subscriber)
+                    || isset($this->publishedWholeThisFlush[$acceptKey])
+                    || Hilos::$sr->pageSubscription($subscriber) !== $subscription
+                    || Hilos::$sr->getTableViewport($subscriber, $browserKey) !== $viewport
+                    || !Hilos::$sr->isTableWindowOwed($subscriber, $browserKey)
+                    || isset($this->setAsideThisFlush[$subscriber][$browserKey])
+                ) {
+                    continue;
+                }
+
+                try {
+                    if ($this->publicationSubscription($page, $subscriber) !== $subscription) {
+                        continue;
+                    }
+                    $table = $this->viewportTable($browserKey);
+                    if ($table === null) {
+                        continue;
+                    }
+
+                    try {
+                        $this->catchUpOwedWindow($table, $viewport, $page, $subscriber, $browserKey);
+                    } catch (Throwable) {
+                        $this->setAsideThisFlush[$subscriber][$browserKey] = true;
+                    }
+                } catch (Throwable $failure) {
+                    // A failure outside the window belongs to this subscription, as in tryEveryDebt().
+                    if (!Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
+                        $contained[] = new ContainedFailure(
+                            WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                            "page={$page} acceptKey={$acceptKey}",
+                            $failure,
+                        );
+                    }
+                    $this->tellPageDeliveryFailed($page, $subscriber);
+                    $failedSubscriptions[$acceptKey] = true;
+                }
+            }
+        }
     }
 
     /**

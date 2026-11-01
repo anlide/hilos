@@ -412,7 +412,7 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
         $this->pagePayloads[] = $payload;
     }
 
-    /** Records only nonempty typed diffs for the actual held subject and query. */
+    /** Records nonempty typed diffs and settles window debt when the simulated publication completes. */
     public function publishTableMutations(string $page, string $acceptKey, string $tableKey, Closure $build): void
     {
         if ($this->classifyMutations) {
@@ -430,6 +430,7 @@ final class DaemonCronWindowTestBrowser extends IdentityTestBrowser
             $this->mutations[] = [$page, $acceptKey];
             array_push($this->rowMutations, ...$mutations);
         }
+        Hilos::$sr?->clearTableWindowDebt($acceptKey, $tableKey);
     }
 
     /**
