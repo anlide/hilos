@@ -514,8 +514,8 @@ $base = $argv[3];
 $modeFile = $base . '.mode';
 $stateFile = $base . '.state';
 $floodLimit = 256 * 1024 * 1024;
-$status = ['state' => 'connecting', 'master' => $master, 'upstream' => '', 'mode' => null,
-    'pingsSeen' => 0, 'pongsSent' => 0, 'lastSentAt' => null, 'floodBytes' => 0,
+$status = ['state' => 'connecting', 'master' => $master, 'upstream' => '', 'sessionToken' => null,
+    'mode' => null, 'pingsSeen' => 0, 'pongsSent' => 0, 'lastSentAt' => null, 'floodBytes' => 0,
     'closedBy' => null, 'closedAt' => null];
 $publish = static function (array $change) use (&$status, $stateFile): void {
     $status = array_replace($status, $change);
@@ -544,6 +544,13 @@ if (!preg_match('/^HTTP\/1\.[01] 101/', $headers)) {
     $publish(['state' => 'failed', 'closedBy' => 'upgrade refused: ' . strtok($headers, "\r\n")]); exit(1);
 }
 preg_match('/^X-Hilos-Stand-Master:\s*([^\r\n]+)/im', $headers, $upstream);
+// The socket presents no session cookie, so the master mints a session and sets its cookie on the
+// 101; that token is the browser test:connection:liveness names (HIL-1860). The rotation cookie
+// shares the name's prefix and is never the one taken.
+$sessionCookie = '/^Set-Cookie:\s*hilos_session_token_[A-Za-z0-9_]*(?<!_rotate)=([^;\r\n]+)/im';
+if (!preg_match($sessionCookie, $headers, $session)) {
+    $publish(['state' => 'failed', 'closedBy' => 'no session cookie in the 101']); exit(1);
+}
 stream_set_blocking($socket, false);
 $frame = static function (int $opcode, string $payload): string {
     $mask = random_bytes(4);
@@ -558,7 +565,7 @@ $close = static function (string $why) use ($publish): never {
 $flood = str_repeat($frame(0x9, str_repeat('p', 125)), 512);
 $mode = null;
 $outbound = '';
-$publish(['state' => 'open', 'upstream' => trim($upstream[1] ?? '')]);
+$publish(['state' => 'open', 'upstream' => trim($upstream[1] ?? ''), 'sessionToken' => $session[1]]);
 while (true) {
     $busy = false;
     $wanted = trim((string)file_get_contents($modeFile));
@@ -640,7 +647,9 @@ def liveness_hold(stand, name, action, master=None):
     pings, read what it saw, or close it (scenario 46, HIL-1566).
 
     `up` opens it on a named master in the `answer` mode, `state` prints its state file, and a
-    mode takes effect on the socket's next turn, within a few tens of milliseconds.
+    mode takes effect on the socket's next turn, within a few tens of milliseconds. The state names
+    the session token the master set on the socket's 101 as `sessionToken`: the browser a scenario
+    names to test:connection:liveness on that master (HIL-1860).
     """
     if stand.entry is None:
         raise StandRefused(f"{stand.project} has no browser entry (x-hilos-cluster.entry)")

@@ -63,7 +63,9 @@ export {
   type SocketFrame,
 } from './socket.js'
 export {
+  bringLivenessMomentToNow,
   openRawWebSocket,
+  type LivenessMoment,
   type RawWebSocket,
   type RawWebSocketCloser,
   type RawWebSocketStand,
@@ -734,4 +736,8 @@ export {
   signUp,
   changePassword,
 } from './session.js'
-export { createTestUser, type TestUserOptions } from './testUser.js'
+export {
+  bindTestUser,
+  createTestUser,
+  type TestUserOptions,
+} from './testUser.js'

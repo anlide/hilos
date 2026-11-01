@@ -24,12 +24,14 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Utils\Logger;
 
 /**
@@ -290,6 +292,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::CONNECTION_TEST_LIVENESS) {
+                // Test-only: the master brings one liveness moment of a browser's sockets to now and
+                // keeps their liveness on the spot. Answered here rather than parked, because the
+                // sockets and their clocks are the master's own and no agent holds them.
+                $reply = $this->answerConnectionLiveness($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CliCommands::TABLE_TEST_LAG) {
                 // Test-only: put an artificial lag on this node's table windows and facet counts
                 // (HIL-1020). Answered here rather than parked, because the lag is a row of the
@@ -406,6 +417,46 @@ class CommandClient extends AbstractClient implements CommandClientInterface
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
         ]);
+    }
+
+    /**
+     * Brings the liveness moment this request names to now on the sockets of one browser on this master.
+     *
+     * The browser is named by its session token and the sockets are found by its hash, the form
+     * a socket holds it in. A count of zero is an answer, not a refusal: the caller decides what
+     * no live socket of that browser here means. A tick that fails is answered as an error rather
+     * than thrown, because this runs inside the master loop.
+     *
+     * @param CommandRequestDTO $request Liveness request naming the session token and the moment
+     * @return CommandReplyDTO Reply carrying how many sockets took the moment, or the error to answer instead
+     */
+    private function answerConnectionLiveness(CommandRequestDTO $request): CommandReplyDTO
+    {
+        // external-boundary: a test harness's command line, checked on the very next line
+        $sessionToken = $request->payload[CommandConstants::FIELD_SESSION_TOKEN] ?? null;
+        if (!is_string($sessionToken) || $sessionToken === '') {
+            return CommandReplyDTO::error($request->correlationId, 'Missing sessionToken');
+        }
+
+        // external-boundary: the same command line, checked on the very next lines
+        $momentName = $request->payload[CommandConstants::FIELD_MOMENT] ?? null;
+        $moment = is_string($momentName) ? WebSocketLivenessMoment::tryFrom($momentName) : null;
+        if ($moment === null) {
+            return CommandReplyDTO::error($request->correlationId, 'moment must be probably-offline, close or check');
+        }
+
+        $door = $this->server->connectionLivenessTestDoor();
+        if ($door === null) {
+            return CommandReplyDTO::error($request->correlationId, 'This daemon has no connection liveness door');
+        }
+
+        try {
+            $sockets = $door->bringLivenessMomentToNow(ProtectedModeRuntime::hashSessionToken($sessionToken), $moment);
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [CommandConstants::FIELD_SOCKETS => $sockets]);
     }
 
     /**

@@ -564,41 +564,51 @@ masters (HIL-1566; `scenario_46_browser_liveness_across_masters` in
 [`scenarios.py`](../../framework/docker/cluster/scenarios.py)). A raw socket is held
 through the entry on a master that does not lead (the `liveness-hold` command of
 [`cluster.py`](../../framework/docker/cluster/cluster.py)), the owner of `connections`
-is the singleton on the leader, and the row is read on the third master. The socket's
-master alone is recreated with spans of 2000/3000/6000/60000 ms (`own-env`); the
-rest of the stand keeps the framework's 40/50/120/600 s, and the original environment is
-restored in `finally`. The scenario requires that a socket silent past the
-probably-offline span is doubted in the observer's row no earlier than the span, and
-cleared once it answers; that a transition made while the owner's worker is stopped is
-missed (the observer's row stays as it was), and, after the worker is killed and the
-leader starts the owner again, repaired by the socket's master's own check within two
-ping intervals plus ten seconds, for a missed `true` and a missed `false` alike; that the
-master closes a socket silent past the close timeout and drops one that floods pings and
-reads no pong past the 8 MiB cap, the cap's log line being in that master's log and no
-other's; and that another socket of the same master, and every node, live on. The
-scenario also resumes a stopped worker in `finally`. It needs three masters and the
-entry, and runs before the freeze pair 23/25:
+is the singleton on the leader, and the row is read on the third master. The whole
+stand, the socket's master included, runs the framework's 40/50/120/600 s, and no
+moment is waited out: the raw socket publishes the session token its master set on the
+101, and the scenario brings the doubt, the close and the check of the copy to now on
+that master with `test:connection:liveness` (HIL-1860). The scenario requires that a
+socket whose doubt is brought to now is doubted in the observer's row, and cleared once it
+answers; that a transition made while the owner's worker is stopped is missed — the
+transition and the check brought to now after it go to the stopped worker, and the
+observer's row stays as it was (for a missed `false` the check is brought twice, because
+the tick of the first may itself clear the doubt and skip its check); that, after the
+worker is killed and the leader starts the owner again, the socket's master's own check
+repairs the row within `CONVERGE_TIMEOUT`, the check being brought to now again on every
+turn of the wait, for a missed `true` and a missed `false` alike; that the master closes a socket whose close is brought
+to now and drops one that floods pings and reads no pong past the 8 MiB cap, the cap's log
+line being in that master's log and no other's; and that another socket of the same
+master, and every node, live on. How long each span is, the scenario does not measure:
+the unit test
+[`WebSocketLivenessTest.php`](../../framework/tests/Unit/Socket/WebSocket/WebSocketLivenessTest.php)
+holds the production values. The scenario also resumes a stopped worker in `finally`. It
+needs three masters and the entry, and runs before the freeze pair 23/25:
 
 ```bash
 composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 46
 ```
 
 The single-node half is `presence-liveness.spec.ts` in each demo's `tests/e2e/tests/`
-(Vue, React, Angular). Each demo's `docker/docker-compose.test.yml` runs the master at a
-fortieth of the production spans and in their proportions
-(`WEBSOCKET_PING_IDLE_MS=1000`, `WEBSOCKET_PING_INTERVAL_MS=1250`,
-`WEBSOCKET_PROBABLY_OFFLINE_MS=3000`, `WEBSOCKET_CLOSE_TIMEOUT_MS=15000`) — a shortened
-stand clock that predates the rule in `cli/commands.md` § "Time-based features: no universal
-clock" and is debt until a command ages a socket's silence. Raw sockets are needed because no
-browser keeps silent: Chromium answers a ping in its network service whatever its page
-is doing. The spec therefore opens raw sockets with the cookies of a browser context
-(`openRawWebSocket()` from
-[`rawWebSocket.ts`](../../framework/frontend/e2e/rawWebSocket.ts)) that can keep their
-pong back, and an administrator watches the person on the people list and the card: online
-while one socket answers, probably offline while every socket is doubted, offline when
-none is left. The spec keeps no clock of its own; each step waits for what the master did
-to a socket, the pings it sent into the silence and the close, and then for what the
-observer was told.
+(Vue, React, Angular). Each demo's `docker/docker-compose.test.yml` sets none of the
+`WEBSOCKET_*` liveness spans, so the master runs the production values of the catalog,
+and the spec waits none of them out: `bringLivenessMomentToNow()` from
+[`rawWebSocket.ts`](../../framework/frontend/e2e/rawWebSocket.ts) sends
+`test:connection:liveness` with one browser's session token
+([Time-based features](cli/commands.md#time-based-features-no-universal-clock)) and
+requires the master to answer that exactly one socket took the moment. Raw sockets are
+needed because no browser keeps silent: Chromium answers a ping in its network service
+whatever its page is doing. The spec therefore opens raw sockets with the cookies of a
+browser context (`openRawWebSocket()`) that can keep their pong back. The command takes
+every socket of the browser it names, so the person signs in on two browsers, the first by
+`createTestUser` and the second by `bindTestUser`; each reads its session token on a fresh
+document, closes its tab and leaves one raw socket, so the token is the cookie that socket
+presents and the one the master finds it by. An administrator watches the person
+on the people list and the card: online while one socket answers, probably offline while
+every socket is doubted, offline when none is left. The spec keeps no clock of its own and
+no `test.slow()`; each step brings one browser's doubt or close to now, waits for what the
+master did to its socket, the ping it sent into the silence or the close, and then for
+what the observer was told.
 
 The Hilos shapes keep their original purpose: quorum, network partitions and
 TLS on binance-btc-tracker; placement and failover with a stable leader on

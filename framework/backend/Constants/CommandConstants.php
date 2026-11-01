@@ -50,6 +50,15 @@ final class CommandConstants
     /** @var string Payload key: reply flag telling whether a live connection was found and dropped */
     public const string FIELD_DROPPED = 'dropped';
 
+    /** @var string Payload key: session token of the browser whose sockets a liveness request targets */
+    public const string FIELD_SESSION_TOKEN = 'sessionToken';
+
+    /** @var string Payload key: liveness moment a request brings to now (probably-offline, close or check) */
+    public const string FIELD_MOMENT = 'moment';
+
+    /** @var string Payload key: reply count of the live sockets that took the liveness moment */
+    public const string FIELD_SOCKETS = 'sockets';
+
     /** @var string Payload key: milliseconds a changed table window is held back by the test-only table lag */
     public const string FIELD_WINDOW_MS = 'windowMs';
 

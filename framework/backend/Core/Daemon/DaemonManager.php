@@ -175,6 +175,7 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
@@ -216,6 +217,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
@@ -276,6 +278,7 @@ abstract class DaemonManager extends BaseManager implements
     AbandonedCommandSink,
     AgentRestartDoor,
     TestOrmForgetDoor,
+    ConnectionLivenessTestDoor,
     PageAgentRestartDoor,
     AgentSignalSink,
     PlacementVerdictSink,
@@ -1853,6 +1856,9 @@ abstract class DaemonManager extends BaseManager implements
             $server->setTestOrmForgetDoor($this);
             $server->setAgentRestartDoor($this);
             $server->setUploadMemoryTestDoor($this);
+            // And the test-only door to the sockets' liveness: the sockets and their clocks are
+            // the master's alone, so the command branch brings a moment to now through here.
+            $server->setConnectionLivenessTestDoor($this);
         }
 
         // The HTTP server parks a request for an agent the way the command channel parks a
@@ -2260,6 +2266,44 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         return false;
+    }
+
+    /**
+     * Brings one liveness moment of a browser's sockets on this master to now, for a test-only command.
+     *
+     * Walks the WebSocket clients the way {@see dropWebSocketConnection()} does, but does not stop
+     * at the first match: one browser may hold several sockets here, one per tab, and each of them
+     * takes the moment. The count is of sockets the liveness runs on, so one already marked to close
+     * matches and is not counted. Only this master is asked; a socket of the same browser on another
+     * node is that node's to answer for.
+     *
+     * @param string $sessionTokenHash Hash of the session token of the browser whose sockets take the moment
+     * @param WebSocketLivenessMoment $moment Moment to bring to now
+     * @return int How many live sockets of that browser on this master took the moment
+     * @throws InvalidArgumentException When a socket's liveness signal cannot be named
+     * @throws InvalidFormatException When a socket has no accept key to name in the signal
+     * @throws RtActionsStateCollectionNullException When the connections registry has no state collection behind it
+     */
+    public function bringLivenessMomentToNow(string $sessionTokenHash, WebSocketLivenessMoment $moment): int
+    {
+        $sockets = 0;
+        foreach ($this->servers as $server) {
+            if (!$server instanceof WebSocketServer) {
+                continue;
+            }
+
+            foreach ($server->getClients() as $client) {
+                if (!$client instanceof WebSocketClient || $client->sessionTokenHash !== $sessionTokenHash) {
+                    continue;
+                }
+
+                if ($client->bringLivenessMomentToNow($moment)) {
+                    $sockets++;
+                }
+            }
+        }
+
+        return $sockets;
     }
 
     /**

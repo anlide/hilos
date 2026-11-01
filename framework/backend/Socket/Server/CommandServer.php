@@ -8,6 +8,7 @@ use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\AbandonedCommandSink;
 use Hilos\Core\Daemon\AgentRestartDoor;
 use Hilos\Core\Daemon\ConnectionDropper;
+use Hilos\Core\Daemon\ConnectionLivenessTestDoor;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\DaemonStatusSource;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
@@ -65,11 +66,26 @@ class CommandServer extends AbstractServer
 
     private ?UploadMemoryTestDoor $uploadMemoryTestDoor = null;
 
+    /** Master seam for the test-only command that brings a socket liveness moment to now. */
+    private ?ConnectionLivenessTestDoor $connectionLivenessTestDoor = null;
+
 
     /** @param UploadMemoryTestDoor $door The real master owning the node pool */
     public function setUploadMemoryTestDoor(UploadMemoryTestDoor $door): void
     {
         $this->uploadMemoryTestDoor = $door;
+    }
+
+    /** @param ConnectionLivenessTestDoor $door Master holding the sockets whose liveness moment is brought to now */
+    public function setConnectionLivenessTestDoor(ConnectionLivenessTestDoor $door): void
+    {
+        $this->connectionLivenessTestDoor = $door;
+    }
+
+    /** @return ?ConnectionLivenessTestDoor Master entrance, or null before wiring */
+    public function connectionLivenessTestDoor(): ?ConnectionLivenessTestDoor
+    {
+        return $this->connectionLivenessTestDoor;
     }
 
     /**

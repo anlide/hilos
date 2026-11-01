@@ -107,8 +107,24 @@ The idle and interval spans must be positive and the order `WEBSOCKET_PING_IDLE_
 < `WEBSOCKET_PROBABLY_OFFLINE_MS` < `WEBSOCKET_CLOSE_TIMEOUT_MS` must hold. A
 combination that breaks either throws `EnvInvalidValueException` at the handshake,
 which refuses that connection: a check that switched itself off, or refused again
-on every tick, would hide the same mistake. The test stands shorten the spans; see
-[testing.md](../testing.md) under scenario 46.
+on every tick, would hide the same mistake.
+
+**Tests bring the moment to now; the stands keep the defaults.** No test stand sets
+these spans, and no test waits one out: it runs the test-only command
+`test:connection:liveness <sessionToken> <probably-offline|close|check>`
+([../cli/commands.md](../cli/commands.md#time-based-features-no-universal-clock)).
+The session token names the browser, and the master takes the moment on every socket
+of that browser it holds past the handshake and not marked to close. `probably-offline`
+and `close` put the last frame exactly the probably-offline span or the close timeout
+back, and the next ping moves with it; a silence already longer is not made younger.
+`check` makes the check of the row due now and leaves the silence alone. The socket
+then runs its own `WebSocketClient::onTick()` at once, so the reply — how many sockets
+took the moment — means the master has already told the owner, pinged, marked the
+socket to close or checked the row; no such socket on the node is an error. Only the
+node asked answers: a socket of the same browser on another master is brought to now on
+that master. The production values are held by the unit test `WebSocketLivenessTest`;
+[testing.md](../testing.md), under scenario 46, has the cluster scenario and the
+single-node spec that use the command.
 
 **What counts as the browser speaking.** A whole frame of any opcode, taken by the
 parser and then handled (`processReadBuffer()`). A malformed frame throws and a

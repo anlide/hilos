@@ -81,6 +81,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
             [CliCommands::CLUSTER_TEST_DB_ANNOUNCE],
             [CliCommands::CLUSTER_TEST_AGENT_PLACE],
             [CliCommands::CONNECTION_TEST_DROP],
+            [CliCommands::CONNECTION_TEST_LIVENESS],
             [CliCommands::TABLE_TEST_LAG],
             [CliCommands::TABLE_TEST_REFUSE],
             [CliCommands::ADMIN_VIEW_MODE_TEST],

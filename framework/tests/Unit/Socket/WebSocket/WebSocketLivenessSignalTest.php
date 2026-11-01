@@ -36,6 +36,7 @@ use Hilos\Runtime\View\Item\HilosConnection;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\WebSocket\DTO\WebSocketLivenessSignalDTO;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -46,13 +47,16 @@ use Socket;
 /**
  * The liveness transition of a connection reaches the owner of the connections, and only it writes (HIL-1566).
  *
- * Four questions, kept apart because each fails differently. The payload: the master names the
+ * Five questions, kept apart because each fails differently. The payload: the master names the
  * connection and its new state, and both survive every hop a frame takes to an agent on another
  * worker or node. The receipt: the worker writes the doubt flag as the addressed agent, so the
  * row's own claim decides, a repeat costs nothing, and a connection already gone stays gone. The
  * door: a browser that writes the internal type in its own JSON reaches nobody. The repair: a
  * real master socket checks the owner's row once an interval, tells it again only what it
- * missed, writes nothing itself, and keeps that schedule however much the browser says.
+ * missed, writes nothing itself, and keeps that schedule however much the browser says. The
+ * moment: a socket a test-only command brings a moment to now for has done what that moment
+ * calls for by the time it answers, and a socket the liveness does not run on answers that it
+ * does not count and does nothing.
  */
 final class WebSocketLivenessSignalTest extends TestCase
 {
@@ -449,6 +453,80 @@ final class WebSocketLivenessSignalTest extends TestCase
     }
 
     /**
+     * The doubt brought to now is told to the owner once and pings the silence on that very turn,
+     * long before the span the socket would otherwise have waited out.
+     */
+    public function testADoubtBroughtToNowIsToldToTheOwnerAndPingedAtOnce(): void
+    {
+        [$manager, $client] = $this->socketWithOwnedRow(false);
+        $this->tickAt($client, 10000);
+        $this->assertFalse($client->hasPendingWrite());
+
+        $client->now = 20000;
+        $this->assertTrue($client->bringLivenessMomentToNow(WebSocketLivenessMoment::ProbablyOffline));
+
+        $this->assertSame([true], $this->toldOwner($client, $manager));
+        $this->assertTrue($this->connectionsRegistry()[$client->acceptKey]->probablyOffline);
+        $this->assertSame([[StateHilosConnection::probablyOffline => true]], $this->queuedUpdateDiffs());
+        $this->assertTrue($client->hasPendingWrite());
+    }
+
+    /**
+     * The close brought to now marks the socket for the server's drop and tells the owner nothing.
+     */
+    public function testACloseBroughtToNowMarksTheSocketAndTellsNothing(): void
+    {
+        [, $client] = $this->socketWithOwnedRow(false);
+        $this->tickAt($client, 10000);
+
+        $client->now = 20000;
+        $this->assertTrue($client->bringLivenessMomentToNow(WebSocketLivenessMoment::Close));
+
+        $this->assertTrue($client->shouldClose());
+        $this->assertSame([], $this->toldOwner($client, null));
+    }
+
+    /**
+     * The check brought to now repeats the socket's state to a row that disagrees, without waiting
+     * out the interval, and leaves the silence where it was: no ping goes out.
+     */
+    public function testTheCheckBroughtToNowRepeatsTheStateToADisagreeingRow(): void
+    {
+        [$manager, $client] = $this->socketWithOwnedRow(true);
+        $this->tickAt($client, 10000);
+        $this->assertSame([], $this->toldOwner($client, null));
+
+        $client->now = 20000;
+        $this->assertTrue($client->bringLivenessMomentToNow(WebSocketLivenessMoment::Check));
+
+        $this->assertSame([false], $this->toldOwner($client, $manager));
+        $this->assertFalse($this->connectionsRegistry()[$client->acceptKey]->probablyOffline);
+        $this->assertSame([[StateHilosConnection::probablyOffline => false]], $this->queuedUpdateDiffs());
+        $this->assertFalse($client->hasPendingWrite());
+    }
+
+    /**
+     * A socket still before its handshake, and one already marked to close under a disagreeing row,
+     * do not count for any moment, and nothing leaves either of them.
+     */
+    public function testASocketBeforeItsHandshakeOrMarkedToCloseDoesNotCountAndSendsNothing(): void
+    {
+        [, $closing] = $this->socketWithOwnedRow(true);
+        $this->tickAt($closing, 10000);
+        $closing->markShouldClose();
+        $opening = $this->openedSocket();
+
+        foreach (WebSocketLivenessMoment::cases() as $moment) {
+            $this->assertFalse($opening->bringLivenessMomentToNow($moment));
+            $this->assertFalse($closing->bringLivenessMomentToNow($moment));
+        }
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertFalse($opening->hasPendingWrite());
+        $this->assertFalse($closing->hasPendingWrite());
+    }
+
+    /**
      * Builds the transition signal the master socket queues for one of its connections.
      *
      * @param string $acceptKey Connection that moved
@@ -526,11 +604,11 @@ final class WebSocketLivenessSignalTest extends TestCase
     }
 
     /**
-     * Opens a master socket through its real handshake at moment 0, with the queue left empty.
+     * Opens a master socket the browser has not said a word on yet.
      *
      * @return LivenessTestClient Socket whose clock the case moves by hand
      */
-    private function handshakenSocket(): LivenessTestClient
+    private function openedSocket(): LivenessTestClient
     {
         Hilos::$env = new EnvAccessor();
         $pair = [];
@@ -540,6 +618,17 @@ final class WebSocketLivenessSignalTest extends TestCase
         $client = new LivenessTestClient($pair[0]);
         $this->connections[] = [$client, $pair[1]];
 
+        return $client;
+    }
+
+    /**
+     * Opens a master socket through its real handshake at moment 0, with the queue left empty.
+     *
+     * @return LivenessTestClient Socket whose clock the case moves by hand
+     */
+    private function handshakenSocket(): LivenessTestClient
+    {
+        $client = $this->openedSocket();
         $this->writeFromBrowser($client, self::UPGRADE_REQUEST);
         $client->read();
         $this->assertNotSame('', $client->acceptKey);

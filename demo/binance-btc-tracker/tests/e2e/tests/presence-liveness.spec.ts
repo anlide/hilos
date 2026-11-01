@@ -1,11 +1,15 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import {
+  bindTestUser,
+  bringLivenessMomentToNow,
   createTestUser,
   openRawWebSocket,
+  sessionToken,
   typeInto,
   gotoPage,
   grantAdminToSelf,
+  type SignedInUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Presence over silent sockets (HIL-1566). The master pings a browser socket that
@@ -16,25 +20,20 @@ import {
 // when none is left.
 //
 // No browser keeps that silence — Chromium answers a ping by itself, whatever its
-// page is doing — so the person's two sockets here are raw ones
+// page is doing — so the person's sockets here are raw ones
 // (framework/frontend/e2e/rawWebSocket.ts), opened with the cookies of the
-// person's own browser, which then leaves. An administrator watches the person on
-// the list and on the card: two subscriptions, opened once and never reopened.
+// person's own browser, which then leaves. The person signs in on two browsers and
+// each leaves one raw socket: the moment below is brought to the sockets of one
+// browser, and presence counts the person's sockets across all of them. An
+// administrator watches the person on the list and on the card: two
+// subscriptions, opened once and never reopened.
 //
-// The stand runs the spans at a fortieth of production's 40/50/120/600 s and in
-// the same proportions (docker/docker-compose.test.yml): a ping after 1 s of
-// silence, the next every 1.25 s, probably offline at 3 s, closed at 15 s. The
-// spec keeps no clock of its own: each step waits for what the master did to a
-// socket — the pings it sent into a silence, the close — and then for what the
-// observer was told.
-
-/**
- * The ping of a silence by which the master holds the socket in doubt. It pings at
- * the idle span and every interval after it — 40, 90 and 140 s in production, the
- * same proportions on the stand — so the third falls past the probably-offline
- * span of 120 s, and the master settles the doubt on the tick before it pings.
- */
-const PING_PAST_DOUBT = 3
+// The stand runs production's spans: a ping after 40 s of silence, the next every
+// 50 s, probably offline at 120 s, closed at 600 s. The spec never waits them out:
+// test:connection:liveness brings one browser's silence to the moment of doubt or
+// of the close, and the master works its liveness tick at once. Each step then
+// waits for what the master did to the socket — the ping it sent into the silence,
+// the close — and for what the observer was told.
 
 /**
  * The person's presence on the card. The badge stands over an invisible twin that
@@ -87,32 +86,50 @@ async function expectPresence(
   )
 }
 
+/**
+ * Read the session token of one of the person's browsers, and close its tab.
+ * A fresh document spends a rotation the fixture binding may have left in flight,
+ * so the token is the cookie the browser's raw socket presents and the one the
+ * master finds that socket by. The tab answers every ping, so it leaves, and the
+ * raw socket is all of that browser the master hears.
+ *
+ * @param personPage The person's tab in that browser, already bound to them.
+ * @param person The person.
+ * @returns The session token the browser ends on.
+ */
+async function leaveWithToken(
+  personPage: Page,
+  person: SignedInUser,
+): Promise<string> {
+  await gotoPage(expect, personPage, '/')
+  await expect(personPage.getByTestId('self-user')).toHaveText(person.name)
+  const token = await sessionToken(personPage)
+  await personPage.close()
+
+  return token
+}
+
 test('says a person probably offline while every socket of theirs is silent', async ({
   browser,
   page,
 }) => {
-  // Two silences waited into doubt and one into the close, 15 s of the stand's
-  // clock on its own, on top of account preparation: 25.5 s on the original
-  // idle run, most of the 30 s cap; the stand's clock does not stretch with load.
-  test.slow()
   const use = test.info().project.use
-  const personContext = await browser.newContext({
+  const contextOptions = {
     baseURL: use.baseURL,
     ignoreHTTPSErrors: use.ignoreHTTPSErrors,
-  })
+  }
+  const contextA = await browser.newContext(contextOptions)
+  const contextB = await browser.newContext(contextOptions)
   try {
     await grantAdminToSelf(expect, page)
-    const personPage = await personContext.newPage()
-    const person = await createTestUser(expect, personPage)
-    // A fresh document proves the raw sockets will present this person's
-    // established session cookie.
-    await gotoPage(expect, personPage, '/')
-    await expect(personPage.getByTestId('self-user')).toHaveText(person.name)
-    // The person's own tab answers every ping; it leaves, and the raw sockets are
-    // all of the person the master hears.
-    await personPage.close()
-    const first = await openRawWebSocket(personContext, use)
-    const second = await openRawWebSocket(personContext, use)
+    const pageA = await contextA.newPage()
+    const person = await createTestUser(expect, pageA)
+    const tokenA = await leaveWithToken(pageA, person)
+    const pageB = await contextB.newPage()
+    await bindTestUser(expect, pageB, person)
+    const tokenB = await leaveWithToken(pageB, person)
+    const first = await openRawWebSocket(contextA, use)
+    const second = await openRawWebSocket(contextB, use)
 
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     const list = await page.context().newPage()
@@ -120,22 +137,27 @@ test('says a person probably offline while every socket of theirs is silent', as
     await typeInto(list.getByTestId('hilos-table-search'), person.name)
     await expectPresence(page, list, person.userId, 'online', 2)
 
-    // One socket silent past the doubt, the other answering: still online.
+    // One socket silent into the doubt, the other answering: still online. The
+    // silence goes first — an answering socket would pong the master's ping and end
+    // the doubt — and the ping the master sends into it is its trace on this side.
     first.keepSilent()
-    await first.waitForSilentPings(PING_PAST_DOUBT)
+    await bringLivenessMomentToNow(tokenA, 'probably-offline')
+    await first.waitForSilentPings(1)
     await expectPresence(page, list, person.userId, 'online', 2)
 
-    // Both silent past the doubt: probably offline, and both still counted.
+    // Both silent into the doubt: probably offline, and both still counted.
     second.keepSilent()
-    await second.waitForSilentPings(PING_PAST_DOUBT)
+    await bringLivenessMomentToNow(tokenB, 'probably-offline')
+    await second.waitForSilentPings(1)
     await expectPresence(page, list, person.userId, 'probably offline', 2)
 
     // One answers: online again, while the other is still silent and in doubt.
     second.answer()
     await expectPresence(page, list, person.userId, 'online', 2)
-    expect(first.silentPings()).toBeGreaterThanOrEqual(PING_PAST_DOUBT)
+    expect(first.silentPings()).toBeGreaterThanOrEqual(1)
 
     // The master closes the one that kept silent; the one answering is left.
+    await bringLivenessMomentToNow(tokenA, 'close')
     expect(await first.closed).toBe('server')
     await expectPresence(page, list, person.userId, 'online', 1)
 
@@ -144,10 +166,11 @@ test('says a person probably offline while every socket of theirs is silent', as
     await expectPresence(page, list, person.userId, 'offline', 0)
 
     // A new socket of the same person brings them back to the same observer.
-    const again = await openRawWebSocket(personContext, use)
+    const again = await openRawWebSocket(contextA, use)
     await expectPresence(page, list, person.userId, 'online', 1)
     await again.close()
   } finally {
-    await personContext.close()
+    await contextA.close()
+    await contextB.close()
   }
 })

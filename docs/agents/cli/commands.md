@@ -358,9 +358,9 @@ new production action". Waiting a real clock or shortening a stand's clock inste
 deviation the owner approves in the leaf's contract
 ([../../../agents.md](../../../agents.md), "Contract approval gate").
 
-Specs written before this rule still wait clocks: node reports, cron firings, the OAuth agent's
-request deadline, waited out through a stand gateway delay or hold, and socket silence on a
-shortened stand clock. They are debt, not a pattern to copy.
+Specs written before this rule still wait clocks: node reports, cron firings, and the OAuth
+agent's request deadline, waited out through a stand gateway delay or hold. They are debt, not a
+pattern to copy.
 
 ## Database-free commands
 
@@ -396,6 +396,9 @@ writes, and the CLI process has nothing to read or write — HIL-1856),
 `test:i18n:language:delete <code>`,
 `test:i18n:locale:on <code>`, `test:i18n:country:off <code>` and `test:i18n:country:on <code>` (every row they cause is written by
 the agent that answers them, so the CLI process itself has nothing to read or write),
+`test:connection:liveness` (the master answers it out of memory, from the browser sockets
+it holds, and the flag it may cause is written by the owner of the connections collection,
+so the CLI process has nothing to read or write either — HIL-1860),
 `test:table:lag` (the master answers it out of memory and writes its own node's lag row,
 so the CLI process has nothing to read or write either — HIL-1020), `test:table:refuse`
 (the same shape: the master answers it out of memory and writes its own node's refusal row

@@ -365,26 +365,6 @@ DB_LOAD_STEADY = 3
 # queue more work than that worker processes and time out its own command before the fault.
 DB_LOAD_INTERVAL_SECONDS = 0.5
 
-# The liveness spans scenario 46 gives the master holding its sockets, in milliseconds (HIL-1566):
-# short enough that a silent socket is doubted and closed within the scenario, and in the order the
-# handshake demands, idle below probably offline below the close (WebSocketLivenessConfig). The
-# close leaves room for a silence that outlasts a stopped, killed and restarted owner and the check
-# that repairs what it missed. Only that master runs on them, for as long as the scenario runs; the
-# stand keeps the framework's 40/50/120/600 s (EnvCatalogStub).
-LIVENESS_PING_IDLE_MS = 2000
-LIVENESS_PING_INTERVAL_MS = 3000
-LIVENESS_PROBABLY_OFFLINE_MS = 6000
-LIVENESS_CLOSE_TIMEOUT_MS = 60000
-# How long a missed liveness transition may take to be repaired once its owner is back. The socket's
-# master checks its copy of the row once a ping interval, whatever the browser sends
-# (WebSocketLiveness::isReconcileDue()), so one interval finds the disagreement; the second interval
-# and the ten seconds are for the copy to be back on that master and for the row the owner writes to
-# reach the observer.
-LIVENESS_REPAIR_TIMEOUT = (2 * LIVENESS_PING_INTERVAL_MS / 1000 + 10.0) * TIMEOUT_SCALE
-# How far a socket's own stamp of its last frame may run behind the master's reading of it: the
-# frame is on the wire before the write that sends it returns and is stamped. Both read one host
-# clock, so this covers the stamp, not a drift.
-LIVENESS_CLOCK_SLACK_SEC = 0.5
 # The RT collection of the browser sockets, a copy of which every process holds; mirrors
 # BinanceBtcTrackerRtContext::connections (demo/binance-btc-tracker/backend/Runtime/View/Context/
 # BinanceBtcTrackerRtContext.php), the stand that carries scenarios 33 and 46.
@@ -4540,6 +4520,17 @@ def liveness_socket_state(name):
         return None
 
 
+def bring_liveness(name, moment):
+    """Bring one liveness moment of a raw socket of scenario 46 to now on the master it is open on:
+    probably-offline, close or check, by test:connection:liveness and the session token that master
+    set on the socket's 101 (HIL-1860). Success means the master has already acted on the moment."""
+    state = liveness_socket_state(name) or {}
+    assert state.get("sessionToken"), f"socket {name} names no session token: {state}"
+    outcome = control.client(STAND, state["master"], "test:connection:liveness", state["sessionToken"], moment)
+    assert outcome.code == 0, \
+        f"{state['master']} did not bring {moment} to now on socket {name}: {outcome.err or outcome.out}"
+
+
 def wait_liveness_socket(name, predicate, desc, timeout=CONVERGE_TIMEOUT):
     """Poll one raw socket's state until predicate(state) holds; return that state."""
     last = {}
@@ -4553,12 +4544,6 @@ def wait_liveness_socket(name, predicate, desc, timeout=CONVERGE_TIMEOUT):
     except ScenarioTimeout as timeout_error:
         raise ScenarioTimeout(f"{timeout_error}\nsocket {name} last said: {last.get('state')}") from timeout_error
     return last["state"]
-
-
-def wait_silence(state, seconds):
-    """Sleep until a socket's own last frame, as its state stamps it, is `seconds` old."""
-    assert state.get("lastSentAt") is not None, f"the socket never sent a frame to be silent after: {state}"
-    time.sleep(max(0.0, state["lastSentAt"] + seconds - time.time()))
 
 
 def connections_owner_worker(node, offset=0):
@@ -4581,29 +4566,24 @@ def scenario_46_browser_liveness_across_masters():
     A transition the owner misses is the next part. The owner's worker is stopped, the socket
     changes its state, and its master's own copy check repeats it - both go to a worker that never
     reads them, and the observer's row stays as it was, which is asserted. The worker is then
-    killed and the leader starts the owner again; the socket's master, checking its copy once an
-    interval, finds the row disagreeing and tells the owner again, so the row comes to the socket's
-    state within LIVENESS_REPAIR_TIMEOUT - for a missed true and for a missed false alike.
+    killed and the leader starts the owner again; the socket's master, checking its copy, finds the
+    row disagreeing and tells the owner again, so the row comes to the socket's state - for a missed
+    true and for a missed false alike.
 
     The close is the socket's master's alone: a socket silent past the close timeout, and one
     flooding pings while reading none of the pongs past the 8 MiB cap, are dropped by their master,
     their rows leave by the ordinary connection close, and another socket of the same master and
     every node live on. The cap's line is in that master's log and in no other master's.
 
-    The spans are the socket master's own for the scenario (LIVENESS_*_MS), given by recreating it,
-    and the stand's are back after it.
+    The stand runs the framework's spans (40/50/120/600 s) and no moment is waited out: the doubt,
+    the close and the check of the copy are brought to now on the socket's master by
+    test:connection:liveness, which names the socket by the session token its 101 set (HIL-1860).
+    How long each span is stays with the unit tests of the socket's liveness.
     """
     views = wait_converge(ALL_NODES)
     leader = leaders(views)[0]
     term = views[leader].get("term")
     socket_master, observer = [node for node in MASTERS if node != leader][:2]
-    spans = (f"WEBSOCKET_PING_IDLE_MS={LIVENESS_PING_IDLE_MS}",
-             f"WEBSOCKET_PING_INTERVAL_MS={LIVENESS_PING_INTERVAL_MS}",
-             f"WEBSOCKET_PROBABLY_OFFLINE_MS={LIVENESS_PROBABLY_OFFLINE_MS}",
-             f"WEBSOCKET_CLOSE_TIMEOUT_MS={LIVENESS_CLOSE_TIMEOUT_MS}")
-    interval = LIVENESS_PING_INTERVAL_MS / 1000
-    doubt_span = LIVENESS_PROBABLY_OFFLINE_MS / 1000
-    close_span = LIVENESS_CLOSE_TIMEOUT_MS / 1000
     probe, other, flood = "probe46", "other46", "flood46"
     stopped = []
     took = {}
@@ -4670,20 +4650,29 @@ def scenario_46_browser_liveness_across_masters():
         process, offset = stop_owner()
         asked_at = time.time()
         liveness_socket(probe, switch)
-        state = wait_liveness_socket(probe, lambda s: s["mode"] == switch, f"socket {probe} is {switch}")
+        wait_liveness_socket(probe, lambda s: s["mode"] == switch, f"socket {probe} is {switch}")
         if switch == "silent":
-            # The transition at the probably-offline span, then a check of the copy an interval later.
-            wait_silence(state, doubt_span + interval + 1.0)
+            # The transition at the probably-offline span, then the check that repeats it.
+            bring_liveness(probe, "probably-offline")
+            bring_liveness(probe, "check")
         else:
-            # The unasked pong is the whole frame that ends the silence; one interval more for a check.
+            # The unasked pong is the whole frame that ends the silence. The tick of the first check
+            # may itself be the one that clears the doubt and skip the check; the second repeats it.
             wait_liveness_socket(probe, lambda s: (s["lastSentAt"] or 0) >= asked_at,
                                  f"socket {probe} sends a frame once told to answer")
-            time.sleep(interval + 1.0)
+            bring_liveness(probe, "check")
+            bring_liveness(probe, "check")
         assert read_flag(probe_key) is (not wanted), \
             f"{observer} read socket {probe} as {read_flag(probe_key)} while its owner was stopped"
         back_at = kill_owner(process, offset)
         stopped.remove(process)
-        wait_until(lambda current: flag(current, probe_key) is wanted, LIVENESS_REPAIR_TIMEOUT,
+
+        def repaired(current):
+            # A row that already agrees is told nothing again, so the check is brought on every turn.
+            bring_liveness(probe, "check")
+            return flag(current, probe_key) is wanted
+
+        wait_until(repaired, CONVERGE_TIMEOUT,
                    f"{observer} reads the missed {state_name} of socket {probe} once its owner is back",
                    nodes=[observer])
         took[f"missed {state_name}"] = time.time() - back_at
@@ -4691,24 +4680,18 @@ def scenario_46_browser_liveness_across_masters():
         led_as_before(f"while the missed {state_name} was repaired")
 
     try:
-        print(f"    recreating {socket_master} with {' '.join(spans)}")
-        outcome = control.execute(STAND, "own-env", socket_master, *spans)
-        assert outcome.code == 0, f"could not give {socket_master} liveness spans of its own: {outcome.err}"
-        wait_converge(ALL_NODES)
-        led_as_before(f"while {socket_master} came back")
-
         other_key = open_socket(other)
         probe_key = open_socket(probe)
 
         liveness_socket(probe, "silent")
-        state = wait_liveness_socket(probe, lambda s: s["mode"] == "silent", f"socket {probe} is silent")
-        current = wait_until(lambda v: flag(v, probe_key) is not False, doubt_span + CONVERGE_TIMEOUT,
+        wait_liveness_socket(probe, lambda s: s["mode"] == "silent", f"socket {probe} is silent")
+        doubted_from = time.time()
+        bring_liveness(probe, "probably-offline")
+        current = wait_until(lambda v: flag(v, probe_key) is not False, CONVERGE_TIMEOUT,
                              f"{observer} reads socket {probe} on {socket_master} probably offline",
                              nodes=[observer])
-        took["doubted"] = time.time() - state["lastSentAt"]
+        took["doubted"] = time.time() - doubted_from
         assert flag(current, probe_key) is True, f"socket {probe} lost its row instead of being doubted"
-        assert took["doubted"] >= doubt_span - LIVENESS_CLOCK_SLACK_SEC, \
-            f"socket {probe} was doubted {took['doubted']:.2f}s into its silence, before the {doubt_span:g}s span"
 
         liveness_socket(probe, "answer")
         cleared_from = time.time()
@@ -4722,15 +4705,15 @@ def scenario_46_browser_liveness_across_masters():
         assert read_flag(other_key) is False, f"socket {other}, answering all along, was doubted"
 
         liveness_socket(probe, "silent")
-        state = wait_liveness_socket(probe, lambda s: s["mode"] == "silent", f"socket {probe} is silent again")
-        wait_until(lambda v: flag(v, probe_key) is True, doubt_span + CONVERGE_TIMEOUT,
+        wait_liveness_socket(probe, lambda s: s["mode"] == "silent", f"socket {probe} is silent again")
+        bring_liveness(probe, "probably-offline")
+        wait_until(lambda v: flag(v, probe_key) is True, CONVERGE_TIMEOUT,
                    f"{observer} reads socket {probe} probably offline before it is closed", nodes=[observer])
+        closed_from = time.time()
+        bring_liveness(probe, "close")
         closed = wait_liveness_socket(probe, lambda s: s["state"] == "closed",
-                                      f"{socket_master} closes socket {probe} silent past {close_span:g}s",
-                                      timeout=close_span + CONVERGE_TIMEOUT)
-        took["closed"] = closed["closedAt"] - state["lastSentAt"]
-        assert took["closed"] >= close_span - LIVENESS_CLOCK_SLACK_SEC, \
-            f"socket {probe} was closed {took['closed']:.2f}s into its silence, before the {close_span:g}s timeout"
+                                      f"{socket_master} closes socket {probe} silent past its close timeout")
+        took["closed"] = closed["closedAt"] - closed_from
         wait_until(lambda v: flag(v, probe_key) is None, CONVERGE_TIMEOUT,
                    f"{observer} drops the row of closed socket {probe}", nodes=[observer])
 
@@ -4759,15 +4742,13 @@ def scenario_46_browser_liveness_across_masters():
             control.signal_worker_process(STAND, process, 18)
         for name in (probe, other, flood):
             control.execute(STAND, "liveness-hold", name, "down")
-        outcome = control.execute(STAND, "own-env", socket_master, "off")
-        assert outcome.code == 0, f"could not restore {socket_master} to the stand's environment: {outcome.err}"
-        wait_converge(ALL_NODES)
 
     return (f"a socket on {socket_master}, its owner on {leader}, read on {observer}: doubted "
-            f"{took['doubted']:.1f}s into its silence, cleared {took['cleared']:.1f}s after it answered; a missed "
-            f"true and a missed false repaired {took['missed true']:.1f}s and {took['missed false']:.1f}s after "
-            f"the owner was back; {socket_master} closed it {took['closed']:.1f}s into its silence and dropped "
-            f"another past {BROWSER_OUTBOUND_CAP_BYTES} bytes after {flooded['floodBytes']} bytes of pings, "
+            f"{took['doubted']:.1f}s after its doubt was brought to now, cleared {took['cleared']:.1f}s after it "
+            f"answered; a missed true and a missed false repaired {took['missed true']:.1f}s and "
+            f"{took['missed false']:.1f}s after the owner was back; {socket_master} closed it "
+            f"{took['closed']:.1f}s after its close was brought to now and dropped another past "
+            f"{BROWSER_OUTBOUND_CAP_BYTES} bytes after {flooded['floodBytes']} bytes of pings, "
             f"while {other} and every node lived on")
 
 
@@ -5549,8 +5530,8 @@ SCENARIOS = [
              Need(nodes=3, slaves=1)),
     Scenario("30 ready copy outlives its node", scenario_30_ready_copy_outlives_its_node,
              Need(slaves=2, cluster_directory=True)),
-    # Before the freeze pair too: it recreates a master that does not lead with liveness spans of
-    # its own and kills the worker of the connections owner on the leader, and restores both.
+    # Before the freeze pair too: it kills the worker of the connections owner on the leader and
+    # waits for the leader to start the owner again.
     Scenario("46 browser liveness across masters", scenario_46_browser_liveness_across_masters,
              Need(masters=3, entry=True)),
     # Last, both of them, because the freeze stops the agents of every master: a lift that fails

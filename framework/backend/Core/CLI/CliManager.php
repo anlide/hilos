@@ -50,6 +50,7 @@ use Hilos\Core\CLI\Commands\CommandTestEchoCommand;
 use Hilos\Core\CLI\Commands\ModerationTestObserveCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
+use Hilos\Core\CLI\Commands\ConnectionTestLivenessCommand;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\BackupTestResetCommand;
@@ -291,6 +292,7 @@ class CliManager
         $this->commands[CliCommands::BACKUP_TEST_SHIP] = new BackupTestShipCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
         $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
+        $this->commands[CliCommands::CONNECTION_TEST_LIVENESS] = new ConnectionTestLivenessCommand();
         $this->commands[CliCommands::TABLE_TEST_LAG] = new TableTestLagCommand();
         $this->commands[CliCommands::TABLE_TEST_REFUSE] = new TableTestRefuseCommand();
         $this->commands[CliCommands::ADMIN_VIEW_MODE_TEST] = new AdminViewModeTestCommand();

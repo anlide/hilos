@@ -21,6 +21,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketLivenessSignalDTO;
 use Hilos\Socket\WebSocket\Exception\ReservedOpcodeException;
 use Hilos\Socket\WebSocket\Liveness\WebSocketLiveness;
 use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessConfig;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Tests\Unit\Runtime\EmptyTestRtContext;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -113,6 +114,94 @@ final class WebSocketLivenessTest extends TestCase
         self::assertFalse($liveness->isPingDue(600000));
         self::assertFalse($liveness->isProbablyOfflineTransitionDue(600000));
         self::assertFalse($liveness->probablyOffline);
+    }
+
+    public function testTheDoubtBroughtToNowPutsTheLastFrameExactlyItsSpanBackAndOwesOnePing(): void
+    {
+        $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
+        $liveness->recordPingSent(40000);
+
+        $liveness->bringToNow(WebSocketLivenessMoment::ProbablyOffline, 60000);
+
+        self::assertFalse($liveness->isProbablyOfflineTransitionDue(59999));
+        self::assertTrue($liveness->isProbablyOfflineTransitionDue(60000));
+        self::assertFalse($liveness->probablyOffline);
+        self::assertTrue($liveness->isPingDue(60000));
+        $liveness->recordPingSent(60000);
+        self::assertFalse($liveness->isPingDue(109999));
+        self::assertTrue($liveness->isPingDue(110000));
+        self::assertFalse($liveness->isCloseDue(539999));
+        self::assertTrue($liveness->isCloseDue(540000));
+        self::assertFalse($liveness->isReconcileDue(49999));
+        self::assertTrue($liveness->isReconcileDue(50000));
+    }
+
+    public function testTheCloseBroughtToNowIsDueAtNowWithNoPingAndNoTransition(): void
+    {
+        $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
+
+        $liveness->bringToNow(WebSocketLivenessMoment::Close, 60000);
+
+        self::assertFalse($liveness->isCloseDue(59999));
+        self::assertTrue($liveness->isCloseDue(60000));
+        self::assertFalse($liveness->isPingDue(60000));
+        self::assertFalse($liveness->isProbablyOfflineTransitionDue(60000));
+        self::assertFalse($liveness->isReconcileDue(60000));
+        self::assertFalse($liveness->probablyOffline);
+    }
+
+    public function testASilenceAlreadyLongerThanTheMomentIsNotMadeYounger(): void
+    {
+        $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
+
+        $liveness->bringToNow(WebSocketLivenessMoment::ProbablyOffline, 130000);
+        $liveness->bringToNow(WebSocketLivenessMoment::Close, 650000);
+
+        self::assertFalse($liveness->isPingDue(39999));
+        self::assertTrue($liveness->isPingDue(40000));
+        self::assertFalse($liveness->isProbablyOfflineTransitionDue(119999));
+        self::assertTrue($liveness->isProbablyOfflineTransitionDue(120000));
+        self::assertFalse($liveness->isCloseDue(599999));
+        self::assertTrue($liveness->isCloseDue(600000));
+    }
+
+    public function testTheCheckBroughtToNowIsDueAtNowAndLeavesTheSilenceAlone(): void
+    {
+        $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
+        self::assertFalse($liveness->isReconcileDue(10000));
+
+        $liveness->bringToNow(WebSocketLivenessMoment::Check, 10000);
+
+        self::assertTrue($liveness->isReconcileDue(10000));
+        $liveness->recordReconciled(10000);
+        self::assertFalse($liveness->isReconcileDue(59999));
+        self::assertTrue($liveness->isReconcileDue(60000));
+        self::assertFalse($liveness->isPingDue(39999));
+        self::assertTrue($liveness->isPingDue(40000));
+        self::assertFalse($liveness->isProbablyOfflineTransitionDue(119999));
+        self::assertTrue($liveness->isProbablyOfflineTransitionDue(120000));
+        self::assertFalse($liveness->isCloseDue(599999));
+        self::assertTrue($liveness->isCloseDue(600000));
+    }
+
+    public function testAFrameAfterTheMomentWasBroughtToNowStartsTheSilenceAgain(): void
+    {
+        $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
+        $liveness->bringToNow(WebSocketLivenessMoment::ProbablyOffline, 60000);
+        $liveness->settleProbablyOffline(60000);
+        self::assertTrue($liveness->probablyOffline);
+
+        $liveness->recordReceived(70000);
+
+        self::assertTrue($liveness->isProbablyOfflineTransitionDue(70000));
+        $liveness->settleProbablyOffline(70000);
+        self::assertFalse($liveness->probablyOffline);
+        self::assertFalse($liveness->isPingDue(109999));
+        self::assertTrue($liveness->isPingDue(110000));
+        self::assertFalse($liveness->isProbablyOfflineTransitionDue(189999));
+        self::assertTrue($liveness->isProbablyOfflineTransitionDue(190000));
+        self::assertFalse($liveness->isCloseDue(669999));
+        self::assertTrue($liveness->isCloseDue(670000));
     }
 
     public function testAFrameBetweenPingsClearsTheFlagAndStartsTheIdleSpanAgain(): void

@@ -5,6 +5,8 @@ import type { Socket } from 'node:net'
 
 import type { BrowserContext } from '@playwright/test'
 
+import { createStandCommandChannel } from '../scripts/standCommand.mjs'
+
 // A browser socket the master hears nothing from, as a spec needs it to prove
 // liveness (HIL-1566): the master pings a silent socket with an RFC ping, doubts it
 // after a while and closes it after longer still. No browser can be made that
@@ -20,6 +22,11 @@ import type { BrowserContext } from '@playwright/test'
 // the scenario watches: pings, and the end of the socket. Everything else is
 // dropped unread. A whole frame of any kind tells the master the client is there,
 // so a pong is all it ever sends, and nothing at all while it keeps silent.
+//
+// The stand runs the production spans, so the silence is never waited out and never
+// shortened through the stand's environment: a command ages it instead.
+// bringLivenessMomentToNow below brings the moment a browser's sockets have reached
+// to now, and the master works its liveness tick at once.
 //
 // No dependency comes with it: node:http(s) makes the upgrade and hands over the
 // raw stream. It lives in the toolbox rather than in scripts/ because it opens the
@@ -55,6 +62,15 @@ const CLOSE_NORMAL = 1000
 /** The path the stand's nginx proxies to the master's WebSocket port. */
 const SOCKET_PATH = '/ws'
 
+/** The test-only command that brings a browser's socket liveness moment to now. */
+const LIVENESS_COMMAND = 'test:connection:liveness'
+
+/** How long the master may take to work its liveness tick and answer. */
+const LIVENESS_TIMEOUT_MS = 5_000
+
+/** How many live sockets of the one browser the master must report. */
+const LIVENESS_SOCKETS = 1
+
 /** Where the stand is reached, as a project's `use` names it. */
 export interface RawWebSocketStand {
   readonly baseURL?: string
@@ -63,6 +79,9 @@ export interface RawWebSocketStand {
 
 /** The side that ended a raw socket. */
 export type RawWebSocketCloser = 'server' | 'client'
+
+/** The moment of a socket's silence that the master is told has come. */
+export type LivenessMoment = 'probably-offline' | 'close' | 'check'
 
 /** One raw socket of a signed-in person, answering the master's pings or not. */
 export interface RawWebSocket {
@@ -281,5 +300,40 @@ export async function openRawWebSocket(
 
       return closed
     },
+  }
+}
+
+/**
+ * Bring the liveness moment of one browser's sockets to now, on the master that
+ * answers the command channel, and have the master work its liveness tick at once.
+ * The reply means the master has already acted: told the socket's owner, sent the
+ * ping, marked the socket to close or compared its copy.
+ *
+ * The spec needs exactly one live socket of that browser on this node. Any other
+ * count fails here and now instead of waiting for a badge that will not change.
+ *
+ * @param sessionToken The session cookie of the browser whose sockets take the moment.
+ * @param moment The moment of the silence to bring to now.
+ * @returns Resolves once the master reports exactly one socket took the moment.
+ * @throws {Error} When the channel refuses, or the master reports any other count.
+ */
+export async function bringLivenessMomentToNow(
+  sessionToken: string,
+  moment: LivenessMoment,
+): Promise<void> {
+  const sendCommand = createStandCommandChannel({
+    timeoutMs: LIVENESS_TIMEOUT_MS,
+  })
+  const reply = await sendCommand(LIVENESS_COMMAND, { sessionToken, moment })
+  if (
+    typeof reply.sockets !== 'number' ||
+    !Number.isSafeInteger(reply.sockets)
+  ) {
+    throw new Error(`Invalid ${LIVENESS_COMMAND} reply`)
+  }
+  if (reply.sockets !== LIVENESS_SOCKETS) {
+    throw new Error(
+      `${LIVENESS_COMMAND} ${moment}: expected ${LIVENESS_SOCKETS} live socket of this browser on this node, the master reported ${reply.sockets}`,
+    )
   }
 }

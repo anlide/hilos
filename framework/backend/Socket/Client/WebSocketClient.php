@@ -67,6 +67,7 @@ use Hilos\Socket\WebSocket\Exception\UnknownOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
 use Hilos\Socket\WebSocket\Liveness\WebSocketLiveness;
 use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessConfig;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
@@ -2057,6 +2058,32 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $this->sendPing();
             $this->liveness->recordPingSent($nowMs);
         }
+    }
+
+    /**
+     * Brings one moment of this socket's liveness to now for a test-only command, and keeps the liveness at once.
+     *
+     * Counts only for a socket the liveness runs on - past its handshake and not marked to close.
+     * The tick that follows is {@see onTick()} itself, in its usual order, so a socket that counts
+     * has already done what the moment calls for: told its owner, pinged, been marked to close, or
+     * been checked against its row.
+     *
+     * @param WebSocketLivenessMoment $moment Moment to bring to now
+     * @return bool Whether this socket counts: false before the handshake and once it is marked to close
+     * @throws InvalidArgumentException When the liveness signal cannot be named
+     * @throws InvalidFormatException When the socket has no accept key to name in the signal
+     * @throws RtActionsStateCollectionNullException When the connections registry has no state collection behind it
+     */
+    public function bringLivenessMomentToNow(WebSocketLivenessMoment $moment): bool
+    {
+        if ($this->liveness === null || $this->shouldClose) {
+            return false;
+        }
+
+        $this->liveness->bringToNow($moment, $this->deliveryNowMs());
+        $this->onTick();
+
+        return true;
     }
 
     /**

@@ -36,9 +36,6 @@ export async function createTestUser(
     commandHost,
   }: TestUserOptions = {},
 ): Promise<SignedInUser> {
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  const token = await sessionToken(page)
   const user = await seedTestUser(
     {
       email,
@@ -48,12 +45,33 @@ export async function createTestUser(
     },
     commandHost,
   )
+  await bindTestUser(expect, page, user, { commandHost })
+
+  return user
+}
+
+/**
+ * Bind this browser's live session to an account that already exists, by the
+ * same fixture path as `createTestUser`. A second browser of one person is
+ * signed in this way: the person is seeded once, and every browser binds to it.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page Browser page to open on the main page; its session is the one bound.
+ * @param user The account to bind, as seeded or signed in elsewhere.
+ * @param options An optional cluster command host.
+ */
+export async function bindTestUser(
+  expect: Expect,
+  page: Page,
+  user: SignedInUser,
+  { commandHost }: Pick<TestUserOptions, 'commandHost'> = {},
+): Promise<void> {
+  await gotoPage(expect, page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await bindTestSession(
-    { sessionToken: token, userId: user.userId },
+    { sessionToken: await sessionToken(page), userId: user.userId },
     commandHost,
   )
   await expect(page.getByTestId('self-user')).toHaveText(user.name)
   await expect(page.getByTestId('self-user-id')).toHaveText(String(user.userId))
-
-  return user
 }

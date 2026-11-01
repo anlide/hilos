@@ -196,6 +196,9 @@ final class CliCommands
     /** @var string Command: Force-close a live WebSocket connection by acceptKey (test-only) */
     public const string CONNECTION_TEST_DROP = 'test:connection:drop';
 
+    /** @var string Command: Bring a liveness moment of one browser's sockets on this node to now (test-only) */
+    public const string CONNECTION_TEST_LIVENESS = 'test:connection:liveness';
+
     /** @var string Command: Hold table windows and facet counts back by an artificial lag (test-only) */
     public const string TABLE_TEST_LAG = 'test:table:lag';
 

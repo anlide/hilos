@@ -24,6 +24,9 @@ namespace Hilos\Socket\WebSocket\Liveness;
  *
  * Once the close is due no other answer is given: a socket being closed is pinged no more,
  * changes no flag and is checked against no row.
+ *
+ * Only a test-only command moves a moment by hand ({@see bringToNow()}); a running socket's
+ * moments move by its own frames, pings and checks alone.
  */
 final class WebSocketLiveness
 {
@@ -92,6 +95,35 @@ final class WebSocketLiveness
     public function recordReconciled(int $nowMs): void
     {
         $this->nextReconcileAtMs = $nowMs + $this->config->pingIntervalMs;
+    }
+
+    /**
+     * Brings one moment of this socket's liveness to now, for a test that cannot wait its span out.
+     *
+     * A silence puts the last frame exactly its span back and the next ping moves with it, so the
+     * nearest tick owes a single ping, as a late tick does; a silence already longer is never made
+     * younger. The check is put at now and leaves the silence alone. The settled flag stays as it
+     * was, and once the close is due nothing is answered, as before.
+     *
+     * @param WebSocketLivenessMoment $moment Moment to bring to now
+     * @param int $nowMs Monotonic moment the command reached the socket
+     */
+    public function bringToNow(WebSocketLivenessMoment $moment, int $nowMs): void
+    {
+        if ($moment === WebSocketLivenessMoment::Check) {
+            $this->nextReconcileAtMs = $nowMs;
+            return;
+        }
+
+        $silenceMs = $moment === WebSocketLivenessMoment::Close
+            ? $this->config->closeTimeoutMs
+            : $this->config->probablyOfflineMs;
+        $shiftMs = $nowMs - $silenceMs - $this->lastReceivedAtMs;
+        if ($shiftMs >= 0) {
+            return;
+        }
+        $this->lastReceivedAtMs += $shiftMs;
+        $this->nextPingAtMs += $shiftMs;
     }
 
     /**
