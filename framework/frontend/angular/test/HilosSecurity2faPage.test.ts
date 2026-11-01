@@ -11,6 +11,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  HIDDEN_VALUE,
   HilosPages,
   HilosSecondFactorSettingKey,
   ScopeManager,
@@ -19,6 +20,7 @@ import {
   createSignal,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosConnection,
   HilosRouter,
   HilosTwoFactorContext,
@@ -98,7 +100,11 @@ function seededContext(
   enabled = 'true',
 ): {
   context: HilosTwoFactorContext
-  pushUpdate: (rowKey: string, value: string) => void
+  pushUpdate: (
+    rowKey: string,
+    value: string,
+    editDisabledReason?: Hideable<string | null>,
+  ) => void
   pushRemove: (rowKey: string) => void
   answer: (outcome: 'success' | 'fail', reply?: unknown) => void
   sent: Array<{ action: string; payload: Record<string, unknown> }>
@@ -246,10 +252,17 @@ function seededContext(
       scopes,
       actions,
     },
-    pushUpdate(rowKey: string, value: string): void {
+    pushUpdate(
+      rowKey: string,
+      value: string,
+      editDisabledReason?: Hideable<string | null>,
+    ): void {
       const factorOn =
         (rowKey === ENABLED ? value : settings.get(ENABLED)?.value) !== 'false'
       const setting = settingSlot(rowKey, value, factorOn)
+      if (editDisabledReason !== undefined) {
+        setting.editDisabledReason = editDisabledReason
+      }
       settings = new Map(settings).set(rowKey, setting)
       pushDelta({
         kind: 'row_updated',
@@ -725,6 +738,162 @@ describe('HilosSecurity2faPage switches', () => {
         'opacity-50',
       ),
     ).toBe(false)
+  })
+})
+
+describe('HilosSecurity2faPage locked pencil reason', () => {
+  /** Find the controls in one of the table's two projections. */
+  function pencil(
+    fixture: ComponentFixture<unknown>,
+    projection: 'table' | 'card',
+    rowKey = REQUIRED,
+  ): HTMLButtonElement {
+    const root = fixture.nativeElement as HTMLElement
+    const selector =
+      projection === 'table' ? 'table' : '[data-id="hilos-table-cards"]'
+    return root.querySelector<HTMLButtonElement>(
+      `${selector} [data-id="hilos-2fa-edit-${rowKey}"]`,
+    )!
+  }
+
+  /** The explanation lives outside both the page and the native opener. */
+  function explanation(id: string): HTMLElement | null {
+    return document.querySelector(`[data-id="${id}"]`)
+  }
+
+  it.each(['table', 'card'] as const)(
+    'explains the locked pencil in the %s without opening an edit or sending a write',
+    (projection) => {
+      const world = seededContext(false, 'false')
+      const fixture = mountPage(world.context)
+      document.body.append(fixture.nativeElement as HTMLElement)
+      const edit = pencil(fixture, projection)
+      const why = edit.parentElement!.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      )!
+
+      expect(edit.disabled).toBe(true)
+      edit.click()
+      fixture.detectChanges()
+      expect(el(fixture, 'hilos-2fa-input')).toBeNull()
+      expect(why.hidden).toBe(false)
+      expect(why.type).toBe('button')
+      expect(why.disabled).toBe(false)
+      expect(why.getAttribute('aria-label')).toBe(
+        'Why this action is unavailable',
+      )
+      why.focus()
+      why.click()
+      fixture.detectChanges()
+
+      const dialog = explanation('modal')!
+      expect(dialog.getAttribute('role')).toBe('dialog')
+      expect(dialog.getAttribute('aria-label')).toBe('Action unavailable')
+      expect(document.activeElement).toBe(dialog)
+      expect(explanation('hilos-action-reason-body')?.textContent?.trim()).toBe(
+        LOCKED_WHILE_OFF,
+      )
+      expect(el(fixture, 'hilos-2fa-input')).toBeNull()
+      expect(world.sent).toEqual([])
+      expect(world.focus).toEqual([])
+
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+      const close = explanation('hilos-action-reason-close')!
+      close.focus()
+      close.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
+      )
+      expect(dialog.contains(document.activeElement)).toBe(true)
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+      fixture.detectChanges()
+      expect(explanation('modal')).toBeNull()
+      expect(document.activeElement).toBe(why)
+      expect(world.sent).toEqual([])
+      fixture.destroy()
+    },
+  )
+
+  it('follows the live server lock and preserves an open explanation when editing becomes available', () => {
+    const world = seededContext(false, 'false')
+    const fixture = mountPage(world.context)
+    const why = pencil(
+      fixture,
+      'table',
+    ).parentElement!.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-action-reason"]',
+    )!
+    why.click()
+    fixture.detectChanges()
+    const dialog = explanation('modal')
+
+    world.pushUpdate(ENABLED, 'true')
+    fixture.detectChanges()
+    for (const projection of ['table', 'card'] as const) {
+      const edit = pencil(fixture, projection)
+      expect(edit.disabled).toBe(false)
+      const opener = edit.parentElement!.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      )!
+      expect(opener.hidden).toBe(true)
+      expect(opener.hasAttribute('title')).toBe(false)
+    }
+    expect(explanation('modal')).toBe(dialog)
+    expect(explanation('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      LOCKED_WHILE_OFF,
+    )
+    explanation('hilos-action-reason-close')!.click()
+    fixture.detectChanges()
+
+    const nextReason = 'The administrator has paused changes to this setting.'
+    world.pushUpdate(REQUIRED, 'admins', nextReason)
+    fixture.detectChanges()
+    expect(pencil(fixture, 'table').disabled).toBe(true)
+    expect(why.hidden).toBe(false)
+    why.click()
+    fixture.detectChanges()
+    expect(explanation('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      nextReason,
+    )
+    expect(world.sent).toEqual([])
+    fixture.destroy()
+  })
+
+  it('offers no explanation on a switch or for a hidden reason that does not lock its pencil', () => {
+    const world = seededContext()
+    const fixture = mountPage(world.context)
+    world.pushUpdate(REQUIRED, 'admins', HIDDEN_VALUE)
+    fixture.detectChanges()
+    for (const projection of ['table', 'card'] as const) {
+      const edit = pencil(fixture, projection)
+      const why = edit.parentElement!.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason"]',
+      )!
+      expect(edit.disabled).toBe(false)
+      expect(why.hidden).toBe(true)
+      expect(why.hasAttribute('title')).toBe(false)
+      why.click()
+    }
+    for (const key of [ENABLED, FORGET]) {
+      expect(
+        inTable(fixture, `hilos-2fa-switch-${key}`)
+          .closest('tr')
+          ?.querySelector('[data-id="hilos-action-reason"]'),
+      ).toBeNull()
+    }
+    fixture.detectChanges()
+    expect(explanation('modal')).toBeNull()
+    expect((fixture.nativeElement as HTMLElement).innerHTML).not.toContain(
+      '_hidden',
+    )
+    expect((fixture.nativeElement as HTMLElement).innerHTML).not.toContain(
+      '[object Object]',
+    )
+    expect(world.sent).toEqual([])
+    fixture.destroy()
   })
 })
 

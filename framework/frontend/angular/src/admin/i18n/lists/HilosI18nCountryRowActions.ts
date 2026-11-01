@@ -1,22 +1,23 @@
-// HilosI18nCountryRowActions — a country row's delete control: it only opens the
-// confirmation, and only while the server's live hint lets the country go. A
-// refused delete keeps its place, marked as blocked and not offered, with the
-// server's reason as visible text beside it — never a title. Each table and
-// card copy owns its description id: the table draws this cell twice (row and
-// card), so an id built from the country code would join two distinct DOM
-// nodes. Bootstrap classes only (styling-rules.md).
+// HilosI18nCountryRowActions — the question button explains a refused delete,
+// whose server-written sentence also describes the disabled control. Each
+// table and card copy owns its description id: the table draws this cell twice
+// (row and card), so an id built from the country code would join two distinct
+// DOM nodes. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   input,
   output,
 } from '@angular/core'
 import {
   HILOS_I18N_COUNTRY_MARKS,
   hilosI18nCountryDeleteLabel,
-  hilosI18nCountryDeleteReason,
+  hilosI18nCountryRowDeleteReason,
 } from '@hilos/core/admin/i18n'
 import type { HilosI18nCountryRow } from '@hilos/core/admin/i18n'
+
+import { HilosActionReason } from '@hilos/angular/base'
 
 // Distinct ids so the row and the card copy of one country never share one.
 let countryRowActionsSeq = 0
@@ -25,30 +26,36 @@ let countryRowActionsSeq = 0
 @Component({
   selector: 'hilos-i18n-country-row-actions',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosActionReason],
+  host: { class: 'hilos-button-group d-md-inline-flex gap-1' },
   template: `
-    <span class="d-flex flex-column align-items-start gap-1">
-      <button
-        type="button"
-        [class]="
-          'btn btn-sm ' + (row().canDelete ? 'btn-outline-danger' : blockedTone)
-        "
-        [attr.aria-label]="'Delete country ' + label(row())"
-        [attr.aria-disabled]="row().canDelete ? null : 'true'"
-        [attr.aria-describedby]="row().canDelete ? null : reasonId"
-        [attr.data-id]="'i18n-countries-delete-' + row().code"
-        (click)="openDelete()"
+    <button
+      hilosActionReason
+      [reason]="reason()"
+      data-id="hilos-action-reason"
+    ></button>
+    <button
+      type="button"
+      [class]="
+        'btn btn-sm ' + (row().canDelete ? 'btn-outline-danger' : blockedTone)
+      "
+      [disabled]="!row().canDelete"
+      [attr.aria-label]="'Delete country ' + label(row())"
+      [attr.aria-describedby]="reason() ? reasonId : null"
+      [attr.data-id]="'i18n-countries-delete-' + row().code"
+      (click)="openDelete()"
+    >
+      <i class="bi bi-trash" aria-hidden="true"></i>
+    </button>
+    @if (reason(); as reason) {
+      <span
+        [id]="reasonId"
+        class="visually-hidden"
+        [attr.data-id]="'i18n-countries-delete-reason-' + row().code"
       >
-        <i class="bi bi-trash" aria-hidden="true"></i>
-      </button>
-      @if (!row().canDelete) {
-        <span
-          [id]="reasonId"
-          class="small text-body-secondary"
-          [attr.data-id]="'i18n-countries-delete-reason-' + row().code"
-          >{{ reason(row()) }}</span
-        >
-      }
-    </span>
+        {{ reason }}
+      </span>
+    }
   `,
 })
 export class HilosI18nCountryRowActions {
@@ -59,7 +66,9 @@ export class HilosI18nCountryRowActions {
 
   protected readonly blockedTone = HILOS_I18N_COUNTRY_MARKS.deleteBlocked.tone
   protected readonly label = hilosI18nCountryDeleteLabel
-  protected readonly reason = hilosI18nCountryDeleteReason
+  protected readonly reason = computed(() =>
+    hilosI18nCountryRowDeleteReason(this.row()),
+  )
   protected readonly reasonId = `i18n-country-delete-reason-${countryRowActionsSeq++}`
 
   protected openDelete(): void {

@@ -26,6 +26,7 @@ import type {
   ProjectSignal,
   TableViewportDescriptor,
 } from '@hilos/core'
+import { HIDDEN_VALUE } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
@@ -82,6 +83,7 @@ interface SettingSlot {
   defaultValue: Hideable<string | null>
   defaultReferenceKey: Hideable<string | null>
   valueSource: string
+  resetDisabledReason: Hideable<string | null>
 }
 
 function slot(
@@ -93,6 +95,7 @@ function slot(
     overrideValue: null,
     defaultValue: 'd',
     defaultReferenceKey: null,
+    resetDisabledReason: null,
     ...over,
   }
 }
@@ -1377,6 +1380,12 @@ describe('HilosSettingsPage reset dialog', () => {
     return root.querySelector(`table [data-id="hilos-settings-reset-${key}"]`)
   }
 
+  function reasonButton(root: HTMLElement): HTMLButtonElement {
+    return root.querySelector(
+      'table button[hilosActionReason]',
+    ) as HTMLButtonElement
+  }
+
   function openReset(
     context: HilosSettingsContext,
   ): ComponentFixture<HilosSettingsPage> {
@@ -1424,9 +1433,158 @@ describe('HilosSettingsPage reset dialog', () => {
     expect(resetButton(root, 'site_name')?.disabled).toBe(false)
     expect(resetButton(root, 'on_default')?.disabled).toBe(true)
     expect(resetButton(root, 'orphan')).toBeNull()
+    const orphanDelete = root.querySelector<HTMLButtonElement>(
+      'table [data-id="hilos-settings-delete-orphan"]',
+    )
+    expect(orphanDelete).not.toBeNull()
     expect(
-      root.querySelector('table [data-id="hilos-settings-delete-orphan"]'),
-    ).not.toBeNull()
+      orphanDelete?.closest('tr')?.querySelector('button[hilosActionReason]'),
+    ).toBeNull()
+  })
+
+  it('explains a disabled reset with the server reason and sends no action', () => {
+    const reason = 'Choose a custom value before resetting this setting.'
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'default',
+        resetDisabledReason: reason,
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    const reset = resetButton(root, 'site_name')!
+    const why = reasonButton(root)
+
+    expect(reset.disabled).toBe(true)
+    expect(why.type).toBe('button')
+    expect(why.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(why.hidden).toBe(false)
+
+    why.click()
+    fixture.detectChanges()
+
+    const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-label')).toBe('Action unavailable')
+    expect(
+      document.querySelector('[data-id="hilos-action-reason-body"]')
+        ?.textContent,
+    ).toContain(reason)
+    expect(
+      root.querySelector('[data-id="hilos-settings-reset-confirm"]'),
+    ).toBeNull()
+    expect(sent).toEqual([])
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
+  })
+
+  it('hides a hidden reason from the title and draws its standard mark', () => {
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'default',
+        resetDisabledReason: HIDDEN_VALUE,
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    const why = reasonButton(root)
+
+    expect(why.hidden).toBe(false)
+    expect(why.hasAttribute('title')).toBe(false)
+    why.click()
+    fixture.detectChanges()
+
+    const body = document.querySelector<HTMLElement>(
+      '[data-id="hilos-action-reason-body"]',
+    )
+    expect(body?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body?.textContent?.trim()).toBe('Hidden')
+    expect(why.hasAttribute('title')).toBe(false)
+    expect(document.body.textContent).not.toContain('_hidden')
+    expect(sent).toEqual([])
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
+  })
+
+  it('tracks a reason clearing and returning with the live setting row', () => {
+    const initialReason = 'The setting is still using its catalog value.'
+    const nextReason = 'The setting still uses its catalog default.'
+    const { context, pushUpdate, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'default',
+        resetDisabledReason: initialReason,
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    const reset = resetButton(root, 'site_name')!
+    const why = reasonButton(root)
+
+    why.click()
+    fixture.detectChanges()
+    const body = document.querySelector<HTMLElement>(
+      '[data-id="hilos-action-reason-body"]',
+    )
+
+    pushUpdate(
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Mine',
+        overrideValue: 'Mine',
+      }),
+    )
+    fixture.detectChanges()
+    expect(reset.disabled).toBe(false)
+    expect(why.hidden).toBe(true)
+    expect(why.hasAttribute('title')).toBe(false)
+    expect(body?.textContent).toContain(initialReason)
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
+
+    pushUpdate(
+      slot({
+        key: 'site_name',
+        valueSource: 'default',
+        resetDisabledReason: nextReason,
+      }),
+    )
+    fixture.detectChanges()
+    expect(reset.disabled).toBe(true)
+    expect(why.hidden).toBe(false)
+    why.click()
+    fixture.detectChanges()
+    expect(
+      document.querySelector('[data-id="hilos-action-reason-body"]')
+        ?.textContent,
+    ).toContain(nextReason)
+    expect(sent).toEqual([])
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
   })
 
   it('opens on ↺ with the row in focus and sends nothing', () => {

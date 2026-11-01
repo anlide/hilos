@@ -56,7 +56,8 @@ export const language: HilosI18nLanguageRow = {
   isOwn: false,
   canDelete: true,
   deleteReason: null,
-  deleteDisabledReason: null,
+  deleteDisabledReason:
+    'The server has not cleared this language for deletion.',
 }
 
 /** The main card of {@link language}. */
@@ -225,7 +226,7 @@ export const country: HilosI18nCountryRow = {
   catalogDefaultLocaleCode: 'en-US',
   canDelete: false,
   deleteReason: 'known',
-  deleteDisabledReason: null,
+  deleteDisabledReason: 'The server does not allow this country to be deleted.',
 }
 
 /** The main card of {@link country}. */

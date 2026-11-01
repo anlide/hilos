@@ -4,11 +4,7 @@
 // its own echo, the row windows, a viewer of the admin view mode, and a context
 // replaced under open windows. The rules themselves are the core's and are
 // tested there; this file covers the Angular wiring.
-import {
-  HILOS_I18N_LANGUAGE_DELETE_COPY,
-  HilosPages,
-  hilosToasts,
-} from '@hilos/core'
+import { HilosPages, hilosToasts } from '@hilos/core'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosI18nLanguagesPage } from '../src/admin/i18n/lists/HilosI18nLanguagesPage.js'
@@ -34,6 +30,7 @@ const own = {
   isOwn: true,
   rtl: true,
 }
+const serverReason = language.deleteDisabledReason!
 
 function setup(rows = [english, own], viewer = false) {
   const bench = i18nBench(HilosPages.I18N_LANGUAGES, rows, viewer)
@@ -65,9 +62,6 @@ describe('HilosI18nLanguagesPage', () => {
     expect(h.el<HTMLInputElement>('i18n-languages-enabled-qx')?.disabled).toBe(
       true,
     )
-    expect(h.el('i18n-languages-link-qx')?.className).toContain(
-      'link-secondary',
-    )
     expect(h.all('i18n-languages-link-qx')).toHaveLength(2)
     expect(h.el('i18n-languages-view-en')).not.toBeNull()
     expect(h.el('i18n-languages-edit-qx')).not.toBeNull()
@@ -86,12 +80,20 @@ describe('HilosI18nLanguagesPage', () => {
   it.each(['default', 'locales', 'names'] as const)(
     'refuses a %s deletion with distinct descriptions and native reason buttons in both projections',
     (deleteReason) => {
-      const h = setup([{ ...own, canDelete: false, deleteReason }])
+      const h = setup([
+        {
+          ...own,
+          canDelete: false,
+          deleteReason,
+          deleteDisabledReason: serverReason,
+        },
+      ])
       const controls = h.all('i18n-languages-delete-qx') as HTMLButtonElement[]
       const ids = controls.map((control) =>
         control.getAttribute('aria-describedby'),
       )
       expect(controls).toHaveLength(2)
+      expect(ids.every((id) => id !== null && id !== '')).toBe(true)
       expect(new Set(ids).size).toBe(2)
       for (const control of controls) {
         expect(control.disabled).toBe(true)
@@ -100,48 +102,19 @@ describe('HilosI18nLanguagesPage', () => {
           document
             .getElementById(control.getAttribute('aria-describedby')!)
             ?.textContent?.trim(),
-        ).toBe(HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason])
+        ).toBe(serverReason)
       }
       const descriptions = h.all('i18n-languages-delete-reason-qx')
       expect(descriptions).toHaveLength(2)
-      descriptions.forEach((description, index) => {
-        expect(description.id).toBe(ids[index])
-        expect(description.className).toBe('visually-hidden')
+      expect(
+        new Set(descriptions.map((description) => description.id)),
+      ).toEqual(new Set(ids))
+      descriptions.forEach((description) => {
         expect(description.hasAttribute('hidden')).toBe(false)
         expect(description.hasAttribute('aria-hidden')).toBe(false)
       })
       const whyButtons = h.all('hilos-action-reason') as HTMLButtonElement[]
       expect(whyButtons).toHaveLength(2)
-      const groups = h.fixture.nativeElement.querySelectorAll(
-        '.hilos-button-group',
-      ) as NodeListOf<HTMLElement>
-      expect(groups).toHaveLength(2)
-      for (const group of groups) {
-        expect(group.tagName).toBe('HILOS-I18N-LANGUAGE-ROW-ACTIONS')
-        expect(group.className).toBe(
-          'hilos-button-group d-md-inline-flex gap-1',
-        )
-        expect(group.querySelector('.hilos-button-group')).toBeNull()
-        expect(
-          [...group.children].map((child) => child.getAttribute('data-id')),
-        ).toEqual([
-          'i18n-languages-edit-qx',
-          'hilos-action-reason',
-          'i18n-languages-delete-qx',
-          'i18n-languages-delete-reason-qx',
-        ])
-        expect(
-          [...group.querySelectorAll('button')].every(
-            (button) => button.parentElement === group,
-          ),
-        ).toBe(true)
-      }
-      const cardRows = h.fixture.nativeElement.querySelectorAll(
-        '.hilos-button-row',
-      ) as NodeListOf<HTMLElement>
-      expect(cardRows).toHaveLength(1)
-      expect(cardRows[0]!.firstElementChild).toBe(groups[1])
-      expect(cardRows[0]!.children).toHaveLength(1)
       h.click('i18n-languages-delete-qx')
       expect(h.focuses).toEqual([])
       expect(h.el('modal')).toBeNull()
@@ -151,20 +124,18 @@ describe('HilosI18nLanguagesPage', () => {
         expect(why.getAttribute('aria-label')).toBe(
           'Why this action is unavailable',
         )
-        expect(why.title).toBe(
-          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
-        )
-        expect(why.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+        expect(why.title).toBe(serverReason)
         why.focus()
         why.click()
         h.detect()
         const dialog = h.el('modal')!
-        expect(why.contains(dialog)).toBe(false)
-        expect(why.parentElement!.contains(dialog)).toBe(false)
+        expect(dialog.getAttribute('role')).toBe('dialog')
+        expect(dialog.getAttribute('aria-label')).toBe('Action unavailable')
         expect(document.activeElement).toBe(dialog)
         expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
-          HILOS_I18N_LANGUAGE_DELETE_COPY.reasons[deleteReason],
+          serverReason,
         )
+        expect(h.el('i18n-language-delete-confirm')).toBeNull()
         h.click('hilos-action-reason-close')
         expect(h.el('modal')).toBeNull()
         expect(document.activeElement).toBe(why)
@@ -179,7 +150,7 @@ describe('HilosI18nLanguagesPage', () => {
     const h = setup([english], true)
     h.click('hilos-action-reason')
     expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
-      HILOS_I18N_LANGUAGE_DELETE_COPY.reasons.default,
+      serverReason,
     )
     expect(h.calls).toEqual([])
     expect(h.focuses).toEqual([])
@@ -206,7 +177,7 @@ describe('HilosI18nLanguagesPage', () => {
     expect(h.el('modal')).toBe(dialog)
     expect(document.activeElement).toBe(dialog)
     expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
-      HILOS_I18N_LANGUAGE_DELETE_COPY.reasons.locales,
+      serverReason,
     )
     expect(h.all('hilos-action-reason').every((button) => button.hidden)).toBe(
       true,

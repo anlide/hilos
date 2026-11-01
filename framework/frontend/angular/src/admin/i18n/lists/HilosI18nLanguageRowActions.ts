@@ -15,7 +15,7 @@ import {
 import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
-  hilosI18nLanguageDelete,
+  hilosI18nLanguageRowDelete,
 } from '@hilos/core/admin/i18n'
 import type { HilosI18nLanguageRow } from '@hilos/core/admin/i18n'
 
@@ -94,8 +94,9 @@ export class HilosI18nLanguageRowActions {
 
   protected readonly copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
   protected readonly deleteCopy = HILOS_I18N_LANGUAGE_DELETE_COPY
-  protected readonly verdict = computed(() =>
-    hilosI18nLanguageDelete(this.row()),
-  )
+  protected readonly verdict = computed(() => {
+    const verdict = hilosI18nLanguageRowDelete(this.row())
+    return verdict.disabled ? verdict : { ...verdict, reason: null }
+  })
   protected readonly reasonId = `i18n-language-delete-reason-${languageRowActionsSeq++}`
 }

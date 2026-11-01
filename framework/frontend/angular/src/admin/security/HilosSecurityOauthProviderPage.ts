@@ -44,12 +44,13 @@ import type {
   HilosSecurityOauthContext,
   OAuthValueSource,
 } from '@hilos/core/admin/security'
-import type { TableViewportRow } from '@hilos/core/base'
+import type { Hideable, TableViewportRow } from '@hilos/core/base'
 
 import {
   ConflictActions,
   ConflictHeader,
   HilosActionError,
+  HilosActionReason,
   HilosAdminPage,
   HilosEditNotice,
   HilosHideable,
@@ -91,6 +92,7 @@ function resetNowText(row: HilosOAuthFieldRow): string {
   imports: [
     HilosAdminPage,
     HilosActionError,
+    HilosActionReason,
     HilosEditNotice,
     HilosHideable,
     HilosModal,
@@ -161,11 +163,16 @@ function resetNowText(row: HilosOAuthFieldRow): string {
               ></i>
             </button>
             <button
+              hilosActionReason
+              [reason]="resetReason(row)"
+              data-id="hilos-action-reason"
+            ></button>
+            <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
               title="Reset to default"
               aria-label="Reset to default"
-              [disabled]="row.source !== 'db'"
+              [disabled]="!canReset(row)"
               [attr.data-id]="'hilos-oauth-field-reset-' + row.field"
               (click)="openReset(row)"
             >
@@ -483,6 +490,12 @@ export class HilosSecurityOauthProviderPage {
 
     return row === undefined || row.source !== 'db'
   })
+  protected canReset(row: HilosOAuthFieldRow): boolean {
+    return row.source === 'db'
+  }
+  protected resetReason(row: HilosOAuthFieldRow): Hideable<string | null> {
+    return this.canReset(row) ? null : row.resetDisabledReason
+  }
   protected readonly resetTitle = computed(() => {
     const row = this.resetRow()
 

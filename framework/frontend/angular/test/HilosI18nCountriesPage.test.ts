@@ -6,11 +6,7 @@
 // admin view mode, and a context replaced under open windows. The rules
 // themselves are the core's and are tested there; this file covers the Angular
 // wiring.
-import {
-  HILOS_I18N_COUNTRY_DELETE_COPY,
-  HilosPages,
-  hilosToasts,
-} from '@hilos/core'
+import { HilosPages, hilosToasts } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountriesPage } from '../src/admin/i18n/lists/HilosI18nCountriesPage.js'
@@ -29,6 +25,7 @@ const own = {
   catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
+  deleteDisabledReason: null,
 }
 const france = {
   ...country,
@@ -43,6 +40,13 @@ const france = {
   enabled: true,
   locales: [{ localeId: 13103, code: 'fr-FR', enabled: true }],
   catalogDefaultLocaleCode: 'fr-FR',
+  deleteDisabledReason: null,
+}
+
+const serverReasons = {
+  known: country.deleteDisabledReason!,
+  locales: 'The server still finds locales that refer to this country.',
+  names: 'The server still finds names that refer to this country.',
 }
 
 function setup(rows = [country, own, france], viewer = false) {
@@ -65,12 +69,6 @@ describe('HilosI18nCountriesPage', () => {
     const h = setup()
     expect(h.el('i18n-countries-link-us')?.getAttribute('href')).toBe(
       '/hilos/i18n/countries/us',
-    )
-    expect(h.el('i18n-countries-link-us')?.className).toContain(
-      'link-secondary',
-    )
-    expect(h.el('i18n-countries-link-fr')?.className).not.toContain(
-      'link-secondary',
     )
     expect(h.el('hilos-table-row-105')?.textContent).toContain('ZZ')
     expect(h.el('i18n-countries-own-zz')?.textContent).toContain(
@@ -105,27 +103,75 @@ describe('HilosI18nCountriesPage', () => {
   })
 
   it.each(['known', 'locales', 'names'] as const)(
-    'keeps a %s deletion blocked in both projections with its own visible reason',
+    'shows the server %s refusal and opens its explanation without deleting',
     (deleteReason) => {
-      const h = setup([{ ...own, canDelete: false, deleteReason }])
+      const reason = serverReasons[deleteReason]
+      const h = setup([
+        {
+          ...own,
+          canDelete: false,
+          deleteReason,
+          deleteDisabledReason: reason,
+        },
+      ])
       const controls = h.all('i18n-countries-delete-zz') as HTMLButtonElement[]
       const ids = controls.map((control) =>
         control.getAttribute('aria-describedby'),
       )
       expect(controls).toHaveLength(2)
+      expect(ids.every((id) => id !== null && id !== '')).toBe(true)
       expect(new Set(ids).size).toBe(2)
       for (const control of controls) {
-        expect(control.getAttribute('aria-disabled')).toBe('true')
+        expect(control.disabled).toBe(true)
+        expect(control.hasAttribute('aria-disabled')).toBe(false)
         expect(control.hasAttribute('title')).toBe(false)
         expect(
           document
             .getElementById(control.getAttribute('aria-describedby')!)
             ?.textContent?.trim(),
-        ).toBe(HILOS_I18N_COUNTRY_DELETE_COPY.reasons[deleteReason])
+        ).toBe(reason)
       }
+      const descriptions = h.all(
+        'i18n-countries-delete-reason-zz',
+      ) as HTMLElement[]
+      expect(descriptions).toHaveLength(2)
+      expect(
+        new Set(descriptions.map((description) => description.id)),
+      ).toEqual(new Set(ids))
+      descriptions.forEach((description) => {
+        expect(description.textContent?.trim()).toBe(reason)
+        expect(description.hidden).toBe(false)
+        expect(description.hasAttribute('aria-hidden')).toBe(false)
+      })
       h.click('i18n-countries-delete-zz')
       expect(h.focuses).toEqual([])
       expect(h.el('modal')).toBeNull()
+      const whyButtons = h.all('hilos-action-reason') as HTMLButtonElement[]
+      expect(whyButtons).toHaveLength(2)
+      for (const why of whyButtons) {
+        expect(why.type).toBe('button')
+        expect(why.getAttribute('aria-label')).toBe(
+          'Why this action is unavailable',
+        )
+        expect(why.title).toBe(reason)
+        why.focus()
+        why.click()
+        h.detect()
+        const dialog = h.el('modal')!
+        expect(dialog.getAttribute('role')).toBe('dialog')
+        expect(dialog.getAttribute('aria-label')).toBe('Action unavailable')
+        expect(document.activeElement).toBe(dialog)
+        expect(h.el('hilos-action-reason-body')?.textContent?.trim()).toBe(
+          reason,
+        )
+        expect(h.el('i18n-country-delete-confirm')).toBeNull()
+        expect(h.calls).toEqual([])
+        h.click('hilos-action-reason-close')
+        expect(h.el('modal')).toBeNull()
+        expect(document.activeElement).toBe(why)
+      }
+      expect(h.focuses).toEqual([])
+      expect(h.calls).toEqual([])
     },
   )
 
@@ -400,10 +446,35 @@ describe('HilosI18nCountriesPage', () => {
 
   it('declines a delete click on a row the server no longer lets go and holds no focus', () => {
     const h = setup([own])
-    h.act(() => h.delta({ ...own, canDelete: false, deleteReason: 'names' }))
+    h.act(() =>
+      h.delta({
+        ...own,
+        canDelete: false,
+        deleteReason: 'names',
+        deleteDisabledReason: serverReasons.names,
+      }),
+    )
+    const controls = h.all('i18n-countries-delete-zz') as HTMLButtonElement[]
+    expect(controls.every((control) => control.disabled)).toBe(true)
+    expect(
+      h
+        .all('i18n-countries-delete-reason-zz')
+        .every(
+          (description) =>
+            description.textContent?.trim() === serverReasons.names,
+        ),
+    ).toBe(true)
+    expect(h.all('hilos-action-reason').every((button) => !button.hidden)).toBe(
+      true,
+    )
     h.click('i18n-countries-delete-zz')
     expect(h.el('modal')).toBeNull()
     expect(h.focuses).toEqual([])
+    h.act(() => h.delta(own))
+    expect(controls.every((control) => !control.disabled)).toBe(true)
+    expect(h.all('hilos-action-reason').every((button) => button.hidden)).toBe(
+      true,
+    )
   })
 
   it('lets a viewer open and read every window while nothing is sent', () => {

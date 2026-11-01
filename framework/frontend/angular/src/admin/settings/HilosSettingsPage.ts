@@ -26,6 +26,7 @@ import {
   untracked,
 } from '@angular/core'
 import { HilosPages, hilosRowEditIdle } from '@hilos/core/base'
+import type { Hideable } from '@hilos/core/base'
 import {
   createHilosSettingsActions,
   createHilosSettingEdit,
@@ -44,6 +45,7 @@ import {
   ConflictActions,
   ConflictHeader,
   HilosActionError,
+  HilosActionReason,
   HilosAdminPage,
   HilosEditNotice,
   HilosModal,
@@ -81,6 +83,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
     HilosViewportTable,
     HilosModal,
     HilosActionError,
+    HilosActionReason,
     HilosEditNotice,
     LoadingButton,
     HilosSettingValueCell,
@@ -125,6 +128,11 @@ function inputStep(type: string | undefined): 'any' | undefined {
             ></i>
           </button>
           @if (!isOrphan(row)) {
+            <button
+              hilosActionReason
+              [reason]="resetReason(row)"
+              data-id="hilos-action-reason"
+            ></button>
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
@@ -449,6 +457,10 @@ export class HilosSettingsPage {
   protected readonly page = HilosPages.SETTINGS
   protected readonly hasCustom = hasCustomValue
   protected readonly isOrphan = isOrphanSetting
+
+  protected resetReason(row: HilosSettingRow): Hideable<string | null> {
+    return this.hasCustom(row) ? null : row.resetDisabledReason
+  }
 
   protected readonly settings = computed(() =>
     createHilosSettingsTable(this.context()),

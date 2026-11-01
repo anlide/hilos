@@ -82,6 +82,7 @@ import type {
 } from '@hilos/core/admin/backup'
 
 import {
+  HilosActionReason,
   HilosActionError,
   HilosAdminPage,
   HilosHiddenMark,
@@ -102,6 +103,7 @@ import {
   selector: 'hilos-backup-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    HilosActionReason,
     HilosAdminPage,
     HilosHiddenMark,
     HilosHideable,
@@ -373,18 +375,15 @@ import {
           }
           @if (offersRestore(row)) {
             @if (restoreGate().uiEnabled) {
-              @if (restoreBlockedReason(row) !== null) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary"
-                  title="Why this backup cannot be restored"
-                  aria-label="Why this backup cannot be restored"
-                  [attr.data-id]="'hilos-backup-blocked-why-' + row.id"
-                  (click)="openBlocked(row)"
-                >
-                  <i class="bi bi-question-circle" aria-hidden="true"></i>
-                </button>
-              }
+              <!-- The shared "why" shows whatever restoreBlockedReason() returns
+              without knowing the cases, so a reason added there is shown here unchanged. -->
+              <button
+                hilosActionReason
+                [reason]="restoreBlockedReason(row)"
+                label="Why this backup cannot be restored"
+                [title]="'Cannot restore · ' + row.id"
+                data-id="hilos-action-reason"
+              ></button>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-warning"
@@ -520,32 +519,6 @@ import {
             type="button"
             class="btn btn-secondary"
             data-id="hilos-backup-details-close"
-            (click)="requestClose()"
-          >
-            Close
-          </button>
-        </ng-template>
-      </hilos-modal>
-
-      <hilos-modal
-        [open]="blockedOpen()"
-        (openChange)="blockedOpen.set($event)"
-        [title]="blockedTitle()"
-        initialFocus="dialog"
-      >
-        <hilos-hideable [value]="blockedReason()">
-          <ng-template let-reason>
-            <hilos-long-text
-              kind="prose"
-              [text]="reason"
-              dataId="hilos-backup-blocked-reason-text"
-            />
-          </ng-template>
-        </hilos-hideable>
-        <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
             (click)="requestClose()"
           >
             Close
@@ -878,22 +851,6 @@ export class HilosBackupPage {
     return row ? `Backup failed · ${row.id}` : 'Backup failed'
   })
 
-  // Blocked-restore dialog: the sentence behind the "why" button of a dark restore
-  // button. It shows whatever restoreBlockedReason() returns rather than knowing the
-  // cases, so a reason added there is shown here without a word changed.
-  protected readonly blockedOpen = signal(false)
-  protected readonly blockedRow = signal<HilosBackupRow | null>(null)
-  protected readonly blockedTitle = computed(() => {
-    const row = this.blockedRow()
-
-    return row ? `Cannot restore · ${row.id}` : 'Cannot restore'
-  })
-  protected readonly blockedReason = computed(() => {
-    const row = this.blockedRow()
-
-    return row === null ? '' : (this.restoreBlockedReason(row) ?? '')
-  })
-
   // Copy-failure dialog: why the last copy of an archive off the machine did not make
   // it. The word stays in the cell; the reason is one click away rather than in a title
   // no phone and no screen reader reaches.
@@ -1073,11 +1030,6 @@ export class HilosBackupPage {
   protected openDetails(row: HilosBackupRow): void {
     this.detailsRow.set(row)
     this.detailsOpen.set(true)
-  }
-
-  protected openBlocked(row: HilosBackupRow): void {
-    this.blockedRow.set(row)
-    this.blockedOpen.set(true)
   }
 
   protected openShipError(row: HilosBackupRow): void {

@@ -19,12 +19,14 @@ import {
   createSignal,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosConnection,
   HilosRouter,
   HilosSecurityOauthContext,
   PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core'
+import { HIDDEN_VALUE } from '@hilos/core/base'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -79,6 +81,7 @@ function fieldSlot(
     defaultValue?: unknown
     defaultSource?: 'env' | 'default'
     defaultSetState?: boolean
+    resetDisabledReason?: Hideable<string | null>
   } = {},
 ): Record<string, unknown> {
   const secret = field === 'client_secret'
@@ -102,6 +105,7 @@ function fieldSlot(
             : '',
     defaultSource: fallback.defaultSource ?? 'default',
     defaultSetState: fallback.defaultSetState ?? field === 'scope',
+    resetDisabledReason: fallback.resetDisabledReason ?? null,
   }
 }
 
@@ -128,6 +132,7 @@ function seededContext(
       defaultValue?: unknown
       defaultSource?: 'env' | 'default'
       defaultSetState?: boolean
+      resetDisabledReason?: Hideable<string | null>
     },
   ) => void
   pushProviderConfigured: (configured: boolean) => void
@@ -629,6 +634,12 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     ) as HTMLButtonElement
   }
 
+  function reasonButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      'table button[hilosActionReason]',
+    ) as HTMLButtonElement
+  }
+
   function confirmButton(
     fixture: ComponentFixture<unknown>,
   ): HTMLButtonElement {
@@ -905,6 +916,117 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     fixture.detectChanges()
 
     expect(resetButton(fixture, 'client_id').disabled).toBe(true)
+  })
+
+  it('explains a disabled reset with the server reason and sends no action', () => {
+    const reason = 'This field is configured by the environment.'
+    const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    pushUpdate('Iv1.env', 'env', { resetDisabledReason: reason })
+    const fixture = mountPage(context)
+    const reset = resetButton(fixture, 'client_id')
+    const why = reasonButton(fixture)
+
+    expect(reset.disabled).toBe(true)
+    expect(why.type).toBe('button')
+    expect(why.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    expect(why.hidden).toBe(false)
+    why.click()
+    fixture.detectChanges()
+
+    const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-label')).toBe('Action unavailable')
+    expect(
+      document.querySelector('[data-id="hilos-action-reason-body"]')
+        ?.textContent,
+    ).toContain(reason)
+    expect(el(fixture, 'hilos-oauth-field-reset-confirm')).toBeNull()
+    expect(sent).toEqual([])
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
+  })
+
+  it('hides a hidden reason from the title and draws its standard mark', () => {
+    const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    pushUpdate('Iv1.env', 'env', { resetDisabledReason: HIDDEN_VALUE })
+    const fixture = mountPage(context)
+    const why = reasonButton(fixture)
+
+    expect(why.hidden).toBe(false)
+    expect(why.hasAttribute('title')).toBe(false)
+    why.click()
+    fixture.detectChanges()
+
+    const body = document.querySelector<HTMLElement>(
+      '[data-id="hilos-action-reason-body"]',
+    )
+    expect(body?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body?.textContent?.trim()).toBe('Hidden')
+    expect(why.hasAttribute('title')).toBe(false)
+    expect(document.body.textContent).not.toContain('_hidden')
+    expect(sent).toEqual([])
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
+  })
+
+  it('tracks a reason clearing and returning with the live provider field', () => {
+    const initialReason = 'The field is configured by the environment.'
+    const nextReason = 'The field is still using its application default.'
+    const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    pushUpdate('Iv1.env', 'env', { resetDisabledReason: initialReason })
+    const fixture = mountPage(context)
+    const reset = resetButton(fixture, 'client_id')
+    const why = reasonButton(fixture)
+
+    why.click()
+    fixture.detectChanges()
+    const body = document.querySelector<HTMLElement>(
+      '[data-id="hilos-action-reason-body"]',
+    )
+
+    pushUpdate('Iv1.admin', 'db')
+    fixture.detectChanges()
+    expect(reset.disabled).toBe(false)
+    expect(why.hidden).toBe(true)
+    expect(why.hasAttribute('title')).toBe(false)
+    expect(body?.textContent).toContain(initialReason)
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
+
+    pushUpdate('Iv1.env', 'env', { resetDisabledReason: nextReason })
+    fixture.detectChanges()
+    expect(reset.disabled).toBe(true)
+    expect(why.hidden).toBe(false)
+    why.click()
+    fixture.detectChanges()
+    expect(
+      document.querySelector('[data-id="hilos-action-reason-body"]')
+        ?.textContent,
+    ).toContain(nextReason)
+    expect(sent).toEqual([])
+
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-reason-close"]',
+      )!
+      .click()
+    fixture.detectChanges()
   })
 })
 

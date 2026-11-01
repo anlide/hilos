@@ -1,6 +1,11 @@
 import { Component, signal } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
-import { createSignal, registerFocusReturnFallback } from '@hilos/core/base'
+import {
+  HIDDEN_VALUE,
+  type Hideable,
+  createSignal,
+  registerFocusReturnFallback,
+} from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosActionReason } from '../src/base/index.js'
@@ -29,7 +34,7 @@ const reason = 'Cannot delete: the language has locales.'
   `,
 })
 class ReasonHost {
-  readonly reason = signal<string | null>(reason)
+  readonly reason = signal<Hideable<string | null>>(reason)
   readonly label = signal('Why this action is unavailable')
   readonly title = signal('Action unavailable')
   readonly present = signal(true)
@@ -193,6 +198,68 @@ describe('HilosActionReason', () => {
     expect(element('hilos-action-reason-body').textContent?.trim()).toBe(
       'Cannot delete: this is the default language.',
     )
+  })
+
+  it('opens a hidden reason on the standard mark without a title or leaked words', () => {
+    const h = mount()
+    h.host.reason.set(HIDDEN_VALUE)
+    h.detect()
+    const opener = element('hilos-action-reason') as HTMLButtonElement
+    expect(opener.hidden).toBe(false)
+    expect(opener.disabled).toBe(false)
+    expect(opener.hasAttribute('title')).toBe(false)
+    expect(opener.getAttribute('aria-label')).toBe(
+      'Why this action is unavailable',
+    )
+    h.open()
+    const dialog = element('modal')
+    const body = element('hilos-action-reason-body')
+    expect(body.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(body.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object')
+    expect(dialog.getAttribute('aria-label')).toBe('Action unavailable')
+    expect(document.activeElement).toBe(dialog)
+    h.close()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('keeps a hidden snapshot through open and null sources, then reads the fresh reason', () => {
+    const h = mount()
+    h.host.reason.set(HIDDEN_VALUE)
+    h.detect()
+    h.open()
+    const dialog = element('modal')
+    h.host.reason.set(reason)
+    h.detect()
+    expect(element('hilos-action-reason').getAttribute('title')).toBe(reason)
+    expect(
+      element('hilos-action-reason-body').querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    h.host.reason.set(null)
+    h.detect()
+    expect(element('hilos-action-reason').hidden).toBe(true)
+    expect(element('modal')).toBe(dialog)
+    expect(document.activeElement).toBe(dialog)
+    expect(
+      element('hilos-action-reason-body').querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    h.close()
+    h.host.reason.set(reason)
+    h.detect()
+    h.open()
+    const body = element('hilos-action-reason-body')
+    expect(body.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+    expect(body.textContent?.trim()).toBe(reason)
+    h.close()
+    h.host.reason.set(HIDDEN_VALUE)
+    h.detect()
+    expect(element('hilos-action-reason').hasAttribute('title')).toBe(false)
   })
 
   it.each(['hidden', 'disabled', 'removed'] as const)(

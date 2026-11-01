@@ -16,6 +16,7 @@ import {
   computedSignal,
   hilosRowEditIdle,
 } from '@hilos/core/base'
+import type { Hideable } from '@hilos/core/base'
 import {
   createHilosChannelFields,
   createHilosChannelSummary,
@@ -36,6 +37,7 @@ import {
   ConflictActions,
   ConflictHeader,
   HilosActionError,
+  HilosActionReason,
   HilosAdminPage,
   HilosEditNotice,
   HilosHiddenMark,
@@ -78,6 +80,7 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
     HilosCommunicationsChannelHead,
     HilosModal,
     HilosActionError,
+    HilosActionReason,
     HilosEditNotice,
     HilosHiddenMark,
     HilosHideable,
@@ -143,11 +146,16 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
               <i class="bi bi-pencil" aria-hidden="true"></i>
             </button>
             <button
+              hilosActionReason
+              [reason]="resetReason(row)"
+              data-id="hilos-action-reason"
+            ></button>
+            <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
               title="Reset to default"
               aria-label="Reset to default"
-              [disabled]="row.valueSource !== 'settings'"
+              [disabled]="!canReset(row)"
               [attr.data-id]="'hilos-channel-field-reset-' + row.field"
               (click)="openReset(row)"
             >
@@ -410,6 +418,12 @@ export class HilosCommunicationsChannelConfigurationPage {
 
     return row === undefined || row.valueSource !== 'settings'
   })
+  protected canReset(row: HilosChannelFieldRow): boolean {
+    return row.valueSource === 'settings'
+  }
+  protected resetReason(row: HilosChannelFieldRow): Hideable<string | null> {
+    return this.canReset(row) ? null : row.resetDisabledReason
+  }
   protected readonly resetTitle = computed(() => {
     const row = this.resetRow()
 

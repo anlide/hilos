@@ -172,7 +172,7 @@ interface SeededOptions {
  * @param initial The archives the table's window carries.
  * @param actions The action lifecycle a dispatch travels through.
  * @param options What the page's own answer says about restoring and reopening.
- * @returns The context to mount the page with.
+ * @returns The context to mount the page with, and a live row update emitter.
  */
 function seededContext(
   initial: BackupFixture[] = [ARCHIVE_FIXTURE],
@@ -180,6 +180,7 @@ function seededContext(
   options: SeededOptions = {},
 ): {
   context: HilosBackupsContext
+  pushUpdate: (item: BackupFixture) => void
 } {
   const rows = initial.slice()
   const scopes = new ScopeManager()
@@ -193,6 +194,21 @@ function seededContext(
 
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const pushUpdate = (item: BackupFixture): void => {
+    const index = rows.findIndex((row) => row.id === item.id)
+    if (index !== -1) rows[index] = item
+    for (const listener of deltaListeners) {
+      listener({
+        data: {
+          page: HilosPages.BACKUP,
+          tableKey: BACKUPS_TABLE,
+          kind: 'row_updated',
+          rowKey: item.id,
+          row: wireRow(item),
+        },
+      })
+    }
+  }
   const serveWindow = (
     pageKey: string = HilosPages.BACKUP,
     tableKey: string = BACKUPS_TABLE,
@@ -258,6 +274,7 @@ function seededContext(
       scopes,
       actions,
     },
+    pushUpdate,
   }
 }
 
@@ -335,8 +352,8 @@ function enter(
 }
 
 /**
- * The element standing under the id in the document. The Angular modal renders in
- * place rather than through a portal, so one query covers the page and its dialogs.
+ * The element standing under the id in the document. This finds page modals that
+ * render in place and the action-reason modal that HilosActionReason relocates.
  *
  * @param id The `data-id` the page renders on the node.
  */
@@ -353,6 +370,17 @@ function byId<T extends HTMLElement = HTMLElement>(id: string): T | null {
  */
 function inTable<T extends HTMLElement = HTMLElement>(id: string): T | null {
   return document.querySelector<T>(`table [data-id="${id}"]`)
+}
+
+/**
+ * The card projection of the backup row's control.
+ *
+ * @param id The `data-id` the card renders on the control.
+ */
+function inCard<T extends HTMLElement = HTMLElement>(id: string): T | null {
+  return document.querySelector<T>(
+    `[data-id="hilos-table-card-${ARCHIVE_ID}"] [data-id="${id}"]`,
+  )
 }
 
 describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
@@ -474,6 +502,200 @@ describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
     expect(
       modal()?.querySelector('[data-id="hilos-backup-ship-error-text"]'),
     ).toBeNull()
+  })
+})
+
+describe('HilosBackupPage why a restore is blocked', () => {
+  const RESTORE_GATE = {
+    backupRestore: { uiEnabled: true, targetEnv: 'dev' },
+  }
+  const OUT_OF_REACH_REASON =
+    'Stored on node node-2 - the backup agent runs elsewhere, so this archive cannot be reached from here'
+  const HIDDEN = { _hidden: true }
+
+  it.each([
+    [
+      'an archive stored on another node',
+      { holderNode: 'node-2' },
+      OUT_OF_REACH_REASON,
+    ],
+    [
+      'a checksum mismatch',
+      { checksumState: 'mismatch' },
+      'This archive does not match its recorded checksum',
+    ],
+  ] as const)(
+    'explains %s from the row and card without opening restore',
+    (_scenario, backupFields, reason) => {
+      const { actions, dispatched } = makeActions()
+      const { context } = seededContext(
+        [
+          {
+            ...ARCHIVE_FIXTURE,
+            backup: { ...ARCHIVE_FIXTURE.backup, ...backupFields },
+          },
+        ],
+        actions,
+        RESTORE_GATE,
+      )
+      const fixture = mountPage(context)
+
+      const restore = inTable<HTMLButtonElement>(
+        `hilos-backup-restore-${ARCHIVE_ID}`,
+      )
+      const opener = inTable<HTMLButtonElement>('hilos-action-reason')
+      const cardOpener = inCard<HTMLButtonElement>('hilos-action-reason')
+      expect(restore?.disabled).toBe(true)
+      expect(opener?.type).toBe('button')
+      expect(opener?.disabled).toBe(false)
+      expect(opener?.getAttribute('aria-label')).toBe(
+        'Why this backup cannot be restored',
+      )
+      expect(opener?.title).toBe(reason)
+      expect(cardOpener?.getAttribute('aria-label')).toBe(
+        'Why this backup cannot be restored',
+      )
+      expect(
+        inCard<HTMLButtonElement>(`hilos-backup-restore-${ARCHIVE_ID}`)
+          ?.disabled,
+      ).toBe(true)
+
+      opener!.focus()
+      click(fixture, opener)
+
+      const dialog = byId('modal')
+      expect(dialog?.getAttribute('role')).toBe('dialog')
+      expect(dialog?.getAttribute('aria-modal')).toBe('true')
+      expect(dialog?.getAttribute('aria-label')).toBe(
+        `Cannot restore · ${ARCHIVE_ID}`,
+      )
+      expect(document.activeElement).toBe(dialog)
+      expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(reason)
+      expect(byId('hilos-backup-restore-id')).toBeNull()
+      expect(byId('hilos-backup-restore-confirm')).toBeNull()
+      expect(dispatched).toHaveLength(0)
+
+      click(fixture, byId('hilos-action-reason-close'))
+      expect(byId('modal')).toBeNull()
+      expect(document.activeElement).toBe(opener)
+    },
+  )
+
+  it('shows a hidden migration notice through the mark without leaking it', () => {
+    const { actions, dispatched } = makeActions()
+    const { context } = seededContext(
+      [
+        {
+          ...ARCHIVE_FIXTURE,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            restoreMigrationDecision: 'refuse',
+            restoreMigrationNotice: HIDDEN,
+          },
+        },
+      ],
+      actions,
+      RESTORE_GATE,
+    )
+    const fixture = mountPage(context)
+
+    const opener = inTable<HTMLButtonElement>('hilos-action-reason')
+    expect(
+      inTable<HTMLButtonElement>(`hilos-backup-restore-${ARCHIVE_ID}`)
+        ?.disabled,
+    ).toBe(true)
+    expect(opener?.hasAttribute('title')).toBe(false)
+    expect(opener?.getAttribute('aria-label')).toBe(
+      'Why this backup cannot be restored',
+    )
+
+    click(fixture, opener)
+
+    const dialog = byId('modal')
+    const body = byId('hilos-action-reason-body')
+    expect(dialog?.getAttribute('aria-label')).toBe(
+      `Cannot restore · ${ARCHIVE_ID}`,
+    )
+    expect(
+      body?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(body?.textContent?.trim()).toBe('Hidden')
+    expect(document.body.innerHTML).not.toContain('_hidden')
+    expect(document.body.innerHTML).not.toContain('[object Object]')
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('follows live restore eligibility and keeps the open explanation snapshot', () => {
+    const { actions, dispatched } = makeActions()
+    const checksumBlocked: BackupFixture = {
+      ...ARCHIVE_FIXTURE,
+      backup: { ...ARCHIVE_FIXTURE.backup, checksumState: 'mismatch' },
+    }
+    const outOfReach: BackupFixture = {
+      ...ARCHIVE_FIXTURE,
+      backup: { ...ARCHIVE_FIXTURE.backup, holderNode: 'node-2' },
+    }
+    const { context, pushUpdate } = seededContext(
+      [checksumBlocked],
+      actions,
+      RESTORE_GATE,
+    )
+    const fixture = mountPage(context)
+
+    const opener = inTable<HTMLButtonElement>('hilos-action-reason')
+    expect(opener?.title).toBe(
+      'This archive does not match its recorded checksum',
+    )
+    click(fixture, opener)
+    const dialog = byId('modal')
+    const body = byId('hilos-action-reason-body')
+    expect(body?.textContent?.trim()).toBe(
+      'This archive does not match its recorded checksum',
+    )
+
+    pushUpdate(ARCHIVE_FIXTURE)
+    fixture.detectChanges()
+    expect(
+      inTable<HTMLButtonElement>(`hilos-backup-restore-${ARCHIVE_ID}`)
+        ?.disabled,
+    ).toBe(false)
+    expect(inTable<HTMLButtonElement>('hilos-action-reason')?.hidden).toBe(true)
+    expect(byId('modal')).toBe(dialog)
+    expect(body?.textContent?.trim()).toBe(
+      'This archive does not match its recorded checksum',
+    )
+    expect(byId('hilos-backup-restore-confirm')).toBeNull()
+
+    click(fixture, byId('hilos-action-reason-close'))
+    pushUpdate(outOfReach)
+    fixture.detectChanges()
+
+    const freshOpener = inTable<HTMLButtonElement>('hilos-action-reason')
+    expect(freshOpener?.hidden).toBe(false)
+    expect(freshOpener?.title).toBe(OUT_OF_REACH_REASON)
+    click(fixture, freshOpener)
+    expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(
+      OUT_OF_REACH_REASON,
+    )
+    expect(byId('hilos-backup-restore-confirm')).toBeNull()
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('hides the reason opener for a restorable archive while enabling restore', () => {
+    const { context } = seededContext(
+      [ARCHIVE_FIXTURE],
+      undefined,
+      RESTORE_GATE,
+    )
+    const fixture = mountPage(context)
+
+    expect(
+      inTable<HTMLButtonElement>(`hilos-backup-restore-${ARCHIVE_ID}`)
+        ?.disabled,
+    ).toBe(false)
+    expect(inTable<HTMLButtonElement>('hilos-action-reason')?.hidden).toBe(true)
+    expect(byId('hilos-backup-restore-confirm')).toBeNull()
+    fixture.destroy()
   })
 })
 

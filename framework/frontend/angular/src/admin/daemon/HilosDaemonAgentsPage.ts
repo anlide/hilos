@@ -40,6 +40,7 @@ import {
   mirrorHilosSignal,
   HilosModal,
   HilosActionError,
+  HilosActionReason,
   LoadingButton,
   createHilosTrackedAction,
 } from '@hilos/angular/base'
@@ -60,6 +61,7 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
     HilosDaemonNodeShell,
     HilosModal,
     HilosActionError,
+    HilosActionReason,
   ],
   template: `
     <hilos-daemon-node-shell [context]="context()" [page]="page">
@@ -123,15 +125,15 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
               >Log</a
             >
             <button
+              hilosActionReason
+              [reason]="restartReason(row)"
+              data-id="hilos-action-reason"
+            ></button>
+            <button
               hilosLoadingButton
               class="btn-sm btn-outline-secondary"
               [disabled]="
-                restartBusy() ||
-                row.restarting ||
-                heading() === null ||
-                heading()?.state === 'silent' ||
-                tableBody() === 'loading' ||
-                frozenSince() !== null
+                restartBusy() || row.restarting || restartReason(row) !== null
               "
               [attr.data-id]="'hilos-daemon-agent-restart-' + row.rowKey"
               (click)="openRestart(row)"
@@ -290,6 +292,7 @@ export class HilosDaemonAgentsPage {
     undefined,
   )
   protected readonly canRestart = signal(false)
+  protected readonly tableCannotVouch = signal(false)
   protected readonly restartIdentity = signal<HilosDaemonAgentRow | null>(null)
   protected readonly restartAction = createHilosTrackedAction()
   protected readonly restartBusy = this.restartAction.busy
@@ -327,6 +330,7 @@ export class HilosDaemonAgentsPage {
         mirrorHilosSignal(restart.opened, this.restartOpen),
         mirrorHilosSignal(restart.target, this.restartTarget),
         mirrorHilosSignal(restart.canSubmit, this.canRestart),
+        mirrorHilosSignal(restart.unavailable, this.tableCannotVouch),
       ]
       this.restartIdentity.set(null)
       this.restartAction.clearError()
@@ -338,15 +342,22 @@ export class HilosDaemonAgentsPage {
       })
     })
   }
+
+  /**
+   * The server's current reason, with table availability mirrored for OnPush.
+   *
+   * @param row The agent whose restart opener asks.
+   */
+  protected restartReason(row: HilosDaemonAgentRow): string | null {
+    this.tableCannotVouch()
+    return this.restart().reasonFor(row)
+  }
+
   protected openRestart(row: HilosDaemonAgentRow): void {
     if (
       this.restartBusy() ||
       row.restarting ||
-      this.heading() === null ||
-      this.heading()?.state === 'silent' ||
-      this.tableBody() === 'loading' ||
-      this.tableBody() === 'unavailable' ||
-      this.frozenSince() !== null
+      this.restartReason(row) !== null
     )
       return
     const restart = this.restart()

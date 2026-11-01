@@ -172,39 +172,33 @@ import { HilosI18nMarksLegend } from './HilosI18nMarksLegend.js'
             />
           </ng-template>
           <ng-template hilosTableCell="actions" let-row>
-            <span class="d-flex align-items-start gap-2">
-              <button
-                type="button"
-                [class]="
-                  'btn btn-sm ' +
-                  (row.enabled
-                    ? 'btn-outline-secondary'
-                    : 'btn-outline-primary')
-                "
-                [title]="row.enabled ? copy.open.view : copy.open.edit"
-                [attr.aria-label]="
-                  row.enabled ? copy.open.view : copy.open.edit
-                "
-                [attr.data-id]="
-                  'i18n-countries-' +
-                  (row.enabled ? 'view' : 'edit') +
-                  '-' +
-                  row.code
-                "
-                (click)="
-                  subject.window.open(row.enabled ? 'view' : 'edit', row.rowKey)
-                "
-              >
-                <i
-                  [class]="'bi ' + (row.enabled ? 'bi-eye' : 'bi-pencil')"
-                  aria-hidden="true"
-                ></i>
-              </button>
-              <hilos-i18n-country-row-actions
-                [row]="row"
-                (remove)="openDelete(row.rowKey)"
-              />
-            </span>
+            <button
+              type="button"
+              [class]="
+                'btn btn-sm ' +
+                (row.enabled ? 'btn-outline-secondary' : 'btn-outline-primary')
+              "
+              [title]="row.enabled ? copy.open.view : copy.open.edit"
+              [attr.aria-label]="row.enabled ? copy.open.view : copy.open.edit"
+              [attr.data-id]="
+                'i18n-countries-' +
+                (row.enabled ? 'view' : 'edit') +
+                '-' +
+                row.code
+              "
+              (click)="
+                subject.window.open(row.enabled ? 'view' : 'edit', row.rowKey)
+              "
+            >
+              <i
+                [class]="'bi ' + (row.enabled ? 'bi-eye' : 'bi-pencil')"
+                aria-hidden="true"
+              ></i>
+            </button>
+            <hilos-i18n-country-row-actions
+              [row]="row"
+              (remove)="openDelete(row.rowKey)"
+            />
           </ng-template>
         </hilos-viewport-table>
         <hilos-i18n-marks-legend

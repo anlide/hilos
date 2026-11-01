@@ -52,6 +52,7 @@ import {
   HilosPages,
   focusInitial,
   hilosRowEditIdle,
+  type Hideable,
 } from '@hilos/core/base'
 import type {
   HilosTwoFactorDisableStep,
@@ -65,6 +66,7 @@ import {
   ConflictActions,
   ConflictHeader,
   HilosActionError,
+  HilosActionReason,
   HilosAdminPage,
   HilosEditNotice,
   HilosFormError,
@@ -90,6 +92,7 @@ import {
   imports: [
     HilosAdminPage,
     HilosActionError,
+    HilosActionReason,
     HilosEditNotice,
     HilosFormError,
     HilosHiddenMark,
@@ -146,6 +149,11 @@ import {
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
           @if (!isSwitch(row.rowKey)) {
+            <button
+              hilosActionReason
+              [reason]="editReason(row)"
+              data-id="hilos-action-reason"
+            ></button>
             <button
               type="button"
               class="btn btn-sm btn-outline-primary"
@@ -507,6 +515,15 @@ export class HilosSecurity2faPage {
    */
   protected isLocked(row: HilosTwoFactorSettingRow): boolean {
     return this.locked().includes(row.rowKey)
+  }
+
+  /**
+   * The server's reason for a locked pencil, absent when editing is available.
+   *
+   * @param row The setting whose pencil asks.
+   */
+  protected editReason(row: HilosTwoFactorSettingRow): Hideable<string | null> {
+    return this.isLocked(row) ? row.editDisabledReason : null
   }
 
   // Turning the factor off opens its window and leaves the switch where it is;
