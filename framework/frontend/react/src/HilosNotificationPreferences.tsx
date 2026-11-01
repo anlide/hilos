@@ -1,7 +1,10 @@
 // HilosNotificationPreferences — the profile "Notifications" section (HIL-485):
 // one switch per globally-enabled channel letting the signed-in user opt in or
 // out, plus an always-on note when the project declares any mandatory
-// notification type. It renders the framework-owned preference store
+// notification type. Each channel is a delivery-channel row: a decorative icon,
+// the label and the channel's address (or the hint to add one) on the left, the
+// switch on the right; the web-push channel renders the device toggle as the same
+// row. It renders the framework-owned preference store
 // (hilosNotificationPreferences), which the mounting profile surface feeds from
 // the profile page data (the section snapshot) and the
 // `notification_preferences_changed` signal (live multi-device sync) — see
@@ -84,12 +87,22 @@ export function HilosNotificationPreferences({
     }
   }
 
+  // The profile section that adds an address, when the page names one and its
+  // path; without both the no-address hint stays plain text.
+  const addressLink =
+    addressSection !== null && addressTo !== undefined
+      ? { label: addressSection.label, to: addressTo }
+      : null
+
   return (
     <section
       aria-labelledby={`${baseId}-heading`}
       data-id="hilos-notification-preferences"
     >
-      <h2 id={`${baseId}-heading`} className="h5">
+      <h2
+        id={`${baseId}-heading`}
+        className="h6 text-uppercase text-body-secondary mb-2"
+      >
         Delivery channels
       </h2>
       {channels.length === 0 && (
@@ -115,50 +128,81 @@ export function HilosNotificationPreferences({
               label={row.label}
               vapidPublicKey={vapidPublicKey}
               store={pushStore}
+              channelRow={true}
+              icon={row.icon}
             />
           )
         }
 
         const id = `${baseId}-${row.channel}`
-        const isPending = pending.has(row.channel)
 
         return (
           <div
             key={row.channel}
+            className="d-flex align-items-center gap-3 py-3 border-bottom"
             data-id={`hilos-notification-preference-${row.channel}`}
           >
-            <HilosSwitch
-              className="mb-2"
-              checked={row.allowed}
-              busy={isPending}
-              disabled={!row.hasAddress}
-              label={row.label}
-              aria-describedby={row.hasAddress ? undefined : `${id}-hint`}
-              dataId={`hilos-notification-preference-toggle-${row.channel}`}
-              onToggle={(next) => toggle(row, next)}
+            <i
+              className={`bi ${row.icon ?? 'bi-bell'} fs-5 text-body-secondary flex-shrink-0`}
+              aria-hidden="true"
+              data-id={`hilos-notification-preference-icon-${row.channel}`}
             />
-            {!row.hasAddress && (
+            <div className="flex-grow-1 overflow-hidden">
+              <div className="fw-semibold small">{row.label}</div>
               <div
-                id={`${id}-hint`}
-                className="form-text mt-0"
-                data-id={`hilos-notification-preference-hint-${row.channel}`}
+                className="hilos-stack small text-body-secondary text-break"
+                data-id={`hilos-notification-preference-subtitle-${row.channel}`}
               >
-                {addressSection && addressTo !== undefined ? (
-                  <>
-                    {COPY.noAddressBefore}{' '}
-                    <HilosLink
-                      to={addressTo}
-                      data-id={`hilos-notification-preference-address-${row.channel}`}
-                    >
-                      {addressSection.label}
-                    </HilosLink>{' '}
-                    {COPY.noAddressAfter}
-                  </>
+                <span className="invisible" aria-hidden="true" inert>
+                  {addressLink
+                    ? `${COPY.noAddressBefore} ${addressLink.label} ${COPY.noAddressAfter}`
+                    : COPY.noAddress}
+                </span>
+                {!row.hasAddress ? (
+                  <div
+                    id={`${id}-hint`}
+                    data-id={`hilos-notification-preference-hint-${row.channel}`}
+                  >
+                    {addressLink ? (
+                      <>
+                        {COPY.noAddressBefore}{' '}
+                        <HilosLink
+                          to={addressLink.to}
+                          data-id={`hilos-notification-preference-address-${row.channel}`}
+                        >
+                          {addressLink.label}
+                        </HilosLink>{' '}
+                        {COPY.noAddressAfter}
+                      </>
+                    ) : (
+                      COPY.noAddress
+                    )}
+                  </div>
                 ) : (
-                  COPY.noAddress
+                  <div id={`${id}-subtitle`}>{row.address ?? '\u00a0'}</div>
                 )}
               </div>
-            )}
+            </div>
+            <div className="hilos-stack flex-shrink-0 text-nowrap">
+              <div
+                className="form-check form-switch mb-0 invisible"
+                aria-hidden="true"
+                inert
+              >
+                <span className="form-check-input" />
+                <span className="spinner-border spinner-border-sm ms-2 align-middle" />
+              </div>
+              <HilosSwitch
+                className="mb-0"
+                checked={row.allowed}
+                busy={pending.has(row.channel)}
+                disabled={!row.hasAddress}
+                aria-label={row.label}
+                aria-describedby={`${id}-${row.hasAddress ? 'subtitle' : 'hint'}`}
+                dataId={`hilos-notification-preference-toggle-${row.channel}`}
+                onToggle={(next) => toggle(row, next)}
+              />
+            </div>
           </div>
         )
       })}
