@@ -1,12 +1,14 @@
 // The user detail page selectors: the requested user resolved by reference into
 // the profile the page renders, plus the reactive runtime presence, the merge
 // the account may have gone into (HIL-1292) and the person's photo (HIL-1300).
-// The profile arrives as a page entity (UserPage::buildPagePayload), so a rename
-// fans out here for free; presence and the session count ride the reactive
-// `userPresence` data slot, the merge rides the `userMerge` slot, which is
-// absent for an account never merged, and the photo rides the `personPhoto`
-// slot, absent for a person without one. The view reads this signal and never
-// touches a raw store.
+// The page entity `user` (UserPage::buildPagePayload) supplies the reference;
+// profile freshness (a rename or updated activity) comes from the `userProfile`
+// list (backend UserProfileBrowserList), whose `users` slot is normalized into
+// the same Users entity, so `Users.signal(ref)` sees the change. The presence
+// and session count ride the reactive `userPresence` data slot, the merge
+// rides the `userMerge` slot, which is absent for an account never merged, and
+// the photo rides the `personPhoto` slot, absent for a person without one. The
+// view reads this signal and never touches a raw store.
 import {
   computedSignal,
   readNumber,
@@ -16,9 +18,9 @@ import {
   type ReadonlySignal,
 } from '@hilos/core/base'
 
-import { scopes } from '../../bootstrap/session'
-import { Users, toPresence } from '../../types'
-import { type UserDetail } from './types/UserDetail'
+import { scopes } from '../../bootstrap/session.js'
+import { Users, toPresence } from '../../types/index.js'
+import { type UserDetail } from './types/UserDetail.js'
 
 // Wire keys: the user profile entity slot (backend UserPage::ENTITY_SLOT), the
 // presence data slot (backend ChatBrowserData::USER_PRESENCE), the merge data
@@ -55,7 +57,8 @@ const userPhotoData = scopes.pageDataSignal(USER_PHOTO_DATA)
 
 /**
  * The requested user's detail, or undefined until its profile entity lands: the
- * referenced user resolved reactively, with the runtime presence folded in so a
+ * referenced user resolved reactively, with freshness supplied by the
+ * `userProfile` list, and the runtime presence folded in so a
  * connect/disconnect flips `presence` without re-streaming the profile.
  */
 export const userDetail: ReadonlySignal<UserDetail | undefined> =

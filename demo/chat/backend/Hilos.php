@@ -81,6 +81,7 @@ use Demo\Chat\Browser\List\MainEventsBrowserList;
 use Demo\Chat\Browser\List\MainUsersBrowserList;
 use Demo\Chat\Browser\List\ProfileDevicesBrowserList;
 use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
+use Demo\Chat\Browser\List\UserProfileBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
@@ -796,6 +797,7 @@ final class Hilos extends HilosFacade
         ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
         ProfileDevicesBrowserList::LIST => ProfileDevicesBrowserList::class,
         BotProfileBrowserList::LIST => BotProfileBrowserList::class,
+        UserProfileBrowserList::LIST => UserProfileBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -847,6 +849,13 @@ final class Hilos extends HilosFacade
             BotProfileBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
+                ],
+            ],
+        ],
+        ChatUserPage::PAGE => [
+            UserProfileBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
                 ],
             ],
         ],

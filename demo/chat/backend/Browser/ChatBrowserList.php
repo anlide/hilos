@@ -15,4 +15,5 @@ final class ChatBrowserList
     public const string PROFILE_SESSIONS = 'profileSessions';
     public const string PROFILE_DEVICES = 'profileDevices';
     public const string BOT_PROFILE = 'botProfile';
+    public const string USER_PROFILE = 'userProfile';
 }

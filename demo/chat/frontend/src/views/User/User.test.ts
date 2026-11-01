@@ -108,4 +108,15 @@ describe('public user activity', () => {
     expect(view.find('[data-id="user-last-activity"]').exists()).toBe(false)
     expect(view.find('[data-id="user-sessions"]').exists()).toBe(false)
   })
+
+  it('preserves the merged account notice without a survivor link when survivor is absent', async () => {
+    const view = mount(User)
+    inputs.scopes
+      .page()!
+      .data.set('userMerge', { mergedInto: null, mergedIntoName: null })
+    await nextTick()
+    expect(view.find('[data-id="user-merged-into"]').exists()).toBe(true)
+    expect(view.find('[data-id="user-merged-into-link"]').exists()).toBe(false)
+    expect(view.find('[data-id="user-sessions"]').exists()).toBe(false)
+  })
 })

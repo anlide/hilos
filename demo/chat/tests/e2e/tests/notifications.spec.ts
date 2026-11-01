@@ -9,6 +9,7 @@ import {
   createTestUser,
   createTestUserJoined,
   grantAdminToSelf,
+  watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   dictateModerationVerdict,
@@ -84,7 +85,7 @@ test('a mention reaches the named user in another window', async ({
   await recipient.context().close()
 })
 
-test('an administrator renaming somebody reaches the renamed person and the room', async ({
+test('an administrator renaming somebody reaches the renamed person, their open page and the room', async ({
   page,
   browser,
 }) => {
@@ -93,39 +94,63 @@ test('an administrator renaming somebody reaches the renamed person and the room
   // load after binding is what createTestUserJoined makes waitable).
   const { userId, name: oldName } = await createTestUserJoined(expect, page)
 
-  const adminPage = await openSecondPerson(browser)
-  await grantAdminToSelf(expect, adminPage)
-  // Straight to the detail page: the users list pages, and this account is not
-  // guaranteed to be on the first page of a database every test writes to.
-  await gotoPage(expect, adminPage, `/hilos/user/${userId}`)
-  await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
-    oldName,
-  )
+  const guest = await openSecondPerson(browser)
+  try {
+    await gotoPage(expect, guest, `/user/${userId}`)
+    const document = await watchClientDocument(guest)
+    try {
+      await expect(guest.getByRole('heading', { level: 1 })).toHaveText(oldName)
 
-  const newName = `Renamed person ${userId}`
-  await adminPage.getByTestId('hilos-user-edit').click()
-  await typeInto(adminPage.getByTestId('hilos-user-name-input'), newName)
-  await clickSubmit(expect, adminPage.getByTestId('hilos-user-save'))
-  await expect(adminPage.getByTestId('hilos-user-name-input')).toHaveCount(0)
-  // The rename settles when the committed name returns over the live table.
-  await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
-    newName,
-  )
+      const adminPage = await openSecondPerson(browser)
+      try {
+        await grantAdminToSelf(expect, adminPage)
+        // Straight to the detail page: the users list pages, and this account is not
+        // guaranteed to be on the first page of a database every test writes to.
+        await gotoPage(expect, adminPage, `/hilos/user/${userId}`)
+        await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
+          oldName,
+        )
 
-  // The rename is the framework's, so the renamed person is told - new for chat.
-  await expect(unreadBadge(page)).toHaveText(/^1\b/)
-  await openBell(page)
-  const menu = page.getByTestId('hilos-notification-menu')
-  await expect(menu).toContainText('An administrator renamed your account')
-  await expect(menu).toContainText(`Your name is now ${newName}`)
+        const newName = `Renamed person ${userId}`
+        await adminPage.getByTestId('hilos-user-edit').click()
+        await typeInto(adminPage.getByTestId('hilos-user-name-input'), newName)
+        await clickSubmit(expect, adminPage.getByTestId('hilos-user-save'))
+        await expect(
+          adminPage.getByTestId('hilos-user-name-input'),
+        ).toHaveCount(0)
+        // The rename settles when the committed name returns over the live table.
+        await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
+          newName,
+        )
 
-  // The room shows the rename as before: the feed line now reads the journal row
-  // it is linked to. A cold load proves the event stream holds it; the filter
-  // isolates the event-notice row, as the author label carries the current name.
-  await gotoPage(expect, page, '/')
-  await expect(
-    page.getByTestId('event-notice').filter({ hasText: newName }),
-  ).toHaveText(`renamed by admin from ${oldName} to ${newName}`)
+        await expect(guest.getByRole('heading', { level: 1 })).toHaveText(
+          newName,
+        )
+        await document.unchanged()
 
-  await adminPage.context().close()
+        // The rename is the framework's, so the renamed person is told - new for chat.
+        await expect(unreadBadge(page)).toHaveText(/^1\b/)
+        await openBell(page)
+        const menu = page.getByTestId('hilos-notification-menu')
+        await expect(menu).toContainText(
+          'An administrator renamed your account',
+        )
+        await expect(menu).toContainText(`Your name is now ${newName}`)
+
+        // The room shows the rename as before: the feed line now reads the journal row
+        // it is linked to. A cold load proves the event stream holds it; the filter
+        // isolates the event-notice row, as the author label carries the current name.
+        await gotoPage(expect, page, '/')
+        await expect(
+          page.getByTestId('event-notice').filter({ hasText: newName }),
+        ).toHaveText(`renamed by admin from ${oldName} to ${newName}`)
+      } finally {
+        await adminPage.context().close()
+      }
+    } finally {
+      await document.dispose()
+    }
+  } finally {
+    await guest.context().close()
+  }
 })

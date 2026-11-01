@@ -11,6 +11,7 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Browser\List\UserProfileBrowserList;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
@@ -35,13 +36,16 @@ use Hilos\Core\Page\PageRouteParams;
  * Handles the chat user-detail subscription.
  *
  * Contributes the requested user's profile as a page-scope entity through
- * buildPagePayload(); the runtime presence rides the reactive browser snapshot
- * (the `userPresence` data source), so it stays out of the one-shot entity
- * payload. An account folded into another one keeps this page at its own address
- * (HIL-1292): the `userMerge` data source says so and names where it went, and
- * the page draws that in place of the sessions and the activity. The person's
- * photo rides the same snapshot as the `personPhoto` data source (HIL-1300): the
- * address of its public avatar variant, and no data at all for a person without one.
+ * buildPagePayload(), which gives the page its first reference to the user. The
+ * profile is kept current while the page is open by the `userProfile` browser
+ * list ({@see UserProfileBrowserList}), and the runtime presence rides the
+ * reactive browser snapshot (the `userPresence` data source), so neither depends
+ * on the one-shot entity payload. An account folded into another one keeps this
+ * page at its own address (HIL-1292): the `userMerge` data source says so and
+ * names where it went, and the page draws that in place of the sessions and the
+ * activity. The person's photo rides the same snapshot as the `personPhoto` data
+ * source (HIL-1300): the address of its public avatar variant, and no data at all
+ * for a person without one.
  *
  * @property ChatAgent $agent
  */
