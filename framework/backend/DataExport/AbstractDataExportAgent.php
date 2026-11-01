@@ -43,6 +43,7 @@ use Hilos\Notification\NotificationSeverity;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
+use DateTimeZone;
 use Hilos\WiringRefusal;
 
 /**
@@ -69,6 +70,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         HilosDbContext::legalAcceptances,
         HilosDbContext::userPhotos,
         HilosDbContext::files,
+        HilosDbContext::users,
     ];
 
     public const array AGENT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class];
@@ -274,6 +276,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                 $export->finishedAt,
                 Hilos::$env[EnvConstants::HILOS_DATA_EXPORT_XACCEL_LOCATION]->string(),
                 Hilos::$cluster?->localNodeId(),
+                new DateTimeZone($export->timeZone ?? TimeConstants::UTC_TIME_ZONE),
             );
         } catch (FsException $e) {
             $this->logAgentError('Cannot serve the data export: ' . $e->getMessage());
@@ -361,10 +364,11 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         $buildingPath = $this->directory[$basename . self::BUILDING_EXTENSION]->getPath();
         $finalPath = $this->directory[$storedName]->getPath();
         try {
-            $archive = new DataExportArchive($buildingPath);
+            $timeZone = TimeHelper::serverTextTimeZone($export->userId);
+            $archive = new DataExportArchive($buildingPath, $timeZone);
             FrameworkDataExportSections::write($export->userId, $archive);
             $this->applyAccountExport($export->userId, $archive);
-            $archive->text('README.txt', $this->readme());
+            $archive->text('README.txt', $this->readme($timeZone));
             $size = $archive->close();
             unset($archive);
 
@@ -377,7 +381,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             FsPath::move($buildingPath, $finalPath);
             $finishedAt = TimeHelper::getSqlDateTime();
             $expiresAt = date('Y-m-d H:i:s', time() + self::LIFETIME_DAYS * TimeConstants::SECONDS_PER_DAY);
-            if (!$export->actions->finishReady($storedName, $size, $finishedAt, $expiresAt)) {
+            if (!$export->actions->finishReady($storedName, $size, $finishedAt, $expiresAt, $timeZone->getName())) {
                 FsPath::delete($finalPath);
 
                 return;
@@ -469,12 +473,14 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     }
 
     /**
-     * @return string Human-readable archive index
+     * @param DateTimeZone $timeZone Zone every date of this archive is written in
+     * @return string Human-readable archive index naming that zone
      */
-    private function readme(): string
+    private function readme(DateTimeZone $timeZone): string
     {
-        return 'Your data copy, prepared at ' . DataExportTime::iso(TimeHelper::getSqlDateTime()) . ".\n\n"
-            . "JSON files contain your account's records. Dates are ISO 8601 in UTC.\n"
+        return 'Your data copy, prepared at ' . DataExportTime::iso(TimeHelper::getSqlDateTime(), $timeZone) . ".\n\n"
+            . "JSON files contain your account's records. Dates are ISO 8601 in the time zone {$timeZone->getName()}, "
+            . "each with its UTC offset written explicitly.\n"
             . "account: account number and the first sign-in method's creation date.\n"
             . "renames: each change of your name - from, to and when.\n"
             . "merges: accounts folded into yours, or yours into another - which, into which and when.\n"

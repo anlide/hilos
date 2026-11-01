@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Legal\Export;
 
+use DateTimeZone;
 use Hilos\DataExport\DataExportTime;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
 
@@ -56,9 +57,10 @@ final class LegalAcceptancesCsv
 
     /**
      * @param HilosLegalAcceptanceTableRow $row One acceptance as the table shows it
+     * @param DateTimeZone $timeZone Zone of the file, which its moment is written in
      * @return string Its line, the line end included
      */
-    public static function line(HilosLegalAcceptanceTableRow $row): string
+    public static function line(HilosLegalAcceptanceTableRow $row, DateTimeZone $timeZone): string
     {
         return self::lineOf([
             (string) $row->userId,
@@ -71,7 +73,7 @@ final class LegalAcceptancesCsv
                 false => self::IN_CODE_NO,
                 null => null,
             },
-            DataExportTime::iso($row->acceptedAt),
+            DataExportTime::iso($row->acceptedAt, $timeZone),
         ]);
     }
 

@@ -39,14 +39,20 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertNotSame($old->id, $new->id);
         self::assertSame($new->id, Hilos::$db->dataExports->ofUser(7)?->id);
         self::assertSame(DataExportState::PREPARING, $new->state);
-        self::assertFalse($old->actions->finishReady('stale.zip', 123, '2026-09-02 00:01:00', '2026-09-09 00:01:00'));
-        self::assertTrue($new->actions->finishReady('current.zip', 456, '2026-09-02 00:02:00', '2026-09-09 00:02:00'));
+        self::assertNull($new->timeZone);
+        self::assertFalse($old->actions->finishReady('stale.zip', 123, '2026-09-02 00:01:00', '2026-09-09 00:01:00', 'Asia/Tokyo'));
+        self::assertNull($old->timeZone);
+        self::assertNull($old->storedName);
+        self::assertTrue($new->actions->finishReady('current.zip', 456, '2026-09-02 00:02:00', '2026-09-09 00:02:00', 'America/New_York'));
         self::assertFalse($new->actions->finishFailed('2026-09-02 00:03:00', '2026-09-09 00:03:00'));
         self::assertSame(DataExportState::READY, $new->state);
         self::assertSame('current.zip', $new->storedName);
         self::assertSame(456, $new->sizeBytes);
-        Database::sql('SELECT COUNT(*) AS count FROM hilos_data_export WHERE user_id = 7');
-        self::assertSame(1, (int)Database::row()['count']);
+        self::assertSame('America/New_York', $new->timeZone);
+        Database::sql('SELECT COUNT(*) AS count, MAX(`time_zone`) AS time_zone FROM hilos_data_export WHERE user_id = 7');
+        $row = Database::row();
+        self::assertSame(1, (int)$row['count']);
+        self::assertSame('America/New_York', $row['time_zone']);
     }
 
     /**
@@ -59,6 +65,9 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         $second = Hilos::$db->dataExports->actions->order(3, '2026-09-01 00:00:00');
         self::assertSame($first->id, Hilos::$db->dataExports->nextPreparing()?->id);
         self::assertTrue($first->actions->finishFailed('2026-09-01 00:01:00', '2026-09-08 00:01:00'));
+        self::assertNull($first->timeZone);
+        Database::sql('SELECT `state`, `time_zone` FROM hilos_data_export WHERE user_id = 2');
+        self::assertSame(['state' => DataExportState::FAILED, 'time_zone' => null], Database::row());
         self::assertSame($second->id, Hilos::$db->dataExports->nextPreparing()?->id);
         $second->actions->delete();
         self::assertSame($late->id, Hilos::$db->dataExports->nextPreparing()?->id);
@@ -100,7 +109,7 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertInstanceOf(ObjectDataExport::class, $failedObject);
         self::assertInstanceOf(ObjectDataExport::class, $pendingObject);
 
-        self::assertTrue($ready->actions->finishReady('ready.zip', 3, '2026-09-01 00:00:00', '2026-09-08 00:00:00'));
+        self::assertTrue($ready->actions->finishReady('ready.zip', 3, '2026-09-01 00:00:00', '2026-09-08 00:00:00', 'UTC'));
         self::assertTrue($failed->actions->finishFailed('2026-09-01 00:00:00', '2026-09-08 00:00:00'));
 
         $viewAllReady = Hilos::$db->dataExports->allReady();

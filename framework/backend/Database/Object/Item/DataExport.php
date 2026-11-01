@@ -25,6 +25,7 @@ use Hilos\HilosException;
  * @property ?string $expiresAt
  * @property ?string $storedName
  * @property ?int $sizeBytes
+ * @property ?string $timeZone IANA zone the ready archive was written in; null while preparing, after failure, and on an older ready archive (UTC)
  */
 class DataExport extends Object_
 {
@@ -38,6 +39,7 @@ class DataExport extends Object_
     public const string expiresAt = 'expiresAt';
     public const string storedName = 'storedName';
     public const string sizeBytes = 'sizeBytes';
+    public const string timeZone = 'timeZone';
 
     /**
      * @param string $property Row property
@@ -55,6 +57,7 @@ class DataExport extends Object_
             self::expiresAt => $this->entity->expires_at,
             self::storedName => $this->entity->stored_name,
             self::sizeBytes => $this->entity->size_bytes,
+            self::timeZone => $this->entity->time_zone,
             default => parent::__get($property),
         };
     }
@@ -81,12 +84,13 @@ class DataExport extends Object_
      * @param int $sizeBytes Archive size
      * @param string $finishedAt Completion time in SQL UTC
      * @param string $expiresAt Expiry time in SQL UTC
+     * @param string $timeZone IANA name of the time zone the archive was written in
      * @return bool Whether this request still existed and was completed by this call
      * @throws HilosException When the conditional write or its announcement fails
      */
-    public function finishReady(string $storedName, int $sizeBytes, string $finishedAt, string $expiresAt): bool
+    public function finishReady(string $storedName, int $sizeBytes, string $finishedAt, string $expiresAt, string $timeZone): bool
     {
-        return $this->finish(DataExportState::READY, $storedName, $sizeBytes, $finishedAt, $expiresAt);
+        return $this->finish(DataExportState::READY, $storedName, $sizeBytes, $finishedAt, $expiresAt, $timeZone);
     }
 
     /**
@@ -97,7 +101,7 @@ class DataExport extends Object_
      */
     public function finishFailed(string $finishedAt, string $expiresAt): bool
     {
-        return $this->finish(DataExportState::FAILED, null, null, $finishedAt, $expiresAt);
+        return $this->finish(DataExportState::FAILED, null, null, $finishedAt, $expiresAt, null);
     }
 
     /**
@@ -114,6 +118,7 @@ class DataExport extends Object_
             self::expiresAt => $this->entity->expires_at,
             self::storedName => $this->entity->stored_name,
             self::sizeBytes => $this->entity->size_bytes,
+            self::timeZone => $this->entity->time_zone,
         ];
     }
 
@@ -123,11 +128,18 @@ class DataExport extends Object_
      * @param ?int $sizeBytes Ready archive size
      * @param string $finishedAt Completion time in SQL UTC
      * @param string $expiresAt Expiry time in SQL UTC
+     * @param ?string $timeZone Ready archive time zone name
      * @return bool Whether this call won completion of the original request
      * @throws HilosException When the conditional write or its announcement fails
      */
-    private function finish(string $state, ?string $storedName, ?int $sizeBytes, string $finishedAt, string $expiresAt): bool
-    {
+    private function finish(
+        string $state,
+        ?string $storedName,
+        ?int $sizeBytes,
+        string $finishedAt,
+        string $expiresAt,
+        ?string $timeZone,
+    ): bool {
         if ($this->entity->id === null) {
             return false;
         }
@@ -138,9 +150,9 @@ class DataExport extends Object_
             TruthSourceOperation::Update,
         );
         Database::sql(
-            'UPDATE `' . EntityDataExport::_table . '` SET `state` = ?, `stored_name` = ?, `size_bytes` = ?, '
+            'UPDATE `' . EntityDataExport::_table . '` SET `state` = ?, `stored_name` = ?, `size_bytes` = ?, `time_zone` = ?, '
                 . '`finished_at` = ?, `expires_at` = ? WHERE `id` = ? AND `state` = ?',
-            [$state, $storedName, $sizeBytes, $finishedAt, $expiresAt, $this->entity->id, DataExportState::PREPARING],
+            [$state, $storedName, $sizeBytes, $timeZone, $finishedAt, $expiresAt, $this->entity->id, DataExportState::PREPARING],
         );
         if (Database::affectedRows() !== 1) {
             return false;
@@ -148,6 +160,7 @@ class DataExport extends Object_
         $this->entity->state = $state;
         $this->entity->stored_name = $storedName;
         $this->entity->size_bytes = $sizeBytes;
+        $this->entity->time_zone = $timeZone;
         $this->entity->finished_at = $finishedAt;
         $this->entity->expires_at = $expiresAt;
         $this->sync();

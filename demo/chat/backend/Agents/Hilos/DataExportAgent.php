@@ -46,7 +46,7 @@ final class DataExportAgent extends AbstractDataExportAgent
                 ];
             }
             $messages[] = [
-                'sentAt' => DataExportTime::iso($message->event?->timestamp),
+                'sentAt' => DataExportTime::iso($message->event?->timestamp, $writer->timeZone()),
                 'text' => $message->message,
                 'attachments' => $attachments,
             ];
@@ -63,7 +63,7 @@ final class DataExportAgent extends AbstractDataExportAgent
                 'name' => isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null,
             ],
             'messages' => $messages,
-            'registeredAt' => DataExportTime::iso($registeredAt),
+            'registeredAt' => DataExportTime::iso($registeredAt, $writer->timeZone()),
         ]);
     }
 }

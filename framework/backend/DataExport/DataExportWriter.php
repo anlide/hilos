@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\DataExport;
 
+use DateTimeZone;
 use Hilos\Fs\FsException;
 
 /** The serialization boundary shared by framework and project account exports. */
@@ -23,4 +24,9 @@ interface DataExportWriter
      * @throws FsException When the name is invalid or the file cannot be archived
      */
     public function file(string $name, string $sourcePath): string;
+
+    /**
+     * @return DateTimeZone Zone chosen when this export started; every moment in it is written in this zone
+     */
+    public function timeZone(): DateTimeZone;
 }

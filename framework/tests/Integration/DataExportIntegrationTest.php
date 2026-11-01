@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\EnvConstants;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DataExportNotificationType;
 use Hilos\Constants\HilosSignalConstants;
@@ -33,6 +36,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalCatalogStub;
 use PharData;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Real queue and archive lifecycle, including a deletion whose sync is still waiting. */
 final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
@@ -161,10 +165,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(7 * 86400, strtotime($first->expiresAt) - strtotime($first->finishedAt));
         $archive = new PharData($this->directory . '/' . $first->storedName);
         self::assertFalse(isset($archive['analytics_person.json']));
-        self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00Z'], self::section($archive, 'account'));
-        self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00Z']], self::section($archive, 'renames'));
+        self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00+00:00'], self::section($archive, 'account'));
+        self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00+00:00']], self::section($archive, 'renames'));
         self::assertSame(
-            [['account' => 7, 'into' => 8, 'at' => '2026-01-04T00:00:00Z'], ['account' => 9, 'into' => 7, 'at' => null]],
+            [['account' => 7, 'into' => 8, 'at' => '2026-01-04T00:00:00+00:00'], ['account' => 9, 'into' => 7, 'at' => null]],
             self::section($archive, 'merges'),
         );
         self::assertCount(2, self::section($archive, 'sign_in_methods'));
@@ -173,8 +177,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame('192.0.2.7', self::section($archive, 'sessions')[0]['address']);
         self::assertSame(
             [
-                ['at' => '2026-01-01T00:00:00Z', 'address' => '192.0.2.7', 'event' => 'sign_in'],
-                ['at' => '2026-01-02T00:00:00Z', 'address' => '2001:db8::7', 'event' => 'new_address'],
+                ['at' => '2026-01-01T00:00:00+00:00', 'address' => '192.0.2.7', 'event' => 'sign_in'],
+                ['at' => '2026-01-02T00:00:00+00:00', 'address' => '2001:db8::7', 'event' => 'new_address'],
             ],
             self::section($archive, 'access_log'),
         );
@@ -189,7 +193,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([
             'document' => 'terms',
             'revisionId' => '2026-01-05',
-            'acceptedAt' => '2026-01-05T00:00:00Z',
+            'acceptedAt' => '2026-01-05T00:00:00+00:00',
             'inCode' => false,
             'publishedOn' => null,
             'effectiveOn' => null,
@@ -199,7 +203,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([
             'document' => 'terms',
             'revisionId' => '2026-09-17',
-            'acceptedAt' => '2026-09-20T10:00:00Z',
+            'acceptedAt' => '2026-09-20T10:00:00+00:00',
             'inCode' => true,
             'publishedOn' => '2026-09-17',
             'effectiveOn' => '2026-09-17',
@@ -220,7 +224,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([
             'document' => 'privacy',
             'revisionId' => '2026-09-17',
-            'acceptedAt' => '2026-09-20T10:00:01Z',
+            'acceptedAt' => '2026-09-20T10:00:01+00:00',
             'inCode' => false,
             'publishedOn' => null,
             'effectiveOn' => null,
@@ -251,6 +255,99 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertNull($announcements[0]->channels);
     }
 
+    /** @return iterable<string, array{string, string, string}> Mode, the zone it gives person 7, and 23:30 UTC in that zone */
+    public static function exportZones(): iterable
+    {
+        yield 'recipient' => ['recipient', 'Europe/Warsaw', '2026-10-23T01:30:00+02:00'];
+        yield 'project' => ['project', 'Pacific/Auckland', '2026-10-23T12:30:00+13:00'];
+        yield 'utc' => ['utc', 'UTC', '2026-10-22T23:30:00+00:00'];
+    }
+
+    /**
+     * The zone is chosen once when the build starts: the sections and the README are written in it,
+     * and the queue keeps its name beside the ready file.
+     *
+     * @param string $mode Exact server text policy
+     * @param string $zone Zone the policy gives this person
+     * @param string $renamedAt The rename moment as the archive must carry it
+     * @throws HilosException When a fixture or archive write fails
+     */
+    #[DataProvider('exportZones')]
+    public function testArchiveIsWrittenInTheZoneChosenWhenItsBuildStarts(string $mode, string $zone, string $renamedAt): void
+    {
+        Database::sqlRun("UPDATE hilos_user SET time_zone = 'Europe/Warsaw', last_browser_time_zone = 'Asia/Tokyo' WHERE id = 7");
+        Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
+            . "(7, 8, 'Old me', 'New me', '2026-10-22 23:30:00')");
+        $this->withZoneEnvironment($mode, 'Pacific/Auckland', function () use ($zone, $renamedAt): void {
+            $export = Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00');
+            $agent = new DataExportTestAgent();
+            $agent->onStart();
+            $agent->onTick();
+
+            self::assertSame(DataExportState::READY, $export->state);
+            self::assertSame($zone, $export->timeZone);
+            Database::sql('SELECT `state`, `time_zone` FROM hilos_data_export WHERE user_id = 7');
+            self::assertSame(['state' => DataExportState::READY, 'time_zone' => $zone], Database::row());
+            $archive = new PharData($this->directory . '/' . $export->storedName);
+            self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => $renamedAt]], self::section($archive, 'renames'));
+            $readme = $archive['README.txt']->getContent();
+            self::assertStringContainsString(
+                "Dates are ISO 8601 in the time zone {$zone}, each with its UTC offset written explicitly.\n",
+                $readme,
+            );
+            self::assertSame(1, preg_match('/^Your data copy, prepared at (\S+)\.\n/', $readme, $prepared));
+            $preparedAt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i:sP', $prepared[1]);
+            self::assertNotFalse($preparedAt);
+            self::assertSame($preparedAt->setTimezone(new DateTimeZone($zone))->format('Y-m-d\TH:i:sP'), $prepared[1]);
+        });
+    }
+
+    /**
+     * The download is named by the zone saved with the ready file, never by the person's or the
+     * policy's zone of the moment, and a ready file older than the saved zone is named in UTC.
+     *
+     * @throws HilosException When seeding or HTTP delivery fails
+     */
+    public function testDownloadNameKeepsTheZoneSavedWithTheReadyFile(): void
+    {
+        $expiresAt = date('Y-m-d H:i:s', time() + 86400);
+        Database::sqlRun("UPDATE hilos_user SET time_zone = 'America/Los_Angeles' WHERE id = 7");
+        Database::sqlRun("UPDATE hilos_user SET time_zone = 'Europe/Warsaw' WHERE id = 8");
+        Database::sqlRun(
+            'INSERT INTO hilos_data_export (user_id, state, requested_at, finished_at, expires_at, stored_name, size_bytes, time_zone) '
+            . "VALUES (8, 'ready', '2026-10-22 23:00:00', '2026-10-22 23:30:00', ?, 'older.zip', 4, NULL)",
+            [$expiresAt],
+        );
+        self::seedSession('owner', 7, '2026-01-01 00:00:00', null);
+        self::seedSession('older', 8, '2026-01-01 00:00:00', null);
+        Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00')->actions->finishReady(
+            'snapshot.zip', 4, '2026-10-22 23:30:00', $expiresAt, 'Europe/Warsaw',
+        );
+        mkdir($this->directory);
+        file_put_contents($this->directory . '/snapshot.zip', 'PK..');
+        file_put_contents($this->directory . '/older.zip', 'PK..');
+        $names = [];
+        foreach (['recipient', 'utc'] as $mode) {
+            $this->withZoneEnvironment($mode, 'America/Los_Angeles', function () use (&$names): void {
+                $agent = new DataExportTestAgent();
+                $agent->onStart();
+                foreach (['owner', 'older'] as $token) {
+                    $agent->onSignalHttpRequest(
+                        new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], $token, null), '', '',
+                    );
+                    self::assertSame(200, $agent->httpReply?->status, $token);
+                    $names[] = $agent->httpReply->headers['Content-Disposition'];
+                }
+            });
+        }
+        self::assertSame([
+            'attachment; filename="your-data-2026-10-23.zip"; filename*=UTF-8\'\'your-data-2026-10-23.zip',
+            'attachment; filename="your-data-2026-10-22.zip"; filename*=UTF-8\'\'your-data-2026-10-22.zip',
+            'attachment; filename="your-data-2026-10-23.zip"; filename*=UTF-8\'\'your-data-2026-10-23.zip',
+            'attachment; filename="your-data-2026-10-22.zip"; filename*=UTF-8\'\'your-data-2026-10-22.zip',
+        ], $names);
+    }
+
     /** A personal data copy carries the published picture and its set moment. */
     public function testProfilePhotoSectionIncludesItsPicture(): void
     {
@@ -278,7 +375,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             self::assertSame(DataExportState::READY, $order->state);
             $archive = new PharData($this->directory . '/' . $order->storedName);
             self::assertSame(
-                ['file' => 'files/photo.jpg', 'setAt' => '2026-01-03T00:00:00Z'],
+                ['file' => 'files/photo.jpg', 'setAt' => '2026-01-03T00:00:00+00:00'],
                 self::section($archive, 'profile_photo'),
             );
             self::assertSame('JPEG', $archive['files/photo.jpg']->getContent());
@@ -367,7 +464,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         );
         self::assertSame(401, $agent->httpReply?->status, 'A query-string token is never an identity');
         Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00')->actions->finishReady(
-            'expired.zip', 10, '2026-01-01 00:01:00', '2026-01-02 00:01:00',
+            'expired.zip', 10, '2026-01-01 00:01:00', '2026-01-02 00:01:00', 'UTC',
         );
         file_put_contents($this->directory . '/expired.zip', 'expired bytes');
         $agent->onSignalHttpRequest(new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], 'owner', null), '', '');
@@ -444,7 +541,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $future = date('Y-m-d H:i:s', time() + 86400);
         foreach ([7 => 'kept.zip', 8 => 'missing.zip', 9 => 'expired.zip'] as $userId => $name) {
             $row = Hilos::$db->dataExports->actions->order($userId, '2026-01-01 00:00:00');
-            $row->actions->finishReady($name, 4, '2026-01-01 00:01:00', $userId === 9 ? '2026-01-02 00:00:00' : $future);
+            $row->actions->finishReady($name, 4, '2026-01-01 00:01:00', $userId === 9 ? '2026-01-02 00:00:00' : $future, 'UTC');
         }
         Hilos::$db->dataExports->actions->order(10, '2026-01-01 00:00:00')->actions->finishFailed(
             '2026-01-01 00:01:00', '2026-01-02 00:00:00',
@@ -558,6 +655,25 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame('Open Profile › Your data to try again.', $announcements[0]->body);
         self::assertSame(['url' => '/profile/data'], $announcements[0]->data);
         self::assertNull($announcements[0]->channels);
+    }
+
+    /**
+     * @param string $mode Exact server text policy for the call
+     * @param string $project Project zone for the call
+     * @param Closure(): void $assertions Work done under that policy
+     */
+    private function withZoneEnvironment(string $mode, string $project, Closure $assertions): void
+    {
+        $previousMode = getenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
+        $previousProject = getenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        try {
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . '=' . $mode);
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=' . $project);
+            $assertions();
+        } finally {
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . ($previousProject === false ? '' : '=' . $previousProject));
+        }
     }
 
     /** @return list<NotificationEmitSignalData> Completion notices queued for the notification owner */

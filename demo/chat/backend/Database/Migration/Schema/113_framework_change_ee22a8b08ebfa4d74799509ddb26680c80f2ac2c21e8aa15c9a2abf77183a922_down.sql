@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["legal_acceptance_export"],"parts":[{"changeId":"20261101093551800031_HIL-1579_export_time_zones","unit":"legal_acceptance_export","upSha256":"7a2ea42839a0d86fde8699fbca3279b242b0614715c84618559967ea357bc671","downSha256":"c49818c4e69ea4cd01bb33ecf2174432faecdbfc08df9f71a9c49959eb37c9bd"}],"upSha256":"7a2ea42839a0d86fde8699fbca3279b242b0614715c84618559967ea357bc671","downSha256":"c49818c4e69ea4cd01bb33ecf2174432faecdbfc08df9f71a9c49959eb37c9bd"}
+ALTER TABLE `hilos_legal_acceptance_export` DROP COLUMN `time_zone`;

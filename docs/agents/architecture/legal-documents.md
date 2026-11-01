@@ -614,12 +614,15 @@ comma and CRLF, the header line in English:
 `user_id,name,email,document,revision,in_code,accepted_at`. A line is a row of
 the table: the project's name, the verified email (empty when there is none),
 `in_code` `yes` / `no` / empty when the catalog refused, the moment in ISO 8601
-UTC; the order is the table's, newest first. A cell that starts with `=`, `+`,
-`-`, `@`, a tab or a carriage return gets an apostrophe in front: a name is
-written by its person, and the administrator opening the file must not run it.
+with its offset, in the zone the server-text mode selects, with the
+administrator who ordered the file as its recipient, not the people on the rows
+([time-zones.md](time-zones.md)); the order is the table's, newest first. A
+cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets an
+apostrophe in front: a name is written by its person, and the administrator
+opening the file must not run it.
 Nothing under the filter makes a file of the header alone. The file is named
-`legal-acceptances-<YYYY-MM-DD>.csv`, the date of readiness in UTC
-(`LegalAcceptancesCsv`).
+`legal-acceptances-<YYYY-MM-DD>.csv`, the date of readiness in the zone of
+the file (`LegalAcceptancesCsv`).
 
 **The order.** The page action `legal_acceptances_export` on
 `hilos_legal_acceptances` carries `{document, revisionId, search}`, each a
@@ -638,15 +641,18 @@ operation, or Send again finds it confirmed: that tab orders (HIL-1330).
 `hilos_legal_acceptance_export` (one row per administrator, `_pii` PURGE) and
 builds one order at a time, in request order, in the agent's tick: the first
 tick resolves the filters and the search once - names are searched by the
-project once, through `exportScope()` - and opens the file with the mark and
-the header; every next tick appends at most 500 records read by `exportChunk()`
-after the last record of the previous part, by `(accepted_at, id)`, so records
-written after the build started do not enter. A part shorter than 500 finishes
+project once, through `exportScope()` - selects the zone by the server-text
+mode for the administrator as recipient
+(`TimeHelper::serverTextTimeZone($export->userId)`) and keeps it in the build,
+so every part is written in it whatever changes meanwhile, and opens the file
+with the mark and the header; every next tick appends at most 500 records read
+by `exportChunk()` after the last record of the previous part, by
+`(accepted_at, id)`, so records written after the build started do not enter. A part shorter than 500 finishes
 the file: it is renamed from `.building.csv` to its random stored name, the row
-turns `ready` with its size and record count, and expires a day later. Any
-failure removes what was written, records the reason in the agent's journal and
+turns `ready` with its size, record count and the IANA name of the zone in
+`time_zone`, and expires a day later. Any failure removes what was written, records the reason in the agent's journal and
 turns the row `failed` for the same day; the agent does not try again. A
-restart builds a preparing order again from its first line.
+restart builds a preparing order again from its first line and selects the zone again.
 
 **Who learns.** The state of the administrator's own export - `{state,
 document, revisionId, search, requestedAt, finishedAt, expiresAt, sizeBytes,
@@ -665,7 +671,9 @@ legal agent ([agent-http-routes.md](agent-http-routes.md)), answers the file of
 the administrator whose browser asks, by the session cookie or header and never
 by a key in the address: no session or an expired one 401, a takeover or a
 person who is not an active administrator 403, no ready export or an expired
-one 404. The body travels as `PrivateDownloadResponse` sends any private
+one 404. The name is dated by `finishedAt` in the zone stored with the file; a
+ready row with a null `time_zone` predates the column and is named in UTC, as
+its bytes are. The body travels as `PrivateDownloadResponse` sends any private
 attachment: through nginx when `HILOS_LEGAL_EXPORT_XACCEL_LOCATION` names the
 internal location of the `legal_export` volume, otherwise as the daemon's own
 body up to 4 MiB to a browser this node holds.

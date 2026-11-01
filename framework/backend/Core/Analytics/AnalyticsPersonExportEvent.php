@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Analytics;
 
-use Hilos\Constants\TimeConstants;
+use DateTimeZone;
+use Hilos\DataExport\DataExportTime;
 
 /** One authenticated analytics fact selected for a person's data copy. */
 final readonly class AnalyticsPersonExportEvent
@@ -36,15 +37,13 @@ final readonly class AnalyticsPersonExportEvent
     }
 
     /**
+     * @param DateTimeZone $timeZone Zone of the archive being written
      * @return array<string, int|string|array<string, mixed>|null> Portable row without transport secrets
      */
-    public function archiveRow(): array
+    public function archiveRow(DateTimeZone $timeZone): array
     {
-        $seconds = intdiv($this->createdTs, TimeConstants::MS_PER_SECOND);
-        $milliseconds = $this->createdTs % TimeConstants::MS_PER_SECOND;
-
         return [
-            'at' => gmdate('Y-m-d\TH:i:s', $seconds) . sprintf('.%03dZ', $milliseconds),
+            'at' => DataExportTime::isoMs($this->createdTs, $timeZone),
             'kind' => $this->kind,
             'name' => $this->name,
             'page' => $this->page,

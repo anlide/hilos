@@ -42,6 +42,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
      * Interest is raised before construction, so remote writes reach the histogram subscriber. The people's
      * emails go into the exports, and the sessions and confirmations gate who orders and who downloads; the
      * second factors and device keys are what the step-up gate asks to name the proof of an order it refuses.
+     * The ordering administrator's own row gives the time zone the file is written in.
      */
     public const array READS_DB = [
         HilosDbContext::legalAcceptances,
@@ -50,6 +51,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
         HilosDbContext::stepUps,
         HilosDbContext::secondFactors,
         HilosDbContext::passkeyCredentials,
+        HilosDbContext::users,
     ];
 
     public const array AGENT_SIGNALS = [

@@ -1,6 +1,8 @@
 -- Migration: Create hilos_legal_acceptance_export table (stub/reference)
 -- Copy this SQL to the next free project schema migration.
 -- One file of acceptance records per administrator; a restore requiring anonymization purges the queue (HIL-1234).
+-- `time_zone` (HIL-1579) is the IANA zone the ready file was written in; NULL while
+-- preparing, after failure, and on a ready file older than the column, whose moments are UTC.
 
 CREATE TABLE `hilos_legal_acceptance_export` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -14,6 +16,7 @@ CREATE TABLE `hilos_legal_acceptance_export` (
     `expires_at` TIMESTAMP NULL DEFAULT NULL,
     `stored_name` VARCHAR(64) NULL DEFAULT NULL,
     `size_bytes` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `time_zone` VARCHAR(64) NULL DEFAULT NULL,
     `records` INT UNSIGNED NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_legal_acceptance_export_user` (`user_id`),

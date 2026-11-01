@@ -21,6 +21,7 @@ use Hilos\HilosException;
  * @property-read ?string $expiresAt
  * @property-read ?string $storedName
  * @property-read ?int $sizeBytes
+ * @property-read ?string $timeZone IANA zone the ready archive was written in; null reads as UTC on a ready archive
  * @property-read DataExportActions $actions
  */
 class DataExport extends DbItem
@@ -41,6 +42,7 @@ class DataExport extends DbItem
             ObjectDataExport::expiresAt => $this->_object->expiresAt,
             ObjectDataExport::storedName => $this->_object->storedName,
             ObjectDataExport::sizeBytes => $this->_object->sizeBytes,
+            ObjectDataExport::timeZone => $this->_object->timeZone,
             default => parent::__get($name),
         };
     }

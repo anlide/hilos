@@ -369,12 +369,34 @@ formats the moment as `Y-m-d H:i:s P (e)` with
 and no account recipient, so the server-text policy supplies the display zone.
 
 Use that same mode for the personal data archive, a person's analytics export
-and the acceptances CSV. The CSV's recipient is the administrator who requested
-it. Date the filename in the same zone as its contents. Dates in these files
-are ISO-8601 with an offset, and the README states the zone. These are outputs
-for a person, a separate boundary from a moment in a protocol payload; an
-offset in an export does not permit an offset string on the wire.
-(not in the code yet — HIL-1579)
+and the acceptances CSV. The recipient of the archive is the person it describes
+(`TimeHelper::serverTextTimeZone($export->userId)`); the recipient of the CSV is
+the administrator who requested it, not the people on its rows. Date the
+filename in the same zone as its contents. These are outputs for a person, a
+separate boundary from a moment in a protocol payload; an offset in an export
+does not permit an offset string on the wire.
+
+One file is written in one zone. The build selects it once when an attempt
+starts and passes it to everything that writes a moment: the archive writer
+(`DataExportWriter::timeZone()`), the analytics rows and the CSV lines. A change
+of the person's zone or of the mode while the file is being built does not
+reach it, and a restarted `PREPARING` build starts over and selects again. The
+zone's IANA name is stored in `time_zone` of `hilos_data_export` and
+`hilos_legal_acceptance_export` by the same conditional update that marks the
+file ready, and it stays null while the file is preparing or failed.
+
+[DataExportTime](../../../framework/backend/DataExport/DataExportTime.php)
+writes every moment as ISO 8601 with its numeric offset, `+00:00` in `utc`
+mode: SQL moments to the second (`Y-m-d\TH:i:sP`), analytics events to the
+millisecond (`Y-m-d\TH:i:s.vP`). The absolute moment never changes, only its
+notation. The archive's README names the zone. A revision's calendar dates
+(`publishedOn`, `effectiveOn`) are not moments and are not converted;
+`finishedAt` and `expiresAt` in the database stay UTC.
+
+The download names the file by `finishedAt` in the stored zone, not in the
+zone the settings or the person have now. A ready file with a null
+`time_zone` was written before the zone was stored; its bytes are UTC, and it is
+read, and named, as UTC.
 
 ## Cron, Retention And Logs
 

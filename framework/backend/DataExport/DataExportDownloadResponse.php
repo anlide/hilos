@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\DataExport;
 
-use Hilos\Constants\TimeConstants;
+use DateTimeZone;
 use Hilos\Files\Download\PrivateDownloadResponse;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** Delivers an authorized archive through nginx or a bounded direct reply to a browser this node holds. */
 final readonly class DataExportDownloadResponse
@@ -25,13 +24,15 @@ final readonly class DataExportDownloadResponse
     }
 
     /**
-     * The archive travels as any private attachment does ({@see PrivateDownloadResponse}); this names it.
+     * The archive travels as any private attachment does ({@see PrivateDownloadResponse}); this names it
+     * by its readiness date in the zone it was written in, never by the moment it is downloaded.
      *
      * @param HttpRequestDTO $request Request being answered
      * @param FsFile $file Authorized archive on disk
      * @param string $finishedAt Archive readiness date in SQL form
      * @param string $xAccelLocation Internal nginx location, or empty for direct transport
      * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
+     * @param DateTimeZone $timeZone Zone the archive was written in, which dates its name
      * @return self Private download or refusal
      * @throws FsException When the existing file cannot be measured
      */
@@ -41,12 +42,13 @@ final readonly class DataExportDownloadResponse
         string $finishedAt,
         string $xAccelLocation,
         ?string $localNodeId,
+        DateTimeZone $timeZone,
     ): self {
         $response = PrivateDownloadResponse::forFile(
             $request,
             $file,
             'application/zip',
-            'your-data-' . gmdate('Y-m-d', intdiv(TimeHelper::sqlToMs($finishedAt), TimeConstants::MS_PER_SECOND)) . '.zip',
+            'your-data-' . DataExportTime::date($finishedAt, $timeZone) . '.zip',
             $xAccelLocation,
             $localNodeId,
         );

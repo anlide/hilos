@@ -28,6 +28,7 @@ use Hilos\Legal\Export\LegalAcceptancesExportState;
  * @property ?string $expiresAt
  * @property ?string $storedName
  * @property ?int $sizeBytes
+ * @property ?string $timeZone IANA zone the ready file was written in; null while preparing, after failure, and on an older ready file (UTC)
  * @property ?int $records
  */
 class LegalAcceptanceExport extends Object_
@@ -45,6 +46,7 @@ class LegalAcceptanceExport extends Object_
     public const string expiresAt = 'expiresAt';
     public const string storedName = 'storedName';
     public const string sizeBytes = 'sizeBytes';
+    public const string timeZone = 'timeZone';
     public const string records = 'records';
 
     /**
@@ -66,6 +68,7 @@ class LegalAcceptanceExport extends Object_
             self::expiresAt => $this->entity->expires_at,
             self::storedName => $this->entity->stored_name,
             self::sizeBytes => $this->entity->size_bytes,
+            self::timeZone => $this->entity->time_zone,
             self::records => $this->entity->records,
             default => parent::__get($property),
         };
@@ -97,12 +100,19 @@ class LegalAcceptanceExport extends Object_
      * @param int $records Acceptance records written
      * @param string $finishedAt Completion time in SQL UTC
      * @param string $expiresAt Expiry time in SQL UTC
+     * @param string $timeZone IANA name of the time zone the file was written in
      * @return bool Whether this order still existed and was completed by this call
      * @throws HilosException When the conditional write or its announcement fails
      */
-    public function finishReady(string $storedName, int $sizeBytes, int $records, string $finishedAt, string $expiresAt): bool
-    {
-        return $this->finish(LegalAcceptancesExportState::READY, $storedName, $sizeBytes, $records, $finishedAt, $expiresAt);
+    public function finishReady(
+        string $storedName,
+        int $sizeBytes,
+        int $records,
+        string $finishedAt,
+        string $expiresAt,
+        string $timeZone,
+    ): bool {
+        return $this->finish(LegalAcceptancesExportState::READY, $storedName, $sizeBytes, $records, $finishedAt, $expiresAt, $timeZone);
     }
 
     /**
@@ -113,7 +123,7 @@ class LegalAcceptanceExport extends Object_
      */
     public function finishFailed(string $finishedAt, string $expiresAt): bool
     {
-        return $this->finish(LegalAcceptancesExportState::FAILED, null, null, null, $finishedAt, $expiresAt);
+        return $this->finish(LegalAcceptancesExportState::FAILED, null, null, null, $finishedAt, $expiresAt, null);
     }
 
     /**
@@ -133,6 +143,7 @@ class LegalAcceptanceExport extends Object_
             self::expiresAt => $this->entity->expires_at,
             self::storedName => $this->entity->stored_name,
             self::sizeBytes => $this->entity->size_bytes,
+            self::timeZone => $this->entity->time_zone,
             self::records => $this->entity->records,
         ];
     }
@@ -144,6 +155,7 @@ class LegalAcceptanceExport extends Object_
      * @param ?int $records Ready record count
      * @param string $finishedAt Completion time in SQL UTC
      * @param string $expiresAt Expiry time in SQL UTC
+     * @param ?string $timeZone Ready file time zone name
      * @return bool Whether this call won completion of the original order
      * @throws HilosException When the conditional write or its announcement fails
      */
@@ -154,6 +166,7 @@ class LegalAcceptanceExport extends Object_
         ?int $records,
         string $finishedAt,
         string $expiresAt,
+        ?string $timeZone,
     ): bool {
         if ($this->entity->id === null) {
             return false;
@@ -166,8 +179,18 @@ class LegalAcceptanceExport extends Object_
         );
         Database::sql(
             'UPDATE `' . EntityLegalAcceptanceExport::_table . '` SET `state` = ?, `stored_name` = ?, `size_bytes` = ?, '
-                . '`records` = ?, `finished_at` = ?, `expires_at` = ? WHERE `id` = ? AND `state` = ?',
-            [$state, $storedName, $sizeBytes, $records, $finishedAt, $expiresAt, $this->entity->id, LegalAcceptancesExportState::PREPARING],
+                . '`time_zone` = ?, `records` = ?, `finished_at` = ?, `expires_at` = ? WHERE `id` = ? AND `state` = ?',
+            [
+                $state,
+                $storedName,
+                $sizeBytes,
+                $timeZone,
+                $records,
+                $finishedAt,
+                $expiresAt,
+                $this->entity->id,
+                LegalAcceptancesExportState::PREPARING,
+            ],
         );
         if (Database::affectedRows() !== 1) {
             return false;
@@ -175,6 +198,7 @@ class LegalAcceptanceExport extends Object_
         $this->entity->state = $state;
         $this->entity->stored_name = $storedName;
         $this->entity->size_bytes = $sizeBytes;
+        $this->entity->time_zone = $timeZone;
         $this->entity->records = $records;
         $this->entity->finished_at = $finishedAt;
         $this->entity->expires_at = $expiresAt;

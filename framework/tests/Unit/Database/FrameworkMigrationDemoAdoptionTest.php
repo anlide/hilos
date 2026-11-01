@@ -51,6 +51,16 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         ];
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
+        $genesis = array_column(
+            json_decode(FsPath::read($root . '/framework/backend/Database/Migration/catalog.json'), true, flags: JSON_THROW_ON_ERROR)['units'],
+            null,
+            'unit',
+        );
+        $exportTimeZoneIndices = [112, 71, 71, 56, 56, 56];
+        $exportTimeZones = [
+            'data_export' => '6f7552ae23f9d48f528091ecebaab13fd22b0f314bf8f29e08832361b62bc5ba',
+            'legal_acceptance_export' => 'ee22a8b08ebfa4d74799509ddb26680c80f2ac2c21e8aa15c9a2abf77183a922',
+        ];
         foreach ($projects as $index => $project) {
             $base = $project->root . '/' . sprintf('%03d', $indices[$index]) . '_adopt_framework_catalog';
             $up = FsPath::read($base . '.sql');
@@ -63,17 +73,17 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame('', trim(preg_replace('/--[^\n]*/', '', $down)));
             $origins = [$origin];
             if ($index >= 3) {
+                // Both installs copied the genesis form; a later change part reaches them as a change pair.
                 foreach (['oauth_provider', 'legal_acceptance_export'] as $offset => $key) {
-                    $unit = $schema->unit($key);
                     $base = $project->root . '/' . sprintf('%03d', $indices[$index] - 2 + $offset) . '_create_hilos_' . $key;
                     $up = FsPath::read($base . '.sql');
                     $down = FsPath::read($base . '_down.sql');
                     $install = $catalog->verifyPair($up, $down);
                     self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
                     self::assertSame([$key], $install->units);
-                    self::assertSame($catalog->partsForUnits([$key]), $install->parts);
-                    self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
-                    self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                    self::assertSame([], $install->parts);
+                    self::assertSame($genesis[$key]['upSha256'], FrameworkMigrationOrigin::bodyHash(substr($up, strpos($up, "\n") + 1)));
+                    self::assertSame($genesis[$key]['downSha256'], FrameworkMigrationOrigin::bodyHash(substr($down, strpos($down, "\n") + 1)));
                     $origins[] = $install;
                 }
             }
@@ -197,6 +207,21 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('identity')->downPath)),
                 $source->afterStubDownSha256);
             $origins[] = $change;
+            foreach (array_keys($exportTimeZones) as $offset => $unit) {
+                $base = $project->root . '/' . sprintf('%03d', $exportTimeZoneIndices[$index] + $offset)
+                    . '_framework_change_' . $exportTimeZones[$unit];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$unit], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261101093551800031_HIL-1579_export_time_zones/' . $unit, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $unit);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame([], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->upPath)), $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->downPath)), $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

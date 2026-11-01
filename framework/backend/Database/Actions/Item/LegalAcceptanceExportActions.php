@@ -24,14 +24,21 @@ class LegalAcceptanceExportActions extends DbActions
      * @param int $records Acceptance records written
      * @param string $finishedAt Completion time in SQL UTC
      * @param string $expiresAt Expiry time in SQL UTC
+     * @param string $timeZone IANA name of the time zone the file was written in
      * @return bool Whether this call completed the still-preparing order
      * @throws HilosException When ownership, storage, or announcement fails
      */
-    public function finishReady(string $storedName, int $sizeBytes, int $records, string $finishedAt, string $expiresAt): bool
-    {
+    public function finishReady(
+        string $storedName,
+        int $sizeBytes,
+        int $records,
+        string $finishedAt,
+        string $expiresAt,
+        string $timeZone,
+    ): bool {
         $this->ensureCanWrite();
 
-        return $this->object->finishReady($storedName, $sizeBytes, $records, $finishedAt, $expiresAt);
+        return $this->object->finishReady($storedName, $sizeBytes, $records, $finishedAt, $expiresAt, $timeZone);
     }
 
     /**

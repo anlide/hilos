@@ -91,7 +91,7 @@ final class ProfileDataPageTest extends IntegrationTestCase
         }
 
         $export = Hilos::$db->dataExports->actions->order($userId, '2026-09-27 10:00:00');
-        $export->actions->finishReady('own.zip', 123, '2026-09-27 10:01:00', '2026-10-04 10:01:00');
+        $export->actions->finishReady('own.zip', 123, '2026-09-27 10:01:00', '2026-10-04 10:01:00', 'UTC');
         foreach ([ProfileDataPage::class, ProfilePage::class] as $pageClass) {
             if ($pageClass === ProfilePage::class) {
                 self::assertArrayNotHasKey(DataExportStateProjector::SECTION, $this->subscribe($pageClass)[PagePayload::data]);

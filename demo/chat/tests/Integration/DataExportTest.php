@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Analytics\AnalyticsPersonEvent;
@@ -22,6 +25,7 @@ use Hilos\Fs\DirectoryScope;
 use Hilos\HilosException;
 use JsonException;
 use PharData;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** The project seam includes only the author's messages and the rename target's history. */
 final class DataExportTest extends IntegrationTestCase
@@ -31,6 +35,9 @@ final class DataExportTest extends IntegrationTestCase
         'hilos_analytics_person_event', 'hilos_analytics_browser_session',
         'hilos_analytics_page', 'hilos_analytics_page_params', 'hilos_analytics_action_name',
     ];
+
+    /** 2026-10-22T23:30:00Z: a moment whose date in Warsaw or Auckland is already the next day. */
+    private const int EVENT_MOMENT_MS = 1792711800000;
 
     private string $directory;
     private ?FsContext $previousFs;
@@ -153,20 +160,38 @@ final class DataExportTest extends IntegrationTestCase
         self::assertStringNotContainsString('foreign', $archive['chat.json']->getContent());
     }
 
+    /** @return iterable<string, array{string, string, string}> Mode, the zone it gives Alice, and her page open's moment in it */
+    public static function exportZones(): iterable
+    {
+        yield 'recipient' => ['recipient', 'Europe/Warsaw', '2026-10-23T01:30:00.502+02:00'];
+        yield 'project' => ['project', 'Pacific/Auckland', '2026-10-23T12:30:00.502+13:00'];
+        yield 'utc' => ['utc', 'UTC', '2026-10-22T23:30:00.502+00:00'];
+    }
+
     /**
-     * The last user of a shared browser does not own the earlier actor's facts.
+     * The last user of a shared browser does not own the earlier actor's facts, whichever zone the
+     * copy is written in: the zone changes only the notation of the analytics and project sections.
      *
+     * @param string $mode Exact server text policy
+     * @param string $zone Zone the policy gives Alice
+     * @param string $pageOpenedAt Her folded account's page open as the archive must carry it
      * @throws HilosException When event storage or archive creation fails
      * @throws JsonException When an archive part cannot be decoded
      */
-    public function testAnalyticsPartsUseTheExactActorAndIncludeFoldedAccounts(): void
+    #[DataProvider('exportZones')]
+    public function testAnalyticsPartsUseTheExactActorAndIncludeFoldedAccounts(string $mode, string $zone, string $pageOpenedAt): void
     {
         $aliceId = $this->createUser('Alice');
         $bobId = $this->createUser('Bob');
         $foldedId = $this->createUser('Folded');
         $olderId = $this->createUser('Older');
+        Hilos::$db->users[$aliceId]->actions->setTimeZone('Europe/Warsaw');
         Hilos::$db->userMerges->actions->add($foldedId, $aliceId);
         Hilos::$db->userMerges->actions->add($olderId, $foldedId);
+        $registration = Hilos::$db->events->actions->addUserRegistered($aliceId);
+        $this->eventIds[] = (int)$registration->id;
+        $message = Hilos::$db->events->actions->addMessage('my message', userId: $aliceId);
+        $this->eventIds[] = (int)$message->id;
 
         $store = new AnalyticsStore();
         $browserToken = 'shared-browser-' . bin2hex(random_bytes(8));
@@ -174,33 +199,36 @@ final class DataExportTest extends IntegrationTestCase
         for ($row = 1; $row <= 501; $row++) {
             $store->insertPersonEvent(new AnalyticsPersonEvent(
                 $browserToken, $aliceId, null, 11, AnalyticsPersonEvent::ACTION, 'alice_action',
-                null, null, '127.0.0.1', 1,
+                null, null, '127.0.0.1', self::EVENT_MOMENT_MS + 1,
             ));
         }
         $store->insertPersonEvent(new AnalyticsPersonEvent(
             $browserToken, $olderId, null, 12, AnalyticsPersonEvent::PAGE_OPEN,
-            null, 'chat', ['room' => 'mine'], '2001:db8::1', 502,
+            null, 'chat', ['room' => 'mine'], '2001:db8::1', self::EVENT_MOMENT_MS + 502,
         ));
         $store->insertPersonEvent(new AnalyticsPersonEvent(
             $browserToken, $bobId, $aliceId, 13, AnalyticsPersonEvent::ACTION, 'bob_action',
-            null, null, '127.0.0.2', 503,
+            null, null, '127.0.0.2', self::EVENT_MOMENT_MS + 503,
         ));
         Database::sql('UPDATE `hilos_analytics_browser_session` SET `user_identity_type` = ?, `user_identity_value` = ?
             WHERE `session_token` = ?', ['user_id', (string)$bobId, $browserToken]);
 
         $agent = $this->agent = new DataExportAgent();
         $this->startAgent($agent);
-        ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($agent, $aliceId, $bobId): void {
-            Hilos::$db->dataExports->actions->order($aliceId, '2026-01-01 00:00:00');
-            Hilos::$db->dataExports->actions->order($bobId, '2026-01-01 00:00:00');
-            $agent->onTick();
-            $agent->onTick();
+        $this->withZoneEnvironment($mode, 'Pacific/Auckland', static function () use ($agent, $aliceId, $bobId): void {
+            ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($agent, $aliceId, $bobId): void {
+                Hilos::$db->dataExports->actions->order($aliceId, '2026-01-01 00:00:00');
+                Hilos::$db->dataExports->actions->order($bobId, '2026-01-01 00:00:00');
+                $agent->onTick();
+                $agent->onTick();
+            });
         });
 
         $alice = Hilos::$db->dataExports->ofUser($aliceId);
         $bob = Hilos::$db->dataExports->ofUser($bobId);
         self::assertSame(DataExportState::READY, $alice?->state);
         self::assertSame(DataExportState::READY, $bob?->state);
+        self::assertSame($zone, $alice->timeZone);
         $aliceArchive = new PharData($this->directory . '/exports/' . $alice->storedName);
         $bobArchive = new PharData($this->directory . '/exports/' . $bob->storedName);
         $aliceIndex = json_decode($aliceArchive['analytics_person.json']->getContent(), true, flags: JSON_THROW_ON_ERROR);
@@ -213,7 +241,11 @@ final class DataExportTest extends IntegrationTestCase
         self::assertSame('chat', $second[1]['page']);
         self::assertSame(['room' => 'mine'], $second[1]['params']);
         self::assertSame('2001:db8::1', $second[1]['address']);
-        self::assertSame('1970-01-01T00:00:00.502Z', $second[1]['at']);
+        self::assertSame($pageOpenedAt, $second[1]['at']);
+        $chat = json_decode($aliceArchive['chat.json']->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        foreach ([[$message->timestamp, $chat['messages'][0]['sentAt']], [$registration->timestamp, $chat['registeredAt']]] as [$stored, $written]) {
+            self::assertSame(new DateTimeImmutable($stored . ' UTC')->setTimezone(new DateTimeZone($zone))->format('Y-m-d\\TH:i:sP'), $written);
+        }
         self::assertStringNotContainsString('shared-browser', $aliceArchive['analytics_person_000001.json']->getContent());
         self::assertStringNotContainsString('bob_action', $aliceArchive['analytics_person_000002.json']->getContent());
 
@@ -224,6 +256,25 @@ final class DataExportTest extends IntegrationTestCase
         self::assertSame('bob_action', $bobPart[0]['name']);
         self::assertSame($aliceId, $bobPart[0]['subjectUserId']);
         self::assertStringNotContainsString('alice_action', $bobArchive['analytics_person_000001.json']->getContent());
+    }
+
+    /**
+     * @param string $mode Exact server text policy for the call
+     * @param string $project Project zone for the call
+     * @param callable(): void $build Work done under that policy
+     */
+    private function withZoneEnvironment(string $mode, string $project, callable $build): void
+    {
+        $previousMode = getenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
+        $previousProject = getenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        try {
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . '=' . $mode);
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . '=' . $project);
+            $build();
+        } finally {
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));
+            putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . ($previousProject === false ? '' : '=' . $previousProject));
+        }
     }
 
     /**

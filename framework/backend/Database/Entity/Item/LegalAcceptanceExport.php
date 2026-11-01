@@ -27,6 +27,7 @@ class LegalAcceptanceExport extends Entity
     public const string expires_at = 'expires_at';
     public const string stored_name = 'stored_name';
     public const string size_bytes = 'size_bytes';
+    public const string time_zone = 'time_zone';
     public const string records = 'records';
 
     public const string _table = 'hilos_legal_acceptance_export';
@@ -43,6 +44,7 @@ class LegalAcceptanceExport extends Entity
         self::expires_at,
         self::stored_name,
         self::size_bytes,
+        self::time_zone,
         self::records,
     ];
     public const array _types = [
@@ -57,6 +59,7 @@ class LegalAcceptanceExport extends Entity
         self::expires_at => PhpType::DATETIME->value,
         self::stored_name => PhpType::STRING->value,
         self::size_bytes => PhpType::INTEGER->value,
+        self::time_zone => PhpType::STRING->value,
         self::records => PhpType::INTEGER->value,
     ];
     public const array _foreign = [
@@ -85,5 +88,6 @@ class LegalAcceptanceExport extends Entity
     public ?string $expires_at = null;
     public ?string $stored_name = null;
     public ?int $size_bytes = null;
+    public ?string $time_zone = null;
     public ?int $records = null;
 }

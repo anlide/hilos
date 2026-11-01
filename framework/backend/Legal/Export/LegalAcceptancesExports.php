@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Legal\Export;
 
+use DateTimeZone;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\SessionToastSeverity;
 use Hilos\Auth\StepUp\StepUpOperationKey;
@@ -26,6 +27,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\DataExport\DataExportTime;
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Files\Download\PrivateDownloadResponse;
 use Hilos\Fs\Context\FsContext;
@@ -41,6 +43,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -220,6 +223,9 @@ final class LegalAcceptancesExports
     /**
      * Answers the download address: the file of the administrator whose browser asks, while it is kept.
      *
+     * The file is named by the date it became ready in the zone it was written in, UTC for a file kept from
+     * before files carried a zone, and never by the moment of the download or the asker's zone of that moment.
+     *
      * @param PageAgentInterface $agent The legal agent, whose journal names a transport the operator must fix
      * @param HttpRequestDTO $request Request carrying a cookie or header session, never a URL credential
      * @return HttpReplyDTO The file or a refusal without caching
@@ -252,7 +258,7 @@ final class LegalAcceptancesExports
                 self::directory()[$export->storedName],
                 self::CONTENT_TYPE,
                 self::FILENAME_PREFIX
-                    . gmdate('Y-m-d', intdiv(TimeHelper::sqlToMs($export->finishedAt), TimeConstants::MS_PER_SECOND))
+                    . DataExportTime::date($export->finishedAt, new DateTimeZone($export->timeZone ?? TimeConstants::UTC_TIME_ZONE))
                     . self::CSV_EXTENSION,
                 Hilos::$env[EnvConstants::HILOS_LEGAL_EXPORT_XACCEL_LOCATION]->string(),
                 Hilos::$cluster?->localNodeId(),
@@ -320,7 +326,10 @@ final class LegalAcceptancesExports
             if ($rows !== []) {
                 FsPath::append(
                     self::directory()[$build->buildingName]->getPath(),
-                    implode('', array_map(LegalAcceptancesCsv::line(...), $rows)),
+                    implode('', array_map(
+                        static fn (HilosLegalAcceptanceTableRow $row): string => LegalAcceptancesCsv::line($row, $build->timeZone),
+                        $rows,
+                    )),
                 );
                 $build->records += count($rows);
                 $build->after = $rows[array_key_last($rows)];
@@ -337,7 +346,8 @@ final class LegalAcceptancesExports
     }
 
     /**
-     * Resolves the order's filters and search once and opens its file with the byte order mark and the header.
+     * Resolves the order's filters and search once, chooses the one time zone of the whole file for the administrator
+     * who placed it, and opens the file with the byte order mark and the header.
      *
      * @param PageAgentInterface $agent The legal agent ticking
      * @param LegalAcceptanceExport $export Earliest preparing order
@@ -361,6 +371,7 @@ final class LegalAcceptancesExports
                 $basename . self::BUILDING_EXTENSION,
                 $where,
                 $params,
+                TimeHelper::serverTextTimeZone($export->userId),
             );
             FsPath::write(self::directory()[$build->buildingName]->getPath(), LegalAcceptancesCsv::bom() . LegalAcceptancesCsv::header());
             self::$build = $build;
@@ -393,6 +404,7 @@ final class LegalAcceptancesExports
             $build->records,
             TimeHelper::getSqlDateTime(),
             self::expiresAt(),
+            $build->timeZone->getName(),
         )) {
             FsPath::delete($finalPath);
 

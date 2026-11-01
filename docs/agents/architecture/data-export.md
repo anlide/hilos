@@ -89,8 +89,12 @@ preparing state. Archive I/O starts on the following turn, after that flush.
 The builder writes an uncompressed ZIP to a random `*.building.zip`, writes
 explicit JSON projections of framework records, calls the project's seam, adds
 `README.txt`, and renames the complete file before marking the request ready.
-Dates inside the archive are ISO 8601 UTC. Secrets, tokens and push endpoints
-are excluded. A project without push storage gets an empty push section. Each
+Dates inside the archive are ISO 8601 with an explicit offset, in the one zone
+chosen for the person when the attempt starts
+(`TimeHelper::serverTextTimeZone($export->userId)`,
+[time-zones.md](time-zones.md)); the builder hands it to the sections as
+`DataExportWriter::timeZone()`, and `README.txt` names it. Secrets, tokens and
+push endpoints are excluded. A project without push storage gets an empty push section. Each
 session carries the network address it last connected from, and `access_log`
 lists the person's [access log](access-log.md) rows - `at`, `address`, `event`
 in the order they occurred; a privacy text that keeps no address or no log gives
@@ -109,7 +113,7 @@ When analytics is enabled, `analytics_person.json` indexes numbered
 through `hilos_analytics_person_event.user_id`: the person and every account
 folded into them, including indirect merges. It never selects by the browser
 session's last signed-in identity. A guest's activity before sign-in and another
-person's activity in the same browser therefore stay out. Rows carry UTC time,
+person's activity in the same browser therefore stay out. Rows carry their time to the millisecond in the archive's zone,
 kind, action or page name, page params, address, session numbers and takeover
 subject where applicable. They carry no session token, accept key or action
 body. The [analytics writer](analytics.md) remains the only writer of the raw
@@ -117,7 +121,7 @@ table; the export reader issues bounded, read-only SQL from `Core/Analytics`.
 
 When profile photos are enabled, `profile_photo` is null for a person without
 one or whose original file is missing after a restore, or contains the cropped
-JPEG under `files/<stored_name>` and `setAt` in UTC.
+JPEG under `files/<stored_name>` and `setAt` in the archive's zone.
 It reads the framework photo row and file registry; it does not export a
 separate rendered variant.
 
@@ -155,7 +159,11 @@ is 403, and a missing, unfinished or expired copy is 404. Replies are not
 cached.
 
 A successful response is an attachment named `your-data-YYYY-MM-DD.zip`, dated
-by readiness. `HILOS_DATA_EXPORT_XACCEL_LOCATION` makes nginx send the bytes
+by readiness in the zone the archive was written in. That zone is stored in
+`time_zone` of the request, in the same conditional update that marks it ready,
+so a later change of the person's zone or of the mode does not rename the
+file; a ready request with a null `time_zone` predates the column and is named
+in UTC, as its bytes are. `HILOS_DATA_EXPORT_XACCEL_LOCATION` makes nginx send the bytes
 from its internal location. Empty, it sends a direct body up to the files
 subsystem's 4 MiB ceiling; above that it returns 500 and logs which env value to
 configure. The direct body goes only to a browser this node holds; one on

@@ -7,7 +7,6 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
-use Hilos\DataExport\DataExportTime;
 use Hilos\DataExport\DTO\DataExportStateSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -51,12 +50,5 @@ final class DataExportStateSignalDataTest extends TestCase
     {
         $this->expectException(InvalidFormatException::class);
         DataExportStateSignalData::fromArray(['dataExport' => ['state' => 'preparing']]);
-    }
-
-    /** Archive dates retain nullable values and normalize a stored timestamp to UTC. */
-    public function testArchiveDates(): void
-    {
-        self::assertNull(DataExportTime::iso(null));
-        self::assertSame('2026-09-27T10:15:30Z', DataExportTime::iso('2026-09-27 10:15:30 UTC'));
     }
 }

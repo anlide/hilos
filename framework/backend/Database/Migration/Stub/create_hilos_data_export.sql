@@ -1,6 +1,8 @@
 -- Migration: Create hilos_data_export table (stub/reference)
 -- Copy this SQL to the next free project schema migration.
 -- One copy per account; a restore requiring anonymization purges the queue (HIL-303).
+-- `time_zone` (HIL-1579) is the IANA zone the ready archive was written in; NULL while
+-- preparing, after failure, and on a ready archive older than the column, whose moments are UTC.
 
 CREATE TABLE `hilos_data_export` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -11,6 +13,7 @@ CREATE TABLE `hilos_data_export` (
     `expires_at` TIMESTAMP NULL DEFAULT NULL,
     `stored_name` VARCHAR(64) NULL DEFAULT NULL,
     `size_bytes` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `time_zone` VARCHAR(64) NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_data_export_user` (`user_id`),
     KEY `idx_data_export_state` (`state`, `requested_at`),

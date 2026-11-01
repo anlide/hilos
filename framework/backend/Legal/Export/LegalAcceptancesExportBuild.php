@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Legal\Export;
 
+use DateTimeZone;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
 
 /**
@@ -27,6 +28,7 @@ final class LegalAcceptancesExportBuild
      * @param string $buildingName Name the file is written under until it is whole
      * @param string $where WHERE clause the order's filters and search resolved to at the start
      * @param list<mixed> $params Values bound by that clause
+     * @param DateTimeZone $timeZone Zone every moment of the file is written in, chosen for the administrator at the start
      */
     public function __construct(
         public readonly int $exportId,
@@ -35,6 +37,7 @@ final class LegalAcceptancesExportBuild
         public readonly string $buildingName,
         public readonly string $where,
         public readonly array $params,
+        public readonly DateTimeZone $timeZone,
     ) {
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\DataExport;
 
 use BadMethodCallException;
+use DateTimeZone;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use JsonException;
@@ -24,9 +25,10 @@ final class DataExportArchive implements DataExportWriter
 
     /**
      * @param string $path New archive path, ending in .zip
+     * @param DateTimeZone $timeZone Zone of this one archive, chosen when its build started
      * @throws FsException When the path exists or Phar cannot create the archive
      */
-    public function __construct(private readonly string $path)
+    public function __construct(private readonly string $path, private readonly DateTimeZone $timeZone)
     {
         if (file_exists($path) || is_link($path)) {
             throw new FsException('A data export must start with a new archive');
@@ -101,6 +103,14 @@ final class DataExportArchive implements DataExportWriter
         }
 
         return $archivePath;
+    }
+
+    /**
+     * @return DateTimeZone Zone chosen when this export started; every moment in it is written in this zone
+     */
+    public function timeZone(): DateTimeZone
+    {
+        return $this->timeZone;
     }
 
     /**

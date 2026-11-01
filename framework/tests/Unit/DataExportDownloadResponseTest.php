@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use DateTimeZone;
 use Hilos\Constants\HttpConstants;
 use Hilos\DataExport\DataExportDownloadResponse;
 use Hilos\Files\Download\FileDownloadResponse;
@@ -53,6 +54,43 @@ final class DataExportDownloadResponseTest extends TestCase
         self::assertStringContainsString('attachment; filename="your-data-2026-09-27.zip"', $response->reply->headers['Content-Disposition']);
     }
 
+    /** The name carries the readiness date in the archive's own zone, which may differ from the UTC date either way. */
+    public function testNameIsDatedInTheZoneOfTheArchive(): void
+    {
+        file_put_contents($this->file->getPath(), "PK\x00\xff");
+        $names = [];
+        foreach ([
+            ['2026-10-22 23:30:00', 'Europe/Warsaw'],
+            ['2026-10-22 23:30:00', 'UTC'],
+            ['2026-10-23 03:00:00', 'America/Los_Angeles'],
+            ['2026-10-23 03:00:00', 'UTC'],
+        ] as [$finishedAt, $timeZone]) {
+            $names[] = $this->response('', finishedAt: $finishedAt, timeZone: $timeZone)->reply->headers['Content-Disposition'];
+        }
+        self::assertSame([
+            'attachment; filename="your-data-2026-10-23.zip"; filename*=UTF-8\'\'your-data-2026-10-23.zip',
+            'attachment; filename="your-data-2026-10-22.zip"; filename*=UTF-8\'\'your-data-2026-10-22.zip',
+            'attachment; filename="your-data-2026-10-22.zip"; filename*=UTF-8\'\'your-data-2026-10-22.zip',
+            'attachment; filename="your-data-2026-10-23.zip"; filename*=UTF-8\'\'your-data-2026-10-23.zip',
+        ], $names);
+    }
+
+    /** A zone ahead of UTC across midnight changes only the name: the ceiling and the other node still refuse. */
+    public function testZoneDoesNotChangeTransportRefusals(): void
+    {
+        file_put_contents($this->file->getPath(), str_repeat('x', FileDownloadResponse::DIRECT_MAX_BYTES + 1));
+        $tooLarge = $this->response('', finishedAt: '2026-10-22 23:30:00', timeZone: 'Europe/Warsaw');
+        self::assertSame(500, $tooLarge->reply->status);
+        self::assertTrue($tooLarge->tooLarge);
+        self::assertSame('no-store', $tooLarge->reply->headers['Cache-Control']);
+        file_put_contents($this->file->getPath(), "PK\x00\xff");
+        clearstatcache(true, $this->file->getPath());
+        $elsewhere = $this->response('', 'node-b', 'node-a', '2026-10-22 23:30:00', 'Europe/Warsaw');
+        self::assertSame(500, $elsewhere->reply->status);
+        self::assertTrue($elsewhere->onAnotherNode);
+        self::assertSame('no-store', $elsewhere->reply->headers['Cache-Control']);
+    }
+
     /** Large archives require nginx; exactly the direct limit is allowed. */
     public function testDirectByteCeilingAndNginxBypass(): void
     {
@@ -99,13 +137,20 @@ final class DataExportDownloadResponseTest extends TestCase
      * @param string $location Optional nginx location
      * @param ?string $originNodeId Node holding the browser's connection, null off a cluster
      * @param ?string $localNodeId Node the export agent runs on, null off a cluster
+     * @param string $finishedAt Stored UTC readiness date of the archive
+     * @param string $timeZone IANA zone the archive was written in
      * @return DataExportDownloadResponse Response under test
      */
-    private function response(string $location, ?string $originNodeId = null, ?string $localNodeId = null): DataExportDownloadResponse
-    {
+    private function response(
+        string $location,
+        ?string $originNodeId = null,
+        ?string $localNodeId = null,
+        string $finishedAt = '2026-09-27 12:00:00',
+        string $timeZone = 'UTC',
+    ): DataExportDownloadResponse {
         return DataExportDownloadResponse::forFile(
             new HttpRequestDTO('request', HttpConstants::METHOD_GET, '/_hilos/data-export', [], 'session', $originNodeId),
-            $this->file, '2026-09-27 12:00:00', $location, $localNodeId,
+            $this->file, $finishedAt, $location, $localNodeId, new DateTimeZone($timeZone),
         );
     }
 }

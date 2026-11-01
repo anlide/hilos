@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\DataExport;
 
+use DateTimeZone;
 use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Core\Analytics\AnalyticsPersonExportEvent;
 use Hilos\Core\Analytics\AnalyticsPersonExportReader;
@@ -32,10 +33,11 @@ final class FrameworkDataExportSections
      */
     public static function write(int $userId, DataExportWriter $writer): void
     {
+        $timeZone = $writer->timeZone();
         $identities = Hilos::$db->identities->exportEntries($userId);
         $writer->section('account', [
             'id' => $userId,
-            'since' => DataExportTime::iso($identities[0]->createdAt ?? null),
+            'since' => DataExportTime::iso($identities[0]->createdAt ?? null, $timeZone),
         ]);
 
         // Who did a rename is somebody else's data, so the author stays out of the copy.
@@ -44,7 +46,7 @@ final class FrameworkDataExportSections
             $renames[] = [
                 'from' => $rename->oldName,
                 'to' => $rename->newName,
-                'at' => DataExportTime::iso($rename->renamedAt),
+                'at' => DataExportTime::iso($rename->renamedAt, $timeZone),
             ];
         }
         $writer->section('renames', $renames);
@@ -54,10 +56,10 @@ final class FrameworkDataExportSections
         // moment, an older row whose survivor was erased before HIL-1200.
         $merges = [];
         if (isset(Hilos::$db->userMerges[$userId])) {
-            $merges[] = self::merge(Hilos::$db->userMerges[$userId]);
+            $merges[] = self::merge(Hilos::$db->userMerges[$userId], $timeZone);
         }
         foreach (Hilos::$db->userMerges->foldedInto($userId) as $foldedIn) {
-            $merges[] = self::merge($foldedIn);
+            $merges[] = self::merge($foldedIn, $timeZone);
         }
         $writer->section('merges', $merges);
 
@@ -68,7 +70,7 @@ final class FrameworkDataExportSections
             while (($events = $reader->next($lastEvent)) !== []) {
                 $parts++;
                 $writer->section(sprintf('analytics_person_%06d', $parts), array_map(
-                    static fn(AnalyticsPersonExportEvent $event): array => $event->archiveRow(),
+                    static fn(AnalyticsPersonExportEvent $event): array => $event->archiveRow($timeZone),
                     $events,
                 ));
                 $lastEvent = $events[count($events) - 1];
@@ -86,7 +88,7 @@ final class FrameworkDataExportSections
             $stored = $file === null ? null : Hilos::$fs->files[$file->storedName];
             $writer->section(self::PROFILE_PHOTO_SECTION, $stored === null || !$stored->exists() ? null : [
                 'file' => $writer->file($file->storedName, $stored->getPath()),
-                'setAt' => DataExportTime::iso($photo->setAt),
+                'setAt' => DataExportTime::iso($photo->setAt, $timeZone),
             ]);
         }
 
@@ -97,7 +99,7 @@ final class FrameworkDataExportSections
                 'identifier' => $identity->identifier,
                 'provider' => $identity->provider,
                 'verified' => $identity->verified,
-                'createdAt' => DataExportTime::iso($identity->createdAt),
+                'createdAt' => DataExportTime::iso($identity->createdAt, $timeZone),
             ];
         }
         $writer->section('sign_in_methods', $signInMethods);
@@ -106,8 +108,8 @@ final class FrameworkDataExportSections
         foreach (Hilos::$db->passkeyCredentials->listByUser($userId) as $passkey) {
             $passkeys[] = [
                 'label' => $passkey->label,
-                'createdAt' => DataExportTime::iso($passkey->createdAt),
-                'lastUsedAt' => DataExportTime::iso($passkey->lastUsedAt),
+                'createdAt' => DataExportTime::iso($passkey->createdAt, $timeZone),
+                'lastUsedAt' => DataExportTime::iso($passkey->lastUsedAt, $timeZone),
             ];
         }
         $writer->section('passkeys', $passkeys);
@@ -121,8 +123,8 @@ final class FrameworkDataExportSections
                 continue;
             }
             $sessions[] = [
-                'startedAt' => DataExportTime::iso($session->createdAt),
-                'lastSeenAt' => DataExportTime::iso($session->lastSeenAt),
+                'startedAt' => DataExportTime::iso($session->createdAt, $timeZone),
+                'lastSeenAt' => DataExportTime::iso($session->lastSeenAt, $timeZone),
                 'device' => $session->deviceName,
                 'address' => $keepsSessionAddress ? $session->ipAddress : null,
             ];
@@ -133,7 +135,7 @@ final class FrameworkDataExportSections
         if (AccessLogPolicy::keepsLog()) {
             foreach (Hilos::$db->accessLogEntries->ofUser($userId) as $entry) {
                 $accessLog[] = [
-                    'at' => DataExportTime::iso($entry->occurredAt),
+                    'at' => DataExportTime::iso($entry->occurredAt, $timeZone),
                     'address' => $entry->ipAddress,
                     'event' => $entry->event,
                 ];
@@ -159,8 +161,8 @@ final class FrameworkDataExportSections
         }
         $writer->section('second_factor', [
             'connected' => $since !== null,
-            'since' => DataExportTime::iso($since),
-            'lastUsedAt' => DataExportTime::iso($lastUsedAt),
+            'since' => DataExportTime::iso($since, $timeZone),
+            'lastUsedAt' => DataExportTime::iso($lastUsedAt, $timeZone),
             'backupCodesLeft' => $backupCodesLeft,
         ]);
 
@@ -171,8 +173,8 @@ final class FrameworkDataExportSections
                     'type' => $notification->type,
                     'title' => $notification->title,
                     'body' => $notification->body,
-                    'createdAt' => DataExportTime::iso($notification->createdAt),
-                    'readAt' => DataExportTime::iso($notification->readAt),
+                    'createdAt' => DataExportTime::iso($notification->createdAt, $timeZone),
+                    'readAt' => DataExportTime::iso($notification->readAt, $timeZone),
                 ];
             }
             $writer->section('notifications', $notifications);
@@ -190,31 +192,32 @@ final class FrameworkDataExportSections
             foreach (Hilos::$db->pushSubscriptions->whereColumnIs(ObjectPushSubscription::userId, $userId) as $subscription) {
                 $subscriptions[] = [
                     'device' => $subscription->deviceName,
-                    'createdAt' => DataExportTime::iso($subscription->createdAt),
-                    'lastSeenAt' => DataExportTime::iso($subscription->lastSeenAt),
-                    'goneAt' => DataExportTime::iso($subscription->goneAt),
+                    'createdAt' => DataExportTime::iso($subscription->createdAt, $timeZone),
+                    'lastSeenAt' => DataExportTime::iso($subscription->lastSeenAt, $timeZone),
+                    'goneAt' => DataExportTime::iso($subscription->goneAt, $timeZone),
                 ];
             }
         }
         $writer->section('push_subscriptions', $subscriptions);
 
         // Keep every acceptance, including revisions the catalog no longer declares and the profile omits.
-        $writer->section('legal_acceptances', self::legalAcceptances($userId));
+        $writer->section('legal_acceptances', self::legalAcceptances($userId, $timeZone));
 
         $deletion = Hilos::$db->accountDeletions->liveOf($userId);
         $writer->section('account_deletion', $deletion === null ? null : [
-            'requestedAt' => DataExportTime::iso($deletion->requestedAt),
-            'effectiveAt' => DataExportTime::iso($deletion->effectiveAt),
-            'canceledAt' => DataExportTime::iso($deletion->canceledAt),
+            'requestedAt' => DataExportTime::iso($deletion->requestedAt, $timeZone),
+            'effectiveAt' => DataExportTime::iso($deletion->effectiveAt, $timeZone),
+            'canceledAt' => DataExportTime::iso($deletion->canceledAt, $timeZone),
         ]);
     }
 
     /**
      * @param int $userId Person whose acceptance history is exported
+     * @param DateTimeZone $timeZone Zone of the archive being written
      * @return list<array<string, mixed>> Accepted revisions in timestamp/id order
      * @throws HilosException When acceptance records or declared revision text cannot be read
      */
-    private static function legalAcceptances(int $userId): array
+    private static function legalAcceptances(int $userId, DateTimeZone $timeZone): array
     {
         $rows = [];
         foreach (Hilos::$db->legalAcceptances->ofUser($userId) as $acceptance) {
@@ -232,7 +235,7 @@ final class FrameworkDataExportSections
             $rows[] = [
                 'document' => $acceptance->document,
                 'revisionId' => $acceptance->revisionId,
-                'acceptedAt' => DataExportTime::iso($acceptance->acceptedAt),
+                'acceptedAt' => DataExportTime::iso($acceptance->acceptedAt, $timeZone),
                 'inCode' => $revision !== null,
                 'publishedOn' => $revision?->publishedOn,
                 'effectiveOn' => $revision?->effectiveOn,
@@ -246,14 +249,15 @@ final class FrameworkDataExportSections
 
     /**
      * @param UserMerge $merge One merge the person is a side of
+     * @param DateTimeZone $timeZone Zone of the archive being written
      * @return array{account: int, into: ?int, at: ?string} Which account was folded, into which, and when
      */
-    private static function merge(UserMerge $merge): array
+    private static function merge(UserMerge $merge, DateTimeZone $timeZone): array
     {
         return [
             'account' => $merge->userId,
             'into' => $merge->survivorUserId,
-            'at' => DataExportTime::iso($merge->mergedAt),
+            'at' => DataExportTime::iso($merge->mergedAt, $timeZone),
         ];
     }
 }

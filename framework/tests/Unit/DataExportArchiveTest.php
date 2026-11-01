@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use DateTimeZone;
 use Hilos\DataExport\DataExportArchive;
 use Hilos\Fs\FsException;
 use Phar;
@@ -36,7 +37,7 @@ final class DataExportArchiveTest extends TestCase
     {
         $path = $this->directory . '/copy.building.zip';
         file_put_contents($this->directory . '/source', "\x00\xffattachment\r\n");
-        $writer = new DataExportArchive($path);
+        $writer = new DataExportArchive($path, new DateTimeZone('UTC'));
         $attachment = $writer->file('document.bin', $this->directory . '/source');
         $writer->section('chat', ['name' => 'Александр', 'file' => $attachment]);
         $writer->section('account_deletion', null);
@@ -57,10 +58,18 @@ final class DataExportArchiveTest extends TestCase
         self::assertStringContainsString("\n", $archive['chat.json']->getContent());
     }
 
+    /** The archive answers with the zone its build was started in; every moment written into it uses that zone. */
+    public function testKeepsTheZoneOfItsBuild(): void
+    {
+        $writer = new DataExportArchive($this->directory . '/copy.zip', new DateTimeZone('Asia/Kathmandu'));
+
+        self::assertSame('Asia/Kathmandu', $writer->timeZone()->getName());
+    }
+
     /** Duplicate names cannot overwrite a section that another contributor already wrote. */
     public function testRefusesDuplicateEntry(): void
     {
-        $writer = new DataExportArchive($this->directory . '/copy.zip');
+        $writer = new DataExportArchive($this->directory . '/copy.zip', new DateTimeZone('UTC'));
         $writer->section('account', ['id' => 7]);
         $this->expectException(FsException::class);
         $writer->section('account', ['id' => 8]);
@@ -72,7 +81,7 @@ final class DataExportArchiveTest extends TestCase
     #[DataProvider('unsafeNames')]
     public function testRefusesUnsafeAttachmentName(string $name): void
     {
-        $writer = new DataExportArchive($this->directory . '/copy.zip');
+        $writer = new DataExportArchive($this->directory . '/copy.zip', new DateTimeZone('UTC'));
         $this->expectException(FsException::class);
         $writer->file($name, $this->directory . '/source');
     }
@@ -94,7 +103,7 @@ final class DataExportArchiveTest extends TestCase
     /** A missing attachment fails the whole copy through the filesystem exception boundary. */
     public function testWrapsMissingAttachment(): void
     {
-        $writer = new DataExportArchive($this->directory . '/copy.zip');
+        $writer = new DataExportArchive($this->directory . '/copy.zip', new DateTimeZone('UTC'));
         $this->expectException(FsException::class);
         $writer->file('missing', $this->directory . '/missing');
     }
@@ -102,7 +111,7 @@ final class DataExportArchiveTest extends TestCase
     /** Invalid JSON input cannot silently become an empty section. */
     public function testWrapsJsonFailure(): void
     {
-        $writer = new DataExportArchive($this->directory . '/copy.zip');
+        $writer = new DataExportArchive($this->directory . '/copy.zip', new DateTimeZone('UTC'));
         $this->expectException(FsException::class);
         $writer->section('account', ['name' => "\xff"]);
     }
@@ -110,7 +119,7 @@ final class DataExportArchiveTest extends TestCase
     /** A closed archive cannot change after its size was recorded. */
     public function testRefusesWritesAfterClose(): void
     {
-        $writer = new DataExportArchive($this->directory . '/copy.zip');
+        $writer = new DataExportArchive($this->directory . '/copy.zip', new DateTimeZone('UTC'));
         $writer->section('account', ['id' => 7]);
         $writer->close();
         $this->expectException(FsException::class);
@@ -123,6 +132,6 @@ final class DataExportArchiveTest extends TestCase
         $path = $this->directory . '/copy.zip';
         file_put_contents($path, 'existing');
         $this->expectException(FsException::class);
-        new DataExportArchive($path);
+        new DataExportArchive($path, new DateTimeZone('UTC'));
     }
 }

@@ -1,0 +1,22 @@
+{
+    "format": 1,
+    "id": "20261101093551800031_HIL-1579_export_time_zones",
+    "parts": [
+        {
+            "unit": "data_export",
+            "up": "add_data_export_time_zone.sql",
+            "down": "add_data_export_time_zone_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "64665403b18e5a3d033acf755b83dcc9f623fa4b145fe09598ba7d408b7d72d4",
+            "afterStubDownSha256": "ae85831c32a4e031fc2659d042a1d62bcdcfc0510a0ad3ffc032ae9d840a2aea"
+        },
+        {
+            "unit": "legal_acceptance_export",
+            "up": "add_legal_acceptance_export_time_zone.sql",
+            "down": "add_legal_acceptance_export_time_zone_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "04b06818065ecbfc93024ef3963aebfc64bd4a11dbe1905b88c4c541028f01ac",
+            "afterStubDownSha256": "91e01bc5e4644b68fd947865690013329b2838beb59fdb54521fef732884bd5a"
+        }
+    ]
+}

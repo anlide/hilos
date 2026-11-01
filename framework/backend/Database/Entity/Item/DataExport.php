@@ -24,6 +24,7 @@ class DataExport extends Entity
     public const string expires_at = 'expires_at';
     public const string stored_name = 'stored_name';
     public const string size_bytes = 'size_bytes';
+    public const string time_zone = 'time_zone';
 
     public const string _table = 'hilos_data_export';
     public const string _primary = self::id;
@@ -36,6 +37,7 @@ class DataExport extends Entity
         self::expires_at,
         self::stored_name,
         self::size_bytes,
+        self::time_zone,
     ];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
@@ -46,6 +48,7 @@ class DataExport extends Entity
         self::expires_at => PhpType::DATETIME->value,
         self::stored_name => PhpType::STRING->value,
         self::size_bytes => PhpType::INTEGER->value,
+        self::time_zone => PhpType::STRING->value,
     ];
     public const array _foreign = [
         self::user_id => User::_table,
@@ -68,4 +71,5 @@ class DataExport extends Entity
     public ?string $expires_at = null;
     public ?string $stored_name = null;
     public ?int $size_bytes = null;
+    public ?string $time_zone = null;
 }
