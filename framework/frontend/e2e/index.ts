@@ -441,7 +441,10 @@ export {
   expectProfileTimeZone,
   expectProfileTimeZoneCatalog,
   expectProfileTimeZoneSearch,
+  expectTimeZoneEnvironment,
   openProfileTimeZone,
+  timeZoneContextOptions,
+  type TimeZoneEnvironment,
 } from './timeZone.js'
 export {
   APPEARANCE_PATH,

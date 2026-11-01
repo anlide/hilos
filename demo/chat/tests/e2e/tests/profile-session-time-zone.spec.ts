@@ -1,21 +1,24 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  deliveryObject,
-  expectProfileSessionMoments,
-  profileSessionSnapshot,
-  watchSocketFrames,
-  type SocketFrame,
+  chooseProfileTimeZone,
   clickSubmit,
+  createTestUser,
+  deliveryObject,
   expectPageReady,
+  expectProfileSessionMoments,
+  expectProfileTimeZone,
   gotoPage,
   PAGE_READY,
-  createTestUser,
+  profileSessionSnapshot,
+  watchClientDocument,
+  watchSocketFrames,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test.use({ timezoneId: 'Asia/Tokyo', locale: 'en-US' })
 
-test('keeps real session and tab moments in milliseconds through live rebuild and reload', async ({
+test('keeps real session and tab moments in milliseconds through live rebuild, a zone choice and reload', async ({
   context,
   page,
 }, testInfo) => {
@@ -42,9 +45,10 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
     )
 
     // Open only after the first snapshot: this must rebuild the first tab's list.
+    // The second tab stands on the profile so its picker can change the zone later.
     const liveStart = frames.length
     const second = await context.newPage()
-    await gotoPage(expect, second, '/profile/sessions', PAGE_READY)
+    await gotoPage(expect, second, '/profile', PAGE_READY)
     await expect
       .poll(
         () =>
@@ -67,6 +71,45 @@ test('keeps real session and tab moments in milliseconds through live rebuild an
       self.acceptKey as string,
       2,
     )
+
+    await test.step('A zone chosen in the other tab reformats the same moments here without a reload', async () => {
+      // The chosen zone is neither the browser's nor the project's UTC, so a
+      // label still formatted in either would show.
+      const document = await watchClientDocument(page)
+      const socketCount = socket.sockets()
+      try {
+        await chooseProfileTimeZone(expect, second, 'America/New_York')
+        await expectProfileTimeZone(
+          expect,
+          second,
+          'America/New_York',
+          'Asia/Tokyo',
+        )
+        await expectProfileSessionMoments(
+          expect,
+          page,
+          live,
+          'America/New_York',
+          self.acceptKey as string,
+          2,
+          'Asia/Tokyo',
+        )
+        await chooseProfileTimeZone(expect, second, null)
+        await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo')
+        await expectProfileSessionMoments(
+          expect,
+          page,
+          live,
+          'Asia/Tokyo',
+          self.acceptKey as string,
+          2,
+        )
+        await document.unchanged()
+        expect(socket.sockets()).toBe(socketCount)
+      } finally {
+        await document.dispose()
+      }
+    })
 
     const reloadStart = frames.length
     await page.reload()

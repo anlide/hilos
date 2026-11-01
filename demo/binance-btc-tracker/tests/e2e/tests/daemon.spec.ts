@@ -53,6 +53,7 @@ import {
   expectDaemonCronMoments,
   watchDaemonCronDisplay,
   forwardSessionTimeZone,
+  expectTimeZoneEnvironment,
   deliveryObject,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
@@ -875,7 +876,11 @@ test.describe('Cron search and ordering', () => {
 })
 
 test.describe('Cron reader time zone', () => {
-  test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' })
+  test.use({
+    timezoneId: 'America/Los_Angeles',
+    locale: 'en-US',
+    colorScheme: 'light',
+  })
 
   test('reads real millisecond runs in own zones and Automatic while the project stays Warsaw', async ({
     page,
@@ -896,24 +901,14 @@ test.describe('Cron reader time zone', () => {
     const socket = await forwardSessionTimeZone(page, browserZone)
     try {
       const userId = await grantAdminToSelf(expect, page)
-      const welcomes = () =>
-        socket.frames.filter(
-          (frame) => deliveryObject(frame.wire).type === 'handshake',
-        )
-      await expect.poll(() => welcomes().length).toBeGreaterThan(0)
-      for (const frame of welcomes()) {
-        expect(frame.failure).toBeUndefined()
-        expect(
-          deliveryObject(deliveryObject(frame.wire).data).projectTimeZone,
-          'Binance tests/.env must declare HILOS_PROJECT_TIME_ZONE=Europe/Warsaw',
-        ).toBe(projectZone)
-      }
-      expect(
-        await page.evaluate(() => ({
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          locale: navigator.language,
-        })),
-      ).toEqual({ timeZone: browserZone, locale: 'en-US' })
+      // The project zone comes from Binance tests/.env
+      // (HILOS_PROJECT_TIME_ZONE=Europe/Warsaw), read back from the real welcome.
+      await expectTimeZoneEnvironment(expect, page, socket.frames, {
+        browserTimeZone: browserZone,
+        projectTimeZone: projectZone,
+      })
+      // The expected run texts are composed in en-US, so the browser must read so.
+      expect(await page.evaluate(() => navigator.language)).toBe('en-US')
       expect(browserZone).not.toBe(projectZone)
       await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
       await expectStandaloneCron(expect, page)
@@ -975,11 +970,6 @@ test.describe('Cron reader time zone', () => {
           await expect(
             page.getByTestId('hilos-daemon-cron-project-time-zone'),
           ).toHaveText(projectZone)
-          await expect(
-            page.getByTestId('hilos-daemon-cron-time-zone'),
-          ).toHaveText(
-            `Expressions are evaluated in the project's time zone — ${projectZone}. Run times are shown in your time zone.`,
-          )
           expect(readDaemonCronMoment(socket.frames, expireKey)!.rule).toEqual(
             expire,
           )

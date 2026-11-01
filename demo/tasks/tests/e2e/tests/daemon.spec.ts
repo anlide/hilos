@@ -51,9 +51,9 @@ import {
   readDaemonCronMoment,
   expectDaemonCronMoments,
   watchDaemonCronDisplay,
-  watchSocketFrames,
+  forwardSessionTimeZone,
+  expectTimeZoneEnvironment,
   deliveryObject,
-  type SocketFrame,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
   expectStandaloneEnvOrphans,
@@ -79,50 +79,111 @@ import {
 const DATABASE_HOST = 'tasks-mysql-test'
 
 test.describe('Cron time zones', () => {
-  test.use({ timezoneId: 'America/Los_Angeles', colorScheme: 'light' })
+  test.use({
+    timezoneId: 'America/Los_Angeles',
+    locale: 'en-US',
+    colorScheme: 'light',
+  })
 
-  test('labels the delivered project zone separately from reader run times', async ({
+  test('reads real runs in delivered reader zones and Automatic while the project stays Warsaw', async ({
     page,
   }) => {
-    const frames: SocketFrame[] = []
-    const socket = watchSocketFrames(page, (frame) => frames.push(frame))
+    const browserZone = 'America/Los_Angeles'
+    const projectZone = 'Europe/Warsaw'
+    const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
+    const subscribes = countSentFrames(page, '"type":"page_subscribe"')
+    const viewports = countSentFrames(page, '"type":"table_viewport"')
+    // Only currentUser.timeZone is projected. The welcome and Cron frames below
+    // are the unmodified daemon evidence, not a proof of a backend own-zone write.
+    const socket = await forwardSessionTimeZone(page, browserZone)
     try {
-      await grantAdminToSelf(expect, page)
+      const userId = await grantAdminToSelf(expect, page)
+      // The project zone comes from Tasks tests/.env and the test compose stack
+      // (HILOS_PROJECT_TIME_ZONE=Europe/Warsaw), read back from the real welcome.
+      await expectTimeZoneEnvironment(expect, page, socket.frames, {
+        browserTimeZone: browserZone,
+        projectTimeZone: projectZone,
+      })
+      // The expected run texts are composed in en-US, so the browser must read so.
+      expect(await page.evaluate(() => navigator.language)).toBe('en-US')
+      expect(browserZone).not.toBe(projectZone)
       await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
       await expectStandaloneCron(expect, page)
-      const welcomes = frames
-        .map(({ wire }) => deliveryObject(wire))
-        .filter(({ type }) => type === 'handshake')
-      expect(welcomes.length).toBeGreaterThan(0)
-      const projectZone = deliveryObject(welcomes.at(-1)?.data).projectTimeZone
-      expect(projectZone).toEqual(expect.any(String))
-      expect(projectZone).not.toBe('America/Los_Angeles')
       await expect(
         page.getByTestId('hilos-daemon-cron-project-time-zone'),
-      ).toHaveText(projectZone as string)
-      await expect(page.getByTestId('hilos-daemon-cron-time-zone')).toHaveText(
-        `Expressions use the project time zone — ${projectZone}. Run times use your time zone.`,
-      )
-
-      const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
+      ).toHaveText(projectZone)
       await expect
-        .poll(() => readDaemonCronMoment(frames, rowKey))
+        .poll(() => readDaemonCronMoment(socket.frames, rowKey))
         .toBeDefined()
+      let rule = readDaemonCronMoment(socket.frames, rowKey)!.rule
       const display = await watchDaemonCronDisplay(expect, page, rowKey)
       try {
-        await expectDaemonCronMoments(
-          expect,
-          page,
-          frames,
-          rowKey,
-          'America/Los_Angeles',
-        )
-        await display.unchanged()
+        const connections = socket.sockets()
+        const requests = () => ({
+          subscribes: subscribes(),
+          viewports: viewports(),
+        })
+        const baseline = requests()
+        let initial:
+          Awaited<ReturnType<typeof expectDaemonCronMoments>> | undefined
+        let fired = false
+        for (const own of [browserZone, 'Asia/Tokyo', null]) {
+          if (own !== browserZone) socket.replay(own)
+          const zone = own ?? browserZone
+          const times = await expectDaemonCronMoments(
+            expect,
+            page,
+            socket.frames,
+            rowKey,
+            zone,
+          )
+          // A delivered reader zone changes the presentation only: the raw
+          // moments stay as they were. The one frame that may move them is a
+          // real firing of this 15-minute rule: lastRunAt is the actual
+          // firing second, at or after the former nextRunAt and before the
+          // new one. It is read from the current frame whenever it comes,
+          // neither guarded against nor waited out.
+          const current = readDaemonCronMoment(socket.frames, rowKey)!.rule
+          const formerNext = rule.nextRunAt as number
+          const { lastRunAt, nextRunAt } = current
+          if (
+            typeof lastRunAt === 'number' &&
+            typeof nextRunAt === 'number' &&
+            lastRunAt >= formerNext &&
+            lastRunAt < nextRunAt &&
+            nextRunAt > formerNext
+          ) {
+            expect(current).toEqual({
+              ...rule,
+              lastRunAt: expect.any(Number),
+              nextRunAt: expect.any(Number),
+            })
+            rule = current
+            fired = true
+          } else expect(current).toEqual(rule)
+          // Tokyo shows the moments otherwise than the browser zone did, and
+          // Automatic shows them as the browser zone did while they are still
+          // the same moments; after a firing the oracle above has already held
+          // the row to the browser zone.
+          if (own === browserZone) initial = times
+          else if (own !== null) expect(times).not.toEqual(initial)
+          else if (!fired) expect(times).toEqual(initial)
+          expect(socket.sessions.at(-1)).toMatchObject({
+            data: { entities: { currentUser: { id: userId, timeZone: own } } },
+          })
+          // The project zone and the open subscription stay as they were.
+          await expect(
+            page.getByTestId('hilos-daemon-cron-project-time-zone'),
+          ).toHaveText(projectZone)
+          expect(requests()).toEqual(baseline)
+          expect(socket.sockets()).toBe(connections)
+          await display.unchanged()
+        }
       } finally {
         await display.dispose()
       }
     } finally {
-      socket.stop()
+      socket.dispose()
     }
   })
 })

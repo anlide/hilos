@@ -143,6 +143,10 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=test
+      # The project zone the time-zone e2e stand on (HIL-1596). Pinned in the test
+      # stack so a run reads the same zone whatever the host or a stale tests/.env
+      # carries; the process value wins over the env file and /app/.env.
+      - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
       # Its own backups: without it BACKUP_DIR comes from the local .env through the
       # project bind, and test:backup:reset on test:up would wipe the local stand's
       # archives. The process value wins over /app/.env.
@@ -320,6 +324,10 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=test
+      # The project zone the time-zone e2e stand on (HIL-1596). Pinned in the test
+      # stack so a run reads the same zone whatever the host or a stale tests/.env
+      # carries; the process value wins over the env file and /app/.env.
+      - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
       # Its own backups: without it BACKUP_DIR comes from the local .env through the
       # project bind, and test:backup:reset on test:up would wipe the local stand's
       # archives. The process value wins over /app/.env.

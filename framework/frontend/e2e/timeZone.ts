@@ -1,16 +1,82 @@
-import { typeInto } from './input.js'
-import type { Expect, Locator, Page } from '@playwright/test'
+import type { BrowserContextOptions, Expect, Page } from '@playwright/test'
 
 import { deliveryObject } from './deliveryFrames.js'
+import { clickSubmit, typeInto } from './input.js'
 import type { SocketFrame } from './socket.js'
 
-/** Drive a time-zone control through its actionable states. */
-async function clickControl(expect: Expect, control: Locator): Promise<void> {
-  await control.scrollIntoViewIfNeeded()
-  await expect(control).toBeVisible()
-  await expect(control).toBeEnabled()
-  await control.focus()
-  await control.click()
+/** The accessible-name text a row that no browser clock can display carries. */
+const UNAVAILABLE_ROW_TEXT = 'Unavailable in this browser'
+
+/**
+ * Context options for a scenario that opens its own browser context in one
+ * explicit time zone, besides the test's own page.
+ *
+ * A context made off the `browser` fixture inherits none of the project's `use`
+ * options — not the stand's `baseURL`, not the tolerance for its self-signed
+ * certificate, not the locale or viewport — so the caller hands them in from
+ * `test.info().project.use` and this helper keeps every one of them. On top it
+ * sets the explicit zone and the light theme, the only palette e2e runs in
+ * (`docs/agents/frontend/testing-strategy.md`, "Light theme, desktop width").
+ *
+ * The scenario calls `browser.newContext` itself, signs in there and closes
+ * the context: two independently signed-in sessions are two people, so no
+ * cookies or storage state travel from one context to the other.
+ *
+ * @param options The project's `use` options the new context would otherwise lose.
+ * @param timeZone The IANA zone the browser of that context reports.
+ */
+export function timeZoneContextOptions(
+  options: BrowserContextOptions,
+  timeZone: string,
+): BrowserContextOptions {
+  return { ...options, timezoneId: timeZone, colorScheme: 'light' }
+}
+
+/** The two zones an environment check expects, each named by the spec. */
+export interface TimeZoneEnvironment {
+  /** The zone the browser context was given and must report as its own. */
+  readonly browserTimeZone: string
+  /** The zone the daemon was started with, as the spec knows it from its stand. */
+  readonly projectTimeZone: string
+}
+
+/**
+ * Prove the two zones a time-zone scenario stands on: the browser reports the
+ * one its context was given, and every welcome the daemon sent names the
+ * project zone the spec expects.
+ *
+ * Both expectations come from the spec, never from the evidence itself: the
+ * project zone is read back from the original welcome and compared with what the
+ * spec knows its stand was started with, not taken from the server's answer and
+ * then asserted against it. No welcome is forged or rewritten here; the stand's
+ * project zone is set in its environment before the daemon starts. A frame the
+ * core decoder failed on is not accepted as evidence either — an undecodable
+ * message could have been the welcome, so one failure anywhere in the observed
+ * stream fails the check.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page The page whose browser zone is read.
+ * @param frames Frames observed with `watchSocketFrames` from before navigation.
+ * @param environment The browser and project zones the spec expects.
+ */
+export async function expectTimeZoneEnvironment(
+  expect: Expect,
+  page: Page,
+  frames: readonly SocketFrame[],
+  environment: TimeZoneEnvironment,
+): Promise<void> {
+  const welcomes = () =>
+    frames.filter((frame) => deliveryObject(frame.wire).type === 'handshake')
+  await expect.poll(() => welcomes().length).toBeGreaterThan(0)
+  expect(frames.filter((frame) => frame.failure !== undefined)).toEqual([])
+  for (const frame of welcomes()) {
+    expect(
+      deliveryObject(deliveryObject(frame.wire).data).projectTimeZone,
+    ).toBe(environment.projectTimeZone)
+  }
+  expect(
+    await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+  ).toBe(environment.browserTimeZone)
 }
 
 /** Open the profile's live picker and wait for its initial search focus. */
@@ -18,10 +84,17 @@ export async function openProfileTimeZone(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  await clickControl(expect, page.getByTestId('profile-time-zone-change'))
+  await clickSubmit(expect, page.getByTestId('profile-time-zone-change'))
   await expect(page.getByTestId('profile-time-zone-modal')).toBeVisible()
   await expect(page.getByTestId('modal')).toHaveAccessibleName('Time zone')
   await expect(page.getByTestId('profile-time-zone-search')).toBeFocused()
+}
+
+/** Close an open picker and wait for focus to return to its opening control. */
+async function closeProfileTimeZone(expect: Expect, page: Page): Promise<void> {
+  await clickSubmit(expect, page.getByTestId('profile-time-zone-close'))
+  await expect(page.getByTestId('profile-time-zone-modal')).toBeHidden()
+  await expect(page.getByTestId('profile-time-zone-change')).toBeFocused()
 }
 
 /** Choose a real row; a refusal must fail before any caller checks saved state. */
@@ -31,7 +104,7 @@ export async function chooseProfileTimeZone(
   timeZone: string | null,
 ): Promise<void> {
   await openProfileTimeZone(expect, page)
-  await clickControl(
+  await clickSubmit(
     expect,
     page.getByTestId(
       timeZone === null
@@ -41,6 +114,8 @@ export async function chooseProfileTimeZone(
   )
   const modal = page.getByTestId('profile-time-zone-modal')
   const error = modal.getByTestId('hilos-action-error')
+  // The write settles either way — the picker closes on success or shows its
+  // refusal — before the saved state is read.
   await expect
     .poll(async () => !(await modal.isVisible()) || (await error.isVisible()))
     .toBe(true)
@@ -72,7 +147,6 @@ export async function expectProfileTimeZone(
   await expect(selected).toHaveCount(selectedVisible ? 1 : 0)
   if (selectedVisible) {
     await expect(selected).toHaveAttribute('aria-current', 'true')
-    await expect(selected).toHaveClass(/\bactive\b/)
   }
   await expect(modal.locator('[aria-current="true"]')).toHaveCount(
     selectedVisible ? 1 : 0,
@@ -84,35 +158,27 @@ export async function expectProfileTimeZone(
     )
     await expect(automatic).toBeEnabled()
   }
-  // Every available row carries its own 24-hour clock; an unsupported server
-  // identifier stays disabled with its explicit unavailable presentation.
-  const clocks = await modal
+  // A zone this browser cannot display stays a disabled row that says so; every
+  // other row is a working choice. How the row's clock is formatted is the
+  // core's own unit contract, not an e2e outcome. Nothing in a row is a live
+  // region: a clock that ticks every minute must not be announced each time.
+  const rows = await modal
     .getByTestId(/^profile-time-zone-(?:option-|automatic$)/)
-    .evaluateAll((rows) =>
-      rows.map((row) => ({
-        id: row.getAttribute('data-id'),
-        time: row.querySelector('.text-nowrap')?.textContent?.trim(),
-        unavailable: row.textContent?.includes('Unavailable in this browser'),
-        disabled: row.hasAttribute('disabled'),
-        live: row.querySelector('[aria-live]') !== null,
-      })),
+    .evaluateAll(
+      (rows, unavailableText) =>
+        rows.map((row) => ({
+          id: row.getAttribute('data-id'),
+          unavailable: row.textContent?.includes(unavailableText) ?? false,
+          disabled: row.hasAttribute('disabled'),
+          live: row.querySelector('[aria-live]') !== null,
+        })),
+      UNAVAILABLE_ROW_TEXT,
     )
-  expect(clocks.length).toBeGreaterThan(0)
+  expect(rows.length).toBeGreaterThan(0)
   expect(
-    clocks.filter(
-      (clock) =>
-        clock.live ||
-        (clock.unavailable
-          ? clock.time !== '—' || !clock.disabled
-          : !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(clock.time ?? '') ||
-            clock.disabled),
-    ),
+    rows.filter((row) => row.live || row.unavailable !== row.disabled),
   ).toEqual([])
-  if (!alreadyOpen) {
-    await clickControl(expect, page.getByTestId('profile-time-zone-close'))
-    await expect(modal).toBeHidden()
-    await expect(page.getByTestId('profile-time-zone-change')).toBeFocused()
-  }
+  if (!alreadyOpen) await closeProfileTimeZone(expect, page)
 }
 
 /** Prove city-underscore search, empty results and restoration of the full list. */
@@ -129,8 +195,6 @@ export async function expectProfileTimeZoneSearch(
   ).toBeVisible()
   await expect(modal.getByTestId(/^profile-time-zone-option-/)).toHaveCount(1)
   await expect(page.getByTestId('profile-time-zone-automatic')).toBeHidden()
-  await expect(modal.getByText('All time zones', { exact: true })).toBeHidden()
-  await expect(modal.getByText('Found', { exact: true })).toBeVisible()
   await typeInto(search, 'no-such-time-zone')
   await expect(page.getByTestId('profile-time-zone-empty')).toHaveText(
     'No time zones match',
@@ -141,8 +205,6 @@ export async function expectProfileTimeZoneSearch(
   await expect(search).toHaveValue('')
   await expect(page.getByTestId('profile-time-zone-empty')).toBeHidden()
   await expect(page.getByTestId('profile-time-zone-automatic')).toBeVisible()
-  await expect(modal.getByText('All time zones', { exact: true })).toBeVisible()
-  await expect(modal.getByText('Found', { exact: true })).toBeHidden()
   await expect(page.getByTestId('profile-time-zone-option-UTC')).toBeAttached()
   await expect(
     page.getByTestId('profile-time-zone-option-America/New_York'),

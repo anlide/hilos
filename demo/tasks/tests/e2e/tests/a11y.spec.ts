@@ -513,7 +513,8 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 
 test.describe('Analytics accessibility', () => {
   // Today, This week and This hour are calendar windows of the browser's zone:
-  // it is stated here and is not the stand's own UTC.
+  // it is stated here rather than left to the stand, whose process runs in UTC
+  // and whose project zone is Europe/Warsaw.
   test.use({ timezoneId: 'Africa/Malabo' })
 
   test('Analytics overview names its visitor count links and opens the chosen period from the keyboard', async ({

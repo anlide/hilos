@@ -48,6 +48,11 @@ import {
   expectStandaloneWorkers,
   expectStandaloneCron,
   expectDaemonCronQuery,
+  readDaemonCronMoment,
+  expectDaemonCronMoments,
+  watchDaemonCronDisplay,
+  forwardSessionTimeZone,
+  expectTimeZoneEnvironment,
   deliveryObject,
   expectStandaloneHttp,
   expectStandaloneEnvironment,
@@ -706,80 +711,204 @@ test.describe('daemon node pages', () => {
     })
   }
 
-  for (const viewer of [false, true]) {
-    test(`reads Workers and Cron with named tables and keyboard links as ${viewer ? 'a viewer' : 'an admin'}`, async ({
-      page,
-    }) => {
-      // Three live pages and the worker log.
-      test.slow()
-      await setAdminViewMode(viewer)
-      if (!viewer) await grantAdminToSelf(expect, page)
-      await page.setViewportSize({ width: 1280, height: 812 })
-      await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      await page.getByTestId('hilos-daemon-node-standalone').click()
-      await expectStandaloneNodeOverview(expect, page)
-      await page.getByTestId(DAEMON_WORKERS_CHILD).focus()
-      await page.getByTestId(DAEMON_WORKERS_CHILD).press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_daemon_workers')
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-        'standalone',
-      )
-      const surface = page.getByRole('table')
-      await expect(surface).toHaveAccessibleName('standalone')
-      const expand = shownByTestId(page, /^hilos-table-expand-/).first()
-      await expect(expand).toBeVisible()
-      await expand.focus()
-      await expect(expand).toBeFocused()
-      await expand.press('Enter')
-      await expect(expand).toHaveAttribute('aria-expanded', 'true')
-      await expect(
-        shownByTestId(page, /^hilos-daemon-worker-agents-/),
-      ).toBeVisible()
-      const log = shownByTestId(page, /^hilos-daemon-worker-log-/).first()
-      await expect(log).toHaveAttribute(
-        'href',
-        /\/hilos\/logs\/view\/standalone\/live\/worker-/,
-      )
-      await log.click()
-      await expectDaemonPage(expect, page, 'hilos_logs_view')
-      await expect(page.getByTestId('hilos-log-stream')).not.toHaveValue('')
-      await page.goBack()
-      await expectDaemonPage(expect, page, 'hilos_daemon_workers')
-      await page.getByTestId(DAEMON_ROOT_CRUMB).click()
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      await page.getByTestId('hilos-daemon-node-standalone').click()
-      await expectStandaloneNodeOverview(expect, page)
-      const cron = page.getByTestId('hilos-page-tab-hilos_daemon_cron')
-      await expect(cron).toHaveAttribute(
-        'href',
-        '/hilos/daemon/standalone/cron',
-      )
-      await cron.focus()
-      await cron.press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_daemon_cron')
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-        'standalone',
-      )
-      const schedule = page.getByRole('table')
-      await expect(schedule).toHaveAccessibleName('standalone')
-      await expectStandaloneCron(expect, page)
-      await page.getByTestId(DAEMON_ROOT_CRUMB).click()
-      await expectStandaloneOverview(expect, page, DATABASE_HOST)
-      const reports = watchDaemonWebsocketsFrames(page)
-      try {
-        await gotoPage(
-          expect,
-          page,
-          '/hilos/daemon/standalone/websockets',
-          PAGE_READY,
-        )
-        await expectStandaloneWebsockets(expect, page, reports.frames)
-      } finally {
-        reports.stop()
-      }
+  test.describe('Workers and Cron', () => {
+    // The admin branch reads the Cron run times in delivered reader zones, so
+    // the browser zone is known and differs from the project zone; the expected
+    // run texts are composed in en-US. Only this journey is pinned (HIL-1863
+    // owns the explicit zones of the rest).
+    test.use({
+      timezoneId: 'America/Los_Angeles',
+      locale: 'en-US',
+      colorScheme: 'light',
     })
-  }
+
+    for (const viewer of [false, true]) {
+      test(`reads Workers and Cron with named tables and keyboard links as ${viewer ? 'a viewer' : 'an admin'}`, async ({
+        page,
+      }) => {
+        // Three live pages and the worker log.
+        test.slow()
+        const browserZone = 'America/Los_Angeles'
+        const projectZone = 'Europe/Warsaw'
+        const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
+        const subscribes = countSentFrames(page, '"type":"page_subscribe"')
+        const viewports = countSentFrames(page, '"type":"table_viewport"')
+        // Only currentUser.timeZone is projected, for the admin alone. The welcome
+        // and Cron frames below are the unmodified daemon evidence, not a proof of
+        // a backend own-zone write.
+        const socket = viewer
+          ? undefined
+          : await forwardSessionTimeZone(page, browserZone)
+        try {
+          await setAdminViewMode(viewer)
+          const userId = viewer ? null : await grantAdminToSelf(expect, page)
+          if (socket !== undefined) {
+            // The project zone comes from Polls tests/.env and the test compose
+            // stack (HILOS_PROJECT_TIME_ZONE=Europe/Warsaw), read back from the
+            // real welcome.
+            await expectTimeZoneEnvironment(expect, page, socket.frames, {
+              browserTimeZone: browserZone,
+              projectTimeZone: projectZone,
+            })
+            // The expected run texts are composed in en-US, so the browser must read so.
+            expect(await page.evaluate(() => navigator.language)).toBe('en-US')
+            expect(browserZone).not.toBe(projectZone)
+          }
+          await page.setViewportSize({ width: 1280, height: 812 })
+          await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
+          await expectStandaloneOverview(expect, page, DATABASE_HOST)
+          await page.getByTestId('hilos-daemon-node-standalone').click()
+          await expectStandaloneNodeOverview(expect, page)
+          await page.getByTestId(DAEMON_WORKERS_CHILD).focus()
+          await page.getByTestId(DAEMON_WORKERS_CHILD).press('Enter')
+          await expectDaemonPage(expect, page, 'hilos_daemon_workers')
+          await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+            'standalone',
+          )
+          const surface = page.getByRole('table')
+          await expect(surface).toHaveAccessibleName('standalone')
+          const expand = shownByTestId(page, /^hilos-table-expand-/).first()
+          await expect(expand).toBeVisible()
+          await expand.focus()
+          await expect(expand).toBeFocused()
+          await expand.press('Enter')
+          await expect(expand).toHaveAttribute('aria-expanded', 'true')
+          await expect(
+            shownByTestId(page, /^hilos-daemon-worker-agents-/),
+          ).toBeVisible()
+          const log = shownByTestId(page, /^hilos-daemon-worker-log-/).first()
+          await expect(log).toHaveAttribute(
+            'href',
+            /\/hilos\/logs\/view\/standalone\/live\/worker-/,
+          )
+          await log.click()
+          await expectDaemonPage(expect, page, 'hilos_logs_view')
+          await expect(page.getByTestId('hilos-log-stream')).not.toHaveValue('')
+          await page.goBack()
+          await expectDaemonPage(expect, page, 'hilos_daemon_workers')
+          await page.getByTestId(DAEMON_ROOT_CRUMB).click()
+          await expectStandaloneOverview(expect, page, DATABASE_HOST)
+          await page.getByTestId('hilos-daemon-node-standalone').click()
+          await expectStandaloneNodeOverview(expect, page)
+          const cron = page.getByTestId('hilos-page-tab-hilos_daemon_cron')
+          await expect(cron).toHaveAttribute(
+            'href',
+            '/hilos/daemon/standalone/cron',
+          )
+          await cron.focus()
+          await cron.press('Enter')
+          await expectDaemonPage(expect, page, 'hilos_daemon_cron')
+          await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+            'standalone',
+          )
+          const schedule = page.getByRole('table')
+          await expect(schedule).toHaveAccessibleName('standalone')
+          await expectStandaloneCron(expect, page)
+          if (socket !== undefined) {
+            await test.step('reads real runs in delivered reader zones and Automatic while the project stays Warsaw', async () => {
+              await expect(
+                page.getByTestId('hilos-daemon-cron-project-time-zone'),
+              ).toHaveText(projectZone)
+              await expect
+                .poll(() => readDaemonCronMoment(socket.frames, rowKey))
+                .toBeDefined()
+              let rule = readDaemonCronMoment(socket.frames, rowKey)!.rule
+              const display = await watchDaemonCronDisplay(expect, page, rowKey)
+              try {
+                const connections = socket.sockets()
+                const requests = () => ({
+                  subscribes: subscribes(),
+                  viewports: viewports(),
+                })
+                const baseline = requests()
+                let initial:
+                  | Awaited<ReturnType<typeof expectDaemonCronMoments>>
+                  | undefined
+                let fired = false
+                for (const own of [browserZone, 'Asia/Tokyo', null]) {
+                  if (own !== browserZone) socket.replay(own)
+                  const zone = own ?? browserZone
+                  const times = await expectDaemonCronMoments(
+                    expect,
+                    page,
+                    socket.frames,
+                    rowKey,
+                    zone,
+                  )
+                  // A delivered reader zone changes the presentation only:
+                  // the raw moments stay as they were. The one frame that may
+                  // move them is a real firing of this 15-minute rule:
+                  // lastRunAt is the actual firing second, at or after the
+                  // former nextRunAt and before the new one. It is read from
+                  // the current frame whenever it comes, neither guarded
+                  // against nor waited out.
+                  const current = readDaemonCronMoment(
+                    socket.frames,
+                    rowKey,
+                  )!.rule
+                  const formerNext = rule.nextRunAt as number
+                  const { lastRunAt, nextRunAt } = current
+                  if (
+                    typeof lastRunAt === 'number' &&
+                    typeof nextRunAt === 'number' &&
+                    lastRunAt >= formerNext &&
+                    lastRunAt < nextRunAt &&
+                    nextRunAt > formerNext
+                  ) {
+                    expect(current).toEqual({
+                      ...rule,
+                      lastRunAt: expect.any(Number),
+                      nextRunAt: expect.any(Number),
+                    })
+                    rule = current
+                    fired = true
+                  } else expect(current).toEqual(rule)
+                  // Tokyo shows the moments otherwise than the browser zone
+                  // did, and Automatic shows them as the browser zone did
+                  // while they are still the same moments; after a firing the
+                  // oracle above has already held the row to the browser zone.
+                  if (own === browserZone) initial = times
+                  else if (own !== null) expect(times).not.toEqual(initial)
+                  else if (!fired) expect(times).toEqual(initial)
+                  expect(socket.sessions.at(-1)).toMatchObject({
+                    data: {
+                      entities: { currentUser: { id: userId, timeZone: own } },
+                    },
+                  })
+                  // The project zone and the open subscription stay as they
+                  // were.
+                  await expect(
+                    page.getByTestId('hilos-daemon-cron-project-time-zone'),
+                  ).toHaveText(projectZone)
+                  expect(requests()).toEqual(baseline)
+                  expect(socket.sockets()).toBe(connections)
+                  await display.unchanged()
+                }
+              } finally {
+                await display.dispose()
+              }
+            })
+          }
+          await page.getByTestId(DAEMON_ROOT_CRUMB).click()
+          await expectStandaloneOverview(expect, page, DATABASE_HOST)
+          const reports = watchDaemonWebsocketsFrames(page)
+          try {
+            await gotoPage(
+              expect,
+              page,
+              '/hilos/daemon/standalone/websockets',
+              PAGE_READY,
+            )
+            await expectStandaloneWebsockets(expect, page, reports.frames)
+          } finally {
+            reports.stop()
+          }
+        } finally {
+          socket?.dispose()
+        }
+      })
+    }
+  })
 
   for (const viewer of [false, true]) {
     // FIXME(F-035, 2026-10-26): agent log Enter stays on the agents page · чужой · попытка 1 · HIL-1745
