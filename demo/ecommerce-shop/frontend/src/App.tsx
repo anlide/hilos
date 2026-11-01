@@ -169,6 +169,9 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.ANALYTICS_PEOPLE]: lazyPage(() =>
     import('./views/Hilos/Analytics/People.js').then((m) => m.default),
   ),
+  [HilosPages.ANALYTICS_BROWSER_SESSIONS]: lazyPage(() =>
+    import('./views/Hilos/Analytics/BrowserSessions.js').then((m) => m.default),
+  ),
   [HilosPages.ANALYTICS_BROWSER_SESSION]: lazyPage(() =>
     import('./views/Hilos/Analytics/BrowserSession.js').then((m) => m.default),
   ),

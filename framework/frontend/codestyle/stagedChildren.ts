@@ -11,12 +11,6 @@ export interface StagedChild {
 }
 export const STAGED_CHILDREN: readonly StagedChild[] = [
   {
-    layer: 'react',
-    parent: 'hilos_analytics_browser_sessions',
-    child: 'hilos_analytics_browser_session',
-    leaf: 'HIL-1741',
-  },
-  {
     layer: 'angular',
     parent: 'hilos_analytics_browser_sessions',
     child: 'hilos_analytics_browser_session',

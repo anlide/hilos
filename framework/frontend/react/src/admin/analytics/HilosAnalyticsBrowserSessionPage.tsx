@@ -1,13 +1,14 @@
 // HilosAnalyticsBrowserSessionPage — one browser session's page in the Analytics
 // section (HilosPages.ANALYTICS_BROWSER_SESSION): the session's header and the
-// actions recorded in it. The admin shell draws the one heading (the session's
-// number from the page's answer), the lead, and the table's accessible name; the
-// header comes whole with that answer, and the table is the core's actions
-// viewport, preset to the session in the address. A viewer of the admin view
-// mode sees Hidden in place of the header and of every value. The core owns the
-// words, the table and the header, so a project mounts this view by passing its
-// HilosAnalyticsContext. Bootstrap classes only (styling-rules.md).
-import { useContext, useEffect, useMemo } from 'react'
+// actions recorded in it. The shared entity head draws the one heading from the
+// name the page's answer permits, the catalog's icon and lead, and gives the
+// table its accessible name; the header comes whole with that answer, and the
+// table is the core's actions viewport, preset to the session in the address. A
+// viewer of the admin view mode sees Hidden in place of the header and of every
+// value. The core owns the words, the table and the header, so a project mounts
+// this view by passing its HilosAnalyticsContext. Bootstrap classes only
+// (styling-rules.md).
+import { useContext, useEffect, useMemo, useRef } from 'react'
 import {
   ANALYTICS_ACTION_CREATED_TS_FIELD,
   ANALYTICS_ACTION_NAME_FIELD,
@@ -20,15 +21,17 @@ import {
   formatAnalyticsTime,
   hilosAnalyticsBrowserSession,
   readAnalyticsRouteId,
+  type HilosAnalyticsActionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { usePageInstanceName } from '../../usePageInstanceName.js'
 import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosAnalyticsBrowserSessionPage}. */
@@ -53,6 +56,31 @@ export function HilosAnalyticsBrowserSessionPage({
     )
   }
 
+  const pageLabel = useMemo(
+    () => context.scopes.pageDataSignal('pageLabel'),
+    [context.scopes],
+  )
+  const permittedName = useMemo(
+    () =>
+      computedSignal(() => {
+        if (
+          context.scopes.page()?.key !== HilosPages.ANALYTICS_BROWSER_SESSION
+        ) {
+          return undefined
+        }
+        const label = pageLabel.get()
+        return typeof label === 'string' ? label : undefined
+      }),
+    [context.scopes, pageLabel],
+  )
+  usePageInstanceName(
+    context.scopes,
+    HilosPages.ANALYTICS_BROWSER_SESSION,
+    permittedName,
+  )
+  const identity = useSignal(router.pageIdentity)
+  const icon = identity?.pageHeadOwner?.icon
+
   const route = useSignal(router.currentRoute)
   useSignal(hilosTimeZone)
   const browserSessionId = readAnalyticsRouteId(
@@ -74,21 +102,68 @@ export function HilosAnalyticsBrowserSessionPage({
           }),
     [context, browserSessionId],
   )
+  const lifecycle = useRef<{
+    actions: HilosAnalyticsActionsTable | null
+    generation: number
+  }>({ actions: null, generation: 0 })
 
   // Bind the session's table after the render that published its route, once
-  // the router has dropped the previous page's buffered answer, and release it
-  // when the number changes, disappears, or the page unmounts.
+  // the router has dropped the previous page's buffered answer. Every start
+  // adds a binding, so only a table this page has not bound yet is started, and
+  // cleanup waits one microtask: React StrictMode's setup/cleanup/setup replay
+  // keeps the one live binding, while a new or lost number, a context
+  // replacement or a real unmount still releases it.
   useEffect(() => {
+    const current = lifecycle.current
+    const generation = ++current.generation
+    if (current.actions !== actions) {
+      current.actions = actions
+      actions?.start()
+    }
     if (actions === null) {
       return
     }
-    actions.start()
 
-    return () => actions.dispose()
+    return () => {
+      queueMicrotask(() => {
+        if (current.actions !== actions || current.generation === generation) {
+          actions.dispose()
+          if (current.actions === actions) {
+            current.actions = null
+          }
+        }
+      })
+    }
   }, [actions])
 
   return (
-    <HilosAdminPage page={HilosPages.ANALYTICS_BROWSER_SESSION}>
+    <HilosAdminPage
+      page={HilosPages.ANALYTICS_BROWSER_SESSION}
+      headKind="entity"
+      headVisual={
+        <span
+          className="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
+          aria-hidden="true"
+          data-id="analytics-browser-session-head-icon"
+        >
+          <i className={icon ? `bi ${icon}` : 'bi'} />
+        </span>
+      }
+      headDescription={
+        <p
+          className="text-body-secondary mb-0"
+          data-id="analytics-browser-session-head-description"
+        >
+          {identity?.pageHeadOwner?.lead}
+        </p>
+      }
+      headSkeletonVisual={
+        <span
+          className="hilos-avatar-md rounded-circle bg-secondary-subtle flex-shrink-0"
+          data-id="analytics-browser-session-head-skeleton-icon"
+        />
+      }
+    >
       <div
         data-id="hilos-analytics-browser-session-header"
         className="mb-4 text-break"

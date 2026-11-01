@@ -52,6 +52,7 @@ use Demo\Tasks\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Tasks\Pages\Hilos\AnalyticsPage;
 use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionPage;
+use Demo\Tasks\Pages\Hilos\Analytics\BrowserSessionsPage;
 use Demo\Tasks\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Tasks\Pages\Hilos\Analytics\PersonPage;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
@@ -75,6 +76,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
@@ -1686,6 +1688,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
             TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
             TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
+            TasksTableContext::hilosAnalyticsBrowserSessionList => HilosAnalyticsBrowserSessionListTable::class,
             TasksTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
             TasksTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
             TasksTableContext::hilosModerationRules => HilosModerationRulesTable::class,
@@ -1713,6 +1716,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 BrowserSessionPage::PAGE,
                 PeoplePage::PAGE,
                 PersonPage::PAGE,
+                BrowserSessionsPage::PAGE,
                 ChangeLogFeedPage::PAGE,
                 ChangeLogTablesPage::PAGE,
                 ChangeLogNoisyPage::PAGE,
@@ -2158,6 +2162,31 @@ final class TasksTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([TasksTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The period sessions list uses the Analytics owner and its own table, beside the person's sessions table. */
+    public function testAnalyticsBrowserSessionsPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionsPage::class, Hilos::PAGES[BrowserSessionsPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, BrowserSessionsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionsPage::PAGE]);
+        self::assertSame(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_BROWSER_SESSIONS,
+            BrowserSessionsPage::BROWSER[BrowserConfigKey::SIGNAL],
+        );
+        self::assertSame(HilosAnalyticsBrowserSessionListTable::TABLE, TasksTableContext::hilosAnalyticsBrowserSessionList);
+        self::assertSame(
+            HilosAnalyticsBrowserSessionListTable::class,
+            Hilos::TABLES[TasksTableContext::hilosAnalyticsBrowserSessionList],
+        );
+        self::assertSame(
+            [TasksTableContext::hilosAnalyticsBrowserSessionList => []],
+            Hilos::PAGE_TABLES[BrowserSessionsPage::PAGE],
+        );
+        self::assertSame(
+            [TasksTableContext::hilosAnalyticsBrowserSessions => []],
+            Hilos::PAGE_TABLES[PersonPage::PAGE],
+        );
     }
 
     /** The People list uses its existing Analytics owner, signal and framework table. */

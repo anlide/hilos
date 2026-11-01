@@ -443,7 +443,8 @@ export async function expectAnalyticsSectionHead(
   await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
   for (const [key, name, path, active] of [
     ['hilos_analytics', 'Overview', '/hilos/analytics', current === 'overview'],
-    ...(kit === 'vue'
+    // Angular has no Browser sessions list until HIL-1744.
+    ...(kit !== 'angular'
       ? ([
           [
             SESSION_LIST_PAGE,
@@ -606,8 +607,9 @@ export async function expectAnalyticsSessionListAccessibility(
   expect: Expect,
   page: Page,
   direction: 'ascending' | 'descending',
+  kit: 'vue' | 'react' = 'vue',
 ): Promise<void> {
-  await expectAnalyticsSectionHead(expect, page, 'sessions')
+  await expectAnalyticsSectionHead(expect, page, 'sessions', kit)
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
   const table = page
@@ -876,13 +878,14 @@ export async function expectAnalyticsDashboardCard(
  *
  * @param expect The spec's expect.
  * @param page The page showing the ready overview.
- * @param kit Vue has both lists and count links; React and Angular have People navigation.
+ * @param kit Vue and React have both lists and count links; Angular has People navigation.
  */
 export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
   kit: 'legacy' | 'vue' | 'react' | 'angular' = 'legacy',
 ): Promise<void> {
+  const counted = kit === 'vue' || kit === 'react'
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveText('Analytics')
@@ -900,9 +903,9 @@ export async function expectAnalyticsOverview(
       'Analytics',
     )
   }
-  await expect(tiles.getByRole('link')).toHaveCount(kit === 'vue' ? 3 : 0)
+  await expect(tiles.getByRole('link')).toHaveCount(counted ? 3 : 0)
   await expect(tiles.getByRole('button')).toHaveCount(0)
-  if (kit === 'vue') {
+  if (counted) {
     for (const [key, period] of [
       ['week', 'this-week'],
       ['day', 'today'],
@@ -1051,72 +1054,58 @@ export async function expectNoAnalyticsPersonSession(
 }
 
 /**
- * The adopted browser-session head names the page and its real actions table.
+ * The browser-session page names itself once and leads back to its list: one
+ * h1 with the served label, the current crumb, the Browser sessions crumb, and
+ * the actions table named by that h1. The spec follows the crumb.
  *
  * @param expect The spec's expect.
  * @param page The page showing a browser session.
- * @param label The served session label, masked for an admin-view-mode viewer.
+ * @param label The label the page's answer permits — generic for an
+ *   admin-view-mode viewer.
  */
 export async function expectAnalyticsBrowserSessionHead(
   expect: Expect,
   page: Page,
   label: string,
 ): Promise<void> {
-  const head = page.getByTestId('hilos-page-head')
-  await expect(head).toHaveCount(1)
-  await expect(head).toBeVisible()
-  await expect(page.locator('h1')).toHaveCount(1)
-  const title = head
-    .getByTestId('hilos-page-head-title')
-    .and(head.locator('h1'))
-  await expect(title).toHaveCount(1)
-  await expect(title).toBeVisible()
-  await expect(title).toHaveText(label)
-  await expect(title).toHaveAttribute('id', /\S+/)
-  const titleId = await title.getAttribute('id')
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText(label)
+  await expect(heading).toHaveAttribute('id', /\S+/)
+  const headingId = await heading.getAttribute('id')
 
-  const visual = head
-    .getByTestId('analytics-browser-session-head-icon')
-    .and(head.locator('span'))
-  await expect(visual).toBeVisible()
-  await expect(visual).toHaveClass(/\brounded-circle\b/)
-  await expect(visual).toHaveAttribute('aria-hidden', 'true')
-  await expect(visual.locator('i')).toHaveCount(1)
-  await expect(visual.locator('i')).toBeVisible()
-  await expect(visual.locator('i')).toHaveClass('bi bi-window')
-  const description = head.getByTestId(
-    'analytics-browser-session-head-description',
-  )
-  await expect(description).toBeVisible()
-  await expect(description).toHaveText(
-    'Actions recorded in one browser session, in source-time order.',
-  )
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
-  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
-
-  const breadcrumb = head.getByTestId('hilos-breadcrumb')
-  await expect(breadcrumb).toBeVisible()
-  await expect(breadcrumb.locator('li')).toHaveText([
-    'Hilos',
-    'Analytics',
-    'Browser sessions',
-    label,
-  ])
-  const current = breadcrumb.locator('li:last-child')
-  await expect(current).toBeVisible()
-  await expect(current).toHaveText(label)
+  const breadcrumb = page.getByRole('navigation', {
+    name: 'Breadcrumb',
+    exact: true,
+  })
+  const current = breadcrumb.locator('[aria-current]')
+  await expect(current).toHaveCount(1)
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.getByRole('link')).toHaveCount(0)
-  await expect(breadcrumb.locator('[aria-current]')).toHaveCount(1)
+  // The crumb's own words, exactly: a kit may draw its divider as a decoration
+  // hidden from assistive technology inside the crumb, and that is not the name.
+  await expect
+    .poll(() =>
+      current.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe(label)
+  const list = breadcrumb.getByTestId(
+    'hilos-breadcrumb-hilos_analytics_browser_sessions',
+  )
+  await expect(list).toHaveRole('link')
+  await expect(list).toHaveAccessibleName('Browser sessions')
+  await expect(list).toHaveAttribute('href', ANALYTICS_SESSION_LIST_PATH)
 
   const table = page
     .getByTestId('hilos-analytics-actions-table')
-    .locator('table')
-  await expect(table).toHaveCount(1)
+    .getByRole('table')
   await expect(table).toBeVisible()
-  await expect(table).toHaveAttribute('aria-labelledby', titleId!)
+  await expect(table).toHaveAttribute('aria-labelledby', headingId!)
   await expect(table).toHaveAccessibleName(label)
 }
 

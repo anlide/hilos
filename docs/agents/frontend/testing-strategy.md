@@ -378,11 +378,12 @@ and polls. None of these files carries a `spec-owner` line; chat's message and
 message picture moderation specs do (HIL-1638).
 
 The Analytics section did not move either: chat (Vue), tasks (React) and polls
-(Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`
-with the same test titles. The actions the specs look at are the registration of
-the person and of the administrator, because tasks and polls declare no actions
-of their own; no demo's product takes part in them, and they carry no
-`spec-owner` line (HIL-1422).
+(Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`.
+The three session specs share one test title, while the titles in
+`analytics.spec.ts` follow the pages each kit serves. The actions the specs look
+at are the registration of the person and of the administrator, because tasks
+and polls declare no actions of their own; no demo's product takes part in them,
+and they carry no `spec-owner` line (HIL-1422).
 
 online-testing additionally carries the cluster Analytics proof in
 `tests/e2e/cluster/live/analytics.spec.ts`, with three sequential source/viewer
@@ -1063,16 +1064,23 @@ locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` checks the way
 in. The shared Overview check always requires tiles and has no body `kind` or
 empty mode. Its signature is
 `expectAnalyticsOverview(expect: Expect, page: Page, kit: 'legacy' | 'vue' | 'react' | 'angular' = 'legacy'): Promise<void>`:
-Vue expects Overview, Browser sessions and People tabs plus count links; React
-and Angular expect Overview and People tabs without count links; legacy checks
-the breadcrumb and tiles without a shared head.
+Vue and React expect Overview, Browser sessions and People tabs plus count
+links; Angular expects Overview and People tabs without count links; legacy
+checks the breadcrumb and tiles without a shared head.
 `expectAnalyticsSectionHead(expect: Expect, page: Page, current: 'overview' | 'sessions' | 'people', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 and
 `expectAnalyticsPeopleAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 select the right tab row and People table; React and Angular callers pass their
-kit explicitly, while Vue callers retain the default. The chat (Vue), tasks
-(React) and polls (Angular) Overview specs arm `watchSocketFrames` before setup
-and bookmark the log before opening Analytics from the dashboard.
+kit explicitly, while Vue callers retain the default. The section head expects
+the Browser sessions tab for Vue and React and none for Angular.
+`expectAnalyticsSessionListAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' = 'vue'): Promise<void>`
+checks the Browser sessions list the same way: the section head, one `h1` that
+names the list's table through `aria-labelledby` with no table title of its own,
+and the `aria-sort` and accessible name of Last seen. The chat (Vue) and polls
+(Angular) Overview specs arm `watchSocketFrames` before setup and bookmark the
+log before opening Analytics from the dashboard; the tasks (React) spec arms one
+`watchDeliveryFrames` instead, bookmarks its received packets the same way and
+reads the list's requests from that same log.
 `readAnalyticsOverviewSnapshot`
 reads one complete reply from that opening's frames;
 `expectAnalyticsOverviewTiles` compares all three counts and their captured
@@ -1112,12 +1120,21 @@ person's admin card into Analytics. Ordinary People/session preconditions
 can use the same waiter without `expectedAction`.
 
 Tasks' React `analytics.spec.ts` uses the shared Overview helper with the
-`'react'` kit, keeps the snapshot oracle and carries People-to-Person navigation,
+`'react'` kit, keeps the snapshot oracle and carries the count links — each
+opens Browser sessions on its own period, and Period, Reset, F5, Back and
+Forward keep the addressed period — the list-to-session journey with its return
+by the crumb, Signed in to Person to session, People-to-Person navigation,
 direct entry, F5, browser history and return to People, plus Period changes and
-Reset over the captured context. Its existing `analytics-browser-session.spec.ts`
-keeps the User-to-Person-to-session privacy and action-order regression. The
-Analytics accessibility group in `a11y.spec.ts` covers the assembled
-People/Person outlet, including keyboard navigation and table semantics.
+Reset over the captured context, and a viewer's Hidden list values with only
+public session links. Its existing `analytics-browser-session.spec.ts` keeps the
+User-to-Person-to-session privacy and action-order regression and checks the
+session head with `expectAnalyticsBrowserSessionHead`, F5 and the crumb back to
+the list. The Analytics accessibility group in `a11y.spec.ts` covers the count
+links' accessible names and Enter on a period, and the assembled
+list/People/Person/session outlet, including keyboard navigation and table
+semantics; its keyboard path starts at the list, with the table name and the
+Last seen sort, then People and Person, the session by Enter and the return by
+its crumb.
 Polls' Angular `analytics.spec.ts`
 uses the shared helpers with the `'angular'` kit and covers People-to-Person
 navigation, one opening Today viewport without an extra Any time request,

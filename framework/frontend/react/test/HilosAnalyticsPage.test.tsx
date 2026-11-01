@@ -1,6 +1,7 @@
 // The React peer of vue/src/admin/analytics/HilosAnalyticsPage.test.ts:
-// the overview's aggregates, the shared head, snapshot holding, StrictMode replay,
-// and controller disposal on unmount and scope change.
+// the overview's aggregates and their links to the Browser sessions list, the
+// shared head, snapshot holding, StrictMode replay, and controller disposal on
+// unmount and scope change.
 import { StrictMode } from 'react'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -49,6 +50,7 @@ function harness(
   initial?: HilosAnalyticsOverviewSnapshot,
   strict = false,
   customScopes?: ScopeManager,
+  resolvePath: HilosRouter['resolvePath'] = resolveHilosPath,
 ) {
   const scopes = customScopes ?? new ScopeManager()
   const page = scopes.openPage(PAGE)
@@ -66,7 +68,7 @@ function harness(
     pageLoading: createSignal(false),
     pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
-    resolvePath: resolveHilosPath,
+    resolvePath,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -115,7 +117,13 @@ function harness(
         { page: HilosPages.DASHBOARD, label: 'Hilos' },
         { page: PAGE, label: 'Analytics' },
       ])
-      data.set('pageTabs', [{ page: PAGE, label: 'Overview' }])
+      data.set('pageTabs', [
+        { page: PAGE, label: 'Overview' },
+        {
+          page: HilosPages.ANALYTICS_BROWSER_SESSIONS,
+          label: 'Browser sessions',
+        },
+      ])
       data.set('pageChildren', [])
       data.set(ANALYTICS_OVERVIEW_SECTION, snapshot)
     })
@@ -179,6 +187,9 @@ describe('HilosAnalyticsPage', () => {
     expect(
       h.view.container.querySelectorAll('[data-id$="-count"]'),
     ).toHaveLength(0)
+    expect(
+      h.view.container.querySelectorAll('[data-id$="-link"]'),
+    ).toHaveLength(0)
   })
 
   it.each([4, 0])(
@@ -215,8 +226,12 @@ describe('HilosAnalyticsPage', () => {
       ).toContain('Analytics')
       expect(breadcrumb?.querySelector('[aria-current="page"] a')).toBeNull()
       expect(
-        h.view.container.querySelector('[data-id="hilos-page-tabs"]'),
-      ).toBeNull()
+        h.view.container
+          .querySelector(
+            `[data-id="hilos-page-tab-${HilosPages.ANALYTICS_BROWSER_SESSIONS}"]`,
+          )
+          ?.getAttribute('href'),
+      ).toBe('/hilos/analytics/browser-sessions')
 
       const tiles = h.view.container.querySelector(
         '[data-id="hilos-analytics-overview-tiles"]',
@@ -264,8 +279,23 @@ describe('HilosAnalyticsPage', () => {
           )?.textContent,
         ).toBe(since)
       }
+      for (const [key, period, count] of [
+        ['week', 'this-week', 38],
+        ['day', 'today', 7],
+        ['hour', 'this-hour', visitorsThisHour],
+      ] as const) {
+        const link = tiles?.querySelector(
+          `[data-id="hilos-analytics-visitors-${key}-link"]`,
+        )
+        expect(link?.tagName).toBe('A')
+        expect(link?.textContent).toBe(String(count))
+        expect(link?.getAttribute('href')).toBe(
+          `/hilos/analytics/browser-sessions/${period}`,
+        )
+      }
+      expect(tiles?.querySelectorAll('a')).toHaveLength(3)
       expect(
-        tiles?.querySelectorAll('a, button, [aria-hidden="true"]'),
+        tiles?.querySelectorAll('button, [aria-hidden="true"]'),
       ).toHaveLength(0)
       expect(
         h.view.container.querySelector('[data-id="hilos-admin-children"]'),
@@ -301,13 +331,38 @@ describe('HilosAnalyticsPage', () => {
       visitorsToday: 0,
       visitorsThisHour: 0,
     })
-    for (const period of ['week', 'day', 'hour'] as const) {
+    for (const [key, period] of [
+      ['week', 'this-week'],
+      ['day', 'today'],
+      ['hour', 'this-hour'],
+    ] as const) {
       expect(
         h.view.container.querySelector(
-          `dd[data-id="hilos-analytics-visitors-${period}-count"]`,
+          `dd[data-id="hilos-analytics-visitors-${key}-count"]`,
         )?.textContent,
       ).toBe('0')
+      const link = h.view.container.querySelector(
+        `[data-id="hilos-analytics-visitors-${key}-link"]`,
+      )
+      expect(link?.textContent).toBe('0')
+      expect(link?.getAttribute('href')).toBe(
+        `/hilos/analytics/browser-sessions/${period}`,
+      )
     }
+  })
+
+  it('keeps plain counts when the project does not serve the list', () => {
+    const h = harness(undefined, false, undefined, () => undefined)
+    h.answer({ ...SNAPSHOT, visitorsThisHour: 0 })
+    const tiles = h.view.container.querySelector(
+      '[data-id="hilos-analytics-overview-tiles"]',
+    )
+    expect(tiles?.querySelectorAll('a')).toHaveLength(0)
+    expect(
+      tiles?.querySelector('[data-id="hilos-analytics-visitors-hour-count"]')
+        ?.textContent,
+    ).toBe('0')
+    expect(tiles?.innerHTML).not.toContain('href="#"')
   })
 
   it('starts during setup and reads an answer that arrived before mounting', () => {
@@ -441,6 +496,11 @@ describe('HilosAnalyticsPage', () => {
         '[data-id="hilos-analytics-visitors-week-count"]',
       )?.textContent,
     ).toBe('38')
+    expect(
+      h.view.container
+        .querySelector('[data-id="hilos-analytics-visitors-week-link"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/analytics/browser-sessions/this-week')
 
     const newScopes = new ScopeManager()
     newScopes.openPage(PAGE)

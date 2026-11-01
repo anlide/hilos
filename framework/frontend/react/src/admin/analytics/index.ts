@@ -3,6 +3,10 @@ export {
   HilosAnalyticsBrowserSessionPage,
 } from './HilosAnalyticsBrowserSessionPage.js'
 export {
+  type HilosAnalyticsBrowserSessionsPageProps,
+  HilosAnalyticsBrowserSessionsPage,
+} from './HilosAnalyticsBrowserSessionsPage.js'
+export {
   type HilosAnalyticsPageProps,
   HilosAnalyticsPage,
 } from './HilosAnalyticsPage.js'

@@ -6,10 +6,13 @@ import {
   login,
   openSignIn,
   waitAnalyticsBrowserSession,
+  ANALYTICS_SESSION_LIST_PATH,
   analyticsSessionLink,
+  analyticsSessionListCell,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
   expectAnalyticsActionsOnPage,
+  expectAnalyticsBrowserSessionHead,
   expectAnalyticsPersonSession,
   expectAnalyticsSessionFrames,
   expectAnalyticsSessionHeader,
@@ -36,6 +39,8 @@ const sendCommand = createCommandChannel({
   timeoutMs: 5_000,
 })
 
+test.use({ timezoneId: 'Pacific/Johnston' })
+
 test('shows real session actions in source order without bodies or another session', async ({
   page,
   browser,
@@ -52,7 +57,11 @@ test('shows real session actions in source order without bodies or another sessi
   expect(browserMajor).toBeDefined()
   const bodies = [user.email, PASSWORD]
 
-  const adminContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  const adminContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+    timezoneId: 'Africa/Douala',
+  })
   try {
     const admin = await adminContext.newPage()
     const frames = watchAnalyticsFrames(admin)
@@ -112,6 +121,11 @@ test('shows real session actions in source order without bodies or another sessi
       ),
     )
     await expectPageReady(expect, admin)
+    await expectAnalyticsBrowserSessionHead(
+      expect,
+      admin,
+      `Browser session #${userSession.browserSessionId}`,
+    )
     await expectAnalyticsSessionHeader(
       expect,
       admin,
@@ -143,11 +157,10 @@ test('shows real session actions in source order without bodies or another sessi
     // screens legitimately carried these bodies earlier, in the other context.
     await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 
-    await gotoPage(
-      expect,
-      admin,
-      `/hilos/analytics/browser-sessions/${adminSession.browserSessionId}`,
-    )
+    const adminSessionPath = `${ANALYTICS_SESSION_LIST_PATH}/${adminSession.browserSessionId}`
+    const adminSessionLabel = `Browser session #${adminSession.browserSessionId}`
+    await gotoPage(expect, admin, adminSessionPath)
+    await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
     await expectOtherAnalyticsSession(
       expect,
       admin,
@@ -155,6 +168,25 @@ test('shows real session actions in source order without bodies or another sessi
       adminId,
       ascending,
     )
+
+    // A cold entry by F5 answers the same session, and its crumb leads back to
+    // the list, which links that session again.
+    await admin.reload()
+    await expect(admin).toHaveURL(adminSessionPath)
+    await expectPageReady(expect, admin)
+    await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
+    await admin
+      .getByTestId('hilos-breadcrumb-hilos_analytics_browser_sessions')
+      .click()
+    await expect(admin).toHaveURL(ANALYTICS_SESSION_LIST_PATH)
+    await expectPageReady(expect, admin)
+    await expect(
+      analyticsSessionListCell(
+        admin,
+        'session',
+        adminSession.browserSessionId!,
+      ),
+    ).toHaveAttribute('href', adminSessionPath)
   } finally {
     await adminContext.close()
   }

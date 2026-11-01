@@ -414,37 +414,39 @@ layer that has built the section, which all three layers have.
   valid answer for the current page scope; a later answer or reconnect does not
   replace it, though reconnect may cause the backend subscription to run again.
   Vue, React and Angular render three aggregate tiles from that captured snapshot,
-  under the shared section head. Vue also links each tile to Browser sessions at
-  the corresponding `this-week`, `today` or `this-hour` period, including when its
-  count is zero. React and Angular currently render their tiles without those
-  links (HIL-1743, HIL-1744).
+  under the shared section head. Vue and React also link each tile to Browser
+  sessions at the corresponding `this-week`, `today` or `this-hour` period,
+  including when its count is zero; React leaves a count as plain text when its
+  project does not serve the list. Angular currently renders its tiles without
+  those links (HIL-1744).
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
   `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is
   `HilosAnalyticsBrowserSessionPage` in Vue, React and Angular. The opening `page_response` carries the
   short browser description and last signed-in person in `data.browserSession`,
   with `data.pageLabel` naming the session. Chat and Binance opt the Vue detail
-  page into the shared entity head through their complete project provider
-  entries. Its circular visual uses the shared catalog's `bi-window` icon, its
-  description is the owner lead, and the existing `bindPageInstanceName` sends
-  the permitted live label to the head, final breadcrumb entry and document
-  title. Only Overview is eligible, so the shared head remains while its tab
-  row is hidden. Before identity arrives, Vue shows a circular head skeleton
-  with two bars and no breadcrumb, `h1` or tabs; the body keeps its existing
-  two-line header skeleton. The existing two-line browser/last-signed-in header
-  and actions table remain in the body. A view-mode viewer gets the generic
-  label `Browser session`; personal header values are `Hidden`, without the
-  personal number.
+  page, and Tasks and ecommerce-shop the React one, into the shared entity head
+  through their complete project provider entries. Its circular visual uses the
+  shared catalog's `bi-window` icon, its description is the owner lead, and the
+  existing `bindPageInstanceName` in Vue, or `usePageInstanceName()` in React,
+  sends the permitted live label to the head, final breadcrumb entry and
+  document title. Only Overview is eligible, so the shared head remains while
+  its tab row is hidden. Before identity arrives, Vue and React show a circular
+  head skeleton with two bars and no breadcrumb, `h1` or tabs; the body keeps
+  its existing two-line header skeleton. The existing two-line
+  browser/last-signed-in header and actions table remain in the body. A
+  view-mode viewer gets the generic label `Browser session`; personal header
+  values are `Hidden`, without the personal number.
 - The People list has key `hilos_analytics_people` and route
   `/hilos/analytics/people`. It is a thin subscription served by the existing
   Analytics agent: its page payload is empty, and one `page_response` carries
   the catalog, shared Analytics head and table. The Vue bindings expose the
   `Overview`, `Browser sessions` and `People` tabs in Chat and Binance, with
-  People active on this page. Tasks and ecommerce-shop mount the React Overview
-  and People pages; Polls and OnlineTesting mount the Angular Overview and
-  People pages. Each project's row contains the pages its kit serves. In Polls
-  and OnlineTesting, `PeoplePage` extends `AbstractHilosAnalyticsPeoplePage`
-  and is registered in `PAGES`; its existing Analytics agent supplies the
+  People active on this page. Tasks and ecommerce-shop mount the React Overview,
+  Browser sessions and People pages, with the same three tabs; Polls and
+  OnlineTesting mount the Angular Overview and People pages. Each project's row
+  contains the pages its kit serves. In Polls and OnlineTesting, `PeoplePage`
+  extends `AbstractHilosAnalyticsPeoplePage` and is registered in `PAGES`; its existing Analytics agent supplies the
   subscription route. Each project registers `HilosAnalyticsPeopleTable` in its
   `TableContext` and `TABLES`, then binds it to `PeoplePage::PAGE` in
   `PAGE_TABLES`. The page and table are optional; `HilosFeature::ANALYTICS` does
@@ -554,16 +556,24 @@ layer that has built the section, which all three layers have.
   options. These reads do not promise a repeatable snapshot. The existing
   FILTER_USER detail table and person-page behavior are unchanged.
 - In Chat and Binance, Vue currently renders the Browser sessions page and its
-  Overview, Browser sessions and People tabs. React renders Overview and
-  People, but its Browser sessions list remains with HIL-1743; Angular's list
-  remains with HIL-1744. The existing browser-session detail child route remains
-  available through `STAGED_CHILDREN`. This list adds no
+  Overview, Browser sessions and People tabs. Tasks and ecommerce-shop render
+  the same page and tabs in React. Each project's `BrowserSessionsPage` extends
+  `AbstractHilosAnalyticsBrowserSessionsPage` and is registered in `PAGES`; its
+  existing Analytics agent supplies the subscription route. Each project
+  registers `HilosAnalyticsBrowserSessionListTable` in its `TableContext` and
+  `TABLES` and binds it to `BrowserSessionsPage::PAGE` in `PAGE_TABLES`. The
+  project's lazy view mounts `HilosAnalyticsBrowserSessionsPage` with its
+  `HilosAnalyticsContext` — from `@hilos/vue/admin/analytics` in Chat and
+  Binance, from `@hilos/react/admin/analytics` in Tasks and ecommerce-shop.
+  Angular's list remains with HIL-1744, and its existing browser-session detail
+  child route remains available through `STAGED_CHILDREN`. This list adds no
   separate Analytics feature requirement. The session catalog entry remains a
   child of Browser sessions, so that ancestor is present whether the detail is
   opened from the list, from Person, or directly (the list, period and parent
   breadcrumb behavior is HIL-1741). In Chat and Binance, the complete Vue
-  provider entries opt the detail into the shared entity head. React's session
-  detail keeps its legacy head until HIL-1743; Angular's until HIL-1744.
+  provider entries opt the detail into the shared entity head, and the complete
+  React entries of Tasks and ecommerce-shop do the same. Angular's session
+  detail keeps its legacy head until HIL-1744.
   The first existing `page_response` supplies the head identity with
   the page data. No DB/RT field, signal, DTO, route, request, payload key or URL
   was added for this head. The existing two-line session header, actions table
@@ -621,7 +631,7 @@ local-time labels. In all three view layers the browser-session page opens the
 actions table with its route's session number as the preset, and the person
 page opens the browser-sessions table with its route's `userId` as the preset.
 The People table is rendered in Vue, React and Angular; the Browser sessions list
-remains Vue-only.
+in Vue and React, and Angular's remains with HIL-1744.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a
@@ -632,22 +642,32 @@ endpoint; e2e polls it to observe journal rotation and writer loading before
 opening the page. The browser-session E2E remains mirrored in chat, tasks and
 polls; its shared checks live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422). The shared `expectAnalyticsBrowserSessionHead(expect, page,
-label)` checks one `h1` with the exact label, the circular icon and owner lead,
-the breadcrumb, no tab row or legacy title/child cards, and the real actions
-table's accessible name from that `h1`. Chat's
+label)` checks one `h1` with the exact label and an id, one current breadcrumb
+entry that is not a link and whose own words are that label, the Browser
+sessions crumb as a link by name to the list's address, and the real actions
+table, named by that `h1` through `aria-labelledby`. It does not read classes or
+the order of nodes. Chat's
 `demo/chat/tests/e2e/tests/analytics-browser-session.spec.ts` checks user and
 administrator sessions and reloads the current address; its
 `demo/chat/tests/e2e/tests/analytics.spec.ts` checks the viewer's list-to-session
 path, generic head and `Hidden` values. The existing
 `expectAnalyticsSessionReturn` and `expectAnalyticsSessionHeader` keep their
-`locator.or` legacy/shared title lookup and `toHaveCount(1)` assertion for the
-older React and Angular carriers. The mirrored order, privacy and body/frame
-assertions remain unchanged. Chat also has a People flow in
+`locator.or` legacy/shared title lookup and `toHaveCount(1)` assertion; the
+legacy title is now met only by the Angular carriers. The mirrored order,
+privacy and body/frame assertions remain unchanged. Chat also has a People flow in
 `demo/chat/tests/e2e/tests/analytics.spec.ts`. Tasks carries the React
-People-to-Person and Period flows in `demo/tasks/tests/e2e/tests/analytics.spec.ts`,
-keeps the User-to-Person-to-session regression in
-`demo/tasks/tests/e2e/tests/analytics-browser-session.spec.ts`, and checks the
-assembled People/Person outlet in `demo/tasks/tests/e2e/tests/a11y.spec.ts`.
+overview, Browser sessions, People-to-Person and Period flows in
+`demo/tasks/tests/e2e/tests/analytics.spec.ts`: each count opens the list on its
+own period, Period and Reset rewrite the address without a new subscription,
+and F5, Back and Forward keep the addressed period; a real session opens from
+the list and returns by its crumb, and Signed in opens Person, whose session
+link has the same return; a viewer receives Hidden values with only public
+session links. It keeps the User-to-Person-to-session regression in
+`demo/tasks/tests/e2e/tests/analytics-browser-session.spec.ts`, which also
+checks the session head, F5 and the crumb back to the list. The Analytics
+accessibility group in `demo/tasks/tests/e2e/tests/a11y.spec.ts` checks the
+count links' names and Enter, and the keyboard path through the list, People,
+Person and session and back to the list.
 Polls carries the Angular People-to-Person and Period/Reset journey, including
 one opening Today viewport without an extra Any time request, reuse of the
 captured context, the first name/photo reply, direct entry, F5, and Back/Forward

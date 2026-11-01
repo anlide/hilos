@@ -1,9 +1,15 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  ANALYTICS_SESSION_LIST_PATH,
   analyticsPeopleViewports,
   analyticsPersonLink,
+  analyticsSessionLink,
+  analyticsSessionListCell,
+  analyticsSessionListViewports,
+  createTestAdmin,
   deliveryObject,
+  expectAnalyticsBrowserSessionHead,
   expectAnalyticsDashboardCard,
   expectAnalyticsOverview,
   expectAnalyticsOverviewTiles,
@@ -13,6 +19,10 @@ import {
   expectAnalyticsPersonNavigation,
   expectAnalyticsPersonSession,
   expectAnalyticsSectionHead,
+  expectAnalyticsSessionListFacets,
+  expectAnalyticsSessionListRow,
+  expectAnalyticsSessionListViewer,
+  expectAnalyticsSessionListWindow,
   login,
   openSignIn,
   PASSWORD,
@@ -20,12 +30,11 @@ import {
   uniqueEmail,
   waitAnalyticsBrowserSession,
   watchDeliveryFrames,
-  watchSocketFrames,
-  type SocketFrame,
   expectPageReady,
   gotoPage,
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
@@ -34,11 +43,10 @@ const sendCommand = createStandCommandChannel({ timeoutMs: 5_000 })
 
 test.use({ timezoneId: 'Asia/Kathmandu' })
 
-test('opens the Analytics overview tiles from the admin dashboard', async ({
+test('opens the Analytics overview tiles from the admin dashboard and keeps their Period in the Browser sessions address', async ({
   page,
 }) => {
-  const frames: SocketFrame[] = []
-  const observer = watchSocketFrames(page, (frame) => frames.push(frame))
+  const frames = watchDeliveryFrames(page)
   try {
     await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, '/hilos')
@@ -47,24 +55,187 @@ test('opens the Analytics overview tiles from the admin dashboard', async ({
     const browserTimeZone = await page.evaluate(
       () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     )
-    const opening = frames.length
+    const opened = frames.packets.length
     await page.getByTestId('dashboard-card-hilos_analytics').click()
     await expectPageReady(expect, page)
     await expectAnalyticsOverview(expect, page, 'react')
 
+    const overview = frames.packets
+      .slice(opened)
+      .flatMap((packet) => packet.frames)
     await test.info().attach('analytics-overview-frames', {
-      body: JSON.stringify(frames.slice(opening), null, 2),
+      body: JSON.stringify(overview, null, 2),
       contentType: 'application/json',
     })
-    const snapshot = readAnalyticsOverviewSnapshot(frames.slice(opening))
+    const snapshot = readAnalyticsOverviewSnapshot(overview)
 
     await expectAnalyticsOverviewTiles(expect, page, snapshot, browserTimeZone)
+
+    const period = page.getByTestId('hilos-table-filter-period')
+    const subscriptions = () =>
+      frames.sent
+        .map(({ wire }) => deliveryObject(wire))
+        .filter(
+          (wire) =>
+            wire.type === 'page_subscribe' &&
+            wire.page === 'hilos_analytics_browser_sessions',
+        )
+    let opening = 0
+    await test.step('each count opens Browser sessions on its own Period', async () => {
+      // Each real tile owns a calendar address; its snapshot is not sent as list context.
+      for (const [tile, value] of [
+        ['week', 'this-week'],
+        ['day', 'today'],
+        ['hour', 'this-hour'],
+      ] as const) {
+        opening = frames.sent.length
+        await page.getByTestId(`hilos-analytics-visitors-${tile}-link`).click()
+        await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/${value}`)
+        await expectPageReady(expect, page)
+        await expectAnalyticsSessionListWindow(
+          expect,
+          page,
+          frames,
+          value,
+          opening,
+        )
+        expect(
+          analyticsSessionListViewports(frames).filter(
+            (request) => frames.sent.indexOf(request) >= opening,
+          ),
+        ).toHaveLength(1)
+        await page.getByTestId('hilos-page-tab-hilos_analytics').click()
+        await expect(page).toHaveURL('/hilos/analytics')
+        await expectPageReady(expect, page)
+      }
+    })
+
+    await test.step('Period and Reset rewrite the address on the same subscription', async () => {
+      opening = frames.sent.length
+      await page
+        .getByTestId('hilos-page-tab-hilos_analytics_browser_sessions')
+        .click()
+      await expect(page).toHaveURL(ANALYTICS_SESSION_LIST_PATH)
+      await expectPageReady(expect, page)
+      const today = await expectAnalyticsSessionListWindow(
+        expect,
+        page,
+        frames,
+        'today',
+        opening,
+      )
+      const before = subscriptions().length
+      opening = frames.sent.length
+      await period.getByTestId('hilos-dropdown-toggle').click()
+      await period.getByTestId('hilos-dropdown-option-2').click()
+      await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+      const week = await expectAnalyticsSessionListWindow(
+        expect,
+        page,
+        frames,
+        'this-week',
+        opening,
+      )
+      expect(week.request.filter).toEqual({
+        ...today.context,
+        period: 'this-week',
+      })
+      await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/this-week`)
+      expect(subscriptions()).toHaveLength(before)
+      opening = frames.sent.length
+      await page.getByTestId('hilos-table-filter-reset').click()
+      const reset = await expectAnalyticsSessionListWindow(
+        expect,
+        page,
+        frames,
+        undefined,
+        opening,
+      )
+      expect(reset.request.filter).toEqual(today.context)
+      await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/any-time`)
+      await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
+        'Period: Any time',
+      )
+      await expect(page.getByTestId('hilos-table-filter-badge')).toHaveCount(0)
+      expect(subscriptions()).toHaveLength(before)
+    })
+
+    await test.step('F5, Back, Forward and an unknown tail keep the addressed Period', async () => {
+      const before = subscriptions().length
+      opening = frames.sent.length
+      await page.reload()
+      await expectPageReady(expect, page)
+      await expectAnalyticsSessionListWindow(
+        expect,
+        page,
+        frames,
+        undefined,
+        opening,
+      )
+      expect(subscriptions()).toHaveLength(before + 1)
+      // Same-page history returns to the actual replaced address, not default Today.
+      await page.getByTestId('hilos-page-tab-hilos_analytics').click()
+      await expect(page).toHaveURL('/hilos/analytics')
+      await expectPageReady(expect, page)
+      opening = frames.sent.length
+      await page.goBack()
+      await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/any-time`)
+      await expectPageReady(expect, page)
+      await expectAnalyticsSessionListWindow(
+        expect,
+        page,
+        frames,
+        undefined,
+        opening,
+      )
+      // One step deeper is the Overview the counts left; Forward reopens the
+      // list on its addressed Period.
+      await page.goBack()
+      await expect(page).toHaveURL('/hilos/analytics')
+      await expectPageReady(expect, page)
+      await expect(
+        page.getByTestId('hilos-analytics-overview-tiles'),
+      ).toBeVisible()
+      opening = frames.sent.length
+      await page.goForward()
+      await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/any-time`)
+      await expectPageReady(expect, page)
+      await expectAnalyticsSessionListWindow(
+        expect,
+        page,
+        frames,
+        undefined,
+        opening,
+      )
+      for (const [tail, expected] of [
+        ['unknown-period', 'today'],
+        ['this-hour', 'this-hour'],
+      ] as const) {
+        opening = frames.sent.length
+        await gotoPage(expect, page, `${ANALYTICS_SESSION_LIST_PATH}/${tail}`)
+        await expectAnalyticsSessionListWindow(
+          expect,
+          page,
+          frames,
+          expected,
+          opening,
+        )
+      }
+    })
   } finally {
-    observer.stop()
+    await test.info().attach('analytics-session-list-period', {
+      body: JSON.stringify(
+        { sent: frames.sent, packets: frames.packets },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    frames.stop()
   }
 })
 
-test('opens a real person from Analytics People and returns through People crumbs', async ({
+test('opens a real person and session from People and Browser sessions and returns through their crumbs', async ({
   page,
   browser,
   baseURL,
@@ -79,7 +250,11 @@ test('opens a real person from Analytics People and returns through People crumb
     () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
   )
   expect(browserMajor).toBeDefined()
-  const adminContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  const adminContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+    timezoneId: 'Asia/Baghdad',
+  })
   const admin = await adminContext.newPage()
   const frames = watchDeliveryFrames(admin)
   try {
@@ -251,6 +426,79 @@ test('opens a real person from Analytics People and returns through People crumb
       forwarding,
     )
     await expectAnalyticsPeoplePerson(expect, admin, forwarded, user)
+
+    const id = session.browserSessionId!
+    const sessionPath = `${ANALYTICS_SESSION_LIST_PATH}/${id}`
+    const sessionLabel = `Browser session #${id}`
+    const expectListReturn = async () => {
+      const returning = frames.sent.length
+      await admin
+        .getByTestId('hilos-breadcrumb-hilos_analytics_browser_sessions')
+        .click()
+      await expect(admin).toHaveURL(ANALYTICS_SESSION_LIST_PATH)
+      await expectPageReady(expect, admin)
+      await expectAnalyticsSessionListWindow(
+        expect,
+        admin,
+        frames,
+        'today',
+        returning,
+      )
+    }
+    await test.step('Browser sessions shows the real session and opens it', async () => {
+      await admin
+        .getByTestId('hilos-page-tab-hilos_analytics_browser_sessions')
+        .click()
+      await expect(admin).toHaveURL(ANALYTICS_SESSION_LIST_PATH)
+      await expectPageReady(expect, admin)
+      await expectAnalyticsSectionHead(expect, admin, 'sessions', 'react')
+      const listed = await expectAnalyticsSessionListWindow(
+        expect,
+        admin,
+        frames,
+        'today',
+      )
+      expect(analyticsSessionListViewports(frames)).toHaveLength(1)
+      expect(listed.request).toMatchObject({
+        limit: 25,
+        sort: [{ field: 'lastSeenTs', direction: 'desc' }],
+      })
+      await expectAnalyticsSessionListRow(
+        expect,
+        admin,
+        listed,
+        id,
+        user,
+        browserMajor!,
+      )
+      const period = admin.getByTestId('hilos-table-filter-period')
+      await period.getByTestId('hilos-dropdown-toggle').click()
+      await expectAnalyticsSessionListFacets(
+        expect,
+        admin,
+        frames,
+        listed.context,
+      )
+      await period.getByTestId('hilos-dropdown-toggle').press('Escape')
+      await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+
+      await analyticsSessionListCell(admin, 'session', id).click()
+      await expect(admin).toHaveURL(sessionPath)
+      await expectPageReady(expect, admin)
+      await expectAnalyticsBrowserSessionHead(expect, admin, sessionLabel)
+      await expectListReturn()
+    })
+
+    await test.step('Signed in opens Person, whose session link has the same return', async () => {
+      opening = bookmark()
+      await analyticsSessionListCell(admin, 'person', id).click()
+      await expectPersonBlock(opening)
+      await analyticsSessionLink(admin, id).click()
+      await expect(admin).toHaveURL(sessionPath)
+      await expectPageReady(expect, admin)
+      await expectAnalyticsBrowserSessionHead(expect, admin, sessionLabel)
+      await expectListReturn()
+    })
   } finally {
     await test.info().attach('analytics-people-navigation', {
       body: JSON.stringify(
@@ -418,5 +666,94 @@ test('People starts with one Today viewport and resets only its Period filter', 
       contentType: 'application/json',
     })
     frames.stop()
+  }
+})
+
+test('Browser sessions viewer receives hidden personal values with only public session links', async ({
+  page,
+  browser,
+  baseURL,
+  ignoreHTTPSErrors,
+}) => {
+  const userId = await createTestAdmin(expect, page)
+  const session = await waitAnalyticsBrowserSession(expect, sendCommand, userId)
+  const viewerContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+    timezoneId: 'America/Santarem',
+  })
+  const viewer = await viewerContext.newPage()
+  const frames = watchDeliveryFrames(viewer)
+  try {
+    await setAdminViewMode(true)
+    await gotoPage(expect, viewer, ANALYTICS_SESSION_LIST_PATH)
+    await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
+    let window = await expectAnalyticsSessionListWindow(
+      expect,
+      viewer,
+      frames,
+      'today',
+    )
+    await expectAnalyticsSessionListViewer(expect, viewer, window)
+    // Period counts are public: the viewer's facets answer like an admin's.
+    const period = viewer.getByTestId('hilos-table-filter-period')
+    await period.getByTestId('hilos-dropdown-toggle').click()
+    await expectAnalyticsSessionListFacets(
+      expect,
+      viewer,
+      frames,
+      window.context,
+    )
+    await period.getByTestId('hilos-dropdown-toggle').press('Escape')
+    await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+    // Viewer order uses public row numbers; the newly written row can be past 25.
+    const pages = Math.ceil(
+      Number(window.window.totalCount) / Number(window.window.limit),
+    )
+    for (
+      let index = 1;
+      index < pages &&
+      !window.rows.some((row) => row.rowKey === session.browserSessionId);
+      index++
+    ) {
+      const changing = frames.sent.length
+      await viewer.getByTestId('hilos-table-next').click()
+      window = await expectAnalyticsSessionListWindow(
+        expect,
+        viewer,
+        frames,
+        'today',
+        changing,
+      )
+      await expectAnalyticsSessionListViewer(expect, viewer, window)
+    }
+    expect(window.rows.map((row) => row.rowKey)).toContain(
+      session.browserSessionId,
+    )
+    await analyticsSessionListCell(
+      viewer,
+      'session',
+      session.browserSessionId!,
+    ).click()
+    await expect(viewer).toHaveURL(
+      `${ANALYTICS_SESSION_LIST_PATH}/${session.browserSessionId}`,
+    )
+    await expectPageReady(expect, viewer)
+    await expectAnalyticsBrowserSessionHead(expect, viewer, 'Browser session')
+    await expect(
+      viewer.getByTestId('hilos-analytics-browser-session-header'),
+    ).toHaveText('Hidden')
+  } finally {
+    await test.info().attach('analytics-session-list-viewer', {
+      body: JSON.stringify(
+        { sent: frames.sent, packets: frames.packets },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    frames.stop()
+    await viewerContext.close()
+    await setAdminViewMode(false)
   }
 })

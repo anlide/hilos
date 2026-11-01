@@ -23,6 +23,7 @@ import {
   HilosChangeLogTablePage,
   HilosAnalyticsPage,
   HilosAnalyticsPeoplePage,
+  HilosAnalyticsBrowserSessionsPage,
   HilosAnalyticsBrowserSessionPage,
   HilosAnalyticsPersonPage,
   HilosAppearancePage,
@@ -56,6 +57,7 @@ import type {
   HilosChangeLogTablePageProps,
   HilosAnalyticsPageProps,
   HilosAnalyticsPeoplePageProps,
+  HilosAnalyticsBrowserSessionsPageProps,
   HilosAnalyticsBrowserSessionPageProps,
   HilosAnalyticsPersonPageProps,
   HilosAppearancePageProps,
@@ -138,13 +140,17 @@ it('exports the three Change Log pages and leaves them out of the default map', 
   >().toEqualTypeOf<HilosChangeLogTablePageProps>()
 })
 
-it('exports the four Analytics context pages and leaves them out of the default map', () => {
+it('exports the five Analytics context pages and leaves them out of the default map', () => {
   expect(HilosAnalyticsPage).toBeTypeOf('function')
   expect(HilosAnalyticsPeoplePage).toBeTypeOf('function')
+  expect(HilosAnalyticsBrowserSessionsPage).toBeTypeOf('function')
   expect(HilosAnalyticsBrowserSessionPage).toBeTypeOf('function')
   expect(HilosAnalyticsPersonPage).toBeTypeOf('function')
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS)
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.ANALYTICS_PEOPLE)
+  expect(hilosAdminViews()).not.toHaveProperty(
+    HilosPages.ANALYTICS_BROWSER_SESSIONS,
+  )
   expect(hilosAdminViews()).not.toHaveProperty(
     HilosPages.ANALYTICS_BROWSER_SESSION,
   )
@@ -155,6 +161,9 @@ it('exports the four Analytics context pages and leaves them out of the default 
   expectTypeOf<
     Parameters<typeof HilosAnalyticsPeoplePage>[0]
   >().toEqualTypeOf<HilosAnalyticsPeoplePageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosAnalyticsBrowserSessionsPage>[0]
+  >().toEqualTypeOf<HilosAnalyticsBrowserSessionsPageProps>()
   expectTypeOf<
     Parameters<typeof HilosAnalyticsBrowserSessionPage>[0]
   >().toEqualTypeOf<HilosAnalyticsBrowserSessionPageProps>()

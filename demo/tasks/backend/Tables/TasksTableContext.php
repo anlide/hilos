@@ -9,6 +9,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -120,6 +121,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
+ * @property-read HilosAnalyticsBrowserSessionListTable $hilosAnalyticsBrowserSessionList
  * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
  * @property-read HilosModerationKindsTable $hilosModerationKinds
  * @property-read HilosModerationRulesTable $hilosModerationRules
@@ -178,6 +180,7 @@ final class TasksTableContext extends TableContext
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
+    public const string hilosAnalyticsBrowserSessionList = HilosAnalyticsBrowserSessionListTable::TABLE;
     public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
     public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
     public const string hilosModerationRules = HilosModerationRulesTable::TABLE;
