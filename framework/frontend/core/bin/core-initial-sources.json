@@ -440,8 +440,8 @@
     "outputSha256": "fc4c338bd63450e20fe04aa72cf7b1e93b58d93db138a2cced51bbc3224f5d39"
   },
   "src/protocol/logsSignals.ts": {
-    "sourceSha256": "311ff8be04eaea9385aca0f1bdd053447d0b3e11f4e5af9a0a8d840ecab288f2",
-    "outputSha256": "5d33ee4983dab76b2bc75f31a60998f4b0a87215b2ff942b944cdad21b77fcfe"
+    "sourceSha256": "99a886dde95b1e9ca21c96d737107b4cd9c026beeac0d833cf4eccf109d4713b",
+    "outputSha256": "377f13c30fc053136f4fb66e4293a2ac32fcba7d5dc88bcd4b9af98b968771bd"
   },
   "src/protocol/maintenanceSignals.ts": {
     "sourceSha256": "e863bf776f324743ec57514d6cf758af5820ea3c2678be1685bffcc92b291527",

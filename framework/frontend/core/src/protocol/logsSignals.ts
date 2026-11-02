@@ -8,7 +8,8 @@ export const ROTATIONS_HEADER_SIGNAL = 'subscription_page_hilos_logs_rotations'
 
 /**
  * Payload of the screen header: whether there is a picture, which nodes it holds,
- * and the rotation and retention rules actually in force (PHP
+ * the rotation and retention rules actually in force, and the logging mode those
+ * rules were taken from, including when the set has been edited (PHP
  * `HilosLogsRotationsSignalData`).
  */
 export const rotationsHeaderSchema = z.looseObject({
@@ -19,6 +20,8 @@ export const rotationsHeaderSchema = z.looseObject({
   rotationMaxLiveSizeBytes: hideable(z.number()),
   retentionKeepBatches: hideable(z.number()),
   retentionMaxAgeSeconds: hideable(z.number()),
+  preset: hideable(z.string().nullable()),
+  presetEdited: hideable(z.boolean()),
 })
 
 /** The screen header as the page answers a subscription with it. */

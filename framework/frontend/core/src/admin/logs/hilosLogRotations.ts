@@ -61,6 +61,7 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 import {
   formatLogRotationSchedule,
   formatLogSizeThreshold,
+  hilosLogSettingsVocabulary,
 } from './hilosLogSettings.js'
 
 export {
@@ -931,15 +932,19 @@ export function formatRotationFileCounts(row: HilosLogRotationRow): string {
 }
 
 /**
- * The rotation half of the rule line: every axis that is on, in words.
+ * The rotation half of the rule line: the applied mode, when the header names one,
+ * and every axis that is on, in words.
  *
- * The axes are listed rather than named by a mode: the modes exist, but this page is
- * not told which one is applied, so it names what fires instead — in the words of the
- * logging-mode screen (hilosLogSettings.ts), so the two screens of the section never
- * disagree about the same value. An axis at zero is off and is left out entirely —
- * printing `0` would read as "rotates at no size", which is the opposite of what a
- * disabled threshold means. The axes join as one list does in English: "X or Y" for
- * two, "X, Y, or Z" for three.
+ * A named mode leads the line, and a set that has drifted from it carries the caveat
+ * "with your edits". The axes stay in the words of the logging-mode screen
+ * (hilosLogSettings.ts), so the two screens of the section never disagree about the
+ * same value. An axis at zero is off and is left out entirely — printing `0` would
+ * read as "rotates at no size", which is the opposite of what a disabled threshold
+ * means. The axes join as one list does in English: "X or Y" for two, "X, Y, or Z"
+ * for three.
+ *
+ * A hidden axis hides the whole line, and that check comes before the mode. A mode
+ * that is absent or hidden, or a hidden drift mark, leaves the axes to stand alone.
  *
  * Every axis off is a sentence of its own rather than an empty line: rotation that
  * only happens on a restart is a real configuration, and an operator reading a blank
@@ -971,14 +976,27 @@ export function formatRotationRule(
     axes.push(`at ${formatLogSizeThreshold(header.rotationMaxLiveSizeBytes)}`)
   }
 
+  let clause: string
   if (axes.length === 0) {
-    return 'Rotates only when the node restarts'
-  }
-  if (axes.length <= 2) {
-    return `Rotates ${axes.join(' or ')}`
+    clause = 'only when the node restarts'
+  } else if (axes.length <= 2) {
+    clause = axes.join(' or ')
+  } else {
+    clause = `${axes.slice(0, -1).join(', ')}, or ${axes[axes.length - 1]}`
   }
 
-  return `Rotates ${axes.slice(0, -1).join(', ')}, or ${axes[axes.length - 1]}`
+  if (
+    typeof header.preset === 'string' &&
+    !isHiddenValue(header.presetEdited)
+  ) {
+    const title = hilosLogSettingsVocabulary.presetTitle(header.preset)
+
+    return header.presetEdited
+      ? `Mode “${title}” with your edits: rotates ${clause}`
+      : `Mode “${title}”: rotates ${clause}`
+  }
+
+  return `Rotates ${clause}`
 }
 
 /**

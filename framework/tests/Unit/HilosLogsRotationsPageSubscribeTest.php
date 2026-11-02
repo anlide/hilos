@@ -33,6 +33,7 @@ use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Log\LogSettingsPresets;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
@@ -44,6 +45,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\LogLevel;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -188,6 +190,83 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         $this->assertSame(1_048_576, $header->rotationMaxLiveSizeBytes);
         $this->assertSame(7, $header->retentionKeepBatches);
         $this->assertSame(604_800, $header->retentionMaxAgeSeconds);
+    }
+
+    /**
+     * A stored Normal whose values are the mode's own leaves the strip unmarked: the caveat is
+     * for a drift, and a mode that still matches has none.
+     */
+    public function testAMatchingNormalModeLeavesTheStripUnedited(): void
+    {
+        $header = $this->headerUnderSettings($this->normalModeValues());
+
+        $this->assertSame(LogSettingsPresets::NORMAL, $header->preset);
+        $this->assertFalse($header->presetEdited);
+    }
+
+    /**
+     * One axis the strip shows, moved off the mode, is the caveat. The name stays, because the
+     * mode is still the one that was applied.
+     */
+    public function testOneDriftedStripAxisMarksTheModeEdited(): void
+    {
+        $values = $this->normalModeValues();
+        $values[LogSettingsCatalog::ROTATION_MAX_AGE_SECONDS] = 60;
+
+        $header = $this->headerUnderSettings($values);
+
+        $this->assertSame(LogSettingsPresets::NORMAL, $header->preset);
+        $this->assertTrue($header->presetEdited);
+    }
+
+    /**
+     * The write level sits outside the strip. Editing it alone must not read as the strip having
+     * drifted, or the screen would confess to a change it does not show.
+     */
+    public function testAWriteLevelEditLeavesTheStripUnedited(): void
+    {
+        $values = $this->normalModeValues();
+        $values[LogSettingsCatalog::WRITE_LEVEL] = LogLevel::Warning->value;
+
+        $header = $this->headerUnderSettings($values);
+
+        $this->assertSame(LogSettingsPresets::NORMAL, $header->preset);
+        $this->assertFalse($header->presetEdited);
+    }
+
+    /**
+     * A stored name the group does not declare is not a mode. Nothing is lit and nothing is
+     * marked edited: guessing a mode would sign work nobody did.
+     */
+    public function testAStoredNameOutsideTheGroupLeavesTheModeUnset(): void
+    {
+        $header = $this->headerUnderSettings([
+            LogSettingsCatalog::PRESET => 'custom',
+        ]);
+
+        $this->assertNull($header->preset);
+        $this->assertFalse($header->presetEdited);
+    }
+
+    /**
+     * With no settings accessor the mode cannot be read, and the header still answers. The rules
+     * keep coming from the environment; the mode stays quiet.
+     */
+    public function testTheHeaderStaysQuietWhenSettingsCannotBeRead(): void
+    {
+        $previousSetting = Hilos::$setting;
+        Hilos::$setting = null;
+
+        try {
+            new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent())
+                ->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+            $header = $this->header();
+            $this->assertNull($header->preset);
+            $this->assertFalse($header->presetEdited);
+        } finally {
+            Hilos::$setting = $previousSetting;
+        }
     }
 
     public function testViewerReceivesTheSameSettingVerdictsOnSubscribeAndLiveHeader(): void
@@ -722,6 +801,44 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         $this->assertSame(1_048_576, $frame[HilosLogsRotationsSignalData::rotationMaxLiveSizeBytes]);
         $this->assertSame(7, $frame[HilosLogsRotationsSignalData::retentionKeepBatches]);
         $this->assertSame(604_800, $frame[HilosLogsRotationsSignalData::retentionMaxAgeSeconds]);
+        $this->assertFalse(HiddenValue::isMark($frame[HilosLogsRotationsSignalData::preset]));
+        $this->assertFalse(HiddenValue::isMark($frame[HilosLogsRotationsSignalData::presetEdited]));
+    }
+
+    /**
+     * Answers one subscription under scripted settings and returns its header.
+     *
+     * @param array<string, mixed> $values Effective value by setting key
+     * @return HilosLogsRotationsSignalData Header the subscription answered with
+     */
+    private function headerUnderSettings(array $values): HilosLogsRotationsSignalData
+    {
+        $previousSetting = Hilos::$setting;
+        LogsRotationsPagePresetAccessor::$values = $values;
+        Hilos::$setting = new LogsRotationsPagePresetAccessor(LogSettingsCatalog::class);
+
+        try {
+            new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent())
+                ->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+            return $this->header();
+        } finally {
+            LogsRotationsPagePresetAccessor::$values = [];
+            Hilos::$setting = $previousSetting;
+        }
+    }
+
+    /**
+     * Effective values of the Normal mode, selection included, taken from the recipe.
+     *
+     * @return array<string, mixed> Setting key to the value the mode declares
+     */
+    private function normalModeValues(): array
+    {
+        $preset = LogSettingsPresets::presetGroup()->presetByName(LogSettingsPresets::NORMAL);
+        $this->assertNotNull($preset);
+
+        return [LogSettingsCatalog::PRESET => $preset->name, ...$preset->values];
     }
 
     /**
@@ -860,6 +977,28 @@ final class LogsRotationsPageViewerBrowser extends IdentityTestBrowser
     public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
     {
         return true;
+    }
+}
+
+/**
+ * Settings accessor answering with scripted values, so a case never reaches the database.
+ */
+final class LogsRotationsPagePresetAccessor extends SettingsAccessor
+{
+    /** @var array<string, mixed> Effective value by setting key; a key without one falls back to the catalog default */
+    public static array $values = [];
+
+    /**
+     * Returns the scripted value for a key, or the catalog default when none is scripted.
+     *
+     * The cases script every key the resolver compares, so the fall-through is not the path they take.
+     *
+     * @param string $key Setting key
+     * @return mixed Scripted value, or the catalog default when none was scripted
+     */
+    public function effectiveValueFor(string $key): mixed
+    {
+        return self::$values[$key] ?? parent::effectiveValueFor($key);
     }
 }
 

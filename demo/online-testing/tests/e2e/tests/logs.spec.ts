@@ -176,6 +176,14 @@ test('renders every screen of the logs section over the live socket', async ({
   await page.getByTestId('hilos-toast-close').click()
   await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
 
+  // The mode chosen on the modes screen reaches the rotations strip over the
+  // wire. Units hold a forged header, so only this visit proves the live one.
+  await gotoPage(expect, page, '/hilos/logs/rotations')
+  await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+    'Mode “Frugal”: rotates at 03:00 or at 256 MiB',
+  )
+  await gotoPage(expect, page, '/hilos/logs/settings')
+
   // Back to the default, because the stand is shared and frugal raises the write
   // threshold to warnings — every later spec would run against a quieter log. The
   // chosen card is disabled, so this one becoming clickable is the push arriving.

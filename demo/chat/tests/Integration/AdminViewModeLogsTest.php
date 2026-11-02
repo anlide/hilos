@@ -198,6 +198,8 @@ final class AdminViewModeLogsTest extends IntegrationTestCase
                 HilosLogsRotationsSignalData::rotationMaxLiveSizeBytes,
                 HilosLogsRotationsSignalData::retentionKeepBatches,
                 HilosLogsRotationsSignalData::retentionMaxAgeSeconds,
+                HilosLogsRotationsSignalData::preset,
+                HilosLogsRotationsSignalData::presetEdited,
             ] as $field) {
                 self::assertFalse(HiddenValue::isMark($rotation[$field]));
             }

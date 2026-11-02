@@ -37,6 +37,10 @@ use Hilos\Tables\Logs\HilosLogRotationsTable;
  * environment where a setting could not be used, so the screen shows what rotation will do and not
  * what the settings table says it should ({@see LogRotationTriggerPolicy},
  * {@see LogArchiveRetentionPolicy}).
+ *
+ * {@see $preset} names the logging mode those rules were taken from, when the stored name is one
+ * of the group's modes. {@see $presetEdited} says a value this strip shows has drifted from that
+ * mode. A mode that could not be read leaves both quiet, and the rules still go out.
  */
 final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -61,6 +65,12 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
     /** Payload key: age in seconds beyond which a batch may be carried off; 0 is off. */
     public const string retentionMaxAgeSeconds = 'retentionMaxAgeSeconds';
 
+    /** Payload key: machine name of the applied logging mode, null when the stored name is not one. */
+    public const string preset = 'preset';
+
+    /** Payload key: whether a value the strip shows has drifted from the applied mode. */
+    public const string presetEdited = 'presetEdited';
+
     /**
      * @param ?bool $available Whether the log stores could be read, null while no picture has arrived
      * @param list<string> $nodes Names of the nodes in the picture; empty in a single-node installation
@@ -69,6 +79,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
      * @param int $rotationMaxLiveSizeBytes Size axis of rotation in bytes; 0 when the axis is off
      * @param int $retentionKeepBatches Newest batches of each archive always kept; 0 when the criterion is off
      * @param int $retentionMaxAgeSeconds Age at which a batch becomes eligible; 0 when the criterion is off
+     * @param ?string $preset Applied logging mode, null when the stored name is not one or it could not be read
+     * @param bool $presetEdited Whether a key the strip shows differs from that mode
      */
     public function __construct(
         public readonly ?bool $available,
@@ -78,6 +90,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
         public readonly int $rotationMaxLiveSizeBytes,
         public readonly int $retentionKeepBatches,
         public readonly int $retentionMaxAgeSeconds,
+        public readonly ?string $preset,
+        public readonly bool $presetEdited,
     ) {
     }
 
@@ -94,6 +108,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
             self::rotationMaxLiveSizeBytes => $this->rotationMaxLiveSizeBytes,
             self::retentionKeepBatches => $this->retentionKeepBatches,
             self::retentionMaxAgeSeconds => $this->retentionMaxAgeSeconds,
+            self::preset => $this->preset,
+            self::presetEdited => $this->presetEdited,
         ];
     }
 
@@ -101,7 +117,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
      * Availability and nodes describe the cluster. Rotation and retention values follow their
-     * catalog keys' viewer verdicts.
+     * catalog keys' viewer verdicts. The applied mode and the drift of the strip follow the
+     * selection key, the same way a preset screen judges which card is lit.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
@@ -115,6 +132,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
             self::rotationMaxLiveSizeBytes => WireField::setting(LogSettingsCatalog::ROTATION_MAX_LIVE_SIZE_BYTES),
             self::retentionKeepBatches => WireField::setting(LogSettingsCatalog::ARCHIVE_RETENTION_KEEP_BATCHES),
             self::retentionMaxAgeSeconds => WireField::setting(LogSettingsCatalog::ARCHIVE_RETENTION_MAX_AGE_SECONDS),
+            self::preset => WireField::setting(LogSettingsCatalog::PRESET),
+            self::presetEdited => WireField::setting(LogSettingsCatalog::PRESET),
         ];
     }
 
@@ -139,6 +158,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
             rotationMaxLiveSizeBytes: self::requireInt($data, self::rotationMaxLiveSizeBytes),
             retentionKeepBatches: self::requireInt($data, self::retentionKeepBatches),
             retentionMaxAgeSeconds: self::requireInt($data, self::retentionMaxAgeSeconds),
+            preset: self::optionalString($data, self::preset),
+            presetEdited: self::requireBool($data, self::presetEdited),
         );
     }
 }

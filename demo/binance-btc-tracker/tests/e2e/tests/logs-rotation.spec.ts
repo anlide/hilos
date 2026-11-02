@@ -549,6 +549,9 @@ test('shows the configured rotation threshold, carries a batch off on the operat
     await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
       '1 day after the last rotation',
     )
+    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+      'Mode “Normal” with your edits: ',
+    )
 
     // The archive as it stands, read here rather than at the top: every write above
     // repaints the badges and so re-serves this window, which means the picture on

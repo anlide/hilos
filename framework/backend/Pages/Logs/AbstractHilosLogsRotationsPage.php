@@ -24,6 +24,9 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\Settings\Preset\SettingPresetResolver;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -32,8 +35,10 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogStoreAgent;
+use Hilos\Log\LogSettingsCatalog;
+use Hilos\Log\LogSettingsPresets;
 use Hilos\Log\LogSettingsResolver;
+use Hilos\Log\LogStoreAgent;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
@@ -96,6 +101,21 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
 
     /** Seconds between two tick refreshes, so a busy agent does not rebuild the header per loop pass. */
     private const float REFRESH_THROTTLE_SECONDS = 0.1;
+
+    /**
+     * Keys the strip shows.
+     *
+     * {@see LogSettingsCatalog::WRITE_LEVEL} is not shown by this page, and a caveat while the
+     * shown values still match would read as an error of the screen.
+     *
+     * @var list<string>
+     */
+    private const array STRIP_PRESET_KEYS = [
+        LogSettingsCatalog::ROTATION_CRON,
+        LogSettingsCatalog::ROTATION_MAX_AGE_SECONDS,
+        LogSettingsCatalog::ROTATION_MAX_LIVE_SIZE_BYTES,
+        LogSettingsCatalog::ARCHIVE_RETENTION_MAX_AGE_SECONDS,
+    ];
 
     /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
     private static array $subscribers = [];
@@ -279,7 +299,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     }
 
     /**
-     * Builds the header out of the cluster picture and the rules in force.
+     * Builds the header out of the cluster picture, the rules in force and the mode they come from.
      *
      * @return HilosLogsRotationsSignalData Header payload
      */
@@ -291,6 +311,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
         // and a second copy from the page worker says nothing new.
         $rotation = $resolver->rotationPolicy();
         $retention = $resolver->retentionPolicy();
+        [$preset, $presetEdited] = self::appliedLoggingMode();
 
         return new HilosLogsRotationsSignalData(
             available: self::availabilityOf($index),
@@ -300,7 +321,41 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
             rotationMaxLiveSizeBytes: $rotation->maxLiveSizeBytes,
             retentionKeepBatches: $retention->keepBatches,
             retentionMaxAgeSeconds: $retention->maxAgeSeconds,
+            preset: $preset,
+            presetEdited: $presetEdited,
         );
+    }
+
+    /**
+     * The logging mode the strip's rules were taken from, and whether one of them has drifted.
+     *
+     * Read through {@see SettingPresetResolver} on this call. The resolver holds nothing between
+     * calls, so it is not kept on the page the way {@see self::settingsResolver()} is.
+     *
+     * @return array{0: ?string, 1: bool} Applied mode name, and whether a shown key has drifted
+     */
+    private static function appliedLoggingMode(): array
+    {
+        try {
+            $resolver = new SettingPresetResolver(LogSettingsPresets::presetGroup());
+            $preset = $resolver->selectedName();
+            if ($preset === null) {
+                return [null, false];
+            }
+
+            foreach ($resolver->differences() as $difference) {
+                if (in_array($difference->key, self::STRIP_PRESET_KEYS, true)) {
+                    return [$preset, true];
+                }
+            }
+
+            return [$preset, false];
+        } catch (SettingException | DatabaseException) {
+            // The complaint is not taken, for the same reason the rotation rules give above: a
+            // mode that cannot be read is not a second line for the page to write. Both fields
+            // stay quiet and the rules still go out.
+            return [null, false];
+        }
     }
 
     /**

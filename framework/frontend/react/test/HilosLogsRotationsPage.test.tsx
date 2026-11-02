@@ -44,6 +44,8 @@ function header(
     rotationMaxLiveSizeBytes: 0,
     retentionKeepBatches: 7,
     retentionMaxAgeSeconds: 2592000,
+    preset: null,
+    presetEdited: false,
     ...overrides,
   }
 }

@@ -83,6 +83,8 @@ function header(
     rotationMaxLiveSizeBytes: 0,
     retentionKeepBatches: 0,
     retentionMaxAgeSeconds: 0,
+    preset: null,
+    presetEdited: false,
     ...overrides,
   }
 }
@@ -375,6 +377,81 @@ describe('formatRotationRule', () => {
     expect(formatRotationRule(header())).toBe(
       'Rotates only when the node restarts',
     )
+  })
+
+  it('names the applied mode ahead of the axes when nothing has been edited', () => {
+    expect(
+      formatRotationRule(
+        header({
+          preset: 'normal',
+          presetEdited: false,
+          rotationCron: '0 3 * * *',
+          rotationMaxLiveSizeBytes: 512 * 1024 * 1024,
+        }),
+      ),
+    ).toBe('Mode “Normal”: rotates at 03:00 or at 512 MiB')
+
+    expect(
+      formatRotationRule(
+        header({
+          preset: 'frugal',
+          presetEdited: false,
+          rotationCron: '0 3 * * *',
+          rotationMaxLiveSizeBytes: 256 * 1024 * 1024,
+        }),
+      ),
+    ).toBe('Mode “Frugal”: rotates at 03:00 or at 256 MiB')
+  })
+
+  it('says the set was edited when a value has drifted from the applied mode', () => {
+    expect(
+      formatRotationRule(
+        header({
+          preset: 'normal',
+          presetEdited: true,
+          rotationCron: '0 3 * * *',
+          rotationMaxAgeSeconds: 86400,
+          rotationMaxLiveSizeBytes: 512 * 1024 * 1024,
+        }),
+      ),
+    ).toBe(
+      'Mode “Normal” with your edits: rotates at 03:00, 1 day after the last rotation, or at 512 MiB',
+    )
+
+    expect(
+      formatRotationRule(
+        header({
+          preset: 'normal',
+          presetEdited: true,
+        }),
+      ),
+    ).toBe('Mode “Normal” with your edits: rotates only when the node restarts')
+  })
+
+  it('leaves the line as the axes alone when no mode is applied', () => {
+    expect(
+      formatRotationRule(
+        header({
+          preset: null,
+          presetEdited: false,
+          rotationCron: '0 3 * * *',
+          rotationMaxLiveSizeBytes: 512 * 1024 * 1024,
+        }),
+      ),
+    ).toBe('Rotates at 03:00 or at 512 MiB')
+  })
+
+  it('leaves the line as the axes alone when the mode is hidden', () => {
+    expect(
+      formatRotationRule(
+        header({
+          preset: HIDDEN_VALUE,
+          presetEdited: false,
+          rotationCron: '0 3 * * *',
+          rotationMaxLiveSizeBytes: 512 * 1024 * 1024,
+        }),
+      ),
+    ).toBe('Rotates at 03:00 or at 512 MiB')
   })
 })
 
