@@ -310,6 +310,19 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.LEGAL_DOCUMENT]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalDocument.js').then((m) => m.default),
   ),
+  [HilosPages.LEGAL_DOCUMENT_SET]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalDocumentSet.js').then((m) => m.default),
+  ),
+  [HilosPages.LEGAL_DOCUMENT_DEVIATIONS]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalDocumentDeviations.js').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.LEGAL_DOCUMENT_REVISIONS]: lazyPage(() =>
+    import('./views/Hilos/Legal/LegalDocumentRevisions.js').then(
+      (m) => m.default,
+    ),
+  ),
   [HilosPages.LEGAL_REVISION]: lazyPage(() =>
     import('./views/Hilos/Legal/LegalRevision.js').then((m) => m.default),
   ),

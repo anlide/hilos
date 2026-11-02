@@ -1,53 +1,82 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import {
   computedSignal,
   createHilosLegalConsentPreview,
   createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   HilosPages,
-  HILOS_TABLE_ACTIONS_KEY,
   LEGAL_RECONSENT_COPY,
-  resolveHilosPath,
   type HilosLegalContext,
   type HilosLegalDocumentKey,
 } from '@hilos/core/base'
 import {
-  createHilosLegalRevisionsTable,
-  HilosLegalRowKey,
-  LEGAL_CATALOG_REFUSAL_SECTION,
-  LEGAL_DOCUMENT_SECTION,
-  legalAdminDocumentSchema,
+  createHilosLegalDocument,
+  createHilosLegalSettingsTable,
+  hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
+  HilosLegalSettingKey,
+  type HilosLegalSettingRow,
+  type HilosLegalTable,
 } from '@hilos/core/admin/legal'
-import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosLegalDocumentPageShell } from './HilosLegalDocumentPageShell.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosLegalConsent } from '../../legal/HilosLegalConsent.js'
 import { HilosLegalReconsent } from '../../legal/HilosLegalReconsent.js'
 import { HilosLink } from '../../HilosLink.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
-import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 
-/** A document's adopted standard, deviations and revision history. */
+/** The hidden settings carrier of one committed document Overview setup. */
+interface HilosLegalDocumentBinding {
+  readonly context: HilosLegalContext
+  readonly settings: HilosLegalTable<HilosLegalSettingRow>
+}
+
+/**
+ * A document's coverage, sources and read-only previews.
+ *
+ * @param props The project's legal page context.
+ */
 export function HilosLegalDocumentPage({
   context,
 }: {
   context: HilosLegalContext
 }) {
-  const router = useContext(HilosRouterContext)
-  if (!router)
-    throw new Error('HilosLegalDocumentPage requires a provided Hilos router.')
-  const document = useMemo(
+  const documentSource = useMemo(
+    () => createHilosLegalDocument(context),
+    [context],
+  )
+  const details = useSignal(documentSource)
+  const [binding, setBinding] = useState<HilosLegalDocumentBinding | null>(null)
+  const lapsedLabelSource = useMemo(
     () =>
       computedSignal(() =>
-        String(router.currentRoute.get().params.documentKey ?? ''),
+        hilosLegalLapsedLabel(
+          binding?.context === context
+            ? binding.settings.controller.rows
+                .get()
+                .find(
+                  ({ row }) =>
+                    row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
+                )?.row?.value
+            : undefined,
+        ),
       ),
-    [router],
+    [binding, context],
   )
-  const revisions = useMemo(
-    () => createHilosLegalRevisionsTable(context, document),
-    [context, document],
-  )
+  const lapsedLabel = useSignal(lapsedLabelSource)
+  useLayoutEffect(() => {
+    const settings = createHilosLegalSettingsTable(
+      context,
+      HilosPages.LEGAL_DOCUMENT,
+    )
+    settings.start()
+    setBinding({ context, settings })
+    return () => {
+      settings.dispose()
+      settings.controller.dispose()
+    }
+  }, [context])
   const preview = useMemo(
     () => createHilosLegalConsentPreview(context),
     [context],
@@ -64,12 +93,6 @@ export function HilosLegalDocumentPage({
     setReading(null)
     void preview.open()
   }
-  const raw = useSignal(context.scopes.pageDataSignal(LEGAL_DOCUMENT_SECTION))
-  const refusal = useSignal(
-    context.scopes.pageDataSignal(LEGAL_CATALOG_REFUSAL_SECTION),
-  )
-  const parsed = legalAdminDocumentSchema.safeParse(raw)
-  const details = parsed.success ? parsed.data : null
   // The "the terms have changed" screen as whoever held the previous revision
   // sees it today (HIL-500): the same component in a read-only modal.
   const reconsent = useMemo(
@@ -85,166 +108,126 @@ export function HilosLegalDocumentPage({
   function openReconsent(): void {
     if (details) void reconsent.open(details.document)
   }
-  useEffect(() => {
-    revisions.start()
-    return () => revisions.dispose()
-  }, [revisions])
   return (
-    <HilosAdminPage page={HilosPages.LEGAL_DOCUMENT}>
-      {typeof refusal === 'string' ? (
-        <div
-          className="alert alert-danger text-break"
-          role="alert"
-          data-id="legal-catalog-refusal"
-        >
-          <h2 className="h6">The legal document catalog could not be loaded</h2>
-          <p className="mb-0">{refusal}</p>
-        </div>
-      ) : (
-        details && (
-          <>
-            <div className="alert alert-secondary small">
-              Document texts live in code. A new revision is published by a
-              deployment.
-            </div>
-            {details.set && (
-              <section data-id="legal-set" className="mb-4">
-                <h2 className="h5">Hilos standard set {details.set.version}</h2>
-                <p className="small text-body-secondary">
-                  {details.set.publishedOn} · {details.set.significance} ·{' '}
-                  {details.set.clauses.length} clauses
-                </p>
-                <ol className="list-group list-group-numbered">
-                  {details.set.clauses.map((clause) => (
-                    <li
-                      key={clause.clauseKey}
-                      className="list-group-item text-break"
-                    >
-                      <code className="small me-2">{clause.clauseKey}</code>
-                      {clause.statement}
-                    </li>
-                  ))}
-                </ol>
-              </section>
-            )}
-            {details.newerSet && (
-              <section
-                className="alert alert-warning"
-                data-id="legal-set-newer"
-              >
-                <h2 className="h6">
-                  Hilos has released set {details.newerSet.version} for this
-                  document
-                </h2>
-                <p className="small">
-                  {details.newerSet.publishedOn} ·{' '}
-                  {details.newerSet.significance}. The project keeps its
-                  declared set until it publishes a new revision.
-                </p>
-                <ul className="mb-0 small">
-                  {details.newerSet.changes.map((change) => (
-                    <li key={change.clauseKey}>
-                      {change.kind}: {change.title}{' '}
-                      <code>{change.clauseKey}</code>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            <section className="mb-4">
-              <h2 className="h5">Different in this project</h2>
-              {details.deviations.length === 0 && (
-                <p className="text-body-secondary">
-                  No project deviations are declared.
-                </p>
-              )}
-              {details.deviations.map((deviation) => (
-                <div
-                  key={deviation.clauseKey}
-                  className="border rounded p-3 mb-2 text-break"
-                  data-id="legal-deviation-row"
-                >
-                  <h3 className="h6">
-                    {deviation.statement}{' '}
-                    <span className="badge text-bg-secondary">
-                      {deviation.direction}
-                    </span>
+    <HilosLegalDocumentPageShell
+      context={context}
+      page={HilosPages.LEGAL_DOCUMENT}
+    >
+      {details && (
+        <>
+          <div
+            className="alert alert-secondary small text-break"
+            data-id="legal-document-sources"
+          >
+            Standard sets: <code>{details.standardSetCatalogClass}</code>.
+            {details.projectCatalogClass && (
+              <>
+                {' '}
+                Project revisions and deviations:{' '}
+                <code>{details.projectCatalogClass}</code>.
+              </>
+            )}{' '}
+            These declarations are read-only; publishing a revision means
+            deploying it.
+          </div>
+          <section className="mb-4">
+            <h2 className="h5">Current revision</h2>
+            <div className="row row-cols-1 row-cols-sm-3 g-3">
+              <div className="col">
+                <section className="border rounded-3 p-3 h-100">
+                  <h3 className="small text-body-secondary fw-normal">
+                    Covered
                   </h3>
-                  <p className="small text-body-secondary">
-                    Standard: {deviation.standardStatement} ·{' '}
-                    <code>{deviation.clauseKey}</code>
-                  </p>
-                  {deviation.text.split('\n\n').map((paragraph, index) => (
-                    <p key={index} className="small mb-2">
-                      {paragraph}
-                    </p>
-                  ))}
-                </div>
-              ))}
-            </section>
-            <section className="mb-4">
-              <h2 className="h5">How a person sees it</h2>
-              <button
-                type="button"
-                className="btn btn-outline-secondary"
-                data-id="legal-preview-consent"
-                onClick={openPreview}
-              >
-                <i className="bi bi-eye me-1" aria-hidden="true" />
-                Consent screen at registration
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline-secondary ms-2"
-                data-id="legal-preview-reconsent"
-                onClick={openReconsent}
-              >
-                <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
-                Re-consent screen
-              </button>
-            </section>
-            <HilosViewportTable
-              controller={revisions.controller}
-              cells={{
-                [HilosLegalRowKey.rowKey]: (row) => (
-                  <div data-id="legal-revision-row" data-revision={row.rowKey}>
-                    <strong>{row.rowKey}</strong>
-                    {row.current && (
-                      <span className="badge text-bg-primary ms-2">
-                        Current
-                      </span>
-                    )}
-                    {!row.declared && (
-                      <span className="badge text-bg-warning ms-2">
-                        Not in code
-                      </span>
-                    )}
-                    {row.revision && (
-                      <div className="small text-body-secondary">
-                        {row.revision.publishedOn} · {row.revision.significance}{' '}
-                        · Effective {row.revision.effectiveOn} · Set{' '}
-                        {row.revision.setVersion}
-                      </div>
+                  <div
+                    className="fs-4 fw-semibold"
+                    data-id="legal-count-covered"
+                  >
+                    {details.covered}
+                  </div>
+                </section>
+              </div>
+              <div className="col">
+                <section className="border rounded-3 p-3 h-100">
+                  <h3 className="small text-body-secondary fw-normal">
+                    Waiting for acceptance
+                  </h3>
+                  <div
+                    className="fs-4 fw-semibold"
+                    data-id="legal-count-window"
+                  >
+                    {details.window}
+                  </div>
+                </section>
+              </div>
+              <div className="col">
+                <section
+                  className="border rounded-3 p-3 h-100"
+                  data-id="legal-document-lapsed"
+                >
+                  <h3 className="small text-body-secondary fw-normal">
+                    {lapsedLabel}
+                  </h3>
+                  <div className="fs-4 fw-semibold">
+                    {details.lapsed > 0 ? (
+                      <HilosLink
+                        to={hilosLegalLapsedHref(details.document)}
+                        data-id="legal-count-lapsed-link"
+                      >
+                        <span data-id="legal-count-lapsed">
+                          {details.lapsed}
+                        </span>
+                      </HilosLink>
+                    ) : (
+                      <span data-id="legal-count-lapsed">{details.lapsed}</span>
                     )}
                   </div>
-                ),
-                [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-                  <HilosLink
-                    to={resolveHilosPath(HilosPages.LEGAL_REVISION, {
-                      documentKey: details.document,
-                      revisionId: row.rowKey,
-                    })}
-                    className="btn btn-sm btn-outline-secondary"
-                    data-id="legal-revision-open"
-                    data-revision={row.rowKey}
-                  >
-                    Open
-                  </HilosLink>
-                ),
-              }}
-            />
-          </>
-        )
+                </section>
+              </div>
+            </div>
+          </section>
+          {details.newerSet && (
+            <section className="alert alert-warning" data-id="legal-set-newer">
+              <h2 className="h6">
+                Hilos has released set {details.newerSet.version} for this
+                document
+              </h2>
+              <p className="small">
+                {details.newerSet.publishedOn} · {details.newerSet.significance}
+                . The project keeps its declared set until it publishes a new
+                revision.
+              </p>
+              <ul className="mb-0 small">
+                {details.newerSet.changes.map((change) => (
+                  <li key={change.clauseKey}>
+                    {change.kind}: {change.title}{' '}
+                    <code>{change.clauseKey}</code>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <section className="mb-4">
+            <h2 className="h5">How a person sees it</h2>
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              data-id="legal-preview-consent"
+              onClick={openPreview}
+            >
+              <i className="bi bi-eye me-1" aria-hidden="true" />
+              Consent screen at registration
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary ms-2"
+              data-id="legal-preview-reconsent"
+              onClick={openReconsent}
+            >
+              <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
+              Re-consent screen
+            </button>
+          </section>
+        </>
       )}
       <HilosModal
         open={previewOpen}
@@ -360,6 +343,6 @@ export function HilosLegalDocumentPage({
           />
         </div>
       </HilosModal>
-    </HilosAdminPage>
+    </HilosLegalDocumentPageShell>
   )
 }

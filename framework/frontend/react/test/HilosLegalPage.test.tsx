@@ -1,6 +1,5 @@
-import { consentTermsWithClauses } from '../../core/test/legal/consentFixture.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {
   ScopeManager,
@@ -14,7 +13,6 @@ import {
   type TableRow,
 } from '@hilos/core/base'
 import { HilosLegalPage } from '../src/admin/legal/HilosLegalPage.js'
-import { HilosLegalDocumentPage } from '../src/admin/legal/HilosLegalDocumentPage.js'
 import { HilosLegalRevisionPage } from '../src/admin/legal/HilosLegalRevisionPage.js'
 
 /** Real reactive page data with the transport replaced at its boundary. */
@@ -46,7 +44,7 @@ function harness() {
 
 afterEach(cleanup)
 describe('legal admin React pages', () => {
-  it.each([HilosLegalPage, HilosLegalDocumentPage, HilosLegalRevisionPage])(
+  it.each([HilosLegalPage, HilosLegalRevisionPage])(
     'replaces declaration content with the catalog refusal',
     (View) => {
       const h = harness()
@@ -71,105 +69,6 @@ describe('legal admin React pages', () => {
       ).toBeNull()
     },
   )
-})
-
-it('opens both consent documents in a read-only React preview', async () => {
-  const h = harness()
-  h.scope.data.set('legalDocument', {
-    covered: 0,
-    window: 0,
-    lapsed: 0,
-    standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
-    projectCatalogClass: 'Project\\Legal\\LegalCatalog',
-    document: 'terms',
-    declared: true,
-    revision: {
-      revisionId: 'current',
-      publishedOn: '2026-09-17',
-      effectiveOn: '2026-09-17',
-      significance: 'substantial',
-      setVersion: 1,
-      deviationCount: 0,
-    },
-    set: null,
-    newerSet: null,
-    deviations: [],
-  })
-  Object.assign(h.context.actions, {
-    dispatch: () => ({
-      done: Promise.resolve({ reply: consentTermsWithClauses() }),
-    }),
-  })
-  render(
-    <HilosRouterContext.Provider value={h.router}>
-      <HilosLegalDocumentPage context={h.context} />
-    </HilosRouterContext.Provider>,
-  )
-  await act(async () => {
-    fireEvent.click(
-      document.querySelector('[data-id="legal-preview-consent"]')!,
-    )
-  })
-  const preview = document.querySelector('[data-id="legal-consent-preview"]')!
-  expect(
-    preview.querySelectorAll('[data-id="legal-consent-deviation"]'),
-  ).toHaveLength(4)
-  expect(preview.querySelector('[data-id="auth-submit"]')).toBeNull()
-  fireEvent.click(
-    document.querySelector('[data-id="legal-consent-preview-close"]')!,
-  )
-  expect(document.querySelector('[data-id="legal-consent-preview"]')).toBeNull()
-})
-
-it('shows the server unpublished sentence as text in the React preview', async () => {
-  const h = harness()
-  h.scope.data.set('legalDocument', {
-    covered: 0,
-    window: 0,
-    lapsed: 0,
-    standardSetCatalogClass: 'Hilos\\Legal\\StandardSetCatalog',
-    projectCatalogClass: 'Project\\Legal\\LegalCatalog',
-    document: 'terms',
-    declared: true,
-    revision: null,
-    set: null,
-    newerSet: null,
-    deviations: [],
-  })
-  const unpublishedMessage = '<b>This preview has no published terms yet.</b>'
-  Object.assign(h.context.actions, {
-    dispatch: () => ({
-      done: Promise.resolve({
-        reply: {
-          ...consentTermsWithClauses(),
-          documents: [],
-          unpublishedMessage,
-        },
-      }),
-    }),
-  })
-  render(
-    <HilosRouterContext.Provider value={h.router}>
-      <HilosLegalDocumentPage context={h.context} />
-    </HilosRouterContext.Provider>,
-  )
-  await act(async () => {
-    fireEvent.click(
-      document.querySelector('[data-id="legal-preview-consent"]')!,
-    )
-  })
-
-  const preview = document.querySelector('[data-id="legal-consent-preview"]')!
-  const unpublished = preview.querySelector(
-    '[data-id="legal-consent-unpublished"]',
-  )!
-  expect(unpublished.textContent).toBe(unpublishedMessage)
-  expect(unpublished.querySelector('b')).toBeNull()
-  expect(preview.querySelector('[data-id="auth-submit"]')).toBeNull()
-  fireEvent.click(
-    document.querySelector('[data-id="legal-consent-preview-close"]')!,
-  )
-  expect(document.querySelector('[data-id="legal-consent-preview"]')).toBeNull()
 })
 
 const overview = {

@@ -393,9 +393,9 @@ daemon wherever its page is served: nginx in test and production (a
 `/_hilos/data-export` (`vite.config.ts` in chat and tasks, `proxy.conf.json` in
 polls). Chat, tasks and polls provide these export bindings. The framework owns
 the pages, projections, settings rules and SDK views. The Document redraw and
-its three new tabs are connected only in Chat/Vue; React (HIL-1854) and Angular
-(HIL-1855) retain their existing views and mark those tabs unbuilt. The project
-supplies person names and name searches to `AbstractHilosLegalAcceptancesTable`.
+its three new tabs are connected in Chat/Vue and Tasks/React; Angular (HIL-1855)
+retains its existing views and marks those tabs unbuilt. The project supplies
+person names and name searches to `AbstractHilosLegalAcceptancesTable`.
 
 The shared route registry declares `hilos_legal_documents` at
 `/hilos/legal/documents` (`admin=true`, no params), `hilos_legal_document` at
@@ -436,15 +436,26 @@ binds `hilosLegalDocumentSet`, Deviations binds `hilosLegalDocumentDeviations`,
 and Revisions binds `hilosLegalRevisions`. The exact Revision page reuses the
 last table with both document and revision filters.
 
-Tasks (React) and Polls (Angular) each connect six backend Legal pages: the
-root Overview, Documents, Document, Revision, Acceptances and Settings. The root
-binds Checks and Settings; Documents binds the Documents and Settings tables,
-with Settings again a hidden carrier for the refusal-policy label. Document and
-Revision keep their earlier views and bind `hilosLegalRevisions`, and
-Acceptances and Settings bind their own tables; their redraw reaches React with
-HIL-1854 and Angular with HIL-1855. The React and Angular roots are the Overview:
-the declared-document summary and the four checks without a document window,
-while the document coverage table lives on its own Documents page.
+Tasks (React) connects nine backend Legal pages: the root Overview, Documents,
+Document Overview, Standard set, Deviations, Revisions, exact Revision,
+Acceptances and Settings. Its root binds Checks and Settings; Documents binds
+the Documents and Settings tables. Document Overview binds only
+`hilosLegalSettings`. On Documents and Document Overview, Settings is a hidden
+carrier for the refusal-policy label of lapsed counts; no settings table is
+drawn. Standard set binds `hilosLegalDocumentSet`, Deviations binds
+`hilosLegalDocumentDeviations`, and Revisions binds `hilosLegalRevisions`. The
+exact Revision page reuses the last table with both document and revision
+filters; Acceptances and Settings bind their own tables.
+
+Polls (Angular) connects six backend Legal pages: the root Overview, Documents,
+Document, Revision, Acceptances and Settings. Its root binds Checks and Settings;
+Documents binds the Documents and Settings tables, with Settings again a hidden
+carrier for the refusal-policy label. Document and Revision keep their earlier
+views and bind `hilosLegalRevisions`, and Acceptances and Settings bind their own
+tables. The Angular Document redraw and its three tabs remain unbuilt
+(HIL-1855). The React and Angular roots are the Overview: the declared-document
+summary and the four checks without a document window, while the document
+coverage table lives on its own Documents page.
 
 Each of the four Document pages receives the common `legalDocument` projection,
 page identity and its bound windows in the first ordinary `page_response`.

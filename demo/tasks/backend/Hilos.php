@@ -9,6 +9,9 @@ use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Tasks\Pages\Hilos\Legal\LegalPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
@@ -26,6 +29,8 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
@@ -381,6 +386,9 @@ final class Hilos extends HilosFacade
         LegalPage::PAGE => LegalPage::class,
         LegalDocumentsPage::PAGE => LegalDocumentsPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
+        LegalDocumentSetPage::PAGE => LegalDocumentSetPage::class,
+        LegalDocumentDeviationsPage::PAGE => LegalDocumentDeviationsPage::class,
+        LegalDocumentRevisionsPage::PAGE => LegalDocumentRevisionsPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
@@ -609,6 +617,8 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
         TasksTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
         TasksTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+        TasksTableContext::hilosLegalDocumentSet => HilosLegalDocumentSetTable::class,
+        TasksTableContext::hilosLegalDocumentDeviations => HilosLegalDocumentDeviationsTable::class,
         TasksTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         TasksTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
         TasksTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
@@ -817,6 +827,15 @@ final class Hilos extends HilosFacade
             TasksTableContext::hilosLegalSettings => [],
         ],
         LegalDocumentPage::PAGE => [
+            TasksTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentSetPage::PAGE => [
+            TasksTableContext::hilosLegalDocumentSet => [],
+        ],
+        LegalDocumentDeviationsPage::PAGE => [
+            TasksTableContext::hilosLegalDocumentDeviations => [],
+        ],
+        LegalDocumentRevisionsPage::PAGE => [
             TasksTableContext::hilosLegalRevisions => [],
         ],
         LegalRevisionPage::PAGE => [

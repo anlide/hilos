@@ -370,6 +370,53 @@ it('recognizes only explicit React Node Shell page bindings', () => {
   })
 })
 
+it('recognizes only explicit React Legal Document Shell page bindings', () => {
+  withHonestCopy((root) => {
+    const path = 'framework/frontend/react/src/admin/Built.tsx'
+    writeFileSync(
+      join(root, path),
+      `export function Built() {
+      // <HilosLegalDocumentPageShell page={HilosPages.STUB} />
+      const example = '<HilosLegalDocumentPageShell page={HilosPages.STUB} />'
+      return <HilosLegalDocumentPageShell page={HilosPages.BUILT}><p>Document overview</p></HilosLegalDocumentPageShell>
+    }`,
+    )
+    const views = readViews(root, 'react', readPages(source(root, KEYS_PATH)))
+    expect(views.get('hilos_built')).toEqual({ path, line: 4, bare: false })
+    expect(views.get('hilos_stub')?.bare).toBe(true)
+    expect(checkTree(root)).toEqual([])
+    // Remove the lazy map to judge these negative examples only by their JSX.
+    writeFileSync(
+      join(root, 'framework/frontend/react/src/admin/hilosAdminViews.ts'),
+      'export function hilosAdminViews() { return {} }',
+    )
+    for (const opening of [
+      '<OtherShell page={HilosPages.BUILT}>',
+      '<HilosLegalDocumentPageShellLike page={HilosPages.BUILT}>',
+      '<HilosLegalDocumentPageShell page="HilosPages.BUILT">',
+      "<HilosLegalDocumentPageShell page={'HilosPages.BUILT'}>",
+      '<HilosLegalDocumentPageShell page={page}>',
+      '<HilosLegalDocumentPageShell page={HilosPages[key]}>',
+    ]) {
+      const tag = opening.match(/^<([A-Za-z]+)/)![1]
+      writeFileSync(
+        join(root, path),
+        `export function Built() {
+        // <HilosLegalDocumentPageShell page={HilosPages.BUILT} />
+        const example = '<HilosLegalDocumentPageShell page={HilosPages.BUILT} />'
+        return ${opening}<p>Document overview</p></${tag}>
+      }`,
+      )
+      const invalid = readViews(
+        root,
+        'react',
+        readPages(source(root, KEYS_PATH)),
+      )
+      expect(invalid.has('hilos_built')).toBe(false)
+    }
+  })
+})
+
 it.each(LAYERS)(
   'accepts a %s eager named import through a public section entrypoint',
   (layer) => {
