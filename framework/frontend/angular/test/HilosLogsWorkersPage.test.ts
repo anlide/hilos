@@ -102,12 +102,16 @@ afterEach(() => TestBed.resetTestingModule())
 describe('HilosLogsWorkersPage', () => {
   it('draws the shared bar, node filter, type toggle, footer, and narrow card from the header', () => {
     const page = harness()
-    page.header({ available: true, nodes: ['node-1'] })
+    page.header({
+      available: true,
+      nodes: [{ nodeId: 'node-1', nodeName: null }],
+    })
     page.window([
       {
         rowKey: 'node-1:worker-0.log',
         key: 'worker-0.log',
         node: 'node-1',
+        nodeName: null,
         type: 'regular',
         live: true,
         batchCount: 1,

@@ -556,11 +556,11 @@ final class UploadMemoryMasterActivationTest extends TestCase
         $this->manager->drain();
         $this->manager->workers->worker->receive(new WorkerUploadSettingsDTO(8));
         $server = new ReflectionClass(PeerServer::class)->newInstanceWithoutConstructor();
-        new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($server, NodeIdentity::of('A', NodeRole::Master, []));
+        new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($server, NodeIdentity::of('A', 'Node A', NodeRole::Master, []));
         $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
         new ReflectionProperty(PeerLink::class, 'outboundSegments')->setValue($link, new SplQueue());
         new ReflectionProperty(PeerLink::class, 'stagedOutbound')->setValue($link, new SplQueue());
-        $link->activate(NodeIdentity::of('B', NodeRole::Master, []));
+        $link->activate(NodeIdentity::of('B', 'Node B', NodeRole::Master, []));
         new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, [$link]);
         new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($server, ['B' => $link]);
         $server->setUploadMemoryMaster($this->memory);

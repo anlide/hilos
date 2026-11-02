@@ -28,6 +28,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
+use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Runtime\View\Collection\HilosClusterNodes;
+use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
@@ -307,6 +311,8 @@ final class MaintenanceEnableTestRtContext extends RtContext
     /** Seeds session rows so the page reads the real session-source seam. */
     public function configure(): void
     {
+        $this->mountFeatureCollection(HilosClusterNode::RT_COLLECTION, StateHilosClusterNodes::init());
+        $this->setRepresent(HilosClusterNode::RT_COLLECTION, HilosClusterNodes::class, HilosClusterNodesActions::class);
         $connections = MaintenanceEnableTestConnections::init();
         $connections->add(MaintenanceEnableTestConnection::create('maintenance-browser', 7, 'server-session-token'));
         $connections->add(MaintenanceEnableTestConnection::create('sessionless', 7, null));

@@ -16,6 +16,7 @@ final class DaemonClusterPicturePortionSignalData extends BaseDTO implements Sig
     public const string snapshot = 'snapshot';
     public const string nodes = 'nodes';
     public const string nodeId = 'nodeId';
+    public const string name = 'name';
     public const string online = 'online';
     public const string receivedAt = 'receivedAt';
     public const string picture = 'picture';
@@ -33,6 +34,7 @@ final class DaemonClusterPicturePortionSignalData extends BaseDTO implements Sig
             self::nodes => array_map(
                 static fn (ClusterDaemonNodeView $node): array => [
                     self::nodeId => $node->nodeId,
+                    self::name => $node->name,
                     self::online => $node->online,
                     self::receivedAt => $node->slot?->receivedAt,
                     self::picture => $node->slot === null ? null : (new DaemonNodePictureSignalData($node->slot->picture))->toArray(),
@@ -79,7 +81,7 @@ final class DaemonClusterPicturePortionSignalData extends BaseDTO implements Sig
                 }
                 $slot = new ClusterDaemonNodeSlot($nodeId, $picture, $receivedAt);
             }
-            $nodes[] = new ClusterDaemonNodeView($nodeId, $online, $slot);
+            $nodes[] = new ClusterDaemonNodeView($nodeId, $online, $slot, self::optionalString($row, self::name));
         }
 
         return new static(self::requireBool($data, self::snapshot), $nodes);

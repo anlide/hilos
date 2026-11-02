@@ -26,6 +26,8 @@ use Hilos\Pages\Logs\DTO\HilosLogsWorkersSignalData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -41,6 +43,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsWorkersPageSubscribeTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     private ?ClusterContext $previousCluster = null;
 
     private ?EnvAccessor $previousEnv = null;
@@ -59,9 +63,31 @@ final class HilosLogsWorkersPageSubscribeTest extends TestCase
     /** How many nodes the fixture picture holds; each one more moves the header fingerprint. */
     private int $reportedNodes = 0;
 
+    public function testNodeChoicesReadNamesFromTheRegistryAndKeepIdsAsValues(): void
+    {
+        $this->publishLogNode('node-1', 'Archive host', online: false);
+        $this->picture($this->slot('node-1', available: true), $this->slot('node-2', available: true));
+        $page = new LogsWorkersPageSubscribeTestPage(new LogsWorkersPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $header = $this->header();
+
+        $this->assertSame([
+            ['nodeId' => 'node-1', 'nodeName' => 'Archive host'],
+            ['nodeId' => 'node-2', 'nodeName' => null],
+        ], $header->nodes);
+        $this->assertSame($header->toArray(), HilosLogsWorkersSignalData::fromArray($header->toArray())->toArray());
+    }
+
+    public function testTheHeaderRefusesAnOldStringNodeChoice(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        HilosLogsWorkersSignalData::fromArray(['available' => true, 'nodes' => ['node-1']]);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->mountLogsRuntime();
         $this->previousCluster = Hilos::$cluster;
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         Hilos::$env = new EnvAccessor();
@@ -92,6 +118,7 @@ final class HilosLogsWorkersPageSubscribeTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         Hilos::$env = $this->previousEnv;
         putenv('CLUSTER_ENABLED');
+        $this->restoreLogsRuntime();
         parent::tearDown();
     }
 
@@ -183,7 +210,10 @@ final class HilosLogsWorkersPageSubscribeTest extends TestCase
 
         // The picture holds its slots ordered by node, so the filter offers them the same way
         // however the frames happened to arrive.
-        $this->assertSame(['node-1', 'node-2'], $this->header()->nodes);
+        $this->assertSame([
+            ['nodeId' => 'node-1', 'nodeName' => null],
+            ['nodeId' => 'node-2', 'nodeName' => null],
+        ], $this->header()->nodes);
     }
 
     /**

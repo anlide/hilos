@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -429,6 +430,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonNotRegisteredException When the roster does not name the agent reported
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {

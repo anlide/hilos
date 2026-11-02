@@ -64,7 +64,7 @@ final class PeerHandshakeDTOTest extends TestCase
     public function testHelloRoundTripsThroughTheWire(): void
     {
         $markers = [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'en'];
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, ['gpu-local', 'ssd'], $markers);
+        $hello = new PeerHelloDTO(1, 'node-a', 'Node node-a', NodeRole::Master, ['gpu-local', 'ssd'], $markers);
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -72,6 +72,7 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->assertSame(PeerHelloDTO::MESSAGE_TYPE, $parsed->getType());
         $this->assertSame(1, $parsed->protocolVersion);
         $this->assertSame('node-a', $parsed->nodeId);
+        $this->assertSame('Node node-a', $parsed->name);
         $this->assertSame(NodeRole::Master, $parsed->role);
         $this->assertSame(['gpu-local', 'ssd'], $parsed->capabilities);
         $this->assertSame($markers, $parsed->markers);
@@ -81,13 +82,14 @@ final class PeerHandshakeDTOTest extends TestCase
     public function testWelcomeRoundTripsThroughTheWire(): void
     {
         $markers = [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'ru'];
-        $welcome = new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, [], $markers);
+        $welcome = new PeerWelcomeDTO(1, 'node-b', 'Node node-b', NodeRole::Slave, [], $markers);
 
         $parsed = PeerDTO::fromWire($welcome->toJson());
 
         $this->assertInstanceOf(PeerWelcomeDTO::class, $parsed);
         $this->assertSame(PeerWelcomeDTO::MESSAGE_TYPE, $parsed->getType());
         $this->assertSame('node-b', $parsed->nodeId);
+        $this->assertSame('Node node-b', $parsed->name);
         $this->assertSame(NodeRole::Slave, $parsed->role);
         $this->assertSame([], $parsed->capabilities);
         $this->assertSame($markers, $parsed->markers);
@@ -96,10 +98,38 @@ final class PeerHandshakeDTOTest extends TestCase
     /** A node carrying no markers preserves its empty map on the wire too. */
     public function testWelcomeWithoutMarkersRoundTripsThroughTheWire(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, [], [])->toJson());
+        $parsed = PeerDTO::fromWire(new PeerWelcomeDTO(1, 'node-b', 'Node node-b', NodeRole::Slave, [], [])->toJson());
 
         $this->assertInstanceOf(PeerWelcomeDTO::class, $parsed);
         $this->assertSame([], $parsed->markers);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> Absent, blank or mistyped names */
+    public static function invalidNames(): iterable
+    {
+        yield 'absent' => [[]];
+        yield 'empty' => [['name' => '']];
+        yield 'whitespace' => [['name' => '   ']];
+        yield 'null' => [['name' => null]];
+        yield 'number' => [['name' => 42]];
+        yield 'array' => [['name' => ['Node A']]];
+        yield 'boolean' => [['name' => true]];
+    }
+
+    /** @param array<string, mixed> $nameFields Broken name field */
+    #[DataProvider('invalidNames')]
+    public function testHelloAndWelcomeRejectInvalidNames(array $nameFields): void
+    {
+        foreach ([PeerHelloDTO::class, PeerWelcomeDTO::class] as $type) {
+            $payload = new $type(1, 'node-a', 'Node A', NodeRole::Master, [], [])->toArray();
+            unset($payload[PeerHandshakeDTO::FIELD_NODE_NAME]);
+            try {
+                $type::fromArray([...$payload, ...$nameFields]);
+                $this->fail('An invalid name must refuse the handshake');
+            } catch (PeerTransportException $exception) {
+                $this->assertStringContainsString('name', $exception->getMessage());
+            }
+        }
     }
 
     public function testFromWireRejectsUnknownType(): void
@@ -133,6 +163,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'overlord',
         ]);
     }
@@ -151,6 +182,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => $nodeId,
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
         ]);
     }
@@ -174,6 +206,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => ['master'],
         ]);
     }
@@ -187,6 +220,7 @@ final class PeerHandshakeDTOTest extends TestCase
         $hello = PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
             PeerHandshakeDTO::FIELD_ADDRESS => null,
@@ -207,6 +241,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
             PeerHandshakeDTO::FIELD_ADDRESS => ['10.0.0.1', 8095],
@@ -220,6 +255,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
         ]);
     }
@@ -235,6 +271,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
         ]);
@@ -252,6 +289,7 @@ final class PeerHandshakeDTOTest extends TestCase
         PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
             PeerHandshakeDTO::FIELD_MARKERS => $markers,
@@ -273,7 +311,15 @@ final class PeerHandshakeDTOTest extends TestCase
 
     public function testHandshakeCarriesTheAdvertisedAddress(): void
     {
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, [], PeerTestMarkers::onWire(), PeerAddress::fromString('10.0.0.1:8095'));
+        $hello = new PeerHelloDTO(
+            1,
+            'node-a',
+            'Node node-a',
+            NodeRole::Master,
+            [],
+            PeerTestMarkers::onWire(),
+            PeerAddress::fromString('10.0.0.1:8095'),
+        );
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -284,7 +330,7 @@ final class PeerHandshakeDTOTest extends TestCase
 
     public function testHandshakeWithoutAddressRoundTripsNull(): void
     {
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, [], PeerTestMarkers::onWire());
+        $hello = new PeerHelloDTO(1, 'node-a', 'Node node-a', NodeRole::Master, [], PeerTestMarkers::onWire());
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -296,6 +342,7 @@ final class PeerHandshakeDTOTest extends TestCase
         $hello = PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_NAME => 'Node A',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => ['gpu-local', '', 123, 'ssd'],
             PeerHandshakeDTO::FIELD_MARKERS => PeerTestMarkers::onWire(),

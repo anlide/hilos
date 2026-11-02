@@ -67,7 +67,7 @@ final class PageAgentRestartTransportIntegrationTest extends FrameworkIntegratio
         $this->previousRt = Hilos::$rt;
         $this->previousBrowser = Hilos::$browser;
         $this->previousEnv = Hilos::$env;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             $this->previousClusterEnv[$key] = getenv($key);
         }
         Hilos::$cluster = null;
@@ -161,6 +161,7 @@ final class PageAgentRestartTransportIntegrationTest extends FrameworkIntegratio
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-origin');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();

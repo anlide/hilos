@@ -74,6 +74,7 @@ final class SignalRouterPerInstancePageRoutingTest extends TestCase
         HilosFacade::$cluster = $this->previousCluster;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
         putenv('CLUSTER_PEER_ADVERTISE');
 
@@ -100,11 +101,12 @@ final class SignalRouterPerInstancePageRoutingTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-A');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=' . NodeRole::Master->value);
         putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
         HilosFacade::$env = new EnvAccessor();
         HilosFacade::$cluster = new ClusterContext();
-        HilosFacade::$cluster->registry()->recordPeer(NodeIdentity::of('node-B', NodeRole::Master, []), microtime(true));
+        HilosFacade::$cluster->registry()->recordPeer(NodeIdentity::of('node-B', 'Node node-B', NodeRole::Master, []), microtime(true));
 
         $manager = $this->manager();
         $manager->subscribe(self::ALICE, PerInstanceNodePage::PAGE, ['nodeId' => 'node-B']);

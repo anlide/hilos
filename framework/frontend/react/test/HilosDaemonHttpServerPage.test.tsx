@@ -144,6 +144,7 @@ function harness() {
 afterEach(cleanup)
 const LIVE: HilosDaemonNodeHeading = {
   clustered: true,
+  name: null,
   role: null,
   state: 'leader',
   silentSince: null,
@@ -151,6 +152,7 @@ const LIVE: HilosDaemonNodeHeading = {
 }
 const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
+  name: null,
   role: null,
   state: 'silent',
   silentSince: 1700000000000,
@@ -404,6 +406,7 @@ describe('HilosDaemonHttpServerPage', () => {
     )
     h.response(summary(), {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

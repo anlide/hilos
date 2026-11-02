@@ -80,6 +80,8 @@ final class MaintenanceRestoreControlIntegrationTest extends TestCase
         Hilos::$sr = new MaintenanceRestoreControlRouter();
         Hilos::$browser = new IdentityTestBrowser(7, true);
         $rt = new MaintenanceRestoreControlRtContext(self::SESSION_TOKEN);
+        Hilos::$rt = $rt;
+        $rt->mountFeatureRuntime([]);
         $rt->configure();
         $this->row = StateProtectedModeRuntime::fromRow([
             ...StateProtectedModeRuntime::create()->toArray(),
@@ -97,7 +99,6 @@ final class MaintenanceRestoreControlIntegrationTest extends TestCase
             StateProtectedModeRuntime::agentStartGateClosed => true,
         ]);
         $rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, $this->row);
-        Hilos::$rt = $rt;
         $this->operator = new BackupAgent();
         $this->pages = new PageSignalRouter(
             new HilosPageFactory(new MaintenanceRestoreControlIndex(), MaintenanceRestoreControlHilos::class),

@@ -21,6 +21,7 @@ import {
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_FOLLOWER,
+  CLUSTER_NODE_NAMES,
   CLUSTER_LEADER,
   clusterInspect,
   expectLeaderUnmoved,
@@ -112,6 +113,7 @@ test('daemon section navigation: follower entry points name the live leader and 
     )
     expect(deliveryObject(httpData).node).toEqual({
       clustered: true,
+      name: CLUSTER_NODE_NAMES[source.nodeId],
       state: 'leader',
       silentSince: null,
       clock: {
@@ -128,6 +130,7 @@ test('daemon section navigation: follower entry points name the live leader and 
       follower,
       'hilos_daemon_http_server',
       source.nodeId,
+      { nodeName: CLUSTER_NODE_NAMES[source.nodeId] },
     )
     const placement = await follower.context().newPage()
     placementLog = watchDeliveryFrames(placement)

@@ -408,6 +408,7 @@ const daemonNodeValues = [
   'DAEMON_WEBSOCKETS_DATA',
   'daemonWebsocketsSchema',
   'readHilosDaemonWebsockets',
+  'formatHilosNodeLabel',
 ]
 /** Clock projection APIs belong to the lazy Daemon section. */
 const daemonClockValues = [
@@ -1536,6 +1537,9 @@ describe('core public entries', () => {
           passCount: 0,
           circleNamed: 0,
           circleAdmitted: 0,
+          initiatorNodeName: null,
+          diagnosticsNodeName: null,
+          watchdogPendingNodes: [],
         }).watchdogVerdict,
       ).toBeNull()
     }

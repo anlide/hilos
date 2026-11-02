@@ -144,6 +144,7 @@ function stream(
     rowKey: '-:worker-0.log',
     key: 'worker-0.log',
     node: null,
+    nodeName: null,
     class: 'worker',
     live: true,
     batchCount: 12,
@@ -242,7 +243,14 @@ describe('HilosLogsKeysPage', () => {
     const { connection, pushHeader } = makeConnection()
     const container = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
 
     const select = byId(container, 'hilos-table-filter-node')
     expect(select).not.toBeNull()
@@ -298,7 +306,7 @@ describe('HilosLogsKeysPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' })])
 
     expect(subLine(container)?.textContent).toContain('node-1')
@@ -308,13 +316,14 @@ describe('HilosLogsKeysPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' }),
       stream({
         rowKey: 'node-1:worker-1.log',
         key: 'worker-1.log',
         node: 'node-1',
+        nodeName: null,
         live: false,
         lastBatchAt: 1799999000000,
       }),

@@ -12,6 +12,7 @@ import {
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_FOLLOWER,
+  CLUSTER_NODE_NAMES,
   CLUSTER_MASTERS,
   CLUSTER_SLAVES,
   newMasterPage,
@@ -57,7 +58,9 @@ async function readLiveOrphans(
   await expect(page).toHaveURL(
     new RegExp(`/hilos/daemon/${nodeId}/env/orphans$`),
   )
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(nodeId)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    CLUSTER_NODE_NAMES[nodeId],
+  )
   await expect(
     page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
   ).toHaveAttribute('aria-current', 'page')

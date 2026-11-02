@@ -26,6 +26,9 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Hilos;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenanceNodesPage;
@@ -92,8 +95,43 @@ final class HilosMaintenanceNodesPageTest extends MaintenanceNodesTestCase
         self::assertSame(2, $window['totalCount']);
         self::assertSame([['field' => 'nodeId', 'direction' => 'asc']], $window['sort']);
         self::assertSame(['node-a', 'node-b'], array_column($window['rows'], 'rowKey'));
+        self::assertSame(['nodeName' => null, 'nodeId' => 'node-a'], $window['firstAnchor']);
+        self::assertSame(['nodeName' => null, 'nodeId' => 'node-b'], $window['lastAnchor']);
         self::assertSame(['rowKey' => 'node-a', 'slots' => ['node' => self::node('node-a', 'verifying', true)]], $window['rows'][0]);
         self::assertFalse(Hilos::$sr->isTableWindowOwed('nodes', HilosMaintenanceNodesTable::TABLE));
+    }
+
+    public function testNameOnlyUpdateMovesTheRetainedRowWithoutChangingTheWindowAddress(): void
+    {
+        $nodes = [self::node('a'), self::node('b'), self::node('c')];
+        $nodes[0]['nodeName'] = 'Alpha';
+        $nodes[1]['nodeName'] = 'Beta';
+        $nodes[2]['nodeName'] = 'Gamma';
+        $this->publish($nodes);
+        $this->drain();
+        $this->subscribe();
+        $this->drain();
+        $anchor = new TableAnchorDTO(['nodeName' => 'Alpha', 'nodeId' => 'a']);
+        $this->pages->dispatchTableViewport(new WebSocketTableViewportSignalDTO(
+            'nodes', AbstractHilosMaintenanceNodesPage::PAGE, HilosMaintenanceNodesTable::TABLE,
+            sort: TableSortOrderDTO::of(new TableSortDTO('nodeId')), limit: 2, anchor: $anchor,
+        ), 'ws', AbstractHilosMaintenanceNodesPage::PAGE);
+        $frames = $this->drain();
+        self::assertSame(['b', 'c'], array_column($frames[0]['wire']['rows'], 'rowKey'));
+
+        $nodes[1]['nodeName'] = 'Zulu';
+        $this->publish($nodes);
+        $this->flushSync();
+        $frames = $this->drain();
+        self::assertSame(['table_viewport_delta'], array_column($frames, 'name'));
+        self::assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $frames[0]['wire']['kind']);
+        self::assertSame('b', $frames[0]['wire']['rowKey']);
+        self::assertSame(1, $frames[0]['wire']['position']);
+        self::assertSame('Zulu', $frames[0]['wire']['row']['slots']['node']['nodeName']);
+        $held = Hilos::$sr->getTableViewport('nodes', HilosMaintenanceNodesTable::TABLE);
+        self::assertSame($anchor, $held->anchor);
+        self::assertSame([['field' => 'nodeId', 'direction' => 'asc']], $held->sort->toArray());
+        self::assertSame(2, $held->limit);
     }
 
     public function testColdProjectionIsOwedAndFirstRtSyncPaysTheWholeWindow(): void
@@ -183,7 +221,7 @@ final class HilosMaintenanceNodesPageTest extends MaintenanceNodesTestCase
         self::assertNull($this->state->maintenanceNodes);
     }
 
-    public function testViewerSeesAllSixFieldsInitiallyAndLiveWhileANonViewerIsDenied(): void
+    public function testViewerSeesAllSevenFieldsInitiallyAndLiveWhileANonViewerIsDenied(): void
     {
         Hilos::$browser->administrator = false;
         $this->publish([self::node('node-a')]);
@@ -270,7 +308,7 @@ final class HilosMaintenanceNodesPageTest extends MaintenanceNodesTestCase
         $leadership->method('amLeader')->willReturn(false);
         $leadership->method('term')->willReturn(7);
         Hilos::$cluster->registerLeadership($leadership);
-        $server = new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [],
+        $server = new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []), [],
             PeerTestTls::unread(), PeerTestMarkers::shared());
         $pair = [];
         self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
@@ -278,10 +316,10 @@ final class HilosMaintenanceNodesPageTest extends MaintenanceNodesTestCase
         $this->sockets = $pair;
         socket_set_nonblock($near);
         socket_set_nonblock($far);
-        $link = new PeerLink($near, $server, NodeIdentity::of('node-a', NodeRole::Master, []), false,
+        $link = new PeerLink($near, $server, NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []), false,
             new NamedPeerTestTransport($near, 'node-b'));
         Closure::bind(static function () use ($server, $link): void { $server->clients[] = $link; }, null, PeerServer::class)();
-        foreach ([new PeerHelloDTO(PeerProtocol::VERSION, 'node-b', NodeRole::Master, [], PeerTestMarkers::onWire(), null),
+        foreach ([new PeerHelloDTO(PeerProtocol::VERSION, 'node-b', 'Node node-b', NodeRole::Master, [], PeerTestMarkers::onWire(), null),
             new PeerReadyDTO(false), new PeerProtectedModeNodeReportDTO('verifying', 7, ['node-a', 'node-b'], ['node-a'], 'node-a')] as $frame) {
             socket_write($far, $frame->toJson() . "\n");
             $link->read();

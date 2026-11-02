@@ -11,6 +11,7 @@ import {
   formatDaemonNumber,
   formatDaemonPlacementKind,
   formatDaemonPlacementState,
+  formatHilosNodeLabel,
   type HilosDaemonOverviewData,
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
@@ -142,7 +143,7 @@ function cellIds(
             v-if="(cellIds(row, node.nodeId)?.length ?? 0) > 0"
             type="button"
             class="btn btn-sm btn-outline-secondary"
-            :aria-label="`${row.agentType} on ${node.nodeId}: ${cellIds(row, node.nodeId)?.length} instances`"
+            :aria-label="`${row.agentType} on ${formatHilosNodeLabel(node.nodeId, node.nodeName)}: ${cellIds(row, node.nodeId)?.length} instances`"
             :aria-expanded="
               selectedCell?.rowKey === row.rowKey &&
               selectedCell?.nodeId === node.nodeId
@@ -179,7 +180,13 @@ function cellIds(
               </h2>
               <span
                 >on
-                <code class="text-break">{{ selectedCell.nodeId }}</code></span
+                <span class="text-break">{{
+                  formatHilosNodeLabel(
+                    selectedCell.nodeId,
+                    nodes.find((node) => node.nodeId === selectedCell?.nodeId)
+                      ?.nodeName ?? null,
+                  )
+                }}</span></span
               >
               <span class="badge bg-body text-body border">
                 {{ selectedCell.agentIds.length }} instances

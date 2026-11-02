@@ -78,6 +78,7 @@ final class SignalRouterNodeFieldRoutingTest extends TestCase
         HilosFacade::$cluster = $this->previousCluster;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
         putenv('CLUSTER_PEER_ADVERTISE');
 
@@ -246,6 +247,7 @@ final class SignalRouterNodeFieldRoutingTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=' . self::SELF);
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=' . NodeRole::Master->value);
         putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
         HilosFacade::$cluster = new ClusterContext();

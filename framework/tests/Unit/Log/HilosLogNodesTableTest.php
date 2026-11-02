@@ -23,20 +23,62 @@ use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogNodesTableRow;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use PHPUnit\Framework\TestCase;
 
 /** Tests the common node projection and the bounded window built from the cluster mirror. */
 final class HilosLogNodesTableTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     private const int NOW = 1_800_000_000;
 
     private ?ClusterContext $previousCluster = null;
     private ?EnvAccessor $previousEnv = null;
     private string|false $previousClusterEnabled = false;
 
+    public function testNamesOrderTheSourceBeforePagingWithIdsBreakingEqualNames(): void
+    {
+        $this->publishLogNode('node-z', 'Alpha');
+        $this->publishLogNode('node-a', 'Zulu');
+        $this->publishLogNode('node-m', 'Same');
+        $this->publishLogNode('node-b', 'Same', online: false);
+        $this->picture(self::node('node-a'), self::node('node-m'), self::node('node-z'), self::node('node-b'), self::node('node-u'));
+        $table = new HilosLogNodesTable();
+
+        $first = $table->getPage(new TableQueryDTO(sort: $table->defaultSort(), limit: 2));
+        $this->assertSame(['node-z', 'node-b'], array_map(static fn ($row): string => $row->nodeId, $first->rows));
+        $this->assertSame(['Alpha', 'Same'], array_map(static fn ($row): ?string => $row->nodeName, $first->rows));
+        $this->assertSame(['nodeId' => 'node-b'], $first->lastAnchor?->toArray());
+        $next = $table->getPage(new TableQueryDTO(sort: $table->defaultSort(), limit: 2, anchor: $first->lastAnchor));
+        $this->assertSame(['node-m', 'node-a'], array_map(static fn ($row): string => $row->nodeId, $next->rows));
+        $this->assertSame(2, $next->rowsBefore);
+        $jump = $table->getPage(new TableQueryDTO(sort: $table->defaultSort(), limit: 2, pageIndex: 2));
+        $this->assertSame('node-u', $jump->rows[0]->nodeId);
+        $this->assertNull($jump->rows[0]->nodeName);
+        $this->assertSame(5, $jump->totalCount);
+        $descending = $table->getPage(new TableQueryDTO(
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogNodesTableRow::nodeName, TableConstants::ORDER_DESC)),
+            limit: 5,
+        ));
+        $this->assertSame(
+            ['node-u', 'node-a', 'node-m', 'node-b', 'node-z'],
+            array_map(static fn ($row): string => $row->nodeId, $descending->rows),
+        );
+
+        $this->publishLogNode('node-z', 'Zzz', online: false);
+        $renamed = $table->getPage(new TableQueryDTO(limit: 5));
+        $this->assertSame(['node-b', 'node-m', 'node-a', 'node-z', 'node-u'], array_map(
+            static fn ($row): string => $row->getRowKey(),
+            $renamed->rows,
+        ));
+        $this->assertSame('Zzz', $renamed->rows[3]->nodeName);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->mountLogsRuntime();
         $this->previousCluster = Hilos::$cluster;
         $this->previousEnv = Hilos::$env;
         $this->previousClusterEnabled = getenv('CLUSTER_ENABLED');
@@ -52,6 +94,7 @@ final class HilosLogNodesTableTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         Hilos::$env = $this->previousEnv;
         putenv($this->previousClusterEnabled === false ? 'CLUSTER_ENABLED' : 'CLUSTER_ENABLED=' . $this->previousClusterEnabled);
+        $this->restoreLogsRuntime();
         parent::tearDown();
     }
 
@@ -92,7 +135,7 @@ final class HilosLogNodesTableTest extends TestCase
         $this->assertSame(2, $snapshot->totalCount);
         $this->assertSame('nodeId', HilosLogNodesTableRow::keyField());
         $this->assertSame([
-            ['field' => 'nodeId', 'direction' => 'asc'],
+            ['field' => 'nodeName', 'direction' => 'asc'],
         ], $table->defaultSort()?->toArray());
     }
 
@@ -108,7 +151,7 @@ final class HilosLogNodesTableTest extends TestCase
         );
 
         $descending = $table->getPage(new TableQueryDTO(
-            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogNodesTableRow::nodeId, TableConstants::ORDER_DESC)),
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogNodesTableRow::nodeName, TableConstants::ORDER_DESC)),
             limit: 25,
         ));
         $this->assertSame(
@@ -187,6 +230,7 @@ final class HilosLogNodesTableTest extends TestCase
 
         $this->assertSame([
             'nodeId' => 'node-unreadable',
+            'nodeName' => null,
             'available' => false,
             'lastRotationAt' => null,
             'liveBytes' => null,

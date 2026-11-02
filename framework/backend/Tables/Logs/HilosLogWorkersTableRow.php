@@ -38,6 +38,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
 
     public const string key = 'key';
     public const string node = 'node';
+    public const string nodeName = 'nodeName';
 
     /** Payload key of the worker kind, one of the {@see HilosLogWorkersTable} type values. */
     public const string type = 'type';
@@ -59,6 +60,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
      * @param string $rowKey Stable row key, `<node>:<key>`
      * @param string $key File basename of the stream, stable across rotation batches
      * @param string $node Node the file lives on
+     * @param ?string $nodeName Current registry name, null when the node is unknown
      * @param string $type Worker kind: {@see HilosLogWorkersTable::TYPE_MONOPOLISTIC} or {@see HilosLogWorkersTable::TYPE_REGULAR}
      * @param bool $live Whether the stream is still being written, or only present in the archive
      * @param int $batchCount Number of archived batches the stream occurs in
@@ -69,6 +71,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
         public string $rowKey,
         public string $key,
         public string $node,
+        public ?string $nodeName,
         public string $type,
         public bool $live,
         public int $batchCount,
@@ -108,6 +111,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
             self::rowKey => $this->rowKey,
             self::key => $this->key,
             self::node => $this->node,
+            self::nodeName => $this->nodeName,
             self::type => $this->type,
             self::live => $this->live,
             self::batchCount => $this->batchCount,
@@ -129,6 +133,7 @@ final class HilosLogWorkersTableRow extends AbstractTableRow
             rowKey: self::requireString($data, self::rowKey),
             key: self::requireString($data, self::key),
             node: self::requireString($data, self::node),
+            nodeName: self::optionalString($data, self::nodeName),
             type: self::requireString($data, self::type),
             live: self::requireBool($data, self::live),
             batchCount: self::requireInt($data, self::batchCount),

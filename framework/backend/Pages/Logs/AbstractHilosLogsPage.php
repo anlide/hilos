@@ -31,6 +31,7 @@ use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogRecentEntry;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogNodesTableRow;
@@ -66,9 +67,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     ];
 
     /**
-     * The section draws its picture out of the cluster log mirror, so a node that stopped
-     * answering leaves its last word on the screen looking current. The router of cluster nodes
-     * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
+     * The log mirror supplies the figures; the cluster registry supplies current node names
+     * and the frozen-replica mark for a picture whose owner stopped answering.
      */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
@@ -171,7 +171,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     private static ?int $logsOverviewFreeSpaceThresholdPercent = null;
 
     /**
-     * @var list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
+     * @var list<array{nodeId: string, nodeName: ?string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}>
      *     Full compatibility node list, independent of the table window; empty on standalone
@@ -179,7 +179,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     private static array $logsOverviewNodes = [];
 
     /**
-     * @var list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}>
+     * @var list<array{nodeId: string, nodeName: ?string, stream: string, at: string, message: string, traceFrames: ?int}>
      *     Rows of the errors tab of the recent-failures panel, newest first, already cut to the window and the limit
      */
     private static array $logsOverviewRecentErrors = [];
@@ -188,7 +188,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     private static bool $logsOverviewRecentErrorsCapped = false;
 
     /**
-     * @var list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}>
+     * @var list<array{nodeId: string, nodeName: ?string, stream: string, at: string, message: string, traceFrames: ?int}>
      *     Rows of the warnings tab, newest first, already cut to the window and the limit (HIL-868)
      */
     private static array $logsOverviewRecentWarnings = [];
@@ -221,6 +221,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws LogicException When the overview cannot be fingerprinted
      * @throws InvalidFormatException When a table-window request id is malformed
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -268,6 +269,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @throws InvalidArgumentException When the overview signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws LogicException When the overview cannot be fingerprinted
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -326,6 +328,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * reports the answer with its index (HIL-871), so this counter adds up those lists, less the
      * batches an operator already confirmed taking out, using the shared node projection, and moves
      * when a node re-reports, not when this page next looks at a clock.
+     *
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function refreshOverview(): void
     {
@@ -414,7 +418,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *
      * @param ClusterLogNodeSlot $slot Node whose disk figures accompany the projection
      * @param HilosLogNodesTableRow $row Shared measurements with an epoch-millisecond rotation
-     * @return array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
+     * @return array{nodeId: string, nodeName: ?string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}
      *     Full header entry with the existing ISO rotation format
@@ -423,6 +427,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     {
         return [
             HilosLogsOverviewSignalData::nodeId => $row->nodeId,
+            HilosLogsOverviewSignalData::nodeName => $row->nodeName,
             HilosLogsOverviewSignalData::available => $row->available,
             HilosLogsOverviewSignalData::lastRotationAt => self::rotationAt(
                 $row->lastRotationAt === null ? null : intdiv($row->lastRotationAt, TimeConstants::MS_PER_SECOND),
@@ -445,6 +450,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *
      * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture
      * @param int $now Unix timestamp the window is measured back from
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function fillRecent(array $slots, int $now): void
     {
@@ -475,8 +481,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture
      * @param int $now Unix timestamp the window is measured back from
      * @param Closure(NodeLogIndex): list<LogRecentEntry> $entriesOf Which feed of a node's index to read
-     * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Every row
+     * @return list<array{nodeId: string, nodeName: ?string, stream: string, at: string, message: string, traceFrames: ?int}> Every row
      *     inside the window, newest first, not yet cut to the limit
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function recentRows(array $slots, int $now, Closure $entriesOf): array
     {
@@ -494,6 +501,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
                     self::SORTED_BY => $entry->atMs,
                     self::SORTED_ROW => [
                         HilosLogsOverviewSignalData::nodeId => $nodeId,
+                        HilosLogsOverviewSignalData::nodeName => Hilos::$rt->hilosClusterNodes[$nodeId]?->name,
                         HilosLogsOverviewSignalData::stream => $entry->stream,
                         HilosLogsOverviewSignalData::at => self::failureAt($entry->atMs),
                         HilosLogsOverviewSignalData::message => $entry->message,

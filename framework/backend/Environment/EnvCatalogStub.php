@@ -332,6 +332,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::BACKUP_SHIP_TIMEOUT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),
             EnvConstants::CLUSTER_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
+            EnvConstants::CLUSTER_NODE_NAME->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::CLUSTER_NODE_ROLE->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
             EnvConstants::CLUSTER_NODE_CAPABILITIES->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
             EnvConstants::CLUSTER_PEER_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '0.0.0.0', emptyIsMissing: true, perNode: true),

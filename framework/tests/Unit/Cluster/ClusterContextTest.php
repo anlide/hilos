@@ -37,12 +37,14 @@ use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\StandaloneLeadership;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime as StateAdminViewModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tests\Unit\Cluster\Placement\FakePlacementExecutor;
 use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -62,7 +64,7 @@ final class ClusterContextTest extends TestCase
     protected function tearDown(): void
     {
         Hilos::$env = $this->previousEnv;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE', 'CLUSTER_NODE_CAPABILITIES'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE', 'CLUSTER_NODE_CAPABILITIES'] as $key) {
             putenv($key);
         }
     }
@@ -82,6 +84,7 @@ final class ClusterContextTest extends TestCase
     public function testIdentityThrowsWhenDisabled(): void
     {
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $this->expectException(ClusterDisabledException::class);
@@ -93,6 +96,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $this->assertSame('node-a', new ClusterContext()->identity()->nodeId);
@@ -101,6 +105,7 @@ final class ClusterContextTest extends TestCase
     public function testLocalNodeIdUsesConfiguredStandaloneId(): void
     {
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $this->assertSame('node-a', new ClusterContext()->localNodeId());
@@ -115,15 +120,110 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $this->assertSame('node-a', new ClusterContext()->localNodeId());
+    }
+
+    public function testLocalNodeNameUsesTheStandaloneEnvironment(): void
+    {
+        putenv('CLUSTER_NODE_NAME=  Standalone node  ');
+
+        $this->assertSame('Standalone node', new ClusterContext()->localNodeName());
+    }
+
+    public function testLocalNodeNameUsesTheClusterIdentityUntilReload(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_NAME=Original name');
+        $context = new ClusterContext();
+        $context->registry();
+
+        putenv('CLUSTER_NODE_NAME=Renamed node');
+        $this->assertSame('Original name', $context->localNodeName());
+        $this->assertTrue($context->reload());
+        $this->assertSame('Renamed node', $context->localNodeName());
+        $this->assertSame('Renamed node', $context->identity()->name);
+        $this->assertSame('Renamed node', $context->registry()->snapshot()[0]->name);
+        $this->assertSame(2, $context->registry()->version());
+        $this->assertFalse($context->reload());
+        $this->assertSame(2, $context->registry()->version());
+    }
+
+    /** @return iterable<string, array{?string}> Invalid reload names */
+    public static function invalidReloadNames(): iterable
+    {
+        yield 'absent' => [null];
+        yield 'empty' => [''];
+        yield 'whitespace' => ['   '];
+        yield 'too long' => [str_repeat('🌍', 65)];
+        yield 'control character' => ["Main\nnode"];
+        yield 'Unicode line separator' => ["Main\u{2028}node"];
+        yield 'Unicode paragraph separator' => ["Main\u{2029}node"];
+    }
+
+    /** @param ?string $name Invalid name, absent when null */
+    #[DataProvider('invalidReloadNames')]
+    public function testInvalidNameReloadKeepsThePreviousIdentityAndRegistry(?string $name): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_NAME=Original name');
+        $context = new ClusterContext();
+        $previousIdentity = $context->identity();
+        $previousNode = $context->registry()->snapshot()[0];
+        $announcer = $this->createMock(LocalNodeAnnouncer::class);
+        $announcer->expects($this->never())->method('announceLocalNode');
+        $context->registerLocalAnnouncer($announcer);
+        $observer = $this->createMock(MembershipObserver::class);
+        $observer->expects($this->never())->method('onNodeJoined');
+        $context->registerMembershipObserver($observer);
+        putenv($name === null ? 'CLUSTER_NODE_NAME' : 'CLUSTER_NODE_NAME=' . $name);
+
+        try {
+            $context->reload();
+            $this->fail('Invalid name must refuse reload');
+        } catch (ClusterConfigurationException | MissingEnvironmentVariableException $exception) {
+            $this->assertStringContainsString('CLUSTER_NODE_NAME', $exception->getMessage());
+        }
+
+        $this->assertSame($previousIdentity, $context->identity());
+        $this->assertSame('Original name', $context->localNodeName());
+        $this->assertSame($previousNode, $context->registry()->snapshot()[0]);
+        $this->assertSame(1, $context->registry()->version());
+    }
+
+    public function testRenameReloadAnnouncesToPeersAndTheMembershipObserver(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_NAME=Original name');
+        $context = new ClusterContext();
+        $context->registry();
+        $announcer = $this->createMock(LocalNodeAnnouncer::class);
+        $announcer->expects($this->once())->method('announceLocalNode');
+        $context->registerLocalAnnouncer($announcer);
+        $observer = $this->createMock(MembershipObserver::class);
+        $observer->expects($this->once())->method('onNodeJoined')->with(
+            $this->callback(static fn(ClusterNode $node): bool => $node->nodeId === 'node-a' && $node->name === 'Renamed node'),
+        );
+        $context->registerMembershipObserver($observer);
+        putenv('CLUSTER_NODE_NAME=Renamed node');
+
+        $this->assertTrue($context->reload());
+        $this->assertFalse($context->reload());
     }
 
     public function testIdentityIsMemoized(): void
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $context = new ClusterContext();
@@ -143,6 +243,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
@@ -152,6 +253,7 @@ final class ClusterContextTest extends TestCase
         $this->assertSame(
             [[
                 ClusterCommandConstants::FIELD_NODE_ID => 'node-a',
+                ClusterCommandConstants::FIELD_NODE_NAME => 'Local node',
                 ClusterCommandConstants::FIELD_NODE_ROLE => 'master',
                 ClusterCommandConstants::FIELD_NODE_CAPABILITIES => ['gpu-local'],
                 ClusterCommandConstants::FIELD_NODE_ONLINE => true,
@@ -171,6 +273,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
@@ -192,6 +295,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
@@ -205,6 +309,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
@@ -224,6 +329,7 @@ final class ClusterContextTest extends TestCase
         $context->reload();
         $this->assertSame(0, $announcer->announced);
 
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=slave');
         $context->reload();
         $this->assertSame(1, $announcer->announced);
@@ -267,6 +373,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=slave');
 
         $this->assertSame(NodeLifecycleState::Slave, new ClusterContext()->lifecycleState());
@@ -276,6 +383,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         // In this slice PendingLeadership reports no quorum, so a master is dormant.
@@ -305,7 +413,7 @@ final class ClusterContextTest extends TestCase
         $context = new ClusterContext();
         $context->registerMembershipObserver($observer);
 
-        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', NodeRole::Master, []), true, 100.0);
+        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, []), true, 100.0);
         $context->notifyNodeJoined($node);
         $context->notifyNodeLeft($node->asOffline(200.0));
 
@@ -315,7 +423,7 @@ final class ClusterContextTest extends TestCase
 
     public function testMembershipNotificationsAreSafeWithoutAnObserver(): void
     {
-        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', NodeRole::Master, []), true, 100.0);
+        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, []), true, 100.0);
 
         $context = new ClusterContext();
         $context->notifyNodeJoined($node);
@@ -336,6 +444,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
@@ -357,6 +466,7 @@ final class ClusterContextTest extends TestCase
         $nodes = $inspection[ClusterCommandConstants::FIELD_NODES];
         $this->assertCount(1, $nodes);
         $this->assertSame('node-a', $nodes[0][ClusterCommandConstants::FIELD_NODE_ID]);
+        $this->assertSame('Local node', $nodes[0][ClusterCommandConstants::FIELD_NODE_NAME]);
         $this->assertSame(['gpu-local'], $nodes[0][ClusterCommandConstants::FIELD_NODE_CAPABILITIES]);
         $this->assertTrue($nodes[0][ClusterCommandConstants::FIELD_NODE_ONLINE]);
         $this->assertArrayHasKey(ClusterCommandConstants::FIELD_NODE_LAST_SEEN, $nodes[0]);
@@ -366,6 +476,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         $context = new ClusterContext();
 
@@ -391,6 +502,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         $previousRt = Hilos::$rt;
         $previousSignalRouter = Hilos::$sr;
@@ -413,6 +525,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $leadership = new class implements Leadership, ConsensusInspection {
@@ -672,6 +785,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
     }
 

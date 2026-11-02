@@ -75,6 +75,7 @@ final class ClusterPolicySeamTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=slave');
         putenv('CLUSTER_PEER_HOST=127.0.0.1');
         putenv('CLUSTER_PEER_PORT=0');
@@ -103,6 +104,7 @@ final class ClusterPolicySeamTest extends TestCase
             'SOCKET_READ_BUFFER_SIZE',
             'CLUSTER_ENABLED',
             'CLUSTER_NODE_ID',
+            'CLUSTER_NODE_NAME',
             'CLUSTER_NODE_ROLE',
             'CLUSTER_PEER_HOST',
             'CLUSTER_PEER_PORT',
@@ -233,7 +235,7 @@ final class ClusterPolicySeamTest extends TestCase
     private function learnPeer(string $nodeId): void
     {
         Hilos::$cluster->registry()->merge(
-            NodeIdentity::of($nodeId, NodeRole::Master, [], new PeerAddress('10.0.0.1', 1111)),
+            NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Master, [], new PeerAddress('10.0.0.1', 1111)),
             true,
             microtime(true),
         );

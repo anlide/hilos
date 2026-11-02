@@ -10,12 +10,14 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndex;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogKeySummary;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * The catalog of readable sources for the log viewer (server → client, HIL-388).
@@ -32,7 +34,7 @@ use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
  * something to offer.
  *
  * A node carries no online flag, because the mirror does not know one ({@see ClusterLogNodeSlot}
- * holds an id, an index and an arrival time) and this page reads no cluster roster. A node that is
+ * holds an id, an index and an arrival time). Names come from the runtime registry. A node that is
  * down shows up where it is actually felt — in the refusal of the read
  * ({@see AbstractHilosLogsViewPage}), which the screen shows in the log pane.
  *
@@ -52,6 +54,9 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
 
     /** Node row key: effective node id. */
     public const string nodeId = 'nodeId';
+
+    /** Node row key: current registry name, null for an unknown node. */
+    public const string nodeName = 'nodeName';
 
     /** Node row key: ascending UTC epoch milliseconds of the rotation batches the node holds. */
     public const string batches = 'batches';
@@ -79,7 +84,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     /**
      * @param ?bool $available Whether anything can be read, null while no picture has arrived
      * @param bool $clusterEnabled Whether cluster mode is enabled
-     * @param list<array{nodeId: string, available: bool, batches: list<int>,
+     * @param list<array{nodeId: string, nodeName: ?string, available: bool, batches: list<int>,
      *     streams: list<array{key: string, class: string, live: bool, batchTimestamps: list<int>}>}> $nodes
      *     Transport arrays with epoch-millisecond moments, copied literally by toArray/fromArray
      */
@@ -96,6 +101,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
      * @param ?ClusterLogIndex $index Cluster picture, or null while none has arrived
      * @param bool $clusterEnabled Whether this installation runs in cluster mode
      * @return self Catalog of every node in that picture
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public static function fromIndex(?ClusterLogIndex $index, bool $clusterEnabled): self
     {
@@ -139,6 +145,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
             self::clusterEnabled => WireField::notPersonal(),
             self::nodes => WireField::each([
                 self::nodeId => WireField::notPersonal(),
+                self::nodeName => WireField::notPersonal(),
                 self::available => WireField::notPersonal(),
                 self::batches => WireField::notPersonal(),
                 self::streams => WireField::each([
@@ -184,6 +191,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
 
             $nodes[] = [
                 self::nodeId => $nodeId,
+                self::nodeName => self::optionalString($row, self::nodeName),
                 self::available => self::requireBool($row, self::available),
                 self::batches => self::timestamps($row, self::batches),
                 self::streams => $streams,
@@ -233,13 +241,15 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
      * would read as a node that never existed.
      *
      * @param ClusterLogNodeSlot $slot Slot of one node in the cluster picture
-     * @return array{nodeId: string, available: bool, batches: list<int>,
+     * @return array{nodeId: string, nodeName: ?string, available: bool, batches: list<int>,
      *     streams: list<array{key: string, class: string, live: bool, batchTimestamps: list<int>}>} Node row
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function nodeToArray(ClusterLogNodeSlot $slot): array
     {
         return [
             self::nodeId => $slot->nodeId,
+            self::nodeName => Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name,
             self::available => $slot->index->available,
             self::batches => array_map(
                 static fn(LogBatchSummary $batch): int => $batch->timestamp * TimeConstants::MS_PER_SECOND,

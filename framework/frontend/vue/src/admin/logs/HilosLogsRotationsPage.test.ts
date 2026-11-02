@@ -339,6 +339,7 @@ function batch(
     rowKey: 'node-1:1800000000',
     batchAt: 1800000000000,
     node: 'node-1',
+    nodeName: null,
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
@@ -545,15 +546,26 @@ describe('HilosLogsRotationsPage', () => {
   })
 
   it('offers the node column and the node filter once the picture names nodes', async () => {
-    const { connection, pushHeader } = makeConnection()
+    const { connection, sent, pushHeader } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: 'archive-east' },
+        ],
+      }),
+    )
     await nextTick()
 
     const select = wrapper.find('[data-id="hilos-table-filter-node"]')
     expect(select.exists()).toBe(true)
-    expect(select.text()).toContain('node-2')
+    await select.find('[data-id="hilos-dropdown-toggle"]').trigger('click')
+    const nodeOption = select.get('[data-id="hilos-dropdown-option-1"]')
+    expect(nodeOption.text()).toContain('archive-east (node-2)')
+    await nodeOption.trigger('click')
+    expect(sent.at(-1)?.filter).toEqual({ node: 'node-2' })
     expect(
       wrapper.find('[data-id="hilos-table-search"]').attributes('placeholder'),
     ).toBe('Search by batch date or node…')
@@ -631,7 +643,7 @@ describe('HilosLogsRotationsPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([batch({ node: 'node-1' })])
     await nextTick()
 
@@ -680,25 +692,35 @@ describe('HilosLogsRotationsPage', () => {
     )
     const batchAt = 1800000000000
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
     pushWindow([
       batch({ rowKey: 'node-1:1800000000', node: 'node-1', batchAt }),
       batch({ rowKey: 'node-2:1800000000', node: 'node-2', batchAt }),
       batch({
         rowKey: 'node-1:1800000001',
         node: 'node-1',
+        nodeName: null,
         batchAt: batchAt + 1000,
         retentionState: 'due',
       }),
       batch({
         rowKey: 'node-1:1800000002',
         node: 'node-1',
+        nodeName: null,
         batchAt: batchAt + 2000,
         retentionState: 'taken',
       }),
       batch({
         rowKey: 'node-1:1800000003',
         node: 'node-1',
+        nodeName: null,
         batchAt: batchAt + 3000,
         path: 'staging/2027-01-15-08-00-03Z/',
         retentionState: 'carrying',
@@ -825,11 +847,26 @@ describe('HilosLogsRotationsPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(
+      header({ nodes: [{ nodeId: 'node-1', nodeName: 'archive-east' }] }),
+    )
+    pushWindow([
+      batch({
+        node: 'node-1',
+        nodeName: 'archive-east',
+        retentionState: 'due',
+      }),
+    ])
     await nextTick()
+    const row = wrapper.get('[data-id="hilos-table-row-node-1:1800000000"]')
+    expect(row.text()).toContain('archive-east')
+    expect(row.text()).toContain('node-1')
     await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
 
+    expect(
+      document.querySelector('[role="dialog"] .modal-title')?.textContent,
+    ).toContain('archive-east (node-1)')
+    expect(document.body.textContent).toContain('archive-east (node-1)')
     expect(
       document.querySelector('[data-id="hilos-rotation-takeout-path"]')
         ?.textContent,
@@ -878,8 +915,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'due' }),
+    ])
     await nextTick()
     await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
     const confirm = document.querySelector(
@@ -1118,8 +1157,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'taken' }),
+    ])
     await nextTick()
     await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
     const confirm = document.querySelector(
@@ -1250,8 +1291,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'due' }),
+    ])
     await nextTick()
 
     const takeout = wrapper.find<HTMLButtonElement>(
@@ -1292,8 +1335,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'taken' }),
+    ])
     await nextTick()
 
     const undo = wrapper.find<HTMLButtonElement>(
@@ -1334,7 +1379,9 @@ describe('HilosLogsRotationsPage', () => {
     const wrapper = mountPage(connection)
 
     pushHeader(header())
-    pushWindow([batch({ node: 'standalone', retentionState: 'kept' })])
+    pushWindow([
+      batch({ node: 'standalone', nodeName: null, retentionState: 'kept' }),
+    ])
     await nextTick()
 
     const viewLinks = wrapper.findAll('[data-id="hilos-rotation-view"]')
@@ -1376,8 +1423,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'due' }),
+    ])
     await nextTick()
 
     await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')

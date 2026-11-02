@@ -278,7 +278,7 @@ final class ClusterTlsConfigTest extends TestCase
      */
     private function identity(): NodeIdentity
     {
-        return NodeIdentity::of(self::NODE_ID, NodeRole::Master, []);
+        return NodeIdentity::of(self::NODE_ID, 'Node ' . self::NODE_ID, NodeRole::Master, []);
     }
 
     /**

@@ -97,6 +97,7 @@ describe('daemon HTTP empty state', () => {
   it('distinguishes waiting, silence without a report and known metrics', () => {
     const silent = {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 42000,
@@ -104,6 +105,7 @@ describe('daemon HTTP empty state', () => {
     }
     const leader = {
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,

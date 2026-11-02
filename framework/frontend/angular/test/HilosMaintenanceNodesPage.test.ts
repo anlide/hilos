@@ -115,6 +115,7 @@ function node(
 ): HilosMaintenanceNodeRow {
   return {
     nodeId,
+    nodeName: null,
     phase: 'inactive',
     quiesced: null,
     isLeader: false,
@@ -162,8 +163,15 @@ function seededContext(initial: HilosMaintenanceNodeRow[]): {
             rows: initial.map(wireRow),
             totalCount: initial.length,
             totalExact: true,
-            firstAnchor: null,
-            lastAnchor: null,
+            firstAnchor: initial.length
+              ? { nodeName: initial[0].nodeName, nodeId: initial[0].nodeId }
+              : null,
+            lastAnchor: initial.length
+              ? {
+                  nodeName: initial[initial.length - 1].nodeName,
+                  nodeId: initial[initial.length - 1].nodeId,
+                }
+              : null,
             rowsBefore: 0,
             limit: 25,
             sort: [{ field: 'nodeId', direction: 'asc' }],

@@ -21,6 +21,8 @@ function alarm(
 ) {
   return hilosMaintenanceWatchdogAlert(
     maintenanceStateSchema.parse({
+      initiatorNodeName: null,
+      diagnosticsNodeName: null,
       phase: 'activating',
       operation: 'restore',
       manual: false,
@@ -30,11 +32,15 @@ function alarm(
       circleNamed: 0,
       circleAdmitted: 0,
       watchdogVerdict: verdict,
-      watchdogPendingNodeIds: [
-        'node-3',
-        'node-4',
-        '<b>node-5</b>',
-        'node-with-a-very-long-name-that-must-remain-whole-in-details',
+      watchdogPendingNodes: [
+        { nodeId: 'node-3', nodeName: null },
+        { nodeId: 'node-4', nodeName: null },
+        { nodeId: '<b>node-5</b>', nodeName: null },
+        {
+          nodeId:
+            'node-with-a-very-long-name-that-must-remain-whole-in-details',
+          nodeName: null,
+        },
       ],
       diagnosticsNodeId: 'node-1',
       stoppedAgentCount: 6,
@@ -147,11 +153,40 @@ describe('HilosMaintenanceWatchdogAlert', () => {
     expect(dialog.querySelectorAll('input, select, textarea')).toHaveLength(0)
   })
 
+  it('shows registered names beside node ids in watchdog diagnostics as text', async () => {
+    const wrapper = mountAlert(
+      alarm('quiesce-overdue', {
+        initiatorAgentType: 'hilos_backup',
+        initiatorNodeId: 'node-2',
+        initiatorNodeName: '<b>restore-east</b>',
+        diagnosticsNodeId: 'node-5',
+        diagnosticsNodeName: 'logs-north',
+        watchdogPendingNodes: [
+          { nodeId: 'node-3', nodeName: 'worker-west' },
+          { nodeId: 'node-4', nodeName: null },
+        ],
+      }),
+    )
+    await openDetails(wrapper)
+
+    const full = document.querySelector(
+      '[data-id="hilos-maintenance-watchdog-full"]',
+    )!
+    const values = [...full.querySelectorAll('dd')].map(
+      (fact) => fact.textContent,
+    )
+    expect(values).toContain('hilos_backup · node <b>restore-east</b> (node-2)')
+    expect(values).toContain('worker-west (node-3), node-4')
+    expect(values).toContain('logs-north (node-5)')
+    expect(full.querySelector('b')).toBeNull()
+  })
+
   it('leaves unpublished diagnostics and unnamed pending nodes absent without inventing a node', async () => {
     const wrapper = mountAlert(
       alarm('quiesce-overdue', {
-        watchdogPendingNodeIds: [],
+        watchdogPendingNodes: [],
         diagnosticsNodeId: null,
+        diagnosticsNodeName: null,
         stoppedAgentCount: null,
         preservedAgentTypes: null,
         agentStartGateClosed: null,

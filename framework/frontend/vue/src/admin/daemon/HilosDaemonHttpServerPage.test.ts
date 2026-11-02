@@ -22,6 +22,7 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const LIVE_HEADING: HilosDaemonNodeHeading = {
   clustered: true,
+  name: null,
   role: null,
   state: 'leader',
   silentSince: null,
@@ -29,6 +30,7 @@ const LIVE_HEADING: HilosDaemonNodeHeading = {
 }
 const SILENT_HEADING: HilosDaemonNodeHeading = {
   clustered: true,
+  name: null,
   role: null,
   state: 'silent',
   silentSince: 1_700_000_000_000,
@@ -435,6 +437,7 @@ describe('HilosDaemonHttpServerPage', () => {
     const solo = harness(true, 'standalone')
     solo.response(summary(), {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

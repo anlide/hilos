@@ -128,6 +128,7 @@ describe('HilosDaemonWorkersPage', () => {
     )
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -147,6 +148,7 @@ describe('HilosDaemonWorkersPage', () => {
     expect(h.find('hilos-daemon-workers-silent')).toBeNull()
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -163,6 +165,7 @@ describe('HilosDaemonWorkersPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -215,6 +218,7 @@ describe('HilosDaemonWorkersPage', () => {
     expect(updated.textContent).toContain('0 B')
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -269,6 +273,7 @@ describe('HilosDaemonWorkersPage', () => {
     const h = harness(false)
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,

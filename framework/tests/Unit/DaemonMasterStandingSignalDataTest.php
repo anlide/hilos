@@ -91,12 +91,13 @@ final class DaemonMasterStandingSignalDataTest extends TestCase
         try {
             foreach ([true, false] as $snapshot) {
                 $portion = new DaemonClusterPicturePortionSignalData($snapshot, [
-                    new ClusterDaemonNodeView('n1', true, new ClusterDaemonNodeSlot('n1', $picture, 11)),
+                    new ClusterDaemonNodeView('n1', true, new ClusterDaemonNodeSlot('n1', $picture, 11), 'Control'),
                 ]);
                 self::assertSame($expectedClock, $portion->toArray()['nodes'][0]['picture']['standing']['clock']);
                 $parsed = DaemonClusterPicturePortionSignalData::fromArray($portion->toArray());
                 self::assertEquals($portion, $parsed);
                 ClusterDaemonPictureMirror::applyPortion($parsed);
+                self::assertSame('Control', ClusterDaemonPictureMirror::picture()?->node('n1')?->name);
                 self::assertEquals($standing, ClusterDaemonPictureMirror::picture()?->node('n1')?->slot?->picture->standing);
             }
         } finally {

@@ -104,6 +104,7 @@ function harness(nodeId = 'n1') {
         [DAEMON_ENV_NODE_SILENT_DATA]: nodeSilent,
         node: {
           clustered: true,
+          name: null,
           state: nodeSilent ? 'silent' : null,
           silentSince: null,
           clock: null,

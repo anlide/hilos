@@ -58,20 +58,27 @@ final class InMemoryTableFilter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under, used to settle the sort
      * @param bool $nullsLast Keep null sort values last in either direction
+     * @param ?Closure(array, array, TableSortDTO): ?int $compareComponent Table-specific comparison, null for the standard comparison
      * @return TableSnapshotDTO Filtered, sorted and windowed snapshot
      */
-    public static function apply(array $rows, TableQueryDTO $query, string $keyField, bool $nullsLast = false): TableSnapshotDTO
+    public static function apply(
+        array $rows,
+        TableQueryDTO $query,
+        string $keyField,
+        bool $nullsLast = false,
+        ?Closure $compareComponent = null,
+    ): TableSnapshotDTO
     {
         $rows = self::searched($rows, $query);
 
         $order = $query->sort;
         if ($order !== null) {
-            usort($rows, static fn(array $a, array $b): int => self::compare($a, $b, $order, $keyField, $nullsLast));
+            usort($rows, static fn(array $a, array $b): int => self::compare($a, $b, $order, $keyField, $nullsLast, $compareComponent));
         }
 
         $totalCount = count($rows);
         $anchorFields = self::anchorFields($order, $keyField);
-        [$window, $rowsBefore, $frame] = self::window($rows, $query, $keyField, $anchorFields, $nullsLast);
+        [$window, $rowsBefore, $frame] = self::window($rows, $query, $keyField, $anchorFields, $nullsLast, $compareComponent);
 
         return new TableSnapshotDTO(
             rows: $window,
@@ -157,6 +164,7 @@ final class InMemoryTableFilter
      * @param string $keyField Payload field the row key travels under
      * @param list<string> $anchorFields Fields a place in this order is named by
      * @param bool $nullsLast Keep null sort values last in either direction
+     * @param ?Closure(array, array, TableSortDTO): ?int $compareComponent Table-specific component comparison
      * @return array{list<array<string, mixed>>, int, ?TableWindowFrameDTO} Rows of the window in the set's
      *     own order, how many rows of the set stand before them, and the places framing them
      */
@@ -166,6 +174,7 @@ final class InMemoryTableFilter
         string $keyField,
         array $anchorFields,
         bool $nullsLast,
+        ?Closure $compareComponent,
     ): array {
         if ($query->limit === TableConstants::NO_LIMIT) {
             return [$rows, 0, $rows === [] ? null : new TableWindowFrameDTO()];
@@ -178,11 +187,13 @@ final class InMemoryTableFilter
         } elseif ($takesFromEnd) {
             $end = $query->anchor === null
                 ? count($rows)
-                : self::boundary($rows, $query->anchor, $query->sort, $keyField, true, $nullsLast);
+                : self::boundary($rows, $query->anchor, $query->sort, $keyField, true, $nullsLast, $compareComponent);
             $start = max(0, $end - $query->limit);
             $window = array_slice($rows, $start, $end - $start);
         } else {
-            $start = $query->anchor === null ? 0 : self::boundary($rows, $query->anchor, $query->sort, $keyField, false, $nullsLast);
+            $start = $query->anchor === null
+                ? 0
+                : self::boundary($rows, $query->anchor, $query->sort, $keyField, false, $nullsLast, $compareComponent);
             $window = array_slice($rows, $start, $query->limit);
         }
 
@@ -225,6 +236,7 @@ final class InMemoryTableFilter
      * @param string $keyField Payload field the row key travels under
      * @param bool $takesFromEnd Whether the window runs back from the anchor rather than on from it
      * @param bool $nullsLast Keep null sort values last in either direction
+     * @param ?Closure(array, array, TableSortDTO): ?int $compareComponent Table-specific component comparison
      * @return int Index the window starts at, or ends before when it runs back
      */
     private static function boundary(
@@ -234,13 +246,14 @@ final class InMemoryTableFilter
         string $keyField,
         bool $takesFromEnd,
         bool $nullsLast,
+        ?Closure $compareComponent,
     ): int {
         if ($order === null) {
             return self::keyBoundary($rows, $anchor, $keyField, $takesFromEnd);
         }
 
         foreach ($rows as $index => $row) {
-            $comparison = self::compare($row, $anchor->values, $order, $keyField, $nullsLast);
+            $comparison = self::compare($row, $anchor->values, $order, $keyField, $nullsLast, $compareComponent);
             if ($takesFromEnd ? $comparison >= 0 : $comparison > 0) {
                 return $index;
             }
@@ -294,6 +307,7 @@ final class InMemoryTableFilter
      * @param TableSortOrderDTO $order Order the window asked for
      * @param string $keyField Payload field the row key travels under
      * @param bool $nullsLast Keep null sort values last in either direction
+     * @param ?Closure(array, array, TableSortDTO): ?int $compareComponent Signed comparison, or null for the standard comparison
      * @return int Negative, zero or positive in the ordering's sense
      */
     public static function compare(
@@ -302,10 +316,11 @@ final class InMemoryTableFilter
         TableSortOrderDTO $order,
         string $keyField,
         bool $nullsLast = false,
+        ?Closure $compareComponent = null,
     ): int {
         foreach ($order->components as $component) {
             $direction = self::directionSign($component);
-            $byValue = self::compareValues(
+            $byValue = $compareComponent?->__invoke($values, $against, $component) ?? self::compareValues(
                 $values[$component->field] ?? null,
                 $against[$component->field] ?? null,
                 $direction,

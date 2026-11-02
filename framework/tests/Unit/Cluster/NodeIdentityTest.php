@@ -8,6 +8,7 @@ use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -27,7 +28,7 @@ final class NodeIdentityTest extends TestCase
     protected function tearDown(): void
     {
         Hilos::$env = $this->previousEnv;
-        foreach (['CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE', 'CLUSTER_NODE_CAPABILITIES'] as $key) {
+        foreach (['CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE', 'CLUSTER_NODE_CAPABILITIES'] as $key) {
             putenv($key);
         }
     }
@@ -35,12 +36,14 @@ final class NodeIdentityTest extends TestCase
     public function testResolvesIdRoleAndCapabilities(): void
     {
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=  Главный узел  ');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local,ssd');
 
         $identity = NodeIdentity::fromEnv();
 
         $this->assertSame('node-a', $identity->nodeId);
+        $this->assertSame('Главный узел', $identity->name);
         $this->assertSame(NodeRole::Master, $identity->role);
         $this->assertSame(['gpu-local', 'ssd'], $identity->capabilities);
     }
@@ -48,6 +51,7 @@ final class NodeIdentityTest extends TestCase
     public function testResolvesSlaveRole(): void
     {
         putenv('CLUSTER_NODE_ID=node-b');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=slave');
 
         $identity = NodeIdentity::fromEnv();
@@ -59,6 +63,7 @@ final class NodeIdentityTest extends TestCase
     public function testCapabilityParsingTrimsBlanksAndDeduplicates(): void
     {
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES= gpu-local , , ssd ,gpu-local');
 
@@ -69,8 +74,21 @@ final class NodeIdentityTest extends TestCase
         $this->assertFalse($identity->hasCapability('nvme'));
     }
 
+    public function testMissingNameThrows(): void
+    {
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_NAME');
+
+        $this->expectException(MissingEnvironmentVariableException::class);
+        $this->expectExceptionMessage('CLUSTER_NODE_NAME');
+
+        NodeIdentity::fromEnv();
+    }
+
     public function testMissingNodeIdThrows(): void
     {
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         $this->expectException(ClusterConfigurationException::class);
@@ -90,6 +108,7 @@ final class NodeIdentityTest extends TestCase
     public function testInvalidRoleThrows(): void
     {
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=leader');
 
         $this->expectException(ClusterConfigurationException::class);

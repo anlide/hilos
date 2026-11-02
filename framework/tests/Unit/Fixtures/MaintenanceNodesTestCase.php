@@ -34,7 +34,7 @@ abstract class MaintenanceNodesTestCase extends TestCase
     {
         parent::setUp();
         $this->previousGlobals = [Hilos::$env, Hilos::$cluster, Hilos::$rt, Hilos::$sr, Hilos::$db, Hilos::$table, Hilos::$browser];
-        foreach (['CLUSTER_ENABLED' => 'true', 'CLUSTER_NODE_ID' => 'node-a', 'CLUSTER_NODE_ROLE' => 'master',
+        foreach (['CLUSTER_ENABLED' => 'true', 'CLUSTER_NODE_ID' => 'node-a', 'CLUSTER_NODE_NAME' => 'Local node', 'CLUSTER_NODE_ROLE' => 'master',
             'SOCKET_READ_BUFFER_SIZE' => '65536', 'CLUSTER_LINK_KEEPALIVE_INTERVAL_MS' => '60000',
             'CLUSTER_LINK_TIMEOUT_MS' => '60000'] as $key => $value) {
             $this->previousVariables[$key] = getenv($key);
@@ -47,6 +47,7 @@ abstract class MaintenanceNodesTestCase extends TestCase
         AccountStandingResolver::forgetAll();
         $this->state = StateProtectedModeRuntime::create();
         Hilos::$rt = new MaintenanceNodesTestRuntime($this->state);
+        Hilos::$rt->mountFeatureRuntime([]);
         Hilos::$rt->configure();
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         Hilos::$table = new MaintenanceNodesTestTables();
@@ -72,7 +73,7 @@ abstract class MaintenanceNodesTestCase extends TestCase
 
     protected static function node(string $id, ?string $phase = 'inactive', ?bool $quiesced = null): array
     {
-        return ['nodeId' => $id, 'phase' => $phase, 'quiesced' => $quiesced,
+        return ['nodeId' => $id, 'nodeName' => null, 'phase' => $phase, 'quiesced' => $quiesced,
             'isLeader' => false, 'isInitiator' => false, 'reportState' => 'current'];
     }
 

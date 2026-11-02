@@ -56,6 +56,7 @@ final class HilosDaemonWorkersPageAnswerTest extends TestCase
             AbstractHilosDaemonWorkersPage::NODE => [
                     'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
                     'clock' => null,
+                    'name' => null,
                 ],
             AbstractHilosDaemonWorkersPage::PROCESSES_REPORTED => false,
         ], $page->payload($this->address())->data);
@@ -87,6 +88,7 @@ final class HilosDaemonWorkersPageAnswerTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ],
             $page->payload($this->address())->data[AbstractHilosDaemonWorkersPage::NODE]);
     }

@@ -2,7 +2,11 @@
 // Presentation stays here so every view draws the same reported facts.
 
 import { HilosPages, type HilosPageKey } from '../../routing/hilosPages.js'
-import { readBoolean, readString } from '../../state/fieldReaders.js'
+import {
+  readBoolean,
+  readString,
+  readStringOrNull,
+} from '../../state/fieldReaders.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
@@ -14,11 +18,14 @@ import { type HilosMaintenanceContext } from './hilosMaintenance.js'
 /** Canonical backend table key for cluster maintenance reports. */
 export const HILOS_MAINTENANCE_NODES_TABLE = 'hilosMaintenanceNodes'
 
-/** Inline row slot carrying the six public node fields. */
+/** Inline row slot carrying the seven public node fields. */
 export const HILOS_MAINTENANCE_NODES_SLOT = 'node'
 
 /** Row payload key of the node identity, also the row key and sortable field. */
 export const MAINTENANCE_NODE_ID_FIELD = 'nodeId'
+
+/** Row payload key of the current or last known registry name. */
+const MAINTENANCE_NODE_NAME_FIELD = 'nodeName'
 
 /** Row payload key of the phase reported by this node. */
 export const MAINTENANCE_NODE_PHASE_FIELD = 'phase'
@@ -38,6 +45,7 @@ export const MAINTENANCE_NODE_REPORT_STATE_FIELD = 'reportState'
 /** One public node report, byte-for-byte aligned with the backend row fields. */
 export interface HilosMaintenanceNodeRow {
   readonly nodeId: string
+  readonly nodeName: string | null
   readonly phase:
     'inactive' | 'activating' | 'active' | 'verifying' | 'deactivating' | null
   readonly quiesced: boolean | null
@@ -133,6 +141,7 @@ export const HILOS_MAINTENANCE_NODES_COLUMNS: readonly HilosTableColumnOf<HilosM
       label: 'Node',
       sortable: true,
       card: 'title',
+      reads: [MAINTENANCE_NODE_NAME_FIELD],
     },
     {
       key: MAINTENANCE_NODE_QUIESCED_FIELD,
@@ -174,6 +183,7 @@ export function resolveHilosMaintenanceNodeRow(
 
   return {
     nodeId: readString(fields, MAINTENANCE_NODE_ID_FIELD) || String(row.rowKey),
+    nodeName: readStringOrNull(fields, MAINTENANCE_NODE_NAME_FIELD),
     phase:
       phase === 'inactive' ||
       phase === 'activating' ||

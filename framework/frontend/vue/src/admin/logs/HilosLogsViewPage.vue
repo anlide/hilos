@@ -24,6 +24,7 @@ because Bootstrap has no utility for it (styling-rules.md, same exception as
 HilosActionError). -->
 <script setup lang="ts">
 import { formatMoment } from '@hilos/core'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   createHilosLogViewer,
   hasLogViewerNodes,
@@ -276,7 +277,7 @@ function toggle(entry: HilosLogViewerEntry): void {
               :key="entry.nodeId"
               :value="entry.nodeId"
             >
-              {{ entry.nodeId }}
+              {{ formatHilosNodeLabel(entry.nodeId, entry.nodeName) }}
             </option>
           </select>
         </div>

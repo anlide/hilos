@@ -2351,6 +2351,7 @@ export {
   readHilosDaemonNodeHeading,
   readDaemonProcessesReported,
   daemonProcessesEmptyState,
+  formatHilosNodeLabel,
   formatDaemonNodeState,
   formatDaemonNodeSilentSince,
   daemonNodeDiagramPath,

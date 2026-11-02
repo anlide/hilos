@@ -51,6 +51,7 @@ final class PeerLinkKeepaliveTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         Hilos::$cluster = new ClusterContext();
@@ -70,6 +71,7 @@ final class PeerLinkKeepaliveTest extends TestCase
             'SOCKET_READ_BUFFER_SIZE',
             'CLUSTER_ENABLED',
             'CLUSTER_NODE_ID',
+            'CLUSTER_NODE_NAME',
             'CLUSTER_NODE_ROLE',
             'CLUSTER_LINK_KEEPALIVE_INTERVAL_MS',
             'CLUSTER_LINK_TIMEOUT_MS',
@@ -136,7 +138,7 @@ final class PeerLinkKeepaliveTest extends TestCase
             transport: new NamedPeerTestTransport($near, 'node-b'),
         );
 
-        $welcome = new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-b', NodeRole::Master, [], PeerTestMarkers::onWire());
+        $welcome = new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-b', 'Node node-b', NodeRole::Master, [], PeerTestMarkers::onWire());
         socket_write($far, $welcome->toJson() . "\n");
         $link->read();
         socket_write($far, (new PeerReadyAckDTO(true))->toJson() . "\n");
@@ -175,7 +177,7 @@ final class PeerLinkKeepaliveTest extends TestCase
      */
     private function localIdentity(): NodeIdentity
     {
-        return NodeIdentity::of('node-a', NodeRole::Master, []);
+        return NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
     }
 
     /**

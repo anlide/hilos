@@ -620,6 +620,7 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
         array $admitted = [],
     ): void {
         Hilos::$rt = new ManualMaintenanceTestRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => $phase,
             StateProtectedModeRuntime::entryMode => $phase === StateProtectedModeRuntime::PHASE_INACTIVE ? null : $entryMode,

@@ -44,6 +44,7 @@ function harness() {
   const page = scopes.openPage(HilosPages.DAEMON_AGENTS)
   page.data.set('node', {
     clustered: false,
+    name: null,
     role: null,
     state: null,
     silentSince: null,
@@ -170,6 +171,7 @@ describe('daemon restart confirmation', () => {
     h.window()
     h.page.data.set('node', {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 10000,
@@ -178,6 +180,7 @@ describe('daemon restart confirmation', () => {
     expect(h.restart.canSubmit.get()).toBe(false)
     h.page.data.set('node', {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -237,6 +240,7 @@ describe('daemon restart confirmation', () => {
 
     h.page.data.set('node', {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 10000,
@@ -246,6 +250,7 @@ describe('daemon restart confirmation', () => {
     expect(reason()).toBe(UNAVAILABLE)
     h.page.data.set('node', {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

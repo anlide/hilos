@@ -15,6 +15,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
@@ -61,6 +62,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousCluster = Hilos::$cluster;
 
+        putenv('CLUSTER_NODE_NAME=Standalone node');
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
         Hilos::$rt = new ClusterNodesTestRtContext();
@@ -76,6 +78,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
         putenv('CLUSTER_NODE_CAPABILITIES');
         putenv('CLUSTER_PEER_ADVERTISE');
@@ -92,6 +95,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $row = Hilos::$rt->hilosClusterNodes[StateHilosClusterNode::STANDALONE_NODE_ID];
         $this->assertNotNull($row, 'The standalone row is keyed by its effective id');
         $this->assertSame(StateHilosClusterNode::STANDALONE_NODE_ID, $row->nodeId);
+        $this->assertSame('Standalone node', $row->name);
         $this->assertSame(NodeRole::Master->value, $row->role, 'A node on its own is its own master');
         $this->assertTrue($row->online, 'The node publishing the row is by definition up');
         $this->assertSame([], $row->capabilities);
@@ -124,12 +128,21 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $this->assertSame('local-custom', Hilos::$rt->hilosClusterNodes['local-custom']?->nodeId);
     }
 
+    public function testWithoutAClusterContextTheMasterPublishesTheConfiguredName(): void
+    {
+        Hilos::$cluster = null;
+        putenv('CLUSTER_NODE_NAME=Independent node');
+        $this->startMaster(new ClusterNodesTestManager());
+
+        $this->assertSame('Independent node', Hilos::$rt->hilosClusterNodes[StateHilosClusterNode::STANDALONE_NODE_ID]?->name);
+    }
+
     public function testAJoinPublishesTheJoinedNodeWithEveryFieldOfItsRecord(): void
     {
         $manager = new ClusterNodesTestManager();
         $this->enableCluster();
         $this->startMaster($manager);
-        $peer = NodeIdentity::of(self::PEER, NodeRole::Slave, ['gpu'], PeerAddress::fromString(self::PEER_ADDRESS));
+        $peer = NodeIdentity::of(self::PEER, 'Node ' . self::PEER, NodeRole::Slave, ['gpu'], PeerAddress::fromString(self::PEER_ADDRESS));
         $seenAt = microtime(true);
         Hilos::$cluster?->registry()->merge($peer, true, $seenAt);
 
@@ -137,11 +150,42 @@ final class DaemonManagerClusterNodesTest extends TestCase
 
         $row = Hilos::$rt->hilosClusterNodes[self::PEER];
         $this->assertNotNull($row, 'A node the registry knows is a node the workers may read');
+        $this->assertSame('Node ' . self::PEER, $row->name);
         $this->assertSame(NodeRole::Slave->value, $row->role);
         $this->assertSame(['gpu'], $row->capabilities);
         $this->assertSame(self::PEER_ADDRESS, $row->address);
         $this->assertTrue($row->online);
         $this->assertSame($seenAt, $row->lastSeen);
+    }
+
+    public function testPublishingARenameUpdatesTheSameRowAndSyncsOnlyItsName(): void
+    {
+        $manager = new ClusterNodesTestManager();
+        $this->enableCluster();
+        $this->startMaster($manager);
+        $beforeRename = Hilos::$rt->hilosClusterNodes[self::SELF];
+        $this->recordingRouter()->rtFrames = [];
+
+        Hilos::$rt->hilosClusterNodes->actions->publish(
+            self::SELF,
+            'Renamed node',
+            NodeRole::Master->value,
+            [],
+            '10.0.0.1:7000',
+            true,
+            $beforeRename->lastSeen,
+        );
+
+        $this->assertCount(1, Hilos::$rt->hilosClusterNodes);
+        $this->assertSame($beforeRename, Hilos::$rt->hilosClusterNodes[self::SELF]);
+        $this->assertSame('Renamed node', Hilos::$rt->hilosClusterNodes[self::SELF]?->name);
+        $this->assertCount(1, $this->recordingRouter()->rtFrames);
+        $frame = $this->recordingRouter()->rtFrames[0];
+        $this->assertInstanceOf(RtSyncUpdatedSignalData::class, $frame);
+        $this->assertSame(StateHilosClusterNode::RT_COLLECTION, $frame->collectionKey);
+        $this->assertSame(self::SELF, $frame->stateId);
+        $this->assertSame([StateHilosClusterNode::name => 'Renamed node'], $frame->row);
+        $this->assertSame([StateHilosClusterNode::name => 'Local node'], $frame->previous);
     }
 
     public function testAPublicationWithoutAMembershipChangeQueuesNothing(): void
@@ -165,7 +209,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $manager = new ClusterNodesTestManager();
         $this->enableCluster();
         $this->startMaster($manager);
-        $peer = NodeIdentity::of(self::PEER, NodeRole::Slave, [], null);
+        $peer = NodeIdentity::of(self::PEER, 'Node ' . self::PEER, NodeRole::Slave, [], null);
         $seenAt = microtime(true);
         Hilos::$cluster?->registry()->merge($peer, true, $seenAt);
         $this->recordingRouter()->rtFrames = [];
@@ -185,7 +229,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $manager = new ClusterNodesTestManager();
         $this->enableCluster();
         $this->startMaster($manager);
-        $peer = NodeIdentity::of(self::PEER, NodeRole::Slave, [], null);
+        $peer = NodeIdentity::of(self::PEER, 'Node ' . self::PEER, NodeRole::Slave, [], null);
         Hilos::$cluster?->registry()->merge($peer, true, microtime(true));
         $manager->onNodeJoined(ClusterNode::fromIdentity($peer, true, microtime(true)));
         $joinedAt = Hilos::$rt->hilosClusterNodes[self::PEER]?->lastSeen;
@@ -218,6 +262,22 @@ final class DaemonManagerClusterNodesTest extends TestCase
         );
     }
 
+    public function testANameOnlyReloadReachesTheExistingRuntimeRow(): void
+    {
+        $manager = new ClusterNodesTestManager();
+        $this->enableCluster();
+        $this->startMaster($manager);
+        Hilos::$cluster?->registerMembershipObserver($manager);
+        $beforeRename = Hilos::$rt->hilosClusterNodes[self::SELF];
+        putenv('CLUSTER_NODE_NAME=Renamed node');
+
+        Hilos::$cluster?->reload();
+
+        $this->assertCount(1, Hilos::$rt->hilosClusterNodes);
+        $this->assertSame($beforeRename, Hilos::$rt->hilosClusterNodes[self::SELF]);
+        $this->assertSame('Renamed node', Hilos::$rt->hilosClusterNodes[self::SELF]?->name);
+    }
+
     public function testAPublicationWithoutTheWriteRightIsWrittenDownRatherThanThrown(): void
     {
         $manager = new ClusterNodesTestManager();
@@ -237,6 +297,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=' . self::SELF);
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=' . NodeRole::Master->value);
         putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
         Hilos::$cluster = new ClusterContext();

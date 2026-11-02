@@ -26,11 +26,12 @@ namespace Hilos\Cluster\Peer;
  * 22 — peer_placement_view/report carry the complete term/revision-fenced placement snapshot (HIL-446).
  * 23 — peer_protected_mode_node_report carries node diagnostics independently of stopped agents (HIL-1678).
  * 24 — peer_clock_probe / peer_clock_reply measure a node's clock against the leader's (HIL-1646).
+ * 25 — hello/welcome and roster/announce entries carry the node's readable name (HIL-1509).
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 24;
+    public const int VERSION = 25;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

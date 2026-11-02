@@ -50,6 +50,9 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
     /** Payload key: the nodes the picture holds, empty in a single-node installation. */
     public const string nodes = 'nodes';
 
+    public const string nodeId = 'nodeId';
+    public const string nodeName = 'nodeName';
+
     /** Payload key: the cron expression of the rotation schedule axis, null when it is not configured. */
     public const string rotationCron = 'rotationCron';
 
@@ -73,7 +76,7 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
 
     /**
      * @param ?bool $available Whether the log stores could be read, null while no picture has arrived
-     * @param list<string> $nodes Names of the nodes in the picture; empty in a single-node installation
+     * @param list<array{nodeId: string, nodeName: ?string}> $nodes Node ids and names; empty in a single-node installation
      * @param ?string $rotationCron Cron expression of the schedule axis, null when none is configured
      * @param int $rotationMaxAgeSeconds Age axis of rotation in seconds; 0 when the axis is off
      * @param int $rotationMaxLiveSizeBytes Size axis of rotation in bytes; 0 when the axis is off
@@ -126,7 +129,10 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
     {
         return [
             self::available => WireField::notPersonal(),
-            self::nodes => WireField::notPersonal(),
+            self::nodes => WireField::each([
+                self::nodeId => WireField::notPersonal(),
+                self::nodeName => WireField::notPersonal(),
+            ]),
             self::rotationCron => WireField::setting(LogSettingsCatalog::ROTATION_CRON),
             self::rotationMaxAgeSeconds => WireField::setting(LogSettingsCatalog::ROTATION_MAX_AGE_SECONDS),
             self::rotationMaxLiveSizeBytes => WireField::setting(LogSettingsCatalog::ROTATION_MAX_LIVE_SIZE_BYTES),
@@ -147,12 +153,23 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
     public static function fromArray(array $data): static
     {
         $available = $data[self::available] ?? null;
+        $nodes = [];
+        foreach (self::requireArray($data, self::nodes) as $row) {
+            if (!is_array($row)) {
+                throw new InvalidFormatException('Logs header carries a node row that is not an object');
+            }
+
+            $nodes[] = [
+                self::nodeId => self::requireString($row, self::nodeId),
+                self::nodeName => self::optionalString($row, self::nodeName),
+            ];
+        }
 
         return new static(
             // Anything that is not a bool reads as null — "we do not know" — rather than as false:
             // false is the claim that the stores were read and none of them answered.
             available: is_bool($available) ? $available : null,
-            nodes: array_values(array_filter(self::requireArray($data, self::nodes), 'is_string')),
+            nodes: $nodes,
             rotationCron: self::optionalString($data, self::rotationCron),
             rotationMaxAgeSeconds: self::requireInt($data, self::rotationMaxAgeSeconds),
             rotationMaxLiveSizeBytes: self::requireInt($data, self::rotationMaxLiveSizeBytes),

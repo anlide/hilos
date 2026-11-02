@@ -27,6 +27,8 @@ function alarm(
 ): WatchdogAlert {
   return hilosMaintenanceWatchdogAlert(
     maintenanceStateSchema.parse({
+      initiatorNodeName: null,
+      diagnosticsNodeName: null,
       phase: 'activating',
       operation: 'restore',
       manual: false,
@@ -36,11 +38,15 @@ function alarm(
       circleNamed: 0,
       circleAdmitted: 0,
       watchdogVerdict: verdict,
-      watchdogPendingNodeIds: [
-        'node-3',
-        'node-4',
-        '<b>node-5</b>',
-        'node-with-a-very-long-name-that-must-remain-whole-in-details',
+      watchdogPendingNodes: [
+        { nodeId: 'node-3', nodeName: null },
+        { nodeId: 'node-4', nodeName: null },
+        { nodeId: '<b>node-5</b>', nodeName: null },
+        {
+          nodeId:
+            'node-with-a-very-long-name-that-must-remain-whole-in-details',
+          nodeName: null,
+        },
       ],
       diagnosticsNodeId: 'node-1',
       stoppedAgentCount: 6,
@@ -218,8 +224,9 @@ describe('HilosMaintenanceWatchdogAlert', () => {
   it('leaves unpublished diagnostics and unnamed pending nodes absent without inventing a node', async () => {
     const fixture = await mountAlert(
       alarm('quiesce-overdue', {
-        watchdogPendingNodeIds: [],
+        watchdogPendingNodes: [],
         diagnosticsNodeId: null,
+        diagnosticsNodeName: null,
         stoppedAgentCount: null,
         preservedAgentTypes: null,
         agentStartGateClosed: null,

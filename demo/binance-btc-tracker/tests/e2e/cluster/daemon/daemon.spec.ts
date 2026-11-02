@@ -33,6 +33,7 @@ import {
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_LEADER,
+  CLUSTER_NODE_NAMES,
   CLUSTER_MASTERS,
   CLUSTER_SLAVES,
   clusterInspect,
@@ -87,6 +88,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       leaderId: CLUSTER_LEADER,
       term: before.term,
       silentNodeIds: [],
+      nodeNames: CLUSTER_NODE_NAMES,
     }
     // Initial fan-out includes the existing five-second node report coalescing window.
     const reports = expect.configure({ timeout: test.info().timeout })
@@ -154,6 +156,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             overview.frames,
             {
               nodeId: remote.nodeId,
+              nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
               state: 'Data',
               role: 'slave',
             },
@@ -163,7 +166,12 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             reports,
             nodePage,
             overview.frames,
-            { nodeId: remote.nodeId, state: 'Data', role: 'slave' },
+            {
+              nodeId: remote.nodeId,
+              nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
+              state: 'Data',
+              role: 'slave',
+            },
           )
           for (const [child, path] of [
             ['workers', 'workers'],
@@ -187,10 +195,12 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
               nodePage,
               pageKey,
               remote.nodeId,
+              { nodeName: CLUSTER_NODE_NAMES[remote.nodeId] },
             )
             await expectClusterDaemonNodePage(reports, nodePage, {
               pageKey,
               nodeId: remote.nodeId,
+              nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
             })
             await expect(
               nodePage.getByTestId('hilos-daemon-node-role'),
@@ -218,7 +228,9 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
               ).toHaveText(RESTART_AGENT)
               await expect(
                 nodePage.getByTestId('hilos-daemon-restart-node'),
-              ).toHaveText(remote.nodeId)
+              ).toHaveText(
+                `${CLUSTER_NODE_NAMES[remote.nodeId]} (${remote.nodeId})`,
+              )
               await expect(
                 nodePage.getByTestId('hilos-daemon-restart-cli'),
               ).toHaveText(
@@ -326,6 +338,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
               overview.frames,
               {
                 nodeId: remote.nodeId,
+                nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
                 state: 'Data',
                 role: 'slave',
               },
@@ -346,6 +359,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             overview.frames,
             {
               nodeId: remote.nodeId,
+              nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
               state: 'Data',
               role: 'slave',
             },
@@ -433,6 +447,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         overview.frames,
         {
           nodeId: CLUSTER_LEADER,
+          nodeName: CLUSTER_NODE_NAMES[CLUSTER_LEADER],
           state: 'Leader',
           role: 'master',
         },
@@ -448,10 +463,12 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
         pages[5].page,
         'hilos_daemon_workers',
         remote.nodeId,
+        { nodeName: CLUSTER_NODE_NAMES[remote.nodeId] },
       )
       await expectClusterDaemonNodePage(reports, pages[5].page, {
         pageKey: 'hilos_daemon_workers',
         nodeId: remote.nodeId,
+        nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
       })
       await expectDaemonWorkerAgent(reports, pages[5].page, RESTART_AGENT)
       await expect(mismatch.locator('body')).not.toContainText(remote.envValue)
@@ -512,6 +529,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       survivor.overview.frames,
       {
         nodeId: CLUSTER_LEADER,
+        nodeName: CLUSTER_NODE_NAMES[CLUSTER_LEADER],
         state: 'Silent',
         role: 'master',
       },
@@ -521,10 +539,12 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       foreignWorkers.page,
       'hilos_daemon_workers',
       remote.nodeId,
+      { nodeName: CLUSTER_NODE_NAMES[remote.nodeId] },
     )
     await expectClusterDaemonNodePage(reports, foreignWorkers.page, {
       pageKey: 'hilos_daemon_workers',
       nodeId: remote.nodeId,
+      nodeName: CLUSTER_NODE_NAMES[remote.nodeId],
     })
     await expectDaemonWorkerAgent(reports, foreignWorkers.page, RESTART_AGENT)
     await expectClusterEnvironmentMismatch(reports, mismatch.page, {
@@ -622,6 +642,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       diagram.page,
       'hilos_daemon_node',
       CLUSTER_LEADER,
+      { nodeName: CLUSTER_NODE_NAMES[CLUSTER_LEADER] },
     )
     await expect(diagram.page).toHaveURL(
       `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}`,

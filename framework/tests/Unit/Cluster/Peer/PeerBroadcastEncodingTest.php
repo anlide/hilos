@@ -70,6 +70,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         Hilos::$cluster = new ClusterContext();
@@ -84,7 +85,7 @@ final class PeerBroadcastEncodingTest extends TestCase
 
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
-        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             putenv($key);
         }
 
@@ -155,7 +156,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $first = $this->linkTo($server, 'node-b', NodeRole::Master);
         $second = $this->linkTo($server, 'node-c', NodeRole::Master);
         $this->clearQueued($first, $second);
-        $entry = new PeerNodeEntry('node-d', NodeRole::Slave, ['storage'], null);
+        $entry = new PeerNodeEntry('node-d', 'Node node-d', NodeRole::Slave, ['storage'], null);
 
         $server->broadcastToNodes(new PeerAnnounceDTO($entry));
 
@@ -238,7 +239,14 @@ final class PeerBroadcastEncodingTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        return new PeerServer(
+            '127.0.0.1',
+            0,
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
+            [],
+            PeerTestTls::unread(),
+            PeerTestMarkers::shared(),
+        );
     }
 
     /**
@@ -270,12 +278,20 @@ final class PeerBroadcastEncodingTest extends TestCase
         $link = new PeerLink(
             $near,
             $server,
-            NodeIdentity::of('node-a', NodeRole::Master, []),
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
             dialer: false,
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
         $this->attach($server, $link);
-        socket_write($far, (new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, $role, [], PeerTestMarkers::onWire(), null))->toJson() . "\n");
+        socket_write($far, (new PeerHelloDTO(
+            PeerProtocol::VERSION,
+            $nodeId,
+            'Node ' . $nodeId,
+            $role,
+            [],
+            PeerTestMarkers::onWire(),
+            null,
+        ))->toJson() . "\n");
         $link->read();
         socket_write($far, (new PeerReadyDTO(false))->toJson() . "\n");
         $link->read();

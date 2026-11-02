@@ -40,6 +40,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
 
     public const string batchAt = 'batchAt';
     public const string node = 'node';
+    public const string nodeName = 'nodeName';
     public const string path = 'path';
 
     /**
@@ -72,6 +73,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
      * @param string $rowKey Stable row key, `<node>:<timestamp>`
      * @param int $batchAt UTC epoch milliseconds of the rotation batch
      * @param string $node Node holding the batch
+     * @param ?string $nodeName Current registry name, null when the node is unknown
      * @param string $path Archive directory of the batch, relative to the node's log root
      * @param ?string $absolutePath Archive directory of the batch on its own node, null when that
      *     node named no log root
@@ -88,6 +90,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
         public string $rowKey,
         public int $batchAt,
         public string $node,
+        public ?string $nodeName,
         public string $path,
         public ?string $absolutePath,
         public int $daemonFileCount,
@@ -131,6 +134,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             self::rowKey => $this->rowKey,
             self::batchAt => $this->batchAt,
             self::node => $this->node,
+            self::nodeName => $this->nodeName,
             self::path => $this->path,
             self::absolutePath => $this->absolutePath,
             self::daemonFileCount => $this->daemonFileCount,
@@ -156,6 +160,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             rowKey: self::requireString($data, self::rowKey),
             batchAt: self::requireInt($data, self::batchAt),
             node: self::requireString($data, self::node),
+            nodeName: self::optionalString($data, self::nodeName),
             path: self::requireString($data, self::path),
             absolutePath: self::optionalString($data, self::absolutePath),
             daemonFileCount: self::requireInt($data, self::daemonFileCount),

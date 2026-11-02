@@ -93,9 +93,9 @@ final class ProtectedModeAlertMailTest extends TestCase
             null,
         );
 
-        self::assertSame('Node hilos-node-1 is stuck in maintenance', $content->subject);
+        self::assertSame('Node Worker (hilos-node-1) is stuck in maintenance', $content->subject);
         self::assertStringContainsString(
-            'The node hilos-node-1 has been frozen for maintenance since 16 Aug 2026 03:12:44 UTC (32 minutes)'
+            'The node Worker (hilos-node-1) has been frozen for maintenance since 16 Aug 2026 03:12:44 UTC (32 minutes)'
             . ' and it will not come back on its own.',
             $content->text,
         );
@@ -130,7 +130,7 @@ final class ProtectedModeAlertMailTest extends TestCase
             null,
         );
 
-        self::assertSame('Node hilos-node-1 is still stuck in maintenance (1h 02m)', $reminder->subject);
+        self::assertSame('Node Worker (hilos-node-1) is still stuck in maintenance (1h 02m)', $reminder->subject);
         self::assertNotSame($first->subject, $reminder->subject);
         self::assertSame(
             str_replace('32 minutes', '1h 02m', $first->text),
@@ -144,6 +144,7 @@ final class ProtectedModeAlertMailTest extends TestCase
             MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
             [
                 ProtectedModeClearedMailTemplate::PARAM_NODE_ID => self::NODE,
+                ProtectedModeClearedMailTemplate::PARAM_NODE_NAME => 'Worker',
                 ProtectedModeClearedMailTemplate::PARAM_OPERATION => 'backup:restore',
                 ProtectedModeClearedMailTemplate::PARAM_LIFTED_AT => '16 Aug 2026 04:20:10 UTC',
                 ProtectedModeClearedMailTemplate::PARAM_HELD_FOR => '1h 07m',
@@ -152,14 +153,29 @@ final class ProtectedModeAlertMailTest extends TestCase
             null,
         );
 
-        self::assertSame('Node hilos-node-1 is out of maintenance', $content->subject);
+        self::assertSame('Node Worker (hilos-node-1) is out of maintenance', $content->subject);
         self::assertStringContainsString(
-            'The freeze on hilos-node-1 was lifted at 16 Aug 2026 04:20:10 UTC. It had held for 1h 07m,'
+            'The freeze on Worker (hilos-node-1) was lifted at 16 Aug 2026 04:20:10 UTC. It had held for 1h 07m,'
             . ' 55 minutes of them with nothing running behind it.',
             $content->text,
         );
         self::assertStringContainsString('Lifted by: protected-mode:open', $content->text);
         self::assertStringContainsString('No further alerts will be sent for this freeze.', $content->text);
+    }
+
+    public function testBothTemplatesFallBackToTheIdWhenTheNameIsUnknown(): void
+    {
+        $stuck = self::stuckParams(still: false);
+        $stuck[ProtectedModeStuckMailTemplate::PARAM_NODE_NAME] = null;
+        $content = new ProtectedModeStuckMailTemplate()->render($stuck, null);
+        self::assertSame('Node hilos-node-1 is stuck in maintenance', $content->subject);
+        self::assertStringContainsString('The node hilos-node-1 has been frozen', $content->text);
+        $cleared = new ProtectedModeClearedMailTemplate()->render([
+            ProtectedModeClearedMailTemplate::PARAM_NODE_ID => self::NODE,
+            ProtectedModeClearedMailTemplate::PARAM_NODE_NAME => null,
+        ], null);
+        self::assertSame('Node hilos-node-1 is out of maintenance', $cleared->subject);
+        self::assertStringContainsString('The freeze on hilos-node-1 was lifted', $cleared->text);
     }
 
     public function testEveryConfiguredAddressGetsItsOwnMessage(): void
@@ -293,6 +309,7 @@ final class ProtectedModeAlertMailTest extends TestCase
     {
         return [
             ProtectedModeStuckMailTemplate::PARAM_NODE_ID => self::NODE,
+            ProtectedModeStuckMailTemplate::PARAM_NODE_NAME => 'Worker',
             ProtectedModeStuckMailTemplate::PARAM_OPERATION => 'backup:restore',
             ProtectedModeStuckMailTemplate::PARAM_PHASE => 'active',
             ProtectedModeStuckMailTemplate::PARAM_INITIATOR => 'hilos_backup agent on hilos-node-1',

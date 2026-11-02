@@ -569,6 +569,7 @@ describe('cold Node answer and its delivered live overview', () => {
     pageTabs: DAEMON_NODE_TABS.map(({ key, label }) => ({ page: key, label })),
     node: {
       clustered: false,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,

@@ -316,6 +316,7 @@ describe('daemon cron empty state', () => {
   it('keeps a reported empty schedule distinct from an absent report', () => {
     const silent = {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 42000,
@@ -329,6 +330,7 @@ describe('daemon cron empty state', () => {
   it('explains an absent cron report on a silent node', () => {
     const silent = {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 42000,
@@ -341,6 +343,7 @@ describe('daemon cron empty state', () => {
   it('waits for an absent cron report on any other node', () => {
     const standby = {
       clustered: true,
+      name: null,
       role: null,
       state: 'standby',
       silentSince: null,
@@ -355,6 +358,7 @@ describe('daemon cron empty state', () => {
 describe('daemon cron idle notice', () => {
   const standby = {
     clustered: true,
+    name: null,
     role: null,
     state: 'standby',
     silentSince: null,
@@ -380,6 +384,7 @@ describe('daemon cron idle notice', () => {
     expect(
       daemonCronIdleNotice([row()], {
         clustered: false,
+        name: null,
         role: null,
         state: null,
         silentSince: null,
@@ -412,6 +417,7 @@ describe('daemon cron idle notice', () => {
   it('holds no room on a standalone node or without daemon rules', () => {
     const standalone = {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

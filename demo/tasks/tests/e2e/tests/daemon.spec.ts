@@ -69,6 +69,7 @@ import {
   readRestartWorker,
   withStoppedRestartWorker,
   typeInto,
+  DAEMON_STANDALONE_NODE_NAME,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // The live standalone Daemon section: navigation, placement, node reports,
@@ -1130,7 +1131,7 @@ test.describe('restarting an agent', () => {
       }
       await expect(
         page.getByTestId('hilos-toast-success').filter({
-          hasText: `Agent ${RESTART_AGENT} restarted on node standalone.`,
+          hasText: `Agent ${RESTART_AGENT} restarted on node ${DAEMON_STANDALONE_NODE_NAME} (standalone).`,
         }),
       ).toBeVisible()
     } finally {

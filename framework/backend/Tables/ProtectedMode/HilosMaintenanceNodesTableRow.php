@@ -11,6 +11,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 final class HilosMaintenanceNodesTableRow extends AbstractTableRow
 {
     public const string nodeId = 'nodeId';
+    public const string nodeName = 'nodeName';
     public const string phase = 'phase';
     public const string quiesced = 'quiesced';
     public const string isLeader = 'isLeader';
@@ -24,6 +25,7 @@ final class HilosMaintenanceNodesTableRow extends AbstractTableRow
      * @param bool $isLeader Whether this node is the current leader
      * @param bool $isInitiator Whether this node hosts the current initiator
      * @param string $reportState Current, missing or silent report
+     * @param ?string $nodeName Current or last known registry name, null for an unknown node
      */
     public function __construct(
         public string $nodeId,
@@ -32,6 +34,7 @@ final class HilosMaintenanceNodesTableRow extends AbstractTableRow
         public bool $isLeader,
         public bool $isInitiator,
         public string $reportState,
+        public ?string $nodeName = null,
     ) {
     }
 
@@ -47,11 +50,12 @@ final class HilosMaintenanceNodesTableRow extends AbstractTableRow
         return self::nodeId;
     }
 
-    /** @return array<string, string|bool|null> The six public report fields */
+    /** @return array<string, string|bool|null> Public report fields */
     public function toArray(): array
     {
         return [
             self::nodeId => $this->nodeId,
+            self::nodeName => $this->nodeName,
             self::phase => $this->phase,
             self::quiesced => $this->quiesced,
             self::isLeader => $this->isLeader,
@@ -74,6 +78,7 @@ final class HilosMaintenanceNodesTableRow extends AbstractTableRow
             isLeader: self::requireBool($data, self::isLeader),
             isInitiator: self::requireBool($data, self::isInitiator),
             reportState: self::requireString($data, self::reportState),
+            nodeName: self::optionalString($data, self::nodeName),
         );
     }
 }

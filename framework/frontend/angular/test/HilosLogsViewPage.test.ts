@@ -71,6 +71,7 @@ const CATALOG: HilosLogViewerCatalog = {
   nodes: [
     {
       nodeId: 'standalone',
+      nodeName: null,
       available: true,
       batches: [],
       streams: [
@@ -235,6 +236,7 @@ const CLUSTER_CATALOG: HilosLogViewerCatalog = {
   clusterEnabled: true,
   nodes: ['alpha', 'beta'].map((nodeId) => ({
     nodeId,
+    nodeName: null,
     available: true,
     batches: [BATCH, BATCH + 60000],
     streams: ['daemon.log', 'worker-0.log'].map((key) => ({

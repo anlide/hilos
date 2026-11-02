@@ -20,6 +20,7 @@ import { hilosTableRowMessageCells } from '../../../src/table/tableRowMessage.js
 function node(overrides: Partial<HilosLogNodeRow> = {}): HilosLogNodeRow {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: 1800000000000,
     liveBytes: 1024,
@@ -125,12 +126,13 @@ function setup() {
 }
 
 describe('resolveHilosLogNodeRow', () => {
-  it('reads all seven fields from the inline node slot without an entity id', () => {
-    const row = nodeRow({ nodeId: 'node-2' })
+  it('reads the node identity and measurements from the inline node slot without an entity id', () => {
+    const row = nodeRow({ nodeId: 'node-2', nodeName: 'North' })
 
     expect(row.slots.node).not.toHaveProperty('id')
     expect(resolveHilosLogNodeRow(row)).toEqual({
       nodeId: 'node-2',
+      nodeName: 'North',
       available: true,
       lastRotationAt: 1800000000000,
       liveBytes: 1024,
@@ -167,6 +169,7 @@ describe('resolveHilosLogNodeRow', () => {
         resolveHilosLogNodeRow({ rowKey: 'node-1', slots: { node: slot } }),
       ).toEqual({
         nodeId: '',
+        nodeName: null,
         available: false,
         lastRotationAt: null,
         liveBytes: null,
@@ -249,6 +252,7 @@ describe('createHilosLogNodesTable', () => {
       'hilosLogNodes',
       [
         'nodeId',
+        'nodeName',
         'lastRotationAt',
         'available',
         'liveBytes',

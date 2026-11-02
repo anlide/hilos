@@ -31,6 +31,7 @@ function node(
 ): HilosDaemonOverviewNode {
   return {
     nodeId,
+    nodeName: null,
     online: true,
     role: 'master',
     state: 'standby',
@@ -71,6 +72,7 @@ function picture(
     consensus: clustered
       ? {
           nodeId: 'n1',
+          nodeName: null,
           term: 7,
           leaderId: 'n1',
           onlineMasters: 1,
@@ -657,10 +659,12 @@ describe('HilosDaemonPage', () => {
   it('uses each node’s real encoded Overview link and normal router navigation', async () => {
     const h = harness()
     const nodeId = 'node /?#%2F🌍'
+    const nodeName = 'Узел <🌍>'
     h.update(
       picture([
-        node('n1', { state: 'leader' }),
+        node('n1', { state: 'leader', nodeName }),
         node(nodeId, {
+          nodeName,
           clock: {
             reference: false,
             offsetMs: 812,
@@ -679,9 +683,16 @@ describe('HilosDaemonPage', () => {
       expect(boxes[index]!.attributes('href')).toBe(
         h.router.resolvePath(HilosPages.DAEMON_NODE, { nodeId: id }),
       )
-      expect(boxes[index]!.attributes('aria-label')).toBe(`Node ${id}`)
+      expect(boxes[index]!.attributes('aria-label')).toBe(
+        `Node ${nodeName} (${id})`,
+      )
+      expect(boxes[index]!.text()).toContain(nodeName)
+      expect(boxes[index]!.text()).toContain(id)
       expect(boxes[index]!.attributes('aria-pressed')).toBeUndefined()
     }
+    expect(h.view.get(`[data-id="hilos-daemon-link-${nodeId}"]`).text()).toBe(
+      'Узел <🌍> (n1) ↔ Узел <🌍> (node /?#%2F🌍) · Membership link',
+    )
     const descriptionId = boxes[1]!.attributes('aria-describedby')!
     expect(descriptionId).not.toMatch(/\s/)
     expect(document.getElementById(descriptionId)?.textContent?.trim()).toBe(
@@ -697,6 +708,52 @@ describe('HilosDaemonPage', () => {
       h.router.resolvePath(HilosPages.DAEMON_NODE, { nodeId }),
     )
     expect(h.send).toHaveBeenCalledTimes(1)
+    expect(h.sendAction).not.toHaveBeenCalled()
+    h.view.unmount()
+  })
+
+  it('renames node boxes and the consensus report while preserving id-based links and clocks', async () => {
+    const h = harness()
+    const clock = {
+      reference: true,
+      offsetMs: null,
+      measuredAt: null,
+      thresholdMs: 300,
+      beyond: false,
+    }
+    const source = picture([node('n1', { nodeName: 'First node', clock })])
+    h.update({
+      ...source,
+      consensus: { ...source.consensus!, nodeName: 'First node' },
+    })
+    await nextTick()
+    const box = h.view.get('[data-id="hilos-daemon-node-n1"]')
+    const clockLine = h.view.get('[data-id="hilos-daemon-clock-n1"]')
+    expect(box.attributes('aria-label')).toBe('Node First node (n1)')
+    expect(h.view.get('[data-id="hilos-daemon-consensus"]').text()).toContain(
+      'Report: First node (n1) · Majority: 3',
+    )
+    for (const nodeName of ['Renamed node', null]) {
+      h.update({
+        ...source,
+        nodes: [node('n1', { nodeName, clock })],
+        consensus: { ...source.consensus!, nodeName },
+      })
+      await nextTick()
+      const label = nodeName === null ? 'n1' : 'Renamed node (n1)'
+      expect(box.attributes('aria-label')).toBe(`Node ${label}`)
+      expect(h.view.get('[data-id="hilos-daemon-consensus"]').text()).toContain(
+        `Report: ${label} · Majority: 3`,
+      )
+      expect(box.attributes('href')).toBe('/hilos/daemon/n1')
+      expect(h.view.get('[data-id="hilos-daemon-node-n1"]').element).toBe(
+        box.element,
+      )
+      expect(h.view.get('[data-id="hilos-daemon-clock-n1"]').element).toBe(
+        clockLine.element,
+      )
+    }
+    expect(h.send).not.toHaveBeenCalled()
     expect(h.sendAction).not.toHaveBeenCalled()
     h.view.unmount()
   })

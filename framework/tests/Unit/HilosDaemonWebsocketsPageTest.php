@@ -194,6 +194,7 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ], $response->payload->data['node']);
         self::assertSame(['connections' => 0, 'dataNode' => false], $response->payload->data['websockets']);
         self::assertSame(HilosPageConstants::HILOS_DAEMON_NODE, $response->payload->data['pageHeadOwner']['page']);
@@ -280,6 +281,7 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ], $silent['node']);
         self::assertSame(['connections' => 13, 'dataNode' => false], $silent['websockets']);
         $this->deliver([$this->node($this->report('a', 13, NodeRole::Slave), false, 777)]);
@@ -317,6 +319,7 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
             self::assertSame([
                 'clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master',
                 'clock' => null,
+                'name' => null,
             ],
                 $signal->data->data->payload->data['node']);
             self::assertStringNotContainsString('_hidden', json_encode($signal->data->data->toArray(), JSON_THROW_ON_ERROR));
@@ -550,7 +553,7 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
     /** @param string $nodeId Node to admit through the real runtime roster guard */
     private function known(string $nodeId): void
     {
-        Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, NodeRole::Master->value, [], null, true, 100.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, 'Node ' . $nodeId, NodeRole::Master->value, [], null, true, 100.0);
     }
 
     /**

@@ -240,7 +240,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $nodes = $this->projection($picture)['nodes'];
         self::assertSame(['a', 's', 'z'], array_column($nodes, 'nodeId'));
         self::assertSame([
-            'nodeId' => 'a', 'online' => true, 'role' => 'master', 'state' => null, 'silentSince' => null,
+            'nodeId' => 'a', 'nodeName' => null, 'online' => true, 'role' => 'master', 'state' => null, 'silentSince' => null,
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
@@ -254,6 +254,44 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertNull($nodes[2]['silentSince']);
         self::assertNull($nodes[2]['role']);
         self::assertNull($nodes[2]['workers']);
+    }
+
+    public function testNodeAndConsensusNamesComeFromTheSamePictureViews(): void
+    {
+        $leader = $this->master('a', ConsensusRole::Leader, 5, 'a', 0);
+        $picture = ClusterDaemonPicture::empty()
+            ->withNode(new ClusterDaemonNodeView('a', true, $leader->slot, 'Control'))
+            ->withNode(new ClusterDaemonNodeView('b', true, null, 'Waiting for report'))
+            ->withNode(new ClusterDaemonNodeView('old', false, null));
+        $data = $this->projection($picture);
+        self::assertSame(['Control', 'Waiting for report', null], array_column($data['nodes'], 'nodeName'));
+        self::assertSame('Control', $data['consensus']['nodeName']);
+        self::assertSame('a', $data['consensus']['nodeId']);
+        self::assertSame('a', $data['consensus']['leaderId']);
+
+        $candidate = $this->master('a', ConsensusRole::Candidate, 6, null, 0);
+        $picture = $picture->withNode(new ClusterDaemonNodeView('a', true, $candidate->slot, 'Candidate'));
+        self::assertSame('Candidate', $this->projection($picture)['consensus']['nodeName']);
+        self::assertNull($this->projection($picture)['consensus']['leaderId']);
+    }
+
+    public function testNameOnlyPortionPublishesRootDataAndAnIdenticalPortionStaysQuiet(): void
+    {
+        $node = $this->node(new NodeDaemonPicture('n1', NodeRole::Master, 100));
+        $this->deliver([new ClusterDaemonNodeView('n1', true, $node->slot, 'Control')]);
+        $this->subscribe('root');
+        $initial = $this->onlyResponse();
+        self::assertSame('Control', $initial->payload->data['daemon']['nodes'][0]['nodeName']);
+
+        $renamed = new ClusterDaemonNodeView('n1', true, $node->slot, 'Main control');
+        $this->deliver([$renamed], false);
+        $changed = $this->onlyResponse();
+        self::assertSame(['daemon'], array_keys($changed->payload->data));
+        self::assertSame('Main control', $changed->payload->data['daemon']['nodes'][0]['nodeName']);
+        self::assertSame([], $changed->payload->windows);
+        self::assertSame($initial->payload->data['daemon']['placement'], $changed->payload->data['daemon']['placement']);
+        $this->deliver([$renamed], false);
+        self::assertSame([], $this->drain());
     }
 
     public function testNodeClocksComeFromTheCurrentLeaderIncludingSilentAndUnreportedNodes(): void
@@ -442,7 +480,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame(['connections' => 4], $projection['nodes'][1]['standing']);
         self::assertSame(['connections' => 0], $projection['nodes'][2]['standing']);
         self::assertSame([
-            'nodeId' => 'a', 'term' => 5, 'leaderId' => 'a', 'onlineMasters' => 1, 'masters' => 3, 'quorumSize' => 2,
+            'nodeId' => 'a', 'nodeName' => null, 'term' => 5, 'leaderId' => 'a', 'onlineMasters' => 1, 'masters' => 3, 'quorumSize' => 2,
         ], $projection['consensus']);
         self::assertNull($this->projection($picture, false)['consensus']);
 

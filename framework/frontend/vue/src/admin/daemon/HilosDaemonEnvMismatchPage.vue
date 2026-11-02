@@ -9,6 +9,7 @@ import {
   daemonEnvMismatchNodes,
   DAEMON_ENV_SENSITIVE_HINT,
   DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
+  formatHilosNodeLabel,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
 } from '@hilos/core/admin/daemon'
@@ -88,9 +89,9 @@ function nodeSlot(nodeId: string): string {
         </div>
         <p class="small mb-0">
           There is one node,
-          <code data-id="hilos-daemon-env-mismatch-standalone-node">{{
-            summary.servingNodeId
-          }}</code
+          <span data-id="hilos-daemon-env-mismatch-standalone-node">{{
+            formatHilosNodeLabel(summary.servingNodeId, summary.servingNodeName)
+          }}</span
           >, and nothing to compare it with.
         </p>
       </div>

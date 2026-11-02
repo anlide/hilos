@@ -129,6 +129,7 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
+      - CLUSTER_NODE_NAME=Main node
       - DB_HOST=${DB_HOST:-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}

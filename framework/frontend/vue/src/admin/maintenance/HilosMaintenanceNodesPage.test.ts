@@ -83,6 +83,7 @@ function node(
 ): HilosMaintenanceNodeRow {
   return {
     nodeId,
+    nodeName: null,
     phase: 'inactive',
     quiesced: null,
     isLeader: false,
@@ -128,8 +129,15 @@ function seededContext(initial: HilosMaintenanceNodeRow[] = []) {
           rows: rows.map(wireRow),
           totalCount: rows.length,
           totalExact: true,
-          firstAnchor: null,
-          lastAnchor: null,
+          firstAnchor: rows.length
+            ? { nodeName: rows[0].nodeName, nodeId: rows[0].nodeId }
+            : null,
+          lastAnchor: rows.length
+            ? {
+                nodeName: rows[rows.length - 1].nodeName,
+                nodeId: rows[rows.length - 1].nodeId,
+              }
+            : null,
           rowsBefore: 0,
           limit: 25,
           sort: [{ field: 'nodeId', direction: 'asc' }],
@@ -272,22 +280,39 @@ describe('HilosMaintenanceNodesPage', () => {
 
   it('shows inactive reports with unknown acknowledgement and the reported leader', async () => {
     const { context } = seededContext([
-      node('node-1', { isLeader: true }),
+      node('node-1', { isLeader: true, nodeName: 'maintenance-west' }),
       node('node-2'),
     ])
     const wrapper = await mountPage(context)
-    expect(cells(wrapper, 'node-1')).toEqual([
-      'node-1',
+    expect(cells(wrapper, 'node-1').slice(1)).toEqual([
       '—',
       'inactive',
       'Leader',
     ])
+    expect(cells(wrapper, 'node-1')[0]).toContain('maintenance-west')
+    expect(cells(wrapper, 'node-1')[0]).toContain('node-1')
     expect(cells(wrapper, 'node-2')).toEqual(['node-2', '—', 'inactive', '—'])
     expect(
       wrapper
         .get('table [data-id="hilos-maintenance-nodes-row-node-1"]')
         .text(),
-    ).toBe('node-1')
+    ).toContain('node-1')
+  })
+
+  it('keeps a registered name visible for a silent node report', async () => {
+    const { context } = seededContext([
+      node('node-3', {
+        nodeName: 'quiet-west',
+        phase: null,
+        reportState: 'silent',
+      }),
+    ])
+    const wrapper = await mountPage(context)
+    const nodeCell = cells(wrapper, 'node-3')[0]
+
+    expect(nodeCell).toContain('quiet-west')
+    expect(nodeCell).toContain('node-3')
+    expectReadOnly(wrapper)
   })
 
   it('shows verifying and activating reports with Yes/No and both independent roles', async () => {

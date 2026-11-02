@@ -55,6 +55,7 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string restoreMigrationBehind = 'restoreMigrationBehind';
     public const string restoreMigrationNotice = 'restoreMigrationNotice';
     public const string holderNode = 'holderNode';
+    public const string holderNodeName = 'holderNodeName';
 
     /**
      * @param string $rowKey Stable table row key: the stored backup's id
@@ -90,6 +91,7 @@ final class HilosBackupTableRow extends AbstractTableRow
      *     nothing to say
      * @param ?string $holderNode Node holding this archive, named only when it cannot be reached from
      *     here; null otherwise
+     * @param ?string $holderNodeName Current or last known holder name, null when no holder is shown or known
      */
     public function __construct(
         public string $rowKey,
@@ -124,6 +126,7 @@ final class HilosBackupTableRow extends AbstractTableRow
         // One key and not two: out of reach IS a named holder, and a separate flag beside it would
         // let a row claim one thing and carry the other.
         public ?string $holderNode = null,
+        public ?string $holderNodeName = null,
     ) {
     }
 
@@ -179,6 +182,7 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::restoreMigrationBehind => $this->restoreMigrationBehind,
             self::restoreMigrationNotice => $this->restoreMigrationNotice,
             self::holderNode => $this->holderNode,
+            self::holderNodeName => $this->holderNodeName,
         ];
     }
 
@@ -227,6 +231,7 @@ final class HilosBackupTableRow extends AbstractTableRow
             restoreMigrationBehind: self::optionalInt($data, self::restoreMigrationBehind),
             restoreMigrationNotice: self::optionalString($data, self::restoreMigrationNotice),
             holderNode: self::optionalString($data, self::holderNode),
+            holderNodeName: self::optionalString($data, self::holderNodeName),
         );
     }
 

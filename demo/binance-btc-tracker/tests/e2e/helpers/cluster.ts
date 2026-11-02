@@ -43,6 +43,7 @@ export const CLUSTER_LEADER = stand.leader
 export const CLUSTER_FOLLOWER = stand.follower
 export const CLUSTER_MASTERS = [...stand.masters]
 export const CLUSTER_SLAVES = required('CLUSTER_SLAVES').split(',')
+export const CLUSTER_NODE_NAMES = stand.nodeNames
 export const BASE_URL = stand.baseURL
 const nodeHosts = stand.nodeHosts
 const faultFile = required('CLUSTER_FAULT_FILE')

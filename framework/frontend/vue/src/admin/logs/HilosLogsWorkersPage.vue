@@ -20,6 +20,7 @@ import { computed, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosNodeName from '../HilosNodeName.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useSignal } from '../../useSignal.js'
 
@@ -100,7 +101,9 @@ function clearFilters(): void {
       <template #cell-key="{ row }"
         ><code class="fw-semibold small">{{ row.key }}</code></template
       >
-      <template #cell-node="{ row }">{{ row.node }}</template>
+      <template #cell-node="{ row }">
+        <HilosNodeName :node-id="row.node" :node-name="row.nodeName" />
+      </template>
       <template #cell-type="{ row }">
         <span class="badge" :class="typeClass(row)">
           {{ formatLogWorkerType(row) }}

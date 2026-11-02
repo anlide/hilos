@@ -125,6 +125,9 @@ final class CommandConstants
     /** @var string Request and reply payload key: node hosting an agent */
     public const string FIELD_NODE_ID = 'nodeId';
 
+    /** @var string Reply payload key: nullable registry name of the node hosting a restarted agent */
+    public const string FIELD_NODE_NAME = 'nodeName';
+
     /** @var string Reply payload key: moment a node agent published its picture, in epoch milliseconds */
     public const string FIELD_REPORTED_AT = 'reportedAt';
 

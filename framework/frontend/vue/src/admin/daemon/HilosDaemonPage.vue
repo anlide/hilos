@@ -17,6 +17,7 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
+  formatHilosNodeLabel,
   type HilosDaemonContext,
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
@@ -28,6 +29,7 @@ import HilosSkeleton from '../../HilosSkeleton.vue'
 import HilosLink from '../../HilosLink.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
+import HilosNodeName from '../HilosNodeName.vue'
 
 const props = defineProps<{ context: HilosDaemonContext }>()
 const daemon = createHilosDaemonOverview(props.context)
@@ -172,7 +174,14 @@ const metricsPath = computed(() => {
             >Term: {{ formatDaemonNumber(overview.consensus?.term) }}</span
           >
           <span v-if="overview.consensus" class="text-body-secondary text-break"
-            >Report: {{ overview.consensus.nodeId }} · Majority:
+            >Report:
+            {{
+              formatHilosNodeLabel(
+                overview.consensus.nodeId,
+                overview.consensus.nodeName,
+              )
+            }}
+            · Majority:
             {{ overview.consensus.quorumSize }}</span
           >
         </div>
@@ -208,8 +217,13 @@ const metricsPath = computed(() => {
                 aria-hidden="true"
               ></i>
               <span class="visually-hidden"
-                >{{ overview.nodes[nodeIndex - 1]?.nodeId }} ↔
-                {{ node.nodeId }} ·
+                >{{
+                  formatHilosNodeLabel(
+                    overview.nodes[nodeIndex - 1]!.nodeId,
+                    overview.nodes[nodeIndex - 1]!.nodeName,
+                  )
+                }}
+                ↔ {{ formatHilosNodeLabel(node.nodeId, node.nodeName) }} ·
                 {{
                   !node.online || !overview.nodes[nodeIndex - 1]?.online
                     ? 'Silent member'
@@ -225,7 +239,7 @@ const metricsPath = computed(() => {
               "
               class="btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none"
               :class="{ 'border-danger-subtle': !node.online }"
-              :aria-label="`Node ${node.nodeId}`"
+              :aria-label="`Node ${formatHilosNodeLabel(node.nodeId, node.nodeName)}`"
               :aria-describedby="
                 node.online && formatDaemonNodeClockWarning(node.clock) !== null
                   ? `hilos-daemon-clock-warning-${encodeURIComponent(node.nodeId)}`
@@ -237,9 +251,11 @@ const metricsPath = computed(() => {
             >
               <span class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <i class="bi bi-hdd-network" aria-hidden="true"></i>
-                <span class="fw-semibold font-monospace text-break">{{
-                  node.nodeId
-                }}</span>
+                <HilosNodeName
+                  :node-id="node.nodeId"
+                  :node-name="node.nodeName"
+                  class="fw-semibold flex-column"
+                />
                 <span
                   v-if="overview.clustered"
                   class="badge border"

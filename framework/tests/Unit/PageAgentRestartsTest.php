@@ -62,7 +62,7 @@ final class PageAgentRestartsTest extends TestCase
         $this->previousRt = Hilos::$rt;
         $this->previousApp = Hilos::appClass();
         Hilos::$rt = null;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             $this->previousClusterEnv[$key] = getenv($key);
         }
         Hilos::$cluster = null;
@@ -115,6 +115,7 @@ final class PageAgentRestartsTest extends TestCase
         $reply = CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_AGENT_ID => 'room:12',
             CommandConstants::FIELD_NODE_ID => 'node-b',
+            CommandConstants::FIELD_NODE_NAME => 'Worker',
         ]);
         $this->assertTrue($this->bridge->hasWaiter($reply->correlationId));
         $this->assertTrue($this->bridge->hasWaiter($reply->correlationId));
@@ -125,7 +126,7 @@ final class PageAgentRestartsTest extends TestCase
         $this->assertSame('accept-1', $answer->acceptKey);
         $this->assertSame('submit-1', $answer->requestId);
         $this->assertSame(HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART, $answer->action);
-        $this->assertSame('Agent room:12 restarted on node node-b.', $answer->successMessage);
+        $this->assertSame('Agent room:12 restarted on node Worker (node-b).', $answer->successMessage);
         $this->assertNull($answer->error);
         $this->assertNull($answer->errorType);
         $this->assertNull($answer->errorDetail);
@@ -139,6 +140,7 @@ final class PageAgentRestartsTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-origin');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
@@ -263,6 +265,9 @@ final class PageAgentRestartsTest extends TestCase
             $this->assertSame([], $this->answers);
             $this->assertSame([], $this->abandoned);
         }
+        $this->bridge->acceptReply(CommandReplyDTO::ok($id, ['agentId' => 'room:12', 'nodeId' => 'node-b', 'nodeName' => 7]));
+        $this->assertTrue($this->bridge->hasWaiter($id));
+        $this->assertSame([], $this->answers);
         $this->bridge->tick(129.999);
         $this->assertTrue($this->bridge->hasWaiter($id));
         $this->assertSame([], $this->answers);

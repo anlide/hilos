@@ -164,6 +164,7 @@ afterEach(() => {
 })
 const LIVE: HilosDaemonNodeHeading = {
   clustered: true,
+  name: null,
   role: null,
   state: 'leader',
   silentSince: null,
@@ -171,6 +172,7 @@ const LIVE: HilosDaemonNodeHeading = {
 }
 const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
+  name: null,
   role: null,
   state: 'silent',
   silentSince: 1_700_000_000_000,
@@ -302,6 +304,7 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.find('hilos-table-row-room:12')).toBe(row)
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -331,6 +334,7 @@ describe('HilosDaemonAgentsPage', () => {
       const h = ready(placement)
       h.heading({
         clustered,
+        name: null,
         role: null,
         state: clustered ? 'leader' : null,
         silentSince: null,
@@ -700,6 +704,7 @@ describe('HilosDaemonAgentsPage', () => {
     const h = harness(false)
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,

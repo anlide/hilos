@@ -294,6 +294,7 @@ function batch(
     rowKey: 'standalone:1800000000',
     batchAt: 1800000000000,
     node: 'standalone',
+    nodeName: null,
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
@@ -474,7 +475,14 @@ describe('HilosLogsRotationsPage', () => {
     const { connection, pushHeader } = makeConnection()
     const container = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
 
     const select = byId(container, 'hilos-table-filter-node')
     expect(select).not.toBeNull()
@@ -550,7 +558,7 @@ describe('HilosLogsRotationsPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([batch({ rowKey: 'node-1:1800000000', node: 'node-1' })])
 
     expect(
@@ -642,7 +650,14 @@ describe('HilosLogsRotationsPage', () => {
     const nodeOnePath = '/hilos/logs/view/node-1/1800000000000'
     const nodeTwoPath = '/hilos/logs/view/node-2/1800000000000'
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
     pushWindow([
       batch({ rowKey: 'node-1:1800000000', node: 'node-1' }),
       batch({ rowKey: 'node-2:1800000000', node: 'node-2' }),
@@ -702,11 +717,12 @@ describe('HilosLogsRotationsPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       batch({
         rowKey: 'node-1:1800000000',
         node: 'node-1',
+        nodeName: null,
         retentionState: 'due',
       }),
     ])
@@ -758,11 +774,12 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const container = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       batch({
         rowKey: 'node-1:1800000000',
         node: 'node-1',
+        nodeName: null,
         retentionState: 'due',
       }),
     ])
@@ -848,6 +865,7 @@ describe('HilosLogsRotationsPage', () => {
     const moving = batch({
       rowKey: 'node-1:1800000000',
       node: 'node-1',
+      nodeName: null,
       path: 'staging/2027-01-15-08-00-00Z/',
       retentionState: 'carrying',
     })
@@ -940,12 +958,13 @@ describe('HilosLogsRotationsPage', () => {
     const container = mountPage(connection)
 
     try {
-      pushHeader(header({ nodes: ['node-1'] }))
+      pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
       pushWindow([
         batch({
           rowKey: 'node-1:0',
           batchAt: 0,
           node: 'node-1',
+          nodeName: null,
           retentionState: 'taken',
           pruneNotBefore,
         }),
@@ -1043,11 +1062,12 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const container = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       batch({
         rowKey: 'node-1:1800000000',
         node: 'node-1',
+        nodeName: null,
         retentionState: 'taken',
       }),
     ])
@@ -1178,11 +1198,12 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     const { actions, dispatched } = makeActions()
     const container = mountPage(connection, actions, router(), scopes)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       batch({
         rowKey: 'node-1:1800000000',
         node: 'node-1',
+        nodeName: null,
         retentionState: 'due',
       }),
     ])
@@ -1258,11 +1279,12 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     const { actions, dispatched } = makeActions()
     const container = mountPage(connection, actions, router(), scopes)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       batch({
         rowKey: 'node-1:1800000000',
         node: 'node-1',
+        nodeName: null,
         retentionState: 'taken',
       }),
     ])
@@ -1336,11 +1358,12 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     const { actions, dispatched } = makeActions()
     const container = mountPage(connection, actions, router(), scopes)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
       batch({
         rowKey: 'node-1:1800000000',
         node: 'node-1',
+        nodeName: null,
         retentionState: 'due',
       }),
     ])

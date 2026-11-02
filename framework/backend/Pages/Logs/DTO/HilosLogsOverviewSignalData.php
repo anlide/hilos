@@ -103,8 +103,11 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Payload key: share of the volume the node keeps free, in percent, as that node resolved it. */
     public const string freeSpaceThresholdPercent = 'freeSpaceThresholdPercent';
 
-    /** Node row key: cluster node id, always a name - a node without one does not travel here. */
+    /** Node row key: stable cluster node id. */
     public const string nodeId = 'nodeId';
+
+    /** Node row key: current registry name, null for an unknown node. */
+    public const string nodeName = 'nodeName';
 
     /** Node row key: what this node's own archive weighs. */
     public const string archiveBytes = 'archiveBytes';
@@ -137,14 +140,14 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * @param ?int $growthBytesPerDay Bytes written cluster-wide over the last day, null while no window has filled
      * @param ?int $keysWithoutGrowthWindow Streams whose day window has not filled yet (null if unavailable)
      * @param ?int $batchesDueForTakeout Rotation batches past their retention across the cluster (null if unavailable)
-     * @param list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
+     * @param list<array{nodeId: string, nodeName: ?string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> $nodes
      *     Named nodes of the picture with UTC ISO lastRotationAt (.000Z); empty in a single-node installation
-     * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentErrors
+     * @param list<array{nodeId: string, nodeName: ?string, stream: string, at: string, message: string, traceFrames: ?int}> $recentErrors
      *     Last failures with UTC ISO at (milliseconds and Z), newest first, with effective node IDs
      * @param bool $recentErrorsCapped Whether that list was cut at the limit, so the screen says "10+"
-     * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentWarnings
+     * @param list<array{nodeId: string, nodeName: ?string, stream: string, at: string, message: string, traceFrames: ?int}> $recentWarnings
      *     Last warnings with UTC ISO at (milliseconds and Z), newest first, in the same row as failures
      * @param bool $recentWarningsCapped Whether the warnings list was cut at the limit, so its tab says "10+"
      * @param ?int $filesystemFreeBytes Free bytes on this installation's log filesystem, null in a cluster or when not known
@@ -230,6 +233,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::batchesDueForTakeout => WireField::notPersonal(),
             self::nodes => WireField::each([
                 self::nodeId => WireField::notPersonal(),
+                self::nodeName => WireField::notPersonal(),
                 self::available => WireField::notPersonal(),
                 self::lastRotationAt => WireField::notPersonal(),
                 self::liveBytes => WireField::notPersonal(),
@@ -242,6 +246,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             ]),
             self::recentErrors => WireField::each([
                 self::nodeId => WireField::notPersonal(),
+                self::nodeName => WireField::notPersonal(),
                 self::stream => WireField::notPersonal(),
                 self::at => WireField::notPersonal(),
                 self::traceFrames => WireField::notPersonal(),
@@ -249,6 +254,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::recentErrorsCapped => WireField::notPersonal(),
             self::recentWarnings => WireField::each([
                 self::nodeId => WireField::notPersonal(),
+                self::nodeName => WireField::notPersonal(),
                 self::stream => WireField::notPersonal(),
                 self::at => WireField::notPersonal(),
                 self::traceFrames => WireField::notPersonal(),
@@ -263,7 +269,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /**
      * @param array<string, mixed> $data
      * @throws InvalidFormatException When the node list is absent, or a row in it is not an object,
-     *     or a row omits the name or the readability the row has no meaning without
+     *     or a row omits the id or the readability the row has no meaning without
      */
     public static function fromArray(array $data): static
     {
@@ -300,18 +306,18 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /**
      * Reads the full compatibility node list back, refusing an entry that is not a node row.
      *
-     * The name and the readability are required, because a row without either is not a node the
-     * overview could draw: an unnamed row belongs to a single-node installation, which sends no rows
-     * at all. The figures are optional in the same sense the top-level ones are - a node that
+     * The id and the readability are required. The registry name is nullable when the node is
+     * unknown. A standalone installation sends no header node rows. The figures are optional
+     * in the same sense the top-level ones are: a node that
      * could not be read carries null in every one of them, and reading an absent number as zero
      * would report a measurement nobody took.
      *
      * @param array<string, mixed> $data Wire form of the overview
-     * @return list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
+     * @return list<array{nodeId: string, nodeName: ?string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> Full header node entries
      * @throws InvalidFormatException When the list is absent, holds a row that is not an object,
-     *     or a row omits its name or its readability
+     *     or a row omits its id or its readability
      */
     private static function nodeRows(array $data): array
     {
@@ -324,6 +330,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             $lastRotationAt = $row[self::lastRotationAt] ?? null;
             $rows[] = [
                 self::nodeId => self::requireString($row, self::nodeId),
+                self::nodeName => self::optionalString($row, self::nodeName),
                 self::available => self::requireBool($row, self::available),
                 self::lastRotationAt => is_string($lastRotationAt) ? $lastRotationAt : null,
                 self::liveBytes => self::optionalNonNegativeInt($row[self::liveBytes] ?? null),
@@ -344,7 +351,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /**
      * Reads one feed of the panel back — errors or warnings — refusing a row that is not one (HIL-867, HIL-868).
      *
-     * Every field of a row is required but the frame count, and the node id is required as a
+     * Every field of a row is required but the name and frame count, and the node id is required as a
      * string carrying the effective node ID: even a standalone installation names its node. The frame
      * count keeps its null, which is the difference between "there is a stack to look at" and
      * "there is not" — read as zero it would put a badge on every row.
@@ -354,7 +361,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      *
      * @param array<string, mixed> $data Wire form of the overview
      * @param string $listKey Payload key holding the feed, {@see self::recentErrors} or {@see self::recentWarnings}
-     * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Rows of that tab
+     * @return list<array{nodeId: string, nodeName: ?string, stream: string, at: string, message: string, traceFrames: ?int}> Rows of that tab
      * @throws InvalidFormatException When the list is absent, holds a row that is not an object, or
      *     a row omits a field it has no meaning without
      */
@@ -368,6 +375,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
 
             $rows[] = [
                 self::nodeId => self::requireString($row, self::nodeId),
+                self::nodeName => self::optionalString($row, self::nodeName),
                 self::stream => self::requireString($row, self::stream),
                 self::at => self::requireString($row, self::at),
                 self::message => self::requireString($row, self::message),

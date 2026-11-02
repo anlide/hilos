@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
@@ -22,6 +23,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Transport\PlainSocketTransport;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -65,6 +67,7 @@ final class PeerLinkCertificateNameTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=' . self::LOCAL_NODE);
+        putenv('CLUSTER_NODE_NAME=Node ' . self::LOCAL_NODE);
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
 
@@ -88,9 +91,129 @@ final class PeerLinkCertificateNameTest extends TestCase
 
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
-        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             putenv($key);
         }
+    }
+
+    public function testOpeningHelloCarriesTheLocalName(): void
+    {
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: true, transport: new NamedPeerTestTransport($near, self::REMOTE_NODE));
+
+        $link->startHandshake();
+        $link->write();
+        $wire = socket_read($far, 65536, PHP_BINARY_READ);
+        $this->assertIsString($wire);
+        $hello = PeerDTO::fromWire(trim($wire));
+        $this->assertInstanceOf(PeerHelloDTO::class, $hello);
+        $this->assertSame(self::LOCAL_NODE, $hello->nodeId);
+        $this->assertSame('Node ' . self::LOCAL_NODE, $hello->name);
+    }
+
+    /** @return iterable<string, array{bool, bool}> Hello/welcome on new and already pending links */
+    public static function renameHandshakes(): iterable
+    {
+        yield 'new hello' => [true, false];
+        yield 'pending hello' => [true, true];
+        yield 'new welcome' => [false, false];
+        yield 'pending welcome' => [false, true];
+    }
+
+    /**
+     * No roster follows the renamed node's handshake, so only that frame can preserve its name.
+     *
+     * @param bool $dialer Whether this node sends hello rather than welcome
+     * @param bool $pending Whether the link exists before reload accepts the new name
+     */
+    #[DataProvider('renameHandshakes')]
+    public function testHandshakeUsesTheAcceptedRenameWithoutRollingBackThePeer(bool $dialer, bool $pending): void
+    {
+        $server = $this->server();
+        Hilos::$cluster->registry();
+        [$near, $far] = $this->makeSocketPair();
+        $link = $pending
+            ? $this->link($near, $dialer, new NamedPeerTestTransport($near, self::REMOTE_NODE), $server)
+            : null;
+
+        putenv('CLUSTER_NODE_NAME=Renamed node');
+        $this->assertTrue(Hilos::$cluster->reload());
+        $this->assertSame('Renamed node', Hilos::$cluster->identity()->name);
+        $link ??= $this->link($near, $dialer, new NamedPeerTestTransport($near, self::REMOTE_NODE), $server);
+
+        $frame = $this->readLocalHandshake($link, $far, $dialer);
+        $this->assertSame('Renamed node', $frame->name);
+        $this->assertPeerRetainsNameWithoutRoster($frame);
+    }
+
+    /** @return iterable<string, array{bool, string}> Invalid names on both handshake directions */
+    public static function refusedHandshakeReloads(): iterable
+    {
+        foreach (['hello' => true, 'welcome' => false] as $direction => $dialer) {
+            yield $direction . ' control' => [$dialer, "Bad\nname"];
+            yield $direction . ' Unicode line separator' => [$dialer, "Bad\u{2028}name"];
+            yield $direction . ' Unicode paragraph separator' => [$dialer, "Bad\u{2029}name"];
+        }
+    }
+
+    /**
+     * @param bool $dialer Whether this node sends hello rather than welcome
+     * @param string $invalidName Name refused after an earlier rename was accepted
+     */
+    #[DataProvider('refusedHandshakeReloads')]
+    public function testRefusedReloadCannotLeakIntoAPendingHandshake(bool $dialer, string $invalidName): void
+    {
+        $server = $this->server();
+        Hilos::$cluster->registry();
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, $dialer, new NamedPeerTestTransport($near, self::REMOTE_NODE), $server);
+        putenv('CLUSTER_NODE_NAME=Renamed node');
+        $this->assertTrue(Hilos::$cluster->reload());
+        $acceptedIdentity = Hilos::$cluster->identity();
+        $acceptedRegistry = Hilos::$cluster->registry()->snapshot();
+        putenv('CLUSTER_NODE_NAME=' . $invalidName);
+
+        try {
+            Hilos::$cluster->reload();
+            $this->fail('An invalid name must refuse reload');
+        } catch (ClusterConfigurationException $exception) {
+            $this->assertSame('CLUSTER_NODE_NAME must be one line of at most 64 characters', $exception->getMessage());
+        }
+
+        $this->assertSame($acceptedIdentity, Hilos::$cluster->identity());
+        $this->assertSame($acceptedRegistry, Hilos::$cluster->registry()->snapshot());
+        $this->assertSame('Renamed node', $this->readLocalHandshake($link, $far, $dialer)->name);
+    }
+
+    /** The explicit test-server identity still works without a cluster facade. */
+    public function testHandshakeWithoutClusterContextKeepsTheSuppliedName(): void
+    {
+        $server = $this->server();
+        Hilos::$cluster = null;
+
+        foreach ([true, false] as $dialer) {
+            [$near, $far] = $this->makeSocketPair();
+            $link = $this->link($near, $dialer, new NamedPeerTestTransport($near, self::REMOTE_NODE), $server);
+
+            $this->assertSame('Node ' . self::LOCAL_NODE, $this->readLocalHandshake($link, $far, $dialer)->name);
+        }
+    }
+
+    public function testPreviousProtocolHelloAndWelcomeAreRefusedBeforeRegistration(): void
+    {
+        foreach ([false, true] as $dialer) {
+            [$near, $far] = $this->makeSocketPair();
+            $link = $this->link($near, dialer: $dialer, transport: new NamedPeerTestTransport($near, self::REMOTE_NODE));
+            $type = $dialer ? PeerWelcomeDTO::class : PeerHelloDTO::class;
+            $this->deliver($far, new $type(24, self::REMOTE_NODE, 'Remote node', NodeRole::Master, [], PeerTestMarkers::onWire()));
+            $link->read();
+
+            $this->assertTrue($link->shouldClose());
+            $this->assertNull($link->candidateIdentity());
+            $this->assertNull($link->remoteIdentity());
+            $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        }
+        $this->assertSame(2, substr_count($this->log(), 'Incompatible peer protocol version 24, expected 25'));
     }
 
     public function testAHelloNamingTheCertifiedNodeCompletesTheHandshake(): void
@@ -100,11 +223,19 @@ final class PeerLinkCertificateNameTest extends TestCase
 
         $this->deliver($far, $this->hello(self::REMOTE_NODE));
         $link->read();
+        $this->assertSame('Node ' . self::REMOTE_NODE, $link->candidateIdentity()?->name);
+        $link->write();
+        $wire = socket_read($far, 65536, PHP_BINARY_READ);
+        $this->assertIsString($wire);
+        $welcome = PeerDTO::fromWire(trim($wire));
+        $this->assertInstanceOf(PeerWelcomeDTO::class, $welcome);
+        $this->assertSame('Node ' . self::LOCAL_NODE, $welcome->name);
         $this->deliver($far, new PeerReadyDTO(false));
         $link->read();
 
         $this->assertFalse($link->shouldClose());
         $this->assertSame(self::REMOTE_NODE, $link->remoteIdentity()?->nodeId);
+        $this->assertSame('Node ' . self::REMOTE_NODE, $link->remoteIdentity()?->name);
         $this->assertContains(self::REMOTE_NODE, $this->registeredNodeIds());
     }
 
@@ -130,7 +261,7 @@ final class PeerLinkCertificateNameTest extends TestCase
         [$near, $far] = $this->makeSocketPair();
         $link = $this->link($near, dialer: true, transport: new NamedPeerTestTransport($near, self::REMOTE_NODE));
 
-        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-m', NodeRole::Master, [], PeerTestMarkers::onWire()));
+        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-m', 'Node node-m', NodeRole::Master, [], PeerTestMarkers::onWire()));
         $link->read();
 
         $this->assertTrue($link->shouldClose(), 'a welcome naming another node than its certificate must drop the link');
@@ -164,11 +295,19 @@ final class PeerLinkCertificateNameTest extends TestCase
 
         [$welcomedNear, $welcomedFar] = $this->makeSocketPair();
         $welcomed = $this->link($welcomedNear, dialer: true, transport: new NamedPeerTestTransport($welcomedNear, self::REMOTE_NODE));
-        $this->deliver($welcomedFar, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], PeerTestMarkers::onWire()));
+        $this->deliver($welcomedFar, new PeerWelcomeDTO(
+            PeerProtocol::VERSION,
+            self::REMOTE_NODE,
+            'Node ' . self::REMOTE_NODE,
+            NodeRole::Master,
+            [],
+            PeerTestMarkers::onWire(),
+        ));
         $welcomed->read();
         $this->deliver($welcomedFar, new PeerReadyAckDTO(true));
         $welcomed->read();
         $this->assertNotNull($welcomed->remoteIdentity());
+        $this->assertSame('Node ' . self::REMOTE_NODE, $welcomed->remoteIdentity()->name);
         $welcomed->discardAsDuplicate();
         $this->assertFalse($welcomed->closedUnwelcomed(), 'a welcomed link lost to the duplicate collapse was welcomed all the same');
 
@@ -248,6 +387,69 @@ final class PeerLinkCertificateNameTest extends TestCase
     }
 
     /**
+     * @param PeerLink $link Link of the node whose environment was reloaded
+     * @param Socket $far Far end receiving its serialized handshake
+     * @param bool $dialer Whether to start hello or deliver the peer's hello
+     * @return PeerHelloDTO|PeerWelcomeDTO Handshake decoded from the socket
+     */
+    private function readLocalHandshake(PeerLink $link, Socket $far, bool $dialer): PeerHelloDTO|PeerWelcomeDTO
+    {
+        if ($dialer) {
+            $link->startHandshake();
+        } else {
+            $this->deliver($far, $this->hello(self::REMOTE_NODE));
+            $link->read();
+        }
+        $link->write();
+        $wire = socket_read($far, 65536, PHP_BINARY_READ);
+        $this->assertIsString($wire);
+        $frame = PeerDTO::fromWire(trim($wire));
+        $this->assertInstanceOf($dialer ? PeerHelloDTO::class : PeerWelcomeDTO::class, $frame);
+        $this->assertSame(PeerProtocol::VERSION, $frame->protocolVersion);
+        $this->assertSame(self::LOCAL_NODE, $frame->nodeId);
+        $this->assertSame(NodeRole::Master, $frame->role);
+        $this->assertSame([], $frame->capabilities);
+        $this->assertNull($frame->address);
+        $this->assertSame(PeerTestMarkers::onWire(), $frame->markers);
+
+        return $frame;
+    }
+
+    /**
+     * Delivers only the handshake and ready verdict to a neighbor that already learned the rename.
+     *
+     * @param PeerHelloDTO|PeerWelcomeDTO $frame Actual serialized handshake of the renamed node
+     */
+    private function assertPeerRetainsNameWithoutRoster(PeerHelloDTO|PeerWelcomeDTO $frame): void
+    {
+        $peerIdentity = NodeIdentity::of(self::REMOTE_NODE, 'Remote node', NodeRole::Master, []);
+        $peerContext = new ClusterContext();
+        new ReflectionProperty($peerContext, 'identity')->setValue($peerContext, $peerIdentity);
+        Hilos::$cluster = $peerContext;
+        $peerContext->registry()->mergeMembership(
+            NodeIdentity::of(self::LOCAL_NODE, 'Renamed node', NodeRole::Master, []),
+            microtime(true),
+        );
+        $peerServer = new PeerServer('127.0.0.1', 0, $peerIdentity, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        [$near, $far] = $this->makeSocketPair();
+        $link = new PeerLink($near, $peerServer, $peerIdentity, $frame instanceof PeerWelcomeDTO,
+            new NamedPeerTestTransport($near, self::LOCAL_NODE));
+        $this->deliver($far, $frame);
+        $link->read();
+        $this->assertSame('Renamed node', $link->candidateIdentity()?->name);
+        $this->deliver($far, $frame instanceof PeerHelloDTO ? new PeerReadyDTO(false) : new PeerReadyAckDTO(true));
+        $link->read();
+
+        $this->assertFalse($link->shouldClose());
+        $this->assertSame('Renamed node', $link->remoteIdentity()?->name);
+        $this->assertSame('Renamed node', $peerContext->registry()->snapshot()[1]->name);
+        $this->assertTrue($peerContext->registry()->isOnline(self::LOCAL_NODE));
+        $peerServer->onLinkClosed($link);
+        $this->assertFalse($peerContext->registry()->isOnline(self::LOCAL_NODE));
+        $this->assertSame('Renamed node', $peerContext->registry()->snapshot()[1]->name);
+    }
+
+    /**
      * @param Socket $socket Near end of a pair
      * @param bool $dialer Whether the link dialed
      * @param PlainSocketTransport|NamedPeerTestTransport $transport Transport of the link
@@ -276,7 +478,7 @@ final class PeerLinkCertificateNameTest extends TestCase
      */
     private function localIdentity(): NodeIdentity
     {
-        return NodeIdentity::of(self::LOCAL_NODE, NodeRole::Master, []);
+        return NodeIdentity::of(self::LOCAL_NODE, 'Node ' . self::LOCAL_NODE, NodeRole::Master, []);
     }
 
     /**
@@ -285,7 +487,7 @@ final class PeerLinkCertificateNameTest extends TestCase
      */
     private function hello(string $nodeId): PeerHelloDTO
     {
-        return new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire(), null);
+        return new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, 'Node ' . $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire(), null);
     }
 
     /**

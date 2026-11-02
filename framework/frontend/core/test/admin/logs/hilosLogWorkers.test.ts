@@ -40,6 +40,7 @@ function row(overrides: Partial<HilosLogWorkerRow> = {}): HilosLogWorkerRow {
     rowKey: 'node-1:worker-0.log',
     key: 'worker-0.log',
     node: 'node-1',
+    nodeName: null,
     type: HILOS_LOG_WORKER_TYPE_REGULAR,
     live: true,
     batchCount: 12,
@@ -155,6 +156,7 @@ describe('resolveHilosLogWorkerRow', () => {
       workerTableRow('node-2:worker-monopolistic-truth.log', {
         key: 'worker-monopolistic-truth.log',
         node: 'node-2',
+        nodeName: 'North',
         type: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
         live: true,
         batchCount: 3,
@@ -167,6 +169,7 @@ describe('resolveHilosLogWorkerRow', () => {
       rowKey: 'node-2:worker-monopolistic-truth.log',
       key: 'worker-monopolistic-truth.log',
       node: 'node-2',
+      nodeName: 'North',
       type: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
       live: true,
       batchCount: 3,
@@ -179,6 +182,7 @@ describe('resolveHilosLogWorkerRow', () => {
     const resolved = resolveHilosLogWorkerRow(
       workerTableRow('standalone:worker-0.log', {
         node: 'standalone',
+        nodeName: null,
         key: 'worker-0.log',
         bytes: 10,
       }),
@@ -293,7 +297,14 @@ describe('the worker table frame', () => {
     ).not.toContain(WORKER_NODE_FIELD)
     expect(table.controller.frame.filters.get()).toHaveLength(1)
 
-    headerSignal.set(header({ nodes: ['node-1', 'node-2'] }))
+    headerSignal.set(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: 'North' },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
 
     expect(table.controller.frame.searchPlaceholder.get()).toBe(
       'Search by key or node…',
@@ -316,14 +327,16 @@ describe('the worker table frame', () => {
     if (nodeFilter?.kind === 'select') {
       expect(nodeFilter.key).toBe(WORKER_FILTER_NODE)
       expect(nodeFilter.options()).toEqual([
-        { value: 'node-1', label: 'node-1' },
+        { value: 'node-1', label: 'North (node-1)' },
         { value: 'node-2', label: 'node-2' },
       ])
     }
   })
 
   it('derives card layout and rendered keys including action reads', () => {
-    const headerSignal = createSignal(header({ nodes: ['node-1'] }))
+    const headerSignal = createSignal(
+      header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }),
+    )
     const { table } = tableOnAStubConnection(headerSignal)
 
     const card = table.controller.frame.card.get()
@@ -367,7 +380,14 @@ describe('the worker table frame', () => {
   })
 
   it('declares rendered keys and facet options once the first window lands', () => {
-    const headerSignal = createSignal(header({ nodes: ['node-1', 'node-2'] }))
+    const headerSignal = createSignal(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: 'North' },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
     const { table, sentRendered, sentFacets } =
       tableOnAStubConnection(headerSignal)
 
@@ -402,6 +422,39 @@ describe('the worker table frame', () => {
 })
 
 describe('the header schema', () => {
+  it.each(['North', null])(
+    'keeps the node ID beside its name %s',
+    (nodeName) => {
+      const frame = header({ nodes: [{ nodeId: 'node-1', nodeName }] })
+      expect(
+        LOGS_WORKERS_SIGNAL_SCHEMAS[WORKERS_HEADER_SIGNAL].parse(frame),
+      ).toEqual(frame)
+    },
+  )
+
+  it.each([
+    ['node-1'],
+    [{ nodeId: 'node-1' }],
+    [{ nodeId: 'node-1', nodeName: 1 }],
+    [{ nodeId: 'node-1', nodeName: null, extra: true }],
+  ])('rejects an old or malformed node list %j', (nodes) => {
+    expect(
+      LOGS_WORKERS_SIGNAL_SCHEMAS[WORKERS_HEADER_SIGNAL].safeParse({
+        ...header(),
+        nodes,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects an unknown header key', () => {
+    expect(
+      LOGS_WORKERS_SIGNAL_SCHEMAS[WORKERS_HEADER_SIGNAL].safeParse({
+        ...header(),
+        extra: true,
+      }).success,
+    ).toBe(false)
+  })
+
   it('is registered under the page signal the backend sends it as', () => {
     expect(Object.keys(LOGS_WORKERS_SIGNAL_SCHEMAS)).toEqual([
       WORKERS_HEADER_SIGNAL,
@@ -420,7 +473,7 @@ describe('the header schema', () => {
     expect(parsed.success && parsed.data.available).toBeNull()
   })
 
-  it('refuses a payload whose node list is not a list of names', () => {
+  it('refuses a payload whose node list is not an array', () => {
     const parsed = LOGS_WORKERS_SIGNAL_SCHEMAS[WORKERS_HEADER_SIGNAL].safeParse(
       {
         ...header(),
@@ -453,9 +506,16 @@ describe('hasLogWorkerNodes', () => {
   })
 
   it('is true once the picture names nodes', () => {
-    expect(hasLogWorkerNodes(header({ nodes: ['node-1', 'node-2'] }))).toBe(
-      true,
-    )
+    expect(
+      hasLogWorkerNodes(
+        header({
+          nodes: [
+            { nodeId: 'node-1', nodeName: 'North' },
+            { nodeId: 'node-2', nodeName: null },
+          ],
+        }),
+      ),
+    ).toBe(true)
   })
 })
 
@@ -471,9 +531,11 @@ describe('logWorkersSearchPlaceholder', () => {
   })
 
   it('offers the node once the picture names nodes', () => {
-    expect(logWorkersSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
-      'Search by key or node…',
-    )
+    expect(
+      logWorkersSearchPlaceholder(
+        header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }),
+      ),
+    ).toBe('Search by key or node…')
   })
 })
 
@@ -509,7 +571,7 @@ describe('logWorkersEmptyState', () => {
 
 describe('logWorkerViewerPath', () => {
   it('opens a stream that is still written on its live file', () => {
-    expect(logWorkerViewerPath(row())).toBe(
+    expect(logWorkerViewerPath(row({ nodeName: 'North' }))).toBe(
       '/hilos/logs/view/node-1/live/worker-0.log',
     )
   })

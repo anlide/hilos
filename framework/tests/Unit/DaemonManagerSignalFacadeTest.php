@@ -305,7 +305,7 @@ final class DaemonManagerSignalFacadeTestManager extends DaemonManager
         $this->registerServer(new PeerServer(
             '127.0.0.1',
             0,
-            NodeIdentity::of('node-a', NodeRole::Master, []),
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
             [],
             PeerTestTls::unread(),
             PeerTestMarkers::shared(),

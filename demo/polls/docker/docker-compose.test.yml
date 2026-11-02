@@ -182,6 +182,7 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
+      - CLUSTER_NODE_NAME=Main node
       # Mail: the transport is pinned to the stand's own interceptor rather than
       # auto-selected, so a stand that loses the relay fails loudly instead of
       # quietly writing .eml files into the work tree that nobody reads. A sender

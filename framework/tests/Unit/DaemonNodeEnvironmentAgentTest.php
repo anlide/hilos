@@ -98,12 +98,13 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->assertSame(1, $firstFrame->picture->environment?->catalogKeys);
         $this->assertSame($this->agent->environmentReading(), LocalNodeEnvironment::reading());
 
-        Hilos::$rt->hilosClusterNodes->actions->publish('standalone', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('standalone', 'Node standalone', NodeRole::Slave->value, [], null, true, 42.0);
         Hilos::$browser->page = new DaemonNodeEnvironmentTestPage($this->agent);
         $initial = Hilos::$browser->page->payload('ak-live')->data;
         $this->assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave',
             'clock' => null,
+            'name' => 'Node standalone',
         ], $initial['node']);
 
         Hilos::$sr->subscribeToPage(
@@ -152,8 +153,8 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->agent = new DaemonNodeAgent();
         $this->agent->onStart();
         Hilos::$sr->getNextQueuedSignal();
-        Hilos::$rt->hilosClusterNodes->actions->publish('standalone', NodeRole::Slave->value, [], null, true, 42.0);
-        Hilos::$rt->hilosClusterNodes->actions->publish('other', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('standalone', 'Node standalone', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('other', 'Node other', NodeRole::Slave->value, [], null, true, 42.0);
         Hilos::$browser->page = new DaemonNodeEnvironmentTestPage($this->agent);
         Hilos::$browser->orphansPage = new DaemonNodeEnvironmentOrphansTestPage($this->agent);
         foreach ([

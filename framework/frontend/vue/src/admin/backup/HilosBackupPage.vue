@@ -60,6 +60,7 @@ import {
   type HilosBackupRow,
   type HilosBackupsContext,
 } from '@hilos/core/admin/backup'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   formatMoment,
   HilosPages,
@@ -485,12 +486,14 @@ function openOutcome(row: HilosBackupRow): void {
       <template #cell-createdAt="{ row }">
         <span :class="outOfReachClass(row)" data-id="hilos-backup-created-at">
           {{ time(row.createdAt) }}
-          <template v-if="isBackupOutOfReach(row)">
+          <template v-if="row.holderNode !== null">
             <span
               class="badge text-bg-secondary"
               :title="formatBackupOutOfReach(row) ?? undefined"
               :data-id="`hilos-backup-holder-${row.id}`"
-              >{{ row.holderNode }}</span
+              >{{
+                formatHilosNodeLabel(row.holderNode, row.holderNodeName)
+              }}</span
             ><span class="visually-hidden">{{
               formatBackupOutOfReach(row)
             }}</span>

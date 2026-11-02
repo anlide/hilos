@@ -48,7 +48,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         'hilos_file', 'hilos_user_photo',
     ];
     /** Cluster env values the cluster case sets, and tearDown removes. */
-    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
+    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'];
     private string $directory;
     private ?FsContext $previousFs;
     private ?SignalRouter $previousRouter;
@@ -486,6 +486,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $agent->onTick();
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
 

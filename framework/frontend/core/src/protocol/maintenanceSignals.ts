@@ -8,10 +8,10 @@ export const MAINTENANCE_STATE_SIGNAL = 'subscription_page_hilos_maintenance'
 /**
  * The whole state frame (PHP `HilosMaintenanceStateSignalData`).
  * `startedAt`, `activatedAt` and `progressAt` are ISO-8601 UTC moments ending in Z,
- * or null when the row has no such moment. A frame from before those keys existed
- * still parses: the new fields default to null, and `isInitiator` to false.
+ * or null when the row has no such moment. Node names are required, nullable
+ * registry values; pending nodes carry their stable IDs beside those names.
  */
-export const maintenanceStateSchema = z.looseObject({
+export const maintenanceStateSchema = z.strictObject({
   phase: z.enum([
     'inactive',
     'activating',
@@ -28,10 +28,12 @@ export const maintenanceStateSchema = z.looseObject({
   circleAdmitted: z.number().int(),
   initiatorAgentType: z.string().nullable().default(null),
   initiatorNodeId: z.string().nullable().default(null),
+  initiatorNodeName: z.string().nullable(),
   activatedAt: z.string().nullable().default(null),
   progressAt: z.string().nullable().default(null),
   isInitiator: z.boolean().default(false),
   diagnosticsNodeId: z.string().nullable().default(null),
+  diagnosticsNodeName: z.string().nullable(),
   stoppedAgentCount: z.number().int().nullable().default(null),
   preservedAgentTypes: z.array(z.string()).nullable().default(null),
   agentStartGateClosed: z.boolean().nullable().default(null),
@@ -39,7 +41,9 @@ export const maintenanceStateSchema = z.looseObject({
     .enum(['initiator-lost', 'restored-from-disk', 'quiesce-overdue', 'silent'])
     .nullable()
     .default(null),
-  watchdogPendingNodeIds: z.array(z.string()).default([]),
+  watchdogPendingNodes: z.array(
+    z.strictObject({ nodeId: z.string(), nodeName: z.string().nullable() }),
+  ),
   watchdogQuiesceTimeoutSeconds: z.number().int().nullable().default(null),
   watchdogSilenceTimeoutSeconds: z.number().int().nullable().default(null),
   watchdogAlertIntervalSeconds: z.number().int().nullable().default(null),

@@ -380,7 +380,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     {
         $this->mountNode();
         $nodes = [
-            ['nodeId' => 'node-diagnostic-only', 'phase' => 'active', 'quiesced' => true,
+            ['nodeId' => 'node-diagnostic-only', 'nodeName' => 'Diagnostic node', 'phase' => 'active', 'quiesced' => true,
                 'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
         ];
         Hilos::$rt->hilosProtectedModeRuntime->actions->updateMaintenanceNodes($nodes);

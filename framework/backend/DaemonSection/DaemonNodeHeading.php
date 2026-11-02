@@ -15,6 +15,7 @@ final readonly class DaemonNodeHeading
     public const string silentSince = 'silentSince';
     public const string role = 'role';
     public const string clock = 'clock';
+    public const string name = 'name';
 
     /**
      * @param bool $clustered Whether the installation is clustered
@@ -22,6 +23,7 @@ final readonly class DaemonNodeHeading
      * @param ?int $silentSince Last report time in epoch milliseconds, only when the node is silent
      * @param ?NodeRole $role Declared role from the last node report
      * @param ?DaemonNodeClock $clock Clock verdict relative to the picture's leader, or null outside mirror-backed cluster pages
+     * @param ?string $name Roster name, or null when the node has no roster row
      */
     public function __construct(
         public bool $clustered,
@@ -29,6 +31,7 @@ final readonly class DaemonNodeHeading
         public ?int $silentSince,
         public ?NodeRole $role,
         public ?DaemonNodeClock $clock,
+        public ?string $name,
     ) {
     }
 
@@ -60,13 +63,14 @@ final readonly class DaemonNodeHeading
                 $leaderClock?->thresholdMs,
                 $reading !== null && abs($reading->offsetMs) > $leaderClock->thresholdMs,
             ) : null,
+            $picture?->node($nodeId)?->name,
         );
     }
 
     /**
      * @return array{
      *     clustered: bool, state: ?string, silentSince: ?int, role: ?string,
-     *     clock: ?array{reference: bool, offsetMs: ?int, measuredAt: ?int, thresholdMs: ?int, beyond: bool}
+     *     clock: ?array{reference: bool, offsetMs: ?int, measuredAt: ?int, thresholdMs: ?int, beyond: bool}, name: ?string
      * } Browser node line
      */
     public function toArray(): array
@@ -77,6 +81,7 @@ final readonly class DaemonNodeHeading
             self::silentSince => $this->silentSince,
             self::role => $this->role?->value,
             self::clock => $this->clock?->toArray(),
+            self::name => $this->name,
         ];
     }
 }

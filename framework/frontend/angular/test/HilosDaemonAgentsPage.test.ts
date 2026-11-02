@@ -35,6 +35,7 @@ function harness(clustered = false, placement = 'node') {
   } as unknown as ActionLifecycle)
   h.scope.data.set(DAEMON_NODE_DATA, {
     clustered,
+    name: null,
     role: null,
     state: clustered ? 'leader' : null,
     silentSince: null,
@@ -138,6 +139,7 @@ describe('HilosDaemonAgentsPage', () => {
       timeZone.receive('UTC')
       h.scope.data.set(DAEMON_NODE_DATA, {
         clustered: true,
+        name: null,
         role: null,
         state: 'silent',
         silentSince: 1_700_000_000_000,
@@ -301,6 +303,7 @@ describe('HilosDaemonAgentsPage', () => {
       if (state === 'silent')
         h.scope.data.set(DAEMON_NODE_DATA, {
           clustered: true,
+          name: null,
           role: null,
           state: 'silent',
           silentSince: 1700000000000,
@@ -378,6 +381,7 @@ describe('HilosDaemonAgentsPage', () => {
     expect(rowControls(h).why.title).toBe(UNAVAILABLE_REASON)
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -483,6 +487,7 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.dispatch).toHaveBeenCalledTimes(1)
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
@@ -552,6 +557,7 @@ describe('HilosDaemonAgentsPage', () => {
       if (state === 'silent')
         h.scope.data.set(DAEMON_NODE_DATA, {
           clustered: true,
+          name: null,
           role: null,
           state: 'silent',
           silentSince: 1700000000000,

@@ -28,6 +28,7 @@ import {
   readNumber,
   readNumberOrNull,
   readString,
+  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
@@ -37,6 +38,7 @@ import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
+import { formatHilosNodeLabel } from '../daemon/hilosDaemonNode.js'
 
 export {
   WORKERS_HEADER_SIGNAL,
@@ -52,6 +54,8 @@ export interface HilosLogWorkerRow {
   readonly key: string
   /** Effective node ID of the file. */
   readonly node: string
+  /** Registered node name, or null when no registry row is known. */
+  readonly nodeName: string | null
   /** Worker kind: {@link HILOS_LOG_WORKER_TYPE_MONOPOLISTIC} or {@link HILOS_LOG_WORKER_TYPE_REGULAR}. */
   readonly type: string
   /** Whether the stream is still being written, or only left in the archive. */
@@ -78,6 +82,9 @@ export const WORKER_NAME_FIELD = 'key'
 
 /** Row payload key of the node the file lives on (also the node column key). */
 export const WORKER_NODE_FIELD = 'node'
+
+/** Row payload key of the node's registered name. */
+const WORKER_NODE_NAME_FIELD = 'nodeName'
 
 /** Row payload key of the worker kind. */
 export const WORKER_TYPE_FIELD = 'type'
@@ -145,6 +152,7 @@ export function resolveHilosLogWorkerRow(row: TableRow): HilosLogWorkerRow {
     key: readString(slot, WORKER_NAME_FIELD),
     // Keep the node on the row even when the one-node column is hidden.
     node: readString(slot, WORKER_NODE_FIELD),
+    nodeName: readStringOrNull(slot, WORKER_NODE_NAME_FIELD),
     type: readString(slot, WORKER_TYPE_FIELD),
     live: readBoolean(slot, WORKER_LIVE_FIELD),
     batchCount: readNumber(slot, WORKER_BATCH_COUNT_FIELD),
@@ -198,8 +206,8 @@ export function createHilosLogWorkersTable(
               anyLabel: 'All nodes',
               options: () =>
                 (header.get()?.nodes ?? []).map((node) => ({
-                  value: node,
-                  label: node,
+                  value: node.nodeId,
+                  label: formatHilosNodeLabel(node.nodeId, node.nodeName),
                 })),
             },
           ]
@@ -219,7 +227,14 @@ export function createHilosLogWorkersTable(
         card: 'title' as const,
       },
       ...(hasLogWorkerNodes(header.get())
-        ? [{ key: WORKER_NODE_FIELD, label: 'Node', sortable: true }]
+        ? [
+            {
+              key: WORKER_NODE_FIELD,
+              label: 'Node',
+              sortable: true,
+              reads: [WORKER_NODE_NAME_FIELD],
+            },
+          ]
         : []),
       {
         key: WORKER_TYPE_FIELD,

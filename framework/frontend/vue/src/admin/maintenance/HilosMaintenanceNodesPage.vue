@@ -14,6 +14,7 @@ import {
 import { onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosNodeName from '../HilosNodeName.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 
 const props = defineProps<{
@@ -43,9 +44,9 @@ onUnmounted(() => {
       :controller="nodesTable"
     >
       <template #[`cell-${MAINTENANCE_NODE_ID_FIELD}`]="{ row }">
-        <span :data-id="`hilos-maintenance-nodes-row-${row.nodeId}`">{{
-          row.nodeId
-        }}</span>
+        <span :data-id="`hilos-maintenance-nodes-row-${row.nodeId}`">
+          <HilosNodeName :node-id="row.nodeId" :node-name="row.nodeName" />
+        </span>
       </template>
       <template #[`cell-${MAINTENANCE_NODE_QUIESCED_FIELD}`]="{ row }">
         <span

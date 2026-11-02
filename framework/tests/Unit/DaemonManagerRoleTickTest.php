@@ -60,7 +60,7 @@ final class DaemonManagerRoleTickTest extends TestCase
     public function testMembershipHooksDefaultToNoOps(): void
     {
         $manager = new DaemonManagerRoleTickTestManager();
-        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', NodeRole::Master, []), true, 100.0);
+        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, []), true, 100.0);
 
         $manager->onNodeJoined($node);
         $manager->onNodeLeft($node);

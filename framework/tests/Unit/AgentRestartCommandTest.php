@@ -41,13 +41,14 @@ final class AgentRestartCommandTest extends TestCase
             return CommandChannelResult::replied(CommandReplyDTO::ok('c1', [
                 CommandConstants::FIELD_AGENT_ID => 'room:42',
                 CommandConstants::FIELD_NODE_ID => 'n2',
+                CommandConstants::FIELD_NODE_NAME => 'Worker',
             ]), 'daemon:1');
         });
 
         [$code, $output] = $this->runCommand($command, ['node' => 'n2'], ['room:42']);
 
         self::assertSame(ExitCode::SUCCESS, $code);
-        self::assertSame("Agent room:42 restarted on node n2\n", $output);
+        self::assertSame("Agent room:42 restarted on node Worker (n2)\n", $output);
         self::assertSame([CliCommands::AGENT_RESTART, [
             CommandConstants::FIELD_AGENT_TYPE => 'room',
             CommandConstants::FIELD_AGENT_INDEX => '42',

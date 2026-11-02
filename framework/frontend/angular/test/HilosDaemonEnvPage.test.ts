@@ -58,6 +58,7 @@ describe('HilosDaemonEnvPage', () => {
     ]
     h.scope.data.set('node', {
       clustered: true,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,
@@ -123,6 +124,7 @@ describe('HilosDaemonEnvPage', () => {
     ]
     h.scope.data.set('node', {
       clustered: true,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,
@@ -173,6 +175,7 @@ describe('HilosDaemonEnvPage', () => {
     const keys = [key('PORT')]
     h.scope.data.set('node', {
       clustered: true,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,
@@ -187,6 +190,7 @@ describe('HilosDaemonEnvPage', () => {
     expect(h.root.textContent).toContain('visible-value')
     h.scope.data.set('node', {
       clustered: true,
+      name: null,
       state: 'silent',
       silentSince: null,
       clock: null,
@@ -225,6 +229,7 @@ describe('HilosDaemonEnvPage', () => {
     h.detect()
     h.scope.data.set('node', {
       clustered: true,
+      name: null,
       state: 'silent',
       silentSince: null,
       clock: null,

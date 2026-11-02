@@ -2,6 +2,7 @@ import { expect, test } from '../../test.js'
 
 import {
   CLUSTER_FOLLOWER,
+  CLUSTER_NODE_NAMES,
   newMasterPage,
   readCarry,
 } from '../../helpers/cluster.js'
@@ -23,11 +24,12 @@ test('the archive of the stopped slave stays visible but out of reach', async ({
     const row = page.getByTestId(`hilos-table-row-${backupRow}`)
     await expect(row).toBeVisible()
     const holder = row.getByTestId(`hilos-backup-holder-${backupRow}`)
-    await expect(holder).toHaveText(stopped ?? '')
+    const label = `${CLUSTER_NODE_NAMES[stopped!]} (${stopped})`
+    await expect(holder).toHaveText(label)
     await expect(holder).toHaveClass(/text-bg-secondary/)
     await expect(holder).toHaveAttribute(
       'title',
-      `Stored on node ${stopped} - the backup agent runs elsewhere, so this archive cannot be reached from here`,
+      `Stored on node ${label} - the backup agent runs elsewhere, so this archive cannot be reached from here`,
     )
     await expect(
       row.getByTestId(`hilos-backup-delete-${backupRow}`),

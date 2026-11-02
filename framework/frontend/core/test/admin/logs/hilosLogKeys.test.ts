@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createHilosLogKeysTable,
+  type HilosLogKeysContext,
   formatLogKeyClass,
   formatLogKeyGrowth,
   formatLogKeyState,
@@ -19,12 +21,14 @@ import {
   type HilosLogKeysHeader,
 } from '../../../src/admin/logs/hilosLogKeys.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { createSignal } from '../../../src/state/signal.js'
 
 function row(overrides: Partial<HilosLogKeyRow> = {}): HilosLogKeyRow {
   return {
     rowKey: 'node-1:worker-0.log',
     key: 'worker-0.log',
     node: 'node-1',
+    nodeName: null,
     class: HILOS_LOG_CLASS_WORKER,
     live: true,
     batchCount: 12,
@@ -58,6 +62,7 @@ describe('resolveHilosLogKeyRow', () => {
       keyTableRow('node-2:agent-hilos_logs.log', {
         key: 'agent-hilos_logs.log',
         node: 'node-2',
+        nodeName: 'North',
         class: HILOS_LOG_CLASS_AGENT,
         live: true,
         batchCount: 3,
@@ -71,6 +76,7 @@ describe('resolveHilosLogKeyRow', () => {
       rowKey: 'node-2:agent-hilos_logs.log',
       key: 'agent-hilos_logs.log',
       node: 'node-2',
+      nodeName: 'North',
       class: HILOS_LOG_CLASS_AGENT,
       live: true,
       batchCount: 3,
@@ -84,6 +90,7 @@ describe('resolveHilosLogKeyRow', () => {
     const resolved = resolveHilosLogKeyRow(
       keyTableRow('standalone:worker-0.log', {
         node: 'standalone',
+        nodeName: null,
         key: 'worker-0.log',
         bytes: 10,
       }),
@@ -115,6 +122,39 @@ describe('resolveHilosLogKeyRow', () => {
 })
 
 describe('the header schema', () => {
+  it.each(['North', null])(
+    'keeps the node ID beside its name %s',
+    (nodeName) => {
+      const frame = header({ nodes: [{ nodeId: 'node-1', nodeName }] })
+      expect(LOGS_KEYS_SIGNAL_SCHEMAS[KEYS_HEADER_SIGNAL].parse(frame)).toEqual(
+        frame,
+      )
+    },
+  )
+
+  it.each([
+    ['node-1'],
+    [{ nodeId: 'node-1' }],
+    [{ nodeId: 'node-1', nodeName: 1 }],
+    [{ nodeId: 'node-1', nodeName: null, extra: true }],
+  ])('rejects an old or malformed node list %j', (nodes) => {
+    expect(
+      LOGS_KEYS_SIGNAL_SCHEMAS[KEYS_HEADER_SIGNAL].safeParse({
+        ...header(),
+        nodes,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects an unknown header key', () => {
+    expect(
+      LOGS_KEYS_SIGNAL_SCHEMAS[KEYS_HEADER_SIGNAL].safeParse({
+        ...header(),
+        extra: true,
+      }).success,
+    ).toBe(false)
+  })
+
   it('is registered under the page signal the backend sends it as', () => {
     expect(Object.keys(LOGS_KEYS_SIGNAL_SCHEMAS)).toEqual([KEYS_HEADER_SIGNAL])
   })
@@ -129,7 +169,7 @@ describe('the header schema', () => {
     expect(parsed.success && parsed.data.available).toBeNull()
   })
 
-  it('refuses a payload whose node list is not a list of names', () => {
+  it('refuses a payload whose node list is not an array', () => {
     const parsed = LOGS_KEYS_SIGNAL_SCHEMAS[KEYS_HEADER_SIGNAL].safeParse({
       ...header(),
       nodes: 'node-1',
@@ -158,7 +198,16 @@ describe('hasLogKeyNodes', () => {
   })
 
   it('is true once the picture names nodes', () => {
-    expect(hasLogKeyNodes(header({ nodes: ['node-1', 'node-2'] }))).toBe(true)
+    expect(
+      hasLogKeyNodes(
+        header({
+          nodes: [
+            { nodeId: 'node-1', nodeName: null },
+            { nodeId: 'node-2', nodeName: null },
+          ],
+        }),
+      ),
+    ).toBe(true)
   })
 })
 
@@ -174,9 +223,11 @@ describe('logKeysSearchPlaceholder', () => {
   })
 
   it('offers the node once the picture names nodes, the mask staying with the key', () => {
-    expect(logKeysSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
-      'Search by key (agent-*) or node…',
-    )
+    expect(
+      logKeysSearchPlaceholder(
+        header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }),
+      ),
+    ).toBe('Search by key (agent-*) or node…')
   })
 })
 
@@ -281,5 +332,44 @@ describe('formatLogKeyClass and formatLogKeyState', () => {
   it('tells a stream still being written from one left in the archive', () => {
     expect(formatLogKeyState(row())).toBe('Writing')
     expect(formatLogKeyState(row({ live: false }))).toBe('Archive only')
+  })
+})
+
+describe('node filter labels', () => {
+  it('uses registry names for options and keeps IDs as filter values', () => {
+    const headerSignal = createSignal(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: 'North' },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
+    const table = createHilosLogKeysTable(
+      {} as HilosLogKeysContext,
+      headerSignal,
+    )
+    const nodeFilter = table.controller.frame.filters
+      .get()
+      .find(
+        ({ filter }) => filter.kind === 'select' && filter.key === 'node',
+      )?.filter
+    expect(nodeFilter?.kind).toBe('select')
+    if (nodeFilter?.kind === 'select') {
+      expect(nodeFilter.options()).toEqual([
+        { value: 'node-1', label: 'North (node-1)' },
+        { value: 'node-2', label: 'node-2' },
+      ])
+      headerSignal.set(
+        header({ nodes: [{ nodeId: 'node-1', nodeName: 'Renamed' }] }),
+      )
+      expect(nodeFilter.options()).toEqual([
+        { value: 'node-1', label: 'Renamed (node-1)' },
+      ])
+    }
+    expect(logKeyViewerPath(row({ nodeName: 'North' }))).toBe(
+      '/hilos/logs/view/node-1/live/worker-0.log',
+    )
+    table.dispose()
   })
 })

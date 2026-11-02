@@ -107,6 +107,7 @@ function catalog(
     nodes: [
       {
         nodeId: 'node-1',
+        nodeName: null,
         available: true,
         batches: [BATCH],
         streams: [
@@ -126,6 +127,7 @@ function catalog(
       },
       {
         nodeId: 'node-2',
+        nodeName: null,
         available: true,
         batches: [],
         streams: [
@@ -812,6 +814,43 @@ describe('logViewerPendingLabel', () => {
 })
 
 describe('the catalog', () => {
+  it.each(['North', null])(
+    'keeps the required node registry name %s',
+    (nodeName) => {
+      const frame = catalog()
+      frame.nodes[0].nodeName = nodeName
+      expect(
+        LOGS_VIEWER_SIGNAL_SCHEMAS[LOG_VIEWER_CATALOG_SIGNAL].parse(frame),
+      ).toEqual(frame)
+    },
+  )
+
+  it.each([{ nodeName: undefined }, { nodeName: 7 }, { extra: true }])(
+    'rejects absent, malformed or extra catalog node fields %j',
+    (fields) => {
+      const frame = catalog()
+      const node: Record<string, unknown> = { ...frame.nodes[0], ...fields }
+      if ('nodeName' in fields && fields.nodeName === undefined) {
+        delete node.nodeName
+      }
+      expect(
+        LOGS_VIEWER_SIGNAL_SCHEMAS[LOG_VIEWER_CATALOG_SIGNAL].safeParse({
+          ...frame,
+          nodes: [node],
+        }).success,
+      ).toBe(false)
+    },
+  )
+
+  it('rejects extra catalog keys', () => {
+    expect(
+      LOGS_VIEWER_SIGNAL_SCHEMAS[LOG_VIEWER_CATALOG_SIGNAL].safeParse({
+        ...catalog(),
+        extra: true,
+      }).success,
+    ).toBe(false)
+  })
+
   it('rejects a frame that is not a catalog', () => {
     const schema = LOGS_VIEWER_SIGNAL_SCHEMAS[LOG_VIEWER_CATALOG_SIGNAL]
 
@@ -852,7 +891,13 @@ describe('the catalog', () => {
         catalog({
           clusterEnabled: false,
           nodes: [
-            { nodeId: 'standalone', available: true, batches: [], streams: [] },
+            {
+              nodeId: 'standalone',
+              nodeName: null,
+              available: true,
+              batches: [],
+              streams: [],
+            },
           ],
         }),
       ),
@@ -1300,7 +1345,13 @@ describe('createHilosLogViewer', () => {
       catalog({
         clusterEnabled: false,
         nodes: [
-          { nodeId: 'standalone', available: true, batches: [], streams: [] },
+          {
+            nodeId: 'standalone',
+            nodeName: null,
+            available: true,
+            batches: [],
+            streams: [],
+          },
         ],
       }),
     )
@@ -1342,7 +1393,15 @@ describe('createHilosLogViewer', () => {
     expect(actions.sent).toHaveLength(0)
     const dashCatalog = catalog({
       clusterEnabled: false,
-      nodes: [{ nodeId: '-', available: true, batches: [], streams: [] }],
+      nodes: [
+        {
+          nodeId: '-',
+          nodeName: null,
+          available: true,
+          batches: [],
+          streams: [],
+        },
+      ],
     })
     connection.sendCatalog(dashCatalog)
     expect(actions.lastRead().nodeId).toBe('-')
@@ -1360,7 +1419,15 @@ describe('createHilosLogViewer', () => {
     view.start()
 
     const dashCatalog = catalog({
-      nodes: [{ nodeId: '-', available: true, batches: [], streams: [] }],
+      nodes: [
+        {
+          nodeId: '-',
+          nodeName: null,
+          available: true,
+          batches: [],
+          streams: [],
+        },
+      ],
     })
     connection.sendCatalog(dashCatalog)
     expect(actions.lastRead().nodeId).toBe('-')

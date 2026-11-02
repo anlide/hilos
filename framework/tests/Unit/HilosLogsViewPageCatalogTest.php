@@ -26,6 +26,7 @@ use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Pages\Logs\DTO\HilosLogsViewCatalogSignalData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -41,6 +42,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsViewPageCatalogTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     private ?ClusterContext $previousCluster = null;
 
     private ?EnvAccessor $previousEnv = null;
@@ -56,9 +59,32 @@ final class HilosLogsViewPageCatalogTest extends TestCase
     /** How many nodes the fixture picture holds; each one more moves the catalog fingerprint. */
     private int $reportedNodes = 0;
 
+    public function testCatalogNamesFollowTheRegistryWithoutChangingAddressesOrFiles(): void
+    {
+        $this->publishLogNode('node-1', 'Archive host', online: false);
+        $this->picture($this->slot('node-1', available: true), $this->slot('node-2', available: true));
+        $before = HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index(), true)->toArray();
+        $this->assertSame(['Archive host', null], array_column($before['nodes'], 'nodeName'));
+        $this->assertSame(['node-1', 'node-2'], array_column($before['nodes'], 'nodeId'));
+        $this->assertSame($before, HilosLogsViewCatalogSignalData::fromArray($before)->toArray());
+
+        $this->publishLogNode('node-1', 'Renamed host', online: false);
+        $after = HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index(), true)->toArray();
+        $this->assertSame('Renamed host', $after['nodes'][0]['nodeName']);
+        $before['nodes'][0]['nodeName'] = 'Renamed host';
+        $this->assertSame($before, $after);
+
+        $this->restoreLogsRuntime();
+        $this->mountLogsRuntime();
+        $missing = HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index(), true)->toArray();
+        $after['nodes'][0]['nodeName'] = null;
+        $this->assertSame($after, $missing, 'A lost registry row removes only the label, preserving the source address');
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->mountLogsRuntime();
         $this->previousCluster = Hilos::$cluster;
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         Hilos::$env = new EnvAccessor();
@@ -89,6 +115,7 @@ final class HilosLogsViewPageCatalogTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         Hilos::$env = $this->previousEnv;
         putenv('CLUSTER_ENABLED');
+        $this->restoreLogsRuntime();
         parent::tearDown();
     }
 

@@ -290,6 +290,7 @@ function batch(
     rowKey: 'node-1:1800000000',
     batchAt: 1800000000000,
     node: null,
+    nodeName: null,
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
@@ -553,8 +554,10 @@ describe('HilosLogsRotationsPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const fixture = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'due' }),
+    ])
     fixture.detectChanges()
     clickById(fixture, 'hilos-rotation-takeout')
     pushHeader(header({ nodes: [] }))
@@ -635,7 +638,14 @@ describe('HilosLogsRotationsPage', () => {
     expect(row?.querySelector('.d-lg-none')).toBeNull()
     expect(byId(fixture, 'hilos-table-count')?.textContent).toContain('of 1')
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
     fixture.detectChanges()
 
     expect(byId(fixture, 'hilos-table-filter-node')?.textContent).toContain(
@@ -751,8 +761,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const fixture = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'taken' }),
+    ])
     fixture.detectChanges()
     clickById(fixture, 'hilos-rotation-undo')
     clickById(fixture, 'hilos-rotation-undo-confirm')
@@ -845,8 +857,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const fixture = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'due' }),
+    ])
     fixture.detectChanges()
 
     const takeout = byId(
@@ -889,8 +903,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const fixture = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'taken' }),
+    ])
     fixture.detectChanges()
 
     const undo = byId(
@@ -967,8 +983,10 @@ describe('HilosLogsRotationsPage', () => {
     const { actions, dispatched } = makeActions()
     const fixture = mountPage(connection, actions)
 
-    pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([
+      batch({ node: 'node-1', nodeName: null, retentionState: 'due' }),
+    ])
     fixture.detectChanges()
 
     clickById(fixture, 'hilos-rotation-takeout')

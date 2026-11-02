@@ -30,6 +30,7 @@ function node(
 ): HilosLogsOverviewNode {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 210 * 1024 * 1024,
@@ -78,6 +79,7 @@ function failure(
 ): HilosLogsOverviewRecentEntry {
   return {
     nodeId: 'standalone',
+    nodeName: null,
     stream: 'worker-monopolistic-5.error.log',
     at: '2026-09-06T10:00:02.125Z',
     message: 'login action failed',
@@ -175,6 +177,7 @@ function router(): HilosRouter {
 function tableNode(overrides: Partial<HilosLogNodeRow> = {}): HilosLogNodeRow {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: DST_MOMENT,
     liveBytes: 1024,
@@ -279,9 +282,14 @@ describe('HilosLogsPage', () => {
     try {
       push(
         overview({
+          nodes: [node({ nodeId: 'node-1' })],
           lastRotationAt: DST_MOMENT_ISO,
           recentErrors: [
-            failure({ at: DST_MOMENT_ISO, message: HIDDEN_VALUE }),
+            failure({
+              nodeId: 'node-1',
+              at: DST_MOMENT_ISO,
+              message: HIDDEN_VALUE,
+            }),
           ],
         }),
       )
@@ -293,6 +301,9 @@ describe('HilosLogsPage', () => {
       const recentElement = recent.element
       expect(rotation.text()).toBe(rotationLabel('UTC'))
       expect(recent.text()).toContain(recentLabel('UTC'))
+      expect(recent.text()).toContain(
+        'node-1 · worker-monopolistic-5.error.log',
+      )
       expect(recent.find('[data-id="hilos-hidden"]').exists()).toBe(true)
 
       zone.setZone('America/Los_Angeles')
@@ -486,6 +497,7 @@ describe('HilosLogsPage', () => {
       tableNode(),
       tableNode({
         nodeId: 'node-2',
+        nodeName: 'offline-west',
         available: false,
         lastRotationAt: null,
         liveBytes: null,
@@ -497,7 +509,12 @@ describe('HilosLogsPage', () => {
     await nextTick()
 
     const row = wrapper.get('[data-id="hilos-table-row-node-2"]')
-    expect(row.get('[data-id="hilos-logs-node-node-2"]').text()).toBe('node-2')
+    expect(row.get('[data-id="hilos-logs-node-node-2"]').text()).toContain(
+      'offline-west',
+    )
+    expect(row.get('[data-id="hilos-logs-node-node-2"]').text()).toContain(
+      'node-2',
+    )
     expect(row.findAll('[data-id="hilos-table-row-message"]')).toHaveLength(1)
     expect(row.get('[data-id="hilos-table-row-message"]').text()).toBe(
       'No data — this node could not read its log store',
@@ -524,6 +541,7 @@ describe('HilosLogsPage', () => {
     pushPageWindow([
       tableNode({
         nodeId: 'unknown-node',
+        nodeName: null,
         lastRotationAt: null,
         liveBytes: null,
         archiveBytes: null,
@@ -532,6 +550,7 @@ describe('HilosLogsPage', () => {
       }),
       tableNode({
         nodeId: 'zero-node',
+        nodeName: null,
         lastRotationAt: null,
         liveBytes: 0,
         archiveBytes: 0,
@@ -655,7 +674,14 @@ describe('HilosLogsPage', () => {
 
     push(
       overview({
-        recentErrors: [failure({ stream: 'worker-0.error.log' })],
+        nodes: [node({ nodeId: 'node-7', nodeName: 'archive-west' })],
+        recentErrors: [
+          failure({
+            nodeId: 'node-7',
+            nodeName: 'archive-west',
+            stream: 'worker-0.error.log',
+          }),
+        ],
       }),
     )
     await nextTick()
@@ -663,9 +689,10 @@ describe('HilosLogsPage', () => {
     const row = wrapper.find('[data-id="hilos-logs-recent-row"]')
     expect(row.exists()).toBe(true)
     expect(row.attributes('href')).toBe(
-      `/hilos/logs/view/standalone/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
+      `/hilos/logs/view/node-7/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
     )
     expect(row.text()).toContain('login action failed')
+    expect(row.text()).toContain('archive-west (node-7) · worker-0.error.log')
   })
 
   it('badges only the failure that has a stack behind it', async () => {
@@ -787,7 +814,11 @@ describe('HilosLogsPage', () => {
         batchesDueForTakeout: 3,
         nodes: [
           node({ nodeId: 'node-1', batchesDueForTakeout: 0 }),
-          node({ nodeId: 'node-2', batchesDueForTakeout: 2 }),
+          node({
+            nodeId: 'node-2',
+            nodeName: 'archive-east',
+            batchesDueForTakeout: 2,
+          }),
           node({ nodeId: 'node-3', batchesDueForTakeout: 1 }),
         ],
       }),
@@ -796,7 +827,7 @@ describe('HilosLogsPage', () => {
 
     const banner = wrapper.find('[data-id="hilos-logs-takeout"]')
     expect(banner.exists()).toBe(true)
-    expect(banner.text()).toContain('node-2, node-3')
+    expect(banner.text()).toContain('archive-east (node-2), node-3')
     expect(banner.text()).not.toContain('node-1')
   })
 

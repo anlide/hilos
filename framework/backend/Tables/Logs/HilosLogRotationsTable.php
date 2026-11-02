@@ -9,6 +9,7 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -24,18 +25,20 @@ use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
+use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Framework log-rotations table: the archived rotation batches of every node (HIL-387).
  *
- * Rows are built out of {@see ClusterLogIndexMirror} and out of nothing else — the picture the
- * nodes reported, held in the page worker's memory. It walks no directory: a walk here would
+ * Figures come from {@see ClusterLogIndexMirror}, the reported picture held in the page worker's
+ * memory. Node names are read from the current runtime registry. It walks no directory: a walk here would
  * block the worker on file I/O and could only ever see the node it happens to run on, which is
  * one machine's archive shown as though it were the installation's.
  *
@@ -173,6 +176,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             HilosLogRotationsTableRow::rowKey => WireField::notPersonal(),
             HilosLogRotationsTableRow::batchAt => WireField::notPersonal(),
             HilosLogRotationsTableRow::node => WireField::notPersonal(),
+            HilosLogRotationsTableRow::nodeName => WireField::notPersonal(),
             HilosLogRotationsTableRow::path => WireField::notPersonal(),
             HilosLogRotationsTableRow::absolutePath => WireField::notPersonal(),
             HilosLogRotationsTableRow::daemonFileCount => WireField::notPersonal(),
@@ -198,6 +202,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      *     node and state options that were asked about
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
@@ -225,10 +230,32 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      * @return ?bool Whether the row is in the set; this table always knows
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
         return $this->containsRowInMemory($this->narrow($this->collectRows(), $query), $rowKey, $query);
+    }
+
+    /**
+     * @param AbstractTableRow $row Row whose current name and identity locate its place
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?TableAnchorDTO Values of the actual order, or null without a comparable row and order
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO
+    {
+        return parent::anchorForRow($row, self::orderingQuery($query));
+    }
+
+    /**
+     * @param AbstractTableRow $row Current row to place
+     * @param TableAnchorDTO $anchor Previously captured name and identity values
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?int Signed position, or null when the anchor does not describe this order
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int
+    {
+        return parent::placeRowAgainst($row, $anchor, self::orderingQuery($query));
     }
 
     /**
@@ -276,12 +303,11 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      * @return TableSnapshotDTO Window snapshot with raw rows and the total count
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $rows = $this->narrow($this->collectRows(), $query);
-
-        return $this->filterInMemory($rows, $query);
+        return $this->filterInMemory($this->narrow($this->collectRows(), $query), self::orderingQuery($query));
     }
 
     /**
@@ -293,9 +319,67 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     }
 
     /**
+     * Keeps Logs' lexical name/id order and its unknown-name fallback on every comparison path.
+     *
+     * @param array<string, mixed> $values Current row values
+     * @param array<string, mixed> $against Row or captured anchor values
+     * @param TableSortDTO $component Expanded component in its own direction
+     * @return ?int Signed name/id comparison, or null for a standard column
+     */
+    protected function inMemoryCompareComponent(array $values, array $against, TableSortDTO $component): ?int
+    {
+        if (!isset($values[HilosLogRotationsTableRow::node], $against[HilosLogRotationsTableRow::node])) {
+            return null;
+        }
+
+        $comparison = match ($component->field) {
+            HilosLogRotationsTableRow::nodeName => strcmp(
+                $values[HilosLogRotationsTableRow::nodeName] ?? $values[HilosLogRotationsTableRow::node],
+                $against[HilosLogRotationsTableRow::nodeName] ?? $against[HilosLogRotationsTableRow::node],
+            ),
+            HilosLogRotationsTableRow::node => strcmp($values[HilosLogRotationsTableRow::node], $against[HilosLogRotationsTableRow::node]),
+            default => null,
+        };
+
+        return $comparison === null ? null : $comparison * (strtolower($component->direction) === TableConstants::ORDER_DESC ? -1 : 1);
+    }
+
+    /**
+     * Translates the public column order into the row fields used by sorting, anchors and live placement.
+     *
+     * @param TableQueryDTO $query Window whose search, filters and address must stay unchanged
+     * @return TableQueryDTO Same window ordered by its payload values
+     */
+    private static function orderingQuery(TableQueryDTO $query): TableQueryDTO
+    {
+        $components = [];
+        foreach ($query->sort?->components ?? [] as $component) {
+            if ($component->field === HilosLogRotationsTableRow::node) {
+                $components[] = new TableSortDTO(HilosLogRotationsTableRow::nodeName, $component->direction);
+                $components[] = new TableSortDTO(HilosLogRotationsTableRow::node, $component->direction);
+            } else {
+                $components[] = $component;
+            }
+        }
+
+        return new TableQueryDTO(
+            search: $query->search,
+            sort: $query->sort?->withComponents($components),
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $query->anchor,
+            anchorDirection: $query->anchorDirection,
+            pageIndex: $query->pageIndex,
+            searchableFields: $query->searchableFields,
+            shownFields: $query->shownFields,
+        );
+    }
+
+    /**
      * Projects every node's archive into rows, newest batch first.
      *
      * @return list<array<string, mixed>> Row payloads across the whole cluster
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function collectRows(): array
     {
@@ -325,6 +409,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
      *
      * @param ClusterLogNodeSlot $slot The node's slot in the cluster picture
      * @return list<array<string, mixed>> Row payloads of this node
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function rowsOfNode(ClusterLogNodeSlot $slot): array
     {
@@ -337,6 +422,7 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
                 HilosLogRotationsTableRow::rowKey => self::rowKey($slot->nodeId, $batch->timestamp),
                 HilosLogRotationsTableRow::batchAt => $batch->timestamp * TimeConstants::MS_PER_SECOND,
                 HilosLogRotationsTableRow::node => $slot->nodeId,
+                HilosLogRotationsTableRow::nodeName => Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name,
                 HilosLogRotationsTableRow::path => $path,
                 HilosLogRotationsTableRow::absolutePath => self::absolutePath($slot->index->logDirectory, $path),
                 HilosLogRotationsTableRow::daemonFileCount => $batch->daemonFileCount,

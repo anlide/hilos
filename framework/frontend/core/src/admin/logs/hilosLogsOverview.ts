@@ -32,6 +32,7 @@ import {
 } from '../../state/hiddenValue.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
+import { formatHilosNodeLabel } from '../daemon/hilosDaemonNode.js'
 
 export {
   OVERVIEW_SIGNAL,
@@ -197,7 +198,7 @@ export function logsOverviewNodesDue(
 
   return overview.nodes
     .filter((node) => (node.batchesDueForTakeout ?? 0) > 0)
-    .map((node) => node.nodeId)
+    .map((node) => formatHilosNodeLabel(node.nodeId, node.nodeName))
 }
 
 /**
@@ -555,7 +556,11 @@ export function logsOverviewForecastNote(
     return null
   }
 
-  const on = forecast.nodeId === null ? '' : ` on ${forecast.nodeId}`
+  const node = overview?.nodes.find((item) => item.nodeId === forecast.nodeId)
+  const on =
+    node === undefined
+      ? ''
+      : ` on ${formatHilosNodeLabel(node.nodeId, node.nodeName)}`
   if (forecast.daysAway === null) {
     const message =
       forecast.thresholdPercent === 0
@@ -730,7 +735,7 @@ export function logsOverviewRecentOrigin(
   entry: HilosLogsOverviewRecentEntry,
 ): string {
   return hasLogsOverviewNodes(overview)
-    ? `${entry.nodeId} · ${entry.stream}`
+    ? `${formatHilosNodeLabel(entry.nodeId, entry.nodeName)} · ${entry.stream}`
     : entry.stream
 }
 

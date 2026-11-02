@@ -28,6 +28,7 @@ export const DAEMON_PLACEMENT_PATH = '/hilos/daemon/placement'
 export const DAEMON_WORKERS_PATH = '/hilos/daemon/standalone/workers'
 export const DAEMON_WORKERS_CHILD = 'hilos-page-tab-hilos_daemon_workers'
 export const DAEMON_NODE_PATH = '/hilos/daemon/standalone'
+export const DAEMON_STANDALONE_NODE_NAME = 'Main node'
 export const DAEMON_NODE_TABS = [
   { key: 'hilos_daemon_node', path: '', label: 'Overview' },
   { key: 'hilos_daemon_workers', path: '/workers', label: 'Workers' },
@@ -74,12 +75,15 @@ export async function expectStandaloneOverview(
   expect: Expect,
   page: Page,
   databaseHost: string,
+  nodeName?: string,
 ): Promise<void> {
   await expectDaemonPage(expect, page, 'hilos_daemon')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Daemon')
   const node = page.getByTestId('hilos-daemon-node-standalone')
   await expect(node).toHaveRole('link')
-  await expect(node).toHaveAccessibleName('Node standalone')
+  await expect(node).toHaveAccessibleName(
+    `Node ${nodeName === undefined ? 'standalone' : `${nodeName} (standalone)`}`,
+  )
   await expect(node).toHaveAttribute('href', DAEMON_NODE_PATH)
   await expect(node).not.toHaveAttribute('aria-pressed')
   await expect(node).toContainText('Single installation')
@@ -200,13 +204,16 @@ export async function expectDaemonNodeHead(
   page: Page,
   pageKey: string,
   nodeId = 'standalone',
-  options: { showLogLinks?: boolean } = {},
+  options: { showLogLinks?: boolean; nodeName?: string } = {},
 ): Promise<void> {
   await expectDaemonPage(expect, page, pageKey)
   const title = page.getByRole('heading', { level: 1 })
+  const nodeName = options.nodeName ?? nodeId
   await expect(title).toHaveCount(1)
-  await expect(title).toHaveAttribute('data-id', 'hilos-page-head-title')
-  await expect(title).toHaveText(nodeId)
+  await expect(title).toHaveText(nodeName)
+  if (options.nodeName !== undefined) {
+    await expect(page.getByTestId('hilos-page-head')).toContainText(nodeId)
+  }
   const crumbs = page.getByTestId('hilos-breadcrumb')
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
   // React and Angular draw decorative separators inside each list item.
@@ -221,12 +228,12 @@ export async function expectDaemonNodeHead(
         }),
       ),
     )
-    .toEqual(['Hilos', 'Daemon', nodeId])
+    .toEqual(['Hilos', 'Daemon', nodeName])
   await expect(page.getByTestId(DAEMON_ROOT_CRUMB)).toHaveAttribute(
     'href',
     DAEMON_ROOT_PATH,
   )
-  await expect(crumbs.locator('[aria-current="page"]')).toContainText(nodeId)
+  await expect(crumbs.locator('[aria-current="page"]')).toContainText(nodeName)
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveCount(1)
   await expect(tabs).toHaveRole('navigation')
@@ -259,11 +266,12 @@ export async function expectDaemonNodeHead(
 export async function expectDaemonNodeTableName(
   expect: Expect,
   page: Page,
+  nodeName = 'standalone',
 ): Promise<void> {
   const title = page.getByTestId('hilos-page-head-title')
   const id = await title.getAttribute('id')
   expect(id).toBeTruthy()
-  await expect(page.getByRole('table')).toHaveAccessibleName('standalone')
+  await expect(page.getByRole('table')).toHaveAccessibleName(nodeName)
   await expect(page.getByRole('table')).toHaveAttribute('aria-labelledby', id!)
 }
 
@@ -271,7 +279,7 @@ export async function expectDaemonNodeTableName(
 export async function expectStandaloneNodeOverview(
   expect: Expect,
   page: Page,
-  options: { showLogLinks?: boolean } = {},
+  options: { showLogLinks?: boolean; nodeName?: string } = {},
 ): Promise<void> {
   await expectDaemonNodeHead(
     expect,
@@ -387,6 +395,7 @@ export async function expectDaemonNodeFits(
 export async function expectStandalonePlacement(
   expect: Expect,
   page: Page,
+  nodeName?: string,
 ): Promise<void> {
   const tab = page.getByTestId('hilos-page-tab-hilos_daemon_placement')
   await tab.focus()
@@ -411,7 +420,7 @@ export async function expectStandalonePlacement(
   await expect(row.or(card)).toContainText('Stays up')
   await expect(view).not.toContainText('★')
   await expect(shownByTestId(page, DAEMON_PLACEMENT_CELL)).toHaveAccessibleName(
-    `${DAEMON_PLACEMENT_TYPE} on standalone: 1 instances`,
+    `${DAEMON_PLACEMENT_TYPE} on ${nodeName === undefined ? 'standalone' : `${nodeName} (standalone)`}: 1 instances`,
   )
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
 }
@@ -823,7 +832,7 @@ export async function expectStandaloneWebsockets(
   expect: Expect,
   page: Page,
   frames: readonly DaemonPageFrame[],
-  options: { showLogLinks?: boolean } = {},
+  options: { showLogLinks?: boolean; nodeName?: string } = {},
 ): Promise<number> {
   await expectDaemonNodeHead(
     expect,
@@ -973,6 +982,7 @@ export async function expectViewerEnvOrphans(
 export async function expectStandaloneMismatch(
   expect: Expect,
   page: Page,
+  nodeName?: string,
 ): Promise<void> {
   await expect(
     page.getByTestId('hilos-daemon-env-mismatch-standalone'),
@@ -980,9 +990,10 @@ export async function expectStandaloneMismatch(
   await expect(
     page.getByTestId('hilos-daemon-env-mismatch-standalone'),
   ).toContainText('nothing to compare it with')
-  await expect(
-    page.getByTestId('hilos-daemon-env-mismatch-standalone-node'),
-  ).toHaveText('standalone')
+  const node = page.getByTestId('hilos-daemon-env-mismatch-standalone-node')
+  await expect(node).toHaveText(
+    nodeName === undefined ? 'standalone' : `${nodeName} (standalone)`,
+  )
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-daemon-env-mismatch-tile-answering'),
@@ -1000,6 +1011,7 @@ interface ClusterOverview {
   leaderId: string
   term: number
   silentNodeIds: readonly string[]
+  nodeNames?: Readonly<Record<string, string>>
   /**
    * Command host by node id. Given, each live member's report is brought to now
    * until the page draws that member as expected; a silent member is not asked.
@@ -1013,7 +1025,15 @@ interface ClusterOverview {
 export async function expectClusterOverview(
   expect: Expect,
   page: Page,
-  { masters, slaves, leaderId, term, silentNodeIds, hosts }: ClusterOverview,
+  {
+    masters,
+    slaves,
+    leaderId,
+    term,
+    silentNodeIds,
+    hosts,
+    nodeNames,
+  }: ClusterOverview,
 ): Promise<void> {
   await expectDaemonPage(expect, page, 'hilos_daemon')
   const nodes = page.getByTestId('hilos-daemon-nodes')
@@ -1070,7 +1090,9 @@ export async function expectClusterOverview(
     const state = stateOf(nodeId)
     await expect(node).toBeVisible()
     await expect(node).toHaveRole('link')
-    await expect(node).toHaveAccessibleName(`Node ${nodeId}`)
+    await expect(node).toHaveAccessibleName(
+      `Node ${nodeNames === undefined ? nodeId : `${nodeNames[nodeId]} (${nodeId})`}`,
+    )
     await expect(node).toHaveAttribute('href', `${DAEMON_ROOT_PATH}/${nodeId}`)
     await expect(node).not.toHaveAttribute('aria-pressed')
     await expect(node).toHaveAttribute('data-state', state)
@@ -1108,10 +1130,12 @@ export async function expectClusterDaemonNodePage(
   {
     pageKey,
     nodeId,
+    nodeName = nodeId,
     host,
   }: {
     pageKey: string
     nodeId: string
+    nodeName?: string
     /**
      * Command host of the addressed node. Given, its report is brought to now
      * once the page is subscribed; Environment is answered by the node agent
@@ -1123,7 +1147,7 @@ export async function expectClusterDaemonNodePage(
   },
 ): Promise<void> {
   await expectDaemonPage(expect, page, pageKey)
-  await expect(page.getByTestId('hilos-page-head-title')).toHaveText(nodeId)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(nodeName)
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   const section = pageKey.replace('hilos_daemon_', '')
   // The subscribed page is known to the master: one report brought to now
@@ -1174,11 +1198,13 @@ export async function expectClusterDaemonNodeOverview(
   frames: readonly DaemonPageFrame[],
   {
     nodeId,
+    nodeName,
     state,
     role,
     host,
   }: {
     nodeId: string
+    nodeName?: string
     state: 'Leader' | 'Standby' | 'Data' | 'Silent'
     role: 'master' | 'slave' | null
     /**
@@ -1191,7 +1217,9 @@ export async function expectClusterDaemonNodeOverview(
     host?: string
   },
 ): Promise<void> {
-  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', nodeId)
+  await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', nodeId, {
+    nodeName,
+  })
   await expect(page).toHaveURL(`${DAEMON_ROOT_PATH}/${nodeId}`)
   await expect(page.getByTestId('hilos-daemon-node-overview')).toHaveAttribute(
     'data-node-id',
@@ -2016,6 +2044,7 @@ export async function expectDaemonSectionAccessibility(
   expect: Expect,
   page: Page,
   clustered = false,
+  nodeName?: string,
 ): Promise<void> {
   await expectDaemonSectionHead(
     expect,
@@ -2038,7 +2067,7 @@ export async function expectDaemonSectionAccessibility(
   const cell = shownByTestId(page, DAEMON_PLACEMENT_CELL)
   await expect(cell).toHaveRole('button')
   await expect(cell).toHaveAccessibleName(
-    `${DAEMON_PLACEMENT_TYPE} on standalone: 1 instances`,
+    `${DAEMON_PLACEMENT_TYPE} on ${nodeName === undefined ? 'standalone' : `${nodeName} (standalone)`}: 1 instances`,
   )
   await cell.focus()
   await expect(cell).toBeFocused()
@@ -2092,7 +2121,7 @@ export async function searchDaemonPlacement(
     .getByRole('table')
     .getByTestId('hilos-daemon-placement-selection')
   await expect(selection).toContainText(DAEMON_PLACEMENT_TYPE)
-  const ids = (await selection.locator('code').allTextContents()).slice(2)
+  const ids = await selection.locator('div > code').allTextContents()
   expect(ids).toEqual([DAEMON_PLACEMENT_TYPE])
   const totals = await Promise.all(
     DAEMON_PLACEMENT_TOTALS.map((total) =>

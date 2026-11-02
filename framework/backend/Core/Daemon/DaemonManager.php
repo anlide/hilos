@@ -22,6 +22,7 @@ use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
+use Hilos\Cluster\NodeName;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Connections\ClusterClientLocation;
@@ -2048,6 +2049,7 @@ abstract class DaemonManager extends BaseManager implements
      * the same fact.
      *
      * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onAgentStarted(string $agentId): void
     {
@@ -8321,6 +8323,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ClusterNode $node Node that left
      * @throws InvalidFormatException When the recovery page or params are malformed
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onNodeLeft(ClusterNode $node): void
     {
@@ -8653,6 +8656,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $agentType Agent type placed again
      * @param ?string $agentIndex Agent index
      * @param string $nodeId New host
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onRestartPlaced(string $agentType, ?string $agentIndex, string $nodeId): void
     {
@@ -9030,6 +9034,7 @@ abstract class DaemonManager extends BaseManager implements
 
                 Hilos::$rt->hilosClusterNodes->actions->publish(
                     $nodeId,
+                    Hilos::$cluster?->localNodeName() ?? NodeName::fromEnv(),
                     NodeRole::Master->value,
                     [],
                     null,
@@ -9049,6 +9054,7 @@ abstract class DaemonManager extends BaseManager implements
             foreach ($registry->snapshot() as $node) {
                 Hilos::$rt->hilosClusterNodes->actions->publish(
                     $node->nodeId,
+                    $node->name,
                     $node->role->value,
                     $node->capabilities,
                     $node->address?->toString(),

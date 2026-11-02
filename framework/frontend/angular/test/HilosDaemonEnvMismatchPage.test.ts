@@ -24,8 +24,13 @@ function summary(
   return {
     clustered: true,
     servingNodeId: 'n1',
+    servingNodeName: null,
     comparison: {
-      nodes: ['n1', 'n2', 'n3'],
+      nodes: [
+        { nodeId: 'n1', nodeName: null },
+        { nodeId: 'n2', nodeName: null },
+        { nodeId: 'n3', nodeName: null },
+      ],
       answering: ['n1', 'n2'],
       diverged: 1,
       sourcesDiffer: 1,
@@ -79,6 +84,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.scope.data.set(DAEMON_ENV_MISMATCH_DATA, {
       clustered: false,
       servingNodeId: 'standalone',
+      servingNodeName: null,
       comparison: null,
     })
     h.detect()
@@ -138,7 +144,13 @@ describe('HilosDaemonEnvMismatchPage', () => {
     // Updating membership changes both core columns and projected Angular cell templates.
     h.scope.data.set(
       DAEMON_ENV_MISMATCH_DATA,
-      summary({ nodes: ['n1', 'n4'], answering: ['n1'] }),
+      summary({
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n4', nodeName: null },
+        ],
+        answering: ['n1'],
+      }),
     )
     h.detect()
     expect(h.root.querySelector('thead')?.textContent).toContain('n4')
@@ -259,12 +271,16 @@ describe('HilosDaemonEnvMismatchPage', () => {
     replacement.data.set(DAEMON_ENV_MISMATCH_DATA, {
       clustered: false,
       servingNodeId: 'new-node',
+      servingNodeName: null,
       comparison: null,
     })
     h.fixture.componentRef.setInput('context', { ...h.context, scopes })
     h.detect()
     expect(h.unregister).toHaveBeenCalledTimes(1)
-    h.scope.data.set(DAEMON_ENV_MISMATCH_DATA, summary({ nodes: ['old-node'] }))
+    h.scope.data.set(
+      DAEMON_ENV_MISMATCH_DATA,
+      summary({ nodes: [{ nodeId: 'old-node', nodeName: null }] }),
+    )
     h.detect()
     expect(
       h.el('hilos-daemon-env-mismatch-standalone-node')?.textContent,

@@ -822,15 +822,17 @@ function state(
     circleAdmitted: 0,
     initiatorAgentType: null,
     initiatorNodeId: null,
+    initiatorNodeName: null,
     activatedAt: null,
     progressAt: null,
     isInitiator: false,
     diagnosticsNodeId: null,
+    diagnosticsNodeName: null,
     stoppedAgentCount: null,
     preservedAgentTypes: null,
     agentStartGateClosed: null,
     watchdogVerdict: null,
-    watchdogPendingNodeIds: [],
+    watchdogPendingNodes: [],
     watchdogQuiesceTimeoutSeconds: null,
     watchdogSilenceTimeoutSeconds: null,
     watchdogAlertIntervalSeconds: null,
@@ -841,6 +843,97 @@ function state(
 }
 
 describe('maintenance state frame', () => {
+  it.each(['North', null])(
+    'keeps registry names and watchdog pairs %s',
+    (nodeName) => {
+      const frame = state({
+        initiatorNodeId: 'node-1',
+        initiatorNodeName: nodeName,
+        diagnosticsNodeId: 'node-2',
+        diagnosticsNodeName: nodeName,
+        watchdogPendingNodes: [{ nodeId: 'node-3', nodeName }],
+      })
+      const parsed =
+        MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse(frame)
+      expect(parsed).toEqual(frame)
+      expect(parsed).not.toHaveProperty('watchdogPendingNodeIds')
+    },
+  )
+
+  it.each([
+    'initiatorNodeName',
+    'diagnosticsNodeName',
+    'watchdogPendingNodes',
+  ] as const)(
+    'requires %s without supplying a compatibility default',
+    (key) => {
+      const frame: Partial<HilosMaintenanceState> = state()
+      delete frame[key]
+      expect(
+        MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].safeParse(
+          frame,
+        ).success,
+      ).toBe(false)
+    },
+  )
+
+  it.each([
+    { initiatorNodeName: 7 },
+    { diagnosticsNodeName: 7 },
+    { watchdogPendingNodes: ['node-1'] },
+    { watchdogPendingNodes: [{ nodeId: 'node-1' }] },
+    { watchdogPendingNodes: [{ nodeId: 'node-1', nodeName: 7 }] },
+    {
+      watchdogPendingNodes: [{ nodeId: 'node-1', nodeName: null, extra: true }],
+    },
+    { watchdogPendingNodeIds: [] },
+    { extra: true },
+  ])('rejects malformed names and obsolete or extra keys %j', (fields) => {
+    expect(
+      MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].safeParse({
+        ...state(),
+        ...fields,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('projects names for the initiator, diagnostics and pending nodes without changing their IDs', () => {
+    const frame = state({
+      phase: 'active',
+      operation: 'restore',
+      initiatorAgentType: 'hilos_backup',
+      initiatorNodeId: 'node-1',
+      initiatorNodeName: 'North',
+      diagnosticsNodeId: 'node-2',
+      diagnosticsNodeName: 'South',
+      watchdogVerdict: 'quiesce-overdue',
+      watchdogPendingNodes: [
+        { nodeId: 'node-3', nodeName: 'West' },
+        { nodeId: 'node-4', nodeName: null },
+      ],
+    })
+    const card = hilosMaintenanceCard(frame, NOW)
+    expect(card?.initiatorNodeId).toBe('node-1')
+    expect(card?.initiatorCaption).toBe('hilos_backup · node North (node-1)')
+    expect(card?.diagnosticsNodeId).toBe('South (node-2)')
+    expect(hilosMaintenanceOtherBrowserLine(frame)).toBe(
+      'The operation is run by hilos_backup on node North (node-1). Only the browser that started it can open the system.',
+    )
+    expect(hilosMaintenanceWatchdogAlert(frame)?.facts).toContainEqual({
+      label: 'Initiator',
+      value: 'hilos_backup · node North (node-1)',
+    })
+    expect(hilosMaintenanceWatchdogAlert(frame)?.facts).toContainEqual({
+      label: 'Diagnostics node',
+      value: 'South (node-2)',
+    })
+    expect(hilosMaintenanceWatchdogAlert(frame)?.facts).toContainEqual({
+      label: 'Nodes awaiting quiescence',
+      value: 'West (node-3), node-4',
+    })
+    expect(frame.diagnosticsNodeId).toBe('node-2')
+  })
+
   it('matches the backend DTO and rejects an incomplete or malformed frame', () => {
     expect(Object.keys(MAINTENANCE_STATE_SIGNAL_SCHEMAS)).toEqual([
       MAINTENANCE_STATE_SIGNAL,
@@ -864,6 +957,9 @@ describe('maintenance state frame', () => {
     ).toBe(false)
     expect(
       MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse({
+        initiatorNodeName: null,
+        diagnosticsNodeName: null,
+        watchdogPendingNodes: [],
         phase: 'inactive',
         operation: null,
         manual: false,
@@ -880,7 +976,7 @@ describe('maintenance state frame', () => {
       preservedAgentTypes: null,
       agentStartGateClosed: null,
       watchdogVerdict: null,
-      watchdogPendingNodeIds: [],
+      watchdogPendingNodes: [],
       watchdogQuiesceTimeoutSeconds: null,
       watchdogSilenceTimeoutSeconds: null,
       watchdogAlertIntervalSeconds: null,
@@ -889,6 +985,9 @@ describe('maintenance state frame', () => {
     })
     expect(
       MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse({
+        initiatorNodeName: null,
+        diagnosticsNodeName: null,
+        watchdogPendingNodes: [],
         phase: 'inactive',
         operation: null,
         manual: false,
@@ -951,7 +1050,10 @@ describe('maintenance watchdog schema', () => {
     (watchdogVerdict) => {
       const frame = state({
         watchdogVerdict,
-        watchdogPendingNodeIds: ['node-3', 'node-4'],
+        watchdogPendingNodes: [
+          { nodeId: 'node-3', nodeName: null },
+          { nodeId: 'node-4', nodeName: null },
+        ],
         watchdogQuiesceTimeoutSeconds: 31,
         watchdogSilenceTimeoutSeconds: 601,
         watchdogAlertIntervalSeconds: 901,
@@ -987,8 +1089,8 @@ describe('maintenance watchdog schema', () => {
   it.each([
     ['watchdogVerdict', 'unknown'],
     ['watchdogVerdict', false],
-    ['watchdogPendingNodeIds', null],
-    ['watchdogPendingNodeIds', [3]],
+    ['watchdogPendingNodes', null],
+    ['watchdogPendingNodes', [3]],
     ['watchdogQuiesceTimeoutSeconds', 1.5],
     ['watchdogSilenceTimeoutSeconds', '600'],
     ['watchdogAlertIntervalSeconds', 1.5],
@@ -1090,7 +1192,10 @@ describe('maintenance watchdog alert', () => {
       preservedAgentTypes: ['hilos_mail', 'hilos_logs'],
       agentStartGateClosed: false,
       watchdogVerdict: 'quiesce-overdue',
-      watchdogPendingNodeIds: ['node-3', '<node-4>'],
+      watchdogPendingNodes: [
+        { nodeId: 'node-3', nodeName: null },
+        { nodeId: '<node-4>', nodeName: null },
+      ],
       watchdogAlertEmails: ['private@example.test'],
     })
     const alert = hilosMaintenanceWatchdogAlert(frame)
@@ -1282,6 +1387,9 @@ describe('maintenance state selector', () => {
 
   it('selects the manual source, circle counts and elapsed words', () => {
     const manual = state({
+      initiatorNodeName: null,
+      diagnosticsNodeName: null,
+      watchdogPendingNodes: [],
       phase: 'verifying',
       operation: 'manual_maintenance',
       manual: true,
@@ -1462,4 +1570,21 @@ describe('maintenance restore ladder', () => {
       'The operation is run by hilos_backup on node node-1. Only the browser that started it can open the system.',
     )
   })
+
+  it.each(['A$&B', '$$', "$'", '$`', '$1'])(
+    'keeps the other-browser node name %s literal',
+    (initiatorNodeName) => {
+      expect(
+        hilosMaintenanceOtherBrowserLine(
+          state({
+            initiatorAgentType: 'hilos_backup',
+            initiatorNodeId: 'node-1',
+            initiatorNodeName,
+          }),
+        ),
+      ).toBe(
+        `The operation is run by hilos_backup on node ${initiatorNodeName} (node-1). Only the browser that started it can open the system.`,
+      )
+    },
+  )
 })

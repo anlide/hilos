@@ -441,6 +441,7 @@ describe('HilosDaemonCronPage', () => {
       const at = Date.parse('2026-10-24T03:30:00Z')
       h.heading({
         clustered: true,
+        name: null,
         role: 'master',
         state: 'silent',
         silentSince: at,
@@ -571,6 +572,7 @@ describe('HilosDaemonCronPage', () => {
     const built = harness(true)
     built.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -594,6 +596,7 @@ describe('HilosDaemonCronPage', () => {
     const staged = harness()
     staged.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -610,6 +613,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness(true)
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -648,6 +652,7 @@ describe('HilosDaemonCronPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -692,6 +697,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -707,6 +713,7 @@ describe('HilosDaemonCronPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -741,6 +748,7 @@ describe('HilosDaemonCronPage', () => {
       const h = harness()
       h.heading({
         clustered: true,
+        name: null,
         role: null,
         state,
         silentSince: state === 'silent' ? 1_700_000_000_000 : null,
@@ -778,6 +786,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'standby',
       silentSince: null,
@@ -789,6 +798,7 @@ describe('HilosDaemonCronPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -807,6 +817,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -827,6 +838,7 @@ describe('HilosDaemonCronPage', () => {
       const h = harness()
       h.heading({
         clustered: true,
+        name: null,
         role: null,
         state: 'standby',
         silentSince: null,
@@ -846,6 +858,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -881,6 +894,7 @@ describe('HilosDaemonCronPage', () => {
 
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -895,6 +909,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'standby',
       silentSince: null,

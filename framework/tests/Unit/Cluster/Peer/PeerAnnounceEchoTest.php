@@ -52,6 +52,7 @@ final class PeerAnnounceEchoTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         // Long thresholds so no link closes or pings on its own during the test.
         putenv('CLUSTER_LINK_KEEPALIVE_INTERVAL_MS=60000');
@@ -73,6 +74,7 @@ final class PeerAnnounceEchoTest extends TestCase
             'SOCKET_READ_BUFFER_SIZE',
             'CLUSTER_ENABLED',
             'CLUSTER_NODE_ID',
+            'CLUSTER_NODE_NAME',
             'CLUSTER_NODE_ROLE',
             'CLUSTER_LINK_KEEPALIVE_INTERVAL_MS',
             'CLUSTER_LINK_TIMEOUT_MS',
@@ -166,7 +168,14 @@ final class PeerAnnounceEchoTest extends TestCase
         $clients = new ReflectionProperty($server, 'clients');
         $clients->setValue($server, [...$clients->getValue($server), $link]);
 
-        socket_write($far, new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire())->toJson() . "\n");
+        socket_write($far, new PeerWelcomeDTO(
+            PeerProtocol::VERSION,
+            $nodeId,
+            'Node ' . $nodeId,
+            NodeRole::Master,
+            [],
+            PeerTestMarkers::onWire(),
+        )->toJson() . "\n");
         $link->read();
         socket_write($far, (new PeerReadyAckDTO(true))->toJson() . "\n");
         $link->read();
@@ -199,7 +208,7 @@ final class PeerAnnounceEchoTest extends TestCase
      */
     private function entry(string $nodeId, array $capabilities = []): PeerNodeEntry
     {
-        return PeerNodeEntry::fromIdentity(NodeIdentity::of($nodeId, NodeRole::Master, $capabilities));
+        return PeerNodeEntry::fromIdentity(NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Master, $capabilities));
     }
 
     /**
@@ -215,7 +224,7 @@ final class PeerAnnounceEchoTest extends TestCase
      */
     private function localIdentity(): NodeIdentity
     {
-        return NodeIdentity::of('node-a', NodeRole::Master, []);
+        return NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
     }
 
     /**

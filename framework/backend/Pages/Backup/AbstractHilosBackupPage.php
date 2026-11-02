@@ -39,6 +39,7 @@ use Hilos\Environment\Exception\EnvNotInCatalogException;
 use Hilos\Environment\Exception\EnvTypeMismatchException;
 use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\HilosException;
 use Hilos\Pages\Backup\DTO\BackupBulkDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
@@ -81,6 +82,8 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     public const string PAGE = HilosPageConstants::HILOS_BACKUP;
 
     public const PageReach REACH = PageReach::ROUTE;
+
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     public const array ACTIONS = [
         HilosSignalConstants::BACKUP_CREATE => BackupCreateActionDTO::class,

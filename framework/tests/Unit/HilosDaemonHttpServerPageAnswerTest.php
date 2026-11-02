@@ -72,6 +72,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             AbstractHilosDaemonHttpServerPage::NODE => [
                     'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
                     'clock' => null,
+                    'name' => null,
                 ],
             AbstractHilosDaemonHttpServerPage::HTTP => null,
         ];
@@ -92,6 +93,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             AbstractHilosDaemonHttpServerPage::NODE => [
                     'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
                     'clock' => null,
+                    'name' => null,
                 ],
             AbstractHilosDaemonHttpServerPage::HTTP => null,
         ], $page->payload($this->address())->data);
@@ -113,6 +115,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             AbstractHilosDaemonHttpServerPage::NODE => [
                     'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
                     'clock' => null,
+                    'name' => null,
                 ],
             AbstractHilosDaemonHttpServerPage::HTTP => [
                 'host' => '::', 'port' => 8080, 'countingHours' => 0, 'requests' => 0, 'serverErrors' => 0, 'slow' => 0,
@@ -187,6 +190,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
 
@@ -198,6 +202,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
                 'clock' => [
                     'reference' => $reference, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
                 ],
+                'name' => null,
             ],
                 $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
         }
@@ -207,6 +212,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
     }
@@ -229,6 +235,7 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
         self::assertSame(1, $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::HTTP]['countingHours']);

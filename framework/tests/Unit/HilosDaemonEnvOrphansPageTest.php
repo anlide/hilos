@@ -99,7 +99,7 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
 
     public function testTheOwningNodeOmitsTheCatalogOnStandaloneAndInACluster(): void
     {
-        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', 'Node node-A', NodeRole::Slave->value, [], null, true, 42.0);
         $page = new DaemonEnvOrphansPageTestPage($this->nodeAgent('node-A'));
         $params = new PageRouteParams(['nodeId' => 'node-A']);
 
@@ -109,6 +109,7 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $this->assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $admin->data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertSame([], $admin->windows);
@@ -126,6 +127,7 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $this->assertSame([
             'clustered' => true, 'state' => null, 'silentSince' => null, 'role' => 'slave',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $clustered[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertFalse($clustered[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);
@@ -134,7 +136,7 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
 
     public function testAForeignReadingStaysSilentWithoutTheCatalog(): void
     {
-        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', 'Node node-A', NodeRole::Slave->value, [], null, true, 42.0);
         $page = new DaemonEnvOrphansPageTestPage($this->nodeAgent('node-B'));
         $data = $page->payload('ak', new PageRouteParams(['nodeId' => 'node-A']))->data;
 
@@ -142,6 +144,7 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $this->assertSame([
             'clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => 'slave',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertSame(['node', 'nodeSilent'], array_keys($data));
@@ -158,6 +161,7 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $this->assertSame([
             'clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => null,
             'clock' => null,
+            'name' => null,
         ],
             $payload->data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertSame(['node', 'nodeSilent'], array_keys($payload->data));
@@ -170,13 +174,14 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         Hilos::$cluster = new ClusterContext();
-        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', NodeRole::Master->value, [], null, false, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', 'Node node-A', NodeRole::Master->value, [], null, false, 42.0);
         $page = new DaemonEnvOrphansPageTestPage(new DaemonCollectorAgent());
         $data = $page->payload('ak', new PageRouteParams(['nodeId' => 'node-A']))->data;
 
         $this->assertSame([
             'clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertTrue($data[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);

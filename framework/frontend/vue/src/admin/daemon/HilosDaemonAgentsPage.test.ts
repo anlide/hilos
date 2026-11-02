@@ -140,6 +140,7 @@ describe('HilosDaemonAgentsPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -168,6 +169,7 @@ describe('HilosDaemonAgentsPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -213,6 +215,7 @@ describe('HilosDaemonAgentsPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -232,6 +235,7 @@ describe('HilosDaemonAgentsPage', () => {
     const h = harness()
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -264,6 +268,7 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
   const scope = openNodePage(scopes, HilosPages.DAEMON_AGENTS)
   scope.data.set(DAEMON_NODE_DATA, {
     clustered,
+    name: null,
     role: null,
     state: clustered ? 'leader' : null,
     silentSince: null,
@@ -417,6 +422,36 @@ async function open(h: ReturnType<typeof restartHarness>): Promise<void> {
 }
 
 describe('HilosDaemonAgentsPage restart', () => {
+  it.each(['Узел <🌍>', null])(
+    'names the restart target as %s while its CLI and action use the id',
+    async (name) => {
+      const h = restartHarness(true)
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        name,
+        clustered: true,
+        role: 'master',
+        state: 'leader',
+        silentSince: null,
+        clock: null,
+      })
+      await open(h)
+      expect(modal('hilos-daemon-restart-node').textContent).toBe(
+        name === null ? 'n1' : 'Узел <🌍> (n1)',
+      )
+      expect(modal('hilos-daemon-restart-cli').textContent).toBe(
+        'php cli.php agent:restart agent:1 --node=n1',
+      )
+      modal('hilos-daemon-restart-confirm').click()
+      await nextTick()
+      expect(h.dispatch).toHaveBeenCalledWith('hilos_daemon_agent_restart', {
+        agentId: 'agent:1',
+        nodeId: 'n1',
+      })
+      h.success()
+      await flushPromises()
+    },
+  )
+
   it.each([
     [false, 'policy', false],
     [true, 'node', false],
@@ -512,6 +547,7 @@ describe('HilosDaemonAgentsPage restart', () => {
     h.window()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 10000,
@@ -576,6 +612,7 @@ describe('HilosDaemonAgentsPage restart', () => {
     await nextTick()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 10000,
@@ -587,6 +624,7 @@ describe('HilosDaemonAgentsPage restart', () => {
 
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

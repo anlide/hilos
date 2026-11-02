@@ -26,6 +26,7 @@ import {
   readNumber,
   readNumberOrNull,
   readString,
+  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
@@ -35,6 +36,7 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
+import { formatHilosNodeLabel } from '../daemon/hilosDaemonNode.js'
 
 export {
   KEYS_HEADER_SIGNAL,
@@ -50,6 +52,8 @@ export interface HilosLogKeyRow {
   readonly key: string
   /** Effective node ID of the file. */
   readonly node: string
+  /** Registered node name, or null when no registry row is known. */
+  readonly nodeName: string | null
   /**
    * Stream class: {@link HILOS_LOG_CLASS_DAEMON}, {@link HILOS_LOG_CLASS_AGENT} or
    * {@link HILOS_LOG_CLASS_WORKER}.
@@ -81,6 +85,9 @@ export const KEY_NAME_FIELD = 'key'
 
 /** Row payload key of the node the file lives on (also the node column key). */
 export const KEY_NODE_FIELD = 'node'
+
+/** Row payload key of the node's registered name. */
+const KEY_NODE_NAME_FIELD = 'nodeName'
 
 /** Row payload key of the stream class. */
 const KEY_CLASS_FIELD = 'class'
@@ -167,6 +174,7 @@ export function resolveHilosLogKeyRow(row: TableRow): HilosLogKeyRow {
     key: readString(slot, KEY_NAME_FIELD),
     // Keep the node on the row even when the one-node column is hidden.
     node: readString(slot, KEY_NODE_FIELD),
+    nodeName: readStringOrNull(slot, KEY_NODE_NAME_FIELD),
     class: readString(slot, KEY_CLASS_FIELD),
     live: readBoolean(slot, KEY_LIVE_FIELD),
     batchCount: readNumber(slot, KEY_BATCH_COUNT_FIELD),
@@ -230,8 +238,8 @@ export function createHilosLogKeysTable(
               anyLabel: 'All nodes',
               options: () =>
                 (header.get()?.nodes ?? []).map((node) => ({
-                  value: node,
-                  label: node,
+                  value: node.nodeId,
+                  label: formatHilosNodeLabel(node.nodeId, node.nodeName),
                 })),
             },
           ]
@@ -240,7 +248,14 @@ export function createHilosLogKeysTable(
     columns: () => [
       { key: KEY_NAME_FIELD, label: 'Key', sortable: true },
       ...(hasLogKeyNodes(header.get())
-        ? [{ key: KEY_NODE_FIELD, label: 'Node', sortable: true }]
+        ? [
+            {
+              key: KEY_NODE_FIELD,
+              label: 'Node',
+              sortable: true,
+              reads: [KEY_NODE_NAME_FIELD],
+            },
+          ]
         : []),
       { key: KEY_CLASS_FIELD, label: 'Class' },
       { key: KEY_LIVE_FIELD, label: 'State', card: 'badge' as const },

@@ -355,7 +355,13 @@ describe('HilosDaemonNodePage', () => {
     h.act(() => h.answer())
     h.act(() =>
       h.publish({
-        node: { clustered: true, state: null, silentSince: null, clock: null },
+        node: {
+          name: null,
+          clustered: true,
+          state: null,
+          silentSince: null,
+          clock: null,
+        },
       }),
     )
     expect(el('node-overview')).toBeNull()

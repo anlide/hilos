@@ -21,6 +21,8 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
@@ -84,6 +86,34 @@ final class HilosMaintenancePageStateTest extends TestCase
         parent::tearDown();
     }
 
+    public function testRegistryNamesReachAnotherViewerAndKeepUnknownNodesNull(): void
+    {
+        Hilos::$browser = new MaintenanceStateViewerBrowser();
+        $row = $this->mount(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $row->enteredFromBrowser = true;
+        $row->initiatorSessionTokenHash = hash('sha256', self::SESSION_A);
+        $row->initiatorNodeId = 'node-1';
+        $row->diagnosticsNodeId = 'unknown';
+        $row->watchdogPendingNodeIds = ['node-1', 'unknown'];
+        $this->mountSessions()->add(MaintenanceStateSessionConnection::create(self::OTHER_KEY, 2, self::SESSION_B, 2));
+        $row->admittedSessionTokenHashes = [StateProtectedModeRuntime::hashSessionToken(self::SESSION_B)];
+        RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
+        try {
+            Hilos::$rt->hilosClusterNodes->actions->publish('node-1', 'Offline node', 'master', [], null, false, 1_800_000_000.0);
+            $this->page()->onSubscribe(self::OTHER_KEY, new PageRouteParams([]));
+            $wire = $this->payload(Hilos::$sr?->getNextQueuedSignal());
+            $this->assertSame('Offline node', $wire['initiatorNodeName']);
+            $this->assertNull($wire['diagnosticsNodeName']);
+            $this->assertFalse($wire['isInitiator']);
+            $this->assertSame([
+                ['nodeId' => 'node-1', 'nodeName' => 'Offline node'], ['nodeId' => 'unknown', 'nodeName' => null],
+            ], $wire['watchdogPendingNodes']);
+            $this->assertArrayNotHasKey('watchdogPendingNodeIds', $wire);
+        } finally {
+            RtTruthSourceRegistry::unregisterDaemon(HilosClusterNode::RT_COLLECTION);
+        }
+    }
+
     public function testOpenStatePrecedesThePageResponse(): void
     {
         $this->mount(StateProtectedModeRuntime::PHASE_INACTIVE);
@@ -102,15 +132,17 @@ final class HilosMaintenancePageStateTest extends TestCase
             HilosMaintenanceStateSignalData::circleAdmitted => 0,
             HilosMaintenanceStateSignalData::initiatorAgentType => null,
             HilosMaintenanceStateSignalData::initiatorNodeId => null,
+            HilosMaintenanceStateSignalData::initiatorNodeName => null,
             HilosMaintenanceStateSignalData::activatedAt => null,
             HilosMaintenanceStateSignalData::progressAt => null,
             HilosMaintenanceStateSignalData::isInitiator => false,
             HilosMaintenanceStateSignalData::diagnosticsNodeId => null,
+            HilosMaintenanceStateSignalData::diagnosticsNodeName => null,
             HilosMaintenanceStateSignalData::stoppedAgentCount => null,
             HilosMaintenanceStateSignalData::preservedAgentTypes => null,
             HilosMaintenanceStateSignalData::agentStartGateClosed => null,
             HilosMaintenanceStateSignalData::watchdogVerdict => null,
-            HilosMaintenanceStateSignalData::watchdogPendingNodeIds => [],
+            HilosMaintenanceStateSignalData::watchdogPendingNodes => [],
             HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds => null,
             HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds => null,
             HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds => null,
@@ -204,7 +236,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
         $wire = $this->payload(Hilos::$sr?->getNextQueuedSignal());
-        $this->assertCount(24, $wire);
+        $this->assertCount(26, $wire);
         $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, $wire[HilosMaintenanceStateSignalData::phase]);
         $this->assertNull($wire[HilosMaintenanceStateSignalData::preservedAgentTypes]);
         $this->assertSame([
@@ -382,7 +414,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->assertNull($restored->preservedAgentTypes);
         $this->assertNull($restored->agentStartGateClosed);
         $this->assertNull($restored->watchdogVerdict);
-        $this->assertSame([], $restored->watchdogPendingNodeIds);
+        $this->assertSame([], $restored->watchdogPendingNodes);
         $this->assertNull($restored->watchdogQuiesceTimeoutSeconds);
         $this->assertNull($restored->watchdogSilenceTimeoutSeconds);
         $this->assertNull($restored->watchdogAlertIntervalSeconds);
@@ -419,8 +451,12 @@ final class HilosMaintenancePageStateTest extends TestCase
         AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
         $this->drain();
 
-        $default = $row->{$field};
-        $row->{$field} = $value;
+        $runtimeField = $field === HilosMaintenanceStateSignalData::watchdogPendingNodes ? 'watchdogPendingNodeIds' : $field;
+        $default = $row->{$runtimeField};
+        $row->{$runtimeField} = $value;
+        if ($field === HilosMaintenanceStateSignalData::watchdogPendingNodes) {
+            $value = [['nodeId' => 'node-2', 'nodeName' => null], ['nodeId' => 'node-3', 'nodeName' => null]];
+        }
         AbstractHilosMaintenancePage::markStale();
         $page->onSubscribe(self::OTHER_KEY, new PageRouteParams([]));
         $this->assertSame($value, $this->payload(Hilos::$sr?->getNextQueuedSignal())[$field]);
@@ -439,7 +475,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
 
-        $row->{$field} = $default;
+        $row->{$runtimeField} = $default;
         AbstractHilosMaintenancePage::markStale();
         AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
         foreach ([self::ACCEPT_KEY, self::OTHER_KEY] as $acceptKey) {
@@ -457,7 +493,7 @@ final class HilosMaintenancePageStateTest extends TestCase
     public static function watchdogChanges(): iterable
     {
         yield 'verdict' => [HilosMaintenanceStateSignalData::watchdogVerdict, 'silent'];
-        yield 'pending nodes' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, ['node-2', 'node-3']];
+        yield 'pending nodes' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, ['node-2', 'node-3']];
         yield 'quiesce threshold' => [HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds, 31];
         yield 'silence threshold' => [HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds, 301];
         yield 'reminder interval' => [HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds, 601];
@@ -516,7 +552,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->assertTrue(Hilos::$setting->visibleInAdminViewMode(ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL));
         foreach ([
             HilosMaintenanceStateSignalData::watchdogVerdict,
-            HilosMaintenanceStateSignalData::watchdogPendingNodeIds,
+            HilosMaintenanceStateSignalData::watchdogPendingNodes,
             HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds,
             HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds,
             HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds,
@@ -597,7 +633,11 @@ final class HilosMaintenancePageStateTest extends TestCase
     {
         $wire = array_replace($this->stateData()->toArray(), [
             HilosMaintenanceStateSignalData::watchdogVerdict => $verdict,
-            HilosMaintenanceStateSignalData::watchdogPendingNodeIds => ['node-2', 'node-3'],
+            HilosMaintenanceStateSignalData::initiatorNodeName => 'Initiator',
+            HilosMaintenanceStateSignalData::diagnosticsNodeName => 'Diagnostics',
+            HilosMaintenanceStateSignalData::watchdogPendingNodes => [
+                ['nodeId' => 'node-2', 'nodeName' => null], ['nodeId' => 'node-3', 'nodeName' => null],
+            ],
             HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds => 31,
             HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds => 301,
             HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds => 601,
@@ -662,10 +702,12 @@ final class HilosMaintenancePageStateTest extends TestCase
         yield 'verdict type' => [HilosMaintenanceStateSignalData::watchdogVerdict, false];
         yield 'unknown verdict' => [HilosMaintenanceStateSignalData::watchdogVerdict, 'unknown'];
         yield 'empty verdict' => [HilosMaintenanceStateSignalData::watchdogVerdict, ''];
-        yield 'pending null' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, null];
-        yield 'pending scalar' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, 'node-2'];
-        yield 'pending map' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, ['node' => 'node-2']];
-        yield 'pending element' => [HilosMaintenanceStateSignalData::watchdogPendingNodeIds, ['node-2', 2]];
+        yield 'pending null' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, null];
+        yield 'pending scalar' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, 'node-2'];
+        yield 'pending map' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, ['node' => 'node-2']];
+        yield 'pending name type' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, [['nodeId' => 'node-2', 'nodeName' => 2]]];
+        yield 'pending missing id' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, [['nodeName' => 'Worker']]];
+        yield 'pending element' => [HilosMaintenanceStateSignalData::watchdogPendingNodes, ['node-2', 2]];
         yield 'quiesce string' => [HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds, '31'];
         yield 'silence float' => [HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds, 301.0];
         yield 'interval boolean' => [HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds, false];
@@ -739,7 +781,8 @@ final class HilosMaintenancePageStateTest extends TestCase
     ): void
     {
         $this->assertSame('quiesce-overdue', $wire[HilosMaintenanceStateSignalData::watchdogVerdict]);
-        $this->assertSame(['node-2', 'node-3'], $wire[HilosMaintenanceStateSignalData::watchdogPendingNodeIds]);
+        $this->assertSame([['nodeId' => 'node-2', 'nodeName' => null], ['nodeId' => 'node-3', 'nodeName' => null]],
+            $wire[HilosMaintenanceStateSignalData::watchdogPendingNodes]);
         $this->assertSame(31, $wire[HilosMaintenanceStateSignalData::watchdogQuiesceTimeoutSeconds]);
         $this->assertSame(301, $wire[HilosMaintenanceStateSignalData::watchdogSilenceTimeoutSeconds]);
         $this->assertSame(601, $wire[HilosMaintenanceStateSignalData::watchdogAlertIntervalSeconds]);
@@ -757,6 +800,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $row = StateProtectedModeRuntime::create();
         $row->phase = $phase;
         Hilos::$rt = new MaintenanceStateTestRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, $row);
 
         return $row;

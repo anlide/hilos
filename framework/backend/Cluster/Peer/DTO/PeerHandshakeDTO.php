@@ -14,7 +14,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 /**
  * Base for the framed handshake messages (hello and welcome).
  *
- * Both carry the same payload — the sender's self-declared identity (id, role,
+ * Both carry the same payload — the sender's self-declared identity (id, name, role,
  * capabilities, advertised address), the protocol version and the sender's markers
  * ({@see PeerMarkers}: what it reads that every node must share, one value per kind) — and
  * differ only by message type, so the shape and its parsing live here and the concrete
@@ -27,6 +27,9 @@ abstract class PeerHandshakeDTO extends PeerDTO
 
     /** @var string Payload key: sender node id */
     public const string FIELD_NODE_ID = 'nodeId';
+
+    /** @var string Payload key: sender readable node name */
+    public const string FIELD_NODE_NAME = 'name';
 
     /** @var string Payload key: sender node role */
     public const string FIELD_NODE_ROLE = 'role';
@@ -43,6 +46,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
     /**
      * @param int $protocolVersion Sender peer wire-protocol version
      * @param string $nodeId Sender self-declared node id
+     * @param string $name Sender readable node name
      * @param NodeRole $role Sender self-declared role
      * @param list<string> $capabilities Sender declared capability tags
      * @param array<string, string> $markers Sender markers, one value per kind ({@see PeerMarkers})
@@ -51,6 +55,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
     public function __construct(
         public readonly int $protocolVersion,
         public readonly string $nodeId,
+        public readonly string $name,
         public readonly NodeRole $role,
         public readonly array $capabilities,
         public readonly array $markers,
@@ -69,6 +74,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
             self::TYPE => $this->getType(),
             self::FIELD_PROTOCOL_VERSION => $this->protocolVersion,
             self::FIELD_NODE_ID => $this->nodeId,
+            self::FIELD_NODE_NAME => $this->name,
             self::FIELD_NODE_ROLE => $this->role->value,
             self::FIELD_NODE_CAPABILITIES => $this->capabilities,
             self::FIELD_ADDRESS => $this->address?->toString(),
@@ -82,7 +88,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
      * Presence and type are answered by the payload helpers, and their refusal is
      * re-thrown as the one exception this transport speaks - {@see PeerLink} drops
      * the link on it and on nothing else. What stays a check of its own is what the
-     * helpers cannot answer: an id that arrived blank, a role that arrived as a
+     * helpers cannot answer: an id or name that arrived blank, a role that arrived as a
      * name no {@see NodeRole} carries, and a marker whose kind or value is not a
      * non-empty string. The advertised address is the one field a node may
      * legitimately not have, and its own toArray() writes null for it; the markers
@@ -90,7 +96,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored handshake frame
-     * @throws PeerTransportException When a field is missing, the node id is blank, the role is invalid
+     * @throws PeerTransportException When a field is missing, the node id or name is blank, the role is invalid
      *                                or a marker is malformed
      */
     public static function fromArray(array $data): static
@@ -98,6 +104,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
         try {
             $protocolVersion = self::requireInt($data, self::FIELD_PROTOCOL_VERSION);
             $nodeId = trim(self::requireString($data, self::FIELD_NODE_ID));
+            $name = trim(self::requireString($data, self::FIELD_NODE_NAME));
             $roleValue = self::requireString($data, self::FIELD_NODE_ROLE);
             $capabilities = self::requireArray($data, self::FIELD_NODE_CAPABILITIES);
             $address = self::optionalString($data, self::FIELD_ADDRESS);
@@ -108,6 +115,9 @@ abstract class PeerHandshakeDTO extends PeerDTO
 
         if ($nodeId === '') {
             throw new PeerTransportException('Peer handshake is missing the node id');
+        }
+        if ($name === '') {
+            throw new PeerTransportException('Peer handshake is missing the node name');
         }
 
         $role = NodeRole::tryFrom($roleValue);
@@ -124,6 +134,7 @@ abstract class PeerHandshakeDTO extends PeerDTO
         return new static(
             protocolVersion: $protocolVersion,
             nodeId: $nodeId,
+            name: $name,
             role: $role,
             capabilities: PeerDTO::normalizeCapabilities($capabilities),
             markers: $markers,

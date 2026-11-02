@@ -67,8 +67,8 @@ final class HilosDaemonEnvOrphansPageWindowTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(TableRefusalRuntime::RT_ITEM);
         Hilos::$table = new DaemonEnvOrphansWindowTables();
         Hilos::$table->configure();
-        Hilos::$rt->hilosClusterNodes->actions->publish(self::NODE, NodeRole::Slave->value, [], null, true, 42.0);
-        Hilos::$rt->hilosClusterNodes->actions->publish(self::OTHER, NodeRole::Slave->value, [], null, true, 43.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish(self::NODE, 'Node ' . self::NODE, NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish(self::OTHER, 'Node ' . self::OTHER, NodeRole::Slave->value, [], null, true, 43.0);
     }
 
     protected function tearDown(): void

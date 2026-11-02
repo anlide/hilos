@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use DateTimeImmutable;
+use Hilos\Cluster\NodeName;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
@@ -476,8 +477,10 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
             ),
         );
 
+        $node = self::nodeIdentity();
         $this->notifier->notifyCleared([
-            ProtectedModeClearedMailTemplate::PARAM_NODE_ID => self::nodeName(),
+            ProtectedModeClearedMailTemplate::PARAM_NODE_ID => $node[ProtectedModeClearedMailTemplate::PARAM_NODE_ID],
+            ProtectedModeClearedMailTemplate::PARAM_NODE_NAME => $node[ProtectedModeClearedMailTemplate::PARAM_NODE_NAME],
             ProtectedModeClearedMailTemplate::PARAM_OPERATION => $this->alarmOperation ?? self::UNNAMED_OPERATION,
             ProtectedModeClearedMailTemplate::PARAM_LIFTED_AT => self::timestampText($now),
             ProtectedModeClearedMailTemplate::PARAM_HELD_FOR
@@ -539,9 +542,11 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
     private function stuckParams(ProtectedModeRuntime $view, string $problem, int $now, bool $still): array
     {
         $frozenSince = $view->startedAt ?? $this->freezeSeenAt;
+        $node = self::nodeIdentity();
 
         return [
-            ProtectedModeStuckMailTemplate::PARAM_NODE_ID => self::nodeName(),
+            ProtectedModeStuckMailTemplate::PARAM_NODE_ID => $node[ProtectedModeStuckMailTemplate::PARAM_NODE_ID],
+            ProtectedModeStuckMailTemplate::PARAM_NODE_NAME => $node[ProtectedModeStuckMailTemplate::PARAM_NODE_NAME],
             ProtectedModeStuckMailTemplate::PARAM_OPERATION => $view->operation ?? self::UNNAMED_OPERATION,
             ProtectedModeStuckMailTemplate::PARAM_PHASE => $view->phase,
             ProtectedModeStuckMailTemplate::PARAM_INITIATOR => self::initiatorText($view),
@@ -605,28 +610,32 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
             : 'these nodes never confirmed the freeze: ' . implode(', ', $pending);
     }
 
-    /**
-     * How this node is called in a message to a person.
-     *
-     * The cluster node id when there is one, and the machine's hostname otherwise: an operator
-     * reading an alert at 3am has to know which box to open, and a single-node installation has no
-     * node id to give them. Both are in-memory reads.
-     *
-     * @return string Node id, hostname, or a placeholder when neither can be had
-     */
+    /** @return string Node label, with hostname only when the identity cannot be read */
     private static function nodeName(): string
     {
+        $node = self::nodeIdentity();
+        return NodeName::label($node[ProtectedModeStuckMailTemplate::PARAM_NODE_ID], $node[ProtectedModeStuckMailTemplate::PARAM_NODE_NAME]);
+    }
+
+    /** @return array{nodeId: string, nodeName: ?string} Separate node address and name for alert templates */
+    private static function nodeIdentity(): array
+    {
         try {
-            if (Hilos::$cluster?->isEnabled() === true) {
-                return Hilos::$cluster->identity()->nodeId;
+            if (Hilos::$cluster !== null) {
+                return [
+                    ProtectedModeStuckMailTemplate::PARAM_NODE_ID => Hilos::$cluster->localNodeId(),
+                    ProtectedModeStuckMailTemplate::PARAM_NODE_NAME => Hilos::$cluster->localNodeName(),
+                ];
             }
         } catch (Throwable $e) {
             Logger::logAgentError(self::LOG_AGENT_ID, 'Node identity is unreadable: ' . $e->getMessage());
         }
 
         $hostname = gethostname();
-
-        return $hostname === false ? self::UNNAMED_NODE : $hostname;
+        return [
+            ProtectedModeStuckMailTemplate::PARAM_NODE_ID => $hostname === false ? self::UNNAMED_NODE : $hostname,
+            ProtectedModeStuckMailTemplate::PARAM_NODE_NAME => null,
+        ];
     }
 
     /**

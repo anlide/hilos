@@ -152,6 +152,7 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => 'silent', 'silentSince' => 10000, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ],
             $this->browser()->pagePayloads[1]->data['node']);
 

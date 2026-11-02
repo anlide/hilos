@@ -14,6 +14,29 @@ enableAutoUnmount(afterEach)
 afterEach(() => vi.restoreAllMocks())
 
 describe('HilosDaemonNodePage', () => {
+  it('updates the reported node name without changing its stable id', async () => {
+    const h = nodeHarness()
+    h.answer(nodeOverview(), nodeHeading({ name: 'Узел <🌍>' }))
+    await nextTick()
+    const name = h.view
+      .findAll('dl')
+      .find((tile) => tile.find('dt').text() === 'Node name')!
+    const nodeId = h.view
+      .findAll('dl')
+      .find((tile) => tile.find('dt').text() === 'Node ID')!
+    expect(name.findAll('dd').map((value) => value.text())).toEqual([
+      'Узел <🌍>',
+      'CLUSTER_NODE_NAME',
+    ])
+    expect(nodeId.get('dd').text()).toBe('n1')
+    h.publish({ node: nodeHeading({ name: null }) })
+    await nextTick()
+    expect(name.get('dd').text()).toBe('—')
+    expect(nodeId.get('dd').text()).toBe('n1')
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
+  })
+
   it('updates the saved-report notice, open details and shared head in the reader zone', async () => {
     const resolved = new Intl.DateTimeFormat().resolvedOptions()
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
@@ -94,7 +117,7 @@ describe('HilosDaemonNodePage', () => {
     ])
     const rows = h.view.get(id('node-overview')).findAll('.row')
     expect(rows).toHaveLength(4)
-    expect(rows.map((row) => row.findAll('dl').length)).toEqual([4, 4, 4, 4])
+    expect(rows.map((row) => row.findAll('dl').length)).toEqual([4, 4, 4, 5])
     expect(rows[0].findAll('dt').map((cell) => cell.text())).toEqual([
       'Node cores',
       'Daemon CPU',

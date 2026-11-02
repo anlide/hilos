@@ -56,6 +56,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosNodeName from '../HilosNodeName.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useSignal } from '../../useSignal.js'
 
@@ -427,11 +428,8 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
 
     <HilosViewportTable v-if="clustered" :controller="nodesTable" class="mt-4">
       <template #[`cell-${NODE_ID_FIELD}`]="{ row }">
-        <span
-          class="badge bg-body-tertiary text-body-emphasis border"
-          :data-id="`hilos-logs-node-${row.nodeId}`"
-        >
-          {{ row.nodeId }}
+        <span :data-id="`hilos-logs-node-${row.nodeId}`">
+          <HilosNodeName :node-id="row.nodeId" :node-name="row.nodeName" />
         </span>
       </template>
       <template #[`cell-${NODE_LAST_ROTATION_AT_FIELD}`]="{ row }">

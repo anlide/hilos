@@ -156,14 +156,14 @@ final class HilosDaemonAgentRestartActionTest extends TestCase
 
     public function testDoneSignalUsesDeclaredRouteAndProducesTheCorrelatedSuccess(): void
     {
-        $this->answer(null, 'Agent room:12 restarted on node node-b.');
+        $this->answer(null, 'Agent room:12 restarted on node Worker (node-b).');
         $ack = Hilos::$sr->getNextQueuedSignal();
         $this->assertSame(SignalConstants::ACTION_SUCCESS, $ack->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $ack->data);
         $this->assertSame('accept-1', $ack->data->targetAcceptKey);
         $this->assertInstanceOf(PageActionSuccessSignalData::class, $ack->data->data);
         $this->assertSame('submit-1', $ack->data->data->requestId);
-        $this->assertSame('Agent room:12 restarted on node node-b.', $ack->data->data->message);
+        $this->assertSame('Agent room:12 restarted on node Worker (node-b).', $ack->data->data->message);
     }
 
     public function testCommandRefusalIsAnsweredWithoutInventingExceptionDetails(): void

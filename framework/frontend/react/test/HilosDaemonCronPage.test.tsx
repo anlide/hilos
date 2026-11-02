@@ -391,6 +391,7 @@ describe('HilosDaemonCronPage', () => {
           if (state === 'silent')
             h.heading({
               clustered: true,
+              name: null,
               role: null,
               state: 'silent',
               silentSince: 1_700_000_000_000,
@@ -521,6 +522,7 @@ describe('HilosDaemonCronPage', () => {
       const at = Date.parse('2026-10-24T03:30:00Z')
       h.heading({
         clustered: true,
+        name: null,
         role: 'master',
         state: 'silent',
         silentSince: at,
@@ -719,6 +721,7 @@ describe('HilosDaemonCronPage', () => {
     )
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -739,6 +742,7 @@ describe('HilosDaemonCronPage', () => {
     )
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -758,6 +762,7 @@ describe('HilosDaemonCronPage', () => {
       const h = harness()
       h.heading({
         clustered: true,
+        name: null,
         role: null,
         state,
         silentSince: state === 'silent' ? 1_700_000_000_000 : null,
@@ -809,6 +814,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'standby',
       silentSince: null,
@@ -819,6 +825,7 @@ describe('HilosDaemonCronPage', () => {
     expect(room).not.toBeNull()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -835,6 +842,7 @@ describe('HilosDaemonCronPage', () => {
     ).toBeNull()
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

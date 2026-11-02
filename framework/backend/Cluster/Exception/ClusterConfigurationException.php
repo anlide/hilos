@@ -26,6 +26,14 @@ class ClusterConfigurationException extends ClusterException
     }
 
     /**
+     * @return self Configuration exception for a name that violates the node naming rule
+     */
+    public static function invalidName(): self
+    {
+        return new self('CLUSTER_NODE_NAME must be one line of at most 64 characters');
+    }
+
+    /**
      * Builds an exception for a TLS file that cannot be read, or holds no certificate.
      *
      * @param string $envName Environment variable that names the file

@@ -123,7 +123,7 @@ final class PeerClockFramesTest extends TestCase
         // The server also ignores an unidentifiable link when called directly.
         $server->onClockProbeReceived($link, $probe);
         self::assertSame('', $this->buffer($link));
-        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of('leader', NodeRole::Master, []));
+        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of('leader', 'Node leader', NodeRole::Master, []));
         new ReflectionMethod(PeerLink::class, 'handleFrame')->invoke($link, $probe);
 
         $reply = PeerDTO::fromWire(trim($this->buffer($link)));
@@ -136,7 +136,7 @@ final class PeerClockFramesTest extends TestCase
     {
         $server = $this->server();
         $link = $this->link($server);
-        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of('node-b', NodeRole::Slave, []));
+        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of('node-b', 'Node node-b', NodeRole::Slave, []));
         $monoNs = 1_000_000;
         $clock = new ClusterClock(
             static fn (): array => ['node-b' => $link],
@@ -169,7 +169,7 @@ final class PeerClockFramesTest extends TestCase
         return new PeerServer(
             '127.0.0.1',
             0,
-            NodeIdentity::of('node-b', NodeRole::Slave, []),
+            NodeIdentity::of('node-b', 'Node node-b', NodeRole::Slave, []),
             [],
             PeerTestTls::unread(),
             PeerTestMarkers::shared(),
@@ -185,7 +185,13 @@ final class PeerClockFramesTest extends TestCase
         $socket = socket_create(AF_UNIX, SOCK_STREAM, 0);
         self::assertInstanceOf(Socket::class, $socket);
         $this->sockets[] = $socket;
-        return new PeerLink($socket, $server, NodeIdentity::of('node-b', NodeRole::Slave, []), false, new PlainSocketTransport($socket));
+        return new PeerLink(
+            $socket,
+            $server,
+            NodeIdentity::of('node-b', 'Node node-b', NodeRole::Slave, []),
+            false,
+            new PlainSocketTransport($socket),
+        );
     }
 
     /**

@@ -59,6 +59,7 @@ function row(
     rowKey: 'node-1:1800000000',
     batchAt: 1800000000000,
     node: 'node-1',
+    nodeName: null,
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 2,
@@ -102,6 +103,7 @@ describe('resolveHilosLogRotationRow', () => {
       rotationTableRow('node-2:1800000000', {
         batchAt: 1800000000000,
         node: 'node-2',
+        nodeName: 'North',
         path: 'archive/2027-01-15-08-00-00Z/',
         absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
         daemonFileCount: 3,
@@ -118,6 +120,7 @@ describe('resolveHilosLogRotationRow', () => {
       rowKey: 'node-2:1800000000',
       batchAt: 1800000000000,
       node: 'node-2',
+      nodeName: 'North',
       path: 'archive/2027-01-15-08-00-00Z/',
       absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
       daemonFileCount: 3,
@@ -134,6 +137,7 @@ describe('resolveHilosLogRotationRow', () => {
     const resolved = resolveHilosLogRotationRow(
       rotationTableRow('standalone:1800000000', {
         node: 'standalone',
+        nodeName: null,
         batchAt: 1800000000000,
         bytes: 10,
       }),
@@ -175,6 +179,39 @@ describe('resolveHilosLogRotationRow', () => {
 })
 
 describe('the header schema', () => {
+  it.each(['North', null])(
+    'keeps the node ID beside its name %s',
+    (nodeName) => {
+      const frame = header({ nodes: [{ nodeId: 'node-1', nodeName }] })
+      expect(LOGS_SIGNAL_SCHEMAS[ROTATIONS_HEADER_SIGNAL].parse(frame)).toEqual(
+        frame,
+      )
+    },
+  )
+
+  it.each([
+    ['node-1'],
+    [{ nodeId: 'node-1' }],
+    [{ nodeId: 'node-1', nodeName: 1 }],
+    [{ nodeId: 'node-1', nodeName: null, extra: true }],
+  ])('rejects an old or malformed node list %j', (nodes) => {
+    expect(
+      LOGS_SIGNAL_SCHEMAS[ROTATIONS_HEADER_SIGNAL].safeParse({
+        ...header(),
+        nodes,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects an unknown header key', () => {
+    expect(
+      LOGS_SIGNAL_SCHEMAS[ROTATIONS_HEADER_SIGNAL].safeParse({
+        ...header(),
+        extra: true,
+      }).success,
+    ).toBe(false)
+  })
+
   it('is registered under the page signal the backend sends it as', () => {
     expect(Object.keys(LOGS_SIGNAL_SCHEMAS)).toEqual([ROTATIONS_HEADER_SIGNAL])
   })
@@ -189,7 +226,7 @@ describe('the header schema', () => {
     expect(parsed.success && parsed.data.available).toBeNull()
   })
 
-  it('refuses a payload whose node list is not a list of names', () => {
+  it('refuses a payload whose node list is not an array', () => {
     const parsed = LOGS_SIGNAL_SCHEMAS[ROTATIONS_HEADER_SIGNAL].safeParse({
       ...header(),
       nodes: 'node-1',
@@ -218,7 +255,16 @@ describe('hasRotationNodes', () => {
   })
 
   it('is true once the picture names nodes', () => {
-    expect(hasRotationNodes(header({ nodes: ['node-1', 'node-2'] }))).toBe(true)
+    expect(
+      hasRotationNodes(
+        header({
+          nodes: [
+            { nodeId: 'node-1', nodeName: 'North' },
+            { nodeId: 'node-2', nodeName: null },
+          ],
+        }),
+      ),
+    ).toBe(true)
   })
 })
 
@@ -234,9 +280,11 @@ describe('rotationsSearchPlaceholder', () => {
   })
 
   it('offers the node once the picture names nodes', () => {
-    expect(rotationsSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
-      'Search by batch date or node…',
-    )
+    expect(
+      rotationsSearchPlaceholder(
+        header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }),
+      ),
+    ).toBe('Search by batch date or node…')
   })
 })
 
@@ -480,7 +528,7 @@ describe('formatRetentionRule', () => {
 
 describe('rotationTakeoutAddress', () => {
   it('leads with the node, because the batch is on that machine and only there', () => {
-    expect(rotationTakeoutAddress(row(), true)).toBe(
+    expect(rotationTakeoutAddress(row({ nodeName: 'North' }), true)).toBe(
       'node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     )
   })
@@ -498,7 +546,7 @@ describe('rotationTakeoutAddress', () => {
 
 describe('rotationTakeoutCommand', () => {
   it('copies the batch into a folder named after it, under the node it came from', () => {
-    expect(rotationTakeoutCommand(row(), true)).toBe(
+    expect(rotationTakeoutCommand(row({ nodeName: 'North' }), true)).toBe(
       'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/node-1/2027-01-15-08-00-00Z/',
     )
   })
@@ -534,7 +582,7 @@ describe('createHilosLogRotationsActions', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutConfirm(
-      row({ node: 'node-2', batchAt: 1800000000000 }),
+      row({ node: 'node-2', nodeName: null, batchAt: 1800000000000 }),
     )
 
     expect(sent).toEqual([
@@ -562,7 +610,7 @@ describe('createHilosLogRotationsActions', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutUndo(
-      row({ node: 'node-2', batchAt: 1800000000000 }),
+      row({ node: 'node-2', nodeName: null, batchAt: 1800000000000 }),
     )
 
     expect(sent).toEqual([
@@ -846,7 +894,12 @@ describe('createHilosLogRotationsTable and the address', () => {
     const table = createHilosLogRotationsTable(
       stubContext(sent),
       createSignal<HilosLogRotationsHeader | null>(
-        header({ nodes: ['node-1', 'node-2'] }),
+        header({
+          nodes: [
+            { nodeId: 'node-1', nodeName: 'North' },
+            { nodeId: 'node-2', nodeName: null },
+          ],
+        }),
       ),
       fakeAddress({ state: 'due' }, rewrites),
     )
@@ -1011,6 +1064,7 @@ describe('the rotation table frame', () => {
     ROTATION_BYTES_FIELD,
     ROTATION_RETENTION_STATE_FIELD,
     ROTATION_NODE_FIELD,
+    'nodeName',
     'absolutePath',
     'pruneNotBefore',
   ]
@@ -1020,6 +1074,7 @@ describe('the rotation table frame', () => {
     ROTATION_BATCH_AT_FIELD,
     'path',
     ROTATION_NODE_FIELD,
+    'nodeName',
     ROTATION_DAEMON_FILE_COUNT_FIELD,
     'agentFileCount',
     'workerFileCount',
@@ -1140,7 +1195,14 @@ describe('the rotation table frame', () => {
     ).not.toContain(ROTATION_NODE_FIELD)
     expect(table.controller.frame.filters.get()).toHaveLength(1)
 
-    headerSignal.set(header({ nodes: ['node-1', 'node-2'] }))
+    headerSignal.set(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: 'North' },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
 
     expect(table.controller.frame.searchPlaceholder.get()).toBe(
       'Search by batch date or node…',
@@ -1163,7 +1225,7 @@ describe('the rotation table frame', () => {
       expect(nodeFilter.key).toBe(ROTATION_FILTER_NODE)
       expect(nodeFilter.anyLabel).toBe('All nodes')
       expect(nodeFilter.options()).toEqual([
-        { value: 'node-1', label: 'node-1' },
+        { value: 'node-1', label: 'North (node-1)' },
         { value: 'node-2', label: 'node-2' },
       ])
     }
@@ -1171,7 +1233,14 @@ describe('the rotation table frame', () => {
 
   it('drops a selected node that the picture no longer names', () => {
     const sent: TableViewportDescriptor[] = []
-    const headerSignal = createSignal(header({ nodes: ['node-1', 'node-2'] }))
+    const headerSignal = createSignal(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: 'North' },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
     const table = createHilosLogRotationsTable(
       recordingContext(sent, [], []),
       headerSignal,
@@ -1189,7 +1258,7 @@ describe('the rotation table frame', () => {
     )
     table.controller.setFilter(ROTATION_FILTER_NODE, 'node-2')
 
-    headerSignal.set(header({ nodes: ['node-1'] }))
+    headerSignal.set(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
 
     expect(table.controller.filter.get()[ROTATION_FILTER_NODE]).toBeUndefined()
     expect(sent.at(-1)?.filter?.[ROTATION_FILTER_NODE]).toBeUndefined()
@@ -1248,7 +1317,14 @@ describe('the rotation table frame', () => {
     expect(renderedFrames[0]?.rendered).toEqual(singleNodeRendered)
     expect(facetFrames).toEqual([])
 
-    headerSignal.set(header({ nodes: ['node-1', 'node-2'] }))
+    headerSignal.set(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: 'North' },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
 
     expect(
       table.controller.frame.columns.get().map((column) => column.key),

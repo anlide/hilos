@@ -44,6 +44,7 @@ function node(
 ): HilosLogsOverviewNode {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 210 * 1024 * 1024,
@@ -61,6 +62,7 @@ function node(
 function tableNode(overrides: Partial<HilosLogNodeRow> = {}): HilosLogNodeRow {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: Date.parse('2026-09-02T03:00:00.000Z'),
     liveBytes: 210 * 1024 * 1024,
@@ -106,6 +108,7 @@ function failure(
 ): HilosLogsOverviewRecentEntry {
   return {
     nodeId: 'standalone',
+    nodeName: null,
     stream: 'worker-monopolistic-5.error.log',
     at: '2026-09-06T10:00:02.125Z',
     message: 'login action failed',
@@ -311,8 +314,12 @@ describe('HilosLogsPage', () => {
         overview({
           lastRotationAt: moment,
           nodes: [
-            node({ nodeId: 'node-1', lastRotationAt: moment }),
-            node({ nodeId: 'node-2', lastRotationAt: 'not-a-moment' }),
+            node({ nodeId: 'node-1', nodeName: null, lastRotationAt: moment }),
+            node({
+              nodeId: 'node-2',
+              nodeName: null,
+              lastRotationAt: 'not-a-moment',
+            }),
           ],
           recentErrors: [failure()],
           recentWarnings: [
@@ -323,8 +330,12 @@ describe('HilosLogsPage', () => {
       )
       pushPageWindow(
         [
-          tableNode({ nodeId: 'node-1', lastRotationAt: Date.parse(moment) }),
-          tableNode({ nodeId: 'node-2', lastRotationAt: null }),
+          tableNode({
+            nodeId: 'node-1',
+            nodeName: null,
+            lastRotationAt: Date.parse(moment),
+          }),
+          tableNode({ nodeId: 'node-2', nodeName: null, lastRotationAt: null }),
         ],
         2,
       )
@@ -515,6 +526,7 @@ describe('HilosLogsPage', () => {
           node({ nodeId: 'node-1' }),
           node({
             nodeId: 'node-2',
+            nodeName: null,
             available: false,
             lastRotationAt: null,
             liveBytes: null,
@@ -528,6 +540,7 @@ describe('HilosLogsPage', () => {
     pushPageWindow([
       tableNode({
         nodeId: 'node-2',
+        nodeName: null,
         available: false,
         lastRotationAt: null,
         liveBytes: null,
@@ -557,6 +570,7 @@ describe('HilosLogsPage', () => {
     pushPageWindow([
       tableNode({
         nodeId: 'node-1',
+        nodeName: null,
         lastRotationAt: null,
         liveBytes: null,
         archiveBytes: null,
@@ -565,6 +579,7 @@ describe('HilosLogsPage', () => {
       }),
       tableNode({
         nodeId: 'node-2',
+        nodeName: null,
         lastRotationAt: null,
         liveBytes: 0,
         archiveBytes: null,
@@ -784,6 +799,7 @@ describe('HilosLogsPage', () => {
           node({ nodeId: 'node-1' }),
           node({
             nodeId: 'node-2',
+            nodeName: null,
             filesystemFreeBytes: 1400,
             filesystemTotalBytes: 10000,
             freeSpaceThresholdPercent: 20,
@@ -811,6 +827,7 @@ describe('HilosLogsPage', () => {
         nodes: [
           node({
             nodeId: 'node-2',
+            nodeName: null,
             filesystemFreeBytes: 0,
             filesystemTotalBytes: 10000,
             freeSpaceThresholdPercent: 0,

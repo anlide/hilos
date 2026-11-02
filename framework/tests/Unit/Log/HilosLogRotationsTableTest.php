@@ -8,6 +8,7 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -16,6 +17,7 @@ use Hilos\Log\LogBatchSummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogRotationsTableRow;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -39,6 +41,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogRotationsTableTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     /** Fixed instant every fixture batch is placed relative to (Unix seconds, mid-January 2027). */
     private const int NOW = 1_800_000_000;
 
@@ -48,11 +52,176 @@ final class HilosLogRotationsTableTest extends TestCase
     /** Process zone deliberately differs from the UTC disk contract. */
     private string $previousTimeZone;
 
+    public function testRegistryNamesDoNotChangeNodeFiltersOrRowKeys(): void
+    {
+        $this->publishLogNode('node-1', 'Archive host', online: false);
+        $this->picture($this->node('node-1', [self::NOW]), $this->node('node-2', [self::NOW]));
+        $rows = $this->rows(new TableQueryDTO());
+        $this->assertSame(['Archive host', null], array_map(static fn ($row): ?string => $row->nodeName, $rows));
+        $this->assertSame($rows[0]->toArray(), HilosLogRotationsTableRow::fromArray($rows[0]->toArray())->toArray());
+        $filtered = $this->rows(new TableQueryDTO(filter: [HilosLogRotationsTable::FILTER_NODE => 'node-1']));
+        $this->assertCount(1, $filtered);
+        $this->assertSame('node-1', $filtered[0]->node);
+        $this->assertSame('Archive host', $filtered[0]->nodeName);
+        $before = $filtered[0]->toArray();
+
+        $this->publishLogNode('node-1', 'Renamed host', online: false);
+        $after = $this->rows(new TableQueryDTO(filter: [HilosLogRotationsTable::FILTER_NODE => 'node-1']))[0]->toArray();
+        $before['nodeName'] = 'Renamed host';
+        $this->assertSame($before, $after);
+    }
+
+    public function testNodeSortUsesNamesAndThenIdsBeforeCuttingTheWindow(): void
+    {
+        $this->publishLogNode('node-z', 'Alpha');
+        $this->publishLogNode('node-a', 'Zulu');
+        $this->publishLogNode('node-2', 'Same');
+        $this->publishLogNode('node-10', 'Same');
+        $this->picture(
+            $this->node('node-a', [self::NOW]),
+            $this->node('node-z', [self::NOW]),
+            $this->node('node-2', [self::NOW]),
+            $this->node('node-10', [self::NOW]),
+        );
+        $table = new HilosLogRotationsTable();
+        $sort = TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node, TableConstants::ORDER_ASC));
+        $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: 2));
+        $this->assertSame(['node-z', 'node-10'], array_map(static fn ($row): string => $row->node, $first->rows));
+        $next = $table->getPage(new TableQueryDTO(sort: $sort, limit: 2, anchor: $first->lastAnchor));
+        $this->assertSame(['node-2', 'node-a'], array_map(static fn ($row): string => $row->node, $next->rows));
+        $this->assertSame(2, $next->rowsBefore);
+        $this->assertSame(4, $next->totalCount);
+        $descending = $table->getPage(new TableQueryDTO(
+            sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node, TableConstants::ORDER_DESC)),
+            limit: 4,
+        ));
+        $this->assertSame(
+            ['node-a', 'node-2', 'node-10', 'node-z'],
+            array_map(static fn ($row): string => $row->node, $descending->rows),
+        );
+    }
+
+    public function testNodeAnchorSurvivesRemovalInEitherSortDirection(): void
+    {
+        $this->publishLogNode('a', 'Alpha');
+        $this->publishLogNode('b', 'Beta');
+        $this->publishLogNode('c', 'Gamma');
+        $table = new HilosLogRotationsTable();
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $this->picture($this->node('a', [self::NOW]), $this->node('b', [self::NOW]), $this->node('c', [self::NOW]));
+            $sort = TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node, $direction));
+            $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: 1));
+            $middle = $table->getPage(new TableQueryDTO(sort: $sort, limit: 1, anchor: $first->lastAnchor));
+            self::assertSame('b', $middle->rows[0]->node);
+            self::assertSame([
+                'nodeName' => 'Beta', 'node' => 'b', 'rowKey' => $middle->rows[0]->rowKey,
+            ], $middle->lastAnchor->values);
+            self::assertSame($middle->lastAnchor->values,
+                $table->anchorForRow($middle->rows[0], new TableQueryDTO(sort: $sort))->values);
+
+            $this->picture($this->node('a', [self::NOW]), $this->node('c', [self::NOW]));
+            $next = $table->getPage(new TableQueryDTO(sort: $sort, limit: 1, anchor: $middle->lastAnchor));
+            $previous = $table->getPage(new TableQueryDTO(
+                sort: $sort, limit: 1, anchor: $middle->firstAnchor, anchorDirection: TableAnchorDirection::Before,
+            ));
+            self::assertSame($direction === TableConstants::ORDER_ASC ? 'c' : 'a', $next->rows[0]->node);
+            self::assertSame($direction === TableConstants::ORDER_ASC ? 'a' : 'c', $previous->rows[0]->node);
+            self::assertSame(1, $next->rowsBefore);
+            self::assertSame(0, $previous->rowsBefore);
+            self::assertSame($middle->lastAnchor, $next->frame->before);
+            self::assertGreaterThan(0, $table->placeRowAgainst($next->rows[0], $middle->lastAnchor, new TableQueryDTO(sort: $sort)));
+            self::assertLessThan(0, $table->placeRowAgainst($previous->rows[0], $middle->firstAnchor, new TableQueryDTO(sort: $sort)));
+        }
+    }
+
+    public function testNameOnlyChangeHasANewPlaceAtTheSameRowKeyAndWindowAddress(): void
+    {
+        $this->publishLogNode('a', 'Alpha');
+        $this->publishLogNode('b', 'Beta');
+        $this->publishLogNode('c', 'Gamma');
+        $this->picture($this->node('a', [self::NOW]), $this->node('b', [self::NOW]), $this->node('c', [self::NOW]));
+        $table = new HilosLogRotationsTable();
+        $sort = TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node));
+        $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: 1));
+        $held = new TableQueryDTO(sort: $sort, limit: 1, anchor: $first->lastAnchor);
+        $before = $table->getPage($held);
+        $this->publishLogNode('b', 'Zulu');
+        $after = $table->getPage($held);
+        self::assertSame('c', $after->rows[0]->node);
+        self::assertSame($held->anchor, $after->frame->before);
+        $renamed = $table->getPage(new TableQueryDTO(sort: $sort, filter: ['node' => 'b']))->rows[0];
+        self::assertSame($before->rows[0]->rowKey, $renamed->rowKey);
+        self::assertSame('Beta', $before->lastAnchor->values['nodeName']);
+        self::assertSame('Zulu', $table->anchorForRow($renamed, $held)->values['nodeName']);
+        self::assertGreaterThan(0, $table->placeRowAgainst($renamed, $before->lastAnchor, $held));
+    }
+
+    public function testNameIdAndRowKeyTiesHaveTheSameWindowAndPlacementOrder(): void
+    {
+        foreach (['node', 'node-1', 'node-10', 'node-2'] as $id) {
+            $this->publishLogNode($id, 'Same');
+        }
+        $this->picture(
+            $this->node('node-2', [self::NOW, self::NOW + 1]), $this->node('node-10', [self::NOW, self::NOW + 1]),
+            $this->node('node-1', [self::NOW, self::NOW + 1]), $this->node('node', [self::NOW, self::NOW + 1]),
+        );
+        $table = new HilosLogRotationsTable();
+        $keys = ['node:1800000000', 'node:1800000001', 'node-1:1800000000', 'node-1:1800000001',
+            'node-10:1800000000', 'node-10:1800000001', 'node-2:1800000000', 'node-2:1800000001'];
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $sort = TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node, $direction));
+            $snapshot = $table->getPage(new TableQueryDTO(sort: $sort));
+            self::assertSame($direction === TableConstants::ORDER_ASC ? $keys : array_reverse($keys),
+                array_column($snapshot->rows, 'rowKey'));
+            foreach ($snapshot->rows as $index => $row) {
+                $query = new TableQueryDTO(sort: $sort, limit: 1, pageIndex: $index);
+                $page = $table->getPage($query);
+                self::assertSame($row->rowKey, $page->rows[0]->rowKey);
+                self::assertSame($page->lastAnchor->values, $table->anchorForRow($row, $query)->values);
+                self::assertSame(0, $table->placeRowAgainst($row, $page->lastAnchor, $query));
+                if (isset($snapshot->rows[$index + 1])) {
+                    self::assertGreaterThan(0, $table->placeRowAgainst($snapshot->rows[$index + 1], $page->lastAnchor, $query));
+                }
+            }
+        }
+        $query = new TableQueryDTO(
+            search: 'node-1', sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node)),
+            limit: 1, filter: ['node' => 'node-1'], pageIndex: 1,
+            shownFields: array_keys($snapshot->rows[0]->toArray()),
+        );
+        $filtered = $table->getPage($query);
+        self::assertSame($keys[3], $filtered->rows[0]->rowKey);
+        self::assertSame(2, $filtered->totalCount);
+        self::assertSame(1, $filtered->rowsBefore);
+        self::assertSame(1, $filtered->limit);
+        self::assertSame([], $table->getPage(new TableQueryDTO(search: 'absent-stream', sort: $query->sort))->rows);
+    }
+
+    public function testUnknownNameKeepsNullOnWireAndUsesIdForLogOrdering(): void
+    {
+        $this->publishLogNode('z', 'Zulu');
+        $this->picture($this->node('z', [self::NOW]), $this->node('A-unknown', [self::NOW]));
+        $table = new HilosLogRotationsTable();
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $query = new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO(HilosLogRotationsTableRow::node, $direction)));
+            $snapshot = $table->getPage($query);
+            self::assertSame($direction === TableConstants::ORDER_ASC ? ['A-unknown', 'z'] : ['z', 'A-unknown'],
+                array_column($snapshot->rows, 'node'));
+            $unknown = $snapshot->rows[$direction === TableConstants::ORDER_ASC ? 0 : 1];
+            self::assertNull($unknown->nodeName);
+            $anchor = $table->anchorForRow($unknown, $query);
+            self::assertArrayHasKey('nodeName', $anchor->values);
+            self::assertNull($anchor->values['nodeName']);
+            self::assertSame(0, $table->placeRowAgainst($unknown, $anchor, $query));
+        }
+    }
+
     protected function setUp(): void
     {
         $this->previousTimeZone = date_default_timezone_get();
         date_default_timezone_set('America/Los_Angeles');
         parent::setUp();
+        $this->mountLogsRuntime();
         ClusterLogIndexMirror::forgetPicture();
     }
 
@@ -61,6 +230,7 @@ final class HilosLogRotationsTableTest extends TestCase
         date_default_timezone_set($this->previousTimeZone);
         ClusterLogIndexMirror::forgetPicture();
 
+        $this->restoreLogsRuntime();
         parent::tearDown();
     }
 

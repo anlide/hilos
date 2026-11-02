@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Template;
 
+use Hilos\Cluster\NodeName;
 use Hilos\Mail\EmailContent;
 use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
@@ -24,6 +25,9 @@ final class ProtectedModeClearedMailTemplate implements MailTemplate
 {
     /** Template param: id or hostname of the node that came back. */
     public const string PARAM_NODE_ID = 'nodeId';
+
+    /** Template param: nullable readable name of this node. */
+    public const string PARAM_NODE_NAME = 'nodeName';
 
     /** Template param: operation the freeze protected. */
     public const string PARAM_OPERATION = 'operation';
@@ -52,9 +56,9 @@ final class ProtectedModeClearedMailTemplate implements MailTemplate
             );
         }
 
-        $nodeId = (string)$nodeId;
+        $nodeLabel = NodeName::label((string)$nodeId, $params[self::PARAM_NODE_NAME] ?? null);
         $indent = '    ';
-        $body = "The freeze on {$nodeId} was lifted at " . self::text($params, self::PARAM_LIFTED_AT) . '.'
+        $body = "The freeze on {$nodeLabel} was lifted at " . self::text($params, self::PARAM_LIFTED_AT) . '.'
             . ' It had held for ' . self::text($params, self::PARAM_HELD_FOR) . ', '
             . self::text($params, self::PARAM_STUCK_FOR) . " of them with nothing running behind it.\n"
             . "\n"
@@ -63,7 +67,7 @@ final class ProtectedModeClearedMailTemplate implements MailTemplate
             . "\n"
             . 'No further alerts will be sent for this freeze.';
 
-        return new EmailContent("Node {$nodeId} is out of maintenance", $body);
+        return new EmailContent("Node {$nodeLabel} is out of maintenance", $body);
     }
 
     /**

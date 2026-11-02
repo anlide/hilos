@@ -106,6 +106,7 @@ function harness(initialSummary?: HilosDaemonEnvMismatchSummary | null) {
   return {
     view,
     scope,
+    scopes,
     connection,
     sentViewports,
     registeredTables,
@@ -133,6 +134,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: false,
       servingNodeId: 'standalone',
+      servingNodeName: 'Main node',
       comparison: null,
     })
     await nextTick()
@@ -148,7 +150,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
       h.view
         .find('[data-id="hilos-daemon-env-mismatch-standalone-node"]')
         .text(),
-    ).toBe('standalone')
+    ).toBe('Main node (standalone)')
 
     expect(
       h.view
@@ -159,6 +161,62 @@ describe('HilosDaemonEnvMismatchPage', () => {
       h.view.find('[data-id="hilos-daemon-env-mismatch-waiting"]').exists(),
     ).toBe(false)
     expect(h.sentViewports).toHaveLength(0)
+  })
+
+  it('updates the standalone identity from the current summary without subscriptions', async () => {
+    const h = harness({
+      clustered: false,
+      servingNodeId: 'custom-node',
+      servingNodeName: null,
+      comparison: null,
+    })
+    const node = () =>
+      h.view.get('[data-id="hilos-daemon-env-mismatch-standalone-node"]')
+    await nextTick()
+    expect(node().text()).toBe('custom-node')
+
+    h.setSummary({
+      clustered: false,
+      servingNodeId: 'custom-node',
+      servingNodeName: 'Узел <🌍>',
+      comparison: null,
+    })
+    await nextTick()
+    expect(node().text()).toBe('Узел <🌍> (custom-node)')
+    expect(node().findAll('*')).toHaveLength(0)
+
+    h.setSummary({
+      clustered: false,
+      servingNodeId: 'next-node',
+      servingNodeName: 'Next node',
+      comparison: null,
+    })
+    await nextTick()
+    expect(node().text()).toBe('Next node (next-node)')
+
+    h.setSummary({
+      clustered: false,
+      servingNodeId: 'next-node',
+      servingNodeName: null,
+      comparison: null,
+    })
+    await nextTick()
+    expect(node().text()).toBe('next-node')
+    expect(h.registeredTables.size).toBe(0)
+    expect(h.sentViewports).toHaveLength(0)
+    expect([...h.listeners.values()].every((group) => group.size === 0)).toBe(
+      true,
+    )
+
+    h.scopes.dropPage()
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-daemon-env-mismatch-standalone"]').exists(),
+    ).toBe(false)
+    expect(
+      h.view.find('[data-id="hilos-daemon-env-mismatch-waiting"]').exists(),
+    ).toBe(true)
+    h.view.unmount()
   })
 
   it('shows waiting picture when summary or comparison is null', async () => {
@@ -178,6 +236,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.setSummary({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: null,
     })
     await nextTick()
@@ -191,8 +250,13 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2', 'n3'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+          { nodeId: 'n3', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 2,
         sourcesDiffer: 1,
@@ -229,8 +293,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.setSummary({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -260,8 +328,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 1,
@@ -299,8 +371,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -319,8 +395,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.setSummary({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -350,8 +430,15 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2', 'n3', 'n4', 'n5'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+          { nodeId: 'n3', nodeName: null },
+          { nodeId: 'n4', nodeName: null },
+          { nodeId: 'n5', nodeName: null },
+        ],
         answering: ['n1', 'n2', 'n3', 'n5'],
         diverged: 1,
         sourcesDiffer: 1,
@@ -509,8 +596,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -531,8 +622,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.setSummary({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -550,8 +645,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 2,
         sourcesDiffer: 0,
@@ -638,8 +737,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: 'Узел <🌍>' },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -650,7 +753,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
 
     expect(h.view.findAll('th').map((th) => th.text())).toEqual([
       'Key',
-      'n1 · this node',
+      'Узел <🌍> (n1) · this node',
       'n2',
       'Will move Will leaveRow state and controls',
     ])
@@ -658,8 +761,13 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.setSummary({
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2', 'n3'],
+        nodes: [
+          { nodeId: 'n1', nodeName: 'Renamed node' },
+          { nodeId: 'n2', nodeName: null },
+          { nodeId: 'n3', nodeName: null },
+        ],
         answering: ['n1', 'n2', 'n3'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -670,7 +778,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
 
     expect(h.view.findAll('th').map((th) => th.text())).toEqual([
       'Key',
-      'n1 · this node',
+      'Renamed node (n1) · this node',
       'n2',
       'n3',
       'Will move Will leaveRow state and controls',

@@ -8,6 +8,7 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -19,21 +20,22 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
-use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
+use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Pages\Logs\AbstractHilosLogsWorkersPage;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Framework log-workers table: the worker streams of every node, one row per stream on a node (HIL-386).
  *
- * Rows are built out of {@see ClusterLogIndexMirror} and out of nothing else — the picture the
- * nodes reported, held in the page worker's memory. It walks no directory: a walk here would block
+ * Figures come from {@see ClusterLogIndexMirror}, the reported picture held in the page worker's
+ * memory. Node names are read from the current runtime registry. It walks no directory: a walk here would block
  * the worker on file I/O and could only ever see the node it happens to run on, which is one
  * machine's store shown as though it were the installation's.
  *
@@ -132,6 +134,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
             HilosLogWorkersTableRow::rowKey => WireField::notPersonal(),
             HilosLogWorkersTableRow::key => WireField::notPersonal(),
             HilosLogWorkersTableRow::node => WireField::notPersonal(),
+            HilosLogWorkersTableRow::nodeName => WireField::notPersonal(),
             HilosLogWorkersTableRow::type => WireField::notPersonal(),
             HilosLogWorkersTableRow::live => WireField::notPersonal(),
             HilosLogWorkersTableRow::batchCount => WireField::notPersonal(),
@@ -153,6 +156,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
      *     node and type options that were asked about
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
@@ -180,6 +184,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
      * @return ?bool Whether the row is in the set; this table always knows
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -187,12 +192,30 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
     }
 
     /**
+     * @param AbstractTableRow $row Row whose current name and identity locate its place
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?TableAnchorDTO Values of the actual order, or null without a comparable row and order
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO
+    {
+        return parent::anchorForRow($row, self::orderingQuery($query));
+    }
+
+    /**
+     * @param AbstractTableRow $row Current row to place
+     * @param TableAnchorDTO $anchor Previously captured name and identity values
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?int Signed position, or null when the anchor does not describe this order
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int
+    {
+        return parent::placeRowAgainst($row, $anchor, self::orderingQuery($query));
+    }
+
+    /**
      * Declares the stream list's sortable columns and the payload key each one orders by.
      *
-     * All four order by themselves, so the map is an identity one and the ordering handed to
-     * {@see InMemoryTableFilter} is the window's own. The key table needs a swap here only for its
-     * daily growth, whose drawn value is null while the measuring window fills; this screen draws
-     * no growth column and has no null among the four.
+     * The node column is expanded into name and id by orderingQuery(); the other columns order by themselves.
      *
      * @return array<string, string> Wire row fields mapped to the payload keys they order by
      */
@@ -235,12 +258,11 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
      * @return TableSnapshotDTO Window snapshot with raw rows and the total count
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $rows = $this->narrow($this->collectRows(), $query);
-
-        return $this->filterInMemory($rows, $query);
+        return $this->filterInMemory($this->narrow($this->collectRows(), $query), self::orderingQuery($query));
     }
 
     /**
@@ -252,9 +274,67 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
     }
 
     /**
+     * Keeps Logs' lexical name/id order and its unknown-name fallback on every comparison path.
+     *
+     * @param array<string, mixed> $values Current row values
+     * @param array<string, mixed> $against Row or captured anchor values
+     * @param TableSortDTO $component Expanded component in its own direction
+     * @return ?int Signed name/id comparison, or null for a standard column
+     */
+    protected function inMemoryCompareComponent(array $values, array $against, TableSortDTO $component): ?int
+    {
+        if (!isset($values[HilosLogWorkersTableRow::node], $against[HilosLogWorkersTableRow::node])) {
+            return null;
+        }
+
+        $comparison = match ($component->field) {
+            HilosLogWorkersTableRow::nodeName => strcmp(
+                $values[HilosLogWorkersTableRow::nodeName] ?? $values[HilosLogWorkersTableRow::node],
+                $against[HilosLogWorkersTableRow::nodeName] ?? $against[HilosLogWorkersTableRow::node],
+            ),
+            HilosLogWorkersTableRow::node => strcmp($values[HilosLogWorkersTableRow::node], $against[HilosLogWorkersTableRow::node]),
+            default => null,
+        };
+
+        return $comparison === null ? null : $comparison * (strtolower($component->direction) === TableConstants::ORDER_DESC ? -1 : 1);
+    }
+
+    /**
+     * Translates the public column order into the row fields used by sorting, anchors and live placement.
+     *
+     * @param TableQueryDTO $query Window whose search, filters and address must stay unchanged
+     * @return TableQueryDTO Same window ordered by its payload values
+     */
+    private static function orderingQuery(TableQueryDTO $query): TableQueryDTO
+    {
+        $components = [];
+        foreach ($query->sort?->components ?? [] as $component) {
+            if ($component->field === HilosLogWorkersTableRow::node) {
+                $components[] = new TableSortDTO(HilosLogWorkersTableRow::nodeName, $component->direction);
+                $components[] = new TableSortDTO(HilosLogWorkersTableRow::node, $component->direction);
+            } else {
+                $components[] = $component;
+            }
+        }
+
+        return new TableQueryDTO(
+            search: $query->search,
+            sort: $query->sort?->withComponents($components),
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $query->anchor,
+            anchorDirection: $query->anchorDirection,
+            pageIndex: $query->pageIndex,
+            searchableFields: $query->searchableFields,
+            shownFields: $query->shownFields,
+        );
+    }
+
+    /**
      * Projects every node's worker streams into rows, ordered by key and then by node.
      *
      * @return list<array<string, mixed>> Row payloads across the whole cluster
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function collectRows(): array
     {
@@ -284,6 +364,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
      *
      * @param ClusterLogNodeSlot $slot The node's slot in the cluster picture
      * @return list<array<string, mixed>> Row payloads of this node
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function rowsOfNode(ClusterLogNodeSlot $slot): array
     {
@@ -293,6 +374,7 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
                 HilosLogWorkersTableRow::rowKey => self::rowKey($slot->nodeId, $summary->key),
                 HilosLogWorkersTableRow::key => $summary->key,
                 HilosLogWorkersTableRow::node => $slot->nodeId,
+                HilosLogWorkersTableRow::nodeName => Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name,
                 HilosLogWorkersTableRow::type => $summary->monopolistic
                     ? self::TYPE_MONOPOLISTIC
                     : self::TYPE_REGULAR,

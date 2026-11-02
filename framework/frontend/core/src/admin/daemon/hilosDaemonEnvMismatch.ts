@@ -23,6 +23,7 @@ import {
   type HilosDaemonEnvValue,
   type HilosDaemonEnvValueView,
 } from './hilosDaemonEnv.js'
+import { formatHilosNodeLabel } from './hilosDaemonNode.js'
 
 const DAEMON_ENV_MISMATCH_TABLE = 'hilosDaemonEnvMismatch'
 const DAEMON_ENV_MISMATCH_SLOT = 'key'
@@ -51,9 +52,15 @@ export const DAEMON_ENV_MISMATCH_DATA = 'envMismatch'
 export const daemonEnvMismatchSummarySchema = z.strictObject({
   clustered: z.boolean(),
   servingNodeId: z.string(),
+  servingNodeName: z.string().nullable(),
   comparison: z
     .strictObject({
-      nodes: z.array(z.string()),
+      nodes: z.array(
+        z.strictObject({
+          nodeId: z.string(),
+          nodeName: z.string().nullable(),
+        }),
+      ),
       answering: z.array(z.string()),
       diverged: z.number().int(),
       sourcesDiffer: z.number().int(),
@@ -109,6 +116,7 @@ const cellsSchema = z.array(
 /** A node the page names as one column of the verdict table. */
 export interface HilosDaemonEnvMismatchNode {
   readonly nodeId: string
+  readonly nodeName: string | null
   readonly serving: boolean
 }
 
@@ -123,9 +131,10 @@ export function daemonEnvMismatchNodes(
   if (summary === null || summary.comparison === null) {
     return []
   }
-  return summary.comparison.nodes.map((nodeId) => ({
-    nodeId,
-    serving: nodeId === summary.servingNodeId,
+  return summary.comparison.nodes.map((node) => ({
+    nodeId: node.nodeId,
+    nodeName: node.nodeName,
+    serving: node.nodeId === summary.servingNodeId,
   }))
 }
 
@@ -338,7 +347,8 @@ export function daemonEnvMismatchNodeColumnKey(
 export function formatDaemonEnvMismatchNodeLabel(
   node: HilosDaemonEnvMismatchNode,
 ): string {
-  return node.serving ? `${node.nodeId} · this node` : node.nodeId
+  const label = formatHilosNodeLabel(node.nodeId, node.nodeName)
+  return node.serving ? `${label} · this node` : label
 }
 
 /** Return the cell for a node, if this row contains one. */

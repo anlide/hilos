@@ -48,6 +48,7 @@ final class PeerServerAddressChurnTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         Hilos::$cluster = new ClusterContext();
@@ -62,20 +63,20 @@ final class PeerServerAddressChurnTest extends TestCase
 
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
-        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             putenv($key);
         }
     }
 
     public function testReconcileRepointsDialWhenPeerReAdvertisesAChangedAddress(): void
     {
-        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
         $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $registry = Hilos::$cluster->registry();
         $now = microtime(true);
 
         // First handshake at the original endpoint lazily opens the dial.
-        $registry->merge(NodeIdentity::of('node-b', NodeRole::Master, [], new PeerAddress('10.0.0.1', 1111)), true, $now);
+        $registry->merge(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, [], new PeerAddress('10.0.0.1', 1111)), true, $now);
         $this->reconcile($server);
 
         $dials = $this->peerDials($server);
@@ -97,7 +98,7 @@ final class PeerServerAddressChurnTest extends TestCase
         $dial->link = $link;
 
         // The peer restarts on a new port; the same node re-handshakes with a changed address.
-        $registry->merge(NodeIdentity::of('node-b', NodeRole::Master, [], new PeerAddress('10.0.0.2', 2222)), true, $now);
+        $registry->merge(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, [], new PeerAddress('10.0.0.2', 2222)), true, $now);
         $this->reconcile($server);
 
         $this->assertSame('10.0.0.2:2222', $dial->address->toString(), 'dial re-points at the new endpoint');
@@ -107,7 +108,7 @@ final class PeerServerAddressChurnTest extends TestCase
         $this->assertSame($link, $dial->link, 'a live established link is preserved');
 
         // A node that momentarily stops advertising an address leaves its dial untouched.
-        $registry->merge(NodeIdentity::of('node-b', NodeRole::Master, []), true, $now);
+        $registry->merge(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, []), true, $now);
         $this->reconcile($server);
         $this->assertSame('10.0.0.2:2222', $dial->address->toString(), 'a null incoming address does not drop reachability');
     }

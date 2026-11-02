@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
+use Hilos\Hilos;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTableRow;
 
-/** Pure projection of membership and the master's current-link transport inbox. */
+/** Projection of membership, registry names and the master's current-link transport inbox. */
 final class ProtectedModeNodesCollector
 {
     public const string REPORT_CURRENT = 'current';
@@ -28,7 +31,8 @@ final class ProtectedModeNodesCollector
      * @param array<string, PeerProtectedModeNodeReportDTO> $reports Reports from current links plus local self
      * @param ?string $leaderNodeId Recognized current leader, null when unknown
      * @param ?int $term Current consensus term, null without inspection
-     * @return list<array<string, string|bool|null>> Six-field RT projection ordered by node id
+     * @return list<array<string, string|bool|null>> RT projection ordered by node name, then id
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public static function project(array $nodeIds, array $linkedNodeIds, array $reports, ?string $leaderNodeId, ?int $term): array
     {
@@ -47,6 +51,7 @@ final class ProtectedModeNodesCollector
             $report = $linked ? ($reports[$nodeId] ?? null) : null;
             $nodes[] = [
                 'nodeId' => $nodeId,
+                HilosMaintenanceNodesTableRow::nodeName => Hilos::$rt?->hilosClusterNodes[$nodeId]?->name,
                 'phase' => $report?->phase,
                 'quiesced' => match (true) {
                     $round === null => null,
@@ -60,6 +65,11 @@ final class ProtectedModeNodesCollector
                     : ($report?->phase === null ? self::REPORT_MISSING : self::REPORT_CURRENT),
             ];
         }
+
+        usort($nodes, static fn (array $first, array $second): int => strcmp(
+            $first[HilosMaintenanceNodesTableRow::nodeName] ?? $first[HilosMaintenanceNodesTableRow::nodeId],
+            $second[HilosMaintenanceNodesTableRow::nodeName] ?? $second[HilosMaintenanceNodesTableRow::nodeId],
+        ) ?: strcmp($first[HilosMaintenanceNodesTableRow::nodeId], $second[HilosMaintenanceNodesTableRow::nodeId]));
 
         return $nodes;
     }

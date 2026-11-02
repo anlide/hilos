@@ -56,11 +56,11 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     /** @var array<string, array{renewedAt: float, sentRevision: int, replySignal: string}> Sender-key consumer leases */
     private array $watchers = [];
 
-    /** @var array<string, int> Node id to last report or online-change revision */
+    /** @var array<string, int> Node id to last report or roster-change revision */
     private array $nodeRevisions = [];
 
-    /** @var array<string, bool> Last observed roster verdicts */
-    private array $lastOnline = [];
+    /** @var array<string, array{online: bool, name: ?string}> Last roster projection observed by this collector */
+    private array $lastRoster = [];
 
     private int $revision = 0;
     private float $lastFanoutAt = 0.0;
@@ -153,7 +153,7 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
         if (Hilos::$rt !== null) {
             foreach (Hilos::$rt->hilosClusterNodes as $row) {
                 $slot = $views[$row->nodeId]->slot ?? null;
-                $views[$row->nodeId] = new ClusterDaemonNodeView($row->nodeId, $row->online, $slot);
+                $views[$row->nodeId] = new ClusterDaemonNodeView($row->nodeId, $row->online, $slot, $row->name);
             }
         }
         ksort($views);
@@ -254,12 +254,16 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
         $present = [];
         foreach ($views as $view) {
             $present[$view->nodeId] = true;
-            if (!array_key_exists($view->nodeId, $this->lastOnline) || $this->lastOnline[$view->nodeId] !== $view->online) {
+            $roster = [
+                DaemonClusterPicturePortionSignalData::online => $view->online,
+                DaemonClusterPicturePortionSignalData::name => $view->name,
+            ];
+            if (!array_key_exists($view->nodeId, $this->lastRoster) || $this->lastRoster[$view->nodeId] !== $roster) {
                 $this->nodeRevisions[$view->nodeId] = ++$this->revision;
-                $this->lastOnline[$view->nodeId] = $view->online;
+                $this->lastRoster[$view->nodeId] = $roster;
             }
         }
-        $this->lastOnline = array_intersect_key($this->lastOnline, $present);
+        $this->lastRoster = array_intersect_key($this->lastRoster, $present);
     }
 
     /**

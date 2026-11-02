@@ -37,6 +37,7 @@ function node(
 ): HilosDaemonOverviewNode {
   return {
     nodeId,
+    nodeName: null,
     online: true,
     role: 'master',
     state: 'standby',
@@ -75,6 +76,7 @@ function picture(
     },
     consensus: {
       nodeId: 'n1',
+      nodeName: null,
       term: 7,
       leaderId: 'n1',
       onlineMasters: 2,
@@ -105,6 +107,42 @@ function harness() {
 }
 
 describe('Daemon overview readers', () => {
+  it('requires nullable names on nodes and consensus and follows renamed identities', () => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    for (const nodeName of [null, 'Primary', 'Renamed']) {
+      const complete = {
+        ...picture([node('n1', { nodeName })]),
+        consensus: { ...picture().consensus!, nodeName },
+      }
+      page.data.set('daemon', complete)
+      expect(read.get()).toEqual(complete)
+    }
+    const unnamedNode: Record<string, unknown> = { ...node('n1') }
+    delete unnamedNode.nodeName
+    const unnamedConsensus: Record<string, unknown> = { ...picture().consensus }
+    delete unnamedConsensus.nodeName
+    for (const incomplete of [
+      { ...picture(), nodes: [unnamedNode] },
+      { ...picture(), consensus: unnamedConsensus },
+    ]) {
+      page.data.set('daemon', incomplete)
+      expect(read.get()).toBeNull()
+    }
+    for (const nodeName of [undefined, 1, true, {}]) {
+      page.data.set('daemon', {
+        ...picture(),
+        nodes: [{ ...node('n1'), nodeName }],
+      })
+      expect(read.get()).toBeNull()
+      page.data.set('daemon', {
+        ...picture(),
+        consensus: { ...picture().consensus, nodeName },
+      })
+      expect(read.get()).toBeNull()
+    }
+  })
+
   it('keeps missing, null, malformed and a reported empty picture distinct', () => {
     const { scopes, page } = harness()
     const read = readHilosDaemonOverview(scopes)
@@ -524,6 +562,7 @@ describe('Daemon diagnostic calculations and formatting', () => {
     }
     const heading = {
       clustered: true,
+      name: null,
       role: null,
       state: null,
       silentSince: null,

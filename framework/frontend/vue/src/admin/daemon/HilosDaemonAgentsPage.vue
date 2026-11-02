@@ -11,6 +11,7 @@ import {
   formatDaemonAgentOwnership,
   formatDaemonAgentWorker,
   formatDaemonNodeSilentSince,
+  formatHilosNodeLabel,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonAgentRow,
@@ -236,7 +237,10 @@ async function submitRestart(): Promise<void> {
         <code data-id="hilos-daemon-restart-agent">{{
           restartIdentity?.agentId
         }}</code>
-        on node <code data-id="hilos-daemon-restart-node">{{ nodeId }}</code>
+        on node
+        <span data-id="hilos-daemon-restart-node">{{
+          formatHilosNodeLabel(nodeId, heading?.name ?? null)
+        }}</span>
         will be stopped and will immediately start again under its placement
         rules.
       </p>

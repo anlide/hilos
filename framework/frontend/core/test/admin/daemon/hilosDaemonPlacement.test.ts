@@ -162,9 +162,9 @@ describe('daemon placement row', () => {
 describe('daemon placement viewport', () => {
   it('declares the three page nodes in order, with a leader star', () => {
     const { table } = stubTable([
-      { nodeId: 'node-1', leader: false },
-      { nodeId: 'node-2', leader: true },
-      { nodeId: 'node-10', leader: false },
+      { nodeId: 'node-1', nodeName: null, leader: false },
+      { nodeId: 'node-2', nodeName: null, leader: true },
+      { nodeId: 'node-10', nodeName: null, leader: false },
     ])
     const frame = table.controller.frame
     expect(frame.declaration?.title).toBeUndefined()
@@ -208,7 +208,7 @@ describe('daemon placement viewport', () => {
 
   it('keeps a standalone node id and rebuilds columns after the signal changes', () => {
     const { table, nodeSignal } = stubTable([
-      { nodeId: 'standalone', leader: false },
+      { nodeId: 'standalone', nodeName: null, leader: false },
     ])
     expect(
       table.controller.frame.columns.get().map((column) => column.key),
@@ -222,8 +222,8 @@ describe('daemon placement viewport', () => {
     expect(table.controller.frame.columns.get()[2]?.label).toBe('standalone')
 
     nodeSignal.set([
-      { nodeId: 'node-1', leader: true },
-      { nodeId: 'node-2', leader: false },
+      { nodeId: 'node-1', nodeName: null, leader: true },
+      { nodeId: 'node-2', nodeName: null, leader: false },
     ])
     expect(
       table.controller.frame.columns.get().map((column) => column.key),
@@ -240,7 +240,7 @@ describe('daemon placement viewport', () => {
 
   it('declares rendered fields and sends a descriptor without sort or domain filter', () => {
     const { table, sent, sentRendered } = stubTable([
-      { nodeId: 'node-1', leader: false },
+      { nodeId: 'node-1', nodeName: null, leader: false },
     ])
     expect(table.controller.descriptor()).toBeNull()
 
@@ -276,6 +276,17 @@ describe('daemon placement viewport', () => {
 })
 
 describe('daemon placement labels', () => {
+  it.each([
+    [null, false, 'n1'],
+    [null, true, 'n1 ★'],
+    ['Primary', false, 'Primary (n1)'],
+    ['Primary', true, 'Primary (n1) ★'],
+  ] as const)('labels name %s and leader %s', (nodeName, leader, label) => {
+    expect(
+      formatDaemonPlacementNodeLabel({ nodeId: 'n1', nodeName, leader }),
+    ).toBe(label)
+  })
+
   it('formats the column key, leader label, and known, empty or unknown cells', () => {
     const placement = row({
       nodes: [
@@ -286,7 +297,11 @@ describe('daemon placement labels', () => {
     })
     expect(daemonPlacementNodeColumnKey('node-3')).toBe('node:node-3')
     expect(
-      formatDaemonPlacementNodeLabel({ nodeId: 'node-3', leader: true }),
+      formatDaemonPlacementNodeLabel({
+        nodeId: 'node-3',
+        nodeName: null,
+        leader: true,
+      }),
     ).toBe('node-3 ★')
     expect(daemonPlacementCellIds(placement, 'node-3')).toEqual([
       'chat_room:2',
@@ -326,6 +341,7 @@ function viewPicture(
     nodes: [
       {
         nodeId: 'n1',
+        nodeName: null,
         online: true,
         role: 'master',
         state: 'leader',
@@ -379,10 +395,27 @@ function stubView() {
 describe('daemon placement view', () => {
   it('derives dynamic columns and leader marks from the complete picture', () => {
     const h = stubView()
-    expect(h.view.nodes.get()).toEqual([{ nodeId: 'n1', leader: true }])
+    expect(h.view.nodes.get()).toEqual([
+      { nodeId: 'n1', nodeName: null, leader: true },
+    ])
     expect(h.view.controller.frame.columns.get()[2]?.label).toBe('n1 ★')
+    h.overview.set(viewPicture({ nodeName: 'Primary' }))
+    expect(h.view.nodes.get()).toEqual([
+      { nodeId: 'n1', nodeName: 'Primary', leader: true },
+    ])
+    expect(h.view.controller.frame.columns.get()[2]?.key).toBe('node:n1')
+    expect(h.view.controller.frame.columns.get()[2]?.label).toBe(
+      'Primary (n1) ★',
+    )
+    h.overview.set(viewPicture({ nodeName: 'Renamed' }))
+    expect(h.view.controller.frame.columns.get()[2]?.key).toBe('node:n1')
+    expect(h.view.controller.frame.columns.get()[2]?.label).toBe(
+      'Renamed (n1) ★',
+    )
     h.overview.set({ ...viewPicture(), clustered: false })
-    expect(h.view.nodes.get()).toEqual([{ nodeId: 'n1', leader: false }])
+    expect(h.view.nodes.get()).toEqual([
+      { nodeId: 'n1', nodeName: null, leader: false },
+    ])
     h.overview.set(viewPicture({ nodeId: 'n2', state: 'standby' }))
     expect(h.view.controller.frame.columns.get()[2]?.key).toBe('node:n2')
     h.view.dispose()

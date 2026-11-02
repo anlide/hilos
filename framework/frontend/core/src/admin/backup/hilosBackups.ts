@@ -12,6 +12,7 @@
 // actions (create / delete / keep) are a separate page (HIL-333) and are not part of
 // this view.
 
+import { formatHilosNodeLabel } from '../daemon/hilosDaemonNode.js'
 import { type HilosRestoreStatus } from '../../protocol/backupSignals.js'
 import { PERCENT_SCALE } from '../../connection/restoreProgress.js'
 import { z } from 'zod'
@@ -184,6 +185,8 @@ export interface HilosBackupRow {
    * out of reach IS a named holder, so a row cannot claim one and carry the other.
    */
   readonly holderNode: string | null
+  /** Registered holder name, or null when no registry row is known. */
+  readonly holderNodeName: string | null
 }
 
 /**
@@ -311,6 +314,9 @@ export const BACKUP_RESTORE_MIGRATION_NOTICE_FIELD = 'restoreMigrationNotice'
 
 /** Row payload key of the node holding an archive the backup agent cannot reach. */
 export const BACKUP_HOLDER_NODE_FIELD = 'holderNode'
+
+/** Row payload key of the holder's registered name. */
+const BACKUP_HOLDER_NODE_NAME_FIELD = 'holderNodeName'
 
 /** Migration-gate decision that refuses the archive; the only value the views test for. */
 const BACKUP_MIGRATION_REFUSED = 'refuse'
@@ -564,6 +570,7 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
       BACKUP_RESTORE_MIGRATION_NOTICE_FIELD,
     ),
     holderNode: readStringOrNull(slot, BACKUP_HOLDER_NODE_FIELD),
+    holderNodeName: readStringOrNull(slot, BACKUP_HOLDER_NODE_NAME_FIELD),
   }
 }
 
@@ -747,7 +754,7 @@ export function isBackupOutOfReach(row: HilosBackupRow): boolean {
 export function formatBackupOutOfReach(row: HilosBackupRow): string | null {
   return row.holderNode === null
     ? null
-    : `Stored on node ${row.holderNode} - the backup agent runs elsewhere, so this archive cannot be reached from here`
+    : `Stored on node ${formatHilosNodeLabel(row.holderNode, row.holderNodeName)} - the backup agent runs elsewhere, so this archive cannot be reached from here`
 }
 
 /** A completed backup this node holds, success or failure — the only kind that can be deleted. */
@@ -1089,7 +1096,7 @@ const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     cellClass: 'text-nowrap',
     // The node holding an archive out of reach is named here; every other cell greys
     // out by the same field, and one column naming it is what the comparison needs.
-    reads: [BACKUP_HOLDER_NODE_FIELD],
+    reads: [BACKUP_HOLDER_NODE_FIELD, BACKUP_HOLDER_NODE_NAME_FIELD],
   },
   { key: BACKUP_ENV_FIELD, label: 'Environment', sortable: true },
   { key: BACKUP_SCOPE_FIELD, label: 'Scope', sortable: true },

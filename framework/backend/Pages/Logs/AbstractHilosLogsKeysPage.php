@@ -26,6 +26,7 @@ use Hilos\Log\ClusterLogIndex;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogKeySummary;
 use Hilos\Pages\Logs\DTO\HilosLogsKeysSignalData;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use JsonException;
@@ -61,9 +62,8 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
     ];
 
     /**
-     * The section draws its picture out of the cluster log mirror, so a node that stopped
-     * answering leaves its last word on the screen looking current. The router of cluster nodes
-     * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
+     * The log mirror supplies the figures; the cluster registry supplies current node names
+     * and the frozen-replica mark for a picture whose owner stopped answering.
      */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
@@ -171,6 +171,7 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
      * @param PageRouteParams $params Route parameters (unused for this page)
      * @throws InvalidArgumentException When the header signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -208,6 +209,7 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
      * Builds the header out of the cluster picture.
      *
      * @return HilosLogsKeysSignalData Header payload
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function buildHeader(): HilosLogsKeysSignalData
     {
@@ -250,7 +252,8 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
      * The nodes the filter may offer. Standalone keeps its one-node controls hidden.
      *
      * @param ?ClusterLogIndex $index Cluster picture, or null while none has arrived
-     * @return list<string> Node names, in the order the picture holds them
+     * @return list<array{nodeId: string, nodeName: ?string}> Node choices, in the picture order
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function namedNodesOf(?ClusterLogIndex $index): array
     {
@@ -260,7 +263,10 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
 
         $nodes = [];
         foreach ($index?->nodes() ?? [] as $slot) {
-            $nodes[] = $slot->nodeId;
+            $nodes[] = [
+                HilosLogsKeysSignalData::nodeId => $slot->nodeId,
+                HilosLogsKeysSignalData::nodeName => Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name,
+            ];
         }
 
         return $nodes;

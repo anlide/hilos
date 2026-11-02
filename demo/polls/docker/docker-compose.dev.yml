@@ -99,6 +99,7 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
+      - CLUSTER_NODE_NAME=Main node
       # Mail goes to the stack's own interceptor, whose UI is published above. The
       # transport is pinned rather than auto-selected: a stack that loses the
       # catcher should fail loudly, not fall back to writing .eml files nobody opens.

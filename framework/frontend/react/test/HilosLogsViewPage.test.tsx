@@ -84,6 +84,7 @@ function catalog(
     nodes: [
       {
         nodeId: 'standalone',
+        nodeName: null,
         available: true,
         batches: [BATCH],
         streams: [
@@ -114,6 +115,7 @@ function clusterCatalog(): HilosLogViewerCatalog {
     nodes: [
       {
         nodeId: 'node-1',
+        nodeName: null,
         available: true,
         batches: [],
         streams: [
@@ -127,6 +129,7 @@ function clusterCatalog(): HilosLogViewerCatalog {
       },
       {
         nodeId: 'node-2',
+        nodeName: null,
         available: true,
         batches: [],
         streams: [

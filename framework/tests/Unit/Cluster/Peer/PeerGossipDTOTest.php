@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\PeerAddress;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -22,11 +23,12 @@ final class PeerGossipDTOTest extends TestCase
 {
     public function testNodeEntryRoundTrips(): void
     {
-        $entry = new PeerNodeEntry('node-b', NodeRole::Slave, ['cpu'], PeerAddress::fromString('10.0.0.2:9000'));
+        $entry = new PeerNodeEntry('node-b', 'Node node-b', NodeRole::Slave, ['cpu'], PeerAddress::fromString('10.0.0.2:9000'));
 
         $restored = PeerNodeEntry::fromArray($entry->toArray());
 
         $this->assertSame('node-b', $restored->nodeId);
+        $this->assertSame('Node node-b', $restored->name);
         $this->assertSame(NodeRole::Slave, $restored->role);
         $this->assertSame(['cpu'], $restored->capabilities);
         $this->assertSame('10.0.0.2:9000', $restored->address?->toString());
@@ -38,11 +40,17 @@ final class PeerGossipDTOTest extends TestCase
      */
     public function testNodeEntryCarriesNoLiveness(): void
     {
-        $entry = new PeerNodeEntry('node-b', NodeRole::Slave, ['cpu'], PeerAddress::fromString('10.0.0.2:9000'));
+        $entry = new PeerNodeEntry('node-b', 'Node node-b', NodeRole::Slave, ['cpu'], PeerAddress::fromString('10.0.0.2:9000'));
 
         $this->assertArrayNotHasKey('online', $entry->toArray());
         $this->assertSame(
-            [PeerNodeEntry::FIELD_NODE_ID, PeerNodeEntry::FIELD_NODE_ROLE, PeerNodeEntry::FIELD_NODE_CAPABILITIES, PeerNodeEntry::FIELD_ADDRESS],
+            [
+                PeerNodeEntry::FIELD_NODE_ID,
+                PeerNodeEntry::FIELD_NODE_NAME,
+                PeerNodeEntry::FIELD_NODE_ROLE,
+                PeerNodeEntry::FIELD_NODE_CAPABILITIES,
+                PeerNodeEntry::FIELD_ADDRESS,
+            ],
             array_keys($entry->toArray()),
         );
     }
@@ -50,26 +58,29 @@ final class PeerGossipDTOTest extends TestCase
     public function testNodeEntryBridgesNodeAndIdentity(): void
     {
         $node = ClusterNode::fromIdentity(
-            NodeIdentity::of('node-a', NodeRole::Master, ['gpu-local'], PeerAddress::fromString('10.0.0.1:8095')),
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, ['gpu-local'], PeerAddress::fromString('10.0.0.1:8095')),
             true,
             100.0,
         );
 
         $entry = PeerNodeEntry::fromNode($node);
         $this->assertSame('node-a', $entry->nodeId);
+        $this->assertSame('Node node-a', $entry->name);
         $this->assertArrayNotHasKey('online', $entry->toArray(), 'The registry\'s liveness stays with the registry');
 
         $identity = $entry->toIdentity();
         $this->assertSame('node-a', $identity->nodeId);
+        $this->assertSame('Node node-a', $identity->name);
         $this->assertSame(NodeRole::Master, $identity->role);
+        $this->assertSame($entry->toArray(), PeerNodeEntry::fromIdentity($identity)->toArray());
         $this->assertSame('10.0.0.1:8095', $identity->address?->toString());
     }
 
     public function testRosterRoundTripsThroughTheWire(): void
     {
         $roster = new PeerRosterDTO([
-            new PeerNodeEntry('node-a', NodeRole::Master, ['gpu-local'], PeerAddress::fromString('10.0.0.1:8095')),
-            new PeerNodeEntry('node-b', NodeRole::Slave, [], null),
+            new PeerNodeEntry('node-a', 'Node node-a', NodeRole::Master, ['gpu-local'], PeerAddress::fromString('10.0.0.1:8095')),
+            new PeerNodeEntry('node-b', 'Node node-b', NodeRole::Slave, [], null),
         ]);
 
         $parsed = PeerDTO::fromWire($roster->toJson());
@@ -77,20 +88,23 @@ final class PeerGossipDTOTest extends TestCase
         $this->assertInstanceOf(PeerRosterDTO::class, $parsed);
         $this->assertCount(2, $parsed->nodes);
         $this->assertSame('node-a', $parsed->nodes[0]->nodeId);
+        $this->assertSame('Node node-a', $parsed->nodes[0]->name);
         $this->assertSame('node-b', $parsed->nodes[1]->nodeId);
+        $this->assertSame('Node node-b', $parsed->nodes[1]->name);
         $this->assertNull($parsed->nodes[1]->address);
     }
 
     public function testAnnounceRoundTripsThroughTheWire(): void
     {
         $announce = new PeerAnnounceDTO(
-            new PeerNodeEntry('node-c', NodeRole::Slave, ['cpu'], PeerAddress::fromString('10.0.0.3:9000')),
+            new PeerNodeEntry('node-c', 'Node node-c', NodeRole::Slave, ['cpu'], PeerAddress::fromString('10.0.0.3:9000')),
         );
 
         $parsed = PeerDTO::fromWire($announce->toJson());
 
         $this->assertInstanceOf(PeerAnnounceDTO::class, $parsed);
         $this->assertSame('node-c', $parsed->node->nodeId);
+        $this->assertSame('Node node-c', $parsed->node->name);
         $this->assertSame(['cpu'], $parsed->node->capabilities);
     }
 
@@ -101,12 +115,35 @@ final class PeerGossipDTOTest extends TestCase
         PeerDTO::fromWire('{"type":"peer_announce"}');
     }
 
+    /** @return iterable<string, array{array<string, mixed>}> Absent, blank or mistyped names */
+    public static function invalidNames(): iterable
+    {
+        yield 'absent' => [[]];
+        yield 'empty' => [['name' => '']];
+        yield 'whitespace' => [['name' => '   ']];
+        yield 'number' => [['name' => 42]];
+        yield 'null' => [['name' => null]];
+    }
+
+    /** @param array<string, mixed> $nameFields Broken name field */
+    #[DataProvider('invalidNames')]
+    public function testNodeEntryRejectsInvalidNames(array $nameFields): void
+    {
+        $payload = new PeerNodeEntry('node-a', 'Node A', NodeRole::Master, [], null)->toArray();
+        unset($payload[PeerNodeEntry::FIELD_NODE_NAME]);
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('name');
+
+        PeerNodeEntry::fromArray([...$payload, ...$nameFields]);
+    }
+
     public function testNodeEntryRejectsInvalidRole(): void
     {
         $this->expectException(PeerTransportException::class);
 
         PeerNodeEntry::fromArray([
             PeerNodeEntry::FIELD_NODE_ID => 'node-b',
+            PeerNodeEntry::FIELD_NODE_NAME => 'Node B',
             PeerNodeEntry::FIELD_NODE_ROLE => 'overlord',
         ]);
     }

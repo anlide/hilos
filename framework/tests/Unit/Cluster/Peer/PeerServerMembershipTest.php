@@ -73,6 +73,7 @@ final class PeerServerMembershipTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         // Long thresholds so no link closes or pings on its own during the test.
         putenv('CLUSTER_LINK_KEEPALIVE_INTERVAL_MS=60000');
@@ -94,6 +95,7 @@ final class PeerServerMembershipTest extends TestCase
             'SOCKET_READ_BUFFER_SIZE',
             'CLUSTER_ENABLED',
             'CLUSTER_NODE_ID',
+            'CLUSTER_NODE_NAME',
             'CLUSTER_NODE_ROLE',
             'CLUSTER_LINK_KEEPALIVE_INTERVAL_MS',
             'CLUSTER_LINK_TIMEOUT_MS',
@@ -472,6 +474,28 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertSame('node-d', $frames[0]->node->nodeId);
     }
 
+    public function testANodeAnnouncingItsOwnNewNameUpdatesMembership(): void
+    {
+        $observer = $this->registerObserver();
+        $server = $this->makeServer();
+        [$link, $far] = $this->linkTo($server, 'node-b');
+        $observer->joined = [];
+        $renamed = new PeerNodeEntry('node-b', 'Renamed peer', NodeRole::Master, [], null);
+        $version = Hilos::$cluster->registry()->version();
+
+        $this->feed($link, $far, new PeerAnnounceDTO($renamed));
+
+        $this->assertSame(['node-b'], $observer->joined);
+        $this->assertSame($version + 1, Hilos::$cluster->registry()->version());
+        $nodes = array_column(Hilos::$cluster->registry()->snapshot(), null, 'nodeId');
+        $this->assertSame('Renamed peer', $nodes['node-b']->name);
+        $this->assertTrue($nodes['node-b']->online);
+        $observer->joined = [];
+        $this->feed($link, $far, new PeerAnnounceDTO($renamed));
+        $this->assertSame([], $observer->joined);
+        $this->assertSame($version + 1, Hilos::$cluster->registry()->version());
+    }
+
     /**
      * @throws EnvException When a link cannot read its socket and keepalive settings
      * @throws HilosException When a frame refuses to become wire input
@@ -644,7 +668,14 @@ final class PeerServerMembershipTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        return new PeerServer(
+            '127.0.0.1',
+            0,
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
+            [],
+            PeerTestTls::unread(),
+            PeerTestMarkers::shared(),
+        );
     }
 
     /**
@@ -691,12 +722,20 @@ final class PeerServerMembershipTest extends TestCase
         $link = new PeerLink(
             $near,
             $server,
-            NodeIdentity::of('node-a', NodeRole::Master, []),
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
             dialer: false,
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
         $this->attach($server, $link);
-        $this->feed($link, $far, new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire(), null));
+        $this->feed($link, $far, new PeerHelloDTO(
+            PeerProtocol::VERSION,
+            $nodeId,
+            'Node ' . $nodeId,
+            NodeRole::Master,
+            [],
+            PeerTestMarkers::onWire(),
+            null,
+        ));
 
         return [$link, $far];
     }
@@ -725,7 +764,7 @@ final class PeerServerMembershipTest extends TestCase
         $link = new PeerLink(
             $near,
             $server,
-            NodeIdentity::of('node-a', NodeRole::Master, []),
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
             dialer: true,
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
@@ -736,6 +775,7 @@ final class PeerServerMembershipTest extends TestCase
         $this->feed($link, $far, new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $nodeId,
+            'Node ' . $nodeId,
             NodeRole::Master,
             [],
             PeerTestMarkers::onWire(),
@@ -839,6 +879,6 @@ final class PeerServerMembershipTest extends TestCase
      */
     private function entry(string $nodeId, array $capabilities = []): PeerNodeEntry
     {
-        return PeerNodeEntry::fromIdentity(NodeIdentity::of($nodeId, NodeRole::Master, $capabilities));
+        return PeerNodeEntry::fromIdentity(NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Master, $capabilities));
     }
 }

@@ -144,6 +144,49 @@ final class ProtectedModeWatchdogTest extends TestCase
         parent::tearDown();
     }
 
+    /** @param bool $readable Whether the node name permits a readable identity */
+    #[DataProvider('nodeIdentityReadability')]
+    public function testMailCarriesSeparateIdentityWithoutARegistryAndFallsBackOnlyOnUnreadableIdentity(bool $readable): void
+    {
+        $previous = [];
+        foreach (['CLUSTER_ENABLED' => 'false', 'CLUSTER_NODE_ID' => 'mail-node', 'CLUSTER_NODE_NAME' => $readable ? 'Mail node' : null]
+            as $key => $value) {
+            $previous[$key] = getenv($key);
+            putenv($value === null ? $key : $key . '=' . $value);
+        }
+        Hilos::$cluster = new ClusterContext();
+        try {
+            $mailer = $this->mailTo('ops@example.com');
+            $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+            $watchdog = new ProtectedModeWatchdog();
+            $watchdog->onAgentStopped(self::INITIATOR_ID);
+            $watchdog->tick(self::STARTED_AT + 1);
+            $this->lift();
+            $watchdog->tick(self::STARTED_AT + 2);
+            $this->assertCount(2, $mailer->sent);
+            foreach ($mailer->sent as $mail) {
+                $this->assertSame($readable ? 'mail-node' : gethostname(), $mail['params']['nodeId']);
+                $this->assertSame($readable ? 'Mail node' : null, $mail['params']['nodeName']);
+            }
+            $stuck = new ProtectedModeStuckMailTemplate()->render($mailer->sent[0]['params'], null);
+            $cleared = new ProtectedModeClearedMailTemplate()->render($mailer->sent[1]['params'], null);
+            $label = $readable ? 'Mail node (mail-node)' : gethostname();
+            $this->assertSame('Node ' . $label . ' is stuck in maintenance', $stuck->subject);
+            $this->assertSame('Node ' . $label . ' is out of maintenance', $cleared->subject);
+        } finally {
+            foreach ($previous as $key => $value) {
+                putenv($value === false ? $key : $key . '=' . $value);
+            }
+        }
+    }
+
+    /** @return iterable<string, array{bool}> Normal identity and broken required configuration */
+    public static function nodeIdentityReadability(): iterable
+    {
+        yield 'readable' => [true];
+        yield 'unreadable' => [false];
+    }
+
     public function testAFreezeStillInsideItsThresholdIsLeftAlone(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);

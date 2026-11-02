@@ -49,6 +49,7 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, LeaderPageRecoveryApp::class);
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=source');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
         Hilos::$env = new EnvAccessor();
@@ -67,7 +68,7 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
         Hilos::$sr = null;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE', 'CLUSTER_PEER_ADVERTISE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE', 'CLUSTER_PEER_ADVERTISE'] as $key) {
             putenv($key);
         }
     }
@@ -211,6 +212,7 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
 
     public function testASlaveIsNotASourceOfBrowserRecovery(): void
     {
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=slave');
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();

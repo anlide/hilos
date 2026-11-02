@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Exception\PeerTransportException;
 
@@ -436,6 +437,22 @@ final class PeerServer extends AbstractTlsServer implements
     public function localMarkers(): PeerMarkers
     {
         return $this->localMarkers;
+    }
+
+    /**
+     * Reads the accepted name when a handshake is formed, including on links predating a reload.
+     * Without a cluster registry, the server keeps the identity supplied at construction.
+     *
+     * @return string Current accepted local name, or the supplied name when the registry is unavailable
+     */
+    public function localNodeName(): string
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return $this->localIdentity->name;
+        }
+
+        return $this->onlineNodeById($registry, $this->localIdentity->nodeId)?->name ?? $this->localIdentity->name;
     }
 
     /**
@@ -1133,6 +1150,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerNodeLeavingDTO $frame Received graceful-leave frame
      * @throws InvalidFormatException When a pending page recovery address is malformed
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onNodeLeaving(PeerNodeLeavingDTO $frame): void
     {
@@ -1141,7 +1159,7 @@ final class PeerServer extends AbstractTlsServer implements
             $leaving = $this->onlineNodeById($registry, $frame->nodeId);
             $now = microtime(true);
             if ($leaving !== null && $registry->markOffline($frame->nodeId, $now)) {
-                $identity = NodeIdentity::of($leaving->nodeId, $leaving->role, $leaving->capabilities, $leaving->address);
+                $identity = NodeIdentity::of($leaving->nodeId, $leaving->name, $leaving->role, $leaving->capabilities, $leaving->address);
                 $this->notifyLeft($identity, $now);
             }
         }
@@ -1189,6 +1207,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link the reply arrived on
      * @param PeerAgentStatusDTO $frame Received agent-status frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onAgentStatusReceived(PeerLink $link, PeerAgentStatusDTO $frame): void
     {
@@ -2101,6 +2120,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param NodeIdentity $identity Node that went offline
      * @param float $now Microtime of the transition
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function notifyLeft(NodeIdentity $identity, float $now): void
     {
@@ -3512,6 +3532,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws InvalidFormatException When the projected rows violate the RT contract
      * @throws RtActionsCollectionNameNullException When the runtime action lacks its collection name
      * @throws RtTruthSourceWriteNotAllowedException When this process does not own the local row
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function tickProtectedModeNodeReports(float $now): void
     {

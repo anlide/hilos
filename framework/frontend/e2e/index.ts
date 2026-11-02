@@ -337,6 +337,7 @@ export {
   expectDaemonPlacementReset,
   watchDaemonPlacementLive,
   DAEMON_NODE_PATH,
+  DAEMON_STANDALONE_NODE_NAME,
   DAEMON_NODE_TABS,
   expectDaemonNodeHead,
   expectDaemonNodeFits,

@@ -41,6 +41,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
 
     public const string key = 'key';
     public const string node = 'node';
+    public const string nodeName = 'nodeName';
 
     /**
      * Payload key of the stream class, one of the {@see LogKeySummary} class values.
@@ -69,6 +70,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
      * @param string $rowKey Stable row key, `<node>:<key>`
      * @param string $key File basename of the stream, stable across rotation batches
      * @param string $node Node the file lives on
+     * @param ?string $nodeName Current registry name, null when the node is unknown
      * @param string $class Stream class: {@see LogKeySummary::CLASS_AGENT} or {@see LogKeySummary::CLASS_WORKER}
      * @param bool $live Whether the stream is still being written, or only present in the archive
      * @param int $batchCount Number of archived batches the stream occurs in
@@ -81,6 +83,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
         public string $rowKey,
         public string $key,
         public string $node,
+        public ?string $nodeName,
         public string $class,
         public bool $live,
         public int $batchCount,
@@ -122,6 +125,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
             self::rowKey => $this->rowKey,
             self::key => $this->key,
             self::node => $this->node,
+            self::nodeName => $this->nodeName,
             self::streamClass => $this->class,
             self::live => $this->live,
             self::batchCount => $this->batchCount,
@@ -145,6 +149,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
             rowKey: self::requireString($data, self::rowKey),
             key: self::requireString($data, self::key),
             node: self::requireString($data, self::node),
+            nodeName: self::optionalString($data, self::nodeName),
             class: self::requireString($data, self::streamClass),
             live: self::requireBool($data, self::live),
             batchCount: self::requireInt($data, self::batchCount),

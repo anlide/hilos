@@ -2587,7 +2587,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
         $this->peerServer = new PeerServer(
             '127.0.0.1',
             0,
-            NodeIdentity::of(DaemonManagerRtSyncPeerTest::LOCAL_NODE, NodeRole::Master, []),
+            NodeIdentity::of(DaemonManagerRtSyncPeerTest::LOCAL_NODE, 'Node ' . DaemonManagerRtSyncPeerTest::LOCAL_NODE, NodeRole::Master, []),
             [],
             PeerTestTls::unread(),
             PeerTestMarkers::shared(),
@@ -3061,7 +3061,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function nodeJoined(string $nodeId): void
     {
         $this->onNodeJoined(ClusterNode::fromIdentity(
-            NodeIdentity::of($nodeId, NodeRole::Master, []),
+            NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Master, []),
             online: true,
             lastSeen: 0.0,
         ));

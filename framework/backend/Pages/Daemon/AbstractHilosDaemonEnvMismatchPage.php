@@ -21,6 +21,7 @@ use Hilos\DaemonSection\DaemonEnvMismatchSummary;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use JsonException;
@@ -32,6 +33,8 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
     public const string ENV_MISMATCH = 'envMismatch';
 
     public const PageReach REACH = PageReach::ROUTE;
+
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DAEMON_ENV_MISMATCH,
@@ -58,6 +61,7 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
      * @throws EnvException When cluster mode or node id cannot be read
      * @throws ClusterException When cluster configuration or node identity is invalid
      * @throws InvalidArgumentException When an environment cell is invalid
+     * @throws RtActionsStateCollectionNullException When the node registry is unavailable
      */
     public static function onPictureChanged(?ClusterDaemonPicture $before): void
     {
@@ -96,6 +100,7 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
      * @throws EnvException When cluster mode or node id cannot be read from the environment
      * @throws ClusterException When cluster configuration or node identity is invalid
      * @throws InvalidArgumentException When environment comparison generates an invalid cell
+     * @throws RtActionsStateCollectionNullException When the node registry is unavailable
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
@@ -128,13 +133,17 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
      * @throws EnvException When cluster mode or node id cannot be read from the environment
      * @throws ClusterException When cluster configuration or node identity is invalid
      * @throws InvalidArgumentException When environment comparison generates an invalid cell
+     * @throws RtActionsStateCollectionNullException When the node registry is unavailable
      */
     private static function summary(): DaemonEnvMismatchSummary
     {
+        $servingNodeId = Hilos::$cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
+
         return DaemonEnvMismatchSummary::of(
             Hilos::$cluster?->isEnabled() === true,
-            Hilos::$cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID,
+            $servingNodeId,
             ClusterDaemonPictureMirror::picture(),
+            Hilos::$rt?->hilosClusterNodes[$servingNodeId]?->name,
         );
     }
 
@@ -145,6 +154,7 @@ abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSec
      * @throws EnvException When cluster mode or node id cannot be read from the environment
      * @throws ClusterException When cluster configuration or node identity is invalid
      * @throws InvalidArgumentException When environment comparison generates an invalid cell
+     * @throws RtActionsStateCollectionNullException When the node registry is unavailable
      */
     private static function publishChangedPage(): void
     {

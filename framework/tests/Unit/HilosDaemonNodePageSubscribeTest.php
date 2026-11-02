@@ -75,6 +75,7 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         Hilos::$browser = $this->previousBrowser;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
 
         parent::tearDown();
@@ -194,6 +195,7 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=cluster-node');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         $page = new DaemonNodePageTestEnvMismatchPage(new DaemonNodePageTestAgent());
 
@@ -227,7 +229,7 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
      */
     private function publishNode(string $nodeId, bool $online): void
     {
-        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'master', [], null, $online, microtime(true));
+        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'Node ' . $nodeId, 'master', [], null, $online, microtime(true));
     }
 }
 

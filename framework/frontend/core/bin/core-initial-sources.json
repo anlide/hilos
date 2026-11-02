@@ -440,12 +440,12 @@
     "outputSha256": "fc4c338bd63450e20fe04aa72cf7b1e93b58d93db138a2cced51bbc3224f5d39"
   },
   "src/protocol/logsSignals.ts": {
-    "sourceSha256": "99a886dde95b1e9ca21c96d737107b4cd9c026beeac0d833cf4eccf109d4713b",
-    "outputSha256": "377f13c30fc053136f4fb66e4293a2ac32fcba7d5dc88bcd4b9af98b968771bd"
+    "sourceSha256": "7cddf559321b65988cf68673292b0d3e74b0bbbf769fdaf22b8f8f81464a11b5",
+    "outputSha256": "599bcae2208487557f37165a280007065af71cc095e1355a1df278a334a1f002"
   },
   "src/protocol/maintenanceSignals.ts": {
-    "sourceSha256": "e863bf776f324743ec57514d6cf758af5820ea3c2678be1685bffcc92b291527",
-    "outputSha256": "eb6dbb356273a3ca0840c127f7dfa7ee3d8a07226caaa4b6402605aa466a5539"
+    "sourceSha256": "9a10b918561842768bb5f2402e936b89b7e97f9afb8d26006e4f3799dfee799e",
+    "outputSha256": "ebc98ab0acc8f06603361bc69776f75b43341d2cd8df15abb59ad4abff59344c"
   },
   "src/protocol/pageError.ts": {
     "sourceSha256": "3082c6d611abc6ac89e4a08b09f01269df4d9af532e692fdb3b5a4bb1a1c09a0",

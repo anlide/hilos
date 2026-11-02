@@ -531,7 +531,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      */
     private function publishMembership(string $node, bool $online, float $seen): void
     {
-        Hilos::$rt?->hilosClusterNodes->actions->publish($node, NodeRole::Master->value, [], null, $online, $seen);
+        Hilos::$rt?->hilosClusterNodes->actions->publish($node, 'Node ' . $node, NodeRole::Master->value, [], null, $online, $seen);
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $this->assertContains($signal->signalName->getName(), [SignalConstants::RT_SYNC_CREATED, SignalConstants::RT_SYNC_UPDATED]);
         }

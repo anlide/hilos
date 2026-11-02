@@ -24,6 +24,7 @@ import {
   armSocketDrop,
   dropSocket,
   type SocketReconnectControl,
+  DAEMON_STANDALONE_NODE_NAME,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import {
@@ -742,6 +743,18 @@ test.describe('the whole picture group through final owner handover', () => {
     const author = await authorContext.newPage()
     const admin = await adminContext.newPage()
     const trace = await pictureControls(author, record)
+    const workersTrace = watchDeliveryFrames(admin)
+    const pageerrors: { at: number; message: string; stack?: string }[] = []
+    const onAdminPageError = (error: Error) => {
+      pageerrors.push({
+        at: performance.now(),
+        message: error.message,
+        stack: error.stack,
+      })
+    }
+    admin.on('pageerror', onAdminPageError)
+    const diagnosticErrors: { operation: string; error: string }[] = []
+    const workersFailure: Record<string, unknown> = {}
     const failures: unknown[] = []
     try {
       await createTestUserJoined(expect, author)
@@ -839,7 +852,11 @@ test.describe('the whole picture group through final owner handover', () => {
           agentIndex: null,
           nodeId: null,
         })
-        expect(reply).toEqual({ agentId: 'chat', nodeId: 'standalone' })
+        expect(reply).toEqual({
+          agentId: 'chat',
+          nodeId: 'standalone',
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        })
         expect(
           await observeModeration(acceptKey, 'chat_message_picture'),
         ).toEqual(secondStage)
@@ -1031,7 +1048,48 @@ test.describe('the whole picture group through final owner handover', () => {
     } catch (error) {
       record({ kind: 'scenario-error', error: String(error) })
       failures.push(error)
+      workersFailure.url = admin.url()
+      const captured = await Promise.allSettled([
+        admin.getByRole('heading', { level: 1 }).allTextContents(),
+        admin.locator('body').allTextContents(),
+        admin.getByTestId('hilos-page-state').evaluateAll((elements) =>
+          elements.map((element) => ({
+            state: element.getAttribute('data-state'),
+            text: element.textContent,
+          })),
+        ),
+        (async () => {
+          const filename = 'picture-group-handover-workers.png'
+          const path = info.outputPath(filename)
+          await admin.screenshot({ path, fullPage: true })
+          await info.attach('picture-group-handover-workers', {
+            path,
+            contentType: 'image/png',
+          })
+          return filename
+        })(),
+      ])
+      const fields = ['headings', 'body', 'pageState', 'screenshot']
+      for (const [index, result] of captured.entries()) {
+        const field = fields[index]!
+        if (result.status === 'fulfilled') workersFailure[field] = result.value
+        else
+          diagnosticErrors.push({
+            operation: `workers-${field}`,
+            error: String(result.reason),
+          })
+      }
     } finally {
+      const workers = {
+        packets: workersTrace.packets,
+        sent: workersTrace.sent,
+        connections: workersTrace.connections,
+        pageerrors,
+        failure: workersFailure,
+        diagnosticErrors,
+      }
+      workersTrace.stop()
+      admin.off('pageerror', onAdminPageError)
       const cleanupStart = failures.length
       const cleaned = await Promise.allSettled([
         ...Object.values(keys).map(forgetModelKey),
@@ -1045,23 +1103,29 @@ test.describe('the whole picture group through final owner handover', () => {
         kind: 'cleanup',
         errors: failures.slice(cleanupStart).map(String),
       })
-      const path = info.outputPath('picture-group-handover-proof.json')
-      await writeFile(
-        path,
-        JSON.stringify(
-          {
-            events,
-            errors: trace.observer.errors,
-            uploads: trace.observer.summary(),
-          },
-          null,
-          2,
-        ),
-      )
-      await info.attach('picture-group-handover-proof', {
-        path,
-        contentType: 'application/json',
-      })
+      try {
+        const path = info.outputPath('picture-group-handover-proof.json')
+        await writeFile(
+          path,
+          JSON.stringify(
+            {
+              events,
+              errors: trace.observer.errors,
+              uploads: trace.observer.summary(),
+              workers,
+            },
+            null,
+            2,
+          ),
+        )
+        await info.attach('picture-group-handover-proof', {
+          path,
+          contentType: 'application/json',
+        })
+      } catch (error) {
+        console.error('Picture group proof capture failed', error)
+        if (failures.length === 0) failures.push(error)
+      }
     }
     if (failures.length === 1) throw failures[0]
     if (failures.length)
@@ -1131,7 +1195,11 @@ test.describe('the whole picture group through final owner handover', () => {
         agentIndex: null,
         nodeId: null,
       })
-      expect(reply).toEqual({ agentId: 'hilos_uploads', nodeId: 'standalone' })
+      expect(reply).toEqual({
+        agentId: 'hilos_uploads',
+        nodeId: 'standalone',
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      })
       await expect(page.getByTestId('moderation-text')).toHaveText(
         'Moderation is unavailable right now. Your message is still here.',
       )

@@ -22,6 +22,7 @@ use Hilos\HilosException;
  * @extends RtItem<StateHilosClusterNode>
  *
  * @property-read string $nodeId Id of the node, empty on a standalone install
+ * @property-read string $name Non-empty readable node name
  * @property-read string $role Self-declared role of the node, a NodeRole value
  * @property-read list<string> $capabilities Capability tags the node declared
  * @property-read ?string $address Address peers dial to reach the node, or null
@@ -49,6 +50,7 @@ final class HilosClusterNode extends RtItem
     {
         return match ($name) {
             StateHilosClusterNode::nodeId => $this->_state->nodeId,
+            StateHilosClusterNode::name => $this->_state->name,
             StateHilosClusterNode::role => $this->_state->role,
             StateHilosClusterNode::capabilities => $this->_state->capabilities,
             StateHilosClusterNode::address => $this->_state->address,

@@ -42,6 +42,7 @@ use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Pages\Backup\AbstractHilosBackupPage;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -178,6 +179,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * @param SourceChange $change Runtime source change
      * @return ?TableRowMutationDTO Row mutation, or null when the change does not affect this table
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -288,6 +290,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             HilosBackupTableRow::restoreMigrationBehind => WireField::notPersonal(),
             HilosBackupTableRow::restoreMigrationNotice => WireField::notPersonal(),
             HilosBackupTableRow::holderNode => WireField::notPersonal(),
+            HilosBackupTableRow::holderNodeName => WireField::notPersonal(),
         ];
     }
 
@@ -324,6 +327,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
@@ -352,6 +356,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -366,6 +371,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @throws InvalidArgumentException When the period carries an invalid time zone or calendar date
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -444,6 +450,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * Projects the whole stored backup index into row payloads.
      *
      * @return list<array<string, mixed>> Row payloads, in the order the index hands them over
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function collectRows(): array
     {
@@ -570,6 +577,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * @param SourceChange $change Backup index source change
      * @return TableRowMutationDTO Row create/update/delete mutation
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function historyMutation(SourceChange $change): TableRowMutationDTO
     {
@@ -599,6 +607,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * what an idle row and a restore of a since-deleted archive both look like.
      *
      * @return ?TableRowMutationDTO Row update for the restored archive, or null when there is none to update
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function restoreMutation(): ?TableRowMutationDTO
     {
@@ -621,6 +630,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * @param BackupHistory $history Stored backup index row
      * @return HilosBackupTableRow Backup table row
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function rowFromHistory(BackupHistory $history): HilosBackupTableRow
     {
@@ -673,6 +683,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
                 ? $migration->reason
                 : (implode("\n", $migration->describeGaps()) ?: null),
             holderNode: $history->reachable ? null : $history->nodeId,
+            holderNodeName: $history->reachable ? null : Hilos::$rt?->hilosClusterNodes[$history->nodeId]?->name,
         );
     }
 

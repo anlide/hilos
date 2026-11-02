@@ -252,6 +252,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ], $response->payload->data['node']);
         self::assertSame([
             'page' => HilosPageConstants::HILOS_DAEMON_NODE,
@@ -277,6 +278,25 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([], AbstractHilosDaemonNodeOverviewPage::SUBSCRIPTION_AGENT_INDEX);
     }
 
+    public function testNameOnlyPortionPublishesTheAddressedHeadingWithoutChangingTheOverview(): void
+    {
+        $node = $this->node($this->report('a'));
+        $this->deliver([new ClusterDaemonNodeView('a', true, $node->slot, 'Control')]);
+        $this->subscribe('reader', 'a');
+        $initial = $this->onlyResponse();
+        self::assertSame('Control', $initial->payload->data['node']['name']);
+
+        $renamed = new ClusterDaemonNodeView('a', true, $node->slot, 'Main control');
+        $this->deliver([$renamed], false);
+        $changed = $this->onlyResponse();
+        self::assertSame('Main control', $changed->payload->data['node']['name']);
+        self::assertSame($initial->payload->data['node']['clock'], $changed->payload->data['node']['clock']);
+        self::assertSame($initial->payload->data['overview'], $changed->payload->data['overview']);
+        self::assertSame([], $changed->payload->windows);
+        $this->deliver([$renamed], false);
+        self::assertSame([], $this->drain());
+    }
+
     public function testPartialPicturesNeverReleaseOverviewAndFullEmptyAndMissingStayNull(): void
     {
         $this->subscribe('reader', 'a');
@@ -287,6 +307,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ], $partial['node']);
         self::assertNull($partial['overview']);
         $this->deliver([]);
@@ -294,6 +315,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
             'clock' => null,
+            'name' => null,
         ], $empty['node']);
         self::assertNull($empty['overview']);
         $this->deliver([$this->node($this->report('b'))]);
@@ -314,6 +336,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ], $response->payload->data['node']);
         self::assertFalse($response->payload->data['overview']['online']);
         self::assertSame(2, $response->payload->data['overview']['uptimeMinutes']);
@@ -428,6 +451,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
             self::assertSame([
                 'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
                 'clock' => null,
+                'name' => null,
             ],
                 $signal->data->data->payload->data['node']);
             self::assertStringNotContainsString('_hidden', json_encode($signal->data->data->toArray(), JSON_THROW_ON_ERROR));
@@ -570,7 +594,7 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
 
     private function known(string $nodeId): void
     {
-        Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, NodeRole::Master->value, [], null, true, 100.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, 'Node ' . $nodeId, NodeRole::Master->value, [], null, true, 100.0);
     }
 
     private function subscribe(string $key, string $nodeId, bool $known = true): void

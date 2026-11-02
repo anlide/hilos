@@ -37,6 +37,7 @@ function node(
 ): HilosMaintenanceNodeRow {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     phase: 'inactive',
     quiesced: null,
     isLeader: false,
@@ -59,8 +60,19 @@ function windowData(rows: TableRow[], totalCount = rows.length) {
     sort: [{ field: 'nodeId', direction: 'asc' as const }],
     limit: 25,
     rowsBefore: 0,
-    firstAnchor: rows.length ? { nodeId: rows[0].rowKey } : null,
-    lastAnchor: rows.length ? { nodeId: rows.at(-1)?.rowKey } : null,
+    firstAnchor: rows.length
+      ? {
+          nodeName: resolveHilosMaintenanceNodeRow(rows[0]).nodeName,
+          nodeId: rows[0].rowKey,
+        }
+      : null,
+    lastAnchor: rows.length
+      ? {
+          nodeName: resolveHilosMaintenanceNodeRow(rows[rows.length - 1])
+            .nodeName,
+          nodeId: rows[rows.length - 1].rowKey,
+        }
+      : null,
   }
 }
 
@@ -158,9 +170,10 @@ function setup(page: HilosPageKey = HilosPages.MAINTENANCE_NODES) {
 }
 
 describe('maintenance Nodes row contract', () => {
-  it('keeps exactly the six backend fields in the node slot with nodeId as row key', () => {
+  it('keeps exactly the seven backend fields in the node slot with nodeId as row key', () => {
     const fields = [
       'nodeId',
+      'nodeName',
       'phase',
       'quiesced',
       'isLeader',
@@ -186,10 +199,18 @@ describe('maintenance Nodes row contract', () => {
       MAINTENANCE_NODE_IS_LEADER_FIELD,
       MAINTENANCE_NODE_IS_INITIATOR_FIELD,
       MAINTENANCE_NODE_REPORT_STATE_FIELD,
-    ]).toEqual(fields)
+    ]).toEqual([
+      'nodeId',
+      'phase',
+      'quiesced',
+      'isLeader',
+      'isInitiator',
+      'reportState',
+    ])
     expect(HILOS_MAINTENANCE_NODES_TABLE).toBe('hilosMaintenanceNodes')
     expect(HILOS_MAINTENANCE_NODES_SLOT).toBe('node')
     const raw = nodeRow({
+      nodeName: 'East node',
       phase: 'verifying',
       quiesced: true,
       isLeader: true,
@@ -199,6 +220,7 @@ describe('maintenance Nodes row contract', () => {
     expect(Object.keys(raw.slots.node as object)).toEqual(fields)
     expect(resolveHilosMaintenanceNodeRow(raw)).toEqual({
       nodeId: 'node-1',
+      nodeName: 'East node',
       phase: 'verifying',
       quiesced: true,
       isLeader: true,
@@ -206,6 +228,29 @@ describe('maintenance Nodes row contract', () => {
       reportState: 'current',
     })
     expect(Object.keys(resolveHilosMaintenanceNodeRow(raw))).toEqual(fields)
+  })
+
+  it.each([null, undefined, 42, false, [], {}])(
+    'keeps an unknown name null for unsafe input %j',
+    (nodeName) => {
+      expect(
+        resolveHilosMaintenanceNodeRow({
+          rowKey: 'node-1',
+          slots: { node: { ...node(), nodeName } },
+        }),
+      ).toEqual(node())
+    },
+  )
+
+  it('keeps the row key as identity when only a name is known', () => {
+    expect(
+      resolveHilosMaintenanceNodeRow({
+        rowKey: 'node-2',
+        slots: {
+          node: { ...node(), nodeId: undefined, nodeName: 'East node' },
+        },
+      }),
+    ).toEqual(node({ nodeId: 'node-2', nodeName: 'East node' }))
   })
 
   it.each([null, false, true])(
@@ -222,6 +267,7 @@ describe('maintenance Nodes row contract', () => {
     null,
     [],
     'node-1',
+    {},
     { phase: 'unknown', quiesced: 'false' },
   ])('keeps malformed or absent reports unknown: %j', (slot) => {
     expect(
@@ -231,6 +277,7 @@ describe('maintenance Nodes row contract', () => {
       }),
     ).toEqual({
       nodeId: 'node-2',
+      nodeName: null,
       phase: null,
       quiesced: null,
       isLeader: false,
@@ -400,7 +447,15 @@ describe('createHilosMaintenanceNodesTable', () => {
     expect(test.sendTableRendered).toHaveBeenCalledExactlyOnceWith(
       HilosPages.MAINTENANCE_NODES,
       'hilosMaintenanceNodes',
-      ['nodeId', 'quiesced', 'phase', 'isLeader', 'isInitiator', 'reportState'],
+      [
+        'nodeId',
+        'nodeName',
+        'quiesced',
+        'phase',
+        'isLeader',
+        'isInitiator',
+        'reportState',
+      ],
     )
     expect(test.sendTableViewport).not.toHaveBeenCalled()
     expect(test.sendTableFacets).not.toHaveBeenCalled()
@@ -501,7 +556,7 @@ describe('createHilosMaintenanceNodesTable', () => {
       HilosPages.MAINTENANCE_NODES,
       'hilosMaintenanceNodes',
       expect.objectContaining({
-        anchor: { nodeId: 'node-1' },
+        anchor: { nodeName: null, nodeId: 'node-1' },
         anchorDirection: 'after',
         limit: 25,
         sort: [{ field: 'nodeId', direction: 'asc' }],

@@ -907,10 +907,10 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         socket_set_nonblock($pair[1]);
         try {
             $peer = new ReflectionClass(PeerServer::class)->newInstanceWithoutConstructor();
-            $identity = NodeIdentity::of('remote', NodeRole::Master, []);
+            $identity = NodeIdentity::of('remote', 'Node remote', NodeRole::Master, []);
             new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($peer, $identity);
             $link = new PeerLink($pair[0], $peer, $identity, false, new PlainSocketTransport($pair[0]));
-            $link->activate(NodeIdentity::of('socket', NodeRole::Master, []));
+            $link->activate(NodeIdentity::of('socket', 'Node socket', NodeRole::Master, []));
             new ReflectionProperty(AbstractServer::class, 'clients')->setValue($peer, [$link]);
             new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($peer, ['socket' => $link]);
             $serving->registerServer($peer);
@@ -1037,12 +1037,13 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
     {
         $previousCluster = Hilos::$cluster;
         $environment = [];
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE', 'CLUSTER_PEER_ADVERTISE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE', 'CLUSTER_PEER_ADVERTISE'] as $key) {
             $environment[$key] = getenv($key);
         }
         try {
             putenv('CLUSTER_ENABLED=true');
             putenv('CLUSTER_NODE_ID=socket');
+            putenv('CLUSTER_NODE_NAME=Local node');
             putenv('CLUSTER_NODE_ROLE=master');
             putenv('CLUSTER_PEER_ADVERTISE=127.0.0.1:7000');
             Hilos::$env = new EnvAccessor();
@@ -1055,7 +1056,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             self::assertCount(1, $this->pending()[$client->acceptKey]);
             self::assertNull(Hilos::$sr->pageSubscription($client->acceptKey)->agentNode);
             $client->sendFrame('{"type":"own_state","data":{"incomplete":true}}');
-            $identity = NodeIdentity::of('remote', NodeRole::Master, []);
+            $identity = NodeIdentity::of('remote', 'Node remote', NodeRole::Master, []);
             Hilos::$cluster->registry()->recordPeer($identity, microtime(true));
             $this->master->onNodeJoined(ClusterNode::fromIdentity($identity, true, microtime(true)));
             self::assertSame('remote', Hilos::$sr->pageSubscription($client->acceptKey)->agentNode);
@@ -1178,7 +1179,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
 
     private function remoteNode(): ClusterNode
     {
-        return ClusterNode::fromIdentity(NodeIdentity::of('remote', NodeRole::Master, []), false, microtime(true));
+        return ClusterNode::fromIdentity(NodeIdentity::of('remote', 'Node remote', NodeRole::Master, []), false, microtime(true));
     }
 
     /** @return list<array<string, mixed>> Physical text frames, with no flattening of signal_batch */

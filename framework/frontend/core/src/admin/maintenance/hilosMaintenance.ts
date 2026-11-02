@@ -25,6 +25,7 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { z } from 'zod'
 import { elapsedSecondsSince } from '../backup/hilosBackups.js'
+import { formatHilosNodeLabel } from '../daemon/hilosDaemonNode.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatMoment } from '../../format/moment.js'
 import { HilosPages, type HilosPageKey } from '../../routing/hilosPages.js'
@@ -202,7 +203,7 @@ export interface HilosMaintenanceCard {
   readonly preservedAgentTypes: readonly string[] | null
   /** Stopped-agents line. A null count is an em dash, never zero. */
   readonly stoppedAgentsCaption: string
-  /** Node the diagnostic tuple describes, or null until published. */
+  /** Label of the diagnostic node, or null until published. */
   readonly diagnosticsNodeId: string | null
   /** Whether agent start is closed, or null until published. */
   readonly agentStartGateClosed: boolean | null
@@ -333,6 +334,7 @@ export function hilosMaintenanceWatchdogAlert(
         value: initiatorCaption(
           state.initiatorAgentType,
           state.initiatorNodeId,
+          state.initiatorNodeName,
         ),
       },
       {
@@ -349,11 +351,20 @@ export function hilosMaintenanceWatchdogAlert(
       },
       {
         label: copy.pendingNodes,
-        value: state.watchdogPendingNodeIds.join(', ') || ABSENT,
+        value:
+          state.watchdogPendingNodes
+            .map((node) => formatHilosNodeLabel(node.nodeId, node.nodeName))
+            .join(', ') || ABSENT,
       },
       {
         label: HILOS_MAINTENANCE_STATE_COPY.diagnosticsNode,
-        value: state.diagnosticsNodeId ?? ABSENT,
+        value:
+          state.diagnosticsNodeId === null
+            ? ABSENT
+            : formatHilosNodeLabel(
+                state.diagnosticsNodeId,
+                state.diagnosticsNodeName,
+              ),
       },
       {
         label: HILOS_MAINTENANCE_STATE_COPY.agentsStopped,
@@ -475,12 +486,21 @@ export function hilosMaintenanceOtherBrowserLine(
 ): string {
   return HILOS_MAINTENANCE_STATE_COPY.otherBrowser
     .replace('{agent}', state.initiatorAgentType ?? ABSENT)
-    .replace('{node}', state.initiatorNodeId ?? ABSENT)
+    .replace('{node}', () =>
+      state.initiatorNodeId === null
+        ? ABSENT
+        : formatHilosNodeLabel(state.initiatorNodeId, state.initiatorNodeName),
+    )
 }
 
 /** Initiator line; a missing agent or node is an em dash, as the operation line is. */
-function initiatorCaption(agent: string | null, node: string | null): string {
-  return `${agent ?? ABSENT} · ${HILOS_MAINTENANCE_STATE_COPY.node} ${node ?? ABSENT}`
+function initiatorCaption(
+  agent: string | null,
+  nodeId: string | null,
+  nodeName: string | null,
+): string {
+  const node = nodeId === null ? ABSENT : formatHilosNodeLabel(nodeId, nodeName)
+  return `${agent ?? ABSENT} · ${HILOS_MAINTENANCE_STATE_COPY.node} ${node}`
 }
 
 /**
@@ -560,6 +580,7 @@ export function hilosMaintenanceCard(
     initiatorCaption: initiatorCaption(
       state.initiatorAgentType,
       state.initiatorNodeId,
+      state.initiatorNodeName,
     ),
     activatedAt: state.activatedAt,
     progressAt: state.progressAt,
@@ -569,7 +590,13 @@ export function hilosMaintenanceCard(
       state.stoppedAgentCount,
       state.preservedAgentTypes,
     ),
-    diagnosticsNodeId: state.diagnosticsNodeId,
+    diagnosticsNodeId:
+      state.diagnosticsNodeId === null
+        ? null
+        : formatHilosNodeLabel(
+            state.diagnosticsNodeId,
+            state.diagnosticsNodeName,
+          ),
     agentStartGateClosed: state.agentStartGateClosed,
     agentStartCaption: agentStartCaption(state.agentStartGateClosed),
     isInitiator: state.isInitiator,

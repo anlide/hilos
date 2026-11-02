@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Logs;
 
+use Hilos\Cluster\NodeName;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -73,9 +74,8 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
     ];
 
     /**
-     * The section draws its picture out of the cluster log mirror, so a node that stopped
-     * answering leaves its last word on the screen looking current. The router of cluster nodes
-     * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
+     * The log mirror supplies the figures; the cluster registry supplies current node names
+     * and the frozen-replica mark for a picture whose owner stopped answering.
      */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
@@ -148,6 +148,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * @param PageAgentInterface $agent Hilos logs agent, for {@see PageAgentInterface::getAgentSignalSource()}
      * @throws InvalidArgumentException When the catalog signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -258,6 +259,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      *     the address, so the page ignores them
      * @throws InvalidArgumentException When the catalog signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -302,6 +304,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * Builds the catalog out of the cluster picture the mirror holds.
      *
      * @return HilosLogsViewCatalogSignalData Catalog payload
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function buildCatalog(): HilosLogsViewCatalogSignalData
     {
@@ -482,7 +485,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
             throw new TableActionException("Unknown cluster node: {$nodeId}");
         }
         if (!$node->online) {
-            throw new TableActionException("Cluster node {$nodeId} is offline");
+            throw new TableActionException('Cluster node ' . NodeName::label($nodeId, $node->name) . ' is offline');
         }
     }
 }

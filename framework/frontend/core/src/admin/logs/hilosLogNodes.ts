@@ -6,6 +6,7 @@ import {
   readBoolean,
   readNumberOrNull,
   readString,
+  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -19,6 +20,8 @@ import { type HilosLogsOverviewContext } from './hilosLogsOverview.js'
 export interface HilosLogNodeRow {
   /** Stable node identity, also used as the table row key. */
   readonly nodeId: string
+  /** Registered node name, or null when no registry row is known. */
+  readonly nodeName: string | null
   /** Whether the node could read its log store. */
   readonly available: boolean
   /** Newest rotation in UTC epoch milliseconds, or null before any rotation. */
@@ -38,6 +41,9 @@ const NODE_SLOT = 'node'
 
 /** Row payload key of the node identity. */
 export const NODE_ID_FIELD = 'nodeId'
+
+/** Row payload key of the node's registered name. */
+const NODE_NAME_FIELD = 'nodeName'
 
 /** Row payload key of the store's availability. */
 const NODE_AVAILABLE_FIELD = 'available'
@@ -78,6 +84,7 @@ export function resolveHilosLogNodeRow(row: TableRow): HilosLogNodeRow {
 
   return {
     nodeId: readString(fields, NODE_ID_FIELD),
+    nodeName: readStringOrNull(fields, NODE_NAME_FIELD),
     available: readBoolean(fields, NODE_AVAILABLE_FIELD),
     lastRotationAt: readNumberOrNull(fields, NODE_LAST_ROTATION_AT_FIELD),
     liveBytes: readNumberOrNull(fields, NODE_LIVE_BYTES_FIELD),
@@ -113,7 +120,12 @@ export function createHilosLogNodesTable(
   context: HilosLogNodesContext,
 ): HilosLogNodesTable {
   const columns: HilosTableColumnOf<HilosLogNodeRow>[] = [
-    { key: NODE_ID_FIELD, label: 'Node', card: 'title' },
+    {
+      key: NODE_ID_FIELD,
+      label: 'Node',
+      card: 'title',
+      reads: [NODE_NAME_FIELD],
+    },
     {
       key: NODE_LAST_ROTATION_AT_FIELD,
       label: 'Last rotation',

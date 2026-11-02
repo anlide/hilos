@@ -118,6 +118,7 @@ describe('HilosDaemonWorkersPage', () => {
     const built = harness(true)
     built.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -141,6 +142,7 @@ describe('HilosDaemonWorkersPage', () => {
     const staged = harness()
     staged.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -157,6 +159,7 @@ describe('HilosDaemonWorkersPage', () => {
     const h = harness(true)
     h.heading({
       clustered: false,
+      name: null,
       role: null,
       state: null,
       silentSince: null,
@@ -185,6 +188,7 @@ describe('HilosDaemonWorkersPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
@@ -206,6 +210,7 @@ describe('HilosDaemonWorkersPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'standby',
       silentSince: null,
@@ -223,6 +228,7 @@ describe('HilosDaemonWorkersPage', () => {
     const h = harness()
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -282,6 +288,7 @@ describe('HilosDaemonWorkersPage', () => {
 
     h.heading({
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,

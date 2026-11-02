@@ -68,6 +68,7 @@ final class DaemonManagerStandingTest extends TestCase
         Hilos::$env = $this->previousEnv;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
         putenv($this->previousClockThreshold === false
             ? 'CLUSTER_CLOCK_SKEW_THRESHOLD_MS'
@@ -146,6 +147,7 @@ final class DaemonManagerStandingTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=n1');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         $cluster = new ClusterContext();
         $cluster->registerLeadership(new StandingTestConsensus());
@@ -165,6 +167,7 @@ final class DaemonManagerStandingTest extends TestCase
             $standing->consensus?->quorumSize,
         ]);
 
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=slave');
         Hilos::$cluster = new ClusterContext();
         $manager = new StandingTestDaemonManager();
@@ -186,6 +189,7 @@ final class DaemonManagerStandingTest extends TestCase
         ] as [$clustered, $role, $leader]) {
             putenv('CLUSTER_ENABLED=' . ($clustered ? 'true' : 'false'));
             putenv('CLUSTER_NODE_ID=n1');
+            putenv('CLUSTER_NODE_NAME=Local node');
             putenv('CLUSTER_NODE_ROLE=' . $role);
             Hilos::$cluster = new ClusterContext();
             if ($role === 'master') {
@@ -241,6 +245,7 @@ final class DaemonManagerStandingTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=n1');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_CLOCK_SKEW_THRESHOLD_MS=300');
         Hilos::$cluster = new ClusterContext();

@@ -46,6 +46,7 @@ use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\LogLevel;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -95,6 +96,32 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
 
     /** How many nodes the fixture picture holds; each one more moves the header fingerprint. */
     private int $reportedNodes = 0;
+
+    public function testNodeChoicesKeepTheLastKnownNameOfAnOfflineNode(): void
+    {
+        $this->publishNode('node-1', false);
+        $this->picture($this->slot('node-1', available: true), $this->slot('node-2', available: true));
+        $page = new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $header = $this->header();
+
+        $this->assertSame([
+            ['nodeId' => 'node-1', 'nodeName' => 'Node node-1'],
+            ['nodeId' => 'node-2', 'nodeName' => null],
+        ], $header->nodes);
+        $this->assertSame($header->toArray(), HilosLogsRotationsSignalData::fromArray($header->toArray())->toArray());
+    }
+
+    public function testTheHeaderRefusesANodeChoiceWithoutAnId(): void
+    {
+        $page = new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $payload = $this->header()->toArray();
+        $payload['nodes'] = [['nodeName' => 'Archive host']];
+
+        $this->expectException(InvalidFormatException::class);
+        HilosLogsRotationsSignalData::fromArray($payload);
+    }
 
     protected function setUp(): void
     {
@@ -374,7 +401,10 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
 
         // The picture holds its slots ordered by node, so the filter offers them the same way
         // however the frames happened to arrive.
-        $this->assertSame(['node-1', 'node-2'], $this->header()->nodes);
+        $this->assertSame([
+            ['nodeId' => 'node-1', 'nodeName' => null],
+            ['nodeId' => 'node-2', 'nodeName' => null],
+        ], $this->header()->nodes);
     }
 
     /**
@@ -551,7 +581,7 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
             );
             $this->fail('Expected TableActionException');
         } catch (TableActionException $e) {
-            $this->assertSame('Cluster node ' . self::PEER . ' is offline', $e->getMessage());
+            $this->assertSame('Cluster node Node ' . self::PEER . ' (' . self::PEER . ') is offline', $e->getMessage());
         }
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
@@ -624,7 +654,7 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
             );
             $this->fail('Expected TableActionException');
         } catch (TableActionException $e) {
-            $this->assertSame('Cluster node ' . self::PEER . ' is offline', $e->getMessage());
+            $this->assertSame('Cluster node Node ' . self::PEER . ' (' . self::PEER . ') is offline', $e->getMessage());
         }
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'A refused withdrawal travels nowhere');
@@ -698,7 +728,7 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      */
     private function publishNode(string $nodeId, bool $online): void
     {
-        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'master', [], null, $online, microtime(true));
+        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'Node ' . $nodeId, 'master', [], null, $online, microtime(true));
     }
 
     /**

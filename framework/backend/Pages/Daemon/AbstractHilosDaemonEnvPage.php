@@ -88,6 +88,7 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
                 null,
                 $role === null ? null : NodeRole::tryFrom($role),
                 clock: null,
+                name: Hilos::$rt?->hilosClusterNodes[$nodeId]?->name,
             )->toArray(),
         ];
         if ($includeEnvironment) {

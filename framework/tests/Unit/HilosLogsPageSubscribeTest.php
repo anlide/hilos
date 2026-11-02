@@ -40,6 +40,7 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use JsonException;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -64,6 +65,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsPageSubscribeTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     private ?ClusterContext $previousCluster = null;
 
     private ?EnvAccessor $previousEnv = null;
@@ -94,9 +97,37 @@ final class HilosLogsPageSubscribeTest extends TestCase
 
     private ?TableContext $previousTable = null;
 
+    public function testNodeAndRecentFeedNamesComeFromTheLiveRegistry(): void
+    {
+        $this->publishLogNode('node-1', 'Archive host', online: false);
+        $this->fileThePicture(
+            self::nodeSlot('node-1',
+                recentErrors: [self::failure(10, 'daemon-error.log', message: 'failure')],
+                recentWarnings: [self::failure(10, 'daemon.log', message: 'warning')],
+            ),
+            self::nodeSlot('node-2', recentErrors: [self::failure(20, 'daemon-error.log', message: 'unknown')]),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $payload = $this->overview()->toArray();
+
+        $this->assertSame(['Archive host', null], array_column($payload['nodes'], 'nodeName'));
+        $this->assertSame(['Archive host', null], array_column($payload['recentErrors'], 'nodeName'));
+        $this->assertSame(['Archive host'], array_column($payload['recentWarnings'], 'nodeName'));
+        $this->assertSame(['node-1', 'node-2'], array_column($payload['recentErrors'], 'nodeId'));
+        $this->assertSame($payload, HilosLogsOverviewSignalData::fromArray($payload)->toArray());
+        $this->queuedSignalNames();
+
+        $this->publishLogNode('node-1', 'Renamed host', online: false);
+        $this->queuedSignalNames();
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->assertSame('Renamed host', $this->overview()->nodes[0]['nodeName']);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->mountLogsRuntime();
         $this->previousCluster = Hilos::$cluster;
         $this->previousTable = Hilos::$table;
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
@@ -131,6 +162,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         Hilos::$env = $this->previousEnv;
         putenv('CLUSTER_ENABLED');
+        $this->restoreLogsRuntime();
         parent::tearDown();
     }
 
@@ -409,6 +441,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->assertSame(
             [
                 HilosLogsOverviewSignalData::nodeId => 'node-2',
+                HilosLogsOverviewSignalData::nodeName => null,
                 HilosLogsOverviewSignalData::available => false,
                 HilosLogsOverviewSignalData::lastRotationAt => null,
                 HilosLogsOverviewSignalData::liveBytes => null,
@@ -944,7 +977,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->assertSame(25, $window['limit']);
         $this->assertSame(30, $window['totalCount']);
         $this->assertTrue($window['totalExact']);
-        $this->assertSame([['field' => 'nodeId', 'direction' => 'asc']], $window['sort']);
+        $this->assertSame([['field' => 'nodeName', 'direction' => 'asc']], $window['sort']);
         $this->assertSame('node-01', $window['rows'][0]['rowKey']);
         $this->assertSame('node-25', $window['rows'][24]['rowKey']);
         $this->assertSame(1_767_227_405_000, $window['rows'][0]['slots']['node']['lastRotationAt']);

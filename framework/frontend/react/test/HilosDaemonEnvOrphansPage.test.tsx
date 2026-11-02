@@ -77,6 +77,7 @@ function harness() {
           nodeSilent,
           node: {
             clustered: true,
+            name: null,
             state: nodeSilent ? 'silent' : null,
             silentSince: null,
             clock: null,

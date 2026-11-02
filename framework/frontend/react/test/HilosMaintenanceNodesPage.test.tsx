@@ -100,6 +100,7 @@ function node(
 ): HilosMaintenanceNodeRow {
   return {
     nodeId,
+    nodeName: null,
     phase: 'inactive',
     quiesced: null,
     isLeader: false,
@@ -140,8 +141,15 @@ function seededContext(initial: HilosMaintenanceNodeRow[] = []) {
           rows: rows.map(wireRow),
           totalCount: rows.length,
           totalExact: true,
-          firstAnchor: null,
-          lastAnchor: null,
+          firstAnchor: rows.length
+            ? { nodeName: rows[0].nodeName, nodeId: rows[0].nodeId }
+            : null,
+          lastAnchor: rows.length
+            ? {
+                nodeName: rows[rows.length - 1].nodeName,
+                nodeId: rows[rows.length - 1].nodeId,
+              }
+            : null,
           rowsBefore: 0,
           limit: 25,
           sort: [{ field: 'nodeId', direction: 'asc' }],

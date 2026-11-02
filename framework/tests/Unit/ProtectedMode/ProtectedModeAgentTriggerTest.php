@@ -49,6 +49,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
 
         parent::tearDown();
@@ -61,6 +62,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();

@@ -20,7 +20,7 @@ final class FullMeshConnectionPolicyTest extends TestCase
     public function testDialsEveryReachablePeerButNotItself(): void
     {
         $policy = new FullMeshConnectionPolicy();
-        $local = NodeIdentity::of('node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095'));
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095'));
 
         // A known-set that includes the local node and two reachable peers: full mesh
         // wants a link to both peers and never to itself.
@@ -44,7 +44,7 @@ final class FullMeshConnectionPolicyTest extends TestCase
     public function testDoesNotDialItself(): void
     {
         $policy = new FullMeshConnectionPolicy();
-        $local = NodeIdentity::of('node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095'));
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095'));
 
         $this->assertFalse($policy->shouldDial($local, $this->reachableNode('node-a', '10.0.0.1:8095')));
     }
@@ -52,9 +52,9 @@ final class FullMeshConnectionPolicyTest extends TestCase
     public function testDoesNotDialAPeerWithoutAnAdvertisedAddress(): void
     {
         $policy = new FullMeshConnectionPolicy();
-        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
 
-        $addressless = ClusterNode::fromIdentity(NodeIdentity::of('node-b', NodeRole::Slave, []), true, 100.0);
+        $addressless = ClusterNode::fromIdentity(NodeIdentity::of('node-b', 'Node node-b', NodeRole::Slave, []), true, 100.0);
 
         $this->assertFalse($policy->shouldDial($local, $addressless));
     }
@@ -62,7 +62,7 @@ final class FullMeshConnectionPolicyTest extends TestCase
     private function reachableNode(string $nodeId, string $address): ClusterNode
     {
         return ClusterNode::fromIdentity(
-            NodeIdentity::of($nodeId, NodeRole::Slave, [], PeerAddress::fromString($address)),
+            NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Slave, [], PeerAddress::fromString($address)),
             true,
             100.0,
         );

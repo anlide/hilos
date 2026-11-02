@@ -22,6 +22,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Cluster nodes projected from the page worker's log mirror into ordinary bounded windows.
@@ -40,10 +41,10 @@ final class HilosLogNodesTable extends TableDefinition implements ViewportTable
         return 25;
     }
 
-    /** @return ?TableSortOrderDTO Deterministic node identity order */
+    /** @return ?TableSortOrderDTO Node name order, with identity settling equal names */
     public function defaultSort(): ?TableSortOrderDTO
     {
-        return TableSortOrderDTO::of(new TableSortDTO(HilosLogNodesTableRow::nodeId, TableConstants::ORDER_ASC));
+        return TableSortOrderDTO::of(new TableSortDTO(HilosLogNodesTableRow::nodeName, TableConstants::ORDER_ASC));
     }
 
     /**
@@ -73,6 +74,7 @@ final class HilosLogNodesTable extends TableDefinition implements ViewportTable
     {
         return [
             HilosLogNodesTableRow::nodeId => WireField::notPersonal(),
+            HilosLogNodesTableRow::nodeName => WireField::notPersonal(),
             HilosLogNodesTableRow::available => WireField::notPersonal(),
             HilosLogNodesTableRow::lastRotationAt => WireField::notPersonal(),
             HilosLogNodesTableRow::liveBytes => WireField::notPersonal(),
@@ -82,22 +84,22 @@ final class HilosLogNodesTable extends TableDefinition implements ViewportTable
         ];
     }
 
-    /** @return array<string, string> Server vocabulary for the default node identity order */
+    /** @return array<string, string> Server vocabulary for the node name order */
     protected function sortableFields(): array
     {
-        return [HilosLogNodesTableRow::nodeId => HilosLogNodesTableRow::nodeId];
+        return [HilosLogNodesTableRow::nodeName => HilosLogNodesTableRow::nodeName];
     }
 
     /**
-     * Keeps the mirror's nodeId order: the generic value comparator uses natural, case-insensitive
-     * ordering, whereas the cluster index sorts node identities as array keys. The source-order
-     * path still applies the ordinary anchor, page number and limit without reordering identities.
+     * Keeps the projected name/id order through the source-order window path.
+     * The ordinary anchor, page number and limit then cut that same ordered source.
      *
      * @param TableQueryDTO $query Window size, order and anchor or page number
      * @return TableSnapshotDTO Bounded node rows and the exact set size
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws TableSearchNotSupportedException When a search term is supplied to this unsearchable table
      * @throws TableSearchFieldUnknownException When a declared search field is absent from the rows
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -125,8 +127,9 @@ final class HilosLogNodesTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * @return list<array<string, mixed>> Full projected set, in the mirror's nodeId order
+     * @return list<array<string, mixed>> Full projected set ordered by current name, then id
      * @throws EnvException When the cluster mode flag cannot be read
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function collectRows(): array
     {
@@ -138,6 +141,11 @@ final class HilosLogNodesTable extends TableDefinition implements ViewportTable
         foreach (ClusterLogIndexMirror::index()?->nodes() ?? [] as $slot) {
             $rows[] = HilosLogNodesTableRow::fromNode($slot)->toArray();
         }
+
+        usort($rows, static fn (array $first, array $second): int => strcmp(
+            $first[HilosLogNodesTableRow::nodeName] ?? $first[HilosLogNodesTableRow::nodeId],
+            $second[HilosLogNodesTableRow::nodeName] ?? $second[HilosLogNodesTableRow::nodeId],
+        ) ?: strcmp($first[HilosLogNodesTableRow::nodeId], $second[HilosLogNodesTableRow::nodeId]));
 
         return $rows;
     }

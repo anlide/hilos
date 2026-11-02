@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Closure;
+use Hilos\Cluster\NodeName;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
@@ -26,6 +27,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\Hilos;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\HilosException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -115,6 +117,7 @@ final class AgentRestarts
      * @throws AgentDaemonCreationFailedException When a placement profile cannot be built
      * @throws HilosException When the project cannot describe a placement candidate
      * @throws LogicException When an agent declares a negative resource cost or the reserved slot
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function requestChecked(CommandRequestDTO $request, float $now): void
     {
@@ -172,7 +175,9 @@ final class AgentRestarts
                 return;
             }
             if (!$this->nodeOnline($askedNodeId)) {
-                $this->reply($request, CommandReplyDTO::error($request->correlationId, sprintf('Node %s is silent', $askedNodeId)));
+                $this->reply($request, CommandReplyDTO::error($request->correlationId, sprintf(
+                    'Node %s is silent', NodeName::label($askedNodeId, Hilos::$rt?->hilosClusterNodes[$askedNodeId]?->name),
+                )));
                 return;
             }
             $this->forward($request, $type, $index, $askedNodeId, false, false);
@@ -298,6 +303,7 @@ final class AgentRestarts
      * @param string $target Receiving node
      * @param bool $inPlace Whether the leader sanctioned an in-place restart
      * @param bool $toLeader Whether this is the initial route to the cluster leader
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function forward(
         CommandRequestDTO $request,
@@ -320,7 +326,8 @@ final class AgentRestarts
             ? ($this->sendRestartFrame)($target, $frame)
             : ($this->peerServer !== null && ($this->peerServer)()?->sendToNode($target, $frame) === true);
         if (!$sent) {
-            $message = $toLeader ? sprintf('The leader %s is unreachable', $target) : sprintf('Node %s is silent', $target);
+            $message = $toLeader ? sprintf('The leader %s is unreachable', $target)
+                : sprintf('Node %s is silent', NodeName::label($target, Hilos::$rt?->hilosClusterNodes[$target]?->name));
             $this->reply($request, CommandReplyDTO::error($request->correlationId, $message));
         }
     }
@@ -340,6 +347,7 @@ final class AgentRestarts
      * @throws AgentDaemonCreationFailedException When a placement profile cannot be built
      * @throws HilosException When the project cannot describe a placement candidate
      * @throws LogicException When an agent declares a negative resource cost or the reserved slot
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function executeAsLeader(
         CommandRequestDTO $request,
@@ -389,7 +397,7 @@ final class AgentRestarts
         }
         if ($record->nodeId !== $nodeId && !$this->nodeOnline($record->nodeId)) {
             $this->reply($request, CommandReplyDTO::error($request->correlationId, sprintf(
-                'Node %s is silent', $record->nodeId,
+                'Node %s is silent', NodeName::label($record->nodeId, Hilos::$rt?->hilosClusterNodes[$record->nodeId]?->name),
             )));
             return;
         }
@@ -440,6 +448,7 @@ final class AgentRestarts
      * @param string $type Agent type
      * @param ?string $index Agent index
      * @param string $nodeId New host
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onRestartPlaced(string $type, ?string $index, string $nodeId): void
     {
@@ -447,6 +456,7 @@ final class AgentRestarts
         $this->finish($id, CommandReplyDTO::ok('', [
             CommandConstants::FIELD_AGENT_ID => $id,
             CommandConstants::FIELD_NODE_ID => $nodeId,
+            CommandConstants::FIELD_NODE_NAME => Hilos::$rt?->hilosClusterNodes[$nodeId]?->name,
         ]));
     }
 
@@ -554,7 +564,10 @@ final class AgentRestarts
         }
     }
 
-    /** @param string $agentId Agent reported started by its worker */
+    /**
+     * @param string $agentId Agent reported started by its worker
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     */
     public function onAgentStarted(string $agentId): void
     {
         $run = $this->runs[$agentId] ?? null;
@@ -564,6 +577,7 @@ final class AgentRestarts
         $this->finish($agentId, CommandReplyDTO::ok('', [
             CommandConstants::FIELD_AGENT_ID => $agentId,
             CommandConstants::FIELD_NODE_ID => $run->nodeId,
+            CommandConstants::FIELD_NODE_NAME => Hilos::$rt?->hilosClusterNodes[$run->nodeId]?->name,
         ]));
     }
 
@@ -606,7 +620,10 @@ final class AgentRestarts
         }
     }
 
-    /** @param string $nodeId Node that left the mesh */
+    /**
+     * @param string $nodeId Node that left the mesh
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     */
     public function onNodeLeft(string $nodeId): void
     {
         foreach ($this->runs as $id => $run) {
@@ -618,7 +635,8 @@ final class AgentRestarts
             $placementNodeId = Hilos::$cluster?->placement()?->registry()->get($id)?->nodeId;
             if ($run->nodeId === $nodeId && (!$run->placementMove || $placementNodeId === $nodeId)) {
                 $this->finish($id, CommandReplyDTO::error('', sprintf(
-                    'Node %s went silent during the restart of %s', $nodeId, $id,
+                    'Node %s went silent during the restart of %s',
+                    NodeName::label($nodeId, Hilos::$rt?->hilosClusterNodes[$nodeId]?->name), $id,
                 )));
             }
         }

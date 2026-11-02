@@ -19,6 +19,7 @@ import {
   PAGE_READY,
   grantAdminToSelf,
   typeInto,
+  DAEMON_STANDALONE_NODE_NAME,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { rotateLogs, walkLogs } from '../helpers/logs.js'
 
@@ -434,7 +435,7 @@ test(
     await expect(page.getByTestId('modal')).toHaveCount(0)
     await expect(
       page.getByTestId('hilos-toast-success').filter({
-        hasText: `Agent ${agent} restarted on node standalone.`,
+        hasText: `Agent ${agent} restarted on node ${DAEMON_STANDALONE_NODE_NAME} (standalone).`,
       }),
     ).toBeVisible()
     await dismissToasts(page)

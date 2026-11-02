@@ -311,8 +311,8 @@ Each node is an entity page at `/hilos/daemon/{nodeId}`. Its catalog entry opts
 into the shared `HilosPageHead`, drawn by `HilosDaemonNodeShell` in Vue, React,
 and Angular. The owner is the node, not the Daemon root section. One head and
 one row serve Overview, Workers, Agents, Cron, WebSockets, HTTP, Environment,
-and Env orphans; the row's breadcrumb ends at `nodeId`, not at the current child
-tab. The root's Nodes diagram links to
+and Env orphans; the breadcrumb ends at the selected node, not at the current
+child tab. The root's Nodes diagram links to
 each addressed Node Overview; the selected node remains its own entity and
 head owner.
 
@@ -339,9 +339,17 @@ and the page has no form, actions, or table. Each project's lazy page wrapper
 supplies context; the page is not in the default `hilosAdminViews` maps.
 
 For mirror-backed node pages, `DaemonNodeHeading` carries `clustered`, `state`,
-`silentSince`, `role`, and `clock`. `clock` is relative to the current leader
-in the picture; its `beyond` verdict is computed by the server from that
-leader's threshold. `state` remains the picture's verdict;
+`silentSince`, `role`, `clock`, and nullable `name`. `name` is the roster name and
+is null when no roster row exists for that node. The Vue node head uses a known
+name as the page instance label and shows the stable `nodeId` beside it in muted
+monospace; the breadcrumb label follows the name while routes continue to use
+`nodeId`. On the Vue Overview, “Node name” with the `CLUSTER_NODE_NAME` label
+appears beside “Node ID”. Its browser node rows carry `nodeName` next to
+`nodeId`; compact labels use `<name> (<id>)`, falling back to the id alone when
+the name is unknown. Placement headers retain their leader marker, and the
+Environment mismatch header retains “· this node” for the serving node. `clock`
+is relative to the current leader in the picture; its `beyond` verdict is computed
+by the server from that leader's threshold. `state` remains the picture's verdict;
 `silentSince` is present only for a silent node. `role` is the role in the last
 report and stays null until a report exists. On standalone installations the
 head shows “Single installation” without state or role. Environment and Env

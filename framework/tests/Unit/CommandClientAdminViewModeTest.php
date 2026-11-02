@@ -51,7 +51,7 @@ final class CommandClientAdminViewModeTest extends TestCase
         $this->previousRt = Hilos::$rt;
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousCluster = Hilos::$cluster;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             $this->previousClusterEnv[$key] = getenv($key);
         }
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
@@ -162,6 +162,7 @@ final class CommandClientAdminViewModeTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
 

@@ -518,7 +518,7 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
     public function nodeLeaves(string $nodeId): void
     {
         $this->onNodeLeft(ClusterNode::fromIdentity(
-            NodeIdentity::of($nodeId, NodeRole::Master, []),
+            NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Master, []),
             online: false,
             lastSeen: 0.0,
         ));

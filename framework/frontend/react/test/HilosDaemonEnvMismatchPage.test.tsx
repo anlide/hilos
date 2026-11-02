@@ -21,8 +21,12 @@ function summary(
   return {
     clustered: true,
     servingNodeId: 'n1',
+    servingNodeName: null,
     comparison: {
-      nodes: ['n1', 'n2'],
+      nodes: [
+        { nodeId: 'n1', nodeName: null },
+        { nodeId: 'n2', nodeName: null },
+      ],
       answering: ['n1', 'n2'],
       diverged: 0,
       sourcesDiffer: 0,
@@ -163,6 +167,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     const h = harness({
       clustered: false,
       servingNodeId: 'standalone',
+      servingNodeName: null,
       comparison: null,
     })
     expect(
@@ -187,7 +192,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
       'Waiting for the cluster picture…',
     )
     expect(h.register).not.toHaveBeenCalled()
-    h.response({ clustered: true, servingNodeId: 'n1', comparison: null })
+    h.response({
+      clustered: true,
+      servingNodeId: 'n1',
+      servingNodeName: null,
+      comparison: null,
+    })
     expect(h.find('hilos-daemon-env-mismatch-waiting')).not.toBeNull()
     expect(h.find('hilos-daemon-env-mismatch-tile-diverged')).toBeNull()
     expect(h.find('hilos-daemon-env-mismatch-empty-agree')).toBeNull()
@@ -198,7 +208,12 @@ describe('HilosDaemonEnvMismatchPage', () => {
     expect(h.find('hilos-daemon-env-mismatch-empty-agree')?.textContent).toBe(
       'The answering nodes agree on every key they share.',
     )
-    h.response({ clustered: true, servingNodeId: 'n1', comparison: null })
+    h.response({
+      clustered: true,
+      servingNodeId: 'n1',
+      servingNodeName: null,
+      comparison: null,
+    })
     expect(h.find('hilos-daemon-env-mismatch-waiting')).not.toBeNull()
     expect(h.find('hilos-daemon-env-mismatch-tile-diverged')).toBeNull()
   })
@@ -206,7 +221,11 @@ describe('HilosDaemonEnvMismatchPage', () => {
   it('draws four summary tiles, source-only disagreement and per-node declarations', () => {
     const h = harness(
       summary({
-        nodes: ['n1', 'n2', 'n3'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+          { nodeId: 'n3', nodeName: null },
+        ],
         diverged: 2,
         sourcesDiffer: 1,
         perNode: ['CLUSTER_NODE_ID'],
@@ -261,7 +280,14 @@ describe('HilosDaemonEnvMismatchPage', () => {
   it('renders value, digest, undeclared, unknown and missing with textual warnings', () => {
     const h = harness(
       summary({
-        nodes: ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+          { nodeId: 'n3', nodeName: null },
+          { nodeId: 'n4', nodeName: null },
+          { nodeId: 'n5', nodeName: null },
+          { nodeId: 'n6', nodeName: null },
+        ],
         answering: ['n1', 'n2', 'n3', 'n5'],
         diverged: 1,
       }),
@@ -459,7 +485,14 @@ describe('HilosDaemonEnvMismatchPage', () => {
     )
     expect(h.find(`${CELL}KEY-n2`)).not.toBeNull()
     h.response(
-      summary({ nodes: ['n1', 'n3'], answering: ['n1', 'n3'], diverged: 1 }),
+      summary({
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n3', nodeName: null },
+        ],
+        answering: ['n1', 'n3'],
+        diverged: 1,
+      }),
     )
     h.window(MISMATCH, [
       row('KEY', {
@@ -473,6 +506,7 @@ describe('HilosDaemonEnvMismatchPage', () => {
     h.response({
       clustered: false,
       servingNodeId: 'standalone',
+      servingNodeName: null,
       comparison: null,
     })
     expect(h.activeWindows.size).toBe(0)

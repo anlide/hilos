@@ -8,9 +8,35 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\ProtectedMode\ProtectedModeNodesCollector;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 
 final class ProtectedModeNodesCollectorTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->mountLogsRuntime();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->restoreLogsRuntime();
+        parent::tearDown();
+    }
+
+    public function testNamesComeFromTheRegistryAndOrderNamesBeforeIds(): void
+    {
+        $this->publishLogNode('a', 'Zulu');
+        $this->publishLogNode('c', 'Alpha', false);
+        $this->publishLogNode('b', 'Alpha');
+        $rows = ProtectedModeNodesCollector::project(['a', 'c', 'b', 'unknown'], ['a', 'b'], [], null, null);
+        $this->assertSame(['b', 'c', 'a', 'unknown'], array_column($rows, 'nodeId'));
+        $this->assertSame(['Alpha', 'Alpha', 'Zulu', null], array_column($rows, 'nodeName'));
+        $this->assertSame('silent', $rows[1]['reportState']);
+    }
+
     public function testRoundFactsAndEachNodesOwnPhaseStayIndependent(): void
     {
         $reports = [
@@ -20,15 +46,15 @@ final class ProtectedModeNodesCollectorTest extends TestCase
         ];
 
         $this->assertSame([
-            ['nodeId' => 'departed', 'phase' => null, 'quiesced' => true,
+            ['nodeId' => 'departed', 'nodeName' => null, 'phase' => null, 'quiesced' => true,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'silent'],
-            ['nodeId' => 'follower', 'phase' => 'verifying', 'quiesced' => false,
+            ['nodeId' => 'follower', 'nodeName' => null, 'phase' => 'verifying', 'quiesced' => false,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'current'],
-            ['nodeId' => 'master', 'phase' => 'active', 'quiesced' => true,
+            ['nodeId' => 'master', 'nodeName' => null, 'phase' => 'active', 'quiesced' => true,
                 'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
-            ['nodeId' => 'offline', 'phase' => null, 'quiesced' => null,
+            ['nodeId' => 'offline', 'nodeName' => null, 'phase' => null, 'quiesced' => null,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'silent'],
-            ['nodeId' => 'slave', 'phase' => 'inactive', 'quiesced' => null,
+            ['nodeId' => 'slave', 'nodeName' => null, 'phase' => 'inactive', 'quiesced' => null,
                 'isLeader' => false, 'isInitiator' => true, 'reportState' => 'current'],
         ], ProtectedModeNodesCollector::project(
             ['slave', 'master', 'offline', 'follower'], ['slave', 'master', 'follower'], $reports, 'master', 7,
@@ -38,11 +64,11 @@ final class ProtectedModeNodesCollectorTest extends TestCase
     public function testMissingReportNullRuntimeAndLostLinkNeverBecomeInactive(): void
     {
         $this->assertSame([
-            ['nodeId' => 'a', 'phase' => null, 'quiesced' => null,
+            ['nodeId' => 'a', 'nodeName' => null, 'phase' => null, 'quiesced' => null,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'missing'],
-            ['nodeId' => 'b', 'phase' => null, 'quiesced' => null,
+            ['nodeId' => 'b', 'nodeName' => null, 'phase' => null, 'quiesced' => null,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'missing'],
-            ['nodeId' => 'c', 'phase' => null, 'quiesced' => null,
+            ['nodeId' => 'c', 'nodeName' => null, 'phase' => null, 'quiesced' => null,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'silent'],
         ], ProtectedModeNodesCollector::project(['c', 'b', 'a'], ['a', 'b'], [
             'b' => new PeerProtectedModeNodeReportDTO(null, null, null, null, null),

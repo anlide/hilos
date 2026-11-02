@@ -83,6 +83,7 @@ final class LogIndexPushIntegrationTest extends TestCase
             EnvConstants::DAEMON_LOG_FILE,
             EnvConstants::CLUSTER_ENABLED,
             EnvConstants::CLUSTER_NODE_ID,
+            EnvConstants::CLUSTER_NODE_NAME,
             EnvConstants::CLUSTER_NODE_ROLE,
             EnvConstants::CLUSTER_PEER_ADVERTISE,
         ] as $key) {
@@ -269,6 +270,7 @@ final class LogIndexPushIntegrationTest extends TestCase
         }
         putenv(EnvConstants::CLUSTER_ENABLED->name . '=true');
         putenv(EnvConstants::CLUSTER_NODE_ID->name . '=' . $nodeId);
+        putenv(EnvConstants::CLUSTER_NODE_NAME->name . '=Node ' . $nodeId);
         putenv(EnvConstants::CLUSTER_NODE_ROLE->name . '=' . NodeRole::Master->value);
         putenv(EnvConstants::CLUSTER_PEER_ADVERTISE->name . '=10.0.0.1:7000');
         // A context of its own per node: it remembers the identity it resolved, and these two
@@ -311,6 +313,7 @@ final class LogIndexPushIntegrationTest extends TestCase
     {
         Hilos::$rt?->hilosClusterNodes->actions->publish(
             $nodeId,
+            'Node ' . $nodeId,
             NodeRole::Master->value,
             [],
             null,

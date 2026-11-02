@@ -565,6 +565,7 @@ describe('readHilosDaemonEnvOrphansPage', () => {
     expect(state.get()).not.toHaveProperty('environment')
     const node = {
       clustered: false,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,
@@ -873,6 +874,7 @@ describe('daemonEnvNodeHeading', () => {
       for (const silent of [false, true]) {
         const node = {
           clustered,
+          name: null,
           state: silent ? DAEMON_NODE_STATE_SILENT : null,
           silentSince: null,
           clock: null,
@@ -904,6 +906,7 @@ describe('daemonEnvNodeHeading', () => {
     const page = scopes.openPage(HilosPages.DAEMON_ENV)
     const node = {
       clustered: false,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,

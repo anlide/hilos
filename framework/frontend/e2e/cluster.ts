@@ -26,6 +26,7 @@ export interface ClusterBrowserStand {
   follower: string
   masters: readonly string[]
   nodeHosts: Readonly<Record<string, string>>
+  nodeNames: Readonly<Record<string, string>>
   nodeIps: Readonly<Record<string, string>>
   nodeLogs: Readonly<Record<string, string>>
 }
@@ -85,6 +86,17 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
   }
   const nodeHosts = addressMap('CLUSTER_NODE_HOSTS')
   const nodeIps = addressMap('CLUSTER_NODE_IPS')
+  const names: unknown = JSON.parse(required('CLUSTER_NODE_NAMES'))
+  if (names === null || typeof names !== 'object' || Array.isArray(names)) {
+    throw new Error('CLUSTER_NODE_NAMES must be a node-to-name object')
+  }
+  const nodeNames: Record<string, string> = {}
+  for (const [node, name] of Object.entries(names)) {
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new Error(`Invalid cluster node name for ${node}`)
+    }
+    nodeNames[node] = name
+  }
   const logs: unknown = JSON.parse(required('CLUSTER_NODE_LOGS'))
   if (logs === null || typeof logs !== 'object' || Array.isArray(logs)) {
     throw new Error('CLUSTER_NODE_LOGS must be a node-to-path object')
@@ -100,17 +112,32 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
     ...masters,
     ...Object.keys(nodeHosts),
     ...Object.keys(nodeIps),
+    ...Object.keys(nodeNames),
     ...Object.keys(nodeLogs),
   ])
   for (const node of nodes) {
-    if (!nodeHosts[node] || !nodeIps[node] || !nodeLogs[node]) {
+    if (
+      !nodeHosts[node] ||
+      !nodeIps[node] ||
+      !nodeNames[node] ||
+      !nodeLogs[node]
+    ) {
       throw new Error(`Incomplete cluster address maps for ${node}`)
     }
     if (!isIP(nodeIps[node])) {
       throw new Error(`Invalid cluster IP for ${node}: ${nodeIps[node]}`)
     }
   }
-  return { baseURL, leader, follower, masters, nodeHosts, nodeIps, nodeLogs }
+  return {
+    baseURL,
+    leader,
+    follower,
+    masters,
+    nodeHosts,
+    nodeNames,
+    nodeIps,
+    nodeLogs,
+  }
 }
 
 /**

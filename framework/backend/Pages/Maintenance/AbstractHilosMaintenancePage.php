@@ -36,6 +36,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\HilosException;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
@@ -52,6 +53,7 @@ use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Utils\Helpers\UtcMoment;
@@ -80,6 +82,8 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     public const string PAGE = HilosPageConstants::HILOS_MAINTENANCE;
 
     public const PageReach REACH = PageReach::ROUTE;
+
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     public const array ACTIONS = [
         HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
@@ -150,6 +154,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      *
      * @param PageAgentInterface $agent Index agent routing the page signal
      * @throws InvalidArgumentException When the subscription signal cannot be named or queued
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -202,6 +207,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @param string $acceptKey Connection accept key
      * @param PageRouteParams $params Route parameters (unused)
      * @throws InvalidArgumentException When the subscription signal cannot be named or queued
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -246,6 +252,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      *
      * @param ProtectedModeRuntime $row Current protected-mode row
      * @return HilosMaintenanceStateSignalData State shown in the section, before the personal flag
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private static function stateFromRow(ProtectedModeRuntime $row): HilosMaintenanceStateSignalData
     {
@@ -260,15 +267,20 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             circleAdmitted: count($row->circleSessionTokenHashes),
             initiatorAgentType: $row->initiatorAgentType,
             initiatorNodeId: $row->initiatorNodeId,
+            initiatorNodeName: Hilos::$rt->hilosClusterNodes[$row->initiatorNodeId]?->name,
             activatedAt: self::formatEpoch($row->activatedAt),
             progressAt: self::formatEpoch($row->progressAt),
             isInitiator: false,
             diagnosticsNodeId: $row->diagnosticsNodeId,
+            diagnosticsNodeName: Hilos::$rt->hilosClusterNodes[$row->diagnosticsNodeId]?->name,
             stoppedAgentCount: $row->stoppedAgentCount,
             preservedAgentTypes: $row->preservedAgentTypes,
             agentStartGateClosed: $row->agentStartGateClosed,
             watchdogVerdict: $row->watchdogVerdict,
-            watchdogPendingNodeIds: $row->watchdogPendingNodeIds,
+            watchdogPendingNodes: array_map(static fn (string $nodeId): array => [
+                HilosMaintenanceStateSignalData::nodeId => $nodeId,
+                HilosMaintenanceStateSignalData::nodeName => Hilos::$rt->hilosClusterNodes[$nodeId]?->name,
+            ], $row->watchdogPendingNodeIds),
             watchdogQuiesceTimeoutSeconds: $row->watchdogQuiesceTimeoutSeconds,
             watchdogSilenceTimeoutSeconds: $row->watchdogSilenceTimeoutSeconds,
             watchdogAlertIntervalSeconds: $row->watchdogAlertIntervalSeconds,

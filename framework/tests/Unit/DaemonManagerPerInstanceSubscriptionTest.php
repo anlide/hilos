@@ -69,6 +69,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
         putenv('CLUSTER_PEER_ADVERTISE');
 
@@ -275,7 +276,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
     public function testNodeLeavingAndRejoiningRebindsThePageAndSendsFreshSubscribes(): void
     {
         $this->enableCluster();
-        $peer = NodeIdentity::of('node-B', NodeRole::Master, []);
+        $peer = NodeIdentity::of('node-B', 'Node node-B', NodeRole::Master, []);
         Hilos::$cluster->registry()->recordPeer($peer, microtime(true));
         $manager = $this->manager();
         $this->queueSubscribe(PerInstanceNodePage::PAGE, ['nodeId' => 'node-B']);
@@ -525,6 +526,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-A');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=' . NodeRole::Master->value);
         putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
         Hilos::$env = new EnvAccessor();

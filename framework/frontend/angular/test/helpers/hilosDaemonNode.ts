@@ -222,6 +222,7 @@ export function nodeHeading(
 ): HilosDaemonNodeHeading {
   return {
     clustered: true,
+    name: null,
     state: 'standby',
     silentSince: null,
     clock: null,
@@ -424,6 +425,7 @@ export function openNodePage(scopes: ScopeManager, page: string) {
     data: {
       node: {
         clustered: true,
+        name: null,
         state: null,
         silentSince: null,
         clock: null,

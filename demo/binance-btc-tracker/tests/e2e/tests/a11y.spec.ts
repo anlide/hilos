@@ -1,6 +1,7 @@
 import { expect, test as base } from '../test.js'
 import {
   DAEMON_NODE_PATH,
+  DAEMON_STANDALONE_NODE_NAME,
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
   STATUS_WORKS_PATH,
@@ -456,7 +457,7 @@ test('the Env orphans tab names its one table through the heading from the keybo
   await expectPageReady(expect, page)
   await expect(page).toHaveURL(`${DAEMON_NODE_PATH}/env/orphans`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  await expectDaemonNodeTableName(expect, page)
+  await expectDaemonNodeTableName(expect, page, DAEMON_STANDALONE_NODE_NAME)
 })
 
 test.describe('Daemon section accessibility', () => {
@@ -478,7 +479,12 @@ test.describe('Daemon section accessibility', () => {
       await expect(placement).toBeFocused()
       await placement.press('Enter')
       await expectDaemonPage(expect, page, 'hilos_daemon_placement')
-      await expectDaemonSectionAccessibility(expect, page)
+      await expectDaemonSectionAccessibility(
+        expect,
+        page,
+        false,
+        DAEMON_STANDALONE_NODE_NAME,
+      )
       if (viewer)
         await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       const overview = page.getByTestId('hilos-page-tab-hilos_daemon')

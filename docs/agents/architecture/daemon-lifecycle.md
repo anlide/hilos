@@ -474,9 +474,24 @@ process on it — one behavior instead of a flag, as the incoming half already d
 certificate of the cluster's authority. Before this, any process that reached the peer
 port could introduce itself as any node — a master of `CLUSTER_MASTER_SET` included —
 vote, and receive every RT and DB sync frame; the hello/welcome frames carry only
-self-declared fields and no secret. A holder of a valid node certificate is a member:
+self-declared fields, including the readable node name, and no secret. A holder of a
+valid node certificate is a member:
 names inside frames after the handshake (a `voterId` in a vote, nodes in a roster or an
 announce) are **not** checked against the link's name.
+
+**Node name.** `CLUSTER_NODE_NAME` is required on every daemon, including standalone.
+A missing or empty value stops startup and names the key. `NodeName` trims it and accepts
+one line of at most 64 Unicode characters with no control characters. It is a plain,
+untranslated display label, not a secret or personal-data field; duplicate names are
+allowed, and the per-node environment value is not compared across nodes for mismatch.
+In cluster mode, `NodeIdentity` reads the value; hello/welcome and roster/announce carry it
+as `name`, and the registry publishes it through the `hilosClusterNodes` runtime
+collection to page data. This is peer protocol 25; version 24 added the clock-probe frames.
+
+To rename a clustered node, edit its environment and run `cluster:reload`. A rejected
+value leaves the current identity in place; the existing node revision carries a valid
+rename to the Daemon section, and other pages pick it up on their next update or opening.
+A standalone rename takes effect on restart.
 
 **Trust.** One authority per cluster, one certificate per node, and the certificate's
 common name (CN) is the node id. A neighbour is accepted only when its certificate is

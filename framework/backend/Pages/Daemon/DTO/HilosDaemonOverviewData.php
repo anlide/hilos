@@ -23,6 +23,7 @@ final readonly class HilosDaemonOverviewData
     public const string clustered = 'clustered';
     public const string nodes = 'nodes';
     public const string nodeId = 'nodeId';
+    public const string nodeName = 'nodeName';
     public const string online = 'online';
     public const string role = 'role';
     public const string state = 'state';
@@ -55,7 +56,9 @@ final readonly class HilosDaemonOverviewData
      *
      * @param bool $clustered Whether this installation is clustered
      * @param list<array<string, mixed>> $nodes Projected nodes in node-id order
-     * @param ?array{nodeId: string, term: int, leaderId: ?string, onlineMasters: int, masters: int, quorumSize: int} $consensus Report
+     * @param ?array{
+     *     nodeId: string, nodeName: ?string, term: int, leaderId: ?string, onlineMasters: int, masters: int, quorumSize: int
+     * } $consensus Report
      * @param array{instances: ?int, types: int, clusterTypes: int, unplacedTypes: ?list<string>} $placement Full placement projection
      * @param ?array{nodeId: string, commandPort: ?int, httpPort: ?int} $entryPoints Live source's listener ports
      */
@@ -203,6 +206,7 @@ final readonly class HilosDaemonOverviewData
 
         return [
             self::nodeId => $node->nodeId,
+            self::nodeName => $node->name,
             self::online => $node->online,
             self::role => $report?->role->value,
             self::state => $heading->state?->value,
@@ -235,7 +239,9 @@ final readonly class HilosDaemonOverviewData
 
     /**
      * @param ClusterDaemonPicture $picture Source of the leader or highest-term live master report
-     * @return ?array{nodeId: string, term: int, leaderId: ?string, onlineMasters: int, masters: int, quorumSize: int} Report
+     * @return ?array{
+     *     nodeId: string, nodeName: ?string, term: int, leaderId: ?string, onlineMasters: int, masters: int, quorumSize: int
+     * } Report
      */
     private static function consensusToArray(ClusterDaemonPicture $picture): ?array
     {
@@ -258,6 +264,7 @@ final readonly class HilosDaemonOverviewData
 
         return [
             self::nodeId => $source->nodeId,
+            self::nodeName => $source->name,
             self::term => $consensus->term,
             self::leaderId => $consensus->leaderId,
             self::onlineMasters => $consensus->onlineMasters,

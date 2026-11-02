@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -29,6 +30,7 @@ interface AgentStartSink
      * implementation reads memory and returns - no database, no blocking call.
      *
      * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onAgentStarted(string $agentId): void;
 

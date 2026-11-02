@@ -67,7 +67,7 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
     /** Node the library runs on, and the one holding the browser's connection unless a case says otherwise. */
     private const string LIBRARY_NODE = 'node-b';
     /** Cluster env values setUp sets, and tearDown removes. */
-    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
+    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'];
     private ?DbContext $previousDb;
     private ?ClusterContext $previousCluster;
     private ?FsContext $previousFs;
@@ -117,6 +117,7 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         $this->previousCluster = Hilos::$cluster;
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=' . self::LIBRARY_NODE);
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_FILES_LIBRARY);

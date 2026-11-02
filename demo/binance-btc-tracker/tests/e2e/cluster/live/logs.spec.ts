@@ -20,6 +20,7 @@ import {
   CLUSTER_MASTERS,
   CLUSTER_SLAVES,
   CLUSTER_FOLLOWER,
+  CLUSTER_NODE_NAMES,
   newMasterPage,
   nodeHost,
 } from '../../helpers/cluster.js'
@@ -197,9 +198,14 @@ async function expectNodeOptions(
   for (const [index, member] of [...members].sort().entries()) {
     await expect(
       shownByTestId(filter, `hilos-dropdown-option-${index}`),
-    ).toHaveAccessibleName(new RegExp(`^${member}(\\s|$)`), {
-      timeout: TAIL_ARRIVAL_TIMEOUT_MS,
-    })
+    ).toHaveAccessibleName(
+      new RegExp(
+        `^${`${CLUSTER_NODE_NAMES[member]} (${member})`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`,
+      ),
+      {
+        timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+      },
+    )
   }
 }
 

@@ -17,6 +17,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\MultiRowViewportTable;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -47,10 +48,12 @@ class HilosMaintenanceNodesTable extends TableDefinition implements SelfSnapshot
                     BrowserSourceKey::TYPE => BrowserSourceType::RT, BrowserSourceKey::KEY => ProtectedModeRuntime::RT_ITEM,
                 ],
                 BrowserTableFieldKey::ROW_KEY => ProtectedModeRuntime::phase,
-                BrowserTableFieldKey::COMPUTED => [HilosMaintenanceNodesTableRow::nodeId, HilosMaintenanceNodesTableRow::phase,
+                BrowserTableFieldKey::COMPUTED => [HilosMaintenanceNodesTableRow::nodeId, HilosMaintenanceNodesTableRow::nodeName,
+                    HilosMaintenanceNodesTableRow::phase,
                     HilosMaintenanceNodesTableRow::quiesced, HilosMaintenanceNodesTableRow::isLeader,
                     HilosMaintenanceNodesTableRow::isInitiator, HilosMaintenanceNodesTableRow::reportState],
-                BrowserTableFieldKey::NOT_PERSONAL => [HilosMaintenanceNodesTableRow::nodeId, HilosMaintenanceNodesTableRow::phase,
+                BrowserTableFieldKey::NOT_PERSONAL => [HilosMaintenanceNodesTableRow::nodeId, HilosMaintenanceNodesTableRow::nodeName,
+                    HilosMaintenanceNodesTableRow::phase,
                     HilosMaintenanceNodesTableRow::quiesced, HilosMaintenanceNodesTableRow::isLeader,
                     HilosMaintenanceNodesTableRow::isInitiator, HilosMaintenanceNodesTableRow::reportState],
             ],
@@ -65,7 +68,7 @@ class HilosMaintenanceNodesTable extends TableDefinition implements SelfSnapshot
         return self::WINDOW_ROWS;
     }
 
-    /** @return TableSortOrderDTO Initial node identity order */
+    /** @return TableSortOrderDTO Initial name order with node identity settling ties */
     public function defaultSort(): TableSortOrderDTO
     {
         return TableSortOrderDTO::of(new TableSortDTO(HilosMaintenanceNodesTableRow::nodeId));
@@ -118,16 +121,37 @@ class HilosMaintenanceNodesTable extends TableDefinition implements SelfSnapshot
         return array_fill_keys(self::BROWSER[BrowserTableConfigKey::ROWS][0][BrowserTableFieldKey::COMPUTED], WireField::notPersonal());
     }
 
+    /**
+     * @param AbstractTableRow $row Row whose current name and identity locate its place
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?TableAnchorDTO Values of the actual order, or null without a comparable row and order
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO
+    {
+        return parent::anchorForRow($row, self::orderingQuery($query));
+    }
+
+    /**
+     * @param AbstractTableRow $row Current row to place
+     * @param TableAnchorDTO $anchor Previously captured name and identity values
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?int Signed position, or null when the anchor does not describe this order
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int
+    {
+        return parent::placeRowAgainst($row, $anchor, self::orderingQuery($query));
+    }
+
     /** Configures typed rows without mutation actions. */
     protected function init(): void
     {
         $this->setRowClass(HilosMaintenanceNodesTableRow::class);
     }
 
-    /** @return array<string, string> Only node identities are sortable, in either direction */
+    /** @return array<string, string> Node names are sortable in either direction */
     protected function sortableFields(): array
     {
-        return [HilosMaintenanceNodesTableRow::nodeId => HilosMaintenanceNodesTableRow::nodeId];
+        return [HilosMaintenanceNodesTableRow::nodeId => HilosMaintenanceNodesTableRow::nodeName];
     }
 
     /**
@@ -140,7 +164,35 @@ class HilosMaintenanceNodesTable extends TableDefinition implements SelfSnapshot
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->filterInMemory($this->nodes(), $query);
+        return $this->filterInMemory($this->nodes(), self::orderingQuery($query));
+    }
+
+    /**
+     * Translates the public column order into the row fields used by sorting, anchors and live placement.
+     *
+     * @param TableQueryDTO $query Window whose search, filters and address must stay unchanged
+     * @return TableQueryDTO Same window ordered by its payload values
+     */
+    private static function orderingQuery(TableQueryDTO $query): TableQueryDTO
+    {
+        $components = [];
+        foreach ($query->sort?->components ?? [] as $component) {
+            $components[] = $component->field === HilosMaintenanceNodesTableRow::nodeId
+                ? new TableSortDTO(HilosMaintenanceNodesTableRow::nodeName, $component->direction)
+                : $component;
+        }
+
+        return new TableQueryDTO(
+            search: $query->search,
+            sort: $query->sort?->withComponents($components),
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $query->anchor,
+            anchorDirection: $query->anchorDirection,
+            pageIndex: $query->pageIndex,
+            searchableFields: $query->searchableFields,
+            shownFields: $query->shownFields,
+        );
     }
 
     /**

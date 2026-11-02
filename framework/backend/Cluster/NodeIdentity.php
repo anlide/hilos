@@ -15,7 +15,7 @@ use Hilos\Hilos;
  * Immutable self-declared identity of the local cluster node.
  *
  * Identity is "who am I", not "who else is in the cluster": it carries the node's
- * own id, role, declared capability tags, and the address peers dial to reach it.
+ * own id, name, role, declared capability tags, and the address peers dial to reach it.
  * Membership (the live set of peers) is a separate runtime registry built by
  * peer-join and is not modelled here. Capabilities stay a flat tag list on the
  * wire; HIL-182 layers the hard/soft matching on top by reading numeric
@@ -26,12 +26,14 @@ final class NodeIdentity
 {
     /**
      * @param string $nodeId Unique self-declared node id
+     * @param string $name Readable node name
      * @param NodeRole $role Self-declared node role
      * @param list<string> $capabilities Declared capability tags
      * @param ?PeerAddress $address Advertised address peers dial to reach this node, or null when none is configured
      */
     private function __construct(
         public readonly string $nodeId,
+        public readonly string $name,
         public readonly NodeRole $role,
         public readonly array $capabilities,
         public readonly ?PeerAddress $address,
@@ -45,7 +47,7 @@ final class NodeIdentity
      * configuration error rather than a single-node default.
      *
      * @return self Resolved node identity
-     * @throws ClusterConfigurationException When id or role is missing or the role is invalid
+     * @throws ClusterConfigurationException When id or role is missing, the role is invalid, or the name violates its rules
      * @throws EnvException When a node config env value cannot be read
      */
     public static function fromEnv(): self
@@ -67,6 +69,7 @@ final class NodeIdentity
 
         return new self(
             $nodeId,
+            NodeName::fromEnv(),
             $role,
             self::parseCapabilities(Hilos::$env[EnvConstants::CLUSTER_NODE_CAPABILITIES]->string()),
             self::resolveAdvertiseAddress(),
@@ -103,14 +106,15 @@ final class NodeIdentity
      * {@see fromEnv()} which resolves the local node from configuration.
      *
      * @param string $nodeId Node id
+     * @param string $name Readable node name
      * @param NodeRole $role Node role
      * @param list<string> $capabilities Declared capability tags
      * @param ?PeerAddress $address Advertised address peers dial to reach the node
      * @return self Node identity
      */
-    public static function of(string $nodeId, NodeRole $role, array $capabilities, ?PeerAddress $address = null): self
+    public static function of(string $nodeId, string $name, NodeRole $role, array $capabilities, ?PeerAddress $address = null): self
     {
-        return new self($nodeId, $role, $capabilities, $address);
+        return new self($nodeId, $name, $role, $capabilities, $address);
     }
 
     /**

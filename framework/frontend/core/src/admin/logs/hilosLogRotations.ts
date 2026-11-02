@@ -25,6 +25,7 @@ import {
   type HilosLogRotationsHeader,
 } from '../../protocol/logsSignals.js'
 import { z } from 'zod'
+import { formatHilosNodeLabel } from '../daemon/hilosDaemonNode.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -78,6 +79,8 @@ export interface HilosLogRotationRow {
   readonly batchAt: number
   /** Effective node id holding the batch. */
   readonly node: string
+  /** Registered node name, or null when no registry row is known. */
+  readonly nodeName: string | null
   /** Archive directory of the batch, relative to that node's log root. */
   readonly path: string
   /**
@@ -120,6 +123,9 @@ export const ROTATION_BATCH_AT_FIELD = 'batchAt'
 
 /** Row payload key of the node holding the batch (also the node column key). */
 export const ROTATION_NODE_FIELD = 'node'
+
+/** Row payload key of the node's registered name. */
+const ROTATION_NODE_NAME_FIELD = 'nodeName'
 
 /** Row payload key of the archive directory. */
 const ROTATION_PATH_FIELD = 'path'
@@ -259,6 +265,7 @@ export function resolveHilosLogRotationRow(row: TableRow): HilosLogRotationRow {
     rowKey: String(row.rowKey),
     batchAt: readNumber(slot, ROTATION_BATCH_AT_FIELD),
     node: readString(slot, ROTATION_NODE_FIELD),
+    nodeName: readStringOrNull(slot, ROTATION_NODE_NAME_FIELD),
     path: readString(slot, ROTATION_PATH_FIELD),
     // Null is a node that named no log root — an older build reporting an index
     // frame without one — and not an address that happens to be blank.
@@ -410,8 +417,8 @@ export function createHilosLogRotationsTable(
               anyLabel: 'All nodes',
               options: () =>
                 header.get()?.nodes.map((node) => ({
-                  value: node,
-                  label: node,
+                  value: node.nodeId,
+                  label: formatHilosNodeLabel(node.nodeId, node.nodeName),
                 })) ?? [],
             },
           ]
@@ -432,7 +439,14 @@ export function createHilosLogRotationsTable(
         reads: [ROTATION_PATH_FIELD],
       },
       ...(hasRotationNodes(header.get())
-        ? [{ key: ROTATION_NODE_FIELD, label: 'Node', sortable: true }]
+        ? [
+            {
+              key: ROTATION_NODE_FIELD,
+              label: 'Node',
+              sortable: true,
+              reads: [ROTATION_NODE_NAME_FIELD],
+            },
+          ]
         : []),
       {
         key: ROTATION_DAEMON_FILE_COUNT_FIELD,
@@ -462,6 +476,7 @@ export function createHilosLogRotationsTable(
         reads: [
           ROTATION_BATCH_AT_FIELD,
           ROTATION_NODE_FIELD,
+          ROTATION_NODE_NAME_FIELD,
           ROTATION_PATH_FIELD,
           ROTATION_ABSOLUTE_PATH_FIELD,
           ROTATION_RETENTION_STATE_FIELD,

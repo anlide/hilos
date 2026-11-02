@@ -85,10 +85,10 @@ final class PeerUploadMemoryTransportTest extends TestCase
             $remote = $node === 'A' ? 'B' : 'A';
             $master = $this->masters[$node] = new UploadMemoryMaster($node . ':boot');
             $server = $this->servers[$node] = new ReflectionClass(PeerServer::class)->newInstanceWithoutConstructor();
-            $identity = NodeIdentity::of($node, NodeRole::Master, []);
+            $identity = NodeIdentity::of($node, 'Node ' . $node, NodeRole::Master, []);
             new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($server, $identity);
             $link = $this->links[$node] = new PeerLink($pair[$index], $server, $identity, false, new PlainSocketTransport($pair[$index]));
-            $link->activate(NodeIdentity::of($remote, NodeRole::Master, []));
+            $link->activate(NodeIdentity::of($remote, 'Node ' . $remote, NodeRole::Master, []));
             new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, [$link]);
             new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($server, [$remote => $link]);
             $server->setUploadMemoryMaster($master);

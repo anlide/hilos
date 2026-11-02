@@ -71,6 +71,43 @@ final class DaemonPictureMirrorTest extends TestCase
         DaemonClusterPicturePortionSignalData::fromArray($broken);
     }
 
+    public function testNamesSurviveSnapshotsChangedPortionsAndMissingRosterRows(): void
+    {
+        $known = $this->view('n1');
+        $frame = new DaemonClusterPicturePortionSignalData(true, [
+            new ClusterDaemonNodeView('n1', true, $known->slot, 'Control'),
+            new ClusterDaemonNodeView('n2', false, null, 'Data'),
+            new ClusterDaemonNodeView('old', false, null),
+        ]);
+        self::assertSame(['Control', 'Data', null], array_column($frame->toArray()['nodes'], 'name'));
+        $parsed = DaemonClusterPicturePortionSignalData::fromArray($frame->toArray());
+        self::assertEquals($frame, $parsed);
+        ClusterDaemonPictureMirror::applyPortion($parsed);
+        self::assertSame('Control', ClusterDaemonPictureMirror::picture()->node('n1')->name);
+        self::assertSame('Data', ClusterDaemonPictureMirror::picture()->node('n2')->name);
+        self::assertNull(ClusterDaemonPictureMirror::picture()->node('old')->name);
+
+        $changed = new DaemonClusterPicturePortionSignalData(false, [
+            new ClusterDaemonNodeView('n1', true, $known->slot, 'Main control'),
+        ]);
+        ClusterDaemonPictureMirror::applyPortion(DaemonClusterPicturePortionSignalData::fromArray($changed->toArray()));
+        self::assertSame('Main control', ClusterDaemonPictureMirror::picture()->node('n1')->name);
+        self::assertSame('Data', ClusterDaemonPictureMirror::picture()->node('n2')->name);
+        self::assertEquals($known->slot, ClusterDaemonPictureMirror::picture()->node('n1')->slot);
+
+        $withoutName = $frame->toArray();
+        unset($withoutName['nodes'][0]['name']);
+        self::assertNull(DaemonClusterPicturePortionSignalData::fromArray($withoutName)->nodes[0]->name);
+    }
+
+    public function testWireRefusesANonStringName(): void
+    {
+        $wire = new DaemonClusterPicturePortionSignalData(true, [$this->view('n1')])->toArray();
+        $wire['nodes'][0]['name'] = false;
+        $this->expectException(InvalidFormatException::class);
+        DaemonClusterPicturePortionSignalData::fromArray($wire);
+    }
+
     public function testWireRefusesAFrameWhoseInnerNodeIdDoesNotMatchTheSlot(): void
     {
         $frame = new DaemonClusterPicturePortionSignalData(true, [$this->view('n1')]);

@@ -54,7 +54,7 @@ final class ClusterRegistry
      *
      * The path of observation: this node's own handshake with a peer, and the local
      * node itself. Gossip about a node goes through {@see mergeMembership()} instead,
-     * which never touches liveness. A change of role, capabilities, address, or online
+     * which never touches liveness. A change of name, role, capabilities, address, or online
      * status counts; a repeated identical record does not. `lastSeen` alone is never a
      * meaningful change.
      *
@@ -82,14 +82,14 @@ final class ClusterRegistry
      * Merges what a neighbour's gossip says a node is made of, never whether it is alive.
      *
      * An unknown node is recorded offline - known, not yet seen - with `lastSeen` set to
-     * the moment this node learned of it. A known node takes the new role, capabilities
+     * the moment this node learned of it. A known node takes the new name, role, capabilities
      * or address and keeps the `online` and `lastSeen` it had: liveness is taken only
      * from this node's own link (HIL-1059). A repeated identical record changes nothing,
      * so membership gossip converges instead of echoing forever.
      *
      * @param NodeIdentity $node Node identity the gossip carries
      * @param float $now Current microtime
-     * @return bool True when the node was new or its role, capabilities or address changed
+     * @return bool True when the node was new or its name, role, capabilities or address changed
      */
     public function mergeMembership(NodeIdentity $node, float $now): bool
     {
@@ -168,7 +168,7 @@ final class ClusterRegistry
      *
      * @param ClusterNode $existing Current node record
      * @param ClusterNode $incoming Candidate node record
-     * @return bool True when role, capabilities, address, or online status differs
+     * @return bool True when name, role, capabilities, address, or online status differs
      */
     private static function isMeaningfulChange(ClusterNode $existing, ClusterNode $incoming): bool
     {
@@ -180,11 +180,12 @@ final class ClusterRegistry
      *
      * @param ClusterNode $existing Current node record
      * @param ClusterNode $incoming Candidate node record
-     * @return bool True when role, capabilities, or address differs
+     * @return bool True when name, role, capabilities, or address differs
      */
     private static function isMembershipChange(ClusterNode $existing, ClusterNode $incoming): bool
     {
-        return $existing->role !== $incoming->role
+        return $existing->name !== $incoming->name
+            || $existing->role !== $incoming->role
             || $existing->capabilities !== $incoming->capabilities
             || $existing->address?->toString() !== $incoming->address?->toString();
     }

@@ -82,6 +82,7 @@ class StandRefused(Exception):
 class Node:
     """One node of the stand, as its compose service says it."""
     id: str
+    name: str
     service: str
     container: str
     ip: str
@@ -337,6 +338,9 @@ def _node(shown, service, spec, node_id):
     role = env.get("CLUSTER_NODE_ROLE")
     if role not in (ROLE_MASTER, ROLE_SLAVE):
         _lacks(shown, service, "CLUSTER_NODE_ROLE master or slave")
+    name = env.get("CLUSTER_NODE_NAME")
+    if name is None:
+        _lacks(shown, service, "CLUSTER_NODE_NAME")
     log_dir = next((volume.get("source") for volume in spec.get("volumes") or []
                     if isinstance(volume, dict) and volume.get("type") == "bind"
                     and volume.get("target") == LOG_TARGET), None)
@@ -345,6 +349,7 @@ def _node(shown, service, spec, node_id):
     profiles = spec.get("profiles") or []
     return Node(
         id=node_id,
+        name=name,
         service=service,
         container=container,
         ip=ip,

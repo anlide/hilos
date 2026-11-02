@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import browser
+from stand import _node
 
 
 def planned(project, flake=None, title=None, file=None):
@@ -58,7 +59,7 @@ class BrowserQuarantineTest(unittest.TestCase):
             demo_dir=self.root / "demo" / "binance-btc-tracker", project="stand",
             masters=["m1", "m2", "m3"], slaves=["s1", "s2"],
             entry=SimpleNamespace(container="entry"))
-        self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1")
+        self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1", name=f"Node {node}")
                               for node in self.stand.masters + self.stand.slaves}
         (self.stand.demo_dir / "data").mkdir(parents=True)
         # The protocol is exercised with no phase switched off; parking has its own cases.
@@ -192,6 +193,9 @@ class BrowserQuarantineTest(unittest.TestCase):
                                           self.events.index(("start", "s1"))), live_index)
         self.assertEqual("m2", self.calls[2][2]["CLUSTER_LEADER"])
         self.assertEqual("m1", self.calls[2][2]["CLUSTER_FOLLOWER"])
+        for _, _, env, _ in self.calls:
+            self.assertEqual({node: f"Node {node}" for node in self.stand.members},
+                             json.loads(env["CLUSTER_NODE_NAMES"]))
         self.assertEqual(["passed", "passed"], [row["status"] for row in self.lines()])
         self.assertEqual([], list((self.stand.demo_dir / "data" / "cluster-quarantine").iterdir()))
 
@@ -201,6 +205,20 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.assertEqual(7, browser.run(self.stand, []))
         self.assertEqual([("main", "live"), ("quarantine", "live"), ("quarantine", "daemon")],
                          [(phase, project) for phase, project, _, _ in self.calls])
+
+    def test_browser_environment_carries_the_composed_node_name_as_json(self):
+        name = "Главный, узел=🌍"
+        member, _ = _node("stand.yml", "master-two", {
+            "container_name": "m2",
+            "environment": {"CLUSTER_NODE_ROLE": "master", "CLUSTER_NODE_NAME": name},
+            "networks": {"cluster": {"ipv4_address": "192.0.2.2"}},
+            "volumes": [{"type": "bind", "target": "/var/log/hilos",
+                         "source": str(self.stand.demo_dir / "data" / "logs" / "m2")}],
+        }, "m2")
+        self.stand.members["m2"] = member
+        env = browser._environment(self.stand, "m1", "m2", "live")
+        self.assertEqual(name, json.loads(env["CLUSTER_NODE_NAMES"])["m2"])
+        self.assertEqual(set(self.stand.members), set(json.loads(env["CLUSTER_NODE_NAMES"])))
 
     def test_only_daemon_runs_once_and_empty_main_never_creates_a_controller(self):
         self.assertEqual(0, browser.run(self.stand, ["--daemon"]))

@@ -31,15 +31,19 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
     public const string circleAdmitted = 'circleAdmitted';
     public const string initiatorAgentType = 'initiatorAgentType';
     public const string initiatorNodeId = 'initiatorNodeId';
+    public const string initiatorNodeName = 'initiatorNodeName';
     public const string activatedAt = 'activatedAt';
     public const string progressAt = 'progressAt';
     public const string isInitiator = 'isInitiator';
     public const string diagnosticsNodeId = 'diagnosticsNodeId';
+    public const string diagnosticsNodeName = 'diagnosticsNodeName';
     public const string stoppedAgentCount = 'stoppedAgentCount';
     public const string preservedAgentTypes = 'preservedAgentTypes';
     public const string agentStartGateClosed = 'agentStartGateClosed';
     public const string watchdogVerdict = 'watchdogVerdict';
-    public const string watchdogPendingNodeIds = 'watchdogPendingNodeIds';
+    public const string watchdogPendingNodes = 'watchdogPendingNodes';
+    public const string nodeId = 'nodeId';
+    public const string nodeName = 'nodeName';
     public const string watchdogQuiesceTimeoutSeconds = 'watchdogQuiesceTimeoutSeconds';
     public const string watchdogSilenceTimeoutSeconds = 'watchdogSilenceTimeoutSeconds';
     public const string watchdogAlertIntervalSeconds = 'watchdogAlertIntervalSeconds';
@@ -65,12 +69,14 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
      * @param ?list<string> $preservedAgentTypes Agent types left running, or null until published
      * @param ?bool $agentStartGateClosed Whether agent start is closed, or null until published
      * @param ?string $watchdogVerdict Current watchdog cause, or null while clear or unpublished
-     * @param list<string> $watchdogPendingNodeIds Pending nodes for quiesce-overdue, empty otherwise
+     * @param list<array{nodeId: string, nodeName: ?string}> $watchdogPendingNodes Pending nodes for quiesce-overdue
      * @param ?int $watchdogQuiesceTimeoutSeconds Effective quiesce threshold in seconds, or null until published
      * @param ?int $watchdogSilenceTimeoutSeconds Effective silence threshold in seconds, or null until published
      * @param ?int $watchdogAlertIntervalSeconds Effective reminder interval in seconds, or null until published
      * @param ?list<string> $watchdogAlertEmails Effective recipients, null until published, empty when configured so
      * @param ?bool $watchdogManualRestartIsNormal Worker-reported manual restart policy, or null before a report
+     * @param ?string $initiatorNodeName Current or last known initiator node name, null outside the registry
+     * @param ?string $diagnosticsNodeName Current or last known diagnostic node name, null outside the registry
      */
     public function __construct(
         public readonly string $phase,
@@ -91,12 +97,14 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
         public readonly ?array $preservedAgentTypes,
         public readonly ?bool $agentStartGateClosed,
         public readonly ?string $watchdogVerdict = null,
-        public readonly array $watchdogPendingNodeIds = [],
+        public readonly array $watchdogPendingNodes = [],
         public readonly ?int $watchdogQuiesceTimeoutSeconds = null,
         public readonly ?int $watchdogSilenceTimeoutSeconds = null,
         public readonly ?int $watchdogAlertIntervalSeconds = null,
         public readonly ?array $watchdogAlertEmails = null,
         public readonly ?bool $watchdogManualRestartIsNormal = null,
+        public readonly ?string $initiatorNodeName = null,
+        public readonly ?string $diagnosticsNodeName = null,
     ) {
     }
 
@@ -116,15 +124,17 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             self::circleAdmitted => $this->circleAdmitted,
             self::initiatorAgentType => $this->initiatorAgentType,
             self::initiatorNodeId => $this->initiatorNodeId,
+            self::initiatorNodeName => $this->initiatorNodeName,
             self::activatedAt => $this->activatedAt,
             self::progressAt => $this->progressAt,
             self::isInitiator => $this->isInitiator,
             self::diagnosticsNodeId => $this->diagnosticsNodeId,
+            self::diagnosticsNodeName => $this->diagnosticsNodeName,
             self::stoppedAgentCount => $this->stoppedAgentCount,
             self::preservedAgentTypes => $this->preservedAgentTypes,
             self::agentStartGateClosed => $this->agentStartGateClosed,
             self::watchdogVerdict => $this->watchdogVerdict,
-            self::watchdogPendingNodeIds => $this->watchdogPendingNodeIds,
+            self::watchdogPendingNodes => $this->watchdogPendingNodes,
             self::watchdogQuiesceTimeoutSeconds => $this->watchdogQuiesceTimeoutSeconds,
             self::watchdogSilenceTimeoutSeconds => $this->watchdogSilenceTimeoutSeconds,
             self::watchdogAlertIntervalSeconds => $this->watchdogAlertIntervalSeconds,
@@ -151,15 +161,17 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             self::circleAdmitted => WireField::notPersonal(),
             self::initiatorAgentType => WireField::notPersonal(),
             self::initiatorNodeId => WireField::notPersonal(),
+            self::initiatorNodeName => WireField::notPersonal(),
             self::activatedAt => WireField::notPersonal(),
             self::progressAt => WireField::notPersonal(),
             self::isInitiator => WireField::notPersonal(),
             self::diagnosticsNodeId => WireField::notPersonal(),
+            self::diagnosticsNodeName => WireField::notPersonal(),
             self::stoppedAgentCount => WireField::notPersonal(),
             self::preservedAgentTypes => WireField::notPersonal(),
             self::agentStartGateClosed => WireField::notPersonal(),
             self::watchdogVerdict => WireField::notPersonal(),
-            self::watchdogPendingNodeIds => WireField::notPersonal(),
+            self::watchdogPendingNodes => WireField::notPersonal(),
             self::watchdogQuiesceTimeoutSeconds => WireField::notPersonal(),
             self::watchdogSilenceTimeoutSeconds => WireField::notPersonal(),
             self::watchdogAlertIntervalSeconds => WireField::notPersonal(),
@@ -190,20 +202,19 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             circleAdmitted: self::requireInt($data, self::circleAdmitted),
             initiatorAgentType: self::optionalString($data, self::initiatorAgentType),
             initiatorNodeId: self::optionalString($data, self::initiatorNodeId),
+            initiatorNodeName: self::optionalString($data, self::initiatorNodeName),
             activatedAt: self::optionalString($data, self::activatedAt),
             progressAt: self::optionalString($data, self::progressAt),
             isInitiator: array_key_exists(self::isInitiator, $data)
                 ? self::requireBool($data, self::isInitiator)
                 : false,
             diagnosticsNodeId: self::optionalString($data, self::diagnosticsNodeId),
+            diagnosticsNodeName: self::optionalString($data, self::diagnosticsNodeName),
             stoppedAgentCount: self::optionalInt($data, self::stoppedAgentCount),
             preservedAgentTypes: self::optionalStringList($data, self::preservedAgentTypes),
             agentStartGateClosed: self::optionalBool($data, self::agentStartGateClosed),
             watchdogVerdict: $watchdogVerdict,
-            watchdogPendingNodeIds: array_key_exists(self::watchdogPendingNodeIds, $data)
-                ? self::optionalStringList($data, self::watchdogPendingNodeIds)
-                    ?? throw new InvalidFormatException('Payload carries no list of strings under key ' . self::watchdogPendingNodeIds)
-                : [],
+            watchdogPendingNodes: self::pendingNodesFromArray($data),
             watchdogQuiesceTimeoutSeconds: self::optionalInt($data, self::watchdogQuiesceTimeoutSeconds),
             watchdogSilenceTimeoutSeconds: self::optionalInt($data, self::watchdogSilenceTimeoutSeconds),
             watchdogAlertIntervalSeconds: self::optionalInt($data, self::watchdogAlertIntervalSeconds),
@@ -234,20 +245,47 @@ final class HilosMaintenanceStateSignalData extends BaseDTO implements SignalDat
             circleAdmitted: $this->circleAdmitted,
             initiatorAgentType: $this->initiatorAgentType,
             initiatorNodeId: $this->initiatorNodeId,
+            initiatorNodeName: $this->initiatorNodeName,
             activatedAt: $this->activatedAt,
             progressAt: $this->progressAt,
             isInitiator: $isInitiator,
             diagnosticsNodeId: $this->diagnosticsNodeId,
+            diagnosticsNodeName: $this->diagnosticsNodeName,
             stoppedAgentCount: $this->stoppedAgentCount,
             preservedAgentTypes: $this->preservedAgentTypes,
             agentStartGateClosed: $this->agentStartGateClosed,
             watchdogVerdict: $this->watchdogVerdict,
-            watchdogPendingNodeIds: $this->watchdogPendingNodeIds,
+            watchdogPendingNodes: $this->watchdogPendingNodes,
             watchdogQuiesceTimeoutSeconds: $this->watchdogQuiesceTimeoutSeconds,
             watchdogSilenceTimeoutSeconds: $this->watchdogSilenceTimeoutSeconds,
             watchdogAlertIntervalSeconds: $this->watchdogAlertIntervalSeconds,
             watchdogAlertEmails: $this->watchdogAlertEmails,
             watchdogManualRestartIsNormal: $this->watchdogManualRestartIsNormal,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data Maintenance frame
+     * @return list<array{nodeId: string, nodeName: ?string}> Pending nodes with nullable registry names
+     * @throws InvalidFormatException When the list or one of its node pairs is malformed
+     */
+    private static function pendingNodesFromArray(array $data): array
+    {
+        if (!array_key_exists(self::watchdogPendingNodes, $data)) {
+            return [];
+        }
+        $nodes = self::requireArray($data, self::watchdogPendingNodes);
+        if (!array_is_list($nodes)) {
+            throw new InvalidFormatException('Payload carries no node list under key ' . self::watchdogPendingNodes);
+        }
+        return array_map(static function (mixed $node): array {
+            if (!is_array($node)) {
+                throw new InvalidFormatException('Payload carries a malformed pending node');
+            }
+            return [
+                self::nodeId => self::requireString($node, self::nodeId),
+                self::nodeName => self::optionalString($node, self::nodeName),
+            ];
+        }, $nodes);
     }
 }

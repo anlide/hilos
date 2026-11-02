@@ -29,6 +29,8 @@ use Hilos\Runtime\State\Collection\HilosClusterNodes;
  * `online` means reachable from here over this master's own link (HIL-1059), so a row can also
  * be offline because its node is only heard of from a neighbour and not seen yet.
  *
+ * The non-empty name follows the node's re-read configuration, while its id stays stable.
+ *
  * With clustering off the collection is not empty either - the master publishes itself as the
  * single row - so a reader never needs a branch for the standalone case. Its non-empty id is
  * the configured CLUSTER_NODE_ID or the stable standalone default.
@@ -46,6 +48,7 @@ final class HilosClusterNode extends RtState
     public const string STANDALONE_NODE_ID = 'standalone';
 
     public const string nodeId = 'nodeId';
+    public const string name = 'name';
     public const string role = 'role';
     public const string capabilities = 'capabilities';
     public const string address = 'address';
@@ -54,6 +57,9 @@ final class HilosClusterNode extends RtState
 
     /** Id of the node this row describes, and the row id. */
     private(set) string $nodeId = '';
+
+    /** Non-empty readable name declared by the node. */
+    public string $name = '';
 
     /** Self-declared role of the node, a {@see NodeRole} value. */
     public string $role = '';
@@ -74,6 +80,7 @@ final class HilosClusterNode extends RtState
      * Builds a row for a node the master has just seen for the first time.
      *
      * @param string $nodeId Non-empty node id
+     * @param string $name Non-empty readable node name
      * @param string $role Node role value
      * @param list<string> $capabilities Capability tags the node declared
      * @param ?string $address Address peers dial to reach the node, or null
@@ -83,6 +90,7 @@ final class HilosClusterNode extends RtState
      */
     public static function create(
         string $nodeId,
+        string $name,
         string $role,
         array $capabilities,
         ?string $address,
@@ -91,6 +99,7 @@ final class HilosClusterNode extends RtState
     ): static {
         $instance = new static();
         $instance->nodeId = $nodeId;
+        $instance->name = $name;
         $instance->role = $role;
         $instance->capabilities = $capabilities;
         $instance->address = $address;
@@ -110,6 +119,7 @@ final class HilosClusterNode extends RtState
     {
         $instance = new static();
         $instance->nodeId = self::requireString($row, self::nodeId);
+        $instance->name = self::requireString($row, self::name);
         $instance->role = self::requireString($row, self::role);
         $instance->capabilities = self::requireStringList($row, self::capabilities);
         $instance->address = self::optionalString($row, self::address);
@@ -124,7 +134,7 @@ final class HilosClusterNode extends RtState
      * Applies an inbound RT sync diff to this row.
      *
      * Everything but the node id can move: a node goes offline and comes back, and a restart
-     * with a re-read configuration can change its role, its capabilities and the address it
+     * with a re-read configuration can change its name, role, capabilities and the address it
      * advertises. The id is not read here because it is the key the diff arrived under.
      *
      * @param array<string, mixed> $diff Changed fields and values from another process
@@ -132,6 +142,7 @@ final class HilosClusterNode extends RtState
      */
     public function applyDiff(array $diff): void
     {
+        $this->name = self::patchString($diff, self::name, $this->name);
         $this->role = self::patchString($diff, self::role, $this->role);
         $this->capabilities = self::patchStringList($diff, self::capabilities, $this->capabilities);
         $this->address = self::patchOptionalString($diff, self::address, $this->address);
@@ -162,6 +173,7 @@ final class HilosClusterNode extends RtState
     {
         return [
             self::nodeId => $this->nodeId,
+            self::name => $this->name,
             self::role => $this->role,
             self::capabilities => $this->capabilities,
             self::address => $this->address,

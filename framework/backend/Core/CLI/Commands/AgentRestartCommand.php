@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Closure;
+use Hilos\Cluster\NodeName;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
@@ -111,7 +112,10 @@ HELP;
         }
 
         $id = $result->reply->payload[CommandConstants::FIELD_AGENT_ID];
-        $node = $result->reply->payload[CommandConstants::FIELD_NODE_ID];
+        $node = NodeName::label(
+            $result->reply->payload[CommandConstants::FIELD_NODE_ID],
+            $result->reply->payload[CommandConstants::FIELD_NODE_NAME] ?? null,
+        );
         echo "Agent {$id} restarted on node {$node}\n";
 
         return ExitCode::SUCCESS;

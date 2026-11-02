@@ -180,7 +180,7 @@ final class LogsViewPageFollowTest extends TestCase
             $page->onAction(self::ACCEPT_KEY, HilosSignalConstants::LOGS_FOLLOW_START, $this->request(self::PEER));
             $this->fail('Expected TableActionException');
         } catch (TableActionException $e) {
-            $this->assertSame('Cluster node ' . self::PEER . ' is offline', $e->getMessage());
+            $this->assertSame('Cluster node Node ' . self::PEER . ' (' . self::PEER . ') is offline', $e->getMessage());
         }
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
@@ -384,7 +384,7 @@ final class LogsViewPageFollowTest extends TestCase
      */
     private function publishNode(string $nodeId, bool $online): void
     {
-        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'master', [], null, $online, microtime(true));
+        Hilos::$rt?->hilosClusterNodes->actions->publish($nodeId, 'Node ' . $nodeId, 'master', [], null, $online, microtime(true));
     }
 
     /**

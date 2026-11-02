@@ -7,7 +7,9 @@ namespace Hilos\Tables\Logs;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Hilos;
 use Hilos\Log\ClusterLogNodeSlot;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Shared projection of one node's log figures, used by the window and the full overview header.
@@ -18,6 +20,7 @@ use Hilos\Log\ClusterLogNodeSlot;
 final class HilosLogNodesTableRow extends AbstractTableRow
 {
     public const string nodeId = 'nodeId';
+    public const string nodeName = 'nodeName';
     public const string available = 'available';
     public const string lastRotationAt = 'lastRotationAt';
     public const string liveBytes = 'liveBytes';
@@ -27,6 +30,7 @@ final class HilosLogNodesTableRow extends AbstractTableRow
 
     /**
      * @param string $nodeId Stable node identity and row key
+     * @param ?string $nodeName Current registry name, null when the node is unknown
      * @param bool $available Whether the node could read its log store
      * @param ?int $lastRotationAt Newest rotation in UTC epoch milliseconds
      * @param ?int $liveBytes Weight of all live stream classes
@@ -36,6 +40,7 @@ final class HilosLogNodesTableRow extends AbstractTableRow
      */
     public function __construct(
         public string $nodeId,
+        public ?string $nodeName,
         public bool $available,
         public ?int $lastRotationAt,
         public ?int $liveBytes,
@@ -46,16 +51,17 @@ final class HilosLogNodesTableRow extends AbstractTableRow
     }
 
     /**
-     * Projects only the reported picture; no clock, filesystem or second store is consulted.
+     * Projects the reported figures with the current name from the runtime registry.
      * An unreadable store keeps its name and leaves every measurement unknown.
      *
      * @param ClusterLogNodeSlot $slot Node's place in the cluster mirror
      * @return self Node figures shared by both overview transports
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public static function fromNode(ClusterLogNodeSlot $slot): self
     {
         if (!$slot->index->available) {
-            return new self($slot->nodeId, false, null, null, null, null, null);
+            return new self($slot->nodeId, Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name, false, null, null, null, null, null);
         }
 
         $lastRotationAt = null;
@@ -87,6 +93,7 @@ final class HilosLogNodesTableRow extends AbstractTableRow
 
         return new self(
             nodeId: $slot->nodeId,
+            nodeName: Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name,
             available: true,
             lastRotationAt: $lastRotationAt === null ? null : $lastRotationAt * TimeConstants::MS_PER_SECOND,
             // A key summary includes live and archive; both sums include all four stream classes.
@@ -106,6 +113,7 @@ final class HilosLogNodesTableRow extends AbstractTableRow
     {
         return new static(
             nodeId: self::requireString($data, self::nodeId),
+            nodeName: self::optionalString($data, self::nodeName),
             available: self::requireBool($data, self::available),
             lastRotationAt: self::optionalInt($data, self::lastRotationAt),
             liveBytes: self::optionalInt($data, self::liveBytes),
@@ -132,6 +140,7 @@ final class HilosLogNodesTableRow extends AbstractTableRow
     {
         return [
             self::nodeId => $this->nodeId,
+            self::nodeName => $this->nodeName,
             self::available => $this->available,
             self::lastRotationAt => $this->lastRotationAt,
             self::liveBytes => $this->liveBytes,

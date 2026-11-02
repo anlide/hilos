@@ -44,6 +44,7 @@ describe('HilosDaemonHttpServerPage', () => {
       timeZone.receive('UTC')
       h.scope.data.set(DAEMON_NODE_DATA, {
         clustered: true,
+        name: null,
         role: null,
         state: 'silent',
         silentSince: 1_700_000_000_000,
@@ -78,6 +79,7 @@ describe('HilosDaemonHttpServerPage', () => {
     )
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1700000000000,

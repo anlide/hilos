@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
+use Hilos\Cluster\NodeName;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
@@ -87,6 +88,8 @@ final class DaemonApplication
             if ($missing !== []) {
                 throw MissingRequiredEnvironmentException::forNames($hilosClass, $missing);
             }
+
+            NodeName::fromEnv();
 
             DefaultLanguage::assertConfiguredFor($hilosClass);
 

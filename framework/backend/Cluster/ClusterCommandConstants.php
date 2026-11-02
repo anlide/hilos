@@ -25,6 +25,9 @@ final class ClusterCommandConstants
     /** @var string Node-row key: node id */
     public const string FIELD_NODE_ID = 'nodeId';
 
+    /** @var string Node-row key: readable node name */
+    public const string FIELD_NODE_NAME = 'name';
+
     /** @var string Node-row key: node role */
     public const string FIELD_NODE_ROLE = 'role';
 

@@ -50,6 +50,7 @@ function node(
 ): HilosLogsOverviewNode {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 1024,
@@ -96,6 +97,7 @@ function failure(
 ): HilosLogsOverviewRecentEntry {
   return {
     nodeId: 'standalone',
+    nodeName: null,
     stream: 'worker-monopolistic-5.error.log',
     at: '2026-09-06T10:00:02.125Z',
     message: 'login action failed',
@@ -134,6 +136,48 @@ describe('view-mode fields', () => {
 })
 
 describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
+  it.each(['North', null])(
+    'keeps required registry names in nodes and recent entries: %s',
+    (nodeName) => {
+      const frame = overview({
+        nodes: [node({ nodeName })],
+        recentErrors: [failure({ nodeName })],
+        recentWarnings: [failure({ nodeName })],
+      })
+      expect(
+        LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].parse(frame),
+      ).toEqual(frame)
+    },
+  )
+
+  it.each(['nodes', 'recentErrors', 'recentWarnings'] as const)(
+    'rejects absent, malformed and extra node-name fields in %s',
+    (key) => {
+      for (const nodeName of [undefined, 7]) {
+        const item: Record<string, unknown> = {
+          ...(key === 'nodes' ? node() : failure()),
+          nodeName,
+        }
+        if (nodeName === undefined) {
+          delete item.nodeName
+        }
+        expect(
+          LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse({
+            ...overview(),
+            [key]: [item],
+          }).success,
+        ).toBe(false)
+      }
+      const item = key === 'nodes' ? node() : failure()
+      expect(
+        LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse({
+          ...overview(),
+          [key]: [{ ...item, extra: true }],
+        }).success,
+      ).toBe(false)
+    },
+  )
+
   it('is a set of its own, so no neighbouring screen has to land first', () => {
     expect(Object.keys(LOGS_OVERVIEW_SIGNAL_SCHEMAS)).toEqual([OVERVIEW_SIGNAL])
   })
@@ -173,6 +217,7 @@ describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
         nodes: [
           node({
             nodeId: 'node-2',
+            nodeName: null,
             available: false,
             lastRotationAt: null,
             liveBytes: null,
@@ -203,13 +248,13 @@ describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
     )
   })
 
-  it('tolerates a field it has never heard of, so a newer backend still reaches the screen', () => {
+  it('rejects an unknown field at the strict parse boundary', () => {
     const parsed = LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse({
       ...overview(),
       somethingLaterLeavesAdded: 7,
     })
 
-    expect(parsed.success).toBe(true)
+    expect(parsed.success).toBe(false)
   })
 
   it('refuses a payload whose node list is not a list', () => {
@@ -510,7 +555,11 @@ describe('logsOverviewRecentOrigin', () => {
     expect(
       logsOverviewRecentOrigin(
         clustered,
-        failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
+        failure({
+          nodeId: 'node-2',
+          nodeName: null,
+          stream: 'worker-0.error.log',
+        }),
       ),
     ).toBe('node-2 · worker-0.error.log')
   })
@@ -529,7 +578,11 @@ describe('logsOverviewRecentPath', () => {
   it('opens the viewer on the live file, at the moment the line was written', () => {
     expect(
       logsOverviewRecentPath(
-        failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
+        failure({
+          nodeId: 'node-2',
+          nodeName: null,
+          stream: 'worker-0.error.log',
+        }),
       ),
     ).toBe(
       `/hilos/logs/view/node-2/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
@@ -741,6 +794,7 @@ describe('logsOverviewForecastNote', () => {
             }),
             node({
               nodeId: 'node-3',
+              nodeName: null,
               available: false,
               growthBytesPerDay: 100,
               filesystemFreeBytes: 900,
@@ -858,6 +912,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
       nodes: [
         node({
           nodeId: 'node-2',
+          nodeName: null,
           filesystemFreeBytes: 2000,
           filesystemTotalBytes: 10000,
           freeSpaceThresholdPercent: 20,
@@ -975,6 +1030,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
       nodes: [
         node({
           nodeId: 'node-1',
+          nodeName: null,
           filesystemFreeBytes: 2001,
           filesystemTotalBytes: 10000,
           freeSpaceThresholdPercent: 20,
@@ -982,6 +1038,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
         }),
         node({
           nodeId: 'node-2',
+          nodeName: null,
           filesystemFreeBytes: 1400,
           filesystemTotalBytes: 10000,
           freeSpaceThresholdPercent: 20,
@@ -998,6 +1055,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
   it('keeps the first node among equal whole-day forecasts and among passed nodes', () => {
     const first = node({
       nodeId: 'node-1',
+      nodeName: null,
       filesystemFreeBytes: 3190,
       filesystemTotalBytes: 10000,
       freeSpaceThresholdPercent: 20,
@@ -1006,6 +1064,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
     const second = node({
       ...first,
       nodeId: 'node-2',
+      nodeName: null,
       filesystemFreeBytes: 3100,
     })
     expect(logsOverviewForecastNote(overview({ nodes: [first, second] }))).toBe(
@@ -1026,6 +1085,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
       nodes: [
         node({
           nodeId: 'node-1',
+          nodeName: null,
           filesystemFreeBytes: 5400,
           filesystemTotalBytes: 10000,
           freeSpaceThresholdPercent: 20,
@@ -1034,6 +1094,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
         node({ nodeId: 'node-2', growthBytesPerDay: 100 }),
         node({
           nodeId: 'node-3',
+          nodeName: null,
           available: false,
           filesystemFreeBytes: 0,
           filesystemTotalBytes: 10000,
@@ -1065,6 +1126,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
         node(),
         node({
           nodeId: 'node-2',
+          nodeName: null,
           filesystemFreeBytes: 1400,
           filesystemTotalBytes: 10000,
           freeSpaceThresholdPercent: 20,
@@ -1093,6 +1155,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
                   slots: {
                     node: {
                       nodeId: 'node-1',
+                      nodeName: null,
                       available: true,
                       lastRotationAt: 1800000000000,
                       liveBytes: 1024,
@@ -1162,3 +1225,30 @@ it.each([-300_000, 300_000])(
     }
   },
 )
+
+describe('log node labels and addresses', () => {
+  it('uses a registry name for takeout, forecast and recent origin while links keep the ID', () => {
+    const screen = overview({
+      nodes: [
+        node({
+          nodeId: 'node-2',
+          nodeName: 'North',
+          batchesDueForTakeout: 1,
+          filesystemFreeBytes: 1400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ],
+    })
+    const entry = failure({ nodeId: 'node-2', nodeName: 'North' })
+    expect(logsOverviewNodesDue(screen)).toEqual(['North (node-2)'])
+    expect(logsOverviewForecastNote(screen)).toBe(
+      'Free space is already below the 20% threshold on North (node-2) — 14% free',
+    )
+    expect(logsOverviewRecentOrigin(screen, entry)).toBe(
+      'North (node-2) · worker-monopolistic-5.error.log',
+    )
+    expect(logsOverviewRecentPath(entry)).toContain('/node-2/live/')
+    expect(logsOverviewRecentPath(entry)).not.toContain('North')
+  })
+})

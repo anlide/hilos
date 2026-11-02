@@ -221,15 +221,17 @@ function maintenanceState(
     circleAdmitted: 0,
     initiatorAgentType: null,
     initiatorNodeId: null,
+    initiatorNodeName: null,
     activatedAt: null,
     progressAt: null,
     isInitiator: false,
     diagnosticsNodeId: null,
+    diagnosticsNodeName: null,
     stoppedAgentCount: null,
     preservedAgentTypes: null,
     agentStartGateClosed: null,
     watchdogVerdict: null,
-    watchdogPendingNodeIds: [],
+    watchdogPendingNodes: [],
     watchdogQuiesceTimeoutSeconds: null,
     watchdogSilenceTimeoutSeconds: null,
     watchdogAlertIntervalSeconds: null,
@@ -2225,7 +2227,10 @@ describe('HilosMaintenancePage watchdog', () => {
         pushState(
           restoreState({
             watchdogVerdict: 'silent',
-            watchdogPendingNodeIds: ['node-3', 'node-4'],
+            watchdogPendingNodes: [
+              { nodeId: 'node-3', nodeName: null },
+              { nodeId: 'node-4', nodeName: null },
+            ],
           }),
         ),
       )
@@ -2260,7 +2265,7 @@ describe('HilosMaintenancePage watchdog', () => {
         pushState(
           restoreState({
             watchdogVerdict: 'initiator-lost',
-            watchdogPendingNodeIds: [],
+            watchdogPendingNodes: [],
           }),
         ),
       )

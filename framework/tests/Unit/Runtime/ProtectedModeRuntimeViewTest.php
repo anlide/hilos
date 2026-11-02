@@ -36,11 +36,11 @@ final class ProtectedModeRuntimeViewTest extends TestCase
     private const string INITIATOR_SESSION_HASH = 'session-hash-9';
 
     private const array MAINTENANCE_NODES = [
-        ['nodeId' => 'node-a', 'phase' => 'verifying', 'quiesced' => true,
+        ['nodeId' => 'node-a', 'nodeName' => 'Node A', 'phase' => 'verifying', 'quiesced' => true,
             'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
-        ['nodeId' => 'node-b', 'phase' => null, 'quiesced' => false,
+        ['nodeId' => 'node-b', 'nodeName' => null, 'phase' => null, 'quiesced' => false,
             'isLeader' => false, 'isInitiator' => true, 'reportState' => 'missing'],
-        ['nodeId' => 'node-c', 'phase' => null, 'quiesced' => null,
+        ['nodeId' => 'node-c', 'nodeName' => null, 'phase' => null, 'quiesced' => null,
             'isLeader' => false, 'isInitiator' => false, 'reportState' => 'silent'],
     ];
 

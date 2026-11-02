@@ -19,6 +19,7 @@ use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
@@ -570,13 +571,28 @@ abstract class TableDefinition implements ArrayAccess
 
         $this->holdSearchFields($rows, $query);
 
-        return InMemoryTableFilter::apply($rows, $query, $keyField, $this->inMemoryNullsLast());
+        return InMemoryTableFilter::apply(
+            $rows, $query, $keyField, $this->inMemoryNullsLast(), $this->inMemoryCompareComponent(...),
+        );
     }
 
     /** @return bool Whether in-memory sorting, anchor walks and placement keep nulls last in either direction */
     protected function inMemoryNullsLast(): bool
     {
         return false;
+    }
+
+    /**
+     * Overrides one component's comparison on every in-memory path, including anchor walks and live placement.
+     *
+     * @param array<string, mixed> $values Row values to place
+     * @param array<string, mixed> $against Another row or a captured anchor's values
+     * @param TableSortDTO $component Component with its requested direction
+     * @return ?int Signed comparison in the component's direction, or null for the standard comparison
+     */
+    protected function inMemoryCompareComponent(array $values, array $against, TableSortDTO $component): ?int
+    {
+        return null;
     }
 
     /**
@@ -862,7 +878,9 @@ abstract class TableDefinition implements ArrayAccess
             }
         }
 
-        return InMemoryTableFilter::compare($values, $anchor->values, $query->sort, $keyField, $this->inMemoryNullsLast());
+        return InMemoryTableFilter::compare(
+            $values, $anchor->values, $query->sort, $keyField, $this->inMemoryNullsLast(), $this->inMemoryCompareComponent(...),
+        );
     }
 
     /**

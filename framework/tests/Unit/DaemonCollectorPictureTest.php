@@ -9,6 +9,7 @@ use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentFingerprint;
@@ -57,6 +58,7 @@ final class DaemonCollectorPictureTest extends TestCase
         self::assertSame(NodeRole::Slave, $agent->clusterPicture()->node('n2')?->slot?->picture->role);
         self::assertSame(1, $agent->clusterPicture()->node('n2')?->slot?->picture->sampledAt);
         self::assertFalse($agent->nodeViews()[1]->online, 'A saved reporter absent from the roster is offline');
+        self::assertNull($agent->nodeViews()[1]->name);
     }
 
     public function testRosterMemberWithoutAFrameAndOfflineReporterWithLastFrame(): void
@@ -65,8 +67,8 @@ final class DaemonCollectorPictureTest extends TestCase
         Hilos::$rt->configure();
         Hilos::$rt->mountFeatureRuntime([]);
         RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
-        Hilos::$rt->hilosClusterNodes->actions->publish('n1', 'master', [], null, true, microtime(true));
-        Hilos::$rt->hilosClusterNodes->actions->publish('n2', 'slave', [], null, false, microtime(true));
+        Hilos::$rt->hilosClusterNodes->actions->publish('n1', 'Node n1', 'master', [], null, true, microtime(true));
+        Hilos::$rt->hilosClusterNodes->actions->publish('n2', 'Node n2', 'slave', [], null, false, microtime(true));
         $this->drainRuntimeFrames();
 
         $agent = new DaemonCollectorAgent();
@@ -78,6 +80,7 @@ final class DaemonCollectorPictureTest extends TestCase
         self::assertNull($views[0]->slot);
         self::assertFalse($views[1]->online);
         self::assertNotNull($views[1]->slot);
+        self::assertSame(['Node n1', 'Node n2'], array_column($views, 'name'));
 
         $agent->onSignalAgent(
             new AgentSignalData(data: new DaemonPictureWatchSignalData(1)),
@@ -85,13 +88,58 @@ final class DaemonCollectorPictureTest extends TestCase
             HilosSignalConstants::DAEMON_PICTURE_WATCH,
         );
         Hilos::$sr?->getNextQueuedSignal();
-        Hilos::$rt->hilosClusterNodes->actions->publish('n2', 'slave', [], null, true, microtime(true));
+        Hilos::$rt->hilosClusterNodes->actions->publish('n2', 'Node n2', 'slave', [], null, true, microtime(true));
         $this->drainRuntimeFrames();
         $agent->fanOutIfDue(microtime(true) + 1.0);
         $signal = Hilos::$sr?->getNextQueuedSignal();
         self::assertSame(HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION, $signal?->signalName->getName());
         self::assertTrue($signal?->data?->data->nodes[0]->online);
         self::assertSame('n2', $signal?->data?->data->nodes[0]->nodeId);
+    }
+
+    public function testNameAloneAdvancesTheExistingRevisionAndSendsOnlyTheRenamedNode(): void
+    {
+        Hilos::$rt = new DaemonCollectorPictureRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
+        Hilos::$rt->hilosClusterNodes->actions->publish('n1', 'Control', 'master', [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('n2', 'Data', 'slave', [], null, true, 42.0);
+        $this->drainRuntimeFrames();
+        $agent = new DaemonCollectorAgent();
+        $agent->onStart();
+        $agent->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 10));
+        $agent->onSignalAgent(new AgentSignalData(new DaemonPictureWatchSignalData(1)),
+            'agent/hilos_daemon', HilosSignalConstants::DAEMON_PICTURE_WATCH);
+        $snapshot = Hilos::$sr->getNextQueuedSignal()->data->data;
+        self::assertTrue($snapshot->snapshot);
+        self::assertSame(['Control', 'Data'], array_column($snapshot->nodes, 'name'));
+        $revisions = new ReflectionProperty(DaemonCollectorAgent::class, 'nodeRevisions');
+        $before = $revisions->getValue($agent);
+        $now = microtime(true);
+
+        Hilos::$rt->hilosClusterNodes->actions->publish('n1', 'Main control', 'master', [], null, true, 42.0);
+        $this->drainRuntimeFrames();
+        $agent->fanOutIfDue($now + 1.0);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertSame(HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION, $signal->signalName->getName());
+        $portion = DaemonClusterPicturePortionSignalData::fromArray($signal->data->data->toArray());
+        self::assertFalse($portion->snapshot);
+        self::assertCount(1, $portion->nodes);
+        self::assertSame('n1', $portion->nodes[0]->nodeId);
+        self::assertSame('Main control', $portion->nodes[0]->name);
+        self::assertTrue($portion->nodes[0]->online);
+        self::assertEquals($snapshot->nodes[0]->slot, $portion->nodes[0]->slot);
+        $after = $revisions->getValue($agent);
+        self::assertGreaterThan($before['n1'], $after['n1']);
+        self::assertSame($before['n2'], $after['n2']);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        Hilos::$rt->hilosClusterNodes->actions->publish('n1', 'Main control', 'master', [], null, true, 43.0);
+        $this->drainRuntimeFrames();
+        $agent->fanOutIfDue($now + 2.0);
+        self::assertSame($after, $revisions->getValue($agent));
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     public function testAnUnrenewedWatchExpiresBeforeAChangedNodeCanBeSent(): void

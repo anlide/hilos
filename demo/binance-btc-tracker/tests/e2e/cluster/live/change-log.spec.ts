@@ -28,6 +28,7 @@ import {
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import {
   CLUSTER_FOLLOWER,
+  CLUSTER_NODE_NAMES,
   CLUSTER_LEADER,
   CLUSTER_MASTERS,
   CLUSTER_SLAVES,
@@ -112,8 +113,8 @@ test(
       const workersPath = `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}/workers`
       await gotoPage(expect, adminPage, workersPath)
       await expect(adminPage).toHaveURL(workersPath)
-      await expect(adminPage.getByTestId('hilos-page-head-title')).toHaveText(
-        CLUSTER_LEADER,
+      await expect(adminPage.getByRole('heading', { level: 1 })).toHaveText(
+        CLUSTER_NODE_NAMES[CLUSTER_LEADER],
       )
       const processReports = () =>
         bootstrapFrames
@@ -147,6 +148,7 @@ test(
       await expectClusterDaemonNodePage(expect, adminPage, {
         pageKey: 'hilos_daemon_workers',
         nodeId: CLUSTER_LEADER,
+        nodeName: CLUSTER_NODE_NAMES[CLUSTER_LEADER],
       })
       await expectDaemonWorkerAgent(expect, adminPage, 'hilos_change_log', {
         host: leaderHost,

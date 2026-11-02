@@ -68,7 +68,7 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
     private const string OTHER_NODE = 'node-b';
 
     /** Cluster env values the cluster case sets, and tearDown removes. */
-    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
+    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'];
 
     private ?DbContext $previousDb = null;
 
@@ -255,6 +255,7 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
         $fileId = $this->publish(FileVisibility::PUBLIC, 'x');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=' . self::THIS_NODE);
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
 

@@ -20,6 +20,7 @@ empty-state discrimination and the wording are the core headless's
 its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { formatMoment } from '@hilos/core'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   createHilosLogRotationsActions,
   createHilosLogRotationsHeader,
@@ -55,6 +56,7 @@ import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
+import HilosNodeName from '../HilosNodeName.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import LoadingButton from '../../LoadingButton.vue'
@@ -344,7 +346,9 @@ const legendOpen = ref(false)
           going to the archive
         </span>
       </template>
-      <template #cell-node="{ row }">{{ row.node }}</template>
+      <template #cell-node="{ row }">
+        <HilosNodeName :node-id="row.node" :node-name="row.nodeName" />
+      </template>
       <template #cell-daemonFileCount="{ row }">
         <span class="small">{{ formatRotationFileCounts(row) }}</span>
       </template>
@@ -459,7 +463,7 @@ const legendOpen = ref(false)
       v-model="takeoutOpen"
       :title="
         takeoutRow
-          ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${takeoutRow.node}` : ''}`
+          ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${formatHilosNodeLabel(takeoutRow.node, takeoutRow.nodeName)}` : ''}`
           : 'Carrying off a batch'
       "
       :busy="takeoutBusy"
@@ -509,9 +513,11 @@ const legendOpen = ref(false)
         class="alert alert-warning small py-2 mb-0"
       >
         The batch lies on node
-        <span class="font-monospace">{{ takeoutRow.node }}</span> and only
-        there: logs do not converge anywhere. Take it from that node, and the
-        confirmation covers this batch on this node.
+        <span class="font-monospace">{{
+          formatHilosNodeLabel(takeoutRow.node, takeoutRow.nodeName)
+        }}</span>
+        and only there: logs do not converge anywhere. Take it from that node,
+        and the confirmation covers this batch on this node.
       </div>
       <div v-else class="alert alert-secondary small py-2 mb-0">
         Once confirmed, the batch becomes available to the cleaner — but not

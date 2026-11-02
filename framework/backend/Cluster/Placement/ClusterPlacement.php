@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\PeerTransportException;
@@ -798,6 +799,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $hostNodeId Current host
      * @param string $targetNodeId Policy's selected target
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function restartElsewhere(
         string $agentType,
@@ -981,6 +983,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type that started
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function noteAgentStarted(string $agentType, ?string $agentIndex): void
     {
@@ -1226,6 +1229,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $fromNodeId Id of the node that reported the status
      * @param PeerAgentStatusDTO $frame Received agent-status frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame): void
     {

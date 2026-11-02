@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
@@ -223,6 +224,7 @@ final class PeerLink extends AbstractClient
         $this->sendFrame(new PeerHelloDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
+            $this->server->localNodeName(),
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
             $this->server->localMarkers()->values,
@@ -691,10 +693,11 @@ final class PeerLink extends AbstractClient
         $this->requireCertifiedAs($hello->nodeId);
         $this->requireSameMarkers($hello);
 
-        $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities, $hello->address);
+        $remote = NodeIdentity::of($hello->nodeId, $hello->name, $hello->role, $hello->capabilities, $hello->address);
         $welcome = new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
+            $this->server->localNodeName(),
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
             $this->server->localMarkers()->values,
@@ -732,7 +735,7 @@ final class PeerLink extends AbstractClient
         $this->requireSameMarkers($welcome);
         $this->welcomed = true;
 
-        $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities, $welcome->address);
+        $remote = NodeIdentity::of($welcome->nodeId, $welcome->name, $welcome->role, $welcome->capabilities, $welcome->address);
         $this->server->stampDialRemote($this, $remote->nodeId);
         $this->server->registerCandidate($this, $remote);
         $this->candidateIdentity = $remote;
@@ -873,6 +876,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerNodeLeavingDTO $frame Incoming graceful-leave frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function onNodeLeaving(PeerNodeLeavingDTO $frame): void
     {
@@ -909,6 +913,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerAgentStatusDTO $frame Incoming agent-status frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function onAgentStatus(PeerAgentStatusDTO $frame): void
     {

@@ -466,6 +466,7 @@ describe('HilosDaemonNodeShell', () => {
         nodeOverview(),
         nodeHeading({
           clustered: false,
+          name: null,
           state: 'silent',
           role: 'master',
           silentSince: 1_700_000_000_000,

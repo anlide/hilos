@@ -613,7 +613,7 @@ final class ProtectedModeRuntime extends RtState
     }
 
     /**
-     * Reads the six-field diagnostic serialization boundary without inventing unknown facts.
+     * Reads the diagnostic serialization boundary without inventing unknown facts.
      *
      * @param array<string, mixed> $row Runtime row or diff carrying the projection
      * @return ?list<array<string, string|bool|null>> Validated node reports, or null while unpublished
@@ -632,8 +632,9 @@ final class ProtectedModeRuntime extends RtState
 
         $reports = [];
         foreach ($nodes as $node) {
-            if (!is_array($node) || !array_key_exists('phase', $node) || !array_key_exists('quiesced', $node)) {
-                throw new InvalidFormatException('Maintenance node report must carry its nullable phase and quiesced fields');
+            if (!is_array($node) || !array_key_exists('phase', $node) || !array_key_exists('quiesced', $node)
+                || !array_key_exists('nodeName', $node)) {
+                throw new InvalidFormatException('Maintenance node report must carry its nullable phase, quiesced and nodeName fields');
             }
             $phase = self::optionalString($node, 'phase');
             if ($phase !== null && !in_array($phase, [
@@ -651,6 +652,7 @@ final class ProtectedModeRuntime extends RtState
             }
             $reports[] = [
                 'nodeId' => self::requireString($node, 'nodeId'),
+                'nodeName' => self::optionalString($node, 'nodeName'),
                 'phase' => $phase,
                 'quiesced' => self::optionalBool($node, 'quiesced'),
                 'isLeader' => self::requireBool($node, 'isLeader'),

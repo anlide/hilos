@@ -68,7 +68,10 @@ const currentSource = computedSignal(() => {
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.DAEMON_NODE,
-  computedSignal(() => currentSource.get()?.nodeId),
+  computedSignal(() => {
+    const current = currentSource.get()
+    return current?.heading.name ?? current?.nodeId
+  }),
 )
 onUnmounted(unbindName)
 const current = useSignal(currentSource)
@@ -145,6 +148,11 @@ function stateClass(state: string): string {
       </span>
     </template>
     <template v-if="heading" #head-badges>
+      <span
+        v-if="heading.name !== null"
+        class="font-monospace text-body-secondary small text-break"
+        >{{ current?.nodeId }}</span
+      >
       <template v-if="heading.clustered">
         <span
           v-if="heading.state !== null"

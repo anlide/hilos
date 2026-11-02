@@ -58,6 +58,7 @@ final class ProtectedModeNodeReportTest extends TestCase
             'SOCKET_READ_BUFFER_SIZE' => '65536',
             'CLUSTER_ENABLED' => 'true',
             'CLUSTER_NODE_ID' => 'node-a',
+            'CLUSTER_NODE_NAME' => 'Local node',
             'CLUSTER_NODE_ROLE' => 'master',
             'CLUSTER_LINK_KEEPALIVE_INTERVAL_MS' => '60000',
             'CLUSTER_LINK_TIMEOUT_MS' => '60000',
@@ -146,7 +147,7 @@ final class ProtectedModeNodeReportTest extends TestCase
         $this->assertNull(Hilos::$rt->hilosProtectedModeRuntime->maintenanceNodes);
         $this->tick($server, 100.0);
         $this->assertSame([
-            ['nodeId' => 'node-a', 'phase' => 'inactive', 'quiesced' => null,
+            ['nodeId' => 'node-a', 'nodeName' => null, 'phase' => 'inactive', 'quiesced' => null,
                 'isLeader' => false, 'isInitiator' => false, 'reportState' => 'current'],
         ], Hilos::$rt->hilosProtectedModeRuntime->maintenanceNodes);
         $this->assertCount(1, $recorder->updates);
@@ -157,9 +158,9 @@ final class ProtectedModeNodeReportTest extends TestCase
         $this->feed($link, $far, $this->leaderReport());
         $this->tick($server, 101.0);
         $this->assertSame([
-            ['nodeId' => 'node-a', 'phase' => 'inactive', 'quiesced' => false,
+            ['nodeId' => 'node-a', 'nodeName' => null, 'phase' => 'inactive', 'quiesced' => false,
                 'isLeader' => false, 'isInitiator' => true, 'reportState' => 'current'],
-            ['nodeId' => 'node-b', 'phase' => 'verifying', 'quiesced' => true,
+            ['nodeId' => 'node-b', 'nodeName' => null, 'phase' => 'verifying', 'quiesced' => true,
                 'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
         ], Hilos::$rt->hilosProtectedModeRuntime->maintenanceNodes);
         $this->assertCount(2, $recorder->updates);
@@ -230,7 +231,7 @@ final class ProtectedModeNodeReportTest extends TestCase
     public function testSlaveOfflineNullAndMissingReportsStayInTheMembershipProjection(): void
     {
         $server = $this->server();
-        Hilos::$cluster->registry()->mergeMembership(NodeIdentity::of('offline', NodeRole::Slave, []), 0.0);
+        Hilos::$cluster->registry()->mergeMembership(NodeIdentity::of('offline', 'Node offline', NodeRole::Slave, []), 0.0);
         [$slave, $slaveFar] = $this->link($server, 'slave', role: NodeRole::Slave);
         $this->link($server, 'missing');
         $this->feed($slave, $slaveFar, new PeerProtectedModeNodeReportDTO(null, null, null, null, null));
@@ -336,7 +337,14 @@ final class ProtectedModeNodeReportTest extends TestCase
      */
     private function server(NodeRole $role = NodeRole::Master): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', $role, []), [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        return new PeerServer(
+            '127.0.0.1',
+            0,
+            NodeIdentity::of('node-a', 'Node node-a', $role, []),
+            [],
+            PeerTestTls::unread(),
+            PeerTestMarkers::shared(),
+        );
     }
 
     /**
@@ -360,10 +368,10 @@ final class ProtectedModeNodeReportTest extends TestCase
         socket_set_nonblock($near);
         socket_set_nonblock($far);
         $this->sockets = [...$this->sockets, $near, $far];
-        $link = new PeerLink($near, $server, NodeIdentity::of('node-a', NodeRole::Master, []), false,
+        $link = new PeerLink($near, $server, NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []), false,
             new NamedPeerTestTransport($near, $certifiedName ?? $nodeId));
         Closure::bind(static function () use ($server, $link): void { $server->clients[] = $link; }, null, PeerServer::class)();
-        $this->feed($link, $far, new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, $role, [], PeerTestMarkers::onWire(), null));
+        $this->feed($link, $far, new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, 'Node ' . $nodeId, $role, [], PeerTestMarkers::onWire(), null));
         if ($ready) {
             $this->feed($link, $far, new PeerReadyDTO(false));
             $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId);

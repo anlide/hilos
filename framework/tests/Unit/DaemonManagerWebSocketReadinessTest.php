@@ -49,7 +49,7 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
     {
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             putenv($key);
         }
 
@@ -173,6 +173,7 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=m2');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=' . $role);
         $coordinator = new ClusterCoordinator(
             new ClusterConsensusConfig('m2', ['m1', 'm2', 'm3'], 2, 1000, 1000, 100),

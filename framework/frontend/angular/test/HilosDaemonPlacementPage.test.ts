@@ -40,6 +40,7 @@ function picture(clustered = true): HilosDaemonOverviewData {
     clustered,
     nodes: (clustered ? ['n1', 'n2'] : ['standalone']).map((nodeId) => ({
       nodeId,
+      nodeName: null,
       online: true,
       role: 'master',
       state: 'leader',
@@ -70,7 +71,12 @@ function harness(
   ingest(scope, {
     data: {
       daemon: null,
-      envMismatch: { clustered, servingNodeId: 'standalone', comparison: null },
+      envMismatch: {
+        clustered,
+        servingNodeId: 'standalone',
+        servingNodeName: null,
+        comparison: null,
+      },
       pageLabel: 'Agent placement',
       pageLead: 'Where agent types and instances run across nodes.',
       pageHeadOwner: {

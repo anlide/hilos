@@ -10,11 +10,12 @@ use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerAddress;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Wire form of one known cluster node inside a gossip frame.
  *
- * Carries what a node is made of — id, role, capabilities and advertised address —
+ * Carries what a node is made of — id, name, role, capabilities and advertised address —
  * and deliberately nothing about whether it is alive: a node takes liveness only
  * from its own link to the node it describes, so a neighbour has no liveness to
  * hand over (HIL-1059). The master-local `lastSeen` stays off the wire as well. It
@@ -27,6 +28,9 @@ final class PeerNodeEntry extends BaseDTO
     /** @var string Payload key: node id */
     public const string FIELD_NODE_ID = 'nodeId';
 
+    /** @var string Payload key: readable node name */
+    public const string FIELD_NODE_NAME = 'name';
+
     /** @var string Payload key: node role */
     public const string FIELD_NODE_ROLE = 'role';
 
@@ -38,12 +42,14 @@ final class PeerNodeEntry extends BaseDTO
 
     /**
      * @param string $nodeId Node id
+     * @param string $name Readable node name
      * @param NodeRole $role Node role
      * @param list<string> $capabilities Declared capability tags
      * @param ?PeerAddress $address Advertised address peers dial to reach the node
      */
     public function __construct(
         public readonly string $nodeId,
+        public readonly string $name,
         public readonly NodeRole $role,
         public readonly array $capabilities,
         public readonly ?PeerAddress $address,
@@ -58,7 +64,7 @@ final class PeerNodeEntry extends BaseDTO
      */
     public static function fromNode(ClusterNode $node): self
     {
-        return new self($node->nodeId, $node->role, $node->capabilities, $node->address);
+        return new self($node->nodeId, $node->name, $node->role, $node->capabilities, $node->address);
     }
 
     /**
@@ -69,7 +75,7 @@ final class PeerNodeEntry extends BaseDTO
      */
     public static function fromIdentity(NodeIdentity $identity): self
     {
-        return new self($identity->nodeId, $identity->role, $identity->capabilities, $identity->address);
+        return new self($identity->nodeId, $identity->name, $identity->role, $identity->capabilities, $identity->address);
     }
 
     /**
@@ -79,7 +85,7 @@ final class PeerNodeEntry extends BaseDTO
      */
     public function toIdentity(): NodeIdentity
     {
-        return NodeIdentity::of($this->nodeId, $this->role, $this->capabilities, $this->address);
+        return NodeIdentity::of($this->nodeId, $this->name, $this->role, $this->capabilities, $this->address);
     }
 
     /**
@@ -91,6 +97,7 @@ final class PeerNodeEntry extends BaseDTO
     {
         return [
             self::FIELD_NODE_ID => $this->nodeId,
+            self::FIELD_NODE_NAME => $this->name,
             self::FIELD_NODE_ROLE => $this->role->value,
             self::FIELD_NODE_CAPABILITIES => $this->capabilities,
             self::FIELD_ADDRESS => $this->address?->toString(),
@@ -102,7 +109,7 @@ final class PeerNodeEntry extends BaseDTO
      *
      * @param array<string, mixed> $data Entry payload
      * @return static Restored entry
-     * @throws PeerTransportException When the node id is missing or the role is invalid
+     * @throws PeerTransportException When the node id or name is missing or blank, or the role is invalid
      */
     public static function fromArray(array $data): static
     {
@@ -110,6 +117,15 @@ final class PeerNodeEntry extends BaseDTO
         $nodeId = is_string($nodeIdValue) ? trim($nodeIdValue) : null;
         if ($nodeId === null || $nodeId === '') {
             throw new PeerTransportException('Peer node entry is missing the node id');
+        }
+
+        try {
+            $name = trim(self::requireString($data, self::FIELD_NODE_NAME));
+        } catch (InvalidFormatException $exception) {
+            throw new PeerTransportException('Peer node entry is malformed: ' . $exception->getMessage(), 0, $exception);
+        }
+        if ($name === '') {
+            throw new PeerTransportException('Peer node entry is missing the node name');
         }
 
         $roleValue = $data[self::FIELD_NODE_ROLE] ?? null;
@@ -123,6 +139,7 @@ final class PeerNodeEntry extends BaseDTO
 
         return new static(
             nodeId: $nodeId,
+            name: $name,
             role: $role,
             capabilities: PeerDTO::normalizeCapabilities($data[self::FIELD_NODE_CAPABILITIES] ?? []),
             address: is_string($address) ? PeerAddress::fromString($address) : null,

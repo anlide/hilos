@@ -39,6 +39,7 @@ final class HilosClusterNodesActions extends RtActions
      * caller republishing a whole snapshot has no idea which of its values are news.
      *
      * @param string $nodeId Node id, empty on a standalone install
+     * @param string $name Non-empty readable node name
      * @param string $role Node role value
      * @param list<string> $capabilities Capability tags the node declared
      * @param ?string $address Address peers dial to reach the node, or null
@@ -52,6 +53,7 @@ final class HilosClusterNodesActions extends RtActions
      */
     public function publish(
         string $nodeId,
+        string $name,
         string $role,
         array $capabilities,
         ?string $address,
@@ -63,12 +65,13 @@ final class HilosClusterNodesActions extends RtActions
         $state = $this->stateCollection->get($nodeId);
         if ($state === null) {
             $this->addStateToCollection(
-                StateHilosClusterNode::create($nodeId, $role, $capabilities, $address, $online, $lastSeen),
+                StateHilosClusterNode::create($nodeId, $name, $role, $capabilities, $address, $online, $lastSeen),
             );
 
             return;
         }
 
+        $state->name = $name;
         $state->role = $role;
         $state->capabilities = $capabilities;
         $state->address = $address;

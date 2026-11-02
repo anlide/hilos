@@ -321,6 +321,7 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     restoreMigrationBehind: null,
     restoreMigrationNotice: null,
     holderNode: null,
+    holderNodeName: null,
     ...overrides,
   }
 }
@@ -375,6 +376,17 @@ describe('formatBackupSize', () => {
 })
 
 describe('resolveHilosBackupRow', () => {
+  it.each(['North', null])(
+    'reads the holder name %s beside its technical ID',
+    (holderNodeName) => {
+      const resolved = resolveHilosBackupRow(
+        backupTableRow('b1', { holderNode: 'm1', holderNodeName }),
+      )
+      expect(resolved.holderNode).toBe('m1')
+      expect(resolved.holderNodeName).toBe(holderNodeName)
+    },
+  )
+
   it('reads the node holding an archive out of reach, and its absence as null', () => {
     expect(
       resolveHilosBackupRow(backupTableRow('b1', { holderNode: 'm1' }))
@@ -843,6 +855,14 @@ describe('isBackupRestorable', () => {
 })
 
 describe('isBackupOutOfReach', () => {
+  it('names the registered holder beside its ID without changing reachability', () => {
+    const far = row({ holderNode: 'm1', holderNodeName: 'North' })
+    expect(isBackupOutOfReach(far)).toBe(true)
+    expect(formatBackupOutOfReach(far)).toBe(
+      'Stored on node North (m1) - the backup agent runs elsewhere, so this archive cannot be reached from here',
+    )
+  })
+
   it('is false for an archive no node is named for', () => {
     expect(isBackupOutOfReach(row())).toBe(false)
     expect(formatBackupOutOfReach(row())).toBeNull()

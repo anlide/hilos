@@ -22,6 +22,7 @@ final class ClusterNode
 {
     /**
      * @param string $nodeId Node id
+     * @param string $name Readable node name
      * @param NodeRole $role Node role
      * @param list<string> $capabilities Declared capability tags
      * @param ?PeerAddress $address Advertised address peers dial to reach the node
@@ -31,6 +32,7 @@ final class ClusterNode
      */
     private function __construct(
         public readonly string $nodeId,
+        public readonly string $name,
         public readonly NodeRole $role,
         public readonly array $capabilities,
         public readonly ?PeerAddress $address,
@@ -50,7 +52,7 @@ final class ClusterNode
      */
     public static function fromIdentity(NodeIdentity $identity, bool $online, float $lastSeen): self
     {
-        return new self($identity->nodeId, $identity->role, $identity->capabilities, $identity->address, $online, $lastSeen);
+        return new self($identity->nodeId, $identity->name, $identity->role, $identity->capabilities, $identity->address, $online, $lastSeen);
     }
 
     /**
@@ -61,6 +63,6 @@ final class ClusterNode
      */
     public function asOffline(float $lastSeen): self
     {
-        return new self($this->nodeId, $this->role, $this->capabilities, $this->address, false, $lastSeen);
+        return new self($this->nodeId, $this->name, $this->role, $this->capabilities, $this->address, false, $lastSeen);
     }
 }

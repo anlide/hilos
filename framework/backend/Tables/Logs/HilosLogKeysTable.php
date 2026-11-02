@@ -8,6 +8,7 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -24,17 +25,18 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableSearchField;
-use Hilos\Core\Table\TableSortWhitelist;
+use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Framework log-keys table: the log streams of every node, one row per key on a node (HIL-385).
  *
- * Rows are built out of {@see ClusterLogIndexMirror} and out of nothing else — the picture the
- * nodes reported, held in the page worker's memory. It walks no directory: a walk here would block
+ * Figures come from {@see ClusterLogIndexMirror}, the reported picture held in the page worker's
+ * memory. Node names are read from the current runtime registry. It walks no directory: a walk here would block
  * the worker on file I/O and could only ever see the node it happens to run on, which is one
  * machine's store shown as though it were the installation's.
  *
@@ -128,6 +130,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
             HilosLogKeysTableRow::rowKey => WireField::notPersonal(),
             HilosLogKeysTableRow::key => WireField::notPersonal(),
             HilosLogKeysTableRow::node => WireField::notPersonal(),
+            HilosLogKeysTableRow::nodeName => WireField::notPersonal(),
             HilosLogKeysTableRow::streamClass => WireField::notPersonal(),
             HilosLogKeysTableRow::live => WireField::notPersonal(),
             HilosLogKeysTableRow::batchCount => WireField::notPersonal(),
@@ -151,6 +154,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      *     node and class options that were asked about
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
@@ -178,6 +182,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * @return ?bool Whether the row is in the set; this table always knows
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -185,9 +190,30 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
     }
 
     /**
+     * @param AbstractTableRow $row Row whose current name and identity locate its place
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?TableAnchorDTO Values of the actual order, or null without a comparable row and order
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO
+    {
+        return parent::anchorForRow($row, self::orderingQuery($query));
+    }
+
+    /**
+     * @param AbstractTableRow $row Current row to place
+     * @param TableAnchorDTO $anchor Previously captured name and identity values
+     * @param TableQueryDTO $query Window with the public node column order
+     * @return ?int Signed position, or null when the anchor does not describe this order
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int
+    {
+        return parent::placeRowAgainst($row, $anchor, self::orderingQuery($query));
+    }
+
+    /**
      * Declares the stream list's sortable columns and the payload key each one orders by.
      *
-     * Four of the five order by themselves. The daily growth is the exception: it is drawn from
+     * The node orders by name, then id. Daily growth is drawn from
      * {@see HilosLogKeysTableRow::growthPerDay}, which is null while the measuring window fills,
      * and ordered by {@see HilosLogKeysTableRow::growthSort}, which mints that unknown as -1 —
      * without the swap a descending sort would open with the rows nothing is known about, because
@@ -240,25 +266,11 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * @return TableSnapshotDTO Window snapshot with raw rows and the total count
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $rows = $this->narrow($this->collectRows(), $query);
-
-        // Only the order is rewritten here - growth sorts by the number the row carries beside it -
-        // and the search travels on with the fields it was scoped to.
-        $ordering = new TableQueryDTO(
-            search: $query->search,
-            sort: self::orderingSort($query->sort),
-            limit: $query->limit,
-            filter: $query->filter,
-            anchor: $query->anchor,
-            anchorDirection: $query->anchorDirection,
-            pageIndex: $query->pageIndex,
-            searchableFields: $query->searchableFields,
-        );
-
-        return $this->filterInMemory($rows, $ordering);
+        return $this->filterInMemory($this->narrow($this->collectRows(), $query), self::orderingQuery($query));
     }
 
     /**
@@ -270,9 +282,69 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
     }
 
     /**
+     * Keeps Logs' lexical name/id order and its unknown-name fallback on every comparison path.
+     *
+     * @param array<string, mixed> $values Current row values
+     * @param array<string, mixed> $against Row or captured anchor values
+     * @param TableSortDTO $component Expanded component in its own direction
+     * @return ?int Signed name/id comparison, or null for a standard column
+     */
+    protected function inMemoryCompareComponent(array $values, array $against, TableSortDTO $component): ?int
+    {
+        if (!isset($values[HilosLogKeysTableRow::node], $against[HilosLogKeysTableRow::node])) {
+            return null;
+        }
+
+        $comparison = match ($component->field) {
+            HilosLogKeysTableRow::nodeName => strcmp(
+                $values[HilosLogKeysTableRow::nodeName] ?? $values[HilosLogKeysTableRow::node],
+                $against[HilosLogKeysTableRow::nodeName] ?? $against[HilosLogKeysTableRow::node],
+            ),
+            HilosLogKeysTableRow::node => strcmp($values[HilosLogKeysTableRow::node], $against[HilosLogKeysTableRow::node]),
+            default => null,
+        };
+
+        return $comparison === null ? null : $comparison * (strtolower($component->direction) === TableConstants::ORDER_DESC ? -1 : 1);
+    }
+
+    /**
+     * Translates the public column order into the row fields used by sorting, anchors and live placement.
+     *
+     * @param TableQueryDTO $query Window whose search, filters and address must stay unchanged
+     * @return TableQueryDTO Same window ordered by its payload values
+     */
+    private static function orderingQuery(TableQueryDTO $query): TableQueryDTO
+    {
+        $components = [];
+        foreach ($query->sort?->components ?? [] as $component) {
+            if ($component->field === HilosLogKeysTableRow::node) {
+                $components[] = new TableSortDTO(HilosLogKeysTableRow::nodeName, $component->direction);
+                $components[] = new TableSortDTO(HilosLogKeysTableRow::node, $component->direction);
+            } elseif ($component->field === HilosLogKeysTableRow::growthPerDay) {
+                $components[] = new TableSortDTO(HilosLogKeysTableRow::growthSort, $component->direction);
+            } else {
+                $components[] = $component;
+            }
+        }
+
+        return new TableQueryDTO(
+            search: $query->search,
+            sort: $query->sort?->withComponents($components),
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $query->anchor,
+            anchorDirection: $query->anchorDirection,
+            pageIndex: $query->pageIndex,
+            searchableFields: $query->searchableFields,
+            shownFields: $query->shownFields,
+        );
+    }
+
+    /**
      * Projects every node's streams into rows, ordered by key and then by node.
      *
      * @return list<array<string, mixed>> Row payloads across the whole cluster
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function collectRows(): array
     {
@@ -302,6 +374,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      *
      * @param ClusterLogNodeSlot $slot The node's slot in the cluster picture
      * @return list<array<string, mixed>> Row payloads of this node
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function rowsOfNode(ClusterLogNodeSlot $slot): array
     {
@@ -314,6 +387,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
                 HilosLogKeysTableRow::rowKey => self::rowKey($slot->nodeId, $summary->key),
                 HilosLogKeysTableRow::key => $summary->key,
                 HilosLogKeysTableRow::node => $slot->nodeId,
+                HilosLogKeysTableRow::nodeName => Hilos::$rt->hilosClusterNodes[$slot->nodeId]?->name,
                 HilosLogKeysTableRow::streamClass => $summary->class,
                 HilosLogKeysTableRow::live => $summary->live,
                 HilosLogKeysTableRow::batchCount => count($summary->batchTimestamps),
@@ -384,31 +458,6 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
         $trimmed = trim((string) $value);
 
         return $trimmed === '' ? null : $trimmed;
-    }
-
-    /**
-     * Turns the window's ordering into the one the row payloads are ordered by.
-     *
-     * {@see TableSortWhitelist} resolves a wire field into the payload key {@see sortableFields()}
-     * allows it to reach and hands it along as each component's column, while
-     * {@see InMemoryTableFilter} orders by a component's FIELD — a name it looks up as an array key
-     * of the row. The two meet here: for four of the five columns the swap changes nothing, and for
-     * the growth it is what puts the unknown at the bottom instead of the top.
-     *
-     * @param ?TableSortOrderDTO $order Order the window asked for, already through the whitelist
-     * @return ?TableSortOrderDTO Order over the payload keys, or null when the window asked for none
-     */
-    private static function orderingSort(?TableSortOrderDTO $order): ?TableSortOrderDTO
-    {
-        if ($order === null) {
-            return null;
-        }
-
-        return $order->withComponents(array_map(
-            static fn(TableSortDTO $component): TableSortDTO
-                => new TableSortDTO($component->column ?? $component->field, $component->direction),
-            $order->components,
-        ));
     }
 
     /**

@@ -226,15 +226,17 @@ function maintenanceState(
     circleAdmitted: 0,
     initiatorAgentType: null,
     initiatorNodeId: null,
+    initiatorNodeName: null,
     activatedAt: null,
     progressAt: null,
     isInitiator: false,
     diagnosticsNodeId: null,
+    diagnosticsNodeName: null,
     stoppedAgentCount: null,
     preservedAgentTypes: null,
     agentStartGateClosed: null,
     watchdogVerdict: null,
-    watchdogPendingNodeIds: [],
+    watchdogPendingNodes: [],
     watchdogQuiesceTimeoutSeconds: null,
     watchdogSilenceTimeoutSeconds: null,
     watchdogAlertIntervalSeconds: null,
@@ -1445,21 +1447,23 @@ describe('HilosMaintenancePage and the admin view mode', () => {
         isInitiator: true,
         initiatorAgentType: 'hilos_backup',
         initiatorNodeId: 'node-1',
+        initiatorNodeName: 'backup-east',
         stoppedAgentCount: 6,
         diagnosticsNodeId: 'node-1',
+        diagnosticsNodeName: 'logs-west',
       }),
     )
     await settled()
     const card = wrapper.get('[data-id="hilos-maintenance-state-operation"]')
-    expect(
-      card.get('[data-id="hilos-maintenance-initiator"]').text(),
-    ).toContain('hilos_backup')
+    expect(card.get('[data-id="hilos-maintenance-initiator"]').text()).toBe(
+      'hilos_backup · node backup-east (node-1)',
+    )
     expect(
       card.get('[data-id="hilos-maintenance-stopped-agents"]').text(),
     ).toBe('6')
     expect(
       card.get('[data-id="hilos-maintenance-diagnostics-node"]').text(),
-    ).toBe('node-1')
+    ).toBe('logs-west (node-1)')
     expect(card.text()).not.toContain('opaque-secret')
     const button = wrapper.get<HTMLButtonElement>(
       '[data-id="hilos-maintenance-restore-pass"]',
@@ -1824,7 +1828,10 @@ describe('HilosMaintenancePage restore card', () => {
       )
     }
 
-    const initiator = restoreFrame()
+    const initiator = restoreFrame({
+      initiatorNodeName: 'backup-east',
+      diagnosticsNodeName: 'logs-west',
+    })
     pushState(initiator)
     await nextTick()
     expect(
@@ -1859,7 +1866,11 @@ describe('HilosMaintenancePage restore card', () => {
       expect(button.classes()).not.toContain('disabled')
     }
 
-    const other = restoreFrame({ isInitiator: false })
+    const other = restoreFrame({
+      isInitiator: false,
+      initiatorNodeName: 'backup-east',
+      diagnosticsNodeName: 'logs-west',
+    })
     pushState(other)
     await nextTick()
     expect(
@@ -1873,6 +1884,7 @@ describe('HilosMaintenancePage restore card', () => {
     const line = wrapper.get('[data-id="hilos-maintenance-other-browser"]')
     expect(line.attributes('role')).toBe('status')
     expect(line.text()).toContain(hilosMaintenanceOtherBrowserLine(other))
+    expect(line.text()).toContain('backup-east (node-1)')
     expect(line.find('button').exists()).toBe(false)
   })
 })
@@ -2473,7 +2485,10 @@ describe('HilosMaintenancePage watchdog', () => {
     pushState(
       restoreFrame({
         watchdogVerdict: 'silent',
-        watchdogPendingNodeIds: ['node-3', 'node-4'],
+        watchdogPendingNodes: [
+          { nodeId: 'node-3', nodeName: null },
+          { nodeId: 'node-4', nodeName: null },
+        ],
       }),
     )
     await nextTick()
@@ -2511,7 +2526,7 @@ describe('HilosMaintenancePage watchdog', () => {
     pushState(
       restoreFrame({
         watchdogVerdict: 'initiator-lost',
-        watchdogPendingNodeIds: [],
+        watchdogPendingNodes: [],
       }),
     )
     await nextTick()

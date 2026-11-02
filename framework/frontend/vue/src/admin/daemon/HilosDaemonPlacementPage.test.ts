@@ -41,6 +41,7 @@ function picture(clustered = true): HilosDaemonOverviewData {
     clustered,
     nodes: (clustered ? ['n1', 'n2'] : ['standalone']).map((nodeId) => ({
       nodeId,
+      nodeName: null,
       online: true,
       role: 'master',
       state: 'leader',
@@ -71,7 +72,12 @@ function harness(
   ingest(scope, {
     data: {
       daemon: null,
-      envMismatch: { clustered, servingNodeId: 'standalone', comparison: null },
+      envMismatch: {
+        clustered,
+        servingNodeId: 'standalone',
+        servingNodeName: null,
+        comparison: null,
+      },
       pageLabel: 'Agent placement',
       pageLead: 'Where agent types and instances run across nodes.',
       pageHeadOwner: {
@@ -353,6 +359,7 @@ function liveNode(
 ): HilosDaemonOverviewNode {
   return {
     nodeId,
+    nodeName: null,
     online: true,
     role: 'master',
     state: 'standby',
@@ -393,6 +400,7 @@ function livePicture(
     consensus: clustered
       ? {
           nodeId: 'n1',
+          nodeName: null,
           term: 7,
           leaderId: 'n1',
           onlineMasters: 1,
@@ -630,7 +638,18 @@ const alerts = '[data-id="hilos-daemon-placement-alerts"]'
 
 describe('HilosDaemonPlacementPage live windows', () => {
   it('replays the first Placement response and keeps local state on data-only updates', async () => {
-    const h = liveHarness(false, placementPicture(), placementRows())
+    const picture = placementPicture()
+    const h = liveHarness(
+      false,
+      {
+        ...picture,
+        nodes: picture.nodes.map((node) => ({
+          ...node,
+          nodeName: node.nodeId === 'n1' ? 'Рабочий <узел>' : null,
+        })),
+      },
+      placementRows(),
+    )
     await nextTick()
     expect(h.controller().descriptor()).not.toBeNull()
     expect(
@@ -640,7 +659,7 @@ describe('HilosDaemonPlacementPage live windows', () => {
     expect(h.sendRendered).toHaveBeenCalledTimes(1)
     expect(h.view.findAll('h1')).toHaveLength(1)
     expect(h.view.find('h1').text()).toBe('Daemon from catalog')
-    expect(h.view.find('table').text()).toContain('n1 ★')
+    expect(h.view.find('table').text()).toContain('Рабочий <узел> (n1) ★')
     expect(h.view.find('table').text()).toContain('n2')
     expect(h.view.find('table').text()).toContain('Policy-placed · lazy')
     const badge = h.view
@@ -652,13 +671,14 @@ describe('HilosDaemonPlacementPage live windows', () => {
     expect(cards.text()).toContain('Policy-placed · lazy')
     expect(cards.text()).toContain('Unplaced')
     expect(cards.find(cell).attributes('aria-label')).toBe(
-      'chat_room on n1: 2 instances',
+      'chat_room on Рабочий <узел> (n1): 2 instances',
     )
     expect(h.view.find(cell).attributes('aria-label')).toBe(
-      'chat_room on n1: 2 instances',
+      'chat_room on Рабочий <узел> (n1): 2 instances',
     )
     await h.view.find(cell).trigger('keydown', { key: 'Enter' })
     expect(h.view.find(panel).text()).toContain('chat_room:1')
+    expect(h.view.find(panel).text()).toContain('Рабочий <узел> (n1)')
     expect(h.view.find(cell).attributes('aria-expanded')).toBe('true')
     const table = h.view.find('table').element
     const search = h.view.find('[data-id="hilos-table-search"]')
@@ -670,6 +690,10 @@ describe('HilosDaemonPlacementPage live windows', () => {
     await h.view.find(cell).trigger('click')
     h.update({
       ...placementPicture(),
+      nodes: picture.nodes.map((node) => ({
+        ...node,
+        nodeName: node.nodeId === 'n1' ? 'Renamed node' : null,
+      })),
       entryPoints: { nodeId: 'n2', commandPort: 9014, httpPort: 8082 },
     })
     await nextTick()
@@ -684,6 +708,10 @@ describe('HilosDaemonPlacementPage live windows', () => {
       ).value,
     ).toBe('room:1')
     expect(h.view.find(panel).isVisible()).toBe(true)
+    expect(h.view.find(panel).text()).toContain('Renamed node (n1)')
+    expect(h.view.find(cell).attributes('aria-label')).toBe(
+      'chat_room on Renamed node (n1): 1 instances',
+    )
     await h.view.find(cell).trigger('keydown', { key: ' ' })
     expect(h.view.find(panel).exists()).toBe(false)
     expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')

@@ -29,10 +29,11 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.view.find('h1').exists()).toBe(false)
     expect(h.view.find('nav').exists()).toBe(false)
     expect(h.view.find(id('visual')).exists()).toBe(false)
-    h.answer()
+    h.answer(nodeOverview(), nodeHeading({ name: 'Главный узел 🌍' }))
     await nextTick()
     expect(h.view.findAll('h1')).toHaveLength(1)
-    expect(h.view.get('h1').text()).toBe('n1')
+    expect(h.view.get('h1').text()).toBe('Главный узел 🌍')
+    expect(h.view.get('[data-id="hilos-page-head"]').text()).toContain('n1')
     expect(h.view.get('h1').attributes('data-id')).toBe('hilos-page-head-title')
     expect(h.view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
     expect(h.view.find('[data-id="hilos-daemon-node-line"]').exists()).toBe(
@@ -46,15 +47,19 @@ describe('HilosDaemonNodeShell', () => {
     expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
       'Hilos',
       'Daemon',
-      'n1',
+      'Главный узел 🌍',
     ])
     expect(crumbs.findAll('a').map((link) => link.attributes('href'))).toEqual([
       '/hilos',
       '/hilos/daemon',
     ])
     expect(crumbs.get('[aria-current="page"]').element.tagName).toBe('LI')
-    expect(crumbs.findAll('a').some((link) => link.text() === 'n1')).toBe(false)
-    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('n1')
+    expect(
+      crumbs.findAll('a').some((link) => link.text() === 'Главный узел 🌍'),
+    ).toBe(false)
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+      'Главный узел 🌍',
+    )
   })
 
   it.each(nodeTabs)(
@@ -62,7 +67,7 @@ describe('HilosDaemonNodeShell', () => {
     async ({ page }) => {
       const nodeId = 'node /?#%2F🌍'
       const h = nodeHarness({ shell: true, page, nodeId })
-      h.answer(nodeOverview({ nodeId }))
+      h.answer(nodeOverview({ nodeId }), nodeHeading({ name: 'Узел <🌍>' }))
       await nextTick()
       const nav = h.view.get('nav[aria-label="Node pages"]')
       expect(h.view.findAll('nav[aria-label="Node pages"]')).toHaveLength(1)
@@ -87,7 +92,11 @@ describe('HilosDaemonNodeShell', () => {
         )
         expect(link.attributes('role')).toBeUndefined()
       }
-      expect(h.view.get('h1').text()).toBe(nodeId)
+      expect(h.view.get('h1').text()).toBe('Узел <🌍>')
+      expect(h.view.get('[data-id="hilos-page-head"]').text()).toContain(nodeId)
+      expect(
+        h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      ).toBe('Узел <🌍>')
       expect(h.view.text()).not.toContain('hilos_daemon_')
       expect(h.send).not.toHaveBeenCalled()
       expect(h.sendAction).not.toHaveBeenCalled()
@@ -344,6 +353,7 @@ describe('HilosDaemonNodeShell', () => {
       nodeOverview(),
       nodeHeading({
         clustered: false,
+        name: null,
         state: 'silent',
         role: 'master',
         silentSince: 1_700_000_000_000,
@@ -370,7 +380,7 @@ describe('HilosDaemonNodeShell', () => {
 
   it('updates actual node links and drops the old name on a scope switch, clear and unmount', async () => {
     const h = nodeHarness()
-    h.answer()
+    h.answer(nodeOverview(), nodeHeading({ name: 'First node' }))
     await nextTick()
     expect(h.view.get(id('log')).attributes('href')).toBe(
       '/hilos/logs/view/n1/live',
@@ -384,9 +394,13 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.view.find('[data-id="hilos-daemon-node-overview"]').exists()).toBe(
       false,
     )
-    h.answer(nodeOverview({ nodeId: 'n2' }))
+    h.answer(
+      nodeOverview({ nodeId: 'n2' }),
+      nodeHeading({ name: 'Second node' }),
+    )
     await nextTick()
-    expect(h.view.get('h1').text()).toBe('n2')
+    expect(h.view.get('h1').text()).toBe('Second node')
+    expect(h.view.text()).not.toContain('First node')
     expect(h.view.get(id('log')).attributes('href')).toBe(
       '/hilos/logs/view/n2/live',
     )
@@ -495,6 +509,7 @@ describe('HilosDaemonNodeShell', () => {
     const requests = h.sendViewport.mock.calls.length
     h.publish({
       node: nodeHeading({
+        name: 'Renamed worker node',
         state: 'leader',
         clock: {
           reference: false,
@@ -517,7 +532,25 @@ describe('HilosDaemonNodeShell', () => {
     ).toBe(true)
     expect(h.sendViewport).toHaveBeenCalledTimes(requests)
     expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
+    expect(h.view.get('h1').text()).toBe('Renamed worker node')
+    expect(
+      h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('Renamed worker node')
+    expect(
+      h.view.get('nav[aria-label="Node pages"] [aria-current="page"]').text(),
+    ).toBe('Workers')
+    h.publish({ node: nodeHeading({ name: null }) })
+    await nextTick()
     expect(h.view.get('h1').text()).toBe('n1')
+    expect(
+      h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+    ).toBe('n1')
+    expect(
+      h.view.get('[data-id="hilos-page-head"]').text().match(/n1/g),
+    ).toHaveLength(2)
+    expect(h.view.get('table').element).toBe(table)
+    expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+    expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
   })
 
   it('offers the same value-free diagnostics and links to a view-mode viewer', async () => {

@@ -46,6 +46,7 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
+      - CLUSTER_NODE_NAME=Main node
       # The admin view mode of the demo: a non-admin may open the admin section to
       # look and change nothing (HIL-1249). On production this line is required by
       # DemoStackComposeGuardTest - a production node started without it closes the

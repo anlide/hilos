@@ -18,6 +18,7 @@ import { type HilosTableColumn } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { formatDaemonAgentKind } from './hilosDaemonAgents.js'
+import { formatHilosNodeLabel } from './hilosDaemonNode.js'
 import { type HilosDaemonOverviewData } from './hilosDaemonOverview.js'
 
 const DAEMON_PLACEMENT_TABLE = 'hilosDaemonPlacement'
@@ -41,6 +42,7 @@ const nodesSchema = z.array(
 /** One page-header node used to build a matrix column. */
 export interface HilosDaemonPlacementNode {
   readonly nodeId: string
+  readonly nodeName: string | null
   readonly leader: boolean
 }
 
@@ -215,6 +217,7 @@ export function createHilosDaemonPlacementView(
   const nodes = computedSignal(() =>
     (overview.get()?.nodes ?? []).map((node) => ({
       nodeId: node.nodeId,
+      nodeName: node.nodeName,
       leader: overview.get()?.clustered === true && node.state === 'leader',
     })),
   )
@@ -340,7 +343,8 @@ export function daemonPlacementNodeColumnKey(nodeId: string): string {
 export function formatDaemonPlacementNodeLabel(
   node: HilosDaemonPlacementNode,
 ): string {
-  return node.leader ? `${node.nodeId} ★` : node.nodeId
+  const label = formatHilosNodeLabel(node.nodeId, node.nodeName)
+  return node.leader ? `${label} ★` : label
 }
 
 /**

@@ -67,6 +67,7 @@ final class PeerServerClientDeliveryTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
 
         Hilos::$cluster = new ClusterContext();
@@ -81,7 +82,7 @@ final class PeerServerClientDeliveryTest extends TestCase
 
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
-        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             putenv($key);
         }
 
@@ -93,7 +94,7 @@ final class PeerServerClientDeliveryTest extends TestCase
         $sink = $this->registerSink();
         $server = $this->makeServer();
 
-        $server->onHandshakeComplete($this->makeLink($server), NodeIdentity::of('node-b', NodeRole::Master, []));
+        $server->onHandshakeComplete($this->makeLink($server), NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, []));
 
         $this->assertSame(['node-b'], $sink->handedOverTo);
     }
@@ -109,7 +110,7 @@ final class PeerServerClientDeliveryTest extends TestCase
         $sink = $this->registerSink();
         $server = $this->makeServer();
         $link = $this->makeLink($server);
-        $remote = NodeIdentity::of('node-b', NodeRole::Master, []);
+        $remote = NodeIdentity::of('node-b', 'Node node-b', NodeRole::Master, []);
 
         $server->onHandshakeComplete($link, $remote);
         $server->onHandshakeComplete($link, $remote);
@@ -517,7 +518,14 @@ final class PeerServerClientDeliveryTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        return new PeerServer(
+            '127.0.0.1',
+            0,
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
+            [],
+            PeerTestTls::unread(),
+            PeerTestMarkers::shared(),
+        );
     }
 
     /**
@@ -531,7 +539,7 @@ final class PeerServerClientDeliveryTest extends TestCase
         return new PeerLink(
             $socket,
             $server,
-            NodeIdentity::of('node-a', NodeRole::Master, []),
+            NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []),
             dialer: false,
             transport: new PlainSocketTransport($socket),
         );

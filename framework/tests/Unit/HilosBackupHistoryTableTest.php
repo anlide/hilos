@@ -38,6 +38,7 @@ use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Backup\HilosBackupTableRow;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use RuntimeException;
 
 /**
@@ -49,6 +50,8 @@ use RuntimeException;
  */
 final class HilosBackupHistoryTableTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     /** Migration track the fixture files are written under. */
     private const string MIGRATION_TRACK = 'main';
 
@@ -66,6 +69,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->mountLogsRuntime();
         // The row's migration verdict is compared against the level this code lists, and the gate
         // reads that off disk. Pointed at an empty tree by default: no migrations listed, which is
         // what every case in this suite that says nothing about levels runs with.
@@ -79,6 +83,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         // The path stays set on the static Migration for the rest of the process; removing the
         // tree is what makes it harmless - an unreadable path lists no migrations.
         $this->removeTree($this->migrationRoot);
+        $this->restoreLogsRuntime();
         parent::tearDown();
     }
 
@@ -434,6 +439,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::restoreMigrationBehind => null,
                         HilosBackupTableRow::restoreMigrationNotice => null,
                         HilosBackupTableRow::holderNode => null,
+                        HilosBackupTableRow::holderNodeName => null,
                     ],
                 ],
             ],
@@ -606,6 +612,7 @@ final class HilosBackupHistoryTableTest extends TestCase
 
     public function testAReachableRowNamesNoNodeAndAnOutOfReachOneNamesItsHolder(): void
     {
+        $this->publishLogNode('m1', 'Archive', false);
         // The node is drawn only where it explains a refusal: a healthy cluster stamps every row
         // with the same node, and repeating it on each of them would be noise.
         $table = $this->table(histories: $this->historiesWith(
@@ -618,6 +625,11 @@ final class HilosBackupHistoryTableTest extends TestCase
                 BackupHistory::nodeId => 'm1',
                 BackupHistory::reachable => false,
             ])),
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'unknown-holder',
+                BackupHistory::nodeId => 'unknown',
+                BackupHistory::reachable => false,
+            ])),
         ));
 
         $here = $table->buildMutationForSourceEvent(SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'here', []));
@@ -625,6 +637,15 @@ final class HilosBackupHistoryTableTest extends TestCase
 
         $this->assertNull($here->row?->holderNode);
         $this->assertSame('m1', $there->row?->holderNode);
+        $this->assertNull($here->row?->holderNodeName);
+        $this->assertSame('Archive', $there->row?->holderNodeName);
+        $this->assertSame($there->row->toArray(), HilosBackupTableRow::fromArray($there->row->toArray())->toArray());
+        $this->publishLogNode('m1', 'Renamed archive', false);
+        $renamed = $table->buildMutationForSourceEvent(SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'there', []));
+        $this->assertSame('Renamed archive', $renamed->row?->holderNodeName);
+        $unknown = $table->buildMutationForSourceEvent(SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'unknown-holder', []));
+        $this->assertSame('unknown', $unknown->row?->holderNode);
+        $this->assertNull($unknown->row?->holderNodeName);
     }
 
     public function testAVerifiedRowCarriesWhenItWasChecked(): void

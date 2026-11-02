@@ -25,6 +25,7 @@ final class DaemonNodeHeadingTest extends TestCase
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
             'clock' => null,
+            'name' => null,
         ],
             DaemonNodeHeading::of(null, 'n1', false)->toArray());
         self::assertSame([
@@ -32,8 +33,24 @@ final class DaemonNodeHeadingTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ],
             DaemonNodeHeading::of(ClusterDaemonPicture::empty(), 'n1', true)->toArray());
+    }
+
+    public function testNameComesFromTheViewEvenBeforeAReportAndChangesWithTheView(): void
+    {
+        $picture = ClusterDaemonPicture::empty()
+            ->withNode(new ClusterDaemonNodeView('n1', true, null, 'Control'))
+            ->withNode(new ClusterDaemonNodeView('n2', false, null, 'Data'));
+        self::assertSame('Control', DaemonNodeHeading::of($picture, 'n1', true)->toArray()['name']);
+        self::assertSame('Data', DaemonNodeHeading::of($picture, 'n2', true)->toArray()['name']);
+        self::assertNull(DaemonNodeHeading::of($picture, 'unknown', true)->toArray()['name']);
+        self::assertSame('Control', DaemonNodeHeading::of($picture, 'n1', false)->toArray()['name']);
+
+        $renamed = $picture->withNode(new ClusterDaemonNodeView('n1', true, null, 'Main control'));
+        self::assertSame('Main control', DaemonNodeHeading::of($renamed, 'n1', true)->toArray()['name']);
+        self::assertSame('Control', DaemonNodeHeading::of($picture, 'n1', true)->toArray()['name']);
     }
 
     public function testStateWordsComeFromThePicture(): void
@@ -65,6 +82,7 @@ final class DaemonNodeHeadingTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ],
             DaemonNodeHeading::of($picture, 'with-slot', true)->toArray());
         self::assertSame([
@@ -72,6 +90,7 @@ final class DaemonNodeHeadingTest extends TestCase
             'clock' => [
                 'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
             ],
+            'name' => null,
         ],
             DaemonNodeHeading::of($picture, 'without-slot', true)->toArray());
     }
@@ -81,10 +100,11 @@ final class DaemonNodeHeadingTest extends TestCase
         $picture = ClusterDaemonPicture::empty()->withNode($this->node('standalone', NodeRole::Master, false));
         $line = DaemonNodeHeading::of($picture, 'standalone', false)->toArray();
 
-        self::assertSame(['clustered', 'state', 'silentSince', 'role', 'clock'], array_keys($line));
+        self::assertSame(['clustered', 'state', 'silentSince', 'role', 'clock', 'name'], array_keys($line));
         self::assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => null,
         ], $line);
     }
 

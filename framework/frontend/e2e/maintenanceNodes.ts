@@ -19,6 +19,7 @@ const TABLE_ID = 'hilos-maintenance-nodes-table'
  * @param phase The phase reported by that node.
  * @param quiesced The acknowledgement text, independent of the phase.
  * @param role The reported leader and initiator role text.
+ * @param nodeText The visible node name and id, or the legacy id alone.
  */
 export async function expectMaintenanceNode(
   expect: Expect,
@@ -27,16 +28,17 @@ export async function expectMaintenanceNode(
   phase: string,
   quiesced: 'Yes' | 'No' | '—',
   role: string,
+  nodeText: string | RegExp = nodeId,
 ): Promise<void> {
   const table = page.getByTestId(TABLE_ID)
   const row = shownByTestId(table, `hilos-table-row-${nodeId}`)
   await expect(
     row.getByTestId(`hilos-maintenance-nodes-row-${nodeId}`),
-  ).toHaveText(nodeId)
+  ).toHaveText(nodeText)
   await expect(row.getByTestId('hilos-table-row-message')).toHaveCount(0)
   // Read the four declared columns; the table also owns a trailing marks cell.
   const cells = row.getByRole('cell')
-  await expect(cells.nth(0)).toHaveText(nodeId)
+  await expect(cells.nth(0)).toHaveText(nodeText)
   await expect(cells.nth(1)).toHaveText(quiesced)
   await expect(cells.nth(2)).toHaveText(phase)
   await expect(cells.nth(3)).toHaveText(role)
@@ -51,6 +53,7 @@ export async function expectMaintenanceNode(
  * @param log The delivery log armed before navigation.
  * @param nodeIds All masters and slaves of this stand, excluding foreign nodes.
  * @param leaderId The leader recognized by the cluster.
+ * @param nodeNames Names supplied by the running stand.
  * @param after Packet bookmark taken before this navigation.
  */
 export async function expectMaintenanceNodesInitial(
@@ -59,6 +62,7 @@ export async function expectMaintenanceNodesInitial(
   log: DeliveryFrameLog,
   nodeIds: readonly string[],
   leaderId: string,
+  nodeNames: Readonly<Record<string, string>>,
   after = 0,
 ): Promise<void> {
   const replies = () =>
@@ -87,6 +91,7 @@ export async function expectMaintenanceNodesInitial(
   for (const row of rows) {
     expect(deliveryObject(row.slots).node).toEqual({
       nodeId: row.rowKey,
+      nodeName: nodeNames[String(row.rowKey)],
       phase: 'inactive',
       quiesced: null,
       isLeader: row.rowKey === leaderId,
@@ -105,6 +110,9 @@ export async function expectMaintenanceNodesInitial(
       'inactive',
       '—',
       nodeId === leaderId ? 'Leader' : '—',
+      new RegExp(
+        `^${[nodeNames[nodeId], nodeId].map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*')}$`,
+      ),
     )
   }
 }

@@ -38,6 +38,7 @@ export const daemonOverviewWorkerSchema = z
 export const daemonOverviewNodeSchema = z
   .strictObject({
     nodeId: z.string(),
+    nodeName: z.string().nullable(),
     online: z.boolean(),
     role: z.enum(['master', 'slave']).nullable(),
     state: z.enum(['leader', 'standby', 'data', 'silent']).nullable(),
@@ -88,6 +89,7 @@ export const daemonOverviewSchema = z
     consensus: z
       .strictObject({
         nodeId: z.string(),
+        nodeName: z.string().nullable(),
         term: countSchema,
         leaderId: z.string().nullable(),
         onlineMasters: countSchema,

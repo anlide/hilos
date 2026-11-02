@@ -129,6 +129,7 @@ function catalog(
     nodes: [
       {
         nodeId: 'standalone',
+        nodeName: null,
         available: true,
         batches: [BATCH],
         streams: [
@@ -159,6 +160,7 @@ function clusterCatalog(): HilosLogViewerCatalog {
     nodes: [
       {
         nodeId: 'node-1',
+        nodeName: null,
         available: true,
         batches: [],
         streams: [
@@ -172,6 +174,7 @@ function clusterCatalog(): HilosLogViewerCatalog {
       },
       {
         nodeId: 'node-2',
+        nodeName: null,
         available: true,
         batches: [],
         streams: [
@@ -571,10 +574,20 @@ describe('HilosLogsViewPage', () => {
     const { connection, pushCatalog } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushCatalog(clusterCatalog())
+    const picture = clusterCatalog()
+    pushCatalog({
+      ...picture,
+      nodes: picture.nodes.map((entry, index) =>
+        index === 1 ? { ...entry, nodeName: 'collector-west' } : entry,
+      ),
+    })
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-log-node"]').exists()).toBe(true)
+    const select = wrapper.get('[data-id="hilos-log-node"]')
+    expect(select.get('option[value="node-1"]').text()).toBe('node-1')
+    const namedOption = select.get('option[value="node-2"]')
+    expect(namedOption.text()).toBe('collector-west (node-2)')
+    expect(namedOption.attributes('value')).toBe('node-2')
   })
 
   it('offers the streams of the chosen source only', async () => {

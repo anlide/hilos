@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -437,6 +438,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonCreationFailedException If agent creation fails
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function handleAgentStartedMessage(WorkerAgentStartedDTO $dto): void
     {

@@ -28,6 +28,7 @@ export const daemonNodeClockSchema = z.strictObject({
 })
 
 export const daemonNodeHeadingSchema = z.strictObject({
+  name: z.string().nullable(),
   clustered: z.boolean(),
   state: z.string().nullable(),
   /** Last report arrival in epoch milliseconds, only while silent. */
@@ -41,6 +42,19 @@ export type HilosDaemonNodeHeading = z.infer<typeof daemonNodeHeadingSchema>
 
 /** Empty-table explanation for a node's processes. */
 export type HilosDaemonProcessesEmptyState = 'waiting' | 'silent' | 'none'
+
+/**
+ * Format a node's reported name beside its stable identity.
+ *
+ * @param nodeId The node's stable identity.
+ * @param nodeName The reported name, or null when unknown.
+ */
+export function formatHilosNodeLabel(
+  nodeId: string,
+  nodeName: string | null,
+): string {
+  return nodeName === null ? nodeId : `${nodeName} (${nodeId})`
+}
 
 /**
  * Read the current page's node heading, including whole-page resends.
@@ -100,11 +114,11 @@ export function formatDaemonNodeState(state: string): string {
 /**
  * Format the last report's arrival only while the selected node is silent.
  *
- * @param heading The current node heading, if it has arrived.
+ * @param heading The current node's heading metadata; a display name is not needed.
  * @param nowMs Current browser time in milliseconds.
  */
 export function formatDaemonNodeSilentSince(
-  heading: HilosDaemonNodeHeading | null,
+  heading: Omit<HilosDaemonNodeHeading, 'name'> | null,
   nowMs: number,
 ): string | null {
   return heading?.state === DAEMON_NODE_STATE_SILENT &&

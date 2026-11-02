@@ -31,6 +31,10 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
+use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Runtime\View\Collection\HilosClusterNodes;
+use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
 use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
@@ -609,6 +613,8 @@ final class MaintenancePassTestRtContext extends RtContext
     /** Seeds session rows so the page reads the real session-source seam. */
     public function configure(): void
     {
+        $this->mountFeatureCollection(HilosClusterNode::RT_COLLECTION, StateHilosClusterNodes::init());
+        $this->setRepresent(HilosClusterNode::RT_COLLECTION, HilosClusterNodes::class, HilosClusterNodesActions::class);
         $connections = MaintenancePassTestConnections::init();
         $connections->add(MaintenancePassTestConnection::create(
             'maintenance-browser', 7, $this->sessionToken,

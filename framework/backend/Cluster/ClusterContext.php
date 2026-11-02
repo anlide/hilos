@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
@@ -206,6 +207,17 @@ final class ClusterContext
         $configured = trim(Hilos::$env[EnvConstants::CLUSTER_NODE_ID]->string());
 
         return $configured !== '' ? $configured : HilosClusterNode::STANDALONE_NODE_ID;
+    }
+
+    /**
+     * @return string This node's readable name in cluster or standalone mode
+     * @throws EnvException When the cluster mode or node configuration cannot be read
+     * @throws ClusterConfigurationException When the node configuration is invalid
+     * @throws ClusterDisabledException When the cluster reports itself on and then refuses its identity
+     */
+    public function localNodeName(): string
+    {
+        return $this->isEnabled() ? $this->identity()->name : NodeName::fromEnv();
     }
 
     /**
@@ -991,6 +1003,7 @@ final class ClusterContext
      *
      * @param ClusterNode $node Node that left (went offline)
      * @throws InvalidFormatException When a pending page recovery address is malformed
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function notifyNodeLeft(ClusterNode $node): void
     {
@@ -1001,7 +1014,7 @@ final class ClusterContext
      * Re-reads cluster configuration and refreshes the local node in the registry.
      *
      * Reloads the environment source, rebuilds the local identity from it (so an
-     * operator's role/capability/address edits are picked up without a restart),
+     * operator's name/role/capability/address edits are picked up without a restart),
      * and merges the new record into the master registry. When the record changed
      * meaningfully, the local node is re-announced to the peer mesh so peers
      * converge on it. The node id is treated as stable: changing it requires a
@@ -1060,6 +1073,7 @@ final class ClusterContext
         foreach ($this->registry()->snapshot() as $node) {
             $nodes[] = [
                 ClusterCommandConstants::FIELD_NODE_ID => $node->nodeId,
+                ClusterCommandConstants::FIELD_NODE_NAME => $node->name,
                 ClusterCommandConstants::FIELD_NODE_ROLE => $node->role->value,
                 ClusterCommandConstants::FIELD_NODE_CAPABILITIES => $node->capabilities,
                 ClusterCommandConstants::FIELD_NODE_ONLINE => $node->online,
@@ -1125,6 +1139,7 @@ final class ClusterContext
         foreach ($this->registry()->snapshot() as $node) {
             $nodes[] = [
                 ClusterCommandConstants::FIELD_NODE_ID => $node->nodeId,
+                ClusterCommandConstants::FIELD_NODE_NAME => $node->name,
                 ClusterCommandConstants::FIELD_NODE_ROLE => $node->role->value,
                 ClusterCommandConstants::FIELD_NODE_CAPABILITIES => $node->capabilities,
                 ClusterCommandConstants::FIELD_NODE_ONLINE => $node->online,

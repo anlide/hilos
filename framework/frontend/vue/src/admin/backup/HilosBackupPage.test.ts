@@ -90,6 +90,7 @@ interface BackupSlot {
   finished: boolean | null
   checksumState: string
   shipState: string
+  holderNodeName: string | null
   [key: string]: unknown
 }
 
@@ -111,6 +112,8 @@ const ARCHIVE_FIXTURE: BackupFixture = {
     finished: true,
     checksumState: 'verified',
     shipState: 'none',
+    holderNode: null,
+    holderNodeName: null,
   },
 }
 
@@ -1000,6 +1003,47 @@ describe('HilosBackupPage why a restore is blocked', () => {
       expect(dispatched).toHaveLength(0)
     },
   )
+
+  it('labels an out-of-reach holder without making its archive actionable', async () => {
+    const namelessArchiveId = '2026-09-09_03-00-00'
+    const { context } = seededContext(
+      [
+        {
+          id: ARCHIVE_ID,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            holderNode: 'node-2',
+            holderNodeName: 'cold-storage',
+          },
+        },
+        {
+          id: namelessArchiveId,
+          backup: {
+            ...ARCHIVE_FIXTURE.backup,
+            holderNode: 'node-3',
+            holderNodeName: null,
+          },
+        },
+      ],
+      undefined,
+      RESTORE_GATE,
+    )
+    await mountPage(context)
+
+    const namedHolder = document.querySelector<HTMLElement>(
+      `[data-id="hilos-backup-holder-${ARCHIVE_ID}"]`,
+    )
+    expect(namedHolder?.textContent).toBe('cold-storage (node-2)')
+    expect(namedHolder?.title).toContain('cold-storage (node-2)')
+    expect(
+      document.querySelector<HTMLElement>(
+        `[data-id="hilos-backup-holder-${namelessArchiveId}"]`,
+      )?.textContent,
+    ).toBe('node-3')
+    expect(inRow(`hilos-backup-restore-${ARCHIVE_ID}`)?.disabled).toBe(true)
+    expect(inRow(`hilos-backup-keep-${ARCHIVE_ID}`)).toBeNull()
+    expect(inRow(`hilos-backup-delete-${ARCHIVE_ID}`)).toBeNull()
+  })
 
   it('keeps the opener of a hidden migration notice and shows the mark', async () => {
     const { context } = seededContext(

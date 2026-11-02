@@ -40,9 +40,12 @@ final class HilosLogsKeysSignalData extends BaseDTO implements SignalDataInterfa
     /** Payload key: the nodes the picture holds, empty in a single-node installation. */
     public const string nodes = 'nodes';
 
+    public const string nodeId = 'nodeId';
+    public const string nodeName = 'nodeName';
+
     /**
      * @param ?bool $available Whether the log stores could be read, null while no picture has arrived
-     * @param list<string> $nodes Names of the nodes in the picture; empty in a single-node installation
+     * @param list<array{nodeId: string, nodeName: ?string}> $nodes Node ids and names; empty in a single-node installation
      */
     public function __construct(
         public readonly ?bool $available,
@@ -73,7 +76,10 @@ final class HilosLogsKeysSignalData extends BaseDTO implements SignalDataInterfa
     {
         return [
             self::available => WireField::notPersonal(),
-            self::nodes => WireField::notPersonal(),
+            self::nodes => WireField::each([
+                self::nodeId => WireField::notPersonal(),
+                self::nodeName => WireField::notPersonal(),
+            ]),
         ];
     }
 
@@ -87,12 +93,23 @@ final class HilosLogsKeysSignalData extends BaseDTO implements SignalDataInterfa
     public static function fromArray(array $data): static
     {
         $available = $data[self::available] ?? null;
+        $nodes = [];
+        foreach (self::requireArray($data, self::nodes) as $row) {
+            if (!is_array($row)) {
+                throw new InvalidFormatException('Logs header carries a node row that is not an object');
+            }
+
+            $nodes[] = [
+                self::nodeId => self::requireString($row, self::nodeId),
+                self::nodeName => self::optionalString($row, self::nodeName),
+            ];
+        }
 
         return new static(
             // Anything that is not a bool reads as null — "we do not know" — rather than as false:
             // false is the claim that the stores were read and none of them answered.
             available: is_bool($available) ? $available : null,
-            nodes: array_values(array_filter(self::requireArray($data, self::nodes), 'is_string')),
+            nodes: $nodes,
         );
     }
 }

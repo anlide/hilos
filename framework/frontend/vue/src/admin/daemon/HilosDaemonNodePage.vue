@@ -370,6 +370,17 @@ const reportNotice = computed(() => {
         </div>
         <div class="col">
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
+            <dt class="small text-body-secondary fw-normal">Node name</dt>
+            <dd class="small text-break mb-0 mt-2">
+              {{ heading.name ?? '—' }}
+            </dd>
+            <dd class="small text-body-secondary mb-0 mt-1">
+              CLUSTER_NODE_NAME
+            </dd>
+          </dl>
+        </div>
+        <div class="col">
+          <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">
               Requires attention
             </dt>

@@ -40,6 +40,7 @@ use Hilos\Socket\Server\WorkerServer;
 use Closure;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use ReflectionClass;
 use ReflectionProperty;
 use RuntimeException;
@@ -48,6 +49,8 @@ use Throwable;
 /** The local restart keeps its mark until a start fact, beyond every caller's wait. */
 final class AgentRestartsTest extends TestCase
 {
+    use LogsRuntimeFixture;
+
     /** @var class-string<Hilos> */
     private string $previousAppClass;
     private ?SignalRouter $previousRouter;
@@ -69,7 +72,7 @@ final class AgentRestartsTest extends TestCase
         $this->previousRt = Hilos::$rt;
         $this->previousCluster = Hilos::$cluster;
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
-        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             $this->previousClusterEnv[$key] = getenv($key);
         }
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, AgentRestartsTestHilos::class);
@@ -98,6 +101,50 @@ final class AgentRestartsTest extends TestCase
         parent::tearDown();
     }
 
+    public function testFinalRepliesReadNamesForLocalAndRemoteDestinations(): void
+    {
+        $this->mountLogsRuntime();
+        try {
+            $this->publishLogNode('standalone', 'Local');
+            $this->publishLogNode('remote', 'Remote');
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $this->restarts->request($this->request('replica'));
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame(['agentId' => 'replica', 'nodeId' => 'standalone', 'nodeName' => 'Local'], $this->nextReply()->payload);
+            $this->restarts->fromPeer(new PeerAgentRestartDTO('peer-request', 'asking-node', 'replica', null, 'standalone', false));
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame(['agentId' => 'replica', 'nodeId' => 'standalone', 'nodeName' => 'Local'], $this->nextReply()->payload);
+
+            $this->installCluster(true, ['self' => ['slots=10'], 'remote' => ['slots=10']]);
+            Hilos::$cluster->placement()->registry()->put(new PlacementRecord('policy', null, 'self', PlacementState::Started));
+            $this->restarts->request($this->request('policy'));
+            $this->restarts->onRestartPlaced('policy', null, 'remote');
+            self::assertSame(['agentId' => 'policy', 'nodeId' => 'remote', 'nodeName' => 'Remote'], $this->nextReply()->payload);
+        } finally {
+            $this->restoreLogsRuntime();
+        }
+    }
+
+    public function testSilentNodeRefusalsUseLastKnownNamesAndUnknownNodesUseIds(): void
+    {
+        $this->mountLogsRuntime();
+        try {
+            $this->publishLogNode('remote', 'Offline node', false);
+            $this->installCluster(true, ['self' => ['slots=10'], 'remote' => ['slots=10']]);
+            Hilos::$cluster->registry()->markOffline('remote', 101.0);
+            $this->restarts->request($this->request('replica', nodeId: 'remote'));
+            self::assertSame('Node Offline node (remote) is silent', $this->nextReply()->payload['message']);
+            $this->restarts->request($this->request('replica', nodeId: 'Offline node'));
+            self::assertSame('No node Offline node in this installation', $this->nextReply()->payload['message']);
+            Hilos::$cluster->placement()->registry()->put(new PlacementRecord('policy', null, 'remote', PlacementState::Started));
+            $this->restarts->request($this->request('policy'));
+            self::assertSame('Node Offline node (remote) is silent', $this->nextReply()->payload['message']);
+        } finally {
+            $this->restoreLogsRuntime();
+        }
+    }
+
     public function testEveryLocalKindStopsAndStartsOnItsFormerWorker(): void
     {
         foreach (['replica', 'singleton', 'policy', 'indexed:7', 'lazy:8', 'monopoly'] as $id) {
@@ -116,6 +163,8 @@ final class AgentRestartsTest extends TestCase
             self::assertSame(CommandConstants::STATUS_OK, $reply->status);
             self::assertSame($id, $reply->payload[CommandConstants::FIELD_AGENT_ID]);
             self::assertSame('standalone', $reply->payload[CommandConstants::FIELD_NODE_ID]);
+            self::assertArrayHasKey(CommandConstants::FIELD_NODE_NAME, $reply->payload);
+            self::assertNull($reply->payload[CommandConstants::FIELD_NODE_NAME]);
             self::assertSame($before + 2, $this->restarts->revision());
             self::assertSame([], $this->restarts->restartingAgents());
         }
@@ -478,6 +527,7 @@ final class AgentRestartsTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=self');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$env = new EnvAccessor();
         $context = new ClusterContext();
@@ -485,7 +535,7 @@ final class AgentRestartsTest extends TestCase
         Hilos::$cluster = $context;
         foreach ($capabilities as $nodeId => $tags) {
             if ($nodeId !== 'self') {
-                $context->registry()->recordPeer(NodeIdentity::of($nodeId, NodeRole::Master, $tags), 100.0);
+                $context->registry()->recordPeer(NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Master, $tags), 100.0);
             }
         }
         $mesh = new AgentRestartsTestMesh($capabilities);

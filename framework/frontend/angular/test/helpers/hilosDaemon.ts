@@ -26,6 +26,7 @@ export function daemonNode(
 ): HilosDaemonOverviewNode {
   return {
     nodeId,
+    nodeName: null,
     online: true,
     role: 'master',
     state: 'leader',
@@ -66,6 +67,7 @@ export function daemonPicture(
     consensus: clustered
       ? {
           nodeId: 'n1',
+          nodeName: null,
           term: 7,
           leaderId: 'n1',
           onlineMasters: 1,

@@ -123,7 +123,7 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         Hilos::$rt->mountFeatureRuntime([]);
         RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
         foreach (['n1', 'n2', 'n3'] as $nodeId) {
-            Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, 'master', [], null, true, microtime(true));
+            Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, 'Node ' . $nodeId, 'master', [], null, true, microtime(true));
         }
         $this->drain();
 
@@ -246,7 +246,7 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         $statusSnapshot = DaemonClusterPicturePortionSignalData::fromArray($snapshots[0]->data->data->toArray());
         self::assertSame($pageSnapshot->toArray(), $statusSnapshot->toArray(), 'Response name adds no fields to either DTO');
         self::assertSame(['snapshot', 'nodes'], array_keys($statusSnapshot->toArray()));
-        self::assertSame(['nodeId', 'online', 'receivedAt', 'picture'], array_keys($statusSnapshot->toArray()['nodes'][0]));
+        self::assertSame(['nodeId', 'name', 'online', 'receivedAt', 'picture'], array_keys($statusSnapshot->toArray()['nodes'][0]));
 
         $this->report($collector, 'n1', NodeRole::Slave);
         $collector->fanOutIfDue($this->at(0.6));

@@ -69,7 +69,7 @@ final class HilosDaemonEnvPageTest extends TestCase
 
     public function testTheOwningNodeAnswersTheWholePageAndHidesClosedValuesForAViewer(): void
     {
-        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', NodeRole::Slave->value, [], null, true, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', 'Node node-A', NodeRole::Slave->value, [], null, true, 42.0);
         $agent = new DaemonNodeAgent();
         new ReflectionProperty(DaemonNodeAgent::class, 'environment')->setValue($agent, new NodeEnvironmentReading(
             'node-A',
@@ -86,6 +86,7 @@ final class HilosDaemonEnvPageTest extends TestCase
         $this->assertSame([
             'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $admin[AbstractHilosDaemonEnvPage::NODE]);
         $this->assertSame(['kind' => 'secret', 'length' => 8],
@@ -110,6 +111,7 @@ final class HilosDaemonEnvPageTest extends TestCase
         $this->assertSame([
             'clustered' => true, 'state' => null, 'silentSince' => null, 'role' => 'slave',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $clustered[AbstractHilosDaemonEnvPage::NODE]);
         $this->assertTrue($clustered[AbstractHilosDaemonEnvPage::ENVIRONMENT][NodeEnvironmentReading::CLUSTER]);
@@ -126,6 +128,7 @@ final class HilosDaemonEnvPageTest extends TestCase
         $this->assertSame([
             'clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => null,
             'clock' => null,
+            'name' => null,
         ],
             $data[AbstractHilosDaemonEnvPage::NODE]);
         $page->afterResponse('ak', $params);
@@ -136,12 +139,13 @@ final class HilosDaemonEnvPageTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         Hilos::$cluster = new ClusterContext();
-        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', NodeRole::Master->value, [], null, false, 42.0);
+        Hilos::$rt->hilosClusterNodes->actions->publish('node-A', 'Node node-A', NodeRole::Master->value, [], null, false, 42.0);
         $page = new DaemonEnvPageTestPage(new DaemonCollectorAgent());
         $data = $page->payload('ak', new PageRouteParams(['nodeId' => 'node-A']))->data;
         $this->assertSame([
             'clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => 'master',
             'clock' => null,
+            'name' => 'Node node-A',
         ],
             $data[AbstractHilosDaemonEnvPage::NODE]);
         $this->assertNull($data[AbstractHilosDaemonEnvPage::ENVIRONMENT]);

@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   DAEMON_ROOT_PATH,
+  DAEMON_STANDALONE_NODE_NAME,
   DAEMON_WORKERS_PATH,
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
@@ -77,6 +78,7 @@ test('prepare an accepted public archive through real loss, publication and reso
       expect,
       workers,
       'binance-btc-tracker-mysql-test',
+      DAEMON_STANDALONE_NODE_NAME,
     )
     preparation.mirrorReadyAt = performance.now()
     preparation.workersOpeningAt = performance.now()

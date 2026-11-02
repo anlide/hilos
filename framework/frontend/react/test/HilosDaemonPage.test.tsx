@@ -25,6 +25,7 @@ function node(
 ): HilosDaemonOverviewNode {
   return {
     nodeId,
+    nodeName: null,
     online: true,
     role: 'master',
     state: 'standby',
@@ -65,6 +66,7 @@ function picture(
     consensus: clustered
       ? {
           nodeId: 'n1',
+          nodeName: null,
           term: 7,
           leaderId: 'n1',
           onlineMasters: 1,

@@ -71,6 +71,7 @@ final class PeerLinkMarkerTest extends TestCase
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=' . self::LOCAL_NODE);
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
 
@@ -94,7 +95,7 @@ final class PeerLinkMarkerTest extends TestCase
 
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
-        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+        foreach (['SOCKET_READ_BUFFER_SIZE', 'CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
             putenv($key);
         }
     }
@@ -157,6 +158,7 @@ final class PeerLinkMarkerTest extends TestCase
         $this->deliver($far, new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             self::REMOTE_NODE,
+            'Node ' . self::REMOTE_NODE,
             NodeRole::Master,
             [],
             [PeerMarkers::DATABASE => self::FOREIGN_MARKER],
@@ -281,7 +283,14 @@ final class PeerLinkMarkerTest extends TestCase
         $this->assertInstanceOf(PeerHelloDTO::class, $hello);
         $this->assertSame($local->values, $hello->markers);
 
-        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $local->values));
+        $this->deliver($far, new PeerWelcomeDTO(
+            PeerProtocol::VERSION,
+            self::REMOTE_NODE,
+            'Node ' . self::REMOTE_NODE,
+            NodeRole::Master,
+            [],
+            $local->values,
+        ));
         $link->read();
         $this->deliver($far, new PeerReadyAckDTO(true));
         $link->read();
@@ -329,7 +338,14 @@ final class PeerLinkMarkerTest extends TestCase
         [$near, $far] = $this->makeSocketPair();
         $link = $this->link($near, dialer: true, markers: $localHasI18n ? $this->localWithDefaultLanguage() : PeerTestMarkers::shared());
 
-        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $remoteMarkers));
+        $this->deliver($far, new PeerWelcomeDTO(
+            PeerProtocol::VERSION,
+            self::REMOTE_NODE,
+            'Node ' . self::REMOTE_NODE,
+            NodeRole::Master,
+            [],
+            $remoteMarkers,
+        ));
         $link->read();
 
         $this->assertTrue($link->shouldClose());
@@ -374,7 +390,14 @@ final class PeerLinkMarkerTest extends TestCase
         $this->assertInstanceOf(PeerHelloDTO::class, $hello);
         $this->assertSame($local->values, $hello->markers);
 
-        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $local->values));
+        $this->deliver($far, new PeerWelcomeDTO(
+            PeerProtocol::VERSION,
+            self::REMOTE_NODE,
+            'Node ' . self::REMOTE_NODE,
+            NodeRole::Master,
+            [],
+            $local->values,
+        ));
         $link->read();
         $this->deliver($far, new PeerReadyAckDTO(true));
         $link->read();
@@ -418,7 +441,14 @@ final class PeerLinkMarkerTest extends TestCase
         [$near, $far] = $this->makeSocketPair();
         $link = $this->link($near, dialer: true, markers: $this->localWithProjectTimeZone());
 
-        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $remoteMarkers));
+        $this->deliver($far, new PeerWelcomeDTO(
+            PeerProtocol::VERSION,
+            self::REMOTE_NODE,
+            'Node ' . self::REMOTE_NODE,
+            NodeRole::Master,
+            [],
+            $remoteMarkers,
+        ));
         $link->read();
 
         $this->assertTrue($link->shouldClose());
@@ -507,7 +537,7 @@ final class PeerLinkMarkerTest extends TestCase
      */
     private function link(Socket $socket, bool $dialer, ?PeerMarkers $markers = null): PeerLink
     {
-        $identity = NodeIdentity::of(self::LOCAL_NODE, NodeRole::Master, []);
+        $identity = NodeIdentity::of(self::LOCAL_NODE, 'Node ' . self::LOCAL_NODE, NodeRole::Master, []);
         $server = new PeerServer('127.0.0.1', 0, $identity, [], PeerTestTls::unread(), $markers ?? PeerTestMarkers::shared());
 
         return new PeerLink($socket, $server, $identity, $dialer, new NamedPeerTestTransport($socket, self::REMOTE_NODE));
@@ -519,7 +549,7 @@ final class PeerLinkMarkerTest extends TestCase
      */
     private function hello(array $markers): PeerHelloDTO
     {
-        return new PeerHelloDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $markers, null);
+        return new PeerHelloDTO(PeerProtocol::VERSION, self::REMOTE_NODE, 'Node ' . self::REMOTE_NODE, NodeRole::Master, [], $markers, null);
     }
 
     /**

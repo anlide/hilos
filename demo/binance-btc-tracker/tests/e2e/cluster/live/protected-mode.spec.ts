@@ -51,6 +51,7 @@ import {
 } from '../../../../../../framework/frontend/e2e/index.js'
 import {
   CLUSTER_FOLLOWER,
+  CLUSTER_NODE_NAMES,
   CLUSTER_LEADER,
   CLUSTER_MASTERS,
   CLUSTER_SLAVES,
@@ -517,6 +518,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
         observerLog,
         nodeIds,
         CLUSTER_LEADER,
+        CLUSTER_NODE_NAMES,
       )
     })
     const nodesSockets = observerLog.sockets()
@@ -594,6 +596,9 @@ test('cluster manual maintenance: every master closes, another admitted admin op
           master ? 'verifying' : 'inactive',
           master ? 'Yes' : '—',
           role,
+          new RegExp(
+            `^${[CLUSTER_NODE_NAMES[node], node].map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*')}$`,
+          ),
         )
       }
       await expectDocumentUnchanged(expect, observer)
@@ -702,6 +707,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
         observerLog,
         nodeIds,
         CLUSTER_LEADER,
+        CLUSTER_NODE_NAMES,
         nodesReloadAfter,
       )
       const nodesF5After = observerLog.packets.length
@@ -713,6 +719,7 @@ test('cluster manual maintenance: every master closes, another admitted admin op
         observerLog,
         nodeIds,
         CLUSTER_LEADER,
+        CLUSTER_NODE_NAMES,
         nodesF5After,
       )
       Object.assign(nodesEvidence, { nodesReloadAfter, nodesF5After })

@@ -72,6 +72,7 @@ interface BackupSlot {
   finished: boolean | null
   checksumState: string
   shipState: string
+  holderNodeName: string | null
   [key: string]: unknown
 }
 
@@ -93,6 +94,8 @@ const ARCHIVE_FIXTURE: BackupFixture = {
     finished: true,
     checksumState: 'verified',
     shipState: 'none',
+    holderNode: null,
+    holderNodeName: null,
   },
 }
 

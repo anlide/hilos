@@ -135,6 +135,7 @@ describe('HilosDaemonCronPage', () => {
     )
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
@@ -153,6 +154,7 @@ describe('HilosDaemonCronPage', () => {
     const h = harness()
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'standby',
       silentSince: null,
@@ -185,6 +187,7 @@ describe('HilosDaemonCronPage', () => {
     expect(h.root.querySelectorAll('[aria-sort="none"]')).toHaveLength(2)
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
@@ -426,6 +429,7 @@ describe('HilosDaemonCronPage', () => {
     expectQuery(h, { node: 'n2', search: 'replacement' }, null)
     replacement.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'leader',
       silentSince: null,
@@ -433,6 +437,7 @@ describe('HilosDaemonCronPage', () => {
     })
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
+      name: null,
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
@@ -520,6 +525,7 @@ describe('HilosDaemonCronPage', () => {
       timeZone.receive('UTC')
       h.scope.data.set(DAEMON_NODE_DATA, {
         clustered: true,
+        name: null,
         role: null,
         state: 'silent',
         silentSince: 1700000000000,

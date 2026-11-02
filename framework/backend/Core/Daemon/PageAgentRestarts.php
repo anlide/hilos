@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Closure;
+use Hilos\Cluster\NodeName;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Constants\CliCommands;
@@ -106,11 +107,14 @@ final class PageAgentRestarts
         if ($reply->isOk()) {
             $agentId = $reply->payload[CommandConstants::FIELD_AGENT_ID] ?? null;
             $nodeId = $reply->payload[CommandConstants::FIELD_NODE_ID] ?? null;
-            if (!is_string($agentId) || !is_string($nodeId)) {
-                Logger::error('Agent restart reply lacks agentId or nodeId; the page waiter remains until its deadline');
+            $nodeName = $reply->payload[CommandConstants::FIELD_NODE_NAME] ?? null;
+            if (!is_string($agentId) || !is_string($nodeId) || ($nodeName !== null && !is_string($nodeName))) {
+                Logger::error('Agent restart reply has an invalid agentId, nodeId or nodeName; the page waiter remains until its deadline');
                 return;
             }
-            $message = sprintf('Agent %s restarted on node %s.', $agentId, $nodeId);
+            $message = sprintf('Agent %s restarted on node %s.', $agentId, NodeName::label(
+                $nodeId, $nodeName,
+            ));
         } else {
             $error = $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null;
             if (!is_string($error)) {

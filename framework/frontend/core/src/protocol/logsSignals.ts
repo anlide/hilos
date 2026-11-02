@@ -3,6 +3,12 @@ import { z } from 'zod'
 import { hideable } from '../state/hideableSchema.js'
 import { settingPresetsSignalSchemas } from './settingPresetsSignals.js'
 
+/** One node's stable address and its registered name, or null without a registry row. */
+const logNodeIdentitySchema = z.strictObject({
+  nodeId: z.string(),
+  nodeName: z.string().nullable(),
+})
+
 /** Server→client signal `type` carrying the screen header (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS`). */
 export const ROTATIONS_HEADER_SIGNAL = 'subscription_page_hilos_logs_rotations'
 
@@ -12,9 +18,9 @@ export const ROTATIONS_HEADER_SIGNAL = 'subscription_page_hilos_logs_rotations'
  * rules were taken from, including when the set has been edited (PHP
  * `HilosLogsRotationsSignalData`).
  */
-export const rotationsHeaderSchema = z.looseObject({
+export const rotationsHeaderSchema = z.strictObject({
   available: z.boolean().nullable(),
-  nodes: z.array(z.string()),
+  nodes: z.array(logNodeIdentitySchema),
   rotationCron: hideable(z.string().nullable()),
   rotationMaxAgeSeconds: hideable(z.number()),
   rotationMaxLiveSizeBytes: hideable(z.number()),
@@ -44,9 +50,9 @@ export const KEYS_HEADER_SIGNAL = 'subscription_page_hilos_logs_keys'
  * Payload of the screen header: whether there is a picture and which nodes it holds
  * (PHP `HilosLogsKeysSignalData`).
  */
-export const keysHeaderSchema = z.looseObject({
+export const keysHeaderSchema = z.strictObject({
   available: z.boolean().nullable(),
-  nodes: z.array(z.string()),
+  nodes: z.array(logNodeIdentitySchema),
 })
 
 /** The screen header as the page answers a subscription with it. */
@@ -129,8 +135,9 @@ export const OVERVIEW_RECENT_TRACE_FRAMES_FIELD = 'traceFrames'
  * there would be a measurement nobody took, and dropping the row would read as a
  * node that never reported at all.
  */
-export const overviewNodeSchema = z.looseObject({
+export const overviewNodeSchema = z.strictObject({
   [OVERVIEW_NODE_ID_FIELD]: z.string(),
+  nodeName: z.string().nullable(),
   [OVERVIEW_NODE_AVAILABLE_FIELD]: z.boolean(),
   [OVERVIEW_NODE_LAST_ROTATION_FIELD]: z.string().nullable(),
   [OVERVIEW_NODE_LIVE_BYTES_FIELD]: z.number().nullable(),
@@ -146,13 +153,14 @@ export const overviewNodeSchema = z.looseObject({
  * One row of the recent-failures panel, in either of its tabs.
  *
  * `at` is ISO UTC with milliseconds and Z.
- * Every field but the frame count is a string the node measured, so none of them is
- * nullable: a row exists because a line was really written. The frame count keeps its
- * null, which is the difference between "there is a stack to look at" and "there is
- * not" — read as a zero it would put a badge on every row.
+ * The node ID and stream identify the file that really received this entry. Its
+ * registered name is null when the registry row is unknown. The frame count keeps
+ * its null, which distinguishes "there is a stack to look at" from "there is not"
+ * — read as a zero it would put a badge on every row.
  */
-export const recentEntrySchema = z.looseObject({
+export const recentEntrySchema = z.strictObject({
   [OVERVIEW_RECENT_NODE_ID_FIELD]: z.string(),
+  nodeName: z.string().nullable(),
   [OVERVIEW_RECENT_STREAM_FIELD]: z.string(),
   [OVERVIEW_RECENT_AT_FIELD]: z.string(),
   [OVERVIEW_RECENT_MESSAGE_FIELD]: hideable(z.string()),
@@ -163,7 +171,7 @@ export const recentEntrySchema = z.looseObject({
  * Payload of the whole screen: the tiles, the takeout verdict and the per-node table
  * in one frame (PHP `HilosLogsOverviewSignalData`).
  */
-export const overviewSchema = z.looseObject({
+export const overviewSchema = z.strictObject({
   available: z.boolean().nullable(),
   totalRotationsAllTime: z.number().nullable(),
   lastRotationAt: z.string().nullable(),
@@ -240,8 +248,9 @@ export const logViewerStreamSchema = z.looseObject({
 })
 
 /** One node of the catalog: its name, whether it can be read, and what it holds. */
-export const logViewerNodeSchema = z.looseObject({
+export const logViewerNodeSchema = z.strictObject({
   nodeId: z.string(),
+  nodeName: z.string().nullable(),
   available: z.boolean(),
   /** Rotation moments in UTC epoch milliseconds. */
   batches: z.array(z.number()),
@@ -255,7 +264,7 @@ export const logViewerNodeSchema = z.looseObject({
  * no merged picture has arrived, false when it arrived and no node could read its
  * store, true when there is something to open.
  */
-export const logViewerCatalogSchema = z.looseObject({
+export const logViewerCatalogSchema = z.strictObject({
   available: z.boolean().nullable(),
   clusterEnabled: z.boolean(),
   nodes: z.array(logViewerNodeSchema),
@@ -325,9 +334,9 @@ export const WORKERS_HEADER_SIGNAL = 'subscription_page_hilos_logs_workers'
  * Payload of the screen header: whether there is a picture and which nodes it holds
  * (PHP `HilosLogsWorkersSignalData`).
  */
-export const workersHeaderSchema = z.looseObject({
+export const workersHeaderSchema = z.strictObject({
   available: z.boolean().nullable(),
-  nodes: z.array(z.string()),
+  nodes: z.array(logNodeIdentitySchema),
 })
 
 /** The screen header as the page answers a subscription with it. */

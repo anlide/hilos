@@ -141,6 +141,7 @@ function stream(
     rowKey: '-:worker-0.log',
     key: 'worker-0.log',
     node: null,
+    nodeName: null,
     type: 'regular',
     live: true,
     batchCount: 12,
@@ -240,15 +241,26 @@ describe('HilosLogsWorkersPage', () => {
   })
 
   it('offers the node column and the node filter once the picture names nodes', async () => {
-    const { connection, pushHeader } = makeConnection()
+    const { connection, pushHeader, filters } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: 'worker-west' },
+        ],
+      }),
+    )
     await nextTick()
 
     const select = wrapper.find('[data-id="hilos-table-filter-node"]')
     expect(select.exists()).toBe(true)
-    expect(select.text()).toContain('node-2')
+    await select.find('[data-id="hilos-dropdown-toggle"]').trigger('click')
+    const nodeOption = select.get('[data-id="hilos-dropdown-option-1"]')
+    expect(nodeOption.text()).toContain('worker-west (node-2)')
+    await nodeOption.trigger('click')
+    expect(filters.at(-1)).toEqual({ node: 'node-2' })
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
       true,
     )
@@ -317,7 +329,7 @@ describe('HilosLogsWorkersPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' })])
     await nextTick()
 
@@ -333,19 +345,29 @@ describe('HilosLogsWorkersPage', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     pushWindow([
-      stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' }),
+      stream({
+        rowKey: 'node-1:worker-0.log',
+        node: 'node-1',
+        nodeName: 'worker-east',
+      }),
       stream({
         rowKey: 'node-1:worker-1.log',
         key: 'worker-1.log',
         node: 'node-1',
+        nodeName: null,
         live: false,
         lastBatchAt: 1799999000000,
       }),
     ])
     await nextTick()
 
+    const firstRow = wrapper.get(
+      '[data-id="hilos-table-row-node-1:worker-0.log"]',
+    )
+    expect(firstRow.text()).toContain('worker-east')
+    expect(firstRow.text()).toContain('node-1')
     expect(
       wrapper
         .find('[data-id="hilos-log-worker-open-node-1:worker-0.log"]')
@@ -373,7 +395,7 @@ describe('HilosLogsWorkersPage', () => {
     await nextTick()
     expect(wrapper.find('.alert.small').text()).toContain('two hands')
 
-    pushHeader(header({ nodes: ['node-1'] }))
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
     await nextTick()
     expect(wrapper.find('.alert.small').text()).toContain('different machines')
   })

@@ -196,7 +196,7 @@ describe('daemon environment mismatch row', () => {
 describe('daemon environment mismatch viewports', () => {
   it('binds one unnamed table and retains the server technical order without controls', () => {
     const { tables, sent, rendered } = stubTables([
-      { nodeId: 'n1', serving: true },
+      { nodeId: 'n1', nodeName: null, serving: true },
     ])
     const controller = tables.controller
     expect(controller.frame.declaration?.title).toBeUndefined()
@@ -238,9 +238,9 @@ describe('daemon environment mismatch viewports', () => {
 
   it('rebuilds columns in page order when the node signal changes', () => {
     const { tables, nodeSignal } = stubTables([
-      { nodeId: 'n1', serving: false },
-      { nodeId: 'n2', serving: true },
-      { nodeId: 'n10', serving: false },
+      { nodeId: 'n1', nodeName: 'Primary', serving: false },
+      { nodeId: 'n2', nodeName: 'Data', serving: true },
+      { nodeId: 'n10', nodeName: null, serving: false },
     ])
     for (const controller of [tables.controller]) {
       const columns = controller.frame.columns.get()
@@ -252,8 +252,8 @@ describe('daemon environment mismatch viewports', () => {
       ])
       expect(columns.map((column) => column.label)).toEqual([
         'Key',
-        'n1',
-        'n2 · this node',
+        'Primary (n1)',
+        'Data (n2) · this node',
         'n10',
       ])
       expect(columns[0]).toMatchObject({
@@ -263,7 +263,12 @@ describe('daemon environment mismatch viewports', () => {
       expect(columns[1]?.reads).toEqual(['cells', 'value', 'kind'])
       expect(columns.every((column) => column.sortable !== true)).toBe(true)
     }
-    nodeSignal.set([{ nodeId: 'n3', serving: true }])
+    nodeSignal.set([{ nodeId: 'n2', nodeName: 'Renamed', serving: true }])
+    expect(tables.controller.frame.columns.get()[1]?.key).toBe('node:n2')
+    expect(tables.controller.frame.columns.get()[1]?.label).toBe(
+      'Renamed (n2) · this node',
+    )
+    nodeSignal.set([{ nodeId: 'n3', nodeName: null, serving: true }])
     for (const controller of [tables.controller]) {
       expect(
         controller.frame.columns.get().map((column) => column.key),
@@ -272,7 +277,11 @@ describe('daemon environment mismatch viewports', () => {
     }
     expect(daemonEnvMismatchNodeColumnKey('n3')).toBe('node:n3')
     expect(
-      formatDaemonEnvMismatchNodeLabel({ nodeId: 'n3', serving: false }),
+      formatDaemonEnvMismatchNodeLabel({
+        nodeId: 'n3',
+        nodeName: null,
+        serving: false,
+      }),
     ).toBe('n3')
   })
 })
@@ -574,12 +583,87 @@ describe('daemon environment mismatch cells', () => {
 })
 
 describe('daemon environment mismatch summary and helpers', () => {
+  it('requires the serving name key and accepts only a string or null', () => {
+    const summary = {
+      clustered: false,
+      servingNodeId: 'standalone',
+      comparison: null,
+    }
+    expect(daemonEnvMismatchSummarySchema.safeParse(summary).success).toBe(
+      false,
+    )
+    for (const servingNodeName of [undefined, 1, true, {}, []]) {
+      expect(
+        daemonEnvMismatchSummarySchema.safeParse({
+          ...summary,
+          servingNodeName,
+        }).success,
+      ).toBe(false)
+    }
+    for (const servingNodeName of [null, 'Main node']) {
+      expect(
+        daemonEnvMismatchSummarySchema.parse({
+          ...summary,
+          servingNodeName,
+        }),
+      ).toEqual({ ...summary, servingNodeName })
+    }
+  })
+
+  it('requires strict node identities with nullable names and keeps answering as ids', () => {
+    const summary = {
+      clustered: true,
+      servingNodeId: 'n1',
+      servingNodeName: null,
+      comparison: {
+        nodes: [
+          { nodeId: 'n1', nodeName: 'Primary' },
+          { nodeId: 'n2', nodeName: null },
+        ],
+        answering: ['n1', 'n2'],
+        diverged: 0,
+        sourcesDiffer: 0,
+        perNode: [],
+      },
+    }
+    expect(daemonEnvMismatchSummarySchema.parse(summary)).toEqual(summary)
+    for (const node of [
+      'n1',
+      { nodeId: 'n1' },
+      { nodeName: 'Primary' },
+      { nodeId: 'n1', nodeName: undefined },
+      { nodeId: 'n1', nodeName: 1 },
+      { nodeId: 'n1', nodeName: true },
+      { nodeId: 'n1', nodeName: null, extra: true },
+    ]) {
+      expect(
+        daemonEnvMismatchSummarySchema.safeParse({
+          ...summary,
+          comparison: { ...summary.comparison, nodes: [node] },
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      daemonEnvMismatchSummarySchema.safeParse({
+        ...summary,
+        comparison: {
+          ...summary.comparison,
+          answering: [{ nodeId: 'n1', nodeName: 'Primary' }],
+        },
+      }).success,
+    ).toBe(false)
+  })
+
   it('validates the complete summary, standalone null comparison, and degrades garbage to null', () => {
     const fullSummary: HilosDaemonEnvMismatchSummary = {
       clustered: true,
       servingNodeId: 'n1',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 1,
         sourcesDiffer: 2,
@@ -593,6 +677,7 @@ describe('daemon environment mismatch summary and helpers', () => {
     const standaloneSummary: HilosDaemonEnvMismatchSummary = {
       clustered: false,
       servingNodeId: 'standalone',
+      servingNodeName: 'Main node',
       comparison: null,
     }
     expect(daemonEnvMismatchSummarySchema.parse(standaloneSummary)).toEqual(
@@ -611,6 +696,9 @@ describe('daemon environment mismatch summary and helpers', () => {
     scope.data.set(DAEMON_ENV_MISMATCH_DATA, fullSummary)
     expect(signal.get()).toEqual(fullSummary)
 
+    scope.data.set(DAEMON_ENV_MISMATCH_DATA, standaloneSummary)
+    expect(signal.get()).toEqual(standaloneSummary)
+
     scope.data.set(DAEMON_ENV_MISMATCH_DATA, 'garbage-string')
     expect(signal.get()).toBeNull()
   })
@@ -619,8 +707,13 @@ describe('daemon environment mismatch summary and helpers', () => {
     const summary: HilosDaemonEnvMismatchSummary = {
       clustered: true,
       servingNodeId: 'n2',
+      servingNodeName: null,
       comparison: {
-        nodes: ['n1', 'n2', 'n3'],
+        nodes: [
+          { nodeId: 'n1', nodeName: 'n2' },
+          { nodeId: 'n2', nodeName: 'Primary' },
+          { nodeId: 'n3', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -628,15 +721,16 @@ describe('daemon environment mismatch summary and helpers', () => {
       },
     }
     expect(daemonEnvMismatchNodes(summary)).toEqual([
-      { nodeId: 'n1', serving: false },
-      { nodeId: 'n2', serving: true },
-      { nodeId: 'n3', serving: false },
+      { nodeId: 'n1', nodeName: 'n2', serving: false },
+      { nodeId: 'n2', nodeName: 'Primary', serving: true },
+      { nodeId: 'n3', nodeName: null, serving: false },
     ])
     expect(daemonEnvMismatchNodes(null)).toEqual([])
     expect(
       daemonEnvMismatchNodes({
         clustered: false,
         servingNodeId: 'standalone',
+        servingNodeName: null,
         comparison: null,
       }),
     ).toEqual([])
@@ -645,7 +739,10 @@ describe('daemon environment mismatch summary and helpers', () => {
   it('derives empty state between alone and agree', () => {
     expect(
       daemonEnvMismatchEmptyState({
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1'],
         diverged: 0,
         sourcesDiffer: 0,
@@ -654,7 +751,10 @@ describe('daemon environment mismatch summary and helpers', () => {
     ).toBe('alone')
     expect(
       daemonEnvMismatchEmptyState({
-        nodes: ['n1', 'n2'],
+        nodes: [
+          { nodeId: 'n1', nodeName: null },
+          { nodeId: 'n2', nodeName: null },
+        ],
         answering: ['n1', 'n2'],
         diverged: 0,
         sourcesDiffer: 0,

@@ -53,6 +53,7 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
     private ?EnvAccessor $previousEnv = null;
     private ?string $previousClusterEnabled = null;
     private ?string $previousClusterNodeId = null;
+    private ?string $previousClusterNodeName = null;
     private ?string $previousClusterNodeRole = null;
 
     protected function setUp(): void
@@ -65,15 +66,18 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousClusterEnabled = getenv('CLUSTER_ENABLED') !== false ? (string)getenv('CLUSTER_ENABLED') : null;
         $this->previousClusterNodeId = getenv('CLUSTER_NODE_ID') !== false ? (string)getenv('CLUSTER_NODE_ID') : null;
+        $this->previousClusterNodeName = getenv('CLUSTER_NODE_NAME') !== false ? (string)getenv('CLUSTER_NODE_NAME') : null;
         $this->previousClusterNodeRole = getenv('CLUSTER_NODE_ROLE') !== false ? (string)getenv('CLUSTER_NODE_ROLE') : null;
         ClusterDaemonPictureMirror::forgetPicture();
         AbstractHilosDaemonEnvMismatchPage::onPictureForgotten();
         Hilos::$sr = new SignalRouter();
         Hilos::$browser = new DaemonEnvMismatchWindowTestBrowser();
         Hilos::$rt = new DaemonEnvMismatchWindowRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
         Hilos::$rt->configure();
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=a');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
@@ -111,6 +115,11 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
             putenv("CLUSTER_NODE_ID={$this->previousClusterNodeId}");
         } else {
             putenv('CLUSTER_NODE_ID');
+        }
+        if ($this->previousClusterNodeName !== null) {
+            putenv("CLUSTER_NODE_NAME={$this->previousClusterNodeName}");
+        } else {
+            putenv('CLUSTER_NODE_NAME');
         }
         if ($this->previousClusterNodeRole !== null) {
             putenv("CLUSTER_NODE_ROLE={$this->previousClusterNodeRole}");
@@ -174,6 +183,27 @@ final class HilosDaemonEnvMismatchPageWindowTest extends TestCase
             standing: new DaemonNodeStanding(1, 1, false, null, null),
         );
         $this->deliver($agent, [new ClusterDaemonNodeView('a', true, new ClusterDaemonNodeSlot('a', $updated, 2))], false);
+        self::assertSame([], $this->browser()->mutations);
+    }
+
+    public function testNameOnlyPortionPublishesTheComparisonHeadingWithoutChangingRows(): void
+    {
+        $subscriber = 'page-subscriber';
+        $this->subscribe($subscriber);
+        $agent = new DaemonEnvMismatchWindowTestAgent();
+        $node = $this->node('a', true, null);
+        $this->deliver($agent, [new ClusterDaemonNodeView('a', true, $node->slot, 'Control')]);
+        $this->clearWindows();
+        $this->browser()->pageData = [];
+
+        $renamed = new ClusterDaemonNodeView('a', true, $node->slot, 'Main control');
+        $this->deliver($agent, [$renamed], false);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH, $subscriber]], $this->browser()->pageData);
+        self::assertSame([], $this->browser()->mutations);
+
+        $this->browser()->pageData = [];
+        $this->deliver($agent, [$renamed], false);
+        self::assertSame([], $this->browser()->pageData);
         self::assertSame([], $this->browser()->mutations);
     }
 

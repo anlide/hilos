@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Template;
 
+use Hilos\Cluster\NodeName;
 use Hilos\Mail\EmailContent;
 use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
@@ -26,6 +27,9 @@ final class ProtectedModeStuckMailTemplate implements MailTemplate
 {
     /** Template param: id or hostname of the frozen node. */
     public const string PARAM_NODE_ID = 'nodeId';
+
+    /** Template param: nullable readable name of this node. */
+    public const string PARAM_NODE_NAME = 'nodeName';
 
     /** Template param: operation the freeze protects. */
     public const string PARAM_OPERATION = 'operation';
@@ -66,28 +70,28 @@ final class ProtectedModeStuckMailTemplate implements MailTemplate
             );
         }
 
-        $nodeId = (string)$nodeId;
+        $nodeLabel = NodeName::label((string)$nodeId, $params[self::PARAM_NODE_NAME] ?? null);
         $frozenFor = self::text($params, self::PARAM_FROZEN_FOR);
         $subject = ($params[self::PARAM_STILL] ?? false) === true
-            ? "Node {$nodeId} is still stuck in maintenance ({$frozenFor})"
-            : "Node {$nodeId} is stuck in maintenance";
+            ? "Node {$nodeLabel} is still stuck in maintenance ({$frozenFor})"
+            : "Node {$nodeLabel} is stuck in maintenance";
 
-        return new EmailContent($subject, self::body($params, $nodeId, $frozenFor));
+        return new EmailContent($subject, self::body($params, $nodeLabel, $frozenFor));
     }
 
     /**
      * Builds the body both the first alert and every reminder carry.
      *
      * @param array<string, mixed> $params Template params
-     * @param string $nodeId Id or hostname of the frozen node
+     * @param string $nodeLabel Name and id, or the fallback hostname
      * @param string $frozenFor How long the freeze has held, rendered for a human
      * @return string Plain-text body
      */
-    private static function body(array $params, string $nodeId, string $frozenFor): string
+    private static function body(array $params, string $nodeLabel, string $frozenFor): string
     {
         $indent = '    ';
 
-        return "The node {$nodeId} has been frozen for maintenance since "
+        return "The node {$nodeLabel} has been frozen for maintenance since "
             . self::text($params, self::PARAM_FROZEN_SINCE) . " ({$frozenFor})"
             . " and it will not come back on its own.\n"
             . "\n"

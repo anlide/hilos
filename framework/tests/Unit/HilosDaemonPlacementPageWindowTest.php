@@ -89,6 +89,7 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
             ? putenv('CLUSTER_ENABLED')
             : putenv('CLUSTER_ENABLED=' . $this->previousClusterEnabled);
         putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_NAME');
         putenv('CLUSTER_NODE_ROLE');
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->previousAppClass);
         parent::tearDown();
@@ -131,6 +132,7 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
         putenv('CLUSTER_NODE_ID=n1');
+        putenv('CLUSTER_NODE_NAME=Local node');
         putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
         $agent = new PlacementWindowTestAgent();

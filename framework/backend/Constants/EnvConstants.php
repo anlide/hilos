@@ -639,6 +639,12 @@ enum EnvConstants
     /** @var string Self-declared cluster node id (unique per node). Required when CLUSTER_ENABLED. */
     case CLUSTER_NODE_ID;
 
+    /**
+     * Readable name of this node, shown beside its id wherever a person sees the node.
+     * Required on every node, standalone included; one line, at most 64 characters.
+     */
+    case CLUSTER_NODE_NAME;
+
     /** @var string Self-declared node role: master | slave. Required when CLUSTER_ENABLED. */
     case CLUSTER_NODE_ROLE;
 

@@ -290,10 +290,10 @@ final class ClusterClockTest extends TestCase
         $socket = socket_create(AF_UNIX, SOCK_STREAM, 0);
         self::assertInstanceOf(Socket::class, $socket);
         $this->sockets[] = $socket;
-        $identity = NodeIdentity::of('leader', NodeRole::Master, []);
+        $identity = NodeIdentity::of('leader', 'Node leader', NodeRole::Master, []);
         $server = new PeerServer('127.0.0.1', 0, $identity, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $link = new PeerLink($socket, $server, $identity, false, new PlainSocketTransport($socket));
-        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of($nodeId, NodeRole::Slave, []));
+        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of($nodeId, 'Node ' . $nodeId, NodeRole::Slave, []));
         $this->links[$nodeId] = $link;
         return $link;
     }

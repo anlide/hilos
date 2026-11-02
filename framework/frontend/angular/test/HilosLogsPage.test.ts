@@ -34,6 +34,7 @@ function node(
 ): HilosLogsOverviewNode {
   return {
     nodeId: 'node-1',
+    nodeName: null,
     available: true,
     lastRotationAt: '2026-09-02T03:00:00.000Z',
     liveBytes: 210 * 1024 * 1024,
@@ -183,6 +184,7 @@ describe('HilosLogsPage', () => {
         recentErrors: [
           {
             nodeId: '',
+            nodeName: null,
             stream: 'worker-0.log',
             at: '2026-09-02T03:00:00.000Z',
             message: HIDDEN_VALUE,

@@ -70,6 +70,7 @@ describe('daemon node overview boundary', () => {
     expect(daemonEnvironmentAttention(node)).toBe(0)
     const heading = {
       clustered: true,
+      name: null,
       state: null,
       silentSince: null,
       clock: null,
