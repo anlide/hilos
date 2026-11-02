@@ -20,6 +20,12 @@
       "import": "./dist/base.js",
       "default": "./dist/base.js"
     },
+    "./status": {
+      "development": "./src/status/index.ts",
+      "types": "./dist/status/index.d.ts",
+      "import": "./dist/status.js",
+      "default": "./dist/status.js"
+    },
     "./admin-views": {
       "development": "./src/admin/hilosAdminViews.ts",
       "types": "./dist/admin/hilosAdminViews.d.ts",
@@ -133,6 +139,12 @@
       "types": "./dist/admin/sil/index.d.ts",
       "import": "./dist/admin/sil.js",
       "default": "./dist/admin/sil.js"
+    },
+    "./admin/status": {
+      "development": "./src/admin/status/index.ts",
+      "types": "./dist/admin/status/index.d.ts",
+      "import": "./dist/admin/status.js",
+      "default": "./dist/admin/status.js"
     },
     "./admin/users": {
       "development": "./src/admin/users/index.ts",

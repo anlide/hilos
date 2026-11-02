@@ -1,11 +1,15 @@
 import type { Expect, Page } from '@playwright/test'
-import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
+import {
+  deliveryObject,
+  watchDeliveryFrames,
+  type DeliveryFrameLog,
+} from './deliveryFrames.js'
 import {
   expectTrackedActionReply,
   trackedActionReplies,
 } from './actionReplies.js'
 import { clickSubmit, typeInto } from './input.js'
-import { gotoPublicStatus } from './page.js'
+import { gotoPage, gotoPublicStatus, PAGE_READY } from './page.js'
 import { expectDataFreeDeparture, shownByTestId } from './table.js'
 
 export const STATUS_SUBSCRIBERS_PATH = '/hilos/status/subscribers'
@@ -176,6 +180,93 @@ export async function removeStatusSubscriber(
     page.getByTestId(`hilos-status-subscriber-email-${id}`),
   ).toHaveCount(0)
   await expect(page.getByTestId('hilos-table-apply')).toBeHidden()
+}
+
+/**
+ * The ids of the rows carrying exactly this address in the answer to a search
+ * for it, or undefined until that answer has arrived on the requesting socket.
+ */
+export function searchedStatusSubscriberIds(
+  log: DeliveryFrameLog,
+  since: number,
+  email: string,
+): string[] | undefined {
+  const request = log.sent
+    .slice(since)
+    .filter(({ wire }) => {
+      const frame = deliveryObject(wire)
+      return (
+        frame.type === 'table_viewport' &&
+        frame.page === 'hilos_status_subscribers' &&
+        frame.tableKey === 'hilosStatusSubscribers' &&
+        deliveryObject(frame.filter).search === email
+      )
+    })
+    .at(-1)
+  const requestId = deliveryObject(request?.wire).requestId
+  if (!request || typeof requestId !== 'string') return undefined
+  const answer = log.packets
+    .filter((packet) => packet.socket === request.socket)
+    .flatMap((packet) => packet.frames)
+    .map(({ wire }) => deliveryObject(wire))
+    .filter((frame) => frame.type === 'table_window')
+    .map((frame) => deliveryObject(frame.data))
+    .find(
+      (data) =>
+        data.page === 'hilos_status_subscribers' &&
+        data.tableKey === 'hilosStatusSubscribers' &&
+        data.requestId === requestId,
+    )
+  if (answer === undefined) return undefined
+  return (Array.isArray(answer.rows) ? answer.rows : [])
+    .map((row) => deliveryObject(deliveryObject(row).slots).subscriber)
+    .map(deliveryObject)
+    .filter((subscriber) => subscriber.email === email)
+    .map((subscriber) => String(subscriber.id))
+}
+
+/**
+ * Teardown for a scenario that subscribes addresses: remove whatever rows
+ * still carry them, through the real search, dialog and owner-confirmed
+ * action. A fresh page in the administrator's context leaves a failed or dirty
+ * subject page alone. An address that was never subscribed, or that the
+ * scenario already removed, finds no row and is left at that.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param admin A page whose context acts as an administrator.
+ * @param emails The addresses the scenario coined.
+ * @throws {AggregateError} When the removal of any address failed; every
+ *   address is still attempted.
+ */
+export async function removeStatusSubscribersIfAny(
+  expect: Expect,
+  admin: Page,
+  emails: readonly string[],
+): Promise<void> {
+  const page = await admin.context().newPage()
+  const log = watchDeliveryFrames(page)
+  try {
+    await gotoPage(expect, page, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
+    const errors: unknown[] = []
+    for (const email of emails) {
+      try {
+        const since = log.sent.length
+        await typeInto(page.getByTestId('hilos-table-search'), email)
+        await expect
+          .poll(() => searchedStatusSubscriberIds(log, since, email))
+          .toBeDefined()
+        for (const id of searchedStatusSubscriberIds(log, since, email)!)
+          await removeStatusSubscriber(expect, page, log, id)
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length > 0)
+      throw new AggregateError(errors, 'Status subscriber cleanup failed')
+  } finally {
+    log.stop()
+    await page.close()
+  }
 }
 
 /** Public UI submission, settled through its real correlated check-inbox reply. */

@@ -18,6 +18,28 @@ import {
   settleTableLayout,
   shownByTestId,
   watchTableModalFocus,
+  PAGE_READY,
+  STATUS_HISTORY_PATH,
+  STATUS_PATH,
+  STATUS_SUBSCRIBERS_PATH,
+  cleanupFixtures,
+  expectPageReady,
+  expectPublicStatusAccessibility,
+  expectPublicStatusPair,
+  expectPublicStatusReadOnly,
+  expectStatusSubscribeDialog,
+  expectStatusSubscriberRemoveDialog,
+  expectStatusSubscribersAccessibility,
+  gotoPublicStatus,
+  removeStatusSubscribersIfAny,
+  searchedStatusSubscriberIds,
+  statusSubscriberId,
+  subscribeToStatus,
+  typeInto,
+  uniqueEmail,
+  watchDeliveryFrames,
+  watchPublicStatus,
+  type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({
@@ -473,4 +495,200 @@ test.describe('SDK Tiles accessibility, synthetic fixture ingress', () => {
       }
     })
   }
+})
+
+/** The page has settled at its address under one heading, its tab alone current. */
+async function expectStatusPage(
+  page: Page,
+  pageKey: string,
+  path: string,
+): Promise<void> {
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(path)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Status')
+  const tabs = page.getByRole('navigation', { name: 'Status pages' })
+  await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(tabs.getByTestId(`hilos-page-tab-${pageKey}`)).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+}
+
+/** Follow a Status tab from the keyboard to the page it names. */
+async function pressStatusTab(
+  page: Page,
+  pageKey: string,
+  path: string,
+): Promise<void> {
+  const tab = page.getByTestId(`hilos-page-tab-${pageKey}`)
+  await tab.focus()
+  await expect(tab).toBeFocused()
+  await tab.press('Enter')
+  await expectStatusPage(page, pageKey, path)
+}
+
+test.describe('Status accessibility', () => {
+  // The public day strip and the Subscribers table read moments in the
+  // browser's zone: picked at random from the IANA list when these tests were
+  // written, and stated here rather than left to the stand, which runs this
+  // project on UTC. Contexts opened by a test inherit it.
+  test.use({ timezoneId: 'America/Campo_Grande' })
+
+  const statusTest = test.extend<{ cleanup: TestCleanup }>({
+    cleanup: cleanupFixtures,
+  })
+
+  statusTest(
+    'Status Subscribers and History name their tables, sort and filter from the keyboard, and the removal dialog returns focus',
+    async ({ page, browser, cleanup }) => {
+      const guestContext = await browser.newContext()
+      cleanup.defer(() => guestContext.close())
+      const guest = await guestContext.newPage()
+      const admin = watchDeliveryFrames(page)
+      const reader = watchDeliveryFrames(guest)
+      const email = uniqueEmail()
+      try {
+        await grantAdminToSelf(expect, page)
+        cleanup.defer(() => removeStatusSubscribersIfAny(expect, page, [email]))
+
+        await statusTest.step(
+          'a guest leaves an address awaiting confirmation',
+          async () => {
+            await gotoPublicStatus(expect, guest)
+            await expect(guest.getByTestId('conn-state')).toHaveText(
+              'connected',
+            )
+            await subscribeToStatus(expect, guest, reader, email)
+          },
+        )
+
+        await statusTest.step(
+          'the Overview titles the tab and opens Subscribers from the keyboard',
+          async () => {
+            await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+            await expectStatusPage(page, 'hilos_status', STATUS_PATH)
+            await expect(page).toHaveTitle('Status · Hilos Flowers')
+            await expect(page.getByTestId('page-title')).toHaveText(
+              'Status · Hilos Flowers',
+            )
+            await pressStatusTab(
+              page,
+              'hilos_status_subscribers',
+              STATUS_SUBSCRIBERS_PATH,
+            )
+          },
+        )
+
+        const id = await statusTest.step(
+          'Subscribers names its table, sorts and filters from the keyboard, and finds the pending address',
+          async () => {
+            await expectStatusSubscribersAccessibility(expect, page, admin)
+            const filter = page.getByTestId('hilos-table-filter-confirmed')
+            const toggle = filter.getByTestId('hilos-dropdown-toggle')
+            const pending = filter.getByTestId('hilos-dropdown-option-1')
+            await toggle.focus()
+            await toggle.press('ArrowDown')
+            await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+            await expect(filter.getByRole('listbox')).toHaveAccessibleName(
+              'Confirmed',
+            )
+            await expect(
+              filter.getByTestId('hilos-dropdown-option--1'),
+            ).toBeFocused()
+            // Any comes first, then Yes and No.
+            await page.keyboard.press('ArrowDown')
+            await page.keyboard.press('ArrowDown')
+            await expect(pending).toBeFocused()
+            await pending.press('Enter')
+            await expect(toggle).toBeFocused()
+            await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+            await expect(toggle).toHaveAccessibleName('Confirmed: No')
+            const searching = admin.sent.length
+            await typeInto(page.getByTestId('hilos-table-search'), email)
+            // Every keystroke asks for a window, and every window draws the
+            // rows afresh: the dialog opens only over the answer to the whole
+            // address, once nothing is pending.
+            await expect
+              .poll(() => searchedStatusSubscriberIds(admin, searching, email))
+              .toHaveLength(1)
+            await expect(page.getByTestId('hilos-table-loading')).toBeHidden()
+            const [subscriberId] = searchedStatusSubscriberIds(
+              admin,
+              searching,
+              email,
+            )!
+            expect(await statusSubscriberId(expect, page, email)).toBe(
+              subscriberId,
+            )
+            await expect(
+              shownByTestId(
+                page,
+                `hilos-status-subscriber-confirmed-${subscriberId}`,
+              ),
+            ).toHaveText('Awaiting confirmation')
+            return subscriberId
+          },
+        )
+
+        await statusTest.step(
+          'the removal dialog is named, keeps focus inside and returns it on Escape and Cancel',
+          () => expectStatusSubscriberRemoveDialog(expect, page, id),
+        )
+
+        await statusTest.step(
+          'History names its table under the same heading',
+          async () => {
+            await pressStatusTab(
+              page,
+              'hilos_status_history',
+              STATUS_HISTORY_PATH,
+            )
+            await expect(
+              page.getByTestId('hilos-status-history-table').getByRole('table'),
+            ).toHaveAccessibleName('Status')
+          },
+        )
+      } finally {
+        await test.info().attach('status-subscribers-accessibility-wire', {
+          body: JSON.stringify({ admin, guest: reader }),
+          contentType: 'application/json',
+        })
+        admin.stop()
+        reader.stop()
+      }
+    },
+  )
+
+  test('public /status names its days and opens its subscription dialog from the keyboard', async ({
+    page,
+  }) => {
+    const log = watchPublicStatus(page)
+    try {
+      await gotoPublicStatus(expect, page)
+      await expectPublicStatusPair(expect, page, log, ({ status }) =>
+        status.components.every(
+          (component) => component.state === 'operational',
+        ),
+      )
+      await expect(page).toHaveTitle('Status · Hilos Flowers')
+      await expect(page.getByTestId('page-title')).toHaveText(
+        'Status · Hilos Flowers',
+      )
+      // The subscription control is offered over a live connection only.
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      await expectPublicStatusAccessibility(expect, page, 'Service')
+      await expectStatusSubscribeDialog(expect, page)
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('modal')).toBeHidden()
+      expectPublicStatusReadOnly(expect, log)
+    } finally {
+      await log.stop()
+      await test.info().attach('public-status-accessibility-files', {
+        body: JSON.stringify(log),
+        contentType: 'application/json',
+      })
+    }
+  })
 })

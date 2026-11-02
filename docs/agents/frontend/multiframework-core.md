@@ -269,8 +269,10 @@ Each modal region has its own visually hidden description with
 The theme menu also reads `unavailable`: signed-in account theme changes and
 reset are guarded, including stale gestures on an open menu. Guest theme changes
 remain local; a signed-in change still waits for its server acknowledgement.
-Existing busy and impersonation guards remain in place. `/status` has the shell
-opt-out seam only; its page, route and subscription are still future work. These
+Existing busy and impersonation guards remain in place. The Vue and React shells
+release the public `/status` reader's page region through this opt-out; its
+page, route and mail subscription are built there and wait for HIL-1696 in
+Angular ([status-page.md](../architecture/status-page.md)). These
 APIs are re-exported from `@hilos/core/base` and the explicit core root barrel.
 The context readers are safe to import without a browser; each shell state and
 DOM binding is disposed with its owning shell or root.

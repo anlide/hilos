@@ -132,9 +132,9 @@ only for a known empty set.
 The view-mode bridge leaves permitted fields visible, sends subscriber email as
 `HiddenValue`, removes email search/sort paths for a viewer, and refuses
 subscriber removal even if a valid id is forged. The trash control is disabled
-for a viewer. Chat and Binance BTC Tracker mount the Vue pages; React and
-Angular Status views remain unbuilt until HIL-1695 and HIL-1696, so they do not
-show empty Status tabs. The public `/status` surface reads nginx files even
+for a viewer. Chat and Binance BTC Tracker mount the Vue pages, and Tasks and
+Ecommerce Shop the React pages; Angular Status views remain unbuilt until
+HIL-1696, so they do not show empty Status tabs. The public `/status` surface reads nginx files even
 under freeze; it is separate from the admin table and does not read its mirror
 or wait for `page_response`.
 

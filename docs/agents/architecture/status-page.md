@@ -7,9 +7,10 @@ machine, publishing its public files, building its admin section, or reading
 This document records the Status backend built by HIL-1688, the admin surface
 built by HIL-1689, the public file publisher and reader built by HIL-1690, the
 subscriber lifecycle and outage mail built by HIL-1691, scheduled works and
-actual maintenance periods built by HIL-1692, and the completed admin History
-page built by HIL-1693. Separate cluster and failover proof remains with
-HIL-1694, React views with HIL-1695, and Angular views with HIL-1696.
+actual maintenance periods built by HIL-1692, the completed admin History
+page built by HIL-1693, and the React views built by HIL-1695. Separate
+cluster and failover proof remains with HIL-1694, and Angular views with
+HIL-1696.
 
 ## Core Rule
 
@@ -32,8 +33,10 @@ HIL-1691 adds account-independent email subscriptions, the Subscribers admin
 page, and best-effort outage mail to confirmed recipients. HIL-1692 adds
 scheduled works, observed maintenance periods, the Works admin page, public v2
 maintenance projection and reader support, and best-effort Completed mail.
-HIL-1693 adds the completed-history admin page. Separate cluster and failover
-proof remains with HIL-1694; React and Angular views remain with HIL-1695 and
+HIL-1693 adds the completed-history admin page. HIL-1695 adds the React
+counterpart of every Vue Status view and of the public reader, with the React
+shell's `/status` exception, mounted by Tasks and Ecommerce Shop. Separate
+cluster and failover proof remains with HIL-1694; Angular views remain with
 HIL-1696.
 
 Use the existing [Daemon picture chain](daemon-section.md#the-circulation),
@@ -380,9 +383,12 @@ that do not identify one moment are rejected instead of guessed. Action frames
 continue to carry epoch milliseconds UTC. Cancellation remains bound to the
 focused row's immutable public id; an unrelated late acknowledgement cannot
 retarget another dialog. Vue uses the standard Status admin
-page, viewport table, create/edit/cancel modals and action notices. Chat and
-Binance mount thin Vue wrappers; React and Angular Status views remain with
-HIL-1695 and HIL-1696.
+page, viewport table, create/edit/cancel modals and action notices; React draws
+the same pages, table and modals over the same core controllers. Chat and
+Binance mount thin Vue wrappers, and Tasks and Ecommerce Shop thin React
+wrappers; Angular Status views remain with HIL-1696. The React work window
+states the non-overlap rule in a hint under Starts and Ends, which both fields
+name in `aria-describedby`.
 
 Overview source changes, including completed-history changes to `historyCount`,
 use the existing guarded `PageResender` / `resendPageWhole()` path. The narrow
@@ -404,21 +410,31 @@ Moments use `formatMoment()` in the reader's zone; the countdown uses the server
 clock through `toLocal()` and `formatCountdown()`.
 
 The SDK exports the admin implementation lazily from
-`@hilos/core/admin/status` and `@hilos/vue/admin/status`, while keeping
-compatibility-root exports. The public reader and its subscription controller
-are exported from `@hilos/core/status`; the Vue page is exported from
-`@hilos/vue/status` and the compatibility root with required props
-`{connection, actions}`. Its subscription modal is controller-owned: Subscribe
+`@hilos/core/admin/status`, `@hilos/vue/admin/status` and
+`@hilos/react/admin/status`, while keeping compatibility-root exports. The
+public reader and its subscription controller are exported from
+`@hilos/core/status`; the Vue and React pages are exported from
+`@hilos/vue/status` and `@hilos/react/status`, and from each compatibility root
+as `HilosPublicStatusPage`, with required props `{connection, actions}`. Its
+subscription modal is controller-owned: Subscribe
 appears in a body row below the navigation-only shared header, not in a header
-button slot. `HilosStatusSubscribersPage` from `@hilos/vue/admin/status` takes
+button slot. `HilosStatusSubscribersPage` from `@hilos/vue/admin/status` and
+`@hilos/react/admin/status` takes
 `HilosStatusSubscribersContext`, the existing `{scopes, connection, actions}`
-Status context. Status is not imported by either package's eager `base` entry
-or Vue's default `hilosAdminViews()` map. Chat and Binance BTC Tracker mount
-thin Vue wrappers for the public reader and all five admin pages. The public
+Status context. Status is not imported by the eager `base` entry of core, Vue
+or React, or by the default `hilosAdminViews()` map of Vue or React. Chat and
+Binance BTC Tracker mount thin Vue wrappers for the public reader and all five
+admin pages; Tasks and Ecommerce Shop mount thin React wrappers for the same
+six, each a lazy page entry in its `App.tsx`. The public
 `/status` route is the framework-owned client file reader; it has no backend
-page, catalog entry or `page_response` subscription. React and Angular Status
-views remain unbuilt until HIL-1695 and HIL-1696, so their Status tabs stay out
-of the admin navigation.
+page, catalog entry or `page_response` subscription. Angular Status views
+remain unbuilt until HIL-1696, so their Status tabs stay out of the admin
+navigation.
+
+A React Status page creates its state, table and controllers, or its file
+reader and subscription controller, in the effect of its own generation and
+disposes them in that same effect's cleanup, so a replayed effect or a new
+context gets a live set of its own.
 
 The project also registers the shared Status directory, mounts the same volume
 for every node's nginx, and binds the public page to the framework reader.
@@ -1333,14 +1349,23 @@ and formatting, including recipient-zone mail.
 ## Freeze And Disconnection
 
 `/status` is the narrow exception to subscription waiting, the freeze stub,
-disconnect blocking and the ordinary stale-data screen. The built Vue reader
-remains available on a cold load during full freeze; the maintenance stub links
-to it as **Service status**. A disconnected shell may indicate the break, but
-cannot cover the file reader with a blocking overlay. The exception covers this
-read-only page's first-frame paint, disconnect, stale heartbeat and access
+disconnect blocking and the ordinary stale-data screen. The built Vue and React
+readers remain available on a cold load during full freeze; the maintenance stub
+links to it as **Service status**. A disconnected shell may indicate the break,
+but cannot cover the file reader with a blocking overlay. The exception covers
+this read-only page's first-frame paint, disconnect, stale heartbeat and access
 reactions only; it does not unblock shell requests, actions or modal controls.
-Other pages keep their existing rules. React and Angular remain unbuilt until
-HIL-1695 and HIL-1696.
+Other pages keep their existing rules. In React the exception lives in three
+shell files. `HilosLayout.tsx` keeps the reader in place of the maintenance
+stub, the first-frame hold, the blocked-account card and the frozen-account
+screen, gives the page DOM a second interaction state while the shell's dialogs
+keep the caller's policy, and never draws the verification banner on this
+route. While the freeze is active or the first frame is held, the brand stays
+here as passive text where other routes drop it; otherwise it is the ordinary
+link. `HilosView.tsx` clears the departure copy of the previous page when the
+route becomes `/status`, even while the lazy reader code loads.
+`HilosMaintenance.tsx` carries the **Service status** link in every branch of
+the stub. Angular remains unbuilt until HIL-1696.
 
 Do not show the subscription button without a usable live connection. Every
 subscription action and subscriber or work mail pass checks that the Status
@@ -1383,17 +1408,17 @@ current validation surfaces.
 | Work | Source and test evidence | Owner and state |
 |---|---|---|
 | Framework activation, component catalog, status owner, DB/RT machine, candidate notices and typed admin read | `framework/backend/Status/`, `framework/tests/Unit/Status*Test.php`, `framework/tests/Integration/Status*Test.php` | Landed by HIL-1688 |
-| Admin Overview and Components pages, read-only viewport, gatekeeper actions, shared page head and Vue views | `framework/backend/Pages/Status/`, `framework/backend/Tables/Status/`, `framework/frontend/core/src/admin/status/`, `framework/frontend/vue/src/admin/status/` | Landed by HIL-1689; React and Angular remain with HIL-1695 and HIL-1696 |
-| SDK packaging and lazy entrypoints | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs` | Core and Vue export `/admin/status` lazily; eager base closures remain free of Status. React and Angular have no Status view entry yet. |
+| Admin Overview and Components pages, read-only viewport, gatekeeper actions, shared page head, Vue and React views | `framework/backend/Pages/Status/`, `framework/backend/Tables/Status/`, `framework/frontend/core/src/admin/status/`, `framework/frontend/vue/src/admin/status/`, `framework/frontend/react/src/admin/status/HilosStatusPage.tsx`, `HilosStatusIncidentModal.tsx`, `HilosStatusComponentsPage.tsx` | Landed by HIL-1689; the React views landed with HIL-1695; Angular remains with HIL-1696 |
+| SDK packaging and lazy entrypoints | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs`, `framework/frontend/react/test/packaging.smoke.mjs`, `framework/frontend/react/package.json`, `framework/frontend/react/vite.config.ts` | Core, Vue and React export `/admin/status` lazily and `/status` as a separate entry; eager base closures remain free of Status. Angular has no Status view entry yet. |
 | Public files, bounded builder, heartbeat, hint and reader | `framework/backend/Status/StatusPublicSnapshotBuilder.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/tests/Unit/StatusPublicFilesTest.php`, `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/src/status/`, `framework/frontend/core/test/status/` | Landed by HIL-1690 |
-| Public route, Vue page and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts` | Core route and Vue views are built; React and Angular public views remain with HIL-1695 and HIL-1696 |
+| Public route, Vue and React pages and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `framework/frontend/react/src/public/HilosStatusPage.tsx` and `framework/frontend/react/test/HilosPublicStatusPage.test.tsx`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts`; `demo/ecommerce-shop/tests/e2e/tests/status.spec.ts` and `demo/ecommerce-shop/tests/e2e/tests/a11y.spec.ts`; `demo/tasks/tests/e2e/tests/smoke.spec.ts` and `demo/tasks/tests/e2e/tests/a11y.spec.ts` | Core route, Vue and React views are built; the Angular public view remains with HIL-1696 |
 | Guest subscriptions, primary storage, links and mail | `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusSubscriptionLink.php`, `framework/backend/Status/StatusSubscriberMailTask.php`, `framework/backend/Database/Entity/Item/StatusSubscriber.php`, `framework/backend/Database/Actions/Collection/StatusSubscribersActions.php`, `framework/backend/Database/Actions/Item/StatusSubscriberActions.php`, `framework/backend/Mail/Template/Status*MailTemplate.php`; `framework/tests/Unit/StatusGuestActionDTOTest.php`, `StatusSubscriptionLinkTest.php`, `StatusMailTemplatesTest.php`; `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`, `StatusSubscriberStorageIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php`, `StatusSubscriberMailIntegrationTest.php` | Landed by HIL-1691; storage, guest actions and best-effort mail are documented above |
-| Subscribers admin viewport and public subscription controller | `framework/backend/Pages/Status/AbstractHilosStatusSubscribersPage.php`, `framework/backend/Tables/Status/HilosStatusSubscribersTable.php`; `framework/frontend/core/src/admin/status/hilosStatusSubscribers.ts`, `framework/frontend/core/src/status/statusSubscription.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.vue`, `framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue`; `framework/tests/Unit/StatusSubscriberTableTest.php`, `StatusSubscriberAdminIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusSubscribers.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.test.ts`; `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts` | Landed by HIL-1691; Chat and Binance carry the built Vue pages, other four SDK views remain unbuilt |
+| Subscribers admin viewport and public subscription controller | `framework/backend/Pages/Status/AbstractHilosStatusSubscribersPage.php`, `framework/backend/Tables/Status/HilosStatusSubscribersTable.php`; `framework/frontend/core/src/admin/status/hilosStatusSubscribers.ts`, `framework/frontend/core/src/status/statusSubscription.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.vue`, `framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue`, `framework/frontend/react/src/admin/status/HilosStatusSubscribersPage.tsx`, `HilosStatusRemoveSubscriberModal.tsx`, `framework/frontend/react/src/public/HilosStatusSubscriptionModal.tsx`; `framework/tests/Unit/StatusSubscriberTableTest.php`, `StatusSubscriberAdminIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusSubscribers.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.test.ts`, `framework/frontend/react/test/HilosStatusSubscribersPage.test.tsx`, `HilosStatusRemoveSubscriberModal.test.tsx`, `HilosStatusSubscriptionModal.test.tsx`; `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`, `demo/ecommerce-shop/tests/e2e/tests/status-subscriptions.spec.ts`; `framework/frontend/e2e/statusSubscriptions.ts` | Landed by HIL-1691; Chat and Binance carry the built Vue pages, Tasks and Ecommerce Shop the React pages built by HIL-1695, and the Angular views remain unbuilt |
 | Email throttle scope and per-parking-agent verdict route | `framework/backend/Auth/Throttle/ThrottleEmailIdentityInterface.php`, `ThrottleIdentity.php`, `ThrottleVerdictRoute.php`, `framework/backend/Status/StatusAgent.php`, `framework/backend/Core/Topology/TopologyValidator.php`, `framework/backend/Core/Page/PageSignalRouter.php`; `framework/tests/Unit/ThrottleVerdictRouteTest.php`, `StatusThrottleVerdictRoutingTest.php`, `TopologyValidatorTest.php`, `PageSignalRouterThrottlePoolTest.php`; `framework/tests/Integration/AuthThrottleIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php` | Landed by HIL-1691; the ordinary auth verdict remains on its existing host |
-| Scheduled works, maintenance observation and Completed delivery | `framework/backend/Database/Entity/Item/StatusWork.php`, `framework/backend/Database/Entity/Item/StatusWorkComponent.php`, `framework/backend/Database/Entity/Item/StatusMaintenancePeriod.php`; `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusMaintenanceObservation.php`, `framework/backend/Status/StatusMaintenanceObservationStore.php`, `framework/backend/Status/StatusPublicWork.php`, `framework/backend/Status/StatusPublicMaintenancePeriod.php`, `framework/backend/Status/StatusPublicSnapshot.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/backend/Status/StatusPublicSnapshotBuilder.php`; `framework/backend/Pages/Status/AbstractHilosStatusWorksPage.php`, `framework/backend/Tables/Status/HilosStatusWorksTable.php`; `framework/frontend/core/src/admin/status/hilosStatusWorks.ts`, `framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts`, `framework/frontend/core/src/timeZone/localDateTime.ts`, `framework/frontend/core/src/status/statusFiles.ts`, `framework/frontend/core/src/status/derivedStatus.ts`; `framework/frontend/vue/src/admin/status/HilosStatusWorksPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusWorkModal.vue`, `framework/frontend/vue/src/admin/status/HilosStatusCancelWorkModal.vue`, `framework/frontend/vue/src/public/HilosStatusPage.vue`; `demo/chat/frontend/src/views/Hilos/Status/Works/Works.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/Works/Works.vue`; `framework/tests/Integration/StatusWorksSchemaIntegrationTest.php`, `framework/tests/Integration/StatusMaintenancePeriodsIntegrationTest.php`, `framework/tests/Integration/StatusWorkMailIntegrationTest.php`; `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts` | Implemented by HIL-1692; source and validation paths are listed here |
-| Admin History page, merged completed facts and Overview count | `framework/backend/Pages/Status/AbstractHilosStatusHistoryPage.php`, `framework/backend/Status/DTO/StatusHistory*.php`, `framework/backend/Status/DTO/StatusOverviewData.php`, `framework/backend/Tables/Status/HilosStatusHistoryTable.php`, `framework/backend/Tables/Status/HilosStatusHistoryTableRow.php`, `framework/backend/Core/Browser/Context/BrowserContext.php`, `framework/backend/Core/Feature/Definition/StatusFeature.php`, `framework/backend/Database/Migration/Change/20261029183938100830_HIL-1693_status_history_order/up.sql`; `framework/frontend/core/src/admin/status/hilosStatusHistory.ts`, `framework/frontend/vue/src/admin/status/HilosStatusHistoryPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusPage.vue`; `demo/chat/frontend/src/views/Hilos/Status/History/History.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/History/History.vue`; `framework/tests/Unit/StatusHistoryProjectionTest.php`, `StatusHistoryTableTest.php`, `StatusOverviewProjectionTest.php`, `StatusOverviewPageTest.php`, `StatusFeatureActivationTest.php`; `framework/tests/Integration/StatusHistorySchemaIntegrationTest.php`, `StatusHistoryTableIntegrationTest.php`, `StatusHistoryFanoutIntegrationTest.php`, `StatusHistoryPageIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusHistory.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusHistoryPage.test.ts`, `HilosStatusPage.test.ts` | Landed by HIL-1693; Chat and Binance mount the built Vue page; React and Angular remain with HIL-1695 and HIL-1696 |
+| Scheduled works, maintenance observation and Completed delivery | `framework/backend/Database/Entity/Item/StatusWork.php`, `framework/backend/Database/Entity/Item/StatusWorkComponent.php`, `framework/backend/Database/Entity/Item/StatusMaintenancePeriod.php`; `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusMaintenanceObservation.php`, `framework/backend/Status/StatusMaintenanceObservationStore.php`, `framework/backend/Status/StatusPublicWork.php`, `framework/backend/Status/StatusPublicMaintenancePeriod.php`, `framework/backend/Status/StatusPublicSnapshot.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/backend/Status/StatusPublicSnapshotBuilder.php`; `framework/backend/Pages/Status/AbstractHilosStatusWorksPage.php`, `framework/backend/Tables/Status/HilosStatusWorksTable.php`; `framework/frontend/core/src/admin/status/hilosStatusWorks.ts`, `framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts`, `framework/frontend/core/src/timeZone/localDateTime.ts`, `framework/frontend/core/src/status/statusFiles.ts`, `framework/frontend/core/src/status/derivedStatus.ts`; `framework/frontend/vue/src/admin/status/HilosStatusWorksPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusWorkModal.vue`, `framework/frontend/vue/src/admin/status/HilosStatusCancelWorkModal.vue`, `framework/frontend/vue/src/public/HilosStatusPage.vue`, `framework/frontend/react/src/admin/status/HilosStatusWorksPage.tsx`, `HilosStatusWorkModal.tsx`, `HilosStatusCancelWorkModal.tsx`, `framework/frontend/react/src/public/HilosStatusPage.tsx`; `demo/chat/frontend/src/views/Hilos/Status/Works/Works.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/Works/Works.vue`, `demo/tasks/frontend/src/views/Hilos/Status/Works/Works.tsx`, `demo/ecommerce-shop/frontend/src/views/Hilos/Status/Works/Works.tsx`; `framework/tests/Integration/StatusWorksSchemaIntegrationTest.php`, `framework/tests/Integration/StatusMaintenancePeriodsIntegrationTest.php`, `framework/tests/Integration/StatusWorkMailIntegrationTest.php`; `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts`, `demo/ecommerce-shop/tests/e2e/tests/status-works.spec.ts` | Implemented by HIL-1692, with the React page and windows added by HIL-1695; source and validation paths are listed here |
+| Admin History page, merged completed facts and Overview count | `framework/backend/Pages/Status/AbstractHilosStatusHistoryPage.php`, `framework/backend/Status/DTO/StatusHistory*.php`, `framework/backend/Status/DTO/StatusOverviewData.php`, `framework/backend/Tables/Status/HilosStatusHistoryTable.php`, `framework/backend/Tables/Status/HilosStatusHistoryTableRow.php`, `framework/backend/Core/Browser/Context/BrowserContext.php`, `framework/backend/Core/Feature/Definition/StatusFeature.php`, `framework/backend/Database/Migration/Change/20261029183938100830_HIL-1693_status_history_order/up.sql`; `framework/frontend/core/src/admin/status/hilosStatusHistory.ts`, `framework/frontend/vue/src/admin/status/HilosStatusHistoryPage.vue`, `framework/frontend/vue/src/admin/status/HilosStatusPage.vue`, `framework/frontend/react/src/admin/status/HilosStatusHistoryPage.tsx`, `framework/frontend/react/src/admin/status/HilosStatusPage.tsx`; `demo/chat/frontend/src/views/Hilos/Status/History/History.vue`, `demo/binance-btc-tracker/frontend/src/views/Hilos/Status/History/History.vue`, `demo/tasks/frontend/src/views/Hilos/Status/History/History.tsx`, `demo/ecommerce-shop/frontend/src/views/Hilos/Status/History/History.tsx`; `framework/tests/Unit/StatusHistoryProjectionTest.php`, `StatusHistoryTableTest.php`, `StatusOverviewProjectionTest.php`, `StatusOverviewPageTest.php`, `StatusFeatureActivationTest.php`; `framework/tests/Integration/StatusHistorySchemaIntegrationTest.php`, `StatusHistoryTableIntegrationTest.php`, `StatusHistoryFanoutIntegrationTest.php`, `StatusHistoryPageIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusHistory.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusHistoryPage.test.ts`, `HilosStatusPage.test.ts`, `framework/frontend/react/test/HilosStatusHistoryPage.test.tsx`, `HilosStatusPage.test.tsx` | Landed by HIL-1693; Chat and Binance mount the built Vue page, Tasks and Ecommerce Shop the React page built by HIL-1695; Angular remains with HIL-1696 |
 | Separate cluster and failover proof | — | (not in the code yet — HIL-1694) |
-| React UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1695) |
+| React UI parity, including public freeze/disconnection behavior | `framework/frontend/react/src/HilosLayout.tsx`, `HilosView.tsx`, `HilosMaintenance.tsx`, `ConflictActions.tsx`; `framework/frontend/react/src/admin/status/index.ts`, `framework/frontend/react/src/status/index.ts`, `framework/frontend/react/src/index.ts`; `framework/frontend/core/src/routing/hilosUnbuiltPages.ts`; `demo/tasks/frontend/src/App.tsx`, `demo/tasks/frontend/src/views/Status/Status.tsx`, `demo/tasks/frontend/src/views/Hilos/Status/`; `demo/ecommerce-shop/frontend/src/App.tsx`, `demo/ecommerce-shop/frontend/src/views/Status/Status.tsx`, `demo/ecommerce-shop/frontend/src/views/Hilos/Status/`; `framework/frontend/react/test/HilosLayout.test.tsx`, `HilosView.test.tsx`, `HilosMaintenance.test.tsx`, `ConflictActions.test.tsx`, `HilosPublicStatusPage.test.tsx`, `HilosStatus*.test.tsx`, `statusFixtures.tsx`; `framework/frontend/core/test/routing/hilosUnbuiltPages.test.ts` | Landed by HIL-1695; `HILOS_UNBUILT_PAGES` no longer lists `react` for the six Status keys; React `ConflictActions.tsx` keeps the focus in the dialog when a conflict resolves, as the Vue one does |
 | Angular UI parity, including public freeze/disconnection behavior | — | (not in the code yet — HIL-1696) |
 
 PR-133 through PR-135 and PR-204 through PR-209 remain the code leaves' design
@@ -1450,13 +1475,26 @@ Status checks are split across these existing layers:
   are covered by `HilosStatusHistoryPage.test.ts` and `HilosStatusPage.test.ts`.
   The router's fragment-only history behavior is covered by
   `framework/frontend/core/test/routing/HilosRouter.test.ts`.
+- React rendering is covered under `framework/frontend/react/test/` by
+  `HilosPublicStatusPage.test.tsx` and `HilosStatusSubscriptionModal.test.tsx`
+  for the public page and its window, and by the `HilosStatusPage`,
+  `HilosStatusComponentsPage`, `HilosStatusSubscribersPage`,
+  `HilosStatusWorksPage` and `HilosStatusHistoryPage` tests with the tests of
+  their incident, removal, work and cancel windows, all over
+  `statusFixtures.tsx`. The shell exception is covered by `HilosLayout.test.tsx`,
+  `HilosView.test.tsx` and `HilosMaintenance.test.tsx`, the focus kept when a
+  conflict resolves by `ConflictActions.test.tsx`, and the published exports by
+  `framework/frontend/react/test/packaging.smoke.mjs`.
 - Real browser and Mailpit coverage is carried by
   `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`,
   `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`,
-  `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts`, and both
-  demos' `tests/e2e/tests/a11y.spec.ts`. These specs use light color
-  scheme and desktop Chrome; they do not claim dark-theme or narrow-viewport
-  E2E coverage.
+  `demo/binance-btc-tracker/tests/e2e/tests/status-works.spec.ts`,
+  `demo/ecommerce-shop/tests/e2e/tests/status.spec.ts`,
+  `status-subscriptions.spec.ts` and `status-works.spec.ts` of the same demo,
+  the Status steps of `demo/tasks/tests/e2e/tests/smoke.spec.ts`, and the
+  `tests/e2e/tests/a11y.spec.ts` of Chat, Binance BTC Tracker, Tasks and
+  Ecommerce Shop. These specs use light color scheme and desktop Chrome; they do
+  not claim dark-theme or narrow-viewport E2E coverage.
 - The three Status test-only commands ([Test-only moments](#test-only-moments))
   are covered on the CLI side by
   `framework/tests/Unit/Core/CLI/Commands/StatusTestHeartbeatStaleCommandTest.php`,

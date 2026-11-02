@@ -193,9 +193,8 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
       expect(resolveHilosPath(page)).toBe(path)
       expect(router.match(path)).toEqual({ page, params: {}, admin: true })
-      for (const layer of ['react', 'angular'] as const) {
-        expect(hilosUnbuiltPages(layer).has(page)).toBe(true)
-      }
+      expect(hilosUnbuiltPages('react').has(page)).toBe(false)
+      expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
       expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
       expect(hilosUnbuiltPages('vue', [page]).has(page)).toBe(false)
       expect(router.match(`${path}/7`).page).toBeNull()
@@ -205,7 +204,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.match('/status').page).toBe(HilosPages.PUBLIC_STATUS)
   })
 
-  it('registers Subscribers with the Vue view built', () => {
+  it('registers Subscribers with the Vue and React views built', () => {
     const page = HilosPages.STATUS_SUBSCRIBERS
     const path = '/hilos/status/subscribers'
     expect(page).toBe('hilos_status_subscribers')
@@ -217,10 +216,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     for (const kit of ['vue', 'react', 'angular'] as const)
-      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit !== 'vue')
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit === 'angular')
   })
 
-  it('registers Works with Vue built and pending parity views unbuilt', () => {
+  it('registers Works with the Vue and React views built', () => {
     const page = HilosPages.STATUS_WORKS
     const path = '/hilos/status/works'
     expect(page).toBe('hilos_status_works')
@@ -232,12 +231,12 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     for (const kit of ['vue', 'react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit !== 'vue')
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit === 'angular')
       expect(hilosUnbuiltPages(kit, [page]).has(page)).toBe(false)
     }
   })
 
-  it('registers History with its approved address and pending parity views unbuilt', () => {
+  it('registers History with its approved address and the Vue and React views built', () => {
     const page = HilosPages.STATUS_HISTORY
     const path = '/hilos/status/history'
     expect(page).toBe('hilos_status_history')
@@ -249,7 +248,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     for (const kit of ['vue', 'react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit !== 'vue')
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit === 'angular')
       expect(hilosUnbuiltPages(kit, [page]).has(page)).toBe(false)
     }
   })

@@ -2,7 +2,24 @@
 // '@hilos/react' is exported here. Behavior is covered by the module tests.
 import { expect, expectTypeOf, it } from 'vitest'
 import { HilosPages } from '@hilos/core'
-import type { ReadonlySignal, ScopeManager } from '@hilos/core'
+import type {
+  ActionLifecycle,
+  HilosConnection,
+  ReadonlySignal,
+  ScopeManager,
+} from '@hilos/core'
+import type {
+  HilosStatusComponentsContext,
+  HilosStatusContext,
+  HilosStatusIncidentController,
+  HilosStatusSubscriberController,
+  HilosStatusSubscribersContext,
+  HilosStatusWorkCancel,
+  HilosStatusWorkCreate,
+  HilosStatusWorkEdit,
+  HilosStatusWorksContext,
+  HilosStatusWorksState,
+} from '@hilos/core/admin/status'
 import {
   HilosAuthGateContext,
   HilosAuthSurface,
@@ -33,6 +50,16 @@ import {
   HilosPageHeadingIdContext,
   HilosRouterContext,
   HilosSkeleton,
+  HilosStatusComponentsPage,
+  HilosStatusIncidentModal,
+  HilosStatusPage,
+  HilosStatusRemoveSubscriberModal,
+  HilosStatusSubscribersPage,
+  HilosStatusWorksPage,
+  HilosStatusWorkModal,
+  HilosStatusCancelWorkModal,
+  HilosStatusHistoryPage,
+  HilosPublicStatusPage,
   HilosAvatar,
   HilosSwitch,
   HilosTableText,
@@ -64,8 +91,19 @@ import type {
   HilosAnalyticsPersonPageProps,
   HilosAppearancePageProps,
   HilosPageHeadProps,
+  HilosStatusComponentsPageProps,
+  HilosStatusIncidentModalProps,
+  HilosStatusPageProps,
+  HilosStatusRemoveSubscriberModalProps,
+  HilosStatusSubscribersPageProps,
+  HilosStatusWorksPageProps,
+  HilosStatusWorkModalProps,
+  HilosStatusCancelWorkModalProps,
+  HilosStatusHistoryPageProps,
   HilosTableTextProps,
 } from '../src/index.js'
+import * as status from '../src/admin/status/index.js'
+import * as publicStatus from '../src/status/index.js'
 import * as base from '../src/base/index.js'
 
 it('exports the @hilos/react public surface', () => {
@@ -184,6 +222,120 @@ it('exports the Appearance context page and leaves it out of the default map', (
   expectTypeOf<
     Parameters<typeof HilosAppearancePage>[0]
   >().toEqualTypeOf<HilosAppearancePageProps>()
+})
+
+it('keeps admin Status identity and exports the public page under its own root alias', () => {
+  expect(Object.keys(publicStatus)).toEqual(['HilosStatusPage'])
+  expect(HilosPublicStatusPage).toBe(publicStatus.HilosStatusPage)
+  expect(HilosPublicStatusPage).not.toBe(HilosStatusPage)
+  expect(HilosStatusPage).toBe(status.HilosStatusPage)
+  expect(base).not.toHaveProperty('HilosPublicStatusPage')
+  expect(status).not.toHaveProperty('HilosPublicStatusPage')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.PUBLIC_STATUS)
+  expectTypeOf<
+    Parameters<typeof HilosPublicStatusPage>[0]
+  >().toEqualTypeOf<publicStatus.HilosStatusPageProps>()
+  expectTypeOf<
+    publicStatus.HilosStatusPageProps['connection']
+  >().toEqualTypeOf<HilosConnection>()
+  expectTypeOf<
+    publicStatus.HilosStatusPageProps['actions']
+  >().toEqualTypeOf<ActionLifecycle>()
+  expectTypeOf<publicStatus.HilosStatusPageProps>().not.toEqualTypeOf<HilosStatusPageProps>()
+})
+
+it('exports the Status Overview, Components, Subscribers, Scheduled maintenance, History and their windows once, from admin/status the root re-exports', () => {
+  expect(status.HilosStatusPage).toBe(HilosStatusPage)
+  expect(status.HilosStatusComponentsPage).toBe(HilosStatusComponentsPage)
+  expect(status.HilosStatusIncidentModal).toBe(HilosStatusIncidentModal)
+  expect(status.HilosStatusSubscribersPage).toBe(HilosStatusSubscribersPage)
+  expect(status.HilosStatusRemoveSubscriberModal).toBe(
+    HilosStatusRemoveSubscriberModal,
+  )
+  expect(status.HilosStatusWorksPage).toBe(HilosStatusWorksPage)
+  expect(status.HilosStatusWorkModal).toBe(HilosStatusWorkModal)
+  expect(status.HilosStatusCancelWorkModal).toBe(HilosStatusCancelWorkModal)
+  expect(status.HilosStatusHistoryPage).toBe(HilosStatusHistoryPage)
+  expect(base).not.toHaveProperty('HilosStatusPage')
+  expect(base).not.toHaveProperty('HilosStatusComponentsPage')
+  expect(base).not.toHaveProperty('HilosStatusIncidentModal')
+  expect(base).not.toHaveProperty('HilosStatusSubscribersPage')
+  expect(base).not.toHaveProperty('HilosStatusRemoveSubscriberModal')
+  expect(base).not.toHaveProperty('HilosStatusWorksPage')
+  expect(base).not.toHaveProperty('HilosStatusWorkModal')
+  expect(base).not.toHaveProperty('HilosStatusCancelWorkModal')
+  expect(base).not.toHaveProperty('HilosStatusHistoryPage')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.STATUS)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.STATUS_COMPONENTS)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.STATUS_SUBSCRIBERS)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.STATUS_WORKS)
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.STATUS_HISTORY)
+  expectTypeOf<
+    Parameters<typeof HilosStatusPage>[0]
+  >().toEqualTypeOf<HilosStatusPageProps>()
+  expectTypeOf<
+    HilosStatusPageProps['context']
+  >().toEqualTypeOf<HilosStatusContext>()
+  expectTypeOf<status.HilosStatusPageProps>().toEqualTypeOf<HilosStatusPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusComponentsPage>[0]
+  >().toEqualTypeOf<HilosStatusComponentsPageProps>()
+  expectTypeOf<
+    HilosStatusComponentsPageProps['context']
+  >().toEqualTypeOf<HilosStatusComponentsContext>()
+  expectTypeOf<status.HilosStatusComponentsPageProps>().toEqualTypeOf<HilosStatusComponentsPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusIncidentModal>[0]
+  >().toEqualTypeOf<HilosStatusIncidentModalProps>()
+  expectTypeOf<
+    HilosStatusIncidentModalProps['controller']
+  >().toEqualTypeOf<HilosStatusIncidentController>()
+  expectTypeOf<status.HilosStatusIncidentModalProps>().toEqualTypeOf<HilosStatusIncidentModalProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusSubscribersPage>[0]
+  >().toEqualTypeOf<HilosStatusSubscribersPageProps>()
+  expectTypeOf<
+    HilosStatusSubscribersPageProps['context']
+  >().toEqualTypeOf<HilosStatusSubscribersContext>()
+  expectTypeOf<status.HilosStatusSubscribersPageProps>().toEqualTypeOf<HilosStatusSubscribersPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusRemoveSubscriberModal>[0]
+  >().toEqualTypeOf<HilosStatusRemoveSubscriberModalProps>()
+  expectTypeOf<
+    HilosStatusRemoveSubscriberModalProps['controller']
+  >().toEqualTypeOf<HilosStatusSubscriberController>()
+  expectTypeOf<status.HilosStatusRemoveSubscriberModalProps>().toEqualTypeOf<HilosStatusRemoveSubscriberModalProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusWorksPage>[0]
+  >().toEqualTypeOf<HilosStatusWorksPageProps>()
+  expectTypeOf<
+    HilosStatusWorksPageProps['context']
+  >().toEqualTypeOf<HilosStatusWorksContext>()
+  expectTypeOf<status.HilosStatusWorksPageProps>().toEqualTypeOf<HilosStatusWorksPageProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusWorkModal>[0]
+  >().toEqualTypeOf<HilosStatusWorkModalProps>()
+  expectTypeOf<HilosStatusWorkModalProps['controller']>().toEqualTypeOf<
+    HilosStatusWorkCreate | HilosStatusWorkEdit
+  >()
+  expectTypeOf<
+    HilosStatusWorkModalProps['state']
+  >().toEqualTypeOf<HilosStatusWorksState>()
+  expectTypeOf<status.HilosStatusWorkModalProps>().toEqualTypeOf<HilosStatusWorkModalProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusCancelWorkModal>[0]
+  >().toEqualTypeOf<HilosStatusCancelWorkModalProps>()
+  expectTypeOf<
+    HilosStatusCancelWorkModalProps['controller']
+  >().toEqualTypeOf<HilosStatusWorkCancel>()
+  expectTypeOf<status.HilosStatusCancelWorkModalProps>().toEqualTypeOf<HilosStatusCancelWorkModalProps>()
+  expectTypeOf<
+    Parameters<typeof HilosStatusHistoryPage>[0]
+  >().toEqualTypeOf<HilosStatusHistoryPageProps>()
+  expectTypeOf<
+    HilosStatusHistoryPageProps['context']
+  >().toEqualTypeOf<HilosStatusContext>()
+  expectTypeOf<status.HilosStatusHistoryPageProps>().toEqualTypeOf<HilosStatusHistoryPageProps>()
 })
 
 it('exports the shared page head once, from the base entry the root re-exports', () => {

@@ -216,6 +216,31 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.MAINTENANCE_NODES]: lazyPage(() =>
     import('./views/Hilos/Maintenance/Nodes.js').then((m) => m.default),
   ),
+  // The framework Status section: its SDK pages own the incident flows and
+  // tables; the project binds its connection, page scopes and action lifecycle.
+  [HilosPages.STATUS]: lazyPage(() =>
+    import('./views/Hilos/Status/Status.js').then((m) => m.default),
+  ),
+  [HilosPages.STATUS_COMPONENTS]: lazyPage(() =>
+    import('./views/Hilos/Status/Components/Components.js').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.STATUS_SUBSCRIBERS]: lazyPage(() =>
+    import('./views/Hilos/Status/Subscribers/Subscribers.js').then(
+      (m) => m.default,
+    ),
+  ),
+  [HilosPages.STATUS_WORKS]: lazyPage(() =>
+    import('./views/Hilos/Status/Works/Works.js').then((m) => m.default),
+  ),
+  [HilosPages.STATUS_HISTORY]: lazyPage(() =>
+    import('./views/Hilos/Status/History/History.js').then((m) => m.default),
+  ),
+  // The public /status page reads the published files without a page answer.
+  [HilosPages.PUBLIC_STATUS]: lazyPage(() =>
+    import('./views/Status/Status.js').then((m) => m.default),
+  ),
   // The framework Moderation section: its SDK pages own the tables and rule
   // flows; the project binds its connection, page scopes and action lifecycle.
   [HilosPages.MODERATION]: lazyPage(() =>

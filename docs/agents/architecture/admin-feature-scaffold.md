@@ -614,9 +614,12 @@ contract.
    `HilosPages.STATUS_COMPONENTS` and `HilosPages.STATUS_SUBSCRIBERS` map to
    `/hilos/status`, `/hilos/status/components` and
    `/hilos/status/subscribers`; `HilosPages.PUBLIC_STATUS` is the separate
-   `/status` file-reader route. React and Angular backends are ready, but their
-   Status views stay in the unbuilt-page set until HIL-1695 and HIL-1696; do not
-   expose empty tabs.
+   `/status` file-reader route. In Tasks and Ecommerce Shop, mount the public
+   React reader from `@hilos/react/status` with `{connection, actions}` and the
+   admin pages from `@hilos/react/admin/status` through thin wrappers carrying
+   the same Status context, each as a lazy page entry in `App.tsx`. Angular's
+   backend is ready, but its Status views stay in the unbuilt-page set until
+   HIL-1696; do not expose empty tabs.
 
 The shared framework tables and the existing project `TableContext` remain the
 only table binding path. Do not generate a second subscription table, a project

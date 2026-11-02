@@ -97,15 +97,18 @@ function harness(initial = '/main', unbuilt: ReadonlySet<string> = new Set()) {
 afterEach(() => vi.useRealTimers())
 
 describe('createPageViewState', () => {
-  it('mounts cold public Status without a server answer', () => {
-    const { state, pages } = harness('/status')
-    state.setPages({ [HilosPages.PUBLIC_STATUS]: componentB })
-    expect(pages.subscribe).not.toHaveBeenCalled()
-    expect(state.view.get()).toBe(componentB)
-    expect(state.loading.get()).toBe(false)
-    expect(state.error.get()).toBeNull()
-    state.dispose()
-  })
+  it.each(['vue', 'react'] as const)(
+    'mounts cold public Status built in %s without a server answer',
+    (layer) => {
+      const { state, pages } = harness('/status', hilosUnbuiltPages(layer))
+      state.setPages({ [HilosPages.PUBLIC_STATUS]: componentB })
+      expect(pages.subscribe).not.toHaveBeenCalled()
+      expect(state.view.get()).toBe(componentB)
+      expect(state.loading.get()).toBe(false)
+      expect(state.error.get()).toBeNull()
+      state.dispose()
+    },
+  )
 
   it.each(['pending', 'denied', 'ready'] as const)(
     'leaves a %s page for Status and gates every synchronous window on return',
@@ -213,7 +216,7 @@ describe('createPageViewState', () => {
     state.dispose()
   })
 
-  it.each(['react', 'angular'] as const)(
+  it.each(['angular'] as const)(
     'does not import or mount a ghost Status view in %s',
     (layer) => {
       const { state } = harness('/status', hilosUnbuiltPages(layer))

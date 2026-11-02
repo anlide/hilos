@@ -4,6 +4,27 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
 import { ConflictActions } from '../src/ConflictActions.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 
+/**
+ * A dialog on the page with its initial field and a host for the actions.
+ *
+ * @returns The dialog, its autofocus field, and the element to render into.
+ */
+function openDialog(): {
+  dialog: HTMLElement
+  field: HTMLInputElement
+  host: HTMLElement
+} {
+  const dialog = document.createElement('div')
+  dialog.setAttribute('role', 'dialog')
+  const field = document.createElement('input')
+  field.setAttribute('data-autofocus', '')
+  const host = document.createElement('div')
+  dialog.append(field, host)
+  document.body.append(dialog)
+
+  return { dialog, field, host }
+}
+
 describe('ConflictActions', () => {
   afterEach(cleanup)
 
@@ -179,6 +200,45 @@ describe('ConflictActions', () => {
     rerender(<ConflictActions mergeable />)
     expect(container.querySelector('[data-id="conflict-choices"]')).toBeNull()
     expect(read(container, 'conflict-choices-idle')).toEqual(twin)
+  })
+
+  it.each(['accept-mine', 'accept-theirs', 'merge'])(
+    'keeps keyboard focus in the modal when resolving %s removes its button',
+    (choice) => {
+      const { dialog, field, host } = openDialog()
+      try {
+        const { rerender } = render(<ConflictActions conflict mergeable />, {
+          container: host,
+        })
+        const button = host.querySelector(
+          `[data-id="conflict-${choice}"]`,
+        ) as HTMLButtonElement
+        button.focus()
+        expect(document.activeElement).toBe(button)
+        rerender(<ConflictActions mergeable />)
+        expect(document.activeElement).toBe(field)
+      } finally {
+        cleanup()
+        dialog.remove()
+      }
+    },
+  )
+
+  it('preserves an explicit focus choice when the conflict disappears', () => {
+    const { dialog, host } = openDialog()
+    const other = document.createElement('button')
+    dialog.append(other)
+    try {
+      const { rerender } = render(<ConflictActions conflict />, {
+        container: host,
+      })
+      other.focus()
+      rerender(<ConflictActions />)
+      expect(document.activeElement).toBe(other)
+    } finally {
+      cleanup()
+      dialog.remove()
+    }
   })
 })
 

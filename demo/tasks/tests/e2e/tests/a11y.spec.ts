@@ -61,6 +61,19 @@ import {
   watchDeliveryFrames,
   watchProfileRenameStatus,
   typeInto,
+  STATUS_COMPONENTS_PATH,
+  STATUS_PATH,
+  STATUS_WORKS_PATH,
+  deliveryObject,
+  expectPublicStatusAccessibility,
+  expectPublicStatusPair,
+  expectPublicStatusReadOnly,
+  expectStatusSubscribeDialog,
+  expectStatusWorkScheduleDialog,
+  expectStatusWorksAccessibility,
+  gotoPublicStatus,
+  watchPublicStatus,
+  watchStatusFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -985,5 +998,197 @@ test.describe('Maintenance accessibility', () => {
 
     await test.step('Overview opens from the keyboard', () =>
       follow('hilos_maintenance', MAINTENANCE_PATH))
+  })
+})
+
+// This project declares no Status components: its catalog is the framework's
+// single fallback, Service. The state filter offers the declared states by their
+// place; test-owned vocabulary, never read from the SDK that draws them.
+const STATUS_SERVICE = 'service'
+const STATUS_STATES = [
+  'operational',
+  'checking',
+  'partial_outage',
+  'major_outage',
+  'maintenance',
+  'unknown',
+] as const
+const STATUS_STATE_LABELS: Record<(typeof STATUS_STATES)[number], string> = {
+  operational: 'Operational',
+  checking: 'Checking',
+  partial_outage: 'Partial outage',
+  major_outage: 'Major outage',
+  maintenance: 'Maintenance',
+  unknown: 'Unknown',
+}
+
+/** The page has settled at its address under one heading, its tab alone current. */
+async function expectStatusPage(
+  page: Page,
+  pageKey: string,
+  path: string,
+): Promise<void> {
+  await expectPageReady(expect, page)
+  await expect(page).toHaveURL(path)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Status')
+  const tabs = page.getByRole('navigation', { name: 'Status pages' })
+  await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(tabs.getByTestId(`hilos-page-tab-${pageKey}`)).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+}
+
+test.describe('Status accessibility', () => {
+  // The public day strip and the maintenance form read moments in the browser's
+  // zone: picked at random from the IANA list when these tests were written, and
+  // stated here rather than left to the stand, whose project zone is
+  // Europe/Warsaw.
+  test.use({ timezoneId: 'Pacific/Norfolk' })
+
+  test('Status pages name their tables, search, filter and sort from the keyboard, and the schedule dialog keeps focus', async ({
+    page,
+  }) => {
+    const status = watchStatusFrames(page)
+    const frames = watchDeliveryFrames(page)
+    try {
+      await grantAdminToSelf(expect, page)
+
+      await test.step('the Overview titles the tab and opens Components from its live count by keyboard', async () => {
+        await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+        await expectStatusPage(page, 'hilos_status', STATUS_PATH)
+        await expect(page).toHaveTitle('Status · Hilos Tasks')
+        await expect(page.getByTestId('page-title')).toHaveText(
+          'Status · Hilos Tasks',
+        )
+        await expect.poll(() => status.latest()).toBeDefined()
+        const { components } = status.latest()!
+        const link = page.getByTestId('hilos-status-components-link')
+        await expect(link).toHaveRole('link')
+        await expect(link).toContainText(
+          `${components.operationalCount} / ${components.totalCount} operational`,
+        )
+        await link.focus()
+        await expect(link).toBeFocused()
+        await link.press('Enter')
+        await expectStatusPage(
+          page,
+          'hilos_status_components',
+          STATUS_COMPONENTS_PATH,
+        )
+      })
+
+      await test.step('Components names its table, and its search and state filter answer the keyboard', async () => {
+        await expect.poll(() => status.components.length).toBe(1)
+        const { rows } = status.components[0]
+        const [row] = (Array.isArray(rows) ? rows : []).map(deliveryObject)
+        const component = deliveryObject(deliveryObject(row.slots).component)
+        const state = component.state as (typeof STATUS_STATES)[number]
+        const table = page.getByTestId('hilos-status-components-table')
+        const service = shownByTestId(
+          table,
+          `hilos-status-component-${STATUS_SERVICE}`,
+        )
+        const noMatches = shownByTestId(table, 'hilos-table-no-matches')
+        await expect(table.getByRole('table')).toHaveAccessibleName('Status')
+        await expect(service).toContainText(String(component.name))
+
+        const search = page.getByTestId('hilos-table-search')
+        await expect(search).toHaveAccessibleName(
+          'Search by name, description or agent…',
+        )
+        await typeInto(search, 'no-such-status-component')
+        await expect(noMatches).toBeVisible()
+        await expect(service).toHaveCount(0)
+        const clear = page.getByTestId('hilos-table-search-clear')
+        await expect(clear).toHaveAccessibleName('Clear search')
+        await clear.focus()
+        await clear.press('Enter')
+        await expect(search).toHaveValue('')
+        await expect(service).toBeVisible()
+
+        const filter = page.getByTestId('hilos-table-filter-state')
+        const toggle = filter.getByTestId('hilos-dropdown-toggle')
+        const any = filter.getByTestId('hilos-dropdown-option--1')
+        const other = STATUS_STATES.indexOf(
+          state === 'major_outage' ? 'operational' : 'major_outage',
+        )
+        const option = filter.getByTestId(`hilos-dropdown-option-${other}`)
+        await expect(toggle).toHaveAccessibleName('Now: Any')
+        await toggle.focus()
+        await toggle.press('ArrowDown')
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        await expect(filter.getByRole('listbox')).toHaveAccessibleName('Now')
+        await expect(any).toBeFocused()
+        // Any comes first, then each declared state by its place.
+        for (let place = 0; place <= other; place++)
+          await page.keyboard.press('ArrowDown')
+        await expect(option).toBeFocused()
+        await option.press('Enter')
+        await expect(toggle).toBeFocused()
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+        await expect(toggle).toHaveAccessibleName(
+          `Now: ${STATUS_STATE_LABELS[STATUS_STATES[other]]}`,
+        )
+        await expect(noMatches).toBeVisible()
+        await expect(service).toHaveCount(0)
+        await toggle.press('ArrowDown')
+        await expect(any).toBeFocused()
+        await any.press('Enter')
+        await expect(toggle).toBeFocused()
+        await expect(toggle).toHaveAccessibleName('Now: Any')
+        await expect(service).toBeVisible()
+      })
+
+      await test.step('Scheduled maintenance names its table, sorts from the keyboard and keeps focus in its dialog', async () => {
+        const tab = page.getByTestId('hilos-page-tab-hilos_status_works')
+        await tab.focus()
+        await expect(tab).toBeFocused()
+        await tab.press('Enter')
+        await expectStatusPage(page, 'hilos_status_works', STATUS_WORKS_PATH)
+        await expectStatusWorksAccessibility(expect, page, frames)
+        await expectStatusWorkScheduleDialog(expect, page)
+      })
+    } finally {
+      await test.info().attach('status-accessibility-wire', {
+        body: JSON.stringify(frames),
+        contentType: 'application/json',
+      })
+      status.stop()
+      frames.stop()
+    }
+  })
+
+  test('public /status names its days and opens its subscription dialog from the keyboard', async ({
+    page,
+  }) => {
+    const log = watchPublicStatus(page)
+    try {
+      await gotoPublicStatus(expect, page)
+      await expectPublicStatusPair(expect, page, log, ({ status }) =>
+        status.components.every(
+          (component) => component.state === 'operational',
+        ),
+      )
+      await expect(page).toHaveTitle('Status · Hilos Tasks')
+      await expect(page.getByTestId('page-title')).toHaveText(
+        'Status · Hilos Tasks',
+      )
+      // The subscription control is offered over a live connection only.
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      await expectPublicStatusAccessibility(expect, page, 'Service')
+      await expectStatusSubscribeDialog(expect, page)
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('modal')).toBeHidden()
+      expectPublicStatusReadOnly(expect, log)
+    } finally {
+      await log.stop()
+      await test.info().attach('public-status-accessibility-files', {
+        body: JSON.stringify(log),
+        contentType: 'application/json',
+      })
+    }
   })
 })

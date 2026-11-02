@@ -417,6 +417,11 @@ function KnownPage() {
   return <div data-id="known-page">Known</div>
 }
 
+/** The public Status page as the outlet sees it: a page with no server answer. */
+function PublicFileReader() {
+  return <div data-id="public-file-reader">Public file reader</div>
+}
+
 function navigablePages(): NavigablePages {
   const pageLoading = createSignal(false)
   return {
@@ -550,6 +555,7 @@ function controlledRouter(
       main: { path: '/', admin: false },
       lazy: { path: '/lazy/{id?}', admin: true },
       other: { path: '/other', admin: true },
+      [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },
     }),
     {
       ...navigablePages(),
@@ -615,6 +621,103 @@ async function settleCode(): Promise<void> {
     await Promise.resolve()
   })
 }
+
+describe('HilosView public Status assembly (HIL-1690)', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it.each(['pending', 'ready', 'stale', 401, 403, 404] as const)(
+    'leaves the previous %s subscription behind and restores ordinary waiting',
+    async (previous) => {
+      const { router, answer, pageError, pageLoading, subscribe } =
+        controlledRouter()
+      const status = trackedPage('public-file-reader')
+      const auth = trackedPage('auth-surface')
+      const { container } = renderPages(
+        router,
+        { main: KnownPage, [HilosPages.PUBLIC_STATUS]: status.component },
+        { authSurface: auth.component },
+      )
+      if (previous !== 'pending') act(answer)
+      if (previous === 'stale') act(() => pageLoading.set(true))
+      if (typeof previous === 'number') {
+        act(() => pageError.set({ ...NOT_FOUND, httpCode: previous }))
+        expect(
+          container.querySelector('[data-id="auth-surface"]') !== null,
+        ).toBe(previous === 401)
+      }
+      subscribe.mockClear()
+      act(() => router.navigate('/status'))
+      await settleCode()
+      expect(
+        container.querySelector('[data-id="public-file-reader"]'),
+      ).not.toBeNull()
+      expect(container.querySelector('[data-id="auth-surface"]')).toBeNull()
+      expect(container.querySelector('[data-id="page-error"]')).toBeNull()
+      expect(departure().childElementCount).toBe(0)
+      expect(subscribe).not.toHaveBeenCalled()
+      // Late old refusal/loading and generic session hooks cannot replace files.
+      act(() => {
+        pageError.set({ ...NOT_FOUND, httpCode: 401 })
+        pageLoading.set(true)
+        router.denyCurrentPage()
+        router.awaitPageAnswer()
+      })
+      expect(
+        container.querySelector('[data-id="public-file-reader"]'),
+      ).not.toBeNull()
+      expect(marker()).toBe('ready')
+      act(() => router.navigate('/'))
+      expect(container.querySelector('[data-id="known-page"]')).toBeNull()
+      expect(marker()).toBe('loading')
+      act(answer)
+      await settleCode()
+      expect(container.querySelector('[data-id="known-page"]')).not.toBeNull()
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'drops the departure while public lazy code is pending and handles its %s independently of old frames',
+    async (outcome) => {
+      const pending = deferred<ComponentType>()
+      const { router, answer, pageError, pageLoading } = controlledRouter()
+      const status = trackedPage('public-file-reader')
+      const { container } = renderPages(router, {
+        main: KnownPage,
+        [HilosPages.PUBLIC_STATUS]: lazyPage(() => pending.promise),
+      })
+      act(answer)
+      await settleCode()
+      expect(container.querySelector('[data-id="known-page"]')).not.toBeNull()
+      act(() => router.navigate('/status'))
+      expect(marker()).toBe('loading')
+      expect(departure().childElementCount).toBe(0)
+      expect(container.querySelector('[data-id="known-page"]')).toBeNull()
+      expect(status.mounted).not.toHaveBeenCalled()
+      act(() => {
+        pageError.set({ ...NOT_FOUND, httpCode: 401 })
+        pageLoading.set(true)
+      })
+      if (outcome === 'resolve') pending.resolve(status.component)
+      else pending.reject(new Error('Import failed'))
+      await settleCode()
+      await settleCode()
+      expect(marker()).toBe(outcome === 'resolve' ? 'ready' : 'error')
+      expect(
+        container.querySelector('[data-id="public-file-reader"]') !== null,
+      ).toBe(outcome === 'resolve')
+      if (outcome === 'reject') {
+        expect(
+          container
+            .querySelector('[data-id="page-error"]')
+            ?.getAttribute('data-error-code'),
+        ).toBe('503')
+      }
+      expect(departure().childElementCount).toBe(0)
+    },
+  )
+})
 
 describe('HilosView lazy pages', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -1280,6 +1383,7 @@ describe('HilosView and a page shell under a live deletion', () => {
               kind === 'eager'
                 ? page.component
                 : lazyPage(() => Promise.resolve(page.component)),
+            [HilosPages.PUBLIC_STATUS]: PublicFileReader,
           }}
         />
       </HilosRouterContext.Provider>
@@ -1412,6 +1516,26 @@ describe('HilosView and a page shell under a live deletion', () => {
     expect(document.querySelector('[data-id="hilos-admin-page"]')).toBeNull()
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
     expect(pageErrors()).toHaveLength(0)
+  })
+
+  it('leaves a retained deleted card and its dialog for the public file reader', async () => {
+    const { pageError, router } = await openCard(true)
+    act(() => pageError.set(CARD_DELETED))
+    expect(
+      document.querySelector('[data-id="hilos-admin-page"]'),
+    ).not.toBeNull()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+
+    act(() => router.navigate('/status'))
+    await settleCode()
+
+    expect(
+      document.querySelector('[data-id="public-file-reader"]'),
+    ).not.toBeNull()
+    expect(document.querySelector('[data-id="hilos-admin-page"]')).toBeNull()
+    expect(pageErrors()).toHaveLength(0)
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(departure().childElementCount).toBe(0)
   })
 
   it('replaces a card that did not opt in, line and all', async () => {

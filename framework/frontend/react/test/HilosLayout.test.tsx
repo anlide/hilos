@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -49,6 +49,7 @@ import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosModal } from '../src/HilosModal.js'
 import { HilosView } from '../src/HilosView.js'
 import { LoadingButton } from '../src/LoadingButton.js'
+import { HilosStatusPage } from '../src/public/HilosStatusPage.js'
 import {
   useConnectionInteraction,
   type ConnectionInteraction,
@@ -2953,5 +2954,303 @@ describe('HilosLayout connection interaction (HIL-1651)', () => {
     expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
       true,
     )
+  })
+})
+
+/**
+ * The real public file reader inside the real shell, on a route the case moves,
+ * with a shell dialog in the user region that keeps the caller's policy.
+ *
+ * @param feed The shell's connection.
+ */
+function publicShell(feed: ReturnType<typeof shellFeed>) {
+  let allowed = false
+  let modalOpen = false
+  const mutate = vi.fn()
+  const actions = new ActionLifecycle(feed.connection)
+  const currentRoute = createSignal<PageRouteMatch>({
+    page: HilosPages.PUBLIC_STATUS,
+    params: {},
+    admin: false,
+  })
+  const router: HilosRouter = {
+    ...routerOn(HilosPages.PUBLIC_STATUS),
+    currentRoute,
+  }
+  const draw = () => (
+    <HilosRouterContext.Provider value={router}>
+      <HilosLayout
+        connection={feed.connection}
+        allowDisconnectedInteraction={allowed}
+        user={
+          <HilosModal
+            open={modalOpen}
+            aria-label="Protected action"
+            initialFocus="dialog"
+          >
+            <button
+              type="button"
+              data-id="shell-dialog-action"
+              onClick={mutate}
+            >
+              Save
+            </button>
+          </HilosModal>
+        }
+      >
+        <HilosStatusPage connection={feed.connection} actions={actions} />
+      </HilosLayout>
+    </HilosRouterContext.Provider>
+  )
+  const view = render(draw())
+  const update = async (run: () => void): Promise<void> => {
+    await act(async () => {
+      run()
+      await Promise.resolve()
+    })
+  }
+  const query = (id: string): HTMLElement | null =>
+    view.container.querySelector<HTMLElement>(`[data-id="${id}"]`)
+
+  return {
+    mutate,
+    query,
+    update,
+    route: (page: string) =>
+      update(() =>
+        currentRoute.set({
+          page,
+          params: {},
+          admin: page === HilosPages.STATUS,
+        }),
+      ),
+    configure: (options: { allow?: boolean; modalOpen?: boolean }) =>
+      update(() => {
+        allowed = options.allow ?? allowed
+        modalOpen = options.modalOpen ?? modalOpen
+        view.rerender(draw())
+      }),
+    /** Let the reader accept its file pair, then read two days of the strip. */
+    async readDay(): Promise<void> {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      const days = view.container.querySelectorAll<HTMLButtonElement>(
+        '[data-id="public-status-days-30"] button',
+      )
+      const day = days[0]!
+      expect(day.disabled).toBe(false)
+      expect(day.closest('fieldset')?.disabled).toBe(false)
+      expect(day.closest('[inert]')).toBeNull()
+      expect(day.getAttribute('aria-disabled')).toBeNull()
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+      await update(() => {
+        day.focus()
+        day.dispatchEvent(event)
+      })
+      expect(event.defaultPrevented).toBe(false)
+      expect(query('public-status-day-detail')?.textContent).toBe(
+        day.getAttribute('aria-label'),
+      )
+      const last = days[days.length - 1]!
+      await update(() => last.focus())
+      expect(document.activeElement).toBe(last)
+      expect(query('public-status-day-detail')?.textContent).toBe(
+        last.getAttribute('aria-label'),
+      )
+      expect(query('conn-state')).not.toBeNull()
+    },
+  }
+}
+
+describe('HilosLayout public Status exception (HIL-1690)', () => {
+  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
+
+  beforeEach(() => {
+    const now = Date.now()
+    const projection = {
+      schemaVersion: 1,
+      revision: 'shell-public-status',
+      generatedAt: now,
+      config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
+      components: [
+        {
+          componentKey: 'site',
+          name: 'Site',
+          description: 'Public service',
+          state: 'operational',
+        },
+      ],
+      candidates: [],
+      outages: [],
+      scheduledWorks: [],
+      maintenancePeriods: [],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () =>
+          url.endsWith('/status.json')
+            ? projection
+            : {
+                schemaVersion: 1,
+                revision: projection.revision,
+                aliveAt: now,
+              },
+      })),
+    )
+  })
+
+  afterEach(async () => {
+    await unbind?.()
+    unbind = undefined
+    cleanup()
+    document.body.classList.remove('modal-open')
+    hilosToasts.clear()
+    vi.unstubAllGlobals()
+  })
+
+  it('paints cold file content without releasing the first-frame hold or ordinary routes', async () => {
+    const feed = shellFeed()
+    feed.push({ state: 'disconnected', firstFrameHeld: true }, 'firstFrameHold')
+    const shell = publicShell(feed)
+    await shell.readDay()
+    expect(shell.query('hilos-boot-state')?.getAttribute('data-state')).toBe(
+      'ready',
+    )
+    expect(feed.connection.firstFrameHeld).toBe(true)
+    expect(shell.query('nav-brand')?.tagName).toBe('SPAN')
+    expect(shell.query('app-footer')).toBeNull()
+    for (const page of [
+      HilosPages.ABOUT,
+      HilosPages.TERMS,
+      HilosPages.STATUS,
+    ]) {
+      await shell.route(page)
+      expect(shell.query('app-root')).toBeNull()
+      expect(shell.query('hilos-boot-state')?.getAttribute('data-state')).toBe(
+        'held',
+      )
+      await shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    }
+  })
+
+  it('keeps file controls usable through freeze phases and restores the ordinary cover', async () => {
+    const feed = shellFeed()
+    const shell = publicShell(feed)
+    for (const status of [
+      FROZEN,
+      { ...FROZEN, acceptsPass: true },
+      { ...FROZEN, acceptsPass: true, passIssued: true },
+      ADMITTED,
+    ]) {
+      await shell.update(() => {
+        feed.push({ protectedMode: status }, 'protectedMode')
+        feed.push({ state: 'reconnecting' }, 'state')
+      })
+      await shell.readDay()
+      expect(shell.query('maintenance')).toBeNull()
+      expect(shell.query('protected-mode-banner')).toBeNull()
+      await shell.route(HilosPages.STATUS)
+      expect(shell.query('maintenance') !== null).toBe(status.active)
+      if (!status.active) {
+        expect(
+          (shell.query('page-interaction-scope') as HTMLFieldSetElement)
+            .disabled,
+        ).toBe(true)
+      }
+      await shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    }
+  })
+
+  it.each(['blocked', 'frozen', 'takeover'] as const)(
+    'keeps public reading under %s and restores the ordinary account restriction',
+    async (standing) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(
+        standing === 'blocked'
+          ? BLOCKED
+          : standing === 'frozen'
+            ? reconsentHandshake({ frozen: true, shown: 'frozen' })
+            : {
+                ...TAKEOVER,
+                data: {
+                  impersonationPolicy: {
+                    ...DEFAULT_IMPERSONATION_POLICY,
+                    viewOnly: true,
+                  },
+                },
+              },
+      )
+      const feed = shellFeed()
+      feed.push({ state: 'disconnected' }, 'state')
+      const shell = publicShell(feed)
+      await shell.readDay()
+      expect(shell.query('account-blocked')).toBeNull()
+      expect(shell.query('legal-frozen-screen')).toBeNull()
+      if (standing === 'takeover') {
+        const stop = shell.query('impersonation-stop') as HTMLButtonElement
+        expect(stop.disabled).toBe(true)
+        expect((shell.query('nav-logout') as HTMLButtonElement).disabled).toBe(
+          true,
+        )
+        await shell.update(() => stop.click())
+        expect(session.source.sent).toHaveLength(0)
+      }
+      await shell.route('ordinary')
+      expect(
+        (shell.query('page-interaction-scope') as HTMLFieldSetElement).disabled,
+      ).toBe(true)
+      if (standing !== 'takeover') {
+        expect(
+          shell.query(
+            standing === 'blocked' ? 'account-blocked' : 'legal-frozen-screen',
+          ),
+        ).not.toBeNull()
+      }
+      await shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    },
+  )
+
+  it('restores the caller interaction policy on a rapid ordinary round trip', async () => {
+    const feed = shellFeed()
+    feed.push({ state: 'disconnected' }, 'state')
+    const shell = publicShell(feed)
+    await shell.readDay()
+    for (const allow of [false, true, false]) {
+      await shell.configure({ allow })
+      await shell.route('ordinary')
+      expect(
+        (shell.query('page-interaction-scope') as HTMLFieldSetElement).disabled,
+      ).toBe(!allow)
+      await shell.route(HilosPages.PUBLIC_STATUS)
+      await shell.readDay()
+    }
+  })
+
+  it('keeps a shell action dialog blocked while public day controls are released', async () => {
+    const feed = shellFeed()
+    feed.push({ state: 'disconnected' }, 'state')
+    const shell = publicShell(feed)
+    await shell.readDay()
+    await shell.configure({ modalOpen: true })
+    const action = document.querySelector<HTMLButtonElement>(
+      '[data-id="shell-dialog-action"]',
+    )!
+    const scope = action.closest<HTMLFieldSetElement>(
+      '[data-id="modal-interaction-scope"]',
+    )!
+    expect(scope.disabled).toBe(true)
+    await shell.update(() => action.click())
+    expect(shell.mutate).not.toHaveBeenCalled()
+    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
+    expect(scope.disabled).toBe(false)
+    await shell.update(() => action.click())
+    expect(shell.mutate).toHaveBeenCalledTimes(1)
   })
 })

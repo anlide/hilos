@@ -10,11 +10,15 @@
 // conflict is unresolved, the three resolution choices: keep mine, take theirs,
 // and merge where the surface asks for it. Save stays disabled until the
 // conflict is resolved. The handlers fire the choice; the parent form applies
-// it against the core threeWayMerge result. In the page's area of a takeover
-// that only looks Save stands disabled — the default one and the custom one
-// alike (HIL-1170); Cancel and the conflict choices, which edit only the draft
-// in this window, stay as always. Bootstrap classes only.
+// it against the core threeWayMerge result. Resolving a conflict removes its
+// focused button, so the focus returns to the dialog's initial focus, unless it
+// has deliberately moved to another control or modal. In the page's area of a
+// takeover that only looks Save stands disabled — the default one and the
+// custom one alike (HIL-1170); Cancel and the conflict choices, which edit only
+// the draft in this window, stay as always. Bootstrap classes only.
+import { useCallback, useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { focusInitial } from '@hilos/core/base'
 
 import { useLookOnly } from './hilosLookOnly.js'
 
@@ -76,11 +80,43 @@ export function ConflictActions({
   const lookOnly = useLookOnly()
   const disabled = disableSave || conflict || lookOnly.locked
   const handleSave = (): void => onSave?.()
+  const root = useRef<HTMLDivElement>(null)
+  const leftDialog = useRef<HTMLElement | null>(null)
+
+  // Resolving a conflict removes its focused button. Keep keyboard focus in the
+  // same dialog, while preserving a deliberate move to another control or modal.
+  // React lets go of the ref before it removes the block, so the cleanup still
+  // sees whether the focus stood among the choices.
+  const choices = useCallback((block: HTMLDivElement | null) => {
+    if (block === null) return
+
+    return () => {
+      leftDialog.current = block.contains(block.ownerDocument.activeElement)
+        ? block.closest<HTMLElement>('[role="dialog"]')
+        : null
+    }
+  }, [])
+  useLayoutEffect(() => {
+    const dialog = leftDialog.current
+    leftDialog.current = null
+    if (conflict || dialog === null) return
+    if (!root.current?.isConnected || !dialog.isConnected) return
+    const active = dialog.ownerDocument.activeElement
+    if (active === null || active === dialog.ownerDocument.body)
+      focusInitial(dialog)
+  }, [conflict])
 
   return (
-    <div className="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap">
+    <div
+      ref={root}
+      className="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap"
+    >
+      {/* Keyed apart, so the choices leave whole and their ref lets go first;
+          unkeyed, React would turn them into the twin and drop the buttons. */}
       {conflict ? (
         <div
+          key="choices"
+          ref={choices}
           className="hilos-conflict-choices d-flex gap-2"
           data-id="conflict-choices"
         >
@@ -113,6 +149,7 @@ export function ConflictActions({
         </div>
       ) : (
         <div
+          key="idle"
           className="hilos-conflict-choices d-flex gap-2 invisible"
           aria-hidden="true"
           data-id="conflict-choices-idle"

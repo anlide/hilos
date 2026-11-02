@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
+  HILOS_INTERACTION_REGION_ATTR,
   PROTECTED_MODE_INACTIVE,
   PROTECTED_MODE_PASS_COPY,
   RT_STALENESS_FRESH,
@@ -202,6 +203,29 @@ function surface(container: HTMLElement, id: string): Element | null {
   return container.querySelector(`[data-id="${id}"]`)
 }
 
+/**
+ * Click a link the way a person does, and say whether anything before the
+ * browser's own navigation took the click away. The navigation itself is
+ * canceled at the link, so the document stays where it is.
+ *
+ * @param link The link to follow.
+ */
+function followable(link: Element): boolean {
+  let prevented = true
+  link.addEventListener(
+    'click',
+    (event) => {
+      prevented = event.defaultPrevented
+      event.preventDefault()
+    },
+    { once: true },
+  )
+  link.dispatchEvent(
+    new MouseEvent('click', { bubbles: true, cancelable: true }),
+  )
+  return !prevented
+}
+
 describe('HilosMaintenance', () => {
   // The refusal's detail panel is a HilosModal, which portals to <body>:
   // assertions about it query the document.
@@ -209,6 +233,55 @@ describe('HilosMaintenance', () => {
     cleanup()
     document.body.classList.remove('modal-open')
   })
+
+  it.each([FROZEN, FROZEN_WITHOUT_COPY, VERIFYING, MINTED, REJECTED])(
+    'keeps one native Service status link through the maintenance and code phases: %j',
+    (status) => {
+      for (const adminSurface of [false, true]) {
+        const feed = fakeConnection(status, RT_STALENESS_FRESH, 'disconnected')
+        const { container, unmount } = render(
+          <HilosMaintenance
+            status={status}
+            connection={feed.connection}
+            adminSurface={adminSurface}
+          />,
+        )
+        const assertLink = (): void => {
+          const links = container.querySelectorAll('a')
+          expect(links).toHaveLength(1)
+          const link = links[0]!
+          expect(link.textContent).toBe('Service status')
+          expect(link.getAttribute('href')).toBe('/status')
+          expect(link.getAttribute('data-id')).toBe(
+            'maintenance-service-status',
+          )
+          expect(link.getAttribute('role')).toBeNull()
+          expect(link.getAttribute('aria-disabled')).toBeNull()
+          expect(link.closest('fieldset, [inert], form')).toBeNull()
+          expect(followable(link)).toBe(true)
+          expect(feed.presented).toEqual([])
+        }
+        assertLink()
+        for (const progress of [
+          restoreFrame(),
+          restoreFrame({ running: false, outcome: 'success' }),
+          restoreFrame({
+            running: false,
+            outcome: 'error',
+            failureReason: 'Restore refused',
+          }),
+        ]) {
+          act(() => feed.pushRestore(progress))
+          expect(surface(container, 'maintenance-restore')).not.toBeNull()
+          assertLink()
+        }
+        expect(surface(container, 'maintenance-pass-form') !== null).toBe(
+          status.acceptsPass && status.passIssued && adminSurface,
+        )
+        unmount()
+      }
+    },
+  )
 
   it('renders the copy the backend authored', () => {
     const { container } = render(
@@ -757,6 +830,20 @@ describe('HilosLayout under protected mode', () => {
     expect(surface(container, 'app-footer')).toBeNull()
     // The one status worth telling the visitor during planned work.
     expect(surface(container, 'conn-state')).not.toBeNull()
+  })
+
+  it('leaves the Service status link outside the page gate while the link is down', () => {
+    const feed = fakeConnection(MINTED, RT_STALENESS_FRESH, 'disconnected')
+    const container = renderShell(feed.connection)
+
+    const link = surface(container, 'maintenance-service-status')!
+    expect(link.getAttribute('href')).toBe('/status')
+    expect(link.closest('fieldset, [inert]')).toBeNull()
+    expect(
+      container.querySelector(`[${HILOS_INTERACTION_REGION_ATTR}]`),
+    ).toBeNull()
+    expect(followable(link)).toBe(true)
+    expect(feed.presented).toEqual([])
   })
 
   it('carries a banner over the application for whoever is inside the window', () => {

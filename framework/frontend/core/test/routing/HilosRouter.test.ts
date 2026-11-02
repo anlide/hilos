@@ -164,22 +164,25 @@ describe('public Status without a server page', () => {
     return { navigator, pages, scopes, frames, browser }
   }
 
-  it('cold-loads without a handshake, subscription or page scope', () => {
-    const { navigator, pages, scopes, frames } = setup('/status')
-    expect(navigator.currentRoute.get()).toEqual({
-      page: HilosPages.PUBLIC_STATUS,
-      params: {},
-      admin: false,
-    })
-    expect(navigator.currentTitle.get()).toBe('Status')
-    expect(navigator.pageError.get()).toBeNull()
-    expect(navigator.pageLoading.get()).toBe(false)
-    expect(scopes.page()).toBeUndefined()
-    expect(frames).toEqual([])
-    pages.releaseOnSession()
-    expect(frames).toEqual([])
-    navigator.stop()
-  })
+  it.each(['vue', 'react'] as const)(
+    'cold-loads a built %s Status without a handshake, subscription or page scope',
+    (layer) => {
+      const { navigator, pages, scopes, frames } = setup('/status', layer)
+      expect(navigator.currentRoute.get()).toEqual({
+        page: HilosPages.PUBLIC_STATUS,
+        params: {},
+        admin: false,
+      })
+      expect(navigator.currentTitle.get()).toBe('Status')
+      expect(navigator.pageError.get()).toBeNull()
+      expect(navigator.pageLoading.get()).toBe(false)
+      expect(scopes.page()).toBeUndefined()
+      expect(frames).toEqual([])
+      pages.releaseOnSession()
+      expect(frames).toEqual([])
+      navigator.stop()
+    },
+  )
 
   it.each(['pending', 'denied'] as const)(
     'leaves a %s subscription and ignores its late answer and error',
@@ -223,7 +226,7 @@ describe('public Status without a server page', () => {
     },
   )
 
-  it.each(['react', 'angular'] as const)(
+  it.each(['angular'] as const)(
     'refuses an unbuilt %s Status before applying the file-reader exception',
     (layer) => {
       const { navigator, pages, frames } = setup('/status', layer)

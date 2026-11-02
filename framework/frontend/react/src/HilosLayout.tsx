@@ -30,7 +30,10 @@
 // between the project home, the admin section, and the public pages. While the
 // connection reports protected mode the shell becomes the maintenance surface
 // (HilosMaintenance) and keeps only the connection indicator — every other
-// region of the shell links to a page the freeze has shut. On the very first
+// region of the shell links to a page the freeze has shut. Only PUBLIC_STATUS
+// keeps its public file reader, local day controls and a passive project brand.
+// It also paints during the first-frame hold without releasing that connection
+// hold or the restrictions on shell requests. On the very first
 // frame there is nothing to report yet, and on a browser that has met
 // maintenance here the core holds that frame back (HIL-613): the shell then
 // renders only the hidden hilos-boot-state marker, so a reload into a frozen
@@ -200,6 +203,47 @@ const NO_ROUTE = createSignal<PageRouteMatch>({
 })
 
 /**
+ * One connection interaction state owned by the mounted shell. Rendering
+ * (including a discarded StrictMode render or SSR) creates no connection
+ * subscription. Effect replay gets a fresh core instance after disposal;
+ * committed input changes update that instance in place.
+ *
+ * @param connection The shell's current connection.
+ * @param allowDisconnectedInteraction Whether this state releases interaction without a connection.
+ * @returns The holder of the live state, empty before mount and after disposal.
+ */
+function useShellInteractionState(
+  connection: HilosConnection,
+  allowDisconnectedInteraction: boolean,
+): ReadonlySignal<ConnectionInteractionState | null> {
+  const [holder] = useState(() =>
+    createSignal<ConnectionInteractionState | null>(null),
+  )
+  useLayoutEffect(() => {
+    let state = holder.get()
+    if (state === null) {
+      state = createConnectionInteractionState(
+        connection,
+        allowDisconnectedInteraction,
+      )
+      holder.set(state)
+    } else {
+      state.setConnection(connection)
+      state.setAllowDisconnectedInteraction(allowDisconnectedInteraction)
+    }
+  }, [holder, connection, allowDisconnectedInteraction])
+  useLayoutEffect(
+    () => () => {
+      holder.get()?.dispose()
+      holder.set(null)
+    },
+    [holder],
+  )
+
+  return holder
+}
+
+/**
  * The application shell: top navigation with the brand, the admin gear, the
  * live connection indicator, and the routed page content.
  *
@@ -215,34 +259,29 @@ export function HilosLayout({
   banner,
   children,
 }: HilosLayoutProps) {
-  // Rendering (including a discarded StrictMode render or SSR) creates no
-  // connection subscription. Effect replay gets a fresh core instance after
-  // disposal; committed input changes update that instance in place.
-  const [interactionHolder] = useState(() =>
-    createSignal<ConnectionInteractionState | null>(null),
+  // Mirror the navigator's current page title: set it as the document title so
+  // the browser tab tracks the no-refresh navigation, and render it in the live
+  // region below so a screen reader announces the page change (WCAG 2.4.2).
+  // Without a router (tests, the hard-link fallback) the title stays empty.
+  const router = useContext(HilosRouterContext)
+  const pageTitle = useSignal(router?.currentTitle ?? NO_TITLE)
+  const currentRoute = useSignal(router?.currentRoute ?? NO_ROUTE)
+  // Only this file reader has local content before welcome and under a freeze.
+  const publicStatus = currentRoute.page === HilosPages.PUBLIC_STATUS
+
+  const interactionHolder = useShellInteractionState(
+    connection,
+    allowDisconnectedInteraction,
   )
   const interaction = useSignal(interactionHolder)
   const unavailable = useSignal(interaction?.unavailable ?? NO_UNAVAILABILITY)
-  useLayoutEffect(() => {
-    let state = interactionHolder.get()
-    if (state === null) {
-      state = createConnectionInteractionState(
-        connection,
-        allowDisconnectedInteraction,
-      )
-      interactionHolder.set(state)
-    } else {
-      state.setConnection(connection)
-      state.setAllowDisconnectedInteraction(allowDisconnectedInteraction)
-    }
-  }, [interactionHolder, connection, allowDisconnectedInteraction])
-  useLayoutEffect(
-    () => () => {
-      interactionHolder.get()?.dispose()
-      interactionHolder.set(null)
-    },
-    [interactionHolder],
+  // The automatic file-reader exception belongs to the page DOM only. Shell
+  // dialogs retain the caller's policy and cannot gain offline action controls.
+  const pageInteractionHolder = useShellInteractionState(
+    connection,
+    publicStatus || allowDisconnectedInteraction,
   )
+  const pageInteraction = useSignal(pageInteractionHolder)
 
   const pageRoot = useRef<HTMLElement>(null)
   const pageFieldset = useRef<HTMLFieldSetElement>(null)
@@ -264,7 +303,8 @@ export function HilosLayout({
   // worth telling the visitor. The state is read from the connection, not from
   // a page store, so it outlives routing and subscription lifecycles.
   const protectedMode = useProtectedMode(connection)
-  const underMaintenance = protectedMode.active
+  const firstFrameHeld = useFirstFrameHold(connection)
+  const underMaintenance = protectedMode.active || firstFrameHeld
 
   // The opposite side of the same state: whoever the mode does NOT hold, while
   // it still holds the node, is inside a system that is closed to everybody else
@@ -272,7 +312,9 @@ export function HilosLayout({
   // from the connection for the same reason the surface does - navigation, a
   // reconnect, an F5 and a second tab all learn it from the frame rather than
   // from a store that would have to be rebuilt on each of them.
-  const verificationBanner = protectedModeBannerCopy(protectedMode)
+  const verificationBanner = publicStatus
+    ? undefined
+    : protectedModeBannerCopy(protectedMode)
 
   // The second framework strip (HIL-1064): the session says an administrator
   // stands behind it, so the person is told whom they are acting as and given
@@ -395,15 +437,8 @@ export function HilosLayout({
   // draws nothing at all in the meantime — not a spinner, not a placeholder: the
   // wait is measured in the time one frame takes, and anything drawn in it is a
   // second flash replacing the first.
-  const firstFrameHeld = useFirstFrameHold(connection)
-
-  // Mirror the navigator's current page title: set it as the document title so
-  // the browser tab tracks the no-refresh navigation, and render it in the live
-  // region below so a screen reader announces the page change (WCAG 2.4.2).
-  // Without a router (tests, the hard-link fallback) the title stays empty.
-  const router = useContext(HilosRouterContext)
-  const pageTitle = useSignal(router?.currentTitle ?? NO_TITLE)
-  const currentRoute = useSignal(router?.currentRoute ?? NO_ROUTE)
+  // Release this screen's paint only; the connection's hold and identity persist.
+  const shellHeld = firstFrameHeld && !publicStatus
 
   // The disclosure is private to this mounted shell. Navigation still belongs
   // to the existing router; server and shared runtime state do not hold it.
@@ -531,7 +566,9 @@ export function HilosLayout({
       ? ''
       : formatHilosLegalReconsentBadge(reconsentDue, reconsentNow)
   const frozenShown =
-    frozen && !HILOS_FROZEN_OPEN_PAGES.includes(currentRoute.page ?? '')
+    !publicStatus &&
+    frozen &&
+    !HILOS_FROZEN_OPEN_PAGES.includes(currentRoute.page ?? '')
   useEffect(() => {
     if (frozenShown) {
       void hilosLegalReconsent.load()
@@ -543,16 +580,22 @@ export function HilosLayout({
     }
   }, [pageTitle])
 
+  // The maintenance surface stands in the content's place on every page but the
+  // public file reader, which neither a freeze nor the first-frame hold replaces.
+  const maintenanceShown = underMaintenance && !publicStatus
+  // The fieldset exists only in the ordinary branch. Removing it also removes
+  // the main's capture gate, so maintenance can establish its own pass connection.
+  const pageScopeDrawn = !shellHeld && !maintenanceShown
   useLayoutEffect(() => {
     const root = pageRoot.current
     const fieldset = pageFieldset.current
-    if (!root || !fieldset || !interaction) return
+    if (!root || !fieldset || !pageInteraction) return
     return bindInteractionBlock(root, {
       fieldset,
-      blocked: interaction.blocked,
+      blocked: pageInteraction.blocked,
       descriptionId: HILOS_CONNECTION_STATUS_TEXT_ID,
     })
-  }, [interaction, underMaintenance, firstFrameHeld])
+  }, [pageInteraction, pageScopeDrawn])
 
   return (
     <HilosConnectionInteractionContext.Provider value={interaction}>
@@ -561,10 +604,10 @@ export function HilosLayout({
       held. */}
       <div
         data-id="hilos-boot-state"
-        data-state={firstFrameHeld ? 'held' : 'ready'}
+        data-state={shellHeld ? 'held' : 'ready'}
         hidden
       />
-      {!firstFrameHeld && (
+      {!shellHeld && (
         <div
           className="d-flex flex-column vh-100 overflow-hidden"
           data-id="app-root"
@@ -589,7 +632,7 @@ export function HilosLayout({
             aria-label="Main"
           >
             <div className="container">
-              {!underMaintenance && (
+              {!underMaintenance ? (
                 <HilosLink
                   to="/"
                   className="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
@@ -597,7 +640,14 @@ export function HilosLayout({
                 >
                   {brand}
                 </HilosLink>
-              )}
+              ) : publicStatus ? (
+                <span
+                  className="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                  data-id="nav-brand"
+                >
+                  {brand}
+                </span>
+              ) : null}
               {!underMaintenance && nav != null && nav !== false && (
                 <div
                   id="hilos-nav-panel"
@@ -844,10 +894,10 @@ export function HilosLayout({
             ref={pageRoot}
             tabIndex={-1}
             className={`container flex-grow-1 min-h-0 overflow-auto py-4${
-              underMaintenance ? ' d-flex flex-column' : ''
+              maintenanceShown ? ' d-flex flex-column' : ''
             }`}
           >
-            {underMaintenance ? (
+            {maintenanceShown ? (
               <HilosMaintenance
                 status={protectedMode}
                 connection={connection}
@@ -859,7 +909,7 @@ export function HilosLayout({
                 className="border-0 m-0 p-0 min-w-0 h-100"
                 data-id="page-interaction-scope"
               >
-                {accountBlocked !== null ? (
+                {accountBlocked !== null && !publicStatus ? (
                   <HilosAccountBlocked notice={accountBlocked} />
                 ) : frozenShown ? (
                   <div

@@ -4,15 +4,16 @@
 // planned work rather than a generic outage. The words come from the backend
 // registry and travel the wire (the Hilos i18n model); this component holds
 // layout only and falls back to PROTECTED_MODE_FALLBACK_COPY when the state is
-// known but no sentence arrived with it. It is a state, not a page: no links,
-// no retry button — the mode lifts on its own and the core reloads the document.
-// The one exception is the code field, shown only while the freeze says it
-// accepts a pass AND the shell hands over an administrative surface AND at least
-// one code has been minted: that phase is the verification window, and a verifier
-// admitted by the code sees the whole product rather than this screen, while a
-// visitor on a public url is not invited to fill in a key he was never given. The
-// window opens before any code exists, and until one does the same spot carries a
-// sentence saying so — the field would otherwise be a box that can take nothing.
+// known but no sentence arrived with it. The mode lifts on its own and the core
+// reloads the document. The native Service status link always opens the public
+// file reader, even without a usable socket. The code field is shown only while
+// the freeze says it accepts a pass AND the shell hands over an administrative
+// surface AND at least one code has been minted: that phase is the verification
+// window, and a verifier admitted by the code sees the whole product rather than
+// this screen, while a visitor on a public url is not invited to fill in a key
+// he was never given. The window opens before any code exists, and until one
+// does the same spot carries a sentence saying so — the field would otherwise be
+// a box that can take nothing.
 // The rule lives here, in the component that owns the field, rather than in the
 // shell. Submitting reconnects with the key on the socket url (the core does
 // that), because a client refused every outbound frame can only ask to be let in
@@ -35,6 +36,8 @@ import {
   formatBackupProgressLabel,
   formatRestoreOutcomeLine,
   formatRestorePhaseLine,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
 } from '@hilos/core/base'
@@ -254,6 +257,14 @@ export function HilosMaintenance({
           </div>
         </form>
       )}
+      <a
+        href={HILOS_PAGE_ROUTES[HilosPages.PUBLIC_STATUS]}
+        className="small mt-3"
+        data-id="maintenance-service-status"
+      >
+        <i className="bi bi-broadcast me-1" aria-hidden="true" />
+        Service status
+      </a>
     </div>
   )
 }
