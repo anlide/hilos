@@ -28,6 +28,7 @@ export {
   legalAdminDocumentSchema,
   legalAdminRevisionSchema,
   createHilosLegalDocument,
+  createHilosLegalRevision,
   resolveHilosLegalDocumentSetRow,
   resolveHilosLegalDocumentDeviationRow,
   resolveHilosLegalDocumentRow,

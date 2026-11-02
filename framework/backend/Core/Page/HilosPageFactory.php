@@ -99,6 +99,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS => true,
         HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS => true,
         HilosPageConstants::HILOS_LEGAL_REVISION => true,
+        HilosPageConstants::HILOS_LEGAL_REVISION_TEXT => true,
         HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => true,
         HilosPageConstants::HILOS_LEGAL_SETTINGS => true,
         HilosPageConstants::HILOS_ROLES => true,

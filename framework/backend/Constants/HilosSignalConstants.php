@@ -3320,6 +3320,7 @@ final class HilosSignalConstants
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_DEVIATIONS = 'subscription_page_hilos_legal_document_deviations';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_REVISIONS = 'subscription_page_hilos_legal_document_revisions';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION = 'subscription_page_hilos_legal_revision';
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION_TEXT = 'subscription_page_hilos_legal_revision_text';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES = 'subscription_page_hilos_legal_acceptances';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_SETTINGS = 'subscription_page_hilos_legal_settings';
 

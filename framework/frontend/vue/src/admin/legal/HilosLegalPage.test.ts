@@ -252,7 +252,8 @@ describe('legal admin views', () => {
 
   it('does not invent text or a zero count for an undeclared revision', () => {
     const h = harness()
-    h.scope.data.set('legalRevision', {
+    const scope = h.context.scopes.openPage(HilosPages.LEGAL_REVISION)
+    scope.data.set('legalRevision', {
       document: 'terms',
       revisionId: 'gone',
       declared: false,

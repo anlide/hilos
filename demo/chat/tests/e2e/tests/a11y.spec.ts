@@ -192,6 +192,7 @@ test('Legal document links open real clauses from the keyboard and name the tabl
       'deviations',
       'it is reset without notice',
     ],
+    ['hilos_legal_document_revisions', 'revisions', '2026-09-27'],
   ]) {
     await page.keyboard.press('Tab')
     const link = links.getByTestId(`hilos-page-tab-${key}`)
@@ -219,6 +220,59 @@ test('Legal document links open real clauses from the keyboard and name the tabl
     // The new page mounts a new link; resume ordinary Tab navigation from it.
     await link.focus()
   }
+
+  const revision = shownByTestId(page, 'legal-revision-open').and(
+    page.locator('[data-revision="2026-09-27"]'),
+  )
+  await revision.focus()
+  await expect(revision).toBeFocused()
+  await revision.press('Enter')
+  const revisionPath = '/hilos/legal/document/terms/revision/2026-09-27'
+  await expect(page).toHaveURL(revisionPath)
+  await expectPageReady(expect, page)
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Revision of 2026-09-27')
+  await expect(page).toHaveTitle('Revision of 2026-09-27 · Hilos Chat')
+  const revisionLinks = page.getByRole('navigation', {
+    name: 'Revision pages',
+    exact: true,
+  })
+  const revisionOverview = revisionLinks.getByTestId(
+    'hilos-page-tab-hilos_legal_revision',
+  )
+  await expect(revisionOverview).toHaveAttribute('aria-current', 'page')
+  await expect(
+    revisionLinks
+      .getByRole('link')
+      .and(revisionLinks.locator('[aria-current="page"]')),
+  ).toHaveCount(1)
+  await revisionOverview.focus()
+  await page.keyboard.press('Tab')
+  const text = revisionLinks.getByTestId(
+    'hilos-page-tab-hilos_legal_revision_text',
+  )
+  await expect(text).toBeFocused()
+  await expect(text).toHaveRole('link')
+  await expect(text).toHaveAttribute('href', `${revisionPath}/text`)
+  await text.press('Enter')
+  await expect(page).toHaveURL(`${revisionPath}/text`)
+  await expectPageReady(expect, page)
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Revision of 2026-09-27')
+  await expect(page).toHaveTitle('Revision of 2026-09-27 · Hilos Chat')
+  await expect(text).toHaveAttribute('aria-current', 'page')
+  await expect(
+    revisionLinks
+      .getByRole('link')
+      .and(revisionLinks.locator('[aria-current="page"]')),
+  ).toHaveCount(1)
+  await expect(page.getByRole('tablist')).toHaveCount(0)
+  await expect(page.getByTestId('legal-revision-text')).toContainText(
+    'they remain until you delete them or your account is deleted.',
+  )
+  await expect(page.getByTestId('legal-revision-text')).not.toContainText(
+    'it is reset without notice',
+  )
 })
 
 test('the viewport table has an accessible name and a labelled search', async ({

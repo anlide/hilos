@@ -5,6 +5,7 @@
 SHELL-PARITY framework/frontend/vue/src/admin/analytics/HilosAnalyticsBrowserSessionPage.vue 3 # HIL-1744
 SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablePage.vue 3 # HIL-1724
 SHELL-PARITY framework/frontend/vue/src/admin/changeLog/HilosChangeLogTableShell.vue 3 # HIL-1724
+SHELL-PARITY framework/frontend/vue/src/admin/legal/HilosLegalRevisionPageShell.vue 3 # HIL-1875
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsPage.vue 3 # HIL-1719
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.vue 3 # HIL-1719
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsViewPage.vue 2 # HIL-1719

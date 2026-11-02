@@ -7,6 +7,7 @@ import {
   createHilosLegalDocumentDeviationsTable,
   createHilosLegalRevisionsTable,
   createHilosLegalRevisionAcceptanceSummary,
+  createHilosLegalRevision,
   hilosLegalDocumentLabel,
   createHilosLegalSettingsActions,
   describeHilosLegalCheck,
@@ -303,6 +304,36 @@ describe('document page data and catalog rows', () => {
             [field]: value,
           }).success,
         ).toBe(false)
+    },
+  )
+
+  it.each([HilosPages.LEGAL_REVISION, HilosPages.LEGAL_REVISION_TEXT])(
+    'reads the answered revision and clears null or malformed data on %s',
+    (pageKey) => {
+      const h = harness()
+      const details = createHilosLegalRevision(h.context)
+      expect(details.get()).toBeUndefined()
+      const scope = h.context.scopes.openPage(pageKey)
+      const data = {
+        document: 'terms',
+        revisionId: 'current',
+        declared: true,
+        revision,
+        current: true,
+        predecessorId: null,
+        clauses: [],
+        changes: null,
+      }
+      scope.data.set('legalRevision', data)
+      expect(details.get()).toEqual(data)
+      for (const value of [null, { ...data, clauses: 'invalid' }]) {
+        scope.data.set('legalRevision', value)
+        expect(details.get()).toBeNull()
+        scope.data.set('legalRevision', data)
+        expect(details.get()).toEqual(data)
+      }
+      h.context.scopes.openPage(pageKey)
+      expect(details.get()).toBeUndefined()
     },
   )
 

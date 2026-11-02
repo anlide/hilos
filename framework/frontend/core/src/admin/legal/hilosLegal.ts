@@ -235,6 +235,22 @@ export function createHilosLegalDocument(
   })
 }
 
+/**
+ * Reads the shared Overview and Text revision payload. Undefined precedes the
+ * answer; null or malformed data clears the previous revision.
+ */
+export function createHilosLegalRevision(
+  context: HilosLegalContext,
+): ReadonlySignal<HilosLegalAdminRevision | null | undefined> {
+  const source = context.scopes.pageDataSignal(LEGAL_REVISION_SECTION)
+  return computedSignal(() => {
+    const value = source.get()
+    if (value === undefined) return undefined
+    const parsed = legalAdminRevisionSchema.safeParse(value)
+    return parsed.success ? parsed.data : null
+  })
+}
+
 export interface HilosLegalDocumentRow {
   readonly rowKey: string
   readonly documentLabel: string

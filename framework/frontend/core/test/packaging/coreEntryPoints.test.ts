@@ -23,6 +23,7 @@ import * as daemonNode from '../../src/admin/daemon/hilosDaemonNode.js'
 import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
 import * as legalOverview from '../../src/admin/legal/hilosLegalOverview.js'
+import * as legalModel from '../../src/admin/legal/hilosLegal.js'
 import * as logs from '../../src/admin/logs/index.js'
 import * as logNodes from '../../src/admin/logs/hilosLogNodes.js'
 import { logsOverviewThresholdPassed } from '../../src/admin/logs/hilosLogsOverview.js'
@@ -118,6 +119,8 @@ const legalOverviewValues = [
   'createHilosLegalOverview',
 ]
 const legalOverviewTypes = ['HilosLegalOverview']
+/** The shared revision reader belongs only to the lazy Legal section. */
+const legalRevisionValues = ['createHilosLegalRevision']
 /** The card's sessions controller belongs only to the lazy Users section. */
 const userSessionsValues = ['createHilosUserSessions']
 const userSessionsTypes = ['HilosUserSession', 'HilosUserSessions']
@@ -1106,6 +1109,13 @@ describe('core public entries', () => {
             legalOverview[name as keyof typeof legalOverview],
           )
         } else if (
+          entry === './admin/legal' &&
+          legalRevisionValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(legalModel[name as keyof typeof legalModel])
+        } else if (
           entry === './admin/users' &&
           userSessionsValues.includes(name)
         ) {
@@ -1314,6 +1324,7 @@ describe('core public entries', () => {
         ...analyticsPeopleValues,
         ...analyticsSessionListValues,
         ...legalOverviewValues,
+        ...legalRevisionValues,
         ...userSessionsValues,
         ...channelSummaryValues,
         ...letterFrameValues,
@@ -1738,6 +1749,7 @@ describe('core public entries', () => {
     ]
     const legalOverviewExports = exportsOf('admin/legal/hilosLegalOverview.ts')
     const legalOverviewNames = [...legalOverviewValues, ...legalOverviewTypes]
+    const legalRevisionExports = exportsOf('admin/legal/hilosLegal.ts')
     const userSessionsExports = exportsOf('admin/users/hilosUserSessions.ts')
     const userSessionsNames = [...userSessionsValues, ...userSessionsTypes]
     const daemonClockExports = exportsOf('admin/daemon/hilosDaemonNode.ts')
@@ -1904,6 +1916,15 @@ describe('core public entries', () => {
             legalOverviewExports.get(name),
           )
         } else if (
+          entry === 'admin/legal/index.ts' &&
+          legalRevisionValues.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            legalRevisionExports.get(name),
+          )
+        } else if (
           entry === 'admin/users/index.ts' &&
           userSessionsNames.includes(name)
         ) {
@@ -2045,6 +2066,7 @@ describe('core public entries', () => {
         ...peopleNames,
         ...sessionListNames,
         ...legalOverviewNames,
+        ...legalRevisionValues,
         ...userSessionsNames,
         ...sectionOnly,
         ...frameNames,

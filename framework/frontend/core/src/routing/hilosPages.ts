@@ -139,6 +139,7 @@ export const HilosPages = {
   LEGAL_DOCUMENT_DEVIATIONS: 'hilos_legal_document_deviations',
   LEGAL_DOCUMENT_REVISIONS: 'hilos_legal_document_revisions',
   LEGAL_REVISION: 'hilos_legal_revision',
+  LEGAL_REVISION_TEXT: 'hilos_legal_revision_text',
   LEGAL_ACCEPTANCES: 'hilos_legal_acceptances',
   LEGAL_SETTINGS: 'hilos_legal_settings',
   BILLING: 'hilos_billing',
@@ -485,6 +486,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.LEGAL_REVISION]: {
     path: '/hilos/legal/document/{documentKey}/revision/{revisionId}',
+    admin: true,
+  },
+  [HilosPages.LEGAL_REVISION_TEXT]: {
+    path: '/hilos/legal/document/{documentKey}/revision/{revisionId}/text',
     admin: true,
   },
   [HilosPages.LEGAL_ACCEPTANCES]: {

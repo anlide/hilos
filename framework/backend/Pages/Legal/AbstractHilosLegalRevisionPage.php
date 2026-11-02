@@ -33,6 +33,8 @@ abstract class AbstractHilosLegalRevisionPage extends AbstractHilosLegalPage
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION,
     ];
 
+    protected const bool REQUIRE_DECLARED = false;
+
     /**
      * Discards a history window reported while leaving another document or revision scope.
      *
@@ -90,7 +92,9 @@ abstract class AbstractHilosLegalRevisionPage extends AbstractHilosLegalPage
                 }
             }
             if ($revision === null) {
-                if ((Hilos::$db->legalAcceptances->acceptedCounts($route->documentKey)[$route->revisionId] ?? 0) === 0) {
+                if (static::REQUIRE_DECLARED
+                    || (Hilos::$db->legalAcceptances->acceptedCounts($route->documentKey)[$route->revisionId] ?? 0) === 0
+                ) {
                     throw new PageResourceNotFoundException('No such legal revision');
                 }
 

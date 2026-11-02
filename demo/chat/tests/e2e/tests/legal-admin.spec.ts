@@ -39,6 +39,10 @@ const DOCUMENT_KEYS = ['terms', 'privacy'] as const
 const OLD_REVISION = '2026-09-17'
 const DOCUMENT = 'hilos_legal_document'
 const DOCUMENT_PATH = '/hilos/legal/document/terms'
+const REVISION = 'hilos_legal_revision'
+const REVISION_TEXT = 'hilos_legal_revision_text'
+const HISTORICAL_REVISION = '2026-09-27'
+const REVISION_PATH = `${DOCUMENT_PATH}/revision/${HISTORICAL_REVISION}`
 const DOCUMENT_PAGES = [
   [DOCUMENT, '', 'hilosLegalSettings', 'setting'],
   [`${DOCUMENT}_set`, '/set', 'hilosLegalDocumentSet', 'clause'],
@@ -325,6 +329,53 @@ async function expectDocumentOpening(
   return object(data.legalDocument)
 }
 
+/** Chat's saved editorial text arrives whole, without the later demo reset. */
+async function expectHistoricalTextOpening(
+  page: Page,
+  log: DeliveryFrameLog,
+  since: number,
+) {
+  const payload = await firstLegalReply(log, since, REVISION_TEXT, {
+    documentKey: 'terms',
+    revisionId: HISTORICAL_REVISION,
+  })
+  expect(object(payload.data)).toMatchObject({
+    pageHeadOwner: { page: REVISION },
+    legalRevision: {
+      document: 'terms',
+      revisionId: HISTORICAL_REVISION,
+      predecessorId: OLD_REVISION,
+      current: false,
+      declared: true,
+      clauses: expect.arrayContaining([
+        expect.objectContaining({
+          clauseKey: 'standard.retention',
+          source: 'deviation',
+          text: expect.stringContaining(
+            'they remain until you delete them or your account is deleted.',
+          ),
+        }),
+      ]),
+    },
+  })
+  expect(object(payload.windows)).toEqual({})
+  expect(object(payload.refusedWindows)).toEqual({})
+  const text = page.getByTestId('legal-revision-text')
+  await expect(text).toContainText('Messages are kept indefinitely.')
+  await expect(text).toContainText(
+    'they remain until you delete them or your account is deleted.',
+  )
+  await expect(text).not.toContainText('it is reset without notice')
+  await expect(page.getByTestId('legal-revision-metadata')).toContainText(
+    'Published 2026-09-27 · Effective 2026-09-27',
+  )
+  await expect(
+    page.getByTestId('hilos-admin-page').getByRole('button'),
+  ).toHaveCount(0)
+  expectOnlyOpeningRequest(log, since, REVISION_TEXT)
+  expect(legalReplies(log, since, REVISION_TEXT)).toHaveLength(1)
+}
+
 test('Legal opens complete replies and navigates through searched and sorted Documents', async ({
   page,
 }) => {
@@ -491,7 +542,7 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
       const revision = shownByTestId(page, 'legal-revision-open').and(
         page.locator('[data-revision="2026-09-27"]'),
       )
-      const path = `${DOCUMENT_PATH}/revision/2026-09-27`
+      const path = REVISION_PATH
       await expect(revision).toHaveAttribute('href', path)
       since = log.sent.length
       await revision.click()
@@ -516,11 +567,16 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
       ).toEqual(['2026-09-27'])
       expect(exactWindow.totalCount).toBe(1)
       const text = page.getByTestId('legal-revision-text')
-      await expect(text).toContainText('Messages are kept indefinitely.')
-      await expect(text).toContainText(
+      await expect(text).toHaveCount(0)
+      await expect(page.getByTestId('legal-changes')).toContainText(
         'they remain until you delete them or your account is deleted.',
       )
-      await expect(text).not.toContainText('it is reset without notice')
+      const acceptedCount = object(
+        object(object((exactWindow.rows as unknown[])[0]).slots).revision,
+      ).acceptedCount
+      await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
+        `${acceptedCount} acceptances`,
+      )
       await expect(page.getByTestId('hilos-admin-page')).toContainText(
         'Published 2026-09-27 · Effective 2026-09-27',
       )
@@ -528,6 +584,28 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
         page.getByTestId('hilos-admin-page').getByRole('button'),
       ).toHaveCount(0)
       expectOnlyOpeningRequest(log, since, 'hilos_legal_revision')
+      const textLink = page.getByTestId(`hilos-page-tab-${REVISION_TEXT}`)
+      await expect(textLink).toHaveAttribute('href', `${path}/text`)
+      since = log.sent.length
+      await textLink.click()
+      await expect(page).toHaveURL(`${path}/text`)
+      await expectPageReady(expect, page)
+      await expectHistoricalTextOpening(page, log, since)
+      await page.goBack()
+      await expect(page).toHaveURL(path)
+      await expectPageReady(expect, page)
+      await expect(text).toHaveCount(0)
+      await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
+        `${acceptedCount} acceptances`,
+      )
+      since = log.sent.length
+      await page.goForward()
+      await expect(page).toHaveURL(`${path}/text`)
+      await expectPageReady(expect, page)
+      await expectHistoricalTextOpening(page, log, since)
+      await page.goBack()
+      await expect(page).toHaveURL(path)
+      await expectPageReady(expect, page)
       since = log.sent.length
       await page.goBack()
       await expect(page).toHaveURL(`${DOCUMENT_PATH}/revisions`)
@@ -548,8 +626,9 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
       await page.goForward()
       await expect(page).toHaveURL(path)
       await expectPageReady(expect, page)
-      await expect(text).toContainText(
-        'they remain until you delete them or your account is deleted.',
+      await expect(text).toHaveCount(0)
+      await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
+        `${acceptedCount} acceptances`,
       )
       await page.goBack()
       await expectPageReady(expect, page)
@@ -996,7 +1075,7 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
       await expectDocumentsOpening(page, log, since)
     })
 
-    await test.step('Cold entry and F5 preserve each document page and current exact text', async () => {
+    await test.step('Cold entry and F5 preserve each document page and historical exact text', async () => {
       for (const [key, suffix] of DOCUMENT_PAGES) {
         let since = log.sent.length
         await gotoPage(expect, page, `${DOCUMENT_PATH}${suffix}`, PAGE_READY)
@@ -1006,23 +1085,15 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
         await expectPageReady(expect, page)
         await expectDocumentOpening(page, log, since, key)
       }
-      await gotoPage(
-        expect,
-        page,
-        `${DOCUMENT_PATH}/revision/2026-10-01`,
-        PAGE_READY,
-      )
-      await expect(page.getByTestId('legal-revision-text')).toContainText(
-        'This is a demo: its data may be wiped at any time.',
-      )
+      let since = log.sent.length
+      await gotoPage(expect, page, `${REVISION_PATH}/text`, PAGE_READY)
+      await expect(page).toHaveURL(`${REVISION_PATH}/text`)
+      await expectHistoricalTextOpening(page, log, since)
+      since = log.sent.length
       await page.reload()
       await expectPageReady(expect, page)
-      await expect(page.getByTestId('legal-revision-text')).toContainText(
-        'This is a demo: its data may be wiped at any time.',
-      )
-      await expect(
-        page.getByTestId('hilos-admin-page').getByRole('button'),
-      ).toHaveCount(0)
+      await expect(page).toHaveURL(`${REVISION_PATH}/text`)
+      await expectHistoricalTextOpening(page, log, since)
     })
   } finally {
     await test.info().attach('legal-navigation-deliveries', {

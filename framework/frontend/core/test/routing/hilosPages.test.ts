@@ -845,6 +845,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       HilosPages.LEGAL_REVISION,
       '/hilos/legal/document/{documentKey}/revision/{revisionId}',
     ],
+    [
+      HilosPages.LEGAL_REVISION_TEXT,
+      '/hilos/legal/document/{documentKey}/revision/{revisionId}/text',
+    ],
   ])('declares the explicit Legal entity address for %s', (page, path) => {
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
     expect(HILOS_PAGE_ROUTES[page]).toBe(path)
@@ -901,6 +905,17 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       )
       expect(router.match(revisionPath)).toEqual({
         page: HilosPages.LEGAL_REVISION,
+        params: revisionParams,
+        admin: true,
+      })
+      expect(router.path(HilosPages.LEGAL_REVISION_TEXT, revisionParams)).toBe(
+        `${revisionPath}/text`,
+      )
+      expect(
+        resolveHilosPath(HilosPages.LEGAL_REVISION_TEXT, revisionParams),
+      ).toBe(`${revisionPath}/text`)
+      expect(router.match(`${revisionPath}/text`)).toEqual({
+        page: HilosPages.LEGAL_REVISION_TEXT,
         params: revisionParams,
         admin: true,
       })

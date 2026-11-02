@@ -13,6 +13,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
@@ -499,6 +500,7 @@ final class Hilos extends HilosFacade
         LegalDocumentDeviationsPage::PAGE => LegalDocumentDeviationsPage::class,
         LegalDocumentRevisionsPage::PAGE => LegalDocumentRevisionsPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
+        LegalRevisionTextPage::PAGE => LegalRevisionTextPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
@@ -1041,6 +1043,7 @@ final class Hilos extends HilosFacade
         LegalRevisionPage::PAGE => [
             ChatTableContext::hilosLegalRevisions => [],
         ],
+        LegalRevisionTextPage::PAGE => [],
         LegalAcceptancesPage::PAGE => [
             ChatTableContext::hilosLegalAcceptances => [],
         ],

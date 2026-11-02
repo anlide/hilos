@@ -182,8 +182,16 @@ final class HilosPageCatalog
         HilosPageConstants::HILOS_LEGAL_REVISION => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revision',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The exact text, its changes, and its acceptances.',
-            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Revision',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-text',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+        ],
+        HilosPageConstants::HILOS_LEGAL_REVISION_TEXT => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Text',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The assembled text of this revision.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_REVISION,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Text',
         ],
         HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Acceptances',

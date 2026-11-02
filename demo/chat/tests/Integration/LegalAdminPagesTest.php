@@ -16,6 +16,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
@@ -150,6 +151,68 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         $rows = Hilos::$table->hilosLegalRevisions->getPage(new TableQueryDTO(filter: ['document' => 'terms']))->rows;
         self::assertSame([0, 0, 1], array_column($rows, 'heldCount'));
         self::assertSame(2, (int) Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance')->firstRow()['total']);
+    }
+
+    /** Text answers with clauses and catalog identity without opening a hidden counter window. */
+    public function testRevisionTextNeedsOnlyItsInitialPageResponse(): void
+    {
+        $params = ['documentKey' => 'terms', 'revisionId' => '2026-09-27'];
+        $overview = $this->response($this->subscribe(LegalRevisionPage::class, $params));
+        $frames = $this->subscribe(LegalRevisionTextPage::class, $params);
+        $response = $this->response($frames);
+        self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($frames, 'name'));
+        self::assertSame($overview->payload->data['legalRevision'], $response->payload->data['legalRevision']);
+        self::assertCount(6, $response->payload->data['legalRevision']['clauses']);
+        self::assertCount(1, $response->payload->data['legalRevision']['changes']);
+        self::assertSame('Text', $response->payload->data['pageLabel']);
+        self::assertSame('The assembled text of this revision.', $response->payload->data['pageLead']);
+        self::assertSame([], $response->payload->windows);
+        self::assertSame([], $response->payload->refusedWindows);
+        self::assertNull(Hilos::$sr->getTableViewport(self::ACCEPT_KEY, ChatTableContext::hilosLegalRevisions));
+    }
+
+    /** Both pages carry the adopted Revision owner and full parent trail in their first answer. */
+    public function testRevisionPagesCarryTheRevisionsParentInTheirFirstResponse(): void
+    {
+        $trail = [
+            ['page' => 'hilos', 'label' => 'Hilos'],
+            ['page' => 'hilos_legal', 'label' => 'Legal'],
+            ['page' => 'hilos_legal_documents', 'label' => 'Documents'],
+            ['page' => 'hilos_legal_document', 'label' => 'Document'],
+            ['page' => 'hilos_legal_document_revisions', 'label' => 'Revisions'],
+            ['page' => 'hilos_legal_revision', 'label' => 'Revision'],
+        ];
+        foreach ([LegalRevisionPage::class, LegalRevisionTextPage::class] as $page) {
+            $data = $this->response($this->subscribe($page, ['documentKey' => 'terms', 'revisionId' => '2026-09-27']))->payload->data;
+            self::assertSame([
+                'page' => 'hilos_legal_revision',
+                'label' => 'Revision',
+                'lead' => 'The exact text, its changes, and its acceptances.',
+                'icon' => 'bi-file-earmark-text',
+            ], $data['pageHeadOwner']);
+            self::assertSame([
+                ['page' => 'hilos_legal_revision', 'label' => 'Overview'],
+                ['page' => 'hilos_legal_revision_text', 'label' => 'Text'],
+            ], $data['pageTabs']);
+            self::assertSame($trail, $data['pageBreadcrumb']);
+            self::assertSame([], $data['pageChildren']);
+        }
+    }
+
+    public function testRecordedOnlyRevisionKeepsItsOverviewCountWhileDirectTextRefuses(): void
+    {
+        $this->record($this->userId, 'removed');
+        $params = ['documentKey' => 'terms', 'revisionId' => 'removed'];
+        $overview = $this->response($this->subscribe(LegalRevisionPage::class, $params));
+        self::assertFalse($overview->payload->data['legalRevision']['declared']);
+        self::assertNull($overview->payload->data['legalRevision']['clauses']);
+        self::assertSame(1, $overview->payload->windows['hilosLegalRevisions']['rows'][0]['slots']['revision']['acceptedCount']);
+        self::assertSame([
+            ['page' => 'hilos_legal_revision', 'label' => 'Overview'],
+        ], $overview->payload->data['pageTabs']);
+        $this->expectException(PageResourceNotFoundException::class);
+        $this->expectExceptionMessage('No such legal revision');
+        $this->subscribe(LegalRevisionTextPage::class, $params);
     }
 
     /** A reused table key cannot carry another document's search, order or paging into the first response. */
@@ -645,9 +708,12 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         BrokenLegalAdminHilos::initBrowser(Hilos::$browser);
         foreach ([LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
             LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class,
-            LegalRevisionPage::class] as $page) {
+            LegalRevisionPage::class, LegalRevisionTextPage::class] as $page) {
             $payload = $this->response($this->subscribe($page, ['documentKey' => 'terms', 'revisionId' => 'removed']))->payload;
             self::assertSame('Broken admin catalog', $payload->data['legalCatalogRefusal']);
+            if ($page === LegalRevisionPage::class || $page === LegalRevisionTextPage::class) {
+                self::assertNull($payload->data['legalRevision']);
+            }
             foreach ($payload->windows as $table => $window) {
                 if ($table !== ChatTableContext::hilosLegalSettings) {
                     self::assertSame([], $window['rows']);
@@ -664,7 +730,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register($guestKey, null);
         foreach ([LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
             LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class,
-            LegalRevisionPage::class] as $page) {
+            LegalRevisionPage::class, LegalRevisionTextPage::class] as $page) {
             $payload = new ReflectionMethod($page, 'buildPagePayload')->invoke(
                 new $page(new DemoHilosLegalAgent()), $guestKey,
                 new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'removed']),

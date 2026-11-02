@@ -37,6 +37,7 @@ use Hilos\Pages\Legal\AbstractHilosLegalDocumentRevisionsPage;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentsPage;
 use Hilos\Pages\Legal\AbstractHilosLegalPage;
 use Hilos\Pages\Legal\AbstractHilosLegalRevisionPage;
+use Hilos\Pages\Legal\AbstractHilosLegalRevisionTextPage;
 use Hilos\Pages\Legal\AbstractHilosLegalSettingsPage;
 use Hilos\Pages\Legal\DTO\HilosLegalSettingSetActionDTO;
 use Hilos\Pages\Legal\LegalAdminAudience;
@@ -72,6 +73,7 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
             AbstractHilosLegalDocumentDeviationsPage::class,
             AbstractHilosLegalDocumentRevisionsPage::class,
             AbstractHilosLegalRevisionPage::class,
+            AbstractHilosLegalRevisionTextPage::class,
             AbstractHilosLegalAcceptancesPage::class,
             AbstractHilosLegalSettingsPage::class,
         ] as $page) {
@@ -457,6 +459,71 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
         self::assertNull($first->data['legalRevision']['predecessorId']);
     }
 
+    /** Text reuses the complete initial projection and adds no reading action or parser. */
+    public function testRevisionTextSharesThePayloadAndReadonlyBoundary(): void
+    {
+        $params = ['documentKey' => 'terms', 'revisionId' => 'current'];
+        self::assertSame(
+            $this->payload(LegalRevisionPageFixture::class, $params)->data,
+            $this->payload(LegalRevisionTextPageFixture::class, $params)->data,
+        );
+        self::assertSame('hilos_legal_revision_text', AbstractHilosLegalRevisionTextPage::PAGE);
+        self::assertSame('subscription_page_hilos_legal_revision_text', HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION_TEXT);
+        self::assertSame([
+            BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION_TEXT,
+        ], AbstractHilosLegalRevisionTextPage::BROWSER);
+        self::assertSame(PageReach::ROUTE, AbstractHilosLegalRevisionTextPage::REACH);
+        self::assertSame([], AbstractHilosLegalRevisionTextPage::ACTIONS);
+        self::assertSame([], AbstractHilosLegalRevisionTextPage::READING_ACTIONS);
+        self::assertSame([], AbstractHilosLegalRevisionTextPage::SIGNALS);
+        self::assertTrue(new HilosPageFactory($this->createMock(PageAgentInterface::class), Hilos::class)
+            ->hasPage(AbstractHilosLegalRevisionTextPage::PAGE));
+        self::assertSame(AbstractHilosLegalRevisionPage::class,
+            new ReflectionMethod(AbstractHilosLegalRevisionTextPage::class, 'buildPagePayload')->getDeclaringClass()->name);
+        self::assertTrue(new ReflectionMethod(AbstractHilosLegalRevisionTextPage::class, 'onUpdateSubscription')->isFinal());
+    }
+
+    public function testRevisionTextAppliesOnlyToTheRequestedDeclaredRevision(): void
+    {
+        foreach (['first', 'current'] as $revisionId) {
+            self::assertTrue(AbstractHilosLegalRevisionTextPage::isTabApplicable(
+                new PageRouteParams(['documentKey' => 'terms', 'revisionId' => $revisionId]),
+            ));
+        }
+        foreach ([['terms', 'gone'], ['terms', 'unknown'], ['retired', 'current'], ['privacy', 'current']] as [$documentKey, $revisionId]) {
+            self::assertFalse(AbstractHilosLegalRevisionTextPage::isTabApplicable(new PageRouteParams([
+                'documentKey' => $documentKey, 'revisionId' => $revisionId,
+            ])));
+        }
+    }
+
+    public function testDirectRevisionTextRefusesUndeclaredAndUnknownRevisions(): void
+    {
+        self::assertFalse($this->payload(LegalRevisionPageFixture::class,
+            ['documentKey' => 'terms', 'revisionId' => 'gone'])->data['legalRevision']['declared']);
+        foreach ([['terms', 'gone'], ['terms', 'unknown'], ['unknown', 'current']] as [$documentKey, $revisionId]) {
+            try {
+                $this->payload(LegalRevisionTextPageFixture::class, ['documentKey' => $documentKey, 'revisionId' => $revisionId]);
+                self::fail('Undeclared text must refuse the subscription');
+            } catch (PageResourceNotFoundException $e) {
+                self::assertSame('No such legal revision', $e->getMessage());
+            }
+        }
+    }
+
+    public function testRevisionTextKeepsAFaultyCatalogApplicableAndDeliversItsRefusal(): void
+    {
+        LegalBrokenCatalogHilos::initBrowser();
+        $params = ['documentKey' => 'terms', 'revisionId' => 'unknown'];
+        self::assertTrue(AbstractHilosLegalRevisionTextPage::isTabApplicable(new PageRouteParams($params)));
+        foreach ([LegalRevisionPageFixture::class, LegalRevisionTextPageFixture::class] as $page) {
+            self::assertSame([
+                'legalCatalogRefusal' => SignalConstants::ACTION_FAILED_REASON,
+                'legalRevision' => null,
+            ], $this->payload($page, $params)->data);
+        }
+    }
+
     public function testAnUndeclaredRevisionWithRecordsHasNoInventedText(): void
     {
         $payload = $this->payload(LegalRevisionPageFixture::class, ['documentKey' => 'terms', 'revisionId' => 'gone']);
@@ -545,6 +612,11 @@ final class LegalDocumentPageFixture extends AbstractHilosLegalDocumentPage
 
 /** Concrete revision for projection calls only. */
 final class LegalRevisionPageFixture extends AbstractHilosLegalRevisionPage
+{
+}
+
+/** Concrete text tab for shared-payload and declaration-policy checks. */
+final class LegalRevisionTextPageFixture extends AbstractHilosLegalRevisionTextPage
 {
 }
 

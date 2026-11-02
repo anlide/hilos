@@ -6,4 +6,5 @@ export { default as HilosLegalDocumentRevisionsPage } from './HilosLegalDocument
 export { default as HilosLegalDocumentsPage } from './HilosLegalDocumentsPage.vue'
 export { default as HilosLegalPage } from './HilosLegalPage.vue'
 export { default as HilosLegalRevisionPage } from './HilosLegalRevisionPage.vue'
+export { default as HilosLegalRevisionTextPage } from './HilosLegalRevisionTextPage.vue'
 export { default as HilosLegalSettingsPage } from './HilosLegalSettingsPage.vue'

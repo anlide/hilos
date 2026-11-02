@@ -69,9 +69,13 @@ Settings pages share the Legal row; the framework catalog default keeps its
 existing composition.
 Chat (Vue), Tasks (React), and Polls (Angular) opt Document into the shared
 entity head. Document is an entity child of Documents; its Overview / Standard
-set / Deviations / Revisions pages share one head and link row. Revision remains
-a separate entity child of Document without its own head adoption; that redraw
-belongs to HIL-1666.
+set / Deviations / Revisions pages share one head and link row. Revision is a
+framework-catalog entity child of Document Revisions. Chat (Vue) opts Revision
+into the shared entity head: its Overview and Text pages use the Dashboard →
+Legal → Documents → Document → Document Revisions → Revision chain, one head,
+and the Overview / Text row. The framework default does not opt Revision in;
+Tasks (React) and Polls (Angular) keep their legacy Revision heads until their
+ports HIL-1874 and HIL-1875.
 
 ## Core Rule And Ownership
 

@@ -407,7 +407,12 @@ and its three tabs `hilos_legal_document_set` at
 `/hilos/legal/document/{documentKey}/revisions` (each `admin=true`,
 `documentKey: string`). `hilos_legal_revision` remains at
 `/hilos/legal/document/{documentKey}/revision/{revisionId}` (`admin=true`,
-`documentKey: string`, `revisionId: string`). The former entity paths
+`documentKey: string`, `revisionId: string`), and `hilos_legal_revision_text`
+is at `/hilos/legal/document/{documentKey}/revision/{revisionId}/text` (also
+`admin=true` with those two string params). Text uses its own
+`subscription_page_hilos_legal_revision_text` browser signal; the existing
+profile-history `hilos_legal_revision_text` read action and
+`LegalRevisionTextActionDTO` are unchanged. The former entity paths
 `/hilos/legal/{documentKey}` and
 `/hilos/legal/{documentKey}/{revisionId}` are unsupported and have no alias or
 redirect. The `documentKey` space remains open to historical keys, including
@@ -422,19 +427,22 @@ pages keep their own routes.
 | `/hilos/legal/document/{documentKey}/set` | Adopted standard clauses |
 | `/hilos/legal/document/{documentKey}/deviations` | Project deviations of the last declared revision |
 | `/hilos/legal/document/{documentKey}/revisions` | Searchable and sortable revision history |
-| `/hilos/legal/document/{documentKey}/revision/{revisionId}` | Exact text, predecessor comparison and acceptance count |
+| `/hilos/legal/document/{documentKey}/revision/{revisionId}` | Revision Overview: predecessor comparison and exact acceptance count |
+| `/hilos/legal/document/{documentKey}/revision/{revisionId}/text` | Assembled text of the requested declared revision |
 | `/hilos/legal/acceptances` | Immutable acceptance records, document/revision filters, person search and the export of what they show |
 | `/hilos/legal/settings` | The two legal settings, edited in modals |
 
-Chat connects nine backend Legal pages: the root Overview, Documents, Document
-Overview, Standard set, Deviations, Revisions, exact Revision, Acceptances and
-Settings. The root binds Checks and Settings; Documents binds the Documents
-and Settings tables. Document Overview binds only `hilosLegalSettings`. On
-Documents and Document Overview, Settings is a hidden carrier for the
-refusal-policy label of lapsed counts; no settings table is drawn. Standard set
-binds `hilosLegalDocumentSet`, Deviations binds `hilosLegalDocumentDeviations`,
-and Revisions binds `hilosLegalRevisions`. The exact Revision page reuses the
-last table with both document and revision filters.
+Chat connects ten backend Legal pages: the root Overview, Documents, Document
+Overview, Standard set, Deviations, Revisions, Revision Overview, Revision
+Text, Acceptances and Settings. The root binds Checks and Settings; Documents
+binds the Documents and Settings tables. Document Overview binds only
+`hilosLegalSettings`. On Documents and Document Overview, Settings is a hidden
+carrier for the refusal-policy label of lapsed counts; no settings table is
+drawn. Standard set binds `hilosLegalDocumentSet`, Deviations binds
+`hilosLegalDocumentDeviations`, and Revisions binds `hilosLegalRevisions`.
+Revision Overview reuses the last table with both document and revision filters
+and alone draws the accepted-count summary. Revision Text has an empty
+`PAGE_TABLES` binding.
 
 Tasks (React) connects nine backend Legal pages: the root Overview, Documents,
 Document Overview, Standard set, Deviations, Revisions, exact Revision,
@@ -460,6 +468,9 @@ document and revision filters; Acceptances and Settings bind their own tables.
 The React and Angular roots are the Overview: the declared-document
 summary and the four checks without a document window, while the document
 coverage table lives on its own Documents page.
+Chat/Vue connects Revision Text. The React and Angular SDK views still mark
+that page unbuilt; Tasks/React and Polls/Angular keep their legacy Revision
+heads while HIL-1874 and HIL-1875 carry those ports.
 
 Each of the four Document pages receives the common `legalDocument` projection,
 page identity and its bound windows in the first ordinary `page_response`.
@@ -472,6 +483,25 @@ pages; `bindPageInstanceName` uses `hilosLegalDocumentLabel` and releases its
 binding on unmount. The head's single `h1`, breadcrumb and document title use
 that one name.
 
+The first ordinary `page_response` for Revision Overview and Revision Text
+carries page identity and the existing `legalRevision` field. For a declared
+revision it holds the full projection; on catalog refusal it is null and the
+refusal is carried in `legalCatalogRefusal`. Revision Overview also receives
+its first exact `hilosLegalRevisions` window in that response; Text has no
+table. The owner is Revision, with the Dashboard →
+Legal → Documents → Document → Document
+Revisions → Revision chain and the Overview / Text row. Chat/Vue's shared
+Revision page shell binds the Document name through `hilosLegalDocumentLabel`
+and the Revision name as `Revision of <publishedOn>` or, for a recorded-only
+revision, `Revision <revisionId>`. Those bindings are active only for the
+current answered page with valid data and no catalog refusal; the head, final
+breadcrumb and browser title use the same Revision name, while the Document
+breadcrumb uses the shared Document name. The shell releases both bindings on
+departure or when the data is absent or malformed. No extra action fetches the
+name, catalog or revision text. Both pages keep the existing full
+`legalRevision` payload, including `clauses`, while only Text renders the
+assembled text.
+
 Document Overview shows `covered`, `window` and `lapsed`, the `newerSet` warning,
 and read-only registration-consent and re-consent previews. Its source labels
 are class strings from `StandardSetCatalog::class` and
@@ -482,16 +512,25 @@ and publication dates and sorts by publication date, effective date or
 rows last. Publication and effective dates remain `YYYY-MM-DD` calendar values.
 
 The section writes no document or acceptance; the one thing it writes is an
-administrator's export of acceptance records ("Export of acceptances" below). Texts stay in code and a revision
-is published by deployment. The revision view reuses `HilosLegalRevisionText`
-and `HilosLegalChanges`, the same components as the personal agreement surfaces.
-A recorded revision missing from the catalog still opens, with its count and an
-explanation in place of text. A key with neither declaration nor records is
-refused with `PageResourceNotFoundException` (404 / `not_found`). A historical
-document with records opens without invented revision or set metadata; its
-Standard set and Deviations windows are empty. The revision detail narrows
-`hilosLegalRevisions` by both `document` and `revision`: its count must not depend
-on whether its row fits in the first history window. Its existing
+administrator's export of acceptance records ("Export of acceptances" below).
+Texts stay in code and a revision is published by deployment. Revision Overview
+uses `HilosLegalChanges`; Revision Text uses `HilosLegalRevisionText`. Overview
+keeps `clauses` in the shared payload for compatibility but does not display the
+full text. Text composes the clauses of the requested declared revision,
+including project deviations, rather than substituting the latest revision.
+
+A recorded revision missing from the catalog still opens on Revision Overview
+with a warning and its acceptance count, without invented revision dates or
+set metadata. Its Text tab is hidden, and direct access to the Text route is
+404 / `not_found` even when acceptance records exist. If the catalog itself
+refuses, both pages carry the ordinary `legalCatalogRefusal`; the Text tab stays
+available so a catalog failure is not mistaken for an undeclared revision.
+An Overview request for a revision with neither a declaration nor acceptance
+records is refused with `PageResourceNotFoundException` (404 / `not_found`).
+A historical document with records opens without invented revision or set
+metadata; its Standard set and Deviations windows are empty. Revision Overview
+narrows `hilosLegalRevisions` by both `document` and `revision`: its count must
+not depend on whether its row fits in the first history window. Its existing
 `onSubscribeBeforeResponse()` preserves a reported descriptor only for that
 document/revision scope, including its own reconnect; a list or another entity's
 descriptor is discarded so the first window follows the exact route.
@@ -500,12 +539,14 @@ or an exact revision. A new mount reports the opted-in table's opening preset,
 including when an active link opens the same page again; its rows, search,
 order and paging then agree from the first answer. A reconnect with the same
 controller keeps its live descriptor.
-An already-open historical revision reports zero when its last record is erased,
+The existing server tick updates the Overview count without a reload. An
+already-open historical revision reports zero when its last record is erased,
 and distinguishes a refused count window from a loading one.
 
 A `LegalException` from the catalog becomes `legalCatalogRefusal` on the root,
-Documents, all four Document pages and the exact Revision page. Their declaration
-tables answer empty windows; the page shows the refusal rather than zero counts.
+Documents, all four Document pages, Revision Overview and Revision Text. Bound
+declaration tables answer empty windows; each affected page shows the refusal
+rather than zero counts.
 Acceptance history and settings remain usable.
 A project without a catalog has no declared documents and no checks to show.
 

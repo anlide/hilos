@@ -15,12 +15,14 @@ use Demo\Chat\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -29,6 +31,8 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -40,6 +44,9 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Database;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Hilos as FrameworkHilos;
+use Hilos\Legal\Exception\UnknownRevisionException;
+use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
@@ -319,19 +326,64 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
     public function testAViewerSeesTheLegalRevisionPageWithClausesAndChanges(): void
     {
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $frames = $this->subscribe(
-                LegalRevisionPage::class,
-                [
-                    HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT,
-                    HilosPageRouteParams::HILOS_LEGAL_REVISION_ID => self::TEST_REVISION_ID,
-                ],
-                $acceptKey,
-            );
-            $pageData = $this->pagePayload($frames)[PagePayload::data];
-            $revision = $pageData[AbstractHilosLegalRevisionPage::SECTION];
-            self::assertFalse(HiddenValue::isMark($revision));
-            self::assertCount(6, $revision['clauses']);
-            self::assertCount(1, $revision['changes']);
+            foreach ([LegalRevisionPage::class, LegalRevisionTextPage::class] as $page) {
+                $frames = $this->subscribe(
+                    $page,
+                    [
+                        HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT,
+                        HilosPageRouteParams::HILOS_LEGAL_REVISION_ID => self::TEST_REVISION_ID,
+                    ],
+                    $acceptKey,
+                );
+                $pageData = $this->pagePayload($frames)[PagePayload::data];
+                $revision = $pageData[AbstractHilosLegalRevisionPage::SECTION];
+                self::assertFalse(HiddenValue::isMark($revision));
+                self::assertCount(6, $revision['clauses']);
+                self::assertCount(1, $revision['changes']);
+                self::assertSame('hilos_legal_revision', $pageData['pageHeadOwner']['page']);
+                self::assertSame([
+                    ['page' => 'hilos_legal_revision', 'label' => 'Overview'],
+                    ['page' => 'hilos_legal_revision_text', 'label' => 'Text'],
+                ], $pageData['pageTabs']);
+                if ($page === LegalRevisionTextPage::class) {
+                    self::assertArrayNotHasKey(PagePayload::windows, $this->pagePayload($frames));
+                }
+                $json = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
+                self::assertStringNotContainsString(self::TEST_USER_NAME, $json);
+                self::assertStringNotContainsString(self::TEST_USER_EMAIL, $json);
+            }
+        }
+    }
+
+    public function testRevisionPagesKeepTheAdminGateWhenViewModeIsOff(): void
+    {
+        Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+        foreach ([LegalRevisionPage::class, LegalRevisionTextPage::class] as $page) {
+            foreach ([self::ANONYMOUS_KEY => 401, self::VISITOR_KEY => 403] as $acceptKey => $status) {
+                try {
+                    PageAccessGate::assert($page, $acceptKey);
+                    self::fail('The admin gate must refuse this subscription');
+                } catch (PageSubscriptionException $e) {
+                    self::assertSame($status, $e->httpCode);
+                }
+            }
+        }
+    }
+
+    public function testRevisionPagesDeliverSafeCatalogRefusalsThroughTheViewerPagePath(): void
+    {
+        RefusedLegalViewModeHilos::initBrowser(Hilos::$browser);
+        foreach ([LegalRevisionPage::class, LegalRevisionTextPage::class] as $page) {
+            foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY, self::ADMIN_KEY] as $acceptKey) {
+                $frames = $this->subscribe($page, ['documentKey' => self::TERMS_DOCUMENT, 'revisionId' => self::TEST_REVISION_ID], $acceptKey);
+                $data = $this->pagePayload($frames)[PagePayload::data];
+                self::assertNull($data[AbstractHilosLegalRevisionPage::SECTION]);
+                self::assertSame($acceptKey === self::ADMIN_KEY ? 'Refused legal viewer catalog' : SignalConstants::ACTION_FAILED_REASON,
+                    $data[AbstractHilosLegalPage::CATALOG_REFUSAL]);
+                $json = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
+                self::assertStringNotContainsString(self::TEST_USER_NAME, $json);
+                self::assertStringNotContainsString(self::TEST_USER_EMAIL, $json);
+            }
         }
     }
 
@@ -454,6 +506,14 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             ...$this->subscribe(LegalDocumentRevisionsPage::class, ['documentKey' => self::TERMS_DOCUMENT], self::ADMIN_KEY),
             ...$this->subscribe(
                 LegalRevisionPage::class,
+                [
+                    HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT,
+                    HilosPageRouteParams::HILOS_LEGAL_REVISION_ID => self::TEST_REVISION_ID,
+                ],
+                self::ADMIN_KEY,
+            ),
+            ...$this->subscribe(
+                LegalRevisionTextPage::class,
                 [
                     HilosPageRouteParams::HILOS_LEGAL_DOCUMENT_KEY => self::TERMS_DOCUMENT,
                     HilosPageRouteParams::HILOS_LEGAL_REVISION_ID => self::TEST_REVISION_ID,
@@ -624,4 +684,24 @@ final class AdminViewModeLegalRouter extends SignalRouter
     {
         return Hilos::class;
     }
+}
+
+/** Broken declaration provider exercising the ordinary viewer reply. */
+final class RefusedLegalViewModeCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array Never returns a declaration */
+    public static function revisions(): array
+    {
+        throw new UnknownRevisionException('Refused legal viewer catalog');
+    }
+}
+
+/** Keeps production page bindings while replacing only their declaration source. */
+abstract class RefusedLegalViewModeHilos extends FrameworkHilos
+{
+    public const array PAGES = Hilos::PAGES;
+    public const array TABLES = Hilos::TABLES;
+    public const array PAGE_TABLES = Hilos::PAGE_TABLES;
+
+    protected const ?string LEGAL_CATALOG = RefusedLegalViewModeCatalog::class;
 }

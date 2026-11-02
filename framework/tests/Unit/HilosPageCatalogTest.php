@@ -37,7 +37,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 116;
+    private const int CATALOG_ENTRIES = 117;
 
     /** Number of dashboard sections: the six admin groups from the design system mockup. */
     private const int TRANSFERRED_SECTIONS = 6;
@@ -208,10 +208,6 @@ final class HilosPageCatalogTest extends TestCase
             if (($entry[PageCatalogConstants::CATALOG_ENTRY_PARENT] ?? null) !== HilosPageConstants::HILOS_LEGAL_DOCUMENT) {
                 continue;
             }
-            if ($entry[PageCatalogConstants::CATALOG_ENTRY_ENTITY] ?? false) {
-                self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, $page);
-                continue;
-            }
             $children[$page] = $entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB];
             self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_ENTITY, $entry);
         }
@@ -220,6 +216,24 @@ final class HilosPageCatalogTest extends TestCase
             HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS => 'Deviations',
             HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS => 'Revisions',
         ], $children);
+    }
+
+    public function testRevisionOwnsTextBelowTheRevisionsListWithoutGlobalHeadAdoption(): void
+    {
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revision',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The exact text, its changes, and its acceptances.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Revision',
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-text',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_REVISION]);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Text',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The assembled text of this revision.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_REVISION,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Text',
+        ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_REVISION_TEXT]);
     }
 
     public function testTheTransferIsComplete(): void
