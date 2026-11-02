@@ -325,6 +325,87 @@ it('recognizes only an exact Angular Node Shell with a declared page field', () 
   })
 })
 
+it.each([
+  [
+    'literal page field',
+    '<hilos-legal-document-page-shell [page]="page"><p>Overview</p></hilos-legal-document-page-shell>',
+    'HilosPages.BUILT',
+    true,
+  ],
+  [
+    'hyphenated lookalike',
+    '<hilos-legal-document-page-shell-like [page]="page" />',
+    'HilosPages.BUILT',
+    false,
+  ],
+  [
+    'suffixed lookalike',
+    '<hilos-legal-document-page-shellLike [page]="page" />',
+    'HilosPages.BUILT',
+    false,
+  ],
+  [
+    'HTML comment',
+    '<!-- <hilos-legal-document-page-shell [page]="page" /> --><p>Example</p>',
+    'HilosPages.BUILT',
+    false,
+  ],
+  ['example outside template', '<p>Example</p>', 'HilosPages.BUILT', false],
+  [
+    'static attribute',
+    '<hilos-legal-document-page-shell page="HilosPages.BUILT" />',
+    'HilosPages.BUILT',
+    false,
+  ],
+  [
+    'dynamic page',
+    '<hilos-legal-document-page-shell [page]="page" />',
+    'HilosPages[key]',
+    false,
+  ],
+  [
+    'undeclared field',
+    '<hilos-legal-document-page-shell [page]="other" />',
+    'HilosPages.BUILT',
+    false,
+  ],
+] as const)(
+  'recognizes only exact Angular Legal Shell bindings: %s',
+  (_name, template, field, built) => {
+    withHonestCopy((root) => {
+      const path = 'framework/frontend/angular/src/admin/Built.ts'
+      writeFileSync(
+        join(root, path),
+        `
+      const example = '<hilos-legal-document-page-shell [page]="page" />'
+      @Component({ template: \`${template}\` })
+      export class Built { readonly page = ${field} }
+    `,
+      )
+      if (!built) {
+        writeFileSync(
+          join(root, 'framework/frontend/angular/src/admin/hilosAdminViews.ts'),
+          'export function hilosAdminViews() { return {} }',
+        )
+      }
+      const views = readViews(
+        root,
+        'angular',
+        readPages(source(root, KEYS_PATH)),
+      )
+      if (built) {
+        expect(views.get('hilos_built')).toEqual({ path, line: 3, bare: false })
+        expect(checkTree(root)).toEqual([])
+      } else {
+        expect(views.has('hilos_built')).toBe(false)
+        expect(checkTree(root)).toContain(
+          `UNBUILT-PAGE ${KEYS_PATH}:3 — 'hilos_built' is unbuilt in angular; list it in HILOS_UNBUILT_PAGES ${DOC}`,
+        )
+      }
+    })
+  },
+)
+
 it('recognizes only explicit React Node Shell page bindings', () => {
   withHonestCopy((root) => {
     const path = 'framework/frontend/react/src/admin/Built.tsx'

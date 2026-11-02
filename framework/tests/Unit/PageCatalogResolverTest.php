@@ -78,8 +78,8 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
-    /** Polls adopts only the Legal entry: Document and Revision stay entities without a head. */
-    public function testPollsAdoptsLegalAloneAndLeavesDocumentAndRevisionWithoutHead(): void
+    /** Polls adopts Legal and Document while Revision keeps its legacy head. */
+    public function testPollsAdoptsLegalAndDocumentWhileRevisionKeepsItsLegacyHead(): void
     {
         foreach ([
             PollsLegalPageHeadTestHilos::class => PollsPageCatalog::class,
@@ -92,16 +92,23 @@ final class PageCatalogResolverTest extends TestCase
                 $catalog::pages()[HilosPageConstants::HILOS_LEGAL],
                 $facade,
             );
-            self::assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_DOCUMENT, $catalog::pages(), $facade);
             $facade::initBrowser();
-            foreach ([HilosPageConstants::HILOS_LEGAL_DOCUMENT, HilosPageConstants::HILOS_LEGAL_REVISION] as $page) {
-                self::assertSame($page, PageCatalogResolver::rowOwner($page), $facade . ': ' . $page);
-                self::assertNull(PageCatalogResolver::head($page, new PageRouteParams(['documentKey' => 'terms'])), $facade . ': ' . $page);
-            }
+            self::assertSame(
+                HilosPageConstants::HILOS_LEGAL_REVISION,
+                PageCatalogResolver::rowOwner(HilosPageConstants::HILOS_LEGAL_REVISION),
+                $facade,
+            );
+            self::assertNull(
+                PageCatalogResolver::head(
+                    HilosPageConstants::HILOS_LEGAL_REVISION,
+                    new PageRouteParams(['documentKey' => 'terms']),
+                ),
+                $facade,
+            );
         }
     }
 
-    /** Chat and Tasks adopt the Document owner and its four pages beside the Legal section. */
+    /** Chat, Tasks, and Polls adopt the Document owner and its four pages beside the Legal section. */
     public function testDocumentHeadSharesFourTabsAndKeepsRevisionAsAnIndependentEntity(): void
     {
         $tabs = [
@@ -113,6 +120,7 @@ final class PageCatalogResolverTest extends TestCase
         foreach ([
             ChatLegalPageHeadTestHilos::class => ChatPageCatalog::class,
             TasksLegalPageHeadTestHilos::class => TasksPageCatalog::class,
+            PollsLegalPageHeadTestHilos::class => PollsPageCatalog::class,
         ] as $facade => $catalog) {
             self::assertSame(
                 array_replace(
@@ -3205,13 +3213,16 @@ abstract class TasksLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
     protected const string PAGE_CATALOG = TasksPageCatalog::class;
 }
 
-/** Polls adopts the Legal section without its nested entities and serves only the pages it registers. */
+/** Polls adopts Legal and Document while Revision keeps its legacy head. */
 abstract class PollsLegalPageHeadTestHilos extends Hilos
 {
     public const array PAGES = [
         HilosPageConstants::HILOS_LEGAL => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_DOCUMENTS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_DOCUMENT => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_DEVIATIONS => PageHeadTestPage::class,
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_REVISION => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => PageHeadTestPage::class,
         HilosPageConstants::HILOS_LEGAL_SETTINGS => PageHeadTestPage::class,

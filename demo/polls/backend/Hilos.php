@@ -18,6 +18,9 @@ use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Polls\Pages\Hilos\Legal\LegalPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
@@ -33,6 +36,8 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
@@ -382,6 +387,9 @@ final class Hilos extends HilosFacade
         LegalPage::PAGE => LegalPage::class,
         LegalDocumentsPage::PAGE => LegalDocumentsPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
+        LegalDocumentSetPage::PAGE => LegalDocumentSetPage::class,
+        LegalDocumentDeviationsPage::PAGE => LegalDocumentDeviationsPage::class,
+        LegalDocumentRevisionsPage::PAGE => LegalDocumentRevisionsPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
@@ -606,6 +614,8 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
         PollsTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
         PollsTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+        PollsTableContext::hilosLegalDocumentSet => HilosLegalDocumentSetTable::class,
+        PollsTableContext::hilosLegalDocumentDeviations => HilosLegalDocumentDeviationsTable::class,
         PollsTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         PollsTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
         PollsTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
@@ -835,6 +845,15 @@ final class Hilos extends HilosFacade
             PollsTableContext::hilosLegalSettings => [],
         ],
         LegalDocumentPage::PAGE => [
+            PollsTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentSetPage::PAGE => [
+            PollsTableContext::hilosLegalDocumentSet => [],
+        ],
+        LegalDocumentDeviationsPage::PAGE => [
+            PollsTableContext::hilosLegalDocumentDeviations => [],
+        ],
+        LegalDocumentRevisionsPage::PAGE => [
             PollsTableContext::hilosLegalRevisions => [],
         ],
         LegalRevisionPage::PAGE => [

@@ -60,6 +60,9 @@ use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Polls\Pages\Hilos\Legal\LegalPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentSetPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
@@ -73,6 +76,8 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
@@ -843,7 +848,9 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
         foreach ([
             LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
-            LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+            LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class,
+            LegalDocumentRevisionsPage::class, LegalRevisionPage::class,
+            LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
@@ -853,6 +860,16 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame([], LegalDocumentsPage::ACTIONS);
         $this->assertSame([], LegalDocumentsPage::SIGNALS);
         $this->assertSame([], LegalDocumentsPage::READING_ACTIONS);
+        foreach ([
+            LegalDocumentSetPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_SET,
+            LegalDocumentDeviationsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_DEVIATIONS,
+            LegalDocumentRevisionsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_REVISIONS,
+        ] as $page => $signal) {
+            $this->assertSame($signal, $page::BROWSER[BrowserConfigKey::SIGNAL]);
+            $this->assertSame([], $page::ACTIONS);
+            $this->assertSame([], $page::SIGNALS);
+            $this->assertSame([], $page::READING_ACTIONS);
+        }
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
@@ -865,7 +882,12 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosLegalDocuments => [],
             PollsTableContext::hilosLegalSettings => [],
         ], Hilos::PAGE_TABLES[LegalDocumentsPage::PAGE]);
-        $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalDocumentSet => []], Hilos::PAGE_TABLES[LegalDocumentSetPage::PAGE]);
+        $this->assertSame([
+            PollsTableContext::hilosLegalDocumentDeviations => [],
+        ], Hilos::PAGE_TABLES[LegalDocumentDeviationsPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentRevisionsPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
@@ -884,7 +906,13 @@ final class PollsTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Legal',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[HilosPageConstants::HILOS_LEGAL]);
-        $this->assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_DOCUMENT, PageCatalog::pages());
+        $this->assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            PageCatalog::pages()[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
+        );
         $this->assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalog::pages());
     }
 
@@ -1638,6 +1666,8 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
             PollsTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
             PollsTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+            PollsTableContext::hilosLegalDocumentSet => HilosLegalDocumentSetTable::class,
+            PollsTableContext::hilosLegalDocumentDeviations => HilosLegalDocumentDeviationsTable::class,
             PollsTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
             PollsTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
             PollsTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
@@ -1710,6 +1740,9 @@ final class PollsTopologyRegistryTest extends TestCase
                 LegalPage::PAGE,
                 LegalDocumentsPage::PAGE,
                 LegalDocumentPage::PAGE,
+                LegalDocumentSetPage::PAGE,
+                LegalDocumentDeviationsPage::PAGE,
+                LegalDocumentRevisionsPage::PAGE,
                 LegalRevisionPage::PAGE,
                 LegalAcceptancesPage::PAGE,
                 LegalSettingsPage::PAGE,

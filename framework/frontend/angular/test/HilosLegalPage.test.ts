@@ -18,13 +18,16 @@ import {
 import { type HilosLegalOverview } from '@hilos/core/admin/legal'
 import { HilosLegalPage } from '../src/admin/legal/HilosLegalPage.js'
 import { HilosLegalDocumentPage } from '../src/admin/legal/HilosLegalDocumentPage.js'
+import { HilosLegalDocumentSetPage } from '../src/admin/legal/HilosLegalDocumentSetPage.js'
+import { HilosLegalDocumentDeviationsPage } from '../src/admin/legal/HilosLegalDocumentDeviationsPage.js'
+import { HilosLegalDocumentRevisionsPage } from '../src/admin/legal/HilosLegalDocumentRevisionsPage.js'
 import { HilosLegalDocumentsPage } from '../src/admin/legal/HilosLegalDocumentsPage.js'
 import { HilosLegalRevisionPage } from '../src/admin/legal/HilosLegalRevisionPage.js'
 
 /** Real reactive page data with the transport replaced at its boundary. */
-function harness() {
+function harness(page: string = HilosPages.LEGAL) {
   const scopes = new ScopeManager()
-  const scope = scopes.openPage('hilos_legal')
+  const scope = scopes.openPage(page)
   const context = {
     scopes,
     connection: {
@@ -38,7 +41,7 @@ function harness() {
   } as unknown as HilosLegalContext
   const router = {
     currentRoute: createSignal({
-      page: 'hilos_legal',
+      page,
       params: { documentKey: 'terms', revisionId: 'current' },
       admin: true,
     }),
@@ -54,11 +57,24 @@ describe('legal admin Angular pages', () => {
     HilosLegalPage,
     HilosLegalDocumentsPage,
     HilosLegalDocumentPage,
+    HilosLegalDocumentSetPage,
+    HilosLegalDocumentDeviationsPage,
+    HilosLegalDocumentRevisionsPage,
     HilosLegalRevisionPage,
   ])(
     'replaces declaration content with the catalog refusal',
     async (component) => {
-      const h = harness()
+      const page =
+        component === HilosLegalDocumentPage
+          ? HilosPages.LEGAL_DOCUMENT
+          : component === HilosLegalDocumentSetPage
+            ? HilosPages.LEGAL_DOCUMENT_SET
+            : component === HilosLegalDocumentDeviationsPage
+              ? HilosPages.LEGAL_DOCUMENT_DEVIATIONS
+              : component === HilosLegalDocumentRevisionsPage
+                ? HilosPages.LEGAL_DOCUMENT_REVISIONS
+                : HilosPages.LEGAL
+      const h = harness(page)
       await TestBed.configureTestingModule({
         imports: [component],
         providers: [{ provide: HILOS_ROUTER, useValue: h.router }],
@@ -80,13 +96,15 @@ describe('legal admin Angular pages', () => {
       expect(
         element.querySelector('[data-id="legal-revision-text"]'),
       ).toBeNull()
+      expect(element.querySelector('table')).toBeNull()
+      expect(element.querySelector('[data-id="legal-set-metadata"]')).toBeNull()
       fixture.destroy()
     },
   )
 })
 
 it('opens both consent documents in a read-only Angular preview', async () => {
-  const h = harness()
+  const h = harness(HilosPages.LEGAL_DOCUMENT)
   h.scope.data.set('legalDocument', {
     covered: 0,
     window: 0,
@@ -151,7 +169,7 @@ it('opens both consent documents in a read-only Angular preview', async () => {
 })
 
 it('shows the server unpublished sentence literally in the Angular consent preview', async () => {
-  const h = harness()
+  const h = harness(HilosPages.LEGAL_DOCUMENT)
   h.scope.data.set('legalDocument', {
     covered: 0,
     window: 0,

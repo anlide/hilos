@@ -441,7 +441,7 @@ function templateBindings(
     const tag =
       layer === 'vue'
         ? /<([A-Z]\w*)\b[^>]*>/g
-        : /<(?:hilos-(?:admin|setting-presets)-page\b|hilos-daemon-node-shell(?=[\s/>]))[^>]*>/g
+        : /<(?:hilos-(?:admin|setting-presets)-page\b|hilos-daemon-node-shell(?=[\s/>])|hilos-legal-document-page-shell(?=[\s/>]))[^>]*>/g
     for (const match of clean.matchAll(tag)) {
       const attribute =
         layer === 'vue'

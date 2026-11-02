@@ -393,9 +393,9 @@ daemon wherever its page is served: nginx in test and production (a
 `/_hilos/data-export` (`vite.config.ts` in chat and tasks, `proxy.conf.json` in
 polls). Chat, tasks and polls provide these export bindings. The framework owns
 the pages, projections, settings rules and SDK views. The Document redraw and
-its three new tabs are connected in Chat/Vue and Tasks/React; Angular (HIL-1855)
-retains its existing views and marks those tabs unbuilt. The project supplies
-person names and name searches to `AbstractHilosLegalAcceptancesTable`.
+its three new tabs are connected in Chat/Vue, Tasks/React, and Polls/Angular.
+The project also supplies person names and name searches to
+`AbstractHilosLegalAcceptancesTable`.
 
 The shared route registry declares `hilos_legal_documents` at
 `/hilos/legal/documents` (`admin=true`, no params), `hilos_legal_document` at
@@ -447,13 +447,17 @@ drawn. Standard set binds `hilosLegalDocumentSet`, Deviations binds
 exact Revision page reuses the last table with both document and revision
 filters; Acceptances and Settings bind their own tables.
 
-Polls (Angular) connects six backend Legal pages: the root Overview, Documents,
-Document, Revision, Acceptances and Settings. Its root binds Checks and Settings;
-Documents binds the Documents and Settings tables, with Settings again a hidden
-carrier for the refusal-policy label. Document and Revision keep their earlier
-views and bind `hilosLegalRevisions`, and Acceptances and Settings bind their own
-tables. The Angular Document redraw and its three tabs remain unbuilt
-(HIL-1855). The React and Angular roots are the Overview: the declared-document
+Polls (Angular) connects nine backend Legal pages: the root Overview, Documents,
+Document Overview, Standard set, Deviations, Revisions, exact Revision,
+Acceptances and Settings. Its root binds Checks and Settings; Documents binds the
+Documents and Settings tables. Document Overview binds only
+`hilosLegalSettings`; on Documents and Document Overview, Settings is a hidden
+carrier for the refusal-policy label of lapsed counts, and no settings table is
+drawn. Standard set, Deviations and Revisions each bind their own table:
+`hilosLegalDocumentSet`, `hilosLegalDocumentDeviations` and
+`hilosLegalRevisions`. Exact Revision reuses the revisions table with both
+document and revision filters; Acceptances and Settings bind their own tables.
+The React and Angular roots are the Overview: the declared-document
 summary and the four checks without a document window, while the document
 coverage table lives on its own Documents page.
 

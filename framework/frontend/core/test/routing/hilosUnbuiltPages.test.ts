@@ -10,15 +10,15 @@ import {
 } from '../../src/routing/hilosUnbuiltPages.js'
 
 describe('hilosUnbuiltPages', () => {
-  it('keeps only Angular document tabs unbuilt', () => {
+  it('serves all three document tabs in every view layer', () => {
     for (const page of [
       HilosPages.LEGAL_DOCUMENT_SET,
       HilosPages.LEGAL_DOCUMENT_DEVIATIONS,
       HilosPages.LEGAL_DOCUMENT_REVISIONS,
     ]) {
-      expect(HILOS_UNBUILT_PAGES[page]).toEqual(['angular'])
+      expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(page)
       for (const layer of ['vue', 'react', 'angular'] as const) {
-        expect(hilosUnbuiltPages(layer).has(page)).toBe(layer === 'angular')
+        expect(hilosUnbuiltPages(layer).has(page)).toBe(false)
         expect(hilosUnbuiltPages(layer).has(HilosPages.LEGAL_DOCUMENT)).toBe(
           false,
         )

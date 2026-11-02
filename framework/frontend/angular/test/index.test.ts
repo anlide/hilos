@@ -22,6 +22,9 @@ import {
   HilosAuthSurface,
   HilosBreadcrumb,
   HilosDashboardPage,
+  HilosLegalDocumentSetPage,
+  HilosLegalDocumentDeviationsPage,
+  HilosLegalDocumentRevisionsPage,
   HilosDropdown,
   HilosFormError,
   HilosSendProgress,
@@ -67,6 +70,7 @@ import {
 } from '../src/index.js'
 import * as root from '../src/index.js'
 import * as base from '../src/base/index.js'
+import * as legal from '@hilos/angular/admin/legal'
 import * as moderation from '@hilos/angular/admin/moderation'
 
 it('exports the @hilos/angular public surface', () => {
@@ -127,6 +131,18 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosTableText).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')
+  expect(HilosLegalDocumentSetPage).toBeTypeOf('function')
+  expect(HilosLegalDocumentSetPage).toBe(legal.HilosLegalDocumentSetPage)
+  expect(HilosLegalDocumentDeviationsPage).toBeTypeOf('function')
+  expect(HilosLegalDocumentDeviationsPage).toBe(
+    legal.HilosLegalDocumentDeviationsPage,
+  )
+  expect(HilosLegalDocumentRevisionsPage).toBeTypeOf('function')
+  expect(HilosLegalDocumentRevisionsPage).toBe(
+    legal.HilosLegalDocumentRevisionsPage,
+  )
+  expect(legal).not.toHaveProperty('HilosLegalDocumentPageShell')
+  expect(root).not.toHaveProperty('HilosLegalDocumentPageShell')
   expect(HilosAppearancePage).toBeTypeOf('function')
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.APPEARANCE)
   expect(HilosUsersPage).toBeTypeOf('function')

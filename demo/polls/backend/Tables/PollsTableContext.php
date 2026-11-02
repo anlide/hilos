@@ -16,6 +16,8 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
+use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
@@ -107,6 +109,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosSecuritySignInMethodsTable $hilosSecuritySignInMethods
  * @property-read HilosSecurityTwoFactorTable $hilosSecurityTwoFactor
  * @property-read HilosLegalDocumentsTable $hilosLegalDocuments
+ * @property-read HilosLegalDocumentSetTable $hilosLegalDocumentSet
+ * @property-read HilosLegalDocumentDeviationsTable $hilosLegalDocumentDeviations
  * @property-read HilosLegalChecksTable $hilosLegalChecks
  * @property-read HilosLegalRevisionsTable $hilosLegalRevisions
  * @property-read HilosLegalAcceptancesTable $hilosLegalAcceptances
@@ -164,6 +168,8 @@ final class PollsTableContext extends TableContext
     public const string hilosSecuritySignInMethods = HilosSecuritySignInMethodsTable::TABLE;
     public const string hilosSecurityTwoFactor = HilosSecurityTwoFactorTable::TABLE;
     public const string hilosLegalDocuments = HilosLegalDocumentsTable::TABLE;
+    public const string hilosLegalDocumentSet = HilosLegalDocumentSetTable::TABLE;
+    public const string hilosLegalDocumentDeviations = HilosLegalDocumentDeviationsTable::TABLE;
     public const string hilosLegalChecks = HilosLegalChecksTable::TABLE;
     public const string hilosLegalRevisions = HilosLegalRevisionsTable::TABLE;
     public const string hilosLegalAcceptances = HilosLegalAcceptancesTable::TABLE;

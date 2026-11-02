@@ -357,6 +357,21 @@ export class App {
         (module) => module.LegalDocument,
       ),
     ),
+    [HilosPages.LEGAL_DOCUMENT_SET]: lazyPage(() =>
+      import('./views/hilos/legal/legal-document-set.js').then(
+        (module) => module.LegalDocumentSet,
+      ),
+    ),
+    [HilosPages.LEGAL_DOCUMENT_DEVIATIONS]: lazyPage(() =>
+      import('./views/hilos/legal/legal-document-deviations.js').then(
+        (module) => module.LegalDocumentDeviations,
+      ),
+    ),
+    [HilosPages.LEGAL_DOCUMENT_REVISIONS]: lazyPage(() =>
+      import('./views/hilos/legal/legal-document-revisions.js').then(
+        (module) => module.LegalDocumentRevisions,
+      ),
+    ),
     [HilosPages.LEGAL_REVISION]: lazyPage(() =>
       import('./views/hilos/legal/legal-revision.js').then(
         (module) => module.LegalRevision,

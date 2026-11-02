@@ -15,6 +15,7 @@ import {
   PAGE_REFUSED,
   grantAdminToSelf,
   createTestAdmin,
+  tableRowKeys,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 /** The header line of a file of acceptance records (HIL-1234). */
@@ -42,6 +43,58 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   page,
 }) => {
   await createTestAdmin(expect, page)
+  const documentPath = '/hilos/legal/document/terms'
+  const documentTabs = [
+    {
+      suffix: 'set',
+      rows: {
+        terms: [
+          'standard.file_access',
+          'standard.retention',
+          'standard.moderation',
+          'standard.availability',
+          'standard.account_rules',
+          'standard.ownership',
+        ],
+        privacy: [
+          'standard.no_sale',
+          'standard.deletion',
+          'standard.export',
+          'standard.passwords',
+          'standard.access_log',
+          'standard.session_data',
+          'standard.breach_notice',
+        ],
+      },
+      statement: {
+        terms: 'Content is kept for 12 months.',
+        privacy: 'Your data is not sold.',
+      },
+    },
+    {
+      suffix: 'deviations',
+      rows: {
+        terms: ['standard.availability'],
+        privacy: ['standard.deletion'],
+      },
+      statement: {
+        terms: 'This is a demo: its data may be wiped at any time',
+        privacy:
+          'Account deletion leaves numbered analytics events and network addresses',
+      },
+    },
+    {
+      suffix: 'revisions',
+      rows: {
+        terms: ['2026-10-07', '2026-10-01', '2026-09-17'],
+        privacy: ['2026-10-09', '2026-09-17'],
+      },
+      statement: {
+        terms: '2026-10-07',
+        privacy: '2026-10-09',
+      },
+    },
+  ]
   await gotoPage(expect, page, '/hilos/legal')
   // The Overview reads the summary the Polls server hands its root (HIL-1853).
   for (const document of ['terms', 'privacy']) {
@@ -57,10 +110,7 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   // A lapsed count leads to the people past the deadline only when there are any (HIL-945).
   await expect(page.getByTestId('legal-count-lapsed-link')).toHaveCount(0)
   await expect(shownByTestId(page, 'legal-check-row')).toHaveCount(4)
-  // The tab row holds the one Documents link the head offers as a section.
-  const documentsTab = page
-    .getByRole('navigation', { name: 'Page sections' })
-    .getByRole('link', { name: 'Documents' })
+  const documentsTab = page.getByTestId('hilos-page-tab-hilos_legal_documents')
   await clickSubmit(expect, documentsTab)
   await expect(page).toHaveURL('/hilos/legal/documents')
   await expectPageReady(expect, page)
@@ -76,17 +126,39 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   const documentOpen = shownByTestId(page, 'legal-document-open').and(
     page.locator('[data-document="terms"]'),
   )
-  await expect(documentOpen).toHaveAttribute(
-    'href',
-    '/hilos/legal/document/terms',
-  )
+  await expect(documentOpen).toHaveAttribute('href', documentPath)
   await clickSubmit(expect, documentOpen)
-  await expect(page).toHaveURL('/hilos/legal/document/terms')
-  await expect(page.getByTestId('legal-set')).toContainText(
-    'Hilos standard set 1',
+  await expect(page).toHaveURL(documentPath)
+  await expectPageReady(expect, page)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Terms')
+  await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+  await expect(page.getByTestId('legal-document-sources')).toContainText(
+    'Demo\\Polls\\Legal\\PollsLegalCatalog',
   )
-  await expect(page.getByTestId('legal-deviation-row')).toHaveCount(1)
-  await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
+  for (const tab of documentTabs) {
+    await test.step(`The ${tab.suffix} tab opens the Terms window`, async () => {
+      const path = `${documentPath}/${tab.suffix}`
+      const link = page.getByTestId(
+        `hilos-page-tab-hilos_legal_document_${tab.suffix}`,
+      )
+      await expect(link).toHaveAttribute('href', path)
+      await clickSubmit(expect, link)
+      await expect(page).toHaveURL(path)
+      await expectPageReady(expect, page)
+      await expect(link).toHaveAttribute('aria-current', 'page')
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Terms')
+      await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+      await expect.poll(() => tableRowKeys(page)).toEqual(tab.rows.terms)
+      await expect(page.getByRole('table')).toContainText(tab.statement.terms)
+      if (tab.suffix === 'set') {
+        await expect(page.getByTestId('legal-set-metadata')).toContainText(
+          'Set 1 from 2026-09-17',
+        )
+      }
+    })
+  }
   const revisionPath = '/hilos/legal/document/terms/revision/2026-10-07'
   const revisionOpen = shownByTestId(page, 'legal-revision-open').and(
     page.locator('[data-revision="2026-10-07"]'),
@@ -94,7 +166,11 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(revisionOpen).toHaveAttribute('href', revisionPath)
   await clickSubmit(expect, revisionOpen)
   await expect(page).toHaveURL(revisionPath)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('legal-revision-text')).toBeVisible()
+  await expect(page.getByTestId('legal-revision-text')).toContainText(
+    'This installation only demonstrates the framework and is reset without warning',
+  )
   await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(
     page.getByTestId('legal-changes-wide').getByTestId('legal-change-row'),
@@ -102,23 +178,94 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
     /^\s*[1-9]\d* acceptances\s*$/,
   )
-  await page.goBack()
-  await expect(page).toHaveURL('/hilos/legal/document/terms')
-  await expectPageReady(expect, page)
-  await expect(page.getByTestId('legal-set')).toBeVisible()
+  await test.step('Back and Forward restore the document pages and their data', async () => {
+    for (const tab of [...documentTabs].reverse()) {
+      await page.goBack()
+      await expect(page).toHaveURL(`${documentPath}/${tab.suffix}`)
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+      await expect(
+        page.getByTestId(`hilos-page-tab-hilos_legal_document_${tab.suffix}`),
+      ).toHaveAttribute('aria-current', 'page')
+      await expect.poll(() => tableRowKeys(page)).toEqual(tab.rows.terms)
+      await expect(page.getByRole('table')).toContainText(tab.statement.terms)
+    }
+    await page.goBack()
+    await expect(page).toHaveURL(documentPath)
+    await expectPageReady(expect, page)
+    await expect(
+      page.getByTestId('hilos-page-tab-hilos_legal_document'),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByTestId('legal-document-sources')).toContainText(
+      'Demo\\Polls\\Legal\\PollsLegalCatalog',
+    )
+    for (const tab of documentTabs) {
+      await page.goForward()
+      await expect(page).toHaveURL(`${documentPath}/${tab.suffix}`)
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+      await expect(
+        page.getByTestId(`hilos-page-tab-hilos_legal_document_${tab.suffix}`),
+      ).toHaveAttribute('aria-current', 'page')
+      await expect.poll(() => tableRowKeys(page)).toEqual(tab.rows.terms)
+      await expect(page.getByRole('table')).toContainText(tab.statement.terms)
+    }
+    await page.goForward()
+    await expect(page).toHaveURL(revisionPath)
+    await expectPageReady(expect, page)
+    await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await expect(page.getByTestId('legal-revision-text')).toContainText(
+      'This installation only demonstrates the framework and is reset without warning',
+    )
+  })
   await test.step('Document and revision addresses support direct entry and F5', async () => {
     await gotoPage(expect, page, revisionPath, PAGE_READY)
     await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
     await page.reload()
     await expectPageReady(expect, page)
     await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
-    await gotoPage(expect, page, '/hilos/legal/document/terms', PAGE_READY)
-    await expect(page.getByTestId('legal-set')).toBeVisible()
+    await gotoPage(expect, page, documentPath, PAGE_READY)
+    await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+    await expect(page.getByTestId('legal-document-sources')).toContainText(
+      'Demo\\Polls\\Legal\\PollsLegalCatalog',
+    )
     await page.reload()
     await expectPageReady(expect, page)
+    await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
+    await expect(page.getByTestId('legal-document-sources')).toContainText(
+      'Demo\\Polls\\Legal\\PollsLegalCatalog',
+    )
   })
-  await expect(page.getByTestId('legal-set')).toBeVisible()
-  await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
+  for (const tab of documentTabs) {
+    await test.step(`Direct entry and F5 load the Privacy ${tab.suffix} window`, async () => {
+      const path = `/hilos/legal/document/privacy/${tab.suffix}`
+      await gotoPage(expect, page, path, PAGE_READY)
+      await expect(page).toHaveURL(path)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        'Privacy policy',
+      )
+      await expect(page.getByTestId('legal-document-key')).toHaveText('privacy')
+      await expect(
+        page.getByTestId(`hilos-page-tab-hilos_legal_document_${tab.suffix}`),
+      ).toHaveAttribute('aria-current', 'page')
+      await expect.poll(() => tableRowKeys(page)).toEqual(tab.rows.privacy)
+      await expect(page.getByRole('table')).toContainText(tab.statement.privacy)
+      await page.reload()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(path)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        'Privacy policy',
+      )
+      await expect(page.getByTestId('legal-document-key')).toHaveText('privacy')
+      await expect(
+        page.getByTestId(`hilos-page-tab-hilos_legal_document_${tab.suffix}`),
+      ).toHaveAttribute('aria-current', 'page')
+      await expect.poll(() => tableRowKeys(page)).toEqual(tab.rows.privacy)
+      await expect(page.getByRole('table')).toContainText(tab.statement.privacy)
+    })
+  }
   await test.step('Documents supports direct entry and F5', async () => {
     await gotoPage(expect, page, '/hilos/legal/documents', PAGE_READY)
     await expect(shownByTestId(page, 'legal-document-row')).toHaveCount(2)

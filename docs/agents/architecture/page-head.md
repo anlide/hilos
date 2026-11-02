@@ -66,13 +66,11 @@ Legal is opted into the shared section head by the providers of Chat (Vue),
 Tasks (React) and Polls (Angular). Its Overview / Documents / Acceptances /
 Settings pages share the Legal row; the framework catalog default keeps its
 existing composition.
-Chat's Vue and Tasks' React providers also opt Document into the shared entity
-head. Document is an entity child of Documents; its Overview / Standard set /
-Deviations / Revisions pages share one head and link row. Revision remains a
-separate entity child of Document without its own head adoption; that redraw
-belongs to HIL-1666. Polls adopts only the Legal section: Document and Revision
-there are entities without a head of their own, and the three new Document tabs
-remain unbuilt in Angular (HIL-1855).
+Chat (Vue), Tasks (React), and Polls (Angular) opt Document into the shared
+entity head. Document is an entity child of Documents; its Overview / Standard
+set / Deviations / Revisions pages share one head and link row. Revision remains
+a separate entity child of Document without its own head adoption; that redraw
+belongs to HIL-1666.
 
 ## Core Rule And Ownership
 
