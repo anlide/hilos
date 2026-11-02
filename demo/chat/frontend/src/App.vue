@@ -111,6 +111,9 @@ const pages: Record<string, PageView<Component>> = {
   [HilosPages.USER]: lazyPage(() =>
     import('./views/Hilos/Users/User.vue').then((m) => m.default),
   ),
+  [HilosPages.USER_SESSIONS]: lazyPage(() =>
+    import('./views/Hilos/Users/Sessions.vue').then((m) => m.default),
+  ),
   [HilosPages.BACKUP]: lazyPage(() =>
     import('./views/Hilos/Backup/Backup.vue').then((m) => m.default),
   ),

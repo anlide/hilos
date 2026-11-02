@@ -27,8 +27,8 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
  */
 final class UserPage extends AbstractHilosUserPage
 {
-    /** @var list<string> The person this page is about */
-    public const array READS_DB = [BinanceBtcTrackerDbContext::users];
+    /** @var list<string> The person this page is about, and the sessions its sessions tile reads */
+    public const array READS_DB = [BinanceBtcTrackerDbContext::users, BinanceBtcTrackerDbContext::sessions];
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 

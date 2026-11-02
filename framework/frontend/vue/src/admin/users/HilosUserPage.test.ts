@@ -56,7 +56,8 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 /**
  * Navigation uses the production page identity and live instance-name binding.
- * The future user tabs have no built views and therefore resolve no address.
+ * The future user tabs have no built views and therefore resolve no address;
+ * Sessions is built in Vue (HIL-1662) and resolves its own.
  *
  * @param scopes The same permitted page scopes the production shell reads.
  * @param overrides The members a test needs live.
@@ -90,9 +91,7 @@ function router(
     pageIdentity: identity,
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) =>
-      page === HilosPages.USER_ROLES ||
-      page === HilosPages.USER_ACCESS ||
-      page === HilosPages.USER_SESSIONS
+      page === HilosPages.USER_ROLES || page === HilosPages.USER_ACCESS
         ? undefined
         : routes.path(page, params),
     clearPageError: () => {},
@@ -433,6 +432,60 @@ function standing(
   }
 }
 
+/** One session of the card's person with the keys of its open tabs. */
+interface SessionItem {
+  readonly id: number
+  readonly tabs: readonly string[]
+}
+
+/**
+ * A session of the card's person with the keys of its open tabs.
+ *
+ * @param id The session id.
+ * @param tabs The accept keys of its open tabs.
+ */
+function sessionItem(id: number, tabs: readonly string[] = []): SessionItem {
+  return { id, tabs }
+}
+
+/**
+ * Give the card the sessions list its page reads (HIL-1662): the page says it
+ * reads the list, and each session arrives as an entity with its tabs.
+ *
+ * @param scopes The card's scopes.
+ * @param items The person's sessions.
+ */
+function giveSessions(
+  scopes: ScopeManager,
+  items: readonly SessionItem[],
+): void {
+  const page = scopes.page()!
+  page.data.set('userSessionsEnabled', true)
+  for (const item of items) {
+    page.entities.upsert(
+      { type: 'session', id: item.id },
+      {
+        id: item.id,
+        userId: 1,
+        deviceName: 'Firefox on Linux',
+        browserTimeZone: null,
+        createdAt: 1789812000000,
+        lastSeenAt: 1789812000000,
+        expiresAt: null,
+        impersonatorUserId: null,
+      },
+    )
+    page.lists.upsert('userSessions', item.id, {
+      sessions: { type: 'session', id: item.id },
+      connections: item.tabs.map((acceptKey) => ({
+        acceptKey,
+        sessionId: item.id,
+        connectedAt: 1789812000000,
+      })),
+    })
+  }
+}
+
 /** The refusal a window meets when its administrator has nothing to confirm with. */
 const STEP_UP_REFUSAL =
   'Add a password, an email or a phone to your account to do this'
@@ -515,7 +568,15 @@ describe('HilosUserPage Overview', () => {
     expect(
       wrapper.get('[data-id="hilos-breadcrumb"] a').attributes('href'),
     ).toBe('/hilos')
-    expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
+    // Of the tabs the server sent, Vue builds Overview and Sessions (HIL-1662).
+    expect(
+      wrapper
+        .findAll('[data-id="hilos-page-tabs"] [data-id^="hilos-page-tab-"]')
+        .map((tab) => [tab.text(), tab.attributes('href')]),
+    ).toEqual([
+      ['Overview', '/hilos/user/1'],
+      ['Sessions', '/hilos/user/1/sessions'],
+    ])
     expect(
       wrapper.find('[data-id="hilos-page-head-block"] button').exists(),
     ).toBe(false)
@@ -556,6 +617,8 @@ describe('HilosUserPage Overview', () => {
         { timeZone: 'Pacific/Honolulu' },
       )
     context.scopes.page()!.data.set('accountStanding', standing())
+    // One session with three open tabs is one session on the tile (HIL-1662).
+    giveSessions(context.scopes, [sessionItem(41, ['ak-a', 'ak-b', 'ak-c'])])
     const slot = vi.fn(({ detail }: { detail: HilosUserDetailRow }) =>
       h('section', { 'data-id': 'project-user-overview' }, [
         h('h2', 'Chat participant'),
@@ -610,10 +673,12 @@ describe('HilosUserPage Overview', () => {
       'project-user-overview',
       'hilos-user-merge-zone',
     ])
-    expect(overview.get('[data-id="hilos-user-sessions"]').text()).toBe('1')
-    expect(overview.find('[data-id="hilos-user-sessions"] a').exists()).toBe(
-      false,
+    const tile = overview.get('[data-id="hilos-user-sessions"]')
+    expect(tile.text()).toBe('1')
+    expect(tile.element.previousElementSibling?.textContent?.trim()).toBe(
+      'Sessions',
     )
+    expect(tile.get('a').attributes('href')).toBe('/hilos/user/1/sessions')
     expect(overview.find('dl').exists()).toBe(false)
     expect(overview.text()).not.toMatch(
       /User ID|Online sessions|Last activity|Superadmin|Delegations/,
@@ -640,6 +705,61 @@ describe('HilosUserPage Overview', () => {
     await opener.trigger('click')
     expect(nameInput().value).toBe('Alice')
     expect(saveButton().disabled).toBe(true)
+  })
+
+  it('counts sessions on the first tile only where the page reads them, and never draws a hidden count as zero', async () => {
+    /**
+     * Mount the card and return its first tile and the caption above it.
+     *
+     * @param context The card's context.
+     */
+    async function firstTile(context: HilosUsersContext) {
+      const wrapper = mount(HilosUserPage, {
+        props: { context: markRaw(context) },
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+        },
+      })
+      mounted.push(wrapper)
+      await nextTick()
+      const tile = wrapper.get('[data-id="hilos-user-sessions"]')
+
+      return {
+        tile,
+        caption: tile.element.previousElementSibling?.textContent?.trim(),
+      }
+    }
+
+    // A page that reads no list keeps the open connections it always showed.
+    const plain = userContext()
+    const fallback = await firstTile(plain.context)
+    expect(fallback.caption).toBe('Open connections')
+    expect(fallback.tile.text()).toBe('1')
+    expect(fallback.tile.find('a').exists()).toBe(false)
+
+    // A read list with no session is a zero, and still the way to the tab.
+    const empty = userContext()
+    giveSessions(empty.context.scopes, [])
+    const none = await firstTile(empty.context)
+    expect(none.caption).toBe('Sessions')
+    expect(none.tile.text()).toBe('0')
+    expect(none.tile.get('a').attributes('href')).toBe('/hilos/user/1/sessions')
+
+    // A viewer of the admin view mode is shown the mark, not a number.
+    const hidden = userContext()
+    giveSessions(hidden.context.scopes, [sessionItem(41, ['ak-a'])])
+    hidden.context.scopes.session.data.set('adminViewMode', true)
+    const release = bindAdminAccess(hidden.context.scopes)
+    try {
+      const viewer = await firstTile(hidden.context)
+      expect(viewer.caption).toBe('Sessions')
+      expect(viewer.tile.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+      expect(viewer.tile.text()).not.toMatch(/\d/)
+      expect(viewer.tile.find('a').exists()).toBe(false)
+    } finally {
+      release()
+    }
+    expect([...plain.sent, ...empty.sent, ...hidden.sent]).toEqual([])
   })
 
   it('renders the read-only time zone through live visible and hidden entity updates', async () => {

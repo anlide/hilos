@@ -451,6 +451,31 @@ untouched. `Clear` retains its existing collection-wide meaning. The behavior is
 covered by `BrowserContextDataScopeTest` and the language-card fan-out cases in
 `I18nLanguageCardTest::testSubscribedCardReceivesEnabledLocaleCounts`.
 
+A list item can carry a row of another table that its anchor points at by a
+foreign key: the administrator acting in a session, joined by the session's
+`impersonatorUserId`. Such a row declares no `ITEM_KEY`; it is not `MANY`, its
+source is a database collection, and `VIA` names exactly one pair, from the
+source's primary key to an anchor field —
+`[SOURCE => DB users, VIA => [User::id => Session::impersonatorUserId], FIELDS => [User::id, User::name], TRIGGERS => [User::name]]`.
+No vocabulary constant names this form; the missing key and the single `VIA`
+pair do (`BrowserSourceConfig::anchorFieldJoin()`). The row is read by the key
+held in the anchor fragment, and a session nobody acts in carries no fragment
+of it. A change of its source — create, an update of a `TRIGGERS` field, or
+delete — does not become an item key: the changed row's id would address
+whichever item merely has the same number. `BrowserContext` asks the anchor
+table instead, with the same `whereColumnIs()` call a join is read by, for the
+items whose anchor field holds the changed row's key. Each candidate passes
+the anchor's `WHERE` with the subscription's params before its row is built,
+so the subscriber of another person's items gets neither rows nor deletions.
+That is one indexed query per change and subscription, with no cache between
+subscriptions. The start holds the form to the mounted tables
+(`TopologyValidator::validateReferences()`): the `VIA` column is the source's
+primary key, the anchor is a database source that projects the anchor field,
+and that field's column is a primary key or the leftmost column of an index.
+A runtime anchor or a `MANY` row of this form is refused. Declarations that
+carry `ITEM_KEY` behave as before. The behavior is covered by
+`BrowserContextAnchorFieldJoinTest`.
+
 `Clear` is collection-scoped, not row-scoped: it carries the `sourceKey` with an
 empty `sourceId`/`row` and means "every row in this collection was removed". It
 is queued by the framework `Objects::deleteAll()` (signal `DB_SYNC_CLEARED`,

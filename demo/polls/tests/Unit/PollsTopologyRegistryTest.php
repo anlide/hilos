@@ -1251,6 +1251,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 // The takeover the Hilos users page forwards: the page carries the ADMIN level
                 // that closes the action, and the session it rebinds is the library's (HIL-824).
                 HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 // A restore's logins and letters, offered by whoever holds them. Only the hand-over
                 // names land here: this demo registers no backup agent, so nothing writes the

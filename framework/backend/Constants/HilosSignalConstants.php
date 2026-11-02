@@ -51,8 +51,10 @@ use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\Session\DTO\UserSessionsEndRequestSignalData;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmedSignalData;
 use Hilos\Auth\StepUp\StepUpConfirmations;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
@@ -113,6 +115,9 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Pages\Users\AbstractHilosUserSessionsPage;
+use Hilos\Pages\Users\DTO\HilosUserSessionEndActionDTO;
+use Hilos\Pages\Users\DTO\HilosUserSessionsEndAllActionDTO;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
@@ -510,6 +515,9 @@ final class HilosSignalConstants
 
     /** Subscription signal for Hilos single user page. */
     public const string SUBSCRIPTION_PAGE_HILOS_USER = 'subscription_page_hilos_user';
+
+    /** Subscription signal for the Sessions tab of the Hilos single user page (HIL-1662). */
+    public const string SUBSCRIPTION_PAGE_HILOS_USER_SESSIONS = 'subscription_page_hilos_user_sessions';
 
     /** Subscription signal for Hilos roles list. */
     public const string SUBSCRIPTION_PAGE_HILOS_ROLES = 'subscription_page_hilos_roles';
@@ -1766,6 +1774,44 @@ final class HilosSignalConstants
 
     /** Client → sessions library: end every other non-impersonating session of the acting user. */
     public const string HILOS_SESSIONS_END_OTHERS = 'hilos_sessions_end_others';
+
+    /**
+     * Hilos user sessions page → sessions library: end one or every session of the person on the card (HIL-1662).
+     *
+     * The write half of an administrator ending another person's sessions. The page keeps the
+     * ADMIN level that closes the browser actions and defers the submit; the sessions are the
+     * library's, so the library re-checks who pressed, asks the confirmation of
+     * {@see StepUpOperationKey::END_USER_SESSIONS}, ends the sessions and answers the page under
+     * the reply name the ask carries. It is an agent signal and never an action of the library:
+     * who asks is read off the connection, not off the payload. Carried by
+     * {@see UserSessionsEndRequestSignalData}.
+     */
+    public const string HILOS_USER_SESSIONS_END_REQUEST = 'hilos_user_sessions_end_request';
+
+    /**
+     * Sessions library → Hilos user sessions page: the sessions are ended, or why not (HIL-1662).
+     *
+     * Answers {@see self::HILOS_USER_SESSIONS_END_REQUEST} through {@see HandoverAnswerSignalData};
+     * the success sentence carries the number of sessions actually ended, composed by the library.
+     */
+    public const string HILOS_USER_SESSIONS_END_DONE = 'hilos_user_sessions_end_done';
+
+    /**
+     * Client → Hilos user sessions page: end one session of the person on the card (HIL-1662).
+     *
+     * Declared on {@see AbstractHilosUserSessionsPage}, whose ADMIN level closes it; the page hands
+     * the write to the sessions library under {@see self::HILOS_USER_SESSIONS_END_REQUEST} and
+     * answers once the library has. Carried by {@see HilosUserSessionEndActionDTO}.
+     */
+    public const string HILOS_USER_SESSION_END = 'hilos_user_session_end';
+
+    /**
+     * Client → Hilos user sessions page: end every session of the person on the card (HIL-1662).
+     *
+     * The bulk sibling of {@see self::HILOS_USER_SESSION_END} on the same page, handed to the same
+     * library the same way. Carried by {@see HilosUserSessionsEndAllActionDTO}.
+     */
+    public const string HILOS_USER_SESSIONS_END_ALL = 'hilos_user_sessions_end_all';
 
     /**
      * Client → sessions library: erase everything this browser holds and end its session (HIL-839).

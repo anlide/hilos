@@ -31,6 +31,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::BLOCK_ACCOUNT,
             StepUpOperationKey::DELETE_OTHER_ACCOUNT,
             StepUpOperationKey::IMPERSONATE,
+            StepUpOperationKey::END_USER_SESSIONS,
             StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES,
             StepUpOperationKey::DISABLE_SECOND_FACTOR,
             StepUpTestDirectory::PROJECT_OPERATION,
@@ -63,7 +64,8 @@ final class StepUpOperationDirectoryTest extends TestCase
      * "Stop" returns everything (HIL-1170). The export of everybody's acceptance records is declared on
      * by the same test: a file that has left cannot be called back (HIL-1234). So is turning the second
      * factor off for everyone (HIL-1303): the sign-ins let in without a code while it was off are not
-     * taken back by turning it on again.
+     * taken back by turning it on again. Ending another person's sessions is declared on (HIL-1662), one
+     * operation for both of its buttons.
      */
     public function testAdministratorOperationsCarryTheirCopyAndTheirDefaults(): void
     {
@@ -74,6 +76,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::BLOCK_ACCOUNT => ['Block an account', 'block this account', false],
             StepUpOperationKey::DELETE_OTHER_ACCOUNT => ["Delete another person's account", 'delete this account', true],
             StepUpOperationKey::IMPERSONATE => ['Impersonate a person', 'impersonate this person', false],
+            StepUpOperationKey::END_USER_SESSIONS => ['End user sessions', "end this person's sessions", true],
             StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES => ['Export legal acceptances', 'export legal acceptances', true],
             StepUpOperationKey::DISABLE_SECOND_FACTOR => ['Turn two-factor off for everyone', 'turn two-factor off for everyone', true],
         ];

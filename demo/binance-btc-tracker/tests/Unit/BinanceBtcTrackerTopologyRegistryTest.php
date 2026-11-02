@@ -140,6 +140,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserSessionsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UsersPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
@@ -243,6 +244,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -634,6 +636,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             CountryNamesPage::PAGE => CountryNamesPage::class,
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
+            UserSessionsPage::PAGE => UserSessionsPage::class,
             DaemonPage::PAGE => DaemonPage::class,
             DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
             DaemonNodePage::PAGE => DaemonNodePage::class,
@@ -1157,6 +1160,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             AppearancePage::class,
             UsersPage::class,
             UserPage::class,
+            UserSessionsPage::class,
             CommunicationsPage::class,
             CommunicationsChannelPage::class,
             CommunicationsChannelConfigurationPage::class,
@@ -1354,6 +1358,54 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
+        );
+    }
+
+    /**
+     * A person's card reads the person's sessions on its Overview and on its Sessions tab, and nowhere
+     * else (HIL-1662): the tab comes right after the Overview, since the activation check takes the
+     * first registered page of the card for the card; it is served by the Overview's agent and draws
+     * the same head out of the same table. This demo has no photo table and no merge candidates, so
+     * the tab binds the card's detail table alone. Both endings are the tab's, run on the index agent,
+     * and their one reply comes back to the tab on the same agent.
+     */
+    public function testThePersonsCardReadsTheirSessionsOnTheOverviewAndTheSessionsTab(): void
+    {
+        $this->assertSame(HilosUserSessionsBrowserList::class, Hilos::BROWSER_LISTS[HilosUserSessionsBrowserList::LIST]);
+        $this->assertSame(UserSessionsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_USER_SESSIONS]);
+        $pages = array_keys(Hilos::PAGES);
+        $this->assertSame(
+            array_search(UserPage::PAGE, $pages, true) + 1,
+            array_search(UserSessionsPage::PAGE, $pages, true),
+        );
+        $this->assertSame(UserPage::SUBSCRIPTION_AGENT_TYPE, UserSessionsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(PageAccessLevel::ADMIN, UserSessionsPage::ACCESS_LEVEL);
+        $this->assertSame([BinanceBtcTrackerDbContext::users, BinanceBtcTrackerDbContext::sessions], UserPage::READS_DB);
+
+        $readers = [];
+        foreach (Hilos::PAGE_LISTS as $page => $lists) {
+            if (isset($lists[HilosUserSessionsBrowserList::LIST])) {
+                $this->assertSame(HilosUserSessionsBrowserList::BINDING, $lists[HilosUserSessionsBrowserList::LIST], $page);
+                $readers[] = $page;
+            }
+        }
+        $this->assertSame([UserPage::PAGE, UserSessionsPage::PAGE], $readers);
+        $this->assertSame(
+            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING],
+            Hilos::PAGE_TABLES[UserSessionsPage::PAGE],
+        );
+
+        foreach ([HilosSignalConstants::HILOS_USER_SESSION_END, HilosSignalConstants::HILOS_USER_SESSIONS_END_ALL] as $action) {
+            $this->assertSame(UserSessionsPage::PAGE, Hilos::getPageActionRoutes()[$action], $action);
+            $this->assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action], $action);
+        }
+        $this->assertSame(
+            UserSessionsPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_USER_SESSIONS_END_DONE],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_USER_SESSIONS_END_DONE],
         );
     }
 
@@ -1618,6 +1670,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 // waiting on raises a toast on their session (HIL-768).
                 HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => HilosAgentType::HILOS_SESSIONS_LIBRARY,

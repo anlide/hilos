@@ -294,16 +294,23 @@ describe('public Status without a server page', () => {
 })
 
 describe('unbuilt pages', () => {
-  it('refuses direct entry to the unbuilt user tabs in every view layer', () => {
+  it('refuses direct entry to a user tab its view layer has not built and serves the one it has', () => {
     const userRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const userTabs = [
       [HilosPages.USER_ROLES, '/hilos/user/7/roles', { userId: '7' }],
       [HilosPages.USER_ACCESS, '/hilos/user/7/access', { userId: '7' }],
       [HilosPages.USER_SESSIONS, '/hilos/user/7/sessions', { userId: '7' }],
     ] as const
+    // Vue built the Sessions tab (HIL-1662); the other two layers have not.
+    const built: Readonly<Record<string, readonly string[]>> = {
+      vue: [HilosPages.USER_SESSIONS],
+      react: [],
+      angular: [],
+    }
 
     for (const layer of ['vue', 'react', 'angular'] as const) {
       for (const [page, path, params] of userTabs) {
+        const served = built[layer].includes(page)
         const { env } = fakeEnvironment(path)
         const { pages, calls, refused } = fakePages()
         const navigator = createHilosRouter(
@@ -320,9 +327,11 @@ describe('unbuilt pages', () => {
           params,
           admin: true,
         })
-        expect(refused).toEqual([page])
-        expect(calls).toEqual([])
-        expect(navigator.resolvePath(page, params)).toBeUndefined()
+        expect(refused).toEqual(served ? [] : [page])
+        expect(calls).toEqual(served ? [{ page, params }] : [])
+        expect(navigator.resolvePath(page, params)).toBe(
+          served ? path : undefined,
+        )
         navigator.stop()
       }
     }

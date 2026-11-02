@@ -1320,6 +1320,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 // The takeover the Hilos users page forwards: the page carries the ADMIN level
                 // that closes the action, and the session it rebinds is the library's (HIL-824).
                 HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 // A restore's logins and letters, offered by whoever holds them (HIL-846). The
                 // receipts go back to the backup agent, which this demo registers since HIL-911.

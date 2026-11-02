@@ -750,7 +750,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       const unbuilt = hilosUnbuiltPages(layer)
       const projectViews = userTabs.map(([page]) => page)
       for (const [page] of userTabs) {
-        expect(unbuilt.has(page)).toBe(true)
+        // Vue built the Sessions tab (HIL-1662).
+        expect(unbuilt.has(page)).toBe(
+          !(layer === 'vue' && page === HilosPages.USER_SESSIONS),
+        )
         expect(hilosUnbuiltPages(layer, projectViews).has(page)).toBe(false)
       }
     }

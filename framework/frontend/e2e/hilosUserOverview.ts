@@ -1,8 +1,8 @@
 import type { Expect, Page } from '@playwright/test'
 
 /**
- * The adopted user head resolves from a cold page's own permitted detail.
- * Unbuilt user pages offer no tab row or links.
+ * The adopted user head resolves from a cold page's own permitted detail, and
+ * no link on the Overview is dead.
  *
  * @param expect The spec's assertion function.
  * @param page The page viewing the Overview.
@@ -43,12 +43,9 @@ export async function expectHilosUserOverview(
     breadcrumb.getByTestId('hilos-breadcrumb-hilos_users'),
   ).toHaveAttribute('href', '/hilos/users')
   await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(name)
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
-  await expect(page.getByTestId(/^hilos-page-tab-/)).toHaveCount(0)
   await expect(
     page.locator('a[href=""], a[href="#"], a:not([href])'),
   ).toHaveCount(0)
-  await expect(page.locator(`a[href^="/hilos/user/${userId}/"]`)).toHaveCount(0)
   await expect(
     page.getByRole('heading', { name: 'Profile', exact: true }),
   ).toBeVisible()

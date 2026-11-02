@@ -1683,6 +1683,107 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    /** A list item joined by a field of its anchor declares no key of its own, and both moments accept it (HIL-1662). */
+    public function testAListItemJoinedByAnIndexedFieldOfItsAnchorIsAccepted(): void
+    {
+        $this->mountReferenceLayers(new TopologyMountedDbContext());
+
+        TopologyBrowserAnchorFieldHilos::validateTopology();
+        TopologyBrowserAnchorFieldHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(1);
+    }
+
+    /** A MANY item is a set, not a joined row: without a key it is refused as before. */
+    public function testAManyListItemWithoutAKeyIsRefused(): void
+    {
+        $path = 'BROWSER_LISTS[' . TopologyBrowserAnchorFieldManyList::LIST . '] class '
+            . TopologyBrowserAnchorFieldManyList::class . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserAnchorFieldManyHilos::validateTopology();
+            },
+            ["{$path} items[1] must declare a non-empty itemKey"],
+        );
+    }
+
+    /** VIA on an indexed column that is not the source's primary key: the joined row would have no key to be read by. */
+    public function testAJoinByAnAnchorFieldIsRefusedWhenViaNamesNoPrimaryKey(): void
+    {
+        $this->mountReferenceLayers(new TopologyMountedDbContext());
+        $path = 'BROWSER_LISTS[' . TopologyBrowserAnchorFieldForeignViaList::LIST . '] class '
+            . TopologyBrowserAnchorFieldForeignViaList::class . '::BROWSER';
+
+        TopologyBrowserAnchorFieldForeignViaHilos::validateTopology();
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserAnchorFieldForeignViaHilos::validateTopologyReferences();
+            },
+            [
+                "{$path} items[1]: via column 'ownerId' of source 'guardians'"
+                    . ' is not its primary key, and an item joined by an anchor field is read by that key',
+            ],
+        );
+    }
+
+    /** The way back asks the anchor table by the anchor field, so a column with no equality index is refused. */
+    public function testAJoinByAnAnchorFieldIsRefusedWhenTheAnchorTableHasNoIndexForIt(): void
+    {
+        $this->mountReferenceLayers(new TopologyMountedFulltextDbContext());
+        $path = 'BROWSER_LISTS[' . TopologyBrowserAnchorFieldUnindexedList::LIST . '] class '
+            . TopologyBrowserAnchorFieldUnindexedList::class . '::BROWSER';
+
+        TopologyBrowserAnchorFieldUnindexedHilos::validateTopology();
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserAnchorFieldUnindexedHilos::validateTopologyReferences();
+            },
+            [
+                "{$path} items[1]: anchor field 'ownerId' of source 'owners_fulltext'"
+                    . ' is neither the primary key nor the leftmost column of an index that can answer a lookup by value',
+            ],
+        );
+    }
+
+    /** A runtime anchor has no table to ask the way back, and nothing needs one today: refused out loud. */
+    public function testAJoinByAnAnchorFieldIsRefusedWhenTheAnchorIsNotADatabaseSource(): void
+    {
+        $this->mountReferenceLayers(new TopologyMountedDbContext());
+        $path = 'BROWSER_LISTS[' . TopologyBrowserAnchorFieldRuntimeAnchorList::LIST . '] class '
+            . TopologyBrowserAnchorFieldRuntimeAnchorList::class . '::BROWSER';
+
+        TopologyBrowserAnchorFieldRuntimeAnchorHilos::validateTopology();
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserAnchorFieldRuntimeAnchorHilos::validateTopologyReferences();
+            },
+            [
+                "{$path} items[1]: joins by anchor field 'ownerId' of an anchor that is not"
+                    . ' a db source, and a change of the joined source is delivered by asking the anchor table',
+            ],
+        );
+    }
+
+    /** An anchor field the anchor does not project names no column to ask the way back by: refused, not read as null. */
+    public function testAJoinByAnAnchorFieldIsRefusedWhenTheAnchorDoesNotProjectIt(): void
+    {
+        $this->mountReferenceLayers(new TopologyMountedDbContext());
+        $path = 'BROWSER_LISTS[' . TopologyBrowserAnchorFieldUnprojectedList::LIST . '] class '
+            . TopologyBrowserAnchorFieldUnprojectedList::class . '::BROWSER';
+
+        TopologyBrowserAnchorFieldUnprojectedHilos::validateTopology();
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserAnchorFieldUnprojectedHilos::validateTopologyReferences();
+            },
+            [
+                "{$path} items[1]: joins by anchor field 'ownerId',"
+                    . " which the fields of anchor source 'owners' do not project",
+            ],
+        );
+    }
+
     public function testInitRunsTopologyReferenceValidationAfterLayerInitialization(): void
     {
         try {
@@ -2333,6 +2434,20 @@ final class TopologyValidatorTest extends TestCase
         TopologySetTreeComputedReadingHilos::validateTopologyReferences();
 
         $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Mounts the database fixture the reference moment judges, and the runtime the browser fixtures name.
+     *
+     * @param HilosDbContext $db Database context mounting the fixture collections
+     */
+    private function mountReferenceLayers(HilosDbContext $db): void
+    {
+        $db->configure();
+        HilosFacade::$db = $db;
+        $runtime = new TopologyMountedRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
     }
 
     /**
@@ -5531,6 +5646,202 @@ final class TopologyBrowserFulltextIndexedJoinHilos extends HilosFacade
     {
         return new TopologyMountedFulltextDbContext();
     }
+}
+
+/**
+ * A list whose second item is joined by a field of the anchor (HIL-1662): no key of its own, VIA from the
+ * source's primary key to an anchor field read out of an indexed column.
+ */
+final class TopologyBrowserAnchorFieldList
+{
+    public const string LIST = 'browser_anchor_field_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::OWNERS, self::GUARDIANS],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => self::OWNERS,
+                BrowserListFieldKey::ITEM_KEY => 'id',
+                BrowserListFieldKey::FIELDS => ['id', 'ownerId'],
+            ],
+            [
+                BrowserListFieldKey::SOURCE => self::GUARDIANS,
+                BrowserListFieldKey::VIA => ['id' => 'ownerId'],
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+        ],
+    ];
+
+    private const array OWNERS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'owners'];
+
+    private const array GUARDIANS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'guardians'];
+}
+
+abstract class TopologyBrowserAnchorFieldHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [TopologyBrowserAnchorFieldList::LIST => TopologyBrowserAnchorFieldList::class];
+}
+
+/** The same join declared MANY: a set of rows, which a list item without a key cannot be. */
+final class TopologyBrowserAnchorFieldManyList
+{
+    public const string LIST = 'browser_anchor_field_many_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::OWNERS, self::GUARDIANS],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => self::OWNERS,
+                BrowserListFieldKey::ITEM_KEY => 'id',
+                BrowserListFieldKey::FIELDS => ['id', 'ownerId'],
+            ],
+            [
+                BrowserListFieldKey::SOURCE => self::GUARDIANS,
+                BrowserListFieldKey::MANY => true,
+                BrowserListFieldKey::VIA => ['id' => 'ownerId'],
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+        ],
+    ];
+
+    private const array OWNERS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'owners'];
+
+    private const array GUARDIANS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'guardians'];
+}
+
+abstract class TopologyBrowserAnchorFieldManyHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [TopologyBrowserAnchorFieldManyList::LIST => TopologyBrowserAnchorFieldManyList::class];
+}
+
+/** VIA names the source's indexed foreign column instead of its primary key. */
+final class TopologyBrowserAnchorFieldForeignViaList
+{
+    public const string LIST = 'browser_anchor_field_foreign_via_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::OWNERS, self::GUARDIANS],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => self::OWNERS,
+                BrowserListFieldKey::ITEM_KEY => 'id',
+                BrowserListFieldKey::FIELDS => ['id', 'ownerId'],
+            ],
+            [
+                BrowserListFieldKey::SOURCE => self::GUARDIANS,
+                BrowserListFieldKey::VIA => ['ownerId' => 'ownerId'],
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+        ],
+    ];
+
+    private const array OWNERS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'owners'];
+
+    private const array GUARDIANS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'guardians'];
+}
+
+abstract class TopologyBrowserAnchorFieldForeignViaHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [
+        TopologyBrowserAnchorFieldForeignViaList::LIST => TopologyBrowserAnchorFieldForeignViaList::class,
+    ];
+}
+
+/** The anchor field is a real column whose only index is FULLTEXT, which cannot answer a lookup by value. */
+final class TopologyBrowserAnchorFieldUnindexedList
+{
+    public const string LIST = 'browser_anchor_field_unindexed_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::OWNERS],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => self::OWNERS,
+                BrowserListFieldKey::ITEM_KEY => 'id',
+                BrowserListFieldKey::FIELDS => ['id', 'ownerId'],
+            ],
+            [
+                BrowserListFieldKey::SOURCE => self::OWNERS,
+                BrowserListFieldKey::VIA => ['id' => 'ownerId'],
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+        ],
+    ];
+
+    private const array OWNERS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'owners_fulltext'];
+}
+
+abstract class TopologyBrowserAnchorFieldUnindexedHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [
+        TopologyBrowserAnchorFieldUnindexedList::LIST => TopologyBrowserAnchorFieldUnindexedList::class,
+    ];
+}
+
+/** The anchor is a runtime source, which has no table to ask for the items pointing at a changed row. */
+final class TopologyBrowserAnchorFieldRuntimeAnchorList
+{
+    public const string LIST = 'browser_anchor_field_runtime_anchor_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::PRESENCES, self::GUARDIANS],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => self::PRESENCES,
+                BrowserListFieldKey::ITEM_KEY => 'id',
+                BrowserListFieldKey::FIELDS => ['id', 'ownerId'],
+            ],
+            [
+                BrowserListFieldKey::SOURCE => self::GUARDIANS,
+                BrowserListFieldKey::VIA => ['id' => 'ownerId'],
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+        ],
+    ];
+
+    private const array PRESENCES = [BrowserSourceKey::TYPE => BrowserSourceType::RT, BrowserSourceKey::KEY => 'presences'];
+
+    private const array GUARDIANS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'guardians'];
+}
+
+abstract class TopologyBrowserAnchorFieldRuntimeAnchorHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [
+        TopologyBrowserAnchorFieldRuntimeAnchorList::LIST => TopologyBrowserAnchorFieldRuntimeAnchorList::class,
+    ];
+}
+
+/** VIA reads an anchor field the anchor's FIELDS leave out, so the anchor fragment never holds it. */
+final class TopologyBrowserAnchorFieldUnprojectedList
+{
+    public const string LIST = 'browser_anchor_field_unprojected_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::SOURCES => [self::OWNERS, self::GUARDIANS],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => self::OWNERS,
+                BrowserListFieldKey::ITEM_KEY => 'id',
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+            [
+                BrowserListFieldKey::SOURCE => self::GUARDIANS,
+                BrowserListFieldKey::VIA => ['id' => 'ownerId'],
+                BrowserListFieldKey::FIELDS => ['id'],
+            ],
+        ],
+    ];
+
+    private const array OWNERS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'owners'];
+
+    private const array GUARDIANS = [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => 'guardians'];
+}
+
+abstract class TopologyBrowserAnchorFieldUnprojectedHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [
+        TopologyBrowserAnchorFieldUnprojectedList::LIST => TopologyBrowserAnchorFieldUnprojectedList::class,
+    ];
 }
 
 final class TopologyBrowserMountedHilos extends HilosFacade

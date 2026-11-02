@@ -91,6 +91,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     /** Page data key of whether the card links to the person's browser sessions in Analytics (HIL-1420). */
     public const string ANALYTICS_ENABLED = 'analyticsEnabled';
 
+    /** Page data key of whether this page of the card is bound to the person's sessions list (HIL-1662). */
+    public const string USER_SESSIONS_ENABLED = 'userSessionsEnabled';
+
     public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
@@ -305,11 +308,11 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY} (HIL-1307). A viewer of the admin
      * view mode is shown the standing, and the settings only when their catalog keys are open.
      * Whether the card links to Analytics is configuration, the same for every person and every
-     * reader (HIL-1420).
+     * reader (HIL-1420), and so is whether this page reads the person's sessions (HIL-1662).
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
-     * @return ?PagePayload Grace period, standing snapshot and the Analytics link, supplemented by the page's identity
+     * @return ?PagePayload Grace period, standing snapshot, the Analytics link and the sessions flag, supplemented by the page's identity
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      * @throws DatabaseException When the stored setting or the person's standing cannot be read
@@ -325,6 +328,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             self::ACCOUNT_STANDING => AccountStandingResolver::of($userId)->toArray(),
             self::IMPERSONATION => ImpersonationCardSettings::current()->toArray(),
             self::ANALYTICS_ENABLED => self::analyticsEnabled(),
+            self::USER_SESSIONS_ENABLED => self::userSessionsEnabled(static::PAGE),
         ]);
     }
 
@@ -333,7 +337,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      *
      * The standing goes by the one map its live frame uses too ({@see AccountStanding::wireFields()},
      * HIL-1254). The impersonation summary is sent only when every key behind its fields is open.
-     * The Analytics link is computed from the project's declaration, nobody's data.
+     * The Analytics link and the sessions flag are computed from the project's declaration, nobody's data.
      *
      * @return array<string, WireField> Data key to where it comes from
      */
@@ -351,6 +355,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
                 ImpersonationSettings::EQUAL_KEY,
             ]),
             self::ANALYTICS_ENABLED => WireField::notPersonal(),
+            self::USER_SESSIONS_ENABLED => WireField::notPersonal(),
         ];
     }
 
@@ -399,6 +404,23 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     {
         return Hilos::hasFeature(HilosFeature::ANALYTICS)
             && isset(Hilos::appClass()::PAGES[HilosPageConstants::HILOS_ANALYTICS_PERSON]);
+    }
+
+    /**
+     * Whether a page of the card reads the person's sessions list, and the card has its real Sessions tab.
+     *
+     * Both halves of the project's declaration, asked of the running facade as
+     * {@see self::analyticsEnabled()} asks: the Sessions tab in its PAGES, and the list bound to this
+     * very page in its PAGE_LISTS. The client cannot tell the two apart from what it holds - a list
+     * nobody bound and a person with no sessions both arrive empty - which is why the server says it.
+     *
+     * @param string $page Key of the page answering, as the project registers it
+     * @return bool True when the Sessions tab is registered and this page is bound to the sessions list
+     */
+    private static function userSessionsEnabled(string $page): bool
+    {
+        return isset(Hilos::appClass()::PAGES[HilosPageConstants::HILOS_USER_SESSIONS])
+            && isset(Hilos::appClass()::PAGE_LISTS[$page][HilosUserSessionsBrowserList::LIST]);
     }
 
     /**

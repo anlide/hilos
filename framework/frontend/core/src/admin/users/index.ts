@@ -86,6 +86,11 @@ export {
   type HilosImpersonate,
 } from './hilosUsers.js'
 export {
+  createHilosUserSessions,
+  type HilosUserSession,
+  type HilosUserSessions,
+} from './hilosUserSessions.js'
+export {
   SIGNAL_ACCOUNT_STANDING_STATE,
   ACCOUNT_STANDING_SIGNAL_SCHEMAS,
   accountStandingStateSchema,

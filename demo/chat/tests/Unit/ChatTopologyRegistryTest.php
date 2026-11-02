@@ -301,6 +301,7 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
 use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
+use Hilos\Auth\Session\DTO\UserSessionsEndRequestSignalData;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
@@ -519,6 +520,11 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserSessionsBrowserList;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
+use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
+use Demo\Chat\Pages\Hilos\Users\UserSessionsPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
@@ -1002,6 +1008,42 @@ final class ChatTopologyRegistryTest extends TestCase
                 UserPhotoBrowserData::DATA => $binding,
             ],
             Hilos::PAGE_DATA[ChatUserPage::PAGE],
+        );
+    }
+
+    /**
+     * A person's card reads the person's sessions on its Overview and on its Sessions tab, and nowhere
+     * else (HIL-1662): the tab comes right after the Overview, since the activation check takes the
+     * first registered page of the card for the card; it is served by the Overview's agent, draws the
+     * same head out of the same two tables, and has no merge candidates, which belong to the Overview.
+     */
+    public function testThePersonsCardReadsTheirSessionsOnTheOverviewAndTheSessionsTab(): void
+    {
+        self::assertSame(HilosUserSessionsBrowserList::class, Hilos::BROWSER_LISTS[HilosUserSessionsBrowserList::LIST]);
+        self::assertSame(UserSessionsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_USER_SESSIONS]);
+        $pages = array_keys(Hilos::PAGES);
+        self::assertSame(
+            array_search(HilosUserPage::PAGE, $pages, true) + 1,
+            array_search(UserSessionsPage::PAGE, $pages, true),
+        );
+        self::assertSame(HilosUserPage::SUBSCRIPTION_AGENT_TYPE, UserSessionsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(PageAccessLevel::ADMIN, UserSessionsPage::ACCESS_LEVEL);
+        self::assertSame([ChatDbContext::users, ChatDbContext::sessions], HilosUserPage::READS_DB);
+
+        $readers = [];
+        foreach (Hilos::PAGE_LISTS as $page => $lists) {
+            if (isset($lists[HilosUserSessionsBrowserList::LIST])) {
+                self::assertSame(HilosUserSessionsBrowserList::BINDING, $lists[HilosUserSessionsBrowserList::LIST], $page);
+                $readers[] = $page;
+            }
+        }
+        self::assertSame([HilosUserPage::PAGE, UserSessionsPage::PAGE], $readers);
+        self::assertSame(
+            [
+                HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+                HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
+            ],
+            Hilos::PAGE_TABLES[UserSessionsPage::PAGE],
         );
     }
 
@@ -1842,6 +1884,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_BLOCK_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_DELETION_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_IMPERSONATE_START => PageConstants::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_SESSION_END => HilosPageConstants::HILOS_USER_SESSIONS,
+            HilosSignalConstants::HILOS_USER_SESSIONS_END_ALL => HilosPageConstants::HILOS_USER_SESSIONS,
             HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosPageConstants::HILOS_MODERATION_KIND_RULES,
             HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosPageConstants::HILOS_MODERATION_KIND_RULES,
             HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE => HilosPageConstants::HILOS_MODERATION_KIND_RULES,
@@ -1948,6 +1992,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_BLOCK_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_DELETION_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_IMPERSONATE_START => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_USER_SESSION_END => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_USER_SESSIONS_END_ALL => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_MODERATION_RULE_ADD => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE => AgentType::HILOS_INDEX,
@@ -2004,6 +2050,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_IMPERSONATE_DONE => PageConstants::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SESSIONS_END_DONE => HilosPageConstants::HILOS_USER_SESSIONS,
                 HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HilosPageConstants::HILOS_MODERATION_KIND_RULES,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -2041,6 +2088,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_IMPERSONATE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_USER_SESSIONS_END_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
@@ -2142,6 +2190,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -2505,6 +2554,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
+            HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST => UserSessionsEndRequestSignalData::class,
             HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
             HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => DeferredSessionCarryoverHandoverSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => OAuthTripOpenedSignalData::class,

@@ -27,10 +27,15 @@ and the strip rises. A viewer of the admin view mode opens every window at once,
 without the confirmation step, and the confirmation in the window stands
 disabled by the mode (HIL-1263). Beside the header a link opens the person's
 browser sessions in Analytics when the project serves that page (HIL-1420).
+The first tile counts the person's sessions — one per sign-in, whatever its
+tabs — and links the number to the Sessions tab when the page reads the list;
+a page that does not keeps the open connections it always showed, and a hidden
+count stays the hidden mark, never a zero (HIL-1662).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computed,
+  inject,
   nextTick,
   onMounted,
   onUnmounted,
@@ -68,6 +73,7 @@ import {
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   createHilosUserDetail,
+  createHilosUserSessions,
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserRename,
@@ -94,9 +100,11 @@ import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
+import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 import HilosUserPageShell from './HilosUserPageShell.vue'
@@ -117,6 +125,18 @@ const rename = createHilosUserRename(props.context)
 const detail = useSignal(userDetail)
 const error = useSignal(rename.renameError)
 const overviewCopy = HILOS_USER_OVERVIEW_COPY
+
+// The sessions tile (HIL-1662): the count is the list the page reads, never the
+// connection count; undefined while the page reads no list.
+const sessionCount = useSignal(createHilosUserSessions(props.context).count)
+const router = inject(hilosRouterKey, undefined)
+const sessionsPath = computed(() =>
+  detail.value === undefined
+    ? undefined
+    : router?.resolvePath(HilosPages.USER_SESSIONS, {
+        userId: String(detail.value.id),
+      }),
+)
 
 /** Move the focus into a window whose step changed under it. */
 function focusWindow(body: Ref<HTMLElement | null>): void {
@@ -613,10 +633,26 @@ function submit(): void {
           <div class="card h-100">
             <div class="card-body">
               <p class="small text-body-secondary mb-1">
-                {{ overviewCopy.openConnections }}
+                {{
+                  sessionCount === undefined
+                    ? overviewCopy.openConnections
+                    : 'Sessions'
+                }}
               </p>
               <div class="h3 mb-0" data-id="hilos-user-sessions">
-                {{ detail.onlineSessionCount }}
+                <template v-if="sessionCount === undefined">{{
+                  detail.onlineSessionCount
+                }}</template>
+                <HilosHideable v-else :value="sessionCount">
+                  <template #default="{ value }">
+                    <HilosLink
+                      v-if="sessionsPath !== undefined"
+                      :to="sessionsPath"
+                      >{{ value }}</HilosLink
+                    >
+                    <template v-else>{{ value }}</template>
+                  </template>
+                </HilosHideable>
               </div>
             </div>
           </div>

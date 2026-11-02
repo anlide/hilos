@@ -2011,6 +2011,8 @@ describe('createHilosUserCardStepUp', () => {
       block: 'block_account',
       delete: 'delete_other_account',
       impersonate: 'impersonate',
+      endSession: 'end_user_sessions',
+      endAllSessions: 'end_user_sessions',
     })
   })
 
@@ -2027,7 +2029,15 @@ describe('createHilosUserCardStepUp', () => {
     const { context, calls } = stepUpContext({ required: false })
     const stepUp = createHilosUserCardStepUp(context)
     const windows: (keyof typeof HILOS_USER_CARD_STEP_UP_OPERATIONS &
-      HilosUserCardWindow)[] = ['merge', 'grant', 'revoke', 'block', 'delete']
+      HilosUserCardWindow)[] = [
+      'merge',
+      'grant',
+      'revoke',
+      'block',
+      'delete',
+      'endSession',
+      'endAllSessions',
+    ]
 
     for (const window of windows) {
       expect(await stepUp.open(window)).toBe('skip')
@@ -2111,6 +2121,8 @@ describe('createHilosUserCardStepUp', () => {
           'revoke',
           'block',
           'delete',
+          'endSession',
+          'endAllSessions',
         ]
 
         for (const window of windows) {

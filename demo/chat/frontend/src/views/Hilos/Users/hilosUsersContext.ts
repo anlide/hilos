@@ -1,9 +1,10 @@
 // The chat's HilosUsersContext: binds the framework Hilos users/user admin pages
-// (@hilos/vue HilosUsersPage / HilosUserPage) to this project's scope stores,
-// live connection, and typed user collection. The framework owns the table, the
+// (@hilos/vue HilosUsersPage / HilosUserPage / HilosUserSessionsPage) to this
+// project's scope stores, live connection, and typed user collection. The framework owns the table, the
 // row view-model, search/sort/paging, the rename round-trip, and the takeover; the
-// project supplies only where the data lives. Shared by the list and detail wrappers
-// (HilosPages.USERS / USER), which carry the same row slots.
+// project supplies only where the data lives. Shared by the list, detail and
+// sessions wrappers (HilosPages.USERS / USER / USER_SESSIONS), which carry the same
+// row slots.
 import { type HilosUsersContext } from '@hilos/core/admin/users'
 
 import { actions, connection } from '../../../bootstrap/connection'

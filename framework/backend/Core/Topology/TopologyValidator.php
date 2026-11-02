@@ -235,8 +235,8 @@ final class TopologyValidator
      *
      * @param class-string<Hilos> $hilosClass Project facade class
      * @throws InvalidTopologyException When a declaration names a collection no layer mounts, opens a database column to a
-     *     viewer of the admin view mode, or an agent claims a set of a table cut by no column, or of a runtime collection
-     *     cut by no field
+     *     viewer of the admin view mode, joins a list item by an anchor field over columns the tables cannot answer by
+     *     value, or an agent claims a set of a table cut by no column, or of a runtime collection cut by no field
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
      * @throws NamedDatabaseException When a mounted database name or configured binding cannot be resolved
@@ -247,6 +247,7 @@ final class TopologyValidator
         $declarations = [];
         $joins = [];
         $notPersonal = [];
+        $anchorFieldJoins = [];
         foreach ([self::SECTION_BROWSER_TABLES, self::SECTION_BROWSER_LISTS, self::SECTION_BROWSER_DATA] as $registry) {
             $this->collectBrowserSourceReferences(
                 $this->constantArray($hilosClass, $registry, $errors),
@@ -254,6 +255,7 @@ final class TopologyValidator
                 $declarations,
                 $joins,
                 $notPersonal,
+                $anchorFieldJoins,
             );
         }
 
@@ -281,6 +283,7 @@ final class TopologyValidator
         }
 
         $this->validateBrowserJoinColumns($joins, $errors);
+        $this->validateBrowserAnchorFieldJoins($anchorFieldJoins, $errors);
         $this->validateBrowserNotPersonalColumns($notPersonal, $errors);
         $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
         $this->validateSetClaims($agents, $errors);
@@ -319,6 +322,64 @@ final class TopologyValidator
             $errors[] = "{$join['registry']}[{$join['browserKey']}]: join column '{$join['column']}'"
                 . " of source '{$join['sourceKey']}' is neither the primary key"
                 . " nor the leftmost column of an index that can answer a lookup by value";
+        }
+    }
+
+    /**
+     * Holds every list item joined by a field of its anchor against the tables both of its columns live in (HIL-1662).
+     *
+     * Such an item is read by the key its anchor fragment holds, and a change of its source travels back
+     * the other way: the anchor's table is asked for the items whose field holds the changed row's key
+     * ({@see BrowserContext}). Each half needs a column the table answers by value - VIA names the
+     * source's primary key, because the item has no key of its own to be read by; the anchor field is a
+     * field the anchor projects, out of a primary key or the leftmost column of an index, and the anchor
+     * is a database source, because the way back is a query of its table. A runtime anchor is refused
+     * rather than served by a walk: nothing needs it today. Judged here, not in {@see self::validate()},
+     * because the answer lives on the mounted collections' entities - the same reason the join columns are.
+     *
+     * @param list<array{path: string, sourceKey: string, sourceField: string, anchorField: string,
+     *     anchor: array<string, mixed>}> $anchorFieldJoins List items joined by an anchor field, in declaration order
+     * @param list<string> $errors Validation error accumulator
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
+     */
+    private function validateBrowserAnchorFieldJoins(array $anchorFieldJoins, array &$errors): void
+    {
+        foreach ($anchorFieldJoins as $join) {
+            $source = Hilos::$db?->mountedObjectCollection($join['sourceKey']);
+            // An unmounted collection is already reported above, and by its own name.
+            if ($source !== null && !$source->isKeyColumn($join['sourceField'])) {
+                $errors[] = "{$join['path']}: via column '{$join['sourceField']}' of source '{$join['sourceKey']}'"
+                    . ' is not its primary key, and an item joined by an anchor field is read by that key';
+            }
+
+            $anchorSource = $join['anchor'][BrowserFieldKey::SOURCE] ?? null;
+            $anchorKey = is_array($anchorSource) ? ($anchorSource[BrowserSourceKey::KEY] ?? null) : null;
+            if (
+                !is_array($anchorSource)
+                || ($anchorSource[BrowserSourceKey::TYPE] ?? null) !== BrowserSourceType::DB
+                || !is_string($anchorKey)
+            ) {
+                $errors[] = "{$join['path']}: joins by anchor field '{$join['anchorField']}' of an anchor that is not"
+                    . ' a db source, and a change of the joined source is delivered by asking the anchor table';
+
+                continue;
+            }
+
+            $anchorColumn = BrowserSourceConfig::projectedSourceField($join['anchor'], $join['anchorField']);
+            if ($anchorColumn === null) {
+                $errors[] = "{$join['path']}: joins by anchor field '{$join['anchorField']}',"
+                    . " which the fields of anchor source '{$anchorKey}' do not project";
+
+                continue;
+            }
+
+            $anchors = Hilos::$db?->mountedObjectCollection($anchorKey);
+            if ($anchors === null || $anchors->isKeyColumn($anchorColumn) || $anchors->isIndexLeadColumn($anchorColumn)) {
+                continue;
+            }
+
+            $errors[] = "{$join['path']}: anchor field '{$anchorColumn}' of source '{$anchorKey}'"
+                . ' is neither the primary key nor the leftmost column of an index that can answer a lookup by value';
         }
     }
 
@@ -503,6 +564,8 @@ final class TopologyValidator
      *     Declared database joins accumulator
      * @param list<array{path: string, sourceKey: string, sourceField: string, field: string}> $notPersonal
      *     Database fields declared not personal accumulator
+     * @param list<array{path: string, sourceKey: string, sourceField: string, anchorField: string,
+     *     anchor: array<string, mixed>}> $anchorFieldJoins List items joined by an anchor field accumulator
      */
     private function collectBrowserSourceReferences(
         array $browserSources,
@@ -510,6 +573,7 @@ final class TopologyValidator
         array &$declarations,
         array &$joins,
         array &$notPersonal,
+        array &$anchorFieldJoins,
     ): void {
         foreach ($browserSources as $key => $sourceClass) {
             if (!is_string($key) || !is_string($sourceClass) || !class_exists($sourceClass)) {
@@ -532,6 +596,7 @@ final class TopologyValidator
             }
 
             $path = "{$registry}[{$key}] class {$sourceClass}::BROWSER";
+            $anchor = null;
             foreach ($rows as $index => $row) {
                 if (!is_array($row)) {
                     continue;
@@ -542,6 +607,27 @@ final class TopologyValidator
                 $this->rememberBrowserSourceReference($source, $rowPath, $declarations);
                 $this->rememberBrowserJoinColumn($source, $row, $registry, $key, $joins);
                 $this->rememberBrowserNotPersonalFields($source, $row, $rowPath, $notPersonal);
+
+                if ($anchor === null) {
+                    // The first row that is not MANY anchors the list, and is never itself joined by a field of it.
+                    $anchor = ($row[BrowserFieldKey::MANY] ?? false) === true ? null : $row;
+
+                    continue;
+                }
+
+                $anchorFieldJoin = BrowserSourceConfig::anchorFieldJoin($row);
+                $sourceKey = is_array($source) ? ($source[BrowserSourceKey::KEY] ?? null) : null;
+                if ($rowsKey !== BrowserListConfigKey::ITEMS || $anchorFieldJoin === null || !is_string($sourceKey)) {
+                    continue;
+                }
+
+                $anchorFieldJoins[] = [
+                    'path' => $rowPath,
+                    'sourceKey' => $sourceKey,
+                    'sourceField' => $anchorFieldJoin[0],
+                    'anchorField' => $anchorFieldJoin[1],
+                    'anchor' => $anchor,
+                ];
             }
         }
     }
@@ -1579,6 +1665,7 @@ final class TopologyValidator
             }
 
             $referenced = [];
+            $anchorSeen = false;
             foreach ($rows as $index => $row) {
                 $rowPath = "{$path} {$rowsKey}[{$index}]";
                 if (!is_array($row)) {
@@ -1586,14 +1673,23 @@ final class TopologyValidator
                     continue;
                 }
 
+                // The first row that is not MANY anchors the list; the browser reads it the same way.
+                $isAnchor = !$anchorSeen && ($row[BrowserFieldKey::MANY] ?? false) !== true;
+                $anchorSeen = $anchorSeen || $isAnchor;
+
                 $source = $row[BrowserFieldKey::SOURCE] ?? null;
                 $this->validateBrowserSourceDeclaration($source, "{$rowPath} source", $errors);
                 $referenced += $this->browserSourceIdentity($source);
 
+                // A list item joined by a field of its anchor is the one row without a key of its own (HIL-1662);
+                // the mounted tables judge its columns in validateReferences().
                 $rowKey = $row[$rowKeyKey] ?? null;
                 if (is_array($rowKey)) {
                     $this->validateBrowserRef($rowKey, "{$rowPath} {$rowKeyKey}", $declaredParams, [], $errors);
-                } elseif (!is_string($rowKey) || $rowKey === '') {
+                } elseif (
+                    (!is_string($rowKey) || $rowKey === '')
+                    && ($rowsKey !== BrowserListConfigKey::ITEMS || $isAnchor || BrowserSourceConfig::anchorFieldJoin($row) === null)
+                ) {
                     $errors[] = "{$rowPath} must declare a non-empty {$rowKeyKey}";
                 }
 

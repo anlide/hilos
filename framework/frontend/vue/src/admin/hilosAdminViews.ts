@@ -7,10 +7,10 @@
 // bootHilos projectViews. HILOS_UNBUILT_PAGES hides pages the layer has not built:
 // the router answers 404 and no card links to them.
 //
-// The users / user / settings / backup / maintenance, communications hub /
+// The users / user / user sessions / settings / backup / maintenance, communications hub /
 // channel, Change Log, Daemon root, Workers, Agents, Cron, HTTP, Environment and Env Mismatch, and log pages that read
 // live data are intentionally absent: they are
-// real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
+// real framework pages (HilosUsersPage / HilosUserPage / HilosUserSessionsPage / HilosSettingsPage /
 // HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
 // HilosCommunicationsChannelPage / HilosChangeLogPage / HilosLogsKeysPage / HilosLogsRotationsPage /
 // HilosLogsViewPage / HilosDaemonPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /

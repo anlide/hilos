@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {
   endableProfileSessionCount,
-  formatProfileDateTime,
-  hilosTimeZone,
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
@@ -11,8 +9,8 @@ import { computed, ref } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
 import LoadingButton from '../LoadingButton.vue'
-import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
+import HilosSessionRow from './HilosSessionRow.vue'
 
 const props = defineProps<{
   /** Durable sessions and their current live tabs. */
@@ -21,7 +19,6 @@ const props = defineProps<{
   actions: HilosProfileSessionActions
 }>()
 
-const timeZone = useSignal(hilosTimeZone)
 const expanded = ref<ReadonlySet<number>>(new Set())
 const endingSessionId = ref<number | null>(null)
 const endOthersOpen = ref(false)
@@ -43,25 +40,6 @@ const endOthersError = computed(() =>
     ? 'Your other sessions have already ended'
     : endOthersAction.error.value,
 )
-
-/** Format a session moment again when the reader's zone changes. */
-function dateTime(moment: number | null): string {
-  void timeZone.value
-  return formatProfileDateTime(moment)
-}
-
-/**
- * Display form of a tab key.
- *
- * Eight characters or fewer stay whole. A longer key keeps four characters
- * at each end. The list identity stays the full accept key.
- */
-function tabKeyLabel(acceptKey: string): string {
-  if (acceptKey.length <= 8) {
-    return acceptKey
-  }
-  return `${acceptKey.slice(0, 4)}…${acceptKey.slice(-4)}`
-}
 
 function toggleTabs(sessionId: number): void {
   const next = new Set(expanded.value)
@@ -114,73 +92,29 @@ async function confirmEndOthers(): Promise<void> {
       No sessions.
     </div>
     <div v-else>
-      <article
+      <HilosSessionRow
         v-for="session in sessions"
         :key="session.id"
-        class="border-bottom"
-        data-id="profile-session-row"
+        :session="session"
+        :expanded="expanded.has(session.id)"
+        id-prefix="profile-session"
+        @toggle="toggleTabs(session.id)"
       >
-        <div class="d-flex flex-wrap align-items-center gap-2 py-3">
-          <i
-            v-if="session.impersonated"
-            class="bi bi-people-fill fs-5 text-warning-emphasis"
-            aria-hidden="true"
-          ></i>
-          <i
-            v-else
-            class="bi bi-window fs-5 text-body-secondary"
-            aria-hidden="true"
-          ></i>
-          <div class="flex-grow-1 text-break">
-            <h3 class="h6 mb-1">
-              Session #{{ session.id }}
-              <span
-                v-if="session.current"
-                class="badge text-bg-success ms-1"
-                data-id="profile-session-this"
-                >this one</span
-              >
-              <span
-                v-if="session.impersonated"
-                class="badge bg-warning-subtle text-warning-emphasis ms-1"
-                data-id="profile-session-impersonated"
-                >an administrator is working as you</span
-              >
-            </h3>
-            <div data-id="profile-session-device">
-              {{ session.deviceName ?? 'Unknown device' }}
-              <span
-                v-if="session.browserTimeZone !== null"
-                class="text-body-secondary"
-                >· {{ session.browserTimeZone }}</span
-              >
-            </div>
-            <div class="small text-body-secondary">
-              created {{ dateTime(session.createdAt) }} · last seen
-              {{
-                session.tabs.length > 0 ? 'now' : dateTime(session.lastSeenAt)
-              }}
-              · expires {{ dateTime(session.expiresAt) }}
-            </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-link btn-sm p-0 text-decoration-none"
-            :aria-expanded="expanded.has(session.id)"
-            data-id="profile-session-tabs"
-            @click="toggleTabs(session.id)"
+        <template #badge>
+          <span
+            v-if="session.current"
+            class="badge text-bg-success ms-1"
+            data-id="profile-session-this"
+            >this one</span
           >
-            <i
-              class="bi"
-              :class="
-                expanded.has(session.id)
-                  ? 'bi-caret-down-fill'
-                  : 'bi-caret-right-fill'
-              "
-              aria-hidden="true"
-            ></i>
-            tabs: {{ session.tabs.length }}
-          </button>
+          <span
+            v-if="session.impersonated"
+            class="badge bg-warning-subtle text-warning-emphasis ms-1"
+            data-id="profile-session-impersonated"
+            >an administrator is working as you</span
+          >
+        </template>
+        <template #actions>
           <button
             v-if="!session.current && !session.impersonated"
             type="button"
@@ -190,44 +124,8 @@ async function confirmEndOthers(): Promise<void> {
           >
             Revoke
           </button>
-        </div>
-        <div
-          v-if="expanded.has(session.id)"
-          class="bg-body-tertiary rounded-2 mb-2 px-2 py-1"
-        >
-          <p
-            v-if="session.tabs.length === 0"
-            class="text-body-secondary small mb-0"
-          >
-            No open tabs: the sign-in stays valid, but the browser is closed
-            right now.
-          </p>
-          <ul v-else class="list-unstyled mb-0">
-            <li
-              v-for="tab in session.tabs"
-              :key="tab.acceptKey"
-              class="d-flex flex-wrap align-items-center gap-2 py-1"
-              data-id="profile-session-tab"
-            >
-              <i class="bi bi-plug text-body-secondary" aria-hidden="true"></i>
-              <code>{{ tabKeyLabel(tab.acceptKey) }}</code>
-              <span class="small text-body-secondary">
-                opened {{ dateTime(tab.connectedAt) }}
-              </span>
-              <!-- A newline between the tags is dropped, so the boundary is
-                   its own text node, and only while this tab is shown. -->
-              <template v-if="tab.current"
-                >{{ ' '
-                }}<span
-                  class="small text-body-secondary"
-                  data-id="profile-session-tab-this"
-                  >this tab</span
-                ></template
-              >
-            </li>
-          </ul>
-        </div>
-      </article>
+        </template>
+      </HilosSessionRow>
     </div>
 
     <button

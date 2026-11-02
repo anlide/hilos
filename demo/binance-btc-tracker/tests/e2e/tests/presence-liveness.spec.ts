@@ -6,9 +6,11 @@ import {
   createTestUser,
   openRawWebSocket,
   sessionToken,
+  shownByTestId,
   typeInto,
   gotoPage,
   grantAdminToSelf,
+  userColumnCell,
   type SignedInUser,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -17,7 +19,7 @@ import {
 // and closes it at the longest; any frame from the browser ends the silence. The
 // people list and the card say a person is online while one socket of theirs
 // still answers, probably offline when every one of them is in doubt, and offline
-// when none is left.
+// when none is left. The list counts the person's sockets beside their presence.
 //
 // No browser keeps that silence — Chromium answers a ping by itself, whatever its
 // page is doing — so the person's sockets here are raw ones
@@ -63,14 +65,33 @@ function listPresence(list: Page, userId: number): Locator {
 }
 
 /**
- * Wait until the list and the card both say the person's presence, and the card
+ * The number of the person's sockets in their row of the people list. The list's
+ * Sessions column counts sockets; the card's first tile counts the person's
+ * sign-ins instead (HIL-1662), which outlive a socket. The data cell is the one
+ * under that column's header, and the number is its text region.
+ *
+ * @param list The observer's tab on the people list.
+ * @param userId The person's id, the key of their row.
+ * @returns The value of the row's Sessions cell.
+ */
+async function listSockets(list: Page, userId: number): Promise<Locator> {
+  const cell = await userColumnCell(
+    shownByTestId(list, `hilos-table-row-${userId}`),
+    list.getByTestId('hilos-table-sort-onlineSessionCount'),
+  )
+
+  return cell.locator('.hilos-table-text')
+}
+
+/**
+ * Wait until the list and the card both say the person's presence, and the list
  * counts the person's sockets — doubted ones included, until they close.
  *
  * @param card The observer's tab on the person's card.
  * @param list The observer's tab on the people list.
  * @param userId The person's id.
  * @param presence The word both badges say.
- * @param sockets The number of the person's sockets the card counts.
+ * @param sockets The number of the person's sockets the list counts.
  */
 async function expectPresence(
   card: Page,
@@ -81,9 +102,7 @@ async function expectPresence(
 ): Promise<void> {
   await expect(cardPresence(card)).toHaveText(presence)
   await expect(listPresence(list, userId)).toHaveText(presence)
-  await expect(card.getByTestId('hilos-user-sessions')).toHaveText(
-    String(sockets),
-  )
+  await expect(await listSockets(list, userId)).toHaveText(String(sockets))
 }
 
 /**

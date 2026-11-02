@@ -107,6 +107,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsHistoryPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserSessionsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UsersPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
@@ -200,6 +201,7 @@ use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Status\StatusAgent;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 
 /**
  * Hilos - Main app facade for data access.
@@ -311,6 +313,7 @@ class Hilos extends HilosFacade
         CountryNamesPage::PAGE => CountryNamesPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
+        UserSessionsPage::PAGE => UserSessionsPage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonPlacementPage::PAGE => DaemonPlacementPage::class,
         DaemonNodePage::PAGE => DaemonNodePage::class,
@@ -533,6 +536,7 @@ class Hilos extends HilosFacade
 
     public const array BROWSER_LISTS = [
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
+        HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -547,6 +551,12 @@ class Hilos extends HilosFacade
     public const array PAGE_LISTS = [
         ProfileNotificationsPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        UserPage::PAGE => [
+            HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
+        ],
+        UserSessionsPage::PAGE => [
+            HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
         ],
     ];
 
@@ -627,6 +637,9 @@ class Hilos extends HilosFacade
             BinanceBtcTrackerTableContext::hilosUsers => [],
         ],
         UserPage::PAGE => [
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+        ],
+        UserSessionsPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
         ],
         LogsOverviewPage::PAGE => [

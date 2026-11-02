@@ -345,7 +345,7 @@ for (const viewer of [false, true]) {
       // identities. The real operation rows independently establish its tally.
       expect(original).toEqual({
         twoFactor: { enabled: true, required: 'none' },
-        stepUp: { enabledCount: before, totalCount: 15 },
+        stepUp: { enabledCount: before, totalCount: 16 },
         oauth: { configuredCount: 2, totalCount: 2, unconfigured: [] },
         signInMethods: { enabledCount: 6, totalCount: 6, unready: [] },
         impersonation: { allowed: true, scope: 'act' },

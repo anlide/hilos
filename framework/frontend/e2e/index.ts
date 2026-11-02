@@ -475,6 +475,7 @@ export {
   expectUserActivityMoment,
   expectUserActivityWire,
   expectUserTimeZone,
+  userColumnCell,
   userTableRows,
   type UserTableRow,
 } from './users.js'

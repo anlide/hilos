@@ -115,6 +115,12 @@ abstract class StepUpOperationDirectory
                 false,
                 enabledByDefault: false,
             ),
+            StepUpOperationKey::END_USER_SESSIONS => new StepUpOperation(
+                StepUpOperationKey::END_USER_SESSIONS,
+                'End user sessions',
+                "end this person's sessions",
+                false,
+            ),
             StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES => new StepUpOperation(
                 StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES,
                 'Export legal acceptances',

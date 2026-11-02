@@ -331,7 +331,7 @@ const USER_ID_FIELD = 'id'
 /** Row payload key of whether the account is blocked from signing in. */
 const USER_BLOCK_FIELD = 'block'
 /** Field of the user entity carrying the display name (`userFromFields`). */
-const USER_NAME_FIELD = 'name'
+export const USER_NAME_FIELD = 'name'
 /** Field of the user entity carrying the person's own time zone. */
 const USER_TIME_ZONE_FIELD = 'timeZone'
 const USER_IDENTITIES_SLOT = 'identities'
@@ -2061,9 +2061,10 @@ export function hilosUserImpersonationSection(
 
 /**
  * The step-up operation behind each account-card window that takes something
- * away from the person (HIL-1275), and the takeover (HIL-1170). Lifting a block
- * and calling a deletion off give back rather than take, so their windows have
- * no operation.
+ * away from the person (HIL-1275), the takeover (HIL-1170), and ending one or
+ * all of the person's sessions (HIL-1662), both under one operation. Lifting a
+ * block and calling a deletion off give back rather than take, so their windows
+ * have no operation.
  */
 export const HILOS_USER_CARD_STEP_UP_OPERATIONS = {
   merge: 'merge_accounts',
@@ -2072,11 +2073,20 @@ export const HILOS_USER_CARD_STEP_UP_OPERATIONS = {
   block: 'block_account',
   delete: 'delete_other_account',
   impersonate: 'impersonate',
+  endSession: 'end_user_sessions',
+  endAllSessions: 'end_user_sessions',
 } as const
 
-/** A window of the account card: one of the six confirmations, the merge, or the takeover. */
+/**
+ * A window of the account card: one of the six confirmations, the merge, the
+ * takeover, or ending one or all of the person's sessions.
+ */
 export type HilosUserCardWindow =
-  HilosUserLifecycleChoice | 'merge' | 'impersonate'
+  | HilosUserLifecycleChoice
+  | 'merge'
+  | 'impersonate'
+  | 'endSession'
+  | 'endAllSessions'
 
 /** The confirmation step of one account-card window (HIL-1275). */
 export interface HilosUserCardStepUp {

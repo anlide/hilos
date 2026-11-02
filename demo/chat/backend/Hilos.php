@@ -212,6 +212,7 @@ use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
 use Demo\Chat\Pages\Hilos\TermsPage;
 use Demo\Chat\Pages\Hilos\TermsHistoryPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
+use Demo\Chat\Pages\Hilos\Users\UserSessionsPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\UserPage as ChatUserPage;
@@ -279,6 +280,7 @@ use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
 use Hilos\Moderation\ModerationAgent;
 use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
@@ -470,6 +472,7 @@ final class Hilos extends HilosFacade
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
         HilosUsersPage::PAGE => HilosUsersPage::class,
         HilosUserPage::PAGE => HilosUserPage::class,
+        UserSessionsPage::PAGE => UserSessionsPage::class,
         RolesPage::PAGE => RolesPage::class,
         ModerationPage::PAGE => ModerationPage::class,
         ModerationKindPage::PAGE => ModerationKindPage::class,
@@ -798,6 +801,7 @@ final class Hilos extends HilosFacade
         ProfileDevicesBrowserList::LIST => ProfileDevicesBrowserList::class,
         BotProfileBrowserList::LIST => BotProfileBrowserList::class,
         UserProfileBrowserList::LIST => UserProfileBrowserList::class,
+        HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -873,6 +877,12 @@ final class Hilos extends HilosFacade
         ],
         ProfileDataPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        HilosUserPage::PAGE => [
+            HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
+        ],
+        UserSessionsPage::PAGE => [
+            HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
         ],
     ];
 
@@ -1090,6 +1100,10 @@ final class Hilos extends HilosFacade
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
             HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
             ChatTableContext::hilosMergeCandidates => [],
+        ],
+        UserSessionsPage::PAGE => [
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+            HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
         ],
         LanguagesListPage::PAGE => [
             ChatTableContext::hilosI18nLanguages => [],

@@ -346,6 +346,13 @@ nobody is asked*).
     (`TopologyValidator::validateReferences()`), where the collections are
     mounted and can say which of their fields are columns; and at run time
     such a field keeps its column's verdict even where the check did not run.
+    A row joined by a field of its anchor (`BrowserSourceConfig::anchorFieldJoin()`)
+    follows that field's verdict instead of its own columns' (HIL-1662): its
+    key is the field's value, and its presence tells a set field from an empty
+    one. So when the anchor field is hidden from the viewer, the row is sent at
+    no anchor item — not in the answer, not in any frame after it — and a
+    change of its source sends the viewer nothing; a field the viewer is shown
+    leaves the row to its own columns.
   - The page's own data, declared by `AbstractPage::dataFields()`; the page's
     other sections (entities, lists, tables) are hidden whole.
   - The frames of pages with a subscriber set of their own (the logs pages, the

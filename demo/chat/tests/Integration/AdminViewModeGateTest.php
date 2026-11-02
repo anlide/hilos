@@ -12,6 +12,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
+use Demo\Chat\Pages\Hilos\Users\UserSessionsPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Cluster\ClusterContext;
@@ -153,6 +154,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_user_block_set',
         'hilos_user_deletion_set',
         'hilos_user_merge',
+        'hilos_user_session_end',
+        'hilos_user_sessions_end_all',
         'hilos_user_update',
         'legal_acceptances_export',
         'legal_setting_set',
@@ -255,6 +258,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         self::assertSame(self::REFUSED_ACTIONS, array_keys($actions));
         self::assertSame(MaintenanceCirclePage::class, $actions[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD]);
         self::assertSame(MaintenanceCirclePage::class, $actions[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE]);
+        self::assertSame(UserSessionsPage::class, $actions[HilosSignalConstants::HILOS_USER_SESSION_END]);
+        self::assertSame(UserSessionsPage::class, $actions[HilosSignalConstants::HILOS_USER_SESSIONS_END_ALL]);
 
         foreach ($actions as $action => $pageClass) {
             foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {

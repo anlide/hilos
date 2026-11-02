@@ -36,6 +36,12 @@ import {
   PAGE_READY,
   grantAdminToSelf,
   sessionToken,
+  uniqueEmail,
+  openSignIn,
+  login,
+  markDocument,
+  expectDocumentUnchanged,
+  expectAccessLossNotice,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -142,10 +148,112 @@ test('user Overview has no empty project section and supports keyboard rename', 
       page.getByTestId(`hilos-user-${key}-state`).locator('p.fw-medium'),
     ).toHaveText(state!)
   }
-  const connections = page.getByTestId('hilos-user-sessions')
-  await expect(connections).toHaveText(/^[1-9]\d*$/)
-  await expect(connections.locator('..')).toContainText('Open connections')
+  // The first tile counts the person's sessions — the one this browser signed
+  // in with — and its number leads to the Sessions tab of the card.
+  const sessions = page.getByTestId('hilos-user-sessions')
+  await expect(sessions).toHaveText('1')
+  await expect(sessions.getByRole('link')).toHaveAttribute(
+    'href',
+    `/hilos/user/${userId}/sessions`,
+  )
   await expectHilosUserOverviewAccessibility(expect, page)
+})
+
+// HIL-1662: the Sessions tab of a person's card in this demo. The tile's number
+// leads to it, the person's sign-in elsewhere arrives on it live, and an
+// administrator ends that session after confirming it is them; the server takes
+// the row away and the other browser loses the account. This proves the
+// assembly here — the route behind the tile, the tab's subscription, the
+// server's answer in this demo's store, the confirmation step, the library's
+// answer. Ending all of a person's sessions is proved in polls' profile spec,
+// and a takeover's way back to the administrator in chat's
+// impersonation-settings spec.
+test.describe("a person's sessions on the card", () => {
+  test.use({ timezoneId: 'Pacific/Niue' })
+
+  test('ends a session that arrived live on the Sessions tab after the confirmation step', async ({
+    browser,
+    page,
+    baseURL,
+    ignoreHTTPSErrors,
+    timezoneId,
+  }) => {
+    const email = uniqueEmail()
+    const userId = await createTestAdmin(expect, page, { email })
+    const name = await page
+      .getByTestId('nav-profile-name')
+      .getAttribute('title')
+    expect(name).toBeTruthy()
+    await gotoPage(expect, page, `/hilos/user/${userId}`, PAGE_READY)
+    const tile = page.getByTestId('hilos-user-sessions')
+    await expect(tile).toHaveText('1')
+    await markDocument(page)
+
+    await tile.getByRole('link').click()
+    await expect(page).toHaveURL(`/hilos/user/${userId}/sessions`)
+    await expect(page.getByTestId('hilos-user-sessions-page')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name!)
+    const rows = page.getByTestId('user-session-row')
+    await expect(rows).toHaveCount(1)
+    const ownSession = await rows.getAttribute('data-record')
+
+    const otherContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+      timezoneId,
+    })
+    try {
+      const other = await otherContext.newPage()
+      await gotoPage(expect, other, '/', PAGE_READY)
+      await openSignIn(expect, other)
+      await login(expect, other, email)
+      await expect(other.getByTestId('self-user-id')).toHaveText(String(userId))
+
+      // The sign-in arrives on the open tab as a row of its own, unreloaded.
+      await expect(rows).toHaveCount(2)
+      await expectDocumentUnchanged(expect, page)
+      const records = await rows.evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-record')),
+      )
+      const otherSession = records.find((record) => record !== ownSession)
+      expect(otherSession).toBeTruthy()
+      const otherRow = rows.and(page.locator(`[data-record="${otherSession}"]`))
+
+      // Ending it asks the administrator to confirm it is them first.
+      await clickSubmit(expect, otherRow.getByTestId('user-session-end'))
+      await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+      await clickSubmit(
+        expect,
+        page.getByTestId('user-session-end-step-up-confirm'),
+      )
+      await clickSubmit(expect, page.getByTestId('user-session-end-confirm'))
+      await expect(page.getByTestId('modal')).toBeHidden()
+      await expect(page.getByTestId('hilos-toast-success')).toContainText(
+        `Session #${otherSession} ended`,
+      )
+      await expect(otherRow).toHaveCount(0)
+      await expect(rows).toHaveCount(1)
+      await expect(rows).toHaveAttribute('data-record', ownSession!)
+
+      // The other browser is on the sign-in form and says why; this one keeps
+      // its account.
+      await expect(other.getByTestId('auth-surface')).toBeVisible()
+      await expectAccessLossNotice(expect, other, 'session_ended')
+      await expectAccessLossNotice(expect, page, null)
+      await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+        'data-access',
+        'full',
+      )
+
+      // Back on the Overview the tile counts the one session left.
+      await page.goBack()
+      await expect(page).toHaveURL(`/hilos/user/${userId}`)
+      await expect(tile).toHaveText('1')
+      await expectDocumentUnchanged(expect, page)
+    } finally {
+      await otherContext.close()
+    }
+  })
 })
 
 test.describe('people time zones and numeric activity', () => {
@@ -551,10 +659,14 @@ test('shows the connected user as online with a live session', async ({
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
-  // Regression: a connected user must render online with at least one live
-  // session. The detail table's computed presence fields were never populated
-  // (the project browser context returned null), so the live user rendered as
-  // offline with 0 sessions. The presence badge stands over an invisible twin
+  // Regression: a connected user must render online. The detail table's
+  // computed presence fields were never populated (the project browser context
+  // returned null), so the live user rendered as offline with 0 sessions. Here
+  // the first tile counts the person's sign-ins from their sessions list
+  // (HIL-1662), so it holds that this browser's own sign-in is counted; the
+  // detail table's count of open connections is no longer drawn on this demo,
+  // and the users specs of ecommerce-shop and online-testing, whose tile still
+  // draws it, hold that half. The presence badge stands over an invisible twin
   // holding the room of its widest word (HIL-1566); the visible one is read.
   await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
   await expect(

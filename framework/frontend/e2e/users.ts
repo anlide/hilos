@@ -1,4 +1,4 @@
-import type { Expect, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject } from './deliveryFrames.js'
 import { expectReaderMillisecondMoment } from './moments.js'
@@ -153,6 +153,25 @@ export async function expectUserTimeZone(
   ).toHaveCount(0)
 }
 
+/**
+ * The data cell of a person's row under one column of a people table, found by
+ * that column's real header rather than by a position the spec writes down.
+ *
+ * @param row The person's row.
+ * @param header The header of the column, in the same table.
+ * @returns The row's cell under that header.
+ */
+export async function userColumnCell(
+  row: Locator,
+  header: Locator,
+): Promise<Locator> {
+  const column = await header.evaluate(
+    (header) => (header.closest('th') as HTMLTableCellElement).cellIndex,
+  )
+
+  return row.locator('td, th').nth(column)
+}
+
 /** Compare a real list/candidate cell or shared head to the numeric wire moment. */
 export async function expectUserActivityDisplay(
   expect: Expect,
@@ -185,10 +204,7 @@ export async function expectUserActivityDisplay(
     surface === 'candidate'
       ? scope.getByRole('columnheader', { name: 'Last activity', exact: true })
       : scope.getByTestId('hilos-table-sort-lastActivity')
-  const column = await header.evaluate(
-    (header) => (header.closest('th') as HTMLTableCellElement).cellIndex,
-  )
-  const cell = row.locator('td, th').nth(column)
+  const cell = await userColumnCell(row, header)
   const textTarget = cell.locator('.hilos-table-text')
   const target = (await textTarget.count()) > 0 ? textTarget : cell
   return expectReaderMillisecondMoment(expect, target, moment, timeZone)

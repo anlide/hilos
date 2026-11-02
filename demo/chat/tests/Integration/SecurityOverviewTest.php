@@ -182,7 +182,7 @@ final class SecurityOverviewTest extends IntegrationTestCase
             self::assertSame(SecurityPage::PAGE, $response->pageKey);
             self::assertSame([
                 'twoFactor' => ['enabled' => false, 'required' => 'admins'],
-                'stepUp' => ['enabledCount' => 0, 'totalCount' => 15],
+                'stepUp' => ['enabledCount' => 0, 'totalCount' => 16],
                 'oauth' => ['configuredCount' => 1, 'totalCount' => 2, 'unconfigured' => [
                     ['providerKey' => 'oauth:google', 'label' => 'Google', 'missingFields' => 1],
                 ]],

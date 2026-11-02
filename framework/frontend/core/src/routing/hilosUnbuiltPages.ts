@@ -20,7 +20,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.LEGAL_DOCUMENT_REVISIONS]: ['angular'],
   [HilosPages.USER_ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.USER_ACCESS]: ['vue', 'react', 'angular'],
-  [HilosPages.USER_SESSIONS]: ['vue', 'react', 'angular'],
+  [HilosPages.USER_SESSIONS]: ['react', 'angular'],
   [HilosPages.STATUS]: ['angular'],
   [HilosPages.STATUS_COMPONENTS]: ['angular'],
   [HilosPages.STATUS_SUBSCRIBERS]: ['angular'],

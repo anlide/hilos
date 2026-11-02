@@ -116,6 +116,7 @@ use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\Session\DTO\UserSessionsEndRequestSignalData;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
@@ -534,6 +535,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The settings library hands impersonation switched off here (HIL-1308): the takeovers under
      * way are this library's sessions, so it returns every one of them to its administrator before
      * the write that switched it off is answered.
+     *
+     * The Sessions tab of a person's card hands an administrator ending one or every session of
+     * that person here (HIL-1662), beside the takeover it sits next to: the page keeps the ADMIN
+     * level, and the sessions it ends are this library's. The name it is answered under is absent
+     * for the usual reason - the page declares what this library sends back.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -550,6 +556,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,
         HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
         HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
+        HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST => UserSessionsEndRequestSignalData::class,
         HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
         HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => DeferredSessionCarryoverHandoverSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => OAuthTripOpenedSignalData::class,
@@ -765,6 +772,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var string What a browser is told when its connection carries no session to act on */
     private const string SESSION_NOT_ON_CONNECTION_MESSAGE
         = 'The session behind this tab could not be found; reload the page and try again';
+
+    /** @var string Why a session named to be ended is not ended: it no longer stands for the person it was listed under */
+    private const string SESSION_ALREADY_ENDED_MESSAGE = 'This session has already ended';
 
     /** Last private maintenance pass; attempts themselves live in the holder's RT collection. */
     private float $lastProfileNameSweepAt = 0.0;
@@ -3391,7 +3401,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $actingSession = Hilos::$db->sessions->findByToken($actingSessionToken);
         if ($actingSession === null || $actingSession->userId === null) {
-            throw new ValidationException('This session has already ended');
+            throw new ValidationException(self::SESSION_ALREADY_ENDED_MESSAGE);
         }
 
         $targetSession = null;
@@ -3402,7 +3412,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
         }
         if ($targetSession === null) {
-            throw new ValidationException('This session has already ended');
+            throw new ValidationException(self::SESSION_ALREADY_ENDED_MESSAGE);
         }
         if ($targetSession->token === $actingSessionToken) {
             throw new ValidationException('This is the session you are using — sign out instead');
@@ -3436,7 +3446,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $actingSession = Hilos::$db->sessions->findByToken($actingSessionToken);
         if ($actingSession === null || $actingSession->userId === null) {
-            throw new ValidationException('This session has already ended');
+            throw new ValidationException(self::SESSION_ALREADY_ENDED_MESSAGE);
         }
 
         $ended = $this->deauthenticateOtherSessions($actingSession->userId, $actingSessionToken);
@@ -3506,6 +3516,25 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $ended++;
         }
 
+        $this->lowerBlockedCardsOf($userId, $keepSessionToken);
+
+        return $ended;
+    }
+
+    /**
+     * Lowers every "Access closed" card still waiting to give a browser back to this person (HIL-1188).
+     *
+     * A pass that ends the person's sessions ends these browsers too: an unblock would sign each
+     * of them in. They were signed out already, so the caller does not count them. The kept
+     * session, when there is one, keeps its own card.
+     *
+     * @param int $userId Person the cards would give the browsers back to
+     * @param ?string $keepSessionToken Session token that keeps its card, or null when none does
+     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws HilosException On database or runtime failure
+     */
+    private function lowerBlockedCardsOf(int $userId, ?string $keepSessionToken): void
+    {
         foreach (Hilos::$db->sessions->findByBlockedUserId($userId) as $session) {
             if ($session->token === $keepSessionToken) {
                 continue;
@@ -3514,8 +3543,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->actions->releaseBlockedNotice();
             $this->publishBlockedCardState($session, null, null, null, null);
         }
-
-        return $ended;
     }
 
     /**
@@ -4026,7 +4053,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Routes one frame addressed to this library - seven from the users library, two back
      * over the project seam (HIL-622, HIL-710, HIL-729), one from whoever has something to
      * say to a browser (HIL-768), one from the framework's own Hilos users page, which holds
-     * the takeover's name and forwards its write here (HIL-824), one from whoever is carrying
+     * the takeover's name and forwards its write here (HIL-824), one from a person's Sessions
+     * tab ending that person's sessions (HIL-1662), one from whoever is carrying
      * a code, each time the send moves (HIL-826), one from the agent holding the logins a
      * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
      * master about agents that are gone (HIL-1044), one from whoever wrote a block flag (HIL-289),
@@ -4304,6 +4332,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->handleImpersonateRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST:
+                if (!$data->data instanceof UserSessionsEndRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        UserSessionsEndRequestSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->handleUserSessionsEndRequest($data->data);
 
                 return;
 
@@ -5716,6 +5757,169 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function answerImpersonate(ImpersonateRequestSignalData $request, ?ActionRefusal $refusal): void
     {
         $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+    }
+
+    /**
+     * Ends one or every session of a person for the administrator on that person's card, and answers the card (HIL-1662).
+     *
+     * The write half of the Sessions tab's two buttons. The page carries the ADMIN level and has
+     * spent it, so the administrator is re-checked here, on the connection that pressed, and their
+     * fresh confirmation of {@see StepUpOperationKey::END_USER_SESSIONS} is asked before anything
+     * else ({@see AskingAdministrator::confirmed()}); a person gone or folded into another account is
+     * refused next ({@see AddressablePerson::require()}). Rights lost or a confirmation run out while
+     * the frame travelled come back as the refusal, and nothing is ended.
+     *
+     * A refusal comes back on the answering frame rather than as a throw, as it does for the
+     * takeover ({@see self::handleImpersonateRequest()}): outside a page no dispatcher turns a throw
+     * into the card's ack. A sentence written for the person travels whole, any other failure as the
+     * placeholder with its class and text beside it, logged here. A wiring refusal is not answered
+     * but left to the source recovery, as the card's other writes leave it.
+     *
+     * The answer leaves only once the sessions are ended, with a sentence composed here, because the
+     * number ended is known only now. An administrator ending their own sessions ends the tab that
+     * pressed too; that tab learns it first from its own session state.
+     *
+     * @param UserSessionsEndRequestSignalData $request Whose sessions, which one, and the administrator waiting
+     * @throws WiringRefusal When this worker cannot access a required source
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function handleUserSessionsEndRequest(UserSessionsEndRequestSignalData $request): void
+    {
+        try {
+            AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::END_USER_SESSIONS);
+            AddressablePerson::require($request->userId);
+            $successMessage = $request->sessionId === null
+                ? $this->endEverySessionOf($request->userId, $request->acceptKey)
+                : $this->endOneSessionOf($request->userId, $request->sessionId);
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Ending sessions of #{$request->userId} failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($request->replySignal, self::handoverAnswer($request, $successMessage, null, null, null));
+    }
+
+    /**
+     * Ends one session of a person, named by its row, for an administrator (HIL-1662).
+     *
+     * The row has to stand for the person still. A row signed out since, or signed into by
+     * somebody else on the same browser, is refused as already ended: the id the card listed must
+     * not reach whoever holds that row now. An ordinary session is signed out the way the person's
+     * own "end this session" signs it out, and the person's agent is then asked to take its
+     * browser's trust to skip the second factor away (HIL-1407). A session where an administrator
+     * acts as the person is given back to that administrator, the way the command line's Stop gives
+     * it back - with no initiator, because whoever pressed here is not the one behind it - and the
+     * trust of that browser, which is the administrator's, stays.
+     *
+     * @param int $userId Person the session has to stand for
+     * @param int $sessionId Session row to end
+     * @return string Sentence the administrator is answered with
+     * @throws ValidationException When the session no longer stands for the person
+     * @throws InvalidArgumentException When a state frame or the ask to the person's agent cannot be named or queued
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException On database or runtime failure
+     */
+    private function endOneSessionOf(int $userId, int $sessionId): string
+    {
+        $session = Hilos::$db->sessions[$sessionId] ?? null;
+        if ($session === null || $session->userId !== $userId) {
+            throw new ValidationException(self::SESSION_ALREADY_ENDED_MESSAGE);
+        }
+
+        // Read before the end: giving a takeover back clears the marker this asks about.
+        $ordinary = $session->impersonatorUserId === null;
+        $this->endSessionOfPerson($session);
+        if ($ordinary) {
+            $this->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
+                $userId,
+                $sessionId,
+                false,
+                HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE,
+            ));
+        }
+
+        return "Session #{$sessionId} ended";
+    }
+
+    /**
+     * Ends every session a person has at this moment, for an administrator (HIL-1662).
+     *
+     * The set is read once, when the frame arrives, and walked in one pass: a session that
+     * appeared after the card was opened is ended with the rest, and none is left out - neither
+     * the administrator's own, nor one where an administrator acts as the person. Ordinary sessions
+     * are signed out, takeovers given back to their administrators, as one session is
+     * ({@see self::endOneSessionOf()}). The session of the tab that pressed, when it is one of
+     * them, goes last, so a failure on the way is answered to a tab still signed in.
+     *
+     * A browser waiting on the "Access closed" card to be given back to the person loses that
+     * card, as it does when the person ends their other sessions (HIL-1188), and the trust of every
+     * browser of the person to skip the second factor is then asked away from the person's agent
+     * (HIL-1407). An administrator's trust in a browser it took the person over from is the
+     * administrator's and stays. Nothing else about the account changes: no block, no way in
+     * removed, no row erased.
+     *
+     * @param int $userId Person whose sessions end
+     * @param string $actingAcceptKey Connection of the administrator who pressed
+     * @return string Sentence the administrator is answered with, naming how many sessions ended
+     * @throws ValidationException When a session of the set is no longer inside the takeover it was read with
+     * @throws InvalidArgumentException When a state frame or the ask to the person's agent cannot be named or queued
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException On database or runtime failure
+     */
+    private function endEverySessionOf(int $userId, string $actingAcceptKey): string
+    {
+        $actingSessionId = Hilos::$rt?->sessionConnectionsSource()?->get($actingAcceptKey)?->sessionId;
+        $sessions = Hilos::$db->sessions->findByUserId($userId);
+        $ended = count($sessions);
+        $actingSession = null;
+        foreach ($sessions as $session) {
+            if ($session->id === $actingSessionId) {
+                $actingSession = $session;
+                continue;
+            }
+
+            $this->endSessionOfPerson($session);
+        }
+        if ($actingSession !== null) {
+            $this->endSessionOfPerson($actingSession);
+        }
+
+        $this->lowerBlockedCardsOf($userId, null);
+        $this->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
+            $userId,
+            0,
+            true,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE,
+        ));
+
+        return $ended === 1 ? 'Ended 1 session' : "Ended {$ended} sessions";
+    }
+
+    /**
+     * Ends one session of the set an administrator ends: an ordinary one signed out, a takeover given back (HIL-1662).
+     *
+     * @param Session $session Session to end, signed in to the person
+     * @throws ValidationException When the session is no longer inside the takeover it was read with
+     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException On database or runtime failure
+     */
+    private function endSessionOfPerson(Session $session): void
+    {
+        if ($session->impersonatorUserId !== null) {
+            $this->stopImpersonation($session->token, null, null);
+
+            return;
+        }
+
+        $this->deauthenticateSession($session->token, accessLossReason: SessionAccessLossReason::SESSION_ENDED);
     }
 
     /**

@@ -738,6 +738,35 @@ describe('HilosProfileSessions (Vue)', () => {
     expect(openTabs[1]!.get('code').text()).toBe('tab-c')
   })
 
+  it('keeps a row open by its session id when an update puts a new session before it', async () => {
+    const { wrapper } = setup([
+      makeSession(1, { current: true }),
+      makeSession(2),
+    ])
+    await wrapper
+      .findAll('[data-id="profile-session-tabs"]')[1]!
+      .trigger('click')
+
+    await wrapper.setProps({
+      sessions: [
+        makeSession(1, { current: true }),
+        makeSession(3),
+        makeSession(2),
+      ],
+    })
+    const rows = wrapper.findAll('[data-id="profile-session-row"]')
+    expect(rows.map((row) => row.get('h3').text().split(' ')[1])).toEqual([
+      '#1',
+      '#3',
+      '#2',
+    ])
+    expect(
+      rows.map((row) =>
+        row.get('[data-id="profile-session-tabs"]').attributes('aria-expanded'),
+      ),
+    ).toEqual(['false', 'false', 'true'])
+  })
+
   it('explains an expanded session that has no open tabs', async () => {
     const { wrapper } = setup([makeSession(4)])
     await wrapper.get('[data-id="profile-session-tabs"]').trigger('click')

@@ -33,9 +33,11 @@ operations on another person's account: merging an account into the one on the
 card (`merge_accounts`), granting and removing administrator rights
 (`grant_admin`, `revoke_admin`), blocking an account (`block_account`),
 scheduling another person's deletion (`delete_other_account`), taking the
-person over from their card (`impersonate`, HIL-1170) and exporting the
-acceptance records of everybody under a filter (`export_legal_acceptances`,
-HIL-1234) — see *Operations on another person's account*.
+person over from their card (`impersonate`, HIL-1170), ending one or all of
+the person's sessions from their card (`end_user_sessions`, HIL-1662) and
+exporting the acceptance records of everybody under a filter
+(`export_legal_acceptances`, HIL-1234) — see *Operations on another person's
+account*.
 
 Declaring an operation does not protect it by itself. Every server action that
 belongs to the operation calls `requireStepUp($acceptKey, $operation)` before it
@@ -258,6 +260,9 @@ someone else at it.
   Turning the second factor off for everyone is declared on by the same test
   (`disable_second_factor`, HIL-1303): the sign-ins let in without a code while
   it was off are not taken back by turning it on again.
+  Ending another person's sessions is declared on by the same test
+  (`end_user_sessions`, HIL-1662): the person has to sign in again, and no
+  action of the administrator gives a sign-in back.
 - **Declared off** — when one action gives it back: removing rights, blocking,
   and taking the person over (`impersonate`, HIL-1170), which "Stop" ends with
   everything returned. They stand in the list so that an administrator can

@@ -115,6 +115,7 @@ use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
@@ -2648,7 +2649,7 @@ abstract class BrowserContext
             }
 
             $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
-            $rowKeys = $this->rowKeysForChange($browserConfig, $change, $browserParams);
+            $rowKeys = $this->rowKeysForChange($browserConfig, $change, $acceptKey, $pageParams, $browserParams, $viewer);
             $anchorRowKey = $this->selfAnchoredListRowKey(
                 $browserConfig,
                 $acceptKey,
@@ -3613,28 +3614,129 @@ abstract class BrowserContext
     /**
      * Resolves the logical browser row keys affected by a source change.
      *
+     * A row joined by a field of its anchor has no key of its own, so its change is addressed through
+     * the subscriber's anchor items that point at the changed row ({@see self::anchorRowKeysPointingAt()}).
+     * A viewer the anchor field is hidden from is addressed no item at all: that viewer is never sent
+     * the row ({@see self::anchorFieldHiddenFromViewer()}), and a frame for the items pointing at the
+     * changed row would name them. Every other row derives the key from the change, current and
+     * previous values both.
+     *
      * @param BrowserSourceConfig $browserConfig Browser source config
      * @param SourceChange $change Grouped DB/RT source change
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params
+     * @param bool $viewer Whether the subscriber is a viewer of the admin view mode
      * @return list<int|string> Distinct current and previous browser row keys
+     * @throws PageInternalErrorException When a row source configuration is malformed
+     * @throws DbCollectionNotReadableException When the database anchor is not readable here
+     * @throws RtCollectionNotReadableException When a runtime source is not readable here
+     * @throws DatabaseException When the anchor collection cannot be queried
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws InvalidArgumentException When the anchor field names no column of the anchor's entity
+     * @throws ObjectGetIdStringNotImplementedException When a matched anchor's Object cannot name its id
+     * @throws CollectionNotManualException When the collection built for the anchor query refuses its own items
      */
-    private function rowKeysForChange(BrowserSourceConfig $browserConfig, SourceChange $change, array $browserParams): array
-    {
+    private function rowKeysForChange(
+        BrowserSourceConfig $browserConfig,
+        SourceChange $change,
+        string $acceptKey,
+        array $pageParams,
+        array $browserParams,
+        bool $viewer,
+    ): array {
         $rowKeys = [];
+        $anchorSeen = false;
         foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
+            $isAnchor = !$anchorSeen && ($rowConfig[BrowserFieldKey::MANY] ?? false) !== true;
+            $anchorSeen = $anchorSeen || $isAnchor;
             if (!$this->rowConfigMatchesChange($rowConfig, $change)) {
                 continue;
             }
 
-            $sourceValueSets = [$change->row];
-            if ($change->previous !== []) {
-                $sourceValueSets[] = $change->previous;
+            $anchorFieldJoin = $isAnchor ? null : BrowserSourceConfig::anchorFieldJoin($rowConfig);
+            if ($anchorFieldJoin !== null) {
+                if ($viewer && $this->anchorFieldHiddenFromViewer($browserConfig, $anchorFieldJoin[1])) {
+                    continue;
+                }
+                $candidates = $this->anchorRowKeysPointingAt(
+                    browserConfig: $browserConfig,
+                    anchorField: $anchorFieldJoin[1],
+                    change: $change,
+                    acceptKey: $acceptKey,
+                    pageParams: $pageParams,
+                    browserParams: $browserParams,
+                );
+            } else {
+                $candidates = [$this->rowKeyValue($rowConfig, $change, $browserParams, $change->row)];
+                if ($change->previous !== []) {
+                    $candidates[] = $this->rowKeyValue($rowConfig, $change, $browserParams, $change->previous);
+                }
             }
-            foreach ($sourceValueSets as $sourceValues) {
-                $rowKey = $this->rowKeyValue($rowConfig, $change, $browserParams, $sourceValues);
+
+            foreach ($candidates as $rowKey) {
                 if ($rowKey !== null && !in_array($rowKey, $rowKeys, true)) {
                     $rowKeys[] = $rowKey;
                 }
+            }
+        }
+
+        return $rowKeys;
+    }
+
+    /**
+     * Resolves the subscriber's anchor items that point at the changed row of a row joined by an anchor field (HIL-1662).
+     *
+     * Such a row is read by the key its anchor fragment holds, and its change travels the same join back:
+     * the anchor's table is asked for the items whose field holds the changed row's key - the call
+     * {@see self::dbSourceItemsForRow()} reads a join by, on the column the topology validator holds to a
+     * key or an index. Taking the changed row's id for an item key instead would rebuild whichever item
+     * merely shares that number. Each candidate passes the anchor's WHERE with this subscription's params
+     * before any row is built, as {@see self::dataRowKeyMatchesScope()} holds DATA to its anchor, so the
+     * subscriber of somebody else's items is sent neither rows nor deletions. One query per change and
+     * subscription: nothing is cached between subscriptions.
+     *
+     * @param BrowserSourceConfig $browserConfig Browser source config
+     * @param string $anchorField Wire field of the anchor fragment the row is joined by
+     * @param SourceChange $change Change of the joined database source; its id is the changed row's key
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $browserParams Resolved table params
+     * @return list<int|string|null> Row keys of the subscriber's anchor items pointing at the changed row
+     * @throws PageInternalErrorException When the anchor is not a database source projecting the anchor field
+     * @throws DbCollectionNotReadableException When the database anchor is not readable here
+     * @throws DatabaseException When the anchor collection cannot be queried
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws InvalidArgumentException When the anchor field names no column of the anchor's entity
+     * @throws ObjectGetIdStringNotImplementedException When a matched anchor's Object cannot name its id
+     * @throws CollectionNotManualException When the collection built for the anchor query refuses its own items
+     */
+    private function anchorRowKeysPointingAt(
+        BrowserSourceConfig $browserConfig,
+        string $anchorField,
+        SourceChange $change,
+        string $acceptKey,
+        array $pageParams,
+        array $browserParams,
+    ): array {
+        $anchorConfig = $this->anchorRowConfigs($browserConfig)[0] ?? [];
+        $anchorSource = $anchorConfig[BrowserFieldKey::SOURCE] ?? null;
+        $anchorColumn = BrowserSourceConfig::projectedSourceField($anchorConfig, $anchorField);
+        if (!is_array($anchorSource) || $this->sourceType($anchorSource) !== BrowserSourceType::DB || $anchorColumn === null) {
+            throw new PageInternalErrorException(
+                "Browser join by anchor field {$anchorField} needs a database anchor projecting that field"
+            );
+        }
+
+        $anchors = $this->sourceCollection($anchorSource);
+        if (!$anchors instanceof DbCollection) {
+            return [];
+        }
+
+        $rowKeys = [];
+        foreach ($anchors->whereColumnIs($anchorColumn, $change->sourceId) as $anchorItem) {
+            if ($this->sourceItemMatchesWhere($anchorConfig, $anchorItem, $acceptKey, $pageParams, $browserParams)) {
+                $rowKeys[] = $this->rowKeyForSourceItem($anchorConfig, $anchorItem, $acceptKey, $pageParams, $browserParams);
             }
         }
 
@@ -3954,7 +4056,9 @@ abstract class BrowserContext
      * Run on the row once it is whole and never on the way: a VIA join reads the values of the fragments
      * already projected, and a join over a field a viewer does not see must still find its row. Each
      * fragment - one object, or a list of them for a MANY source - is hidden by the map its own config
-     * gives ({@see self::declarativeWireFields()}).
+     * gives ({@see self::declarativeWireFields()}). The one exception is a row joined by a field of its
+     * anchor whose field the viewer is not shown ({@see self::anchorFieldHiddenFromViewer()}): that
+     * fragment is left out of the row whole.
      *
      * @param BrowserSourceConfig $browserConfig Browser source config the row was built from
      * @param array<string, mixed> $sources Row fragments by source key, as an admin receives them
@@ -3963,16 +4067,30 @@ abstract class BrowserContext
     private function sourcesForViewer(BrowserSourceConfig $browserConfig, array $sources): array
     {
         $fieldsBySource = [];
+        $withheld = [];
+        $anchorSeen = false;
         foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
+            $isAnchor = !$anchorSeen && ($rowConfig[BrowserFieldKey::MANY] ?? false) !== true;
+            $anchorSeen = $anchorSeen || $isAnchor;
             $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
             $sourceKey = is_array($source) ? $this->sourceKey($source) : null;
-            if ($sourceKey !== null) {
-                $fieldsBySource[$sourceKey] = $this->declarativeWireFields($rowConfig, $source);
+            if ($sourceKey === null) {
+                continue;
+            }
+
+            $fieldsBySource[$sourceKey] = $this->declarativeWireFields($rowConfig, $source);
+            $anchorFieldJoin = $isAnchor ? null : BrowserSourceConfig::anchorFieldJoin($rowConfig);
+            if ($anchorFieldJoin !== null && $this->anchorFieldHiddenFromViewer($browserConfig, $anchorFieldJoin[1])) {
+                $withheld[$sourceKey] = true;
             }
         }
 
         $hidden = [];
         foreach ($sources as $sourceKey => $fragment) {
+            if (isset($withheld[$sourceKey])) {
+                continue;
+            }
+
             $fields = $fieldsBySource[$sourceKey] ?? [];
             if (!is_array($fragment)) {
                 $hidden[$sourceKey] = HiddenValue::mark();
@@ -3987,6 +4105,37 @@ abstract class BrowserContext
         }
 
         return $hidden;
+    }
+
+    /**
+     * Whether a viewer of the admin view mode is kept from a row joined by a field of its anchor (HIL-1662).
+     *
+     * Such a row is read by the key the anchor field holds, so its own columns cannot hide what it
+     * says: its key is the field's value, and its presence tells a set field from an empty one - the
+     * sessions list would show a viewer the administrator acting in a session, and that one acts at
+     * all, through a field it hides. The row follows the field's verdict instead: hidden from the
+     * viewer, it is sent at no anchor item, in the first answer and in every frame after it, and a
+     * change of its source owes the viewer no frame ({@see self::rowKeysForChange()}). A field the
+     * viewer is shown leaves the row to its own columns, like any other.
+     *
+     * @param BrowserSourceConfig $browserConfig Browser source config
+     * @param string $anchorField Wire field of the anchor fragment the row is joined by
+     * @return bool Whether the anchor field is hidden from a viewer, the row with it
+     */
+    private function anchorFieldHiddenFromViewer(BrowserSourceConfig $browserConfig, string $anchorField): bool
+    {
+        $anchorConfig = $this->anchorRowConfigs($browserConfig)[0] ?? [];
+        $anchorSource = $anchorConfig[BrowserFieldKey::SOURCE] ?? null;
+        if (!is_array($anchorSource)) {
+            return true;
+        }
+
+        $shown = ViewerFields::shownNames(
+            $this->declarativeWireFields($anchorConfig, $anchorSource),
+            $this->viewerColumnShown(...),
+        );
+
+        return !in_array($anchorField, $shown, true);
     }
 
     /**
