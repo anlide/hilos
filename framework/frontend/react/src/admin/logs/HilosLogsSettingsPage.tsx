@@ -30,6 +30,8 @@ export function HilosLogsSettingsPage({ context }: HilosLogsSettingsPageProps) {
       context={context}
       signal={LOG_SETTINGS_SIGNAL}
       vocabulary={hilosLogSettingsVocabulary}
+      headKind="section"
+      tabsLabel="Logs pages"
     />
   )
 }

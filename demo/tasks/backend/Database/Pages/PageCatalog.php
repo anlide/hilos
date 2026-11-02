@@ -45,6 +45,10 @@ final class PageCatalog implements PageCatalogProviderInterface
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
+            HilosPageConstants::HILOS_LOGS => array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
         ];
     }
 

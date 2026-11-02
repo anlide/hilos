@@ -14,10 +14,10 @@
 // arrives, not when the ack does. A taken batch carries the other half of that
 // (HIL-759): a trigger that takes the word back while the batch is still on disk,
 // behind a modal naming when its node's cleaner may first delete it. Deleting a taken
-// batch is HIL-382, and there is no way through to the viewer yet because it takes no
-// batch address (HIL-388). All table logic, the row view-model, the empty-state
-// discrimination and the wording are the core headless's (hilosLogRotations); this view
-// owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
+// batch is HIL-382. A kept batch opens the viewer at its node and UTC batch instant;
+// its physical path is for display, not routing. Table logic, row view-model, empty
+// states and wording stay in the core headless (hilosLogRotations); this view owns
+// only markup, so projects mount it by passing their HilosLogRotationsContext.
 // Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
@@ -29,6 +29,7 @@ import {
 import {
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
+  HILOS_ROTATION_STATE_KEPT,
   HILOS_ROTATION_STATE_TAKEN,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
@@ -41,6 +42,7 @@ import {
   formatRotationState,
   formatRotationWeight,
   hasRotationNodes,
+  logViewerPath,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   rotationTakeoutNotice,
@@ -93,6 +95,20 @@ const RETENTION_CLASS: Record<string, string> = {
  */
 function batchTime(row: HilosLogRotationRow): string {
   return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
+}
+
+/**
+ * The viewer address for this batch, using its node and UTC rotation instant.
+ *
+ * @param row The batch to open in the viewer.
+ */
+function batchViewerPath(row: HilosLogRotationRow): string {
+  return logViewerPath({
+    nodeId: row.node,
+    source: row.batchAt,
+    stream: null,
+    anchorAtMs: null,
+  })
 }
 
 /**
@@ -294,7 +310,11 @@ export function HilosLogsRotationsPage({
   }
 
   return (
-    <HilosAdminPage page={HilosPages.LOGS_ROTATIONS}>
+    <HilosAdminPage
+      page={HilosPages.LOGS_ROTATIONS}
+      headKind="section"
+      tabsLabel="Logs pages"
+    >
       <div className="d-flex flex-wrap align-items-center gap-3 border rounded-3 p-3 mb-4">
         <i className="bi bi-sliders text-body-secondary" aria-hidden="true" />
         <div className="flex-grow-1">
@@ -334,6 +354,15 @@ export function HilosLogsRotationsPage({
             <>
               <div className="fw-semibold small">{batchTime(row)}</div>
               <code className="small text-body-secondary">{row.path}</code>
+              {row.retentionState === HILOS_ROTATION_STATE_CARRYING ? (
+                <span
+                  className="small text-body-secondary"
+                  data-id="hilos-rotation-moving-address"
+                >
+                  <i className="bi bi-arrow-right" aria-hidden="true" /> going
+                  to the archive
+                </span>
+              ) : null}
             </>
           ),
           node: (row: HilosLogRotationRow) => row.node,
@@ -348,6 +377,23 @@ export function HilosLogsRotationsPage({
           ),
           actions: (row: HilosLogRotationRow) => (
             <>
+              {row.retentionState === HILOS_ROTATION_STATE_KEPT ? (
+                <HilosLink
+                  to={batchViewerPath(row)}
+                  className="btn btn-sm btn-outline-secondary text-nowrap"
+                  data-id="hilos-rotation-view"
+                >
+                  View
+                </HilosLink>
+              ) : null}
+              {row.retentionState === HILOS_ROTATION_STATE_CARRYING ? (
+                <span
+                  className="small text-body-secondary"
+                  data-id="hilos-rotation-moving-wait"
+                >
+                  wait until the move is over
+                </span>
+              ) : null}
               {offersTakeout(row) ? (
                 <button
                   type="button"

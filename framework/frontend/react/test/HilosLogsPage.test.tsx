@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import {
   formatLogsOverviewRecentAt,
   formatLogsOverviewRotationAt,
@@ -8,15 +15,21 @@ import {
   HIDDEN_VALUE,
   HilosPages,
   OVERVIEW_SIGNAL,
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  ScopeManager,
   createSignal,
 } from '@hilos/core'
-import { hilosBrowserTimeZone, hilosTimeZone } from '@hilos/core/base'
+import {
+  formatMoment,
+  hilosBrowserTimeZone,
+  hilosTimeZone,
+} from '@hilos/core/base'
+import type { HilosLogNodeRow } from '@hilos/core/admin/logs'
 import type {
   HilosConnection,
   HilosLogsOverview,
   HilosLogsOverviewRecentEntry,
   HilosLogsOverviewNode,
-  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core'
@@ -40,6 +53,20 @@ function node(
     filesystemFreeBytes: null,
     filesystemTotalBytes: null,
     freeSpaceThresholdPercent: null,
+    ...overrides,
+  }
+}
+
+/** One row as the page-scoped node table receives it. */
+function tableNode(overrides: Partial<HilosLogNodeRow> = {}): HilosLogNodeRow {
+  return {
+    nodeId: 'node-1',
+    available: true,
+    lastRotationAt: Date.parse('2026-09-02T03:00:00.000Z'),
+    liveBytes: 210 * 1024 * 1024,
+    archiveBytes: 1024 * 1024 * 1024,
+    growthBytesPerDay: 190 * 1024 * 1024,
+    batchesDueForTakeout: 0,
     ...overrides,
   }
 }
@@ -87,32 +114,7 @@ function failure(
   }
 }
 
-/**
- * The identity the section root answers with: the chain above it and the cards
- * to its five child screens. The overview draws its own figures on top of them,
- * so both have to be there at once.
- */
-const SECTION_IDENTITY: HilosPageIdentity = {
-  label: 'Logs',
-  lead: 'What the journals weigh and where they are rotated.',
-  breadcrumb: [{ page: HilosPages.LOGS, label: 'Logs' }],
-  children: [
-    {
-      page: HilosPages.LOGS_KEYS,
-      label: 'By key',
-      lead: 'Every log key an agent writes.',
-      icon: null,
-    },
-    {
-      page: HilosPages.LOGS_ROTATIONS,
-      label: 'Rotations',
-      lead: 'The history of rotation batches.',
-      icon: null,
-    },
-  ],
-}
-
-function router(identity: HilosPageIdentity | undefined): HilosRouter {
+function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.LOGS,
@@ -123,7 +125,7 @@ function router(identity: HilosPageIdentity | undefined): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(identity),
+    pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     resolvePath: (page) => `/hilos/${page}`,
     clearPageError: () => {},
@@ -137,58 +139,137 @@ function router(identity: HilosPageIdentity | undefined): HilosRouter {
   }
 }
 
-/**
- * A connection stub handing back the one frame this screen lives on. There is no
- * second one and no window: the tiles, the takeout verdict and the per-node rows
- * all ride the page's own signal.
- */
+/** The overview signal and the first and later windows of the node table. */
 function makeConnection(): {
   connection: HilosConnection
   push: (frame: HilosLogsOverview) => void
+  pushPageWindow: (rows: HilosLogNodeRow[], totalCount?: number) => void
+  pushWindow: (rows: HilosLogNodeRow[], totalCount?: number) => void
   listenerRegistrations: () => number
   pushedFrames: () => number
+  pushedWindows: () => number
+  viewportRequests: () => number
 } {
-  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  const projectListeners: ((signal: {
+    type: string
+    data: unknown
+  }) => void)[] = []
+  const windowListeners: ((signal: { data: unknown }) => void)[] = []
   let listenerRegistrations = 0
   let pushedFrames = 0
+  let pushedWindows = 0
+  let viewportRequestCount = 0
+
+  const windowData = (rows: HilosLogNodeRow[], totalCount = rows.length) => ({
+    rows: rows.map((row) => ({
+      rowKey: row.nodeId,
+      slots: { node: { ...row } },
+    })),
+    totalCount,
+    totalExact: true,
+    sort: [{ field: 'nodeId', direction: 'asc' as const }],
+    limit: 25,
+    rowsBefore: 0,
+    firstAnchor: rows.length ? { nodeId: rows[0].nodeId } : null,
+    lastAnchor: rows.length ? { nodeId: rows.at(-1)?.nodeId } : null,
+  })
+
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'projectSignal') {
         listenerRegistrations += 1
-        listeners.push(
+        projectListeners.push(
           listener as unknown as (signal: {
             type: string
             data: unknown
           }) => void,
         )
+        return () => {
+          listenerRegistrations -= 1
+          projectListeners.splice(
+            projectListeners.indexOf(
+              listener as unknown as (signal: {
+                type: string
+                data: unknown
+              }) => void,
+            ),
+            1,
+          )
+        }
+      }
+
+      if (event === 'tableWindow') {
+        const callback = listener as unknown as (signal: {
+          data: unknown
+        }) => void
+        windowListeners.push(callback)
+        return () => {
+          windowListeners.splice(windowListeners.indexOf(callback), 1)
+        }
       }
 
       return () => {}
     },
+    registerTableWindow: () => {},
+    unregisterTableWindow: () => {},
+    sendTableViewport: () => {
+      viewportRequestCount += 1
+      return true
+    },
+    sendTableRendered: () => true,
+    sendTableFacets: () => true,
+    tableWindowDescriptors: () => ({}),
   } as unknown as HilosConnection
 
   return {
     connection,
     listenerRegistrations: () => listenerRegistrations,
     pushedFrames: () => pushedFrames,
+    pushedWindows: () => pushedWindows,
+    viewportRequests: () => viewportRequestCount,
     push(frame: HilosLogsOverview): void {
       pushedFrames += 1
       act(() => {
-        for (const listener of listeners) {
+        for (const listener of projectListeners) {
           listener({ type: OVERVIEW_SIGNAL, data: frame })
+        }
+      })
+    },
+    pushPageWindow(rows: HilosLogNodeRow[], totalCount = rows.length): void {
+      pushedWindows += 1
+      const data = {
+        page: HilosPages.LOGS,
+        payload: { windows: { hilosLogNodes: windowData(rows, totalCount) } },
+      }
+      act(() => {
+        for (const listener of projectListeners) {
+          listener({ type: SIGNAL_TYPE_PAGE_RESPONSE, data })
+        }
+      })
+    },
+    pushWindow(rows: HilosLogNodeRow[], totalCount = rows.length): void {
+      pushedWindows += 1
+      const data = {
+        page: HilosPages.LOGS,
+        tableKey: 'hilosLogNodes',
+        ...windowData(rows, totalCount),
+      }
+      act(() => {
+        for (const listener of windowListeners) {
+          listener({ data })
         }
       })
     },
   }
 }
 
-function mountPage(
-  connection: HilosConnection,
-  identity: HilosPageIdentity | undefined = undefined,
-): HTMLElement {
+function mountPage(connection: HilosConnection): HTMLElement {
+  const scopes = new ScopeManager()
+  scopes.openPage(HilosPages.LOGS)
+
   return render(
-    <HilosRouterContext.Provider value={router(identity)}>
-      <HilosLogsPage context={{ connection }} />
+    <HilosRouterContext.Provider value={router()}>
+      <HilosLogsPage context={{ connection, scopes }} />
     </HilosRouterContext.Provider>,
   ).container
 }
@@ -204,7 +285,7 @@ function textOf(container: HTMLElement, id: string): string {
 describe('HilosLogsPage', () => {
   afterEach(cleanup)
 
-  it('reformats overview moments live without another frame or losing the selected tab', () => {
+  it('reformats overview and node moments live without another frame or window', () => {
     const reader = readerTimeZone()
     const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'
     const initialZone =
@@ -214,8 +295,15 @@ describe('HilosLogsPage', () => {
     act(() => reader.choose(initialZone))
 
     const moment = '2026-10-24T03:30:00.000Z'
-    const { connection, push, listenerRegistrations, pushedFrames } =
-      makeConnection()
+    const {
+      connection,
+      push,
+      pushPageWindow,
+      listenerRegistrations,
+      pushedFrames,
+      pushedWindows,
+      viewportRequests,
+    } = makeConnection()
     const container = mountPage(connection)
 
     try {
@@ -233,17 +321,19 @@ describe('HilosLogsPage', () => {
           ],
         }),
       )
+      pushPageWindow(
+        [
+          tableNode({ nodeId: 'node-1', lastRotationAt: Date.parse(moment) }),
+          tableNode({ nodeId: 'node-2', lastRotationAt: null }),
+        ],
+        2,
+      )
       fireEvent.click(byId(container, 'hilos-logs-recent-tab-warnings')!)
 
       const rotation = textOf(container, 'hilos-logs-tile-rotation')
-      const nodeRow = byId(
-        container,
-        'hilos-logs-node-node-1',
-      ) as HTMLTableRowElement
-      const invalidNodeRow = byId(
-        container,
-        'hilos-logs-node-node-2',
-      ) as HTMLTableRowElement
+      const nodeRow = screen.getByRole('row', { name: /node-1/ })
+      const nodeRotation = byId(container, 'hilos-logs-node-rotation-node-1')
+      const unknownRotation = byId(container, 'hilos-logs-node-rotation-node-2')
       const recentRows = container.querySelectorAll(
         '[data-id="hilos-logs-recent-row"]',
       )
@@ -252,13 +342,18 @@ describe('HilosLogsPage', () => {
       const warningTab = byId(container, 'hilos-logs-recent-tab-warnings')
       const daemonTile = textOf(container, 'hilos-logs-tile-daemon')
       const rotationBefore = formatLogsOverviewRotationAt(moment)
+      const nodeRotationBefore =
+        formatMoment(Date.parse(moment), { kind: 'dateTime' }) ?? '—'
       const recentBefore = formatLogsOverviewRecentAt(moment)
       const registrationsBeforeZoneChange = listenerRegistrations()
       const framesBeforeZoneChange = pushedFrames()
+      const windowsBeforeZoneChange = pushedWindows()
+      const viewportRequestsBeforeZoneChange = viewportRequests()
 
       expect(rotation).toBe(rotationBefore)
-      expect(nodeRow.cells[1]?.textContent).toBe(rotationBefore)
-      expect(invalidNodeRow.cells[1]?.textContent).toBe('—')
+      expect(nodeRow).toBeTruthy()
+      expect(nodeRotation?.textContent).toBe(nodeRotationBefore)
+      expect(unknownRotation?.textContent).toBe('—')
       expect(recentRow.children[1]?.textContent).toBe(recentBefore)
       expect(invalidRecentRow.children[1]?.textContent).toBe('—')
       expect(warningTab?.getAttribute('aria-selected')).toBe('true')
@@ -268,8 +363,10 @@ describe('HilosLogsPage', () => {
       expect(hilosTimeZone.get()).toBe(nextZone)
       expect(nextZone).not.toBe(browserZone)
       expect(pushedFrames()).toBe(framesBeforeZoneChange)
+      expect(pushedWindows()).toBe(windowsBeforeZoneChange)
+      expect(viewportRequests()).toBe(viewportRequestsBeforeZoneChange)
       expect(listenerRegistrations()).toBe(registrationsBeforeZoneChange)
-      expect(byId(container, 'hilos-logs-node-node-1')).toBe(nodeRow)
+      expect(screen.getByRole('row', { name: /node-1/ })).toBeTruthy()
       expect(container.querySelector('[data-id="hilos-logs-recent-row"]')).toBe(
         recentRow,
       )
@@ -279,15 +376,15 @@ describe('HilosLogsPage', () => {
       expect(textOf(container, 'hilos-logs-tile-rotation')).not.toBe(
         rotationBefore,
       )
-      expect(nodeRow.cells[1]?.textContent).toBe(
-        formatLogsOverviewRotationAt(moment),
-      )
-      expect(nodeRow.cells[1]?.textContent).not.toBe(rotationBefore)
+      const nodeRotationAfter =
+        formatMoment(Date.parse(moment), { kind: 'dateTime' }) ?? '—'
+      expect(nodeRotation?.textContent).toBe(nodeRotationAfter)
+      expect(nodeRotation?.textContent).not.toBe(nodeRotationBefore)
       expect(recentRow.children[1]?.textContent).toBe(
         formatLogsOverviewRecentAt(moment),
       )
       expect(recentRow.children[1]?.textContent).not.toBe(recentBefore)
-      expect(invalidNodeRow.cells[1]?.textContent).toBe('—')
+      expect(unknownRotation?.textContent).toBe('—')
       expect(invalidRecentRow.children[1]?.textContent).toBe('—')
       expect(byId(container, 'hilos-logs-recent-tab-warnings')).toBe(warningTab)
       expect(warningTab?.getAttribute('aria-selected')).toBe('true')
@@ -322,22 +419,7 @@ describe('HilosLogsPage', () => {
         '[data-id="hilos-hidden"]',
       ),
     ).not.toBeNull()
-  })
-
-  it('keeps the cards to its child screens and puts its own figures under them', () => {
-    // The section root is the one place both are needed: without the cards the
-    // five child screens are reachable by typed address only, and without the
-    // figures the overview is not an overview. The rest of this file mounts the
-    // page with no identity, where the cards are absent from sound and broken
-    // code alike — which is how the defect survived seventy-five scenarios.
-    const { connection } = makeConnection()
-    const container = mountPage(connection, SECTION_IDENTITY)
-
-    expect(byId(container, 'hilos-admin-children')).not.toBeNull()
-    expect(
-      byId(container, `hilos-admin-child-${HilosPages.LOGS_KEYS}`),
-    ).not.toBeNull()
-    expect(byId(container, 'hilos-logs-tiles')).not.toBeNull()
+    expect(textOf(container, 'hilos-logs-growth-forecast')).not.toContain('14%')
   })
 
   it('keeps the tiles empty rather than zero before any picture arrives', () => {
@@ -388,33 +470,44 @@ describe('HilosLogsPage', () => {
     expect(textOf(container, 'hilos-logs-tile-daemon')).toContain('—')
   })
 
-  it('drops the per-node table entirely in a single-node installation', () => {
-    const { connection, push } = makeConnection()
+  it('keeps node rows out of a standalone overview', () => {
+    const { connection, push, pushPageWindow } = makeConnection()
     const container = mountPage(connection)
 
     push(overview({ nodes: [] }))
+    // Even a stale or malformed row window cannot turn a standalone overview into
+    // a by-node page.
+    pushPageWindow([tableNode({ nodeId: 'standalone' })])
 
-    expect(container.querySelector('table')).toBeNull()
+    expect(screen.queryByRole('row', { name: /standalone/ })).toBeNull()
     expect(byId(container, 'hilos-logs-empty-unknown')).toBeNull()
   })
 
-  it('draws a row per named node once the picture has them', () => {
-    const { connection, push } = makeConnection()
-    const container = mountPage(connection)
+  it('reads rows from the table window while the overview carries the full node set', () => {
+    const { connection, push, pushPageWindow, pushWindow, viewportRequests } =
+      makeConnection()
+    mountPage(connection)
 
     push(
       overview({
         nodes: [node({ nodeId: 'node-1' }), node({ nodeId: 'node-2' })],
       }),
     )
+    pushPageWindow([tableNode({ nodeId: 'node-2' })], 2)
 
-    expect(byId(container, 'hilos-logs-node-node-1')).not.toBeNull()
-    expect(byId(container, 'hilos-logs-node-node-2')).not.toBeNull()
+    expect(screen.getByRole('row', { name: /node-2/ })).toBeTruthy()
+    expect(screen.queryByRole('row', { name: /node-1/ })).toBeNull()
+    expect(viewportRequests()).toBe(0)
+
+    pushWindow([tableNode({ nodeId: 'node-1' })], 2)
+
+    expect(screen.getByRole('row', { name: /node-1/ })).toBeTruthy()
+    expect(screen.queryByRole('row', { name: /node-2/ })).toBeNull()
   })
 
   it('says so once for a node that could not read its own store', () => {
-    const { connection, push } = makeConnection()
-    const container = mountPage(connection)
+    const { connection, push, pushPageWindow } = makeConnection()
+    mountPage(connection)
 
     push(
       overview({
@@ -432,9 +525,56 @@ describe('HilosLogsPage', () => {
         ],
       }),
     )
+    pushPageWindow([
+      tableNode({
+        nodeId: 'node-2',
+        available: false,
+        lastRotationAt: null,
+        liveBytes: null,
+        archiveBytes: null,
+        growthBytesPerDay: null,
+        batchesDueForTakeout: null,
+      }),
+    ])
 
-    expect(byId(container, 'hilos-logs-node-nodata-node-2')).not.toBeNull()
-    expect(byId(container, 'hilos-logs-node-nodata-node-1')).toBeNull()
+    const message = 'No data — this node could not read its log store'
+    const unavailableRow = screen.getByRole('row', {
+      name: /node-2.*No data/,
+    })
+    expect(unavailableRow).toBeTruthy()
+    expect(within(unavailableRow).getByText(message)).toBeTruthy()
+  })
+
+  it('keeps unknown node figures distinct from measured zero', () => {
+    const { connection, push, pushPageWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    push(
+      overview({
+        nodes: [node({ nodeId: 'node-1' }), node({ nodeId: 'node-2' })],
+      }),
+    )
+    pushPageWindow([
+      tableNode({
+        nodeId: 'node-1',
+        lastRotationAt: null,
+        liveBytes: null,
+        archiveBytes: null,
+        growthBytesPerDay: null,
+        batchesDueForTakeout: null,
+      }),
+      tableNode({
+        nodeId: 'node-2',
+        lastRotationAt: null,
+        liveBytes: 0,
+        archiveBytes: null,
+        growthBytesPerDay: null,
+        batchesDueForTakeout: null,
+      }),
+    ])
+
+    expect(textOf(container, 'hilos-logs-node-live-node-1')).toBe('—')
+    expect(textOf(container, 'hilos-logs-node-live-node-2')).toBe('0 B')
   })
 
   it('draws no panel of failures in either empty state, where good news would be made up', () => {
@@ -596,8 +736,8 @@ describe('HilosLogsPage', () => {
   })
 
   it('takes both ways off the screen to the rotations awaiting carry-off', () => {
-    const { connection, push } = makeConnection()
-    const container = mountPage(connection)
+    const { connection, push, pushPageWindow } = makeConnection()
+    mountPage(connection)
 
     push(
       overview({
@@ -605,12 +745,15 @@ describe('HilosLogsPage', () => {
         nodes: [node({ nodeId: 'node-2', batchesDueForTakeout: 2 })],
       }),
     )
+    pushPageWindow([tableNode({ nodeId: 'node-2', batchesDueForTakeout: 2 })])
 
     expect(
-      byId(container, 'hilos-logs-takeout-open')?.getAttribute('href'),
+      screen.getByRole('link', { name: 'Show them' }).getAttribute('href'),
     ).toBe('/hilos/logs/rotations/due')
     expect(
-      byId(container, 'hilos-logs-node-due-node-2')?.getAttribute('href'),
+      within(screen.getByRole('row', { name: /node-2/ }))
+        .getByRole('link', { name: '2' })
+        .getAttribute('href'),
     ).toBe('/hilos/logs/rotations/due')
   })
 
@@ -629,6 +772,99 @@ describe('HilosLogsPage', () => {
     push(overview({ growthBytesPerDay: null, keysWithoutGrowthWindow: 5 }))
     expect(textOf(container, 'hilos-logs-tile-growth')).toBe('Still measuring')
     expect(byId(container, 'hilos-logs-growth-note')).toBeNull()
+  })
+
+  it('names a passed threshold and marks its warning icon as decorative', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+
+    push(
+      overview({
+        nodes: [
+          node({ nodeId: 'node-1' }),
+          node({
+            nodeId: 'node-2',
+            filesystemFreeBytes: 1400,
+            filesystemTotalBytes: 10000,
+            freeSpaceThresholdPercent: 20,
+            growthBytesPerDay: null,
+          }),
+        ],
+      }),
+    )
+
+    const forecast = byId(container, 'hilos-logs-growth-forecast')
+    expect(forecast?.textContent).toBe(
+      'Free space is already below the 20% threshold on node-2 — 14% free',
+    )
+    expect(forecast?.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+  })
+
+  it('names a full disk at zero threshold, with a node only in a cluster', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+
+    push(
+      overview({
+        nodes: [
+          node({
+            nodeId: 'node-2',
+            filesystemFreeBytes: 0,
+            filesystemTotalBytes: 10000,
+            freeSpaceThresholdPercent: 0,
+            growthBytesPerDay: null,
+          }),
+        ],
+      }),
+    )
+    expect(textOf(container, 'hilos-logs-growth-forecast')).toBe(
+      'The log disk is full on node-2 — 0% free',
+    )
+
+    push(
+      overview({
+        growthBytesPerDay: null,
+        filesystemFreeBytes: 0,
+        filesystemTotalBytes: 10000,
+        freeSpaceThresholdPercent: 0,
+      }),
+    )
+    expect(textOf(container, 'hilos-logs-growth-forecast')).toBe(
+      'The log disk is full — 0% free',
+    )
+  })
+
+  it('keeps hidden, future and unknown thresholds in their neutral states', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+    const disk = {
+      filesystemFreeBytes: 1400,
+      filesystemTotalBytes: 10000,
+      freeSpaceThresholdPercent: 20,
+    }
+
+    push(overview({ ...disk, freeSpaceThresholdPercent: HIDDEN_VALUE }))
+    expect(textOf(container, 'hilos-logs-growth-forecast')).toBe('Hidden')
+    expect(textOf(container, 'hilos-logs-growth-forecast')).not.toContain('14%')
+
+    push(
+      overview({
+        ...disk,
+        filesystemFreeBytes: 5400,
+        growthBytesPerDay: 100,
+      }),
+    )
+    expect(textOf(container, 'hilos-logs-growth-forecast')).toBe(
+      'At this rate the 20% threshold is 34 days away',
+    )
+    expect(
+      byId(container, 'hilos-logs-growth-forecast')?.querySelector('i'),
+    ).toBeNull()
+
+    push(overview())
+    expect(byId(container, 'hilos-logs-growth-forecast')).toBeNull()
   })
 
   // The forecast stands under the caveat and appears only where the room is known:

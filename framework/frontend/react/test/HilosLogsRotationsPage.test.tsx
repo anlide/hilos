@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import {
   HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -51,14 +51,16 @@ function header(
 }
 
 /**
- * A navigator entered at `params`, recording the addresses it is rewritten to.
+ * A navigator entered at `params`, recording rewritten and navigated addresses.
  *
  * @param params The route params the screen was entered with.
  * @param rewrites Collects every address passed to `replacePath`.
+ * @param navigations Collects every address passed to `navigate`.
  */
 function router(
   params: Record<string, string> = {},
   rewrites: string[] = [],
+  navigations: string[] = [],
 ): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
@@ -77,7 +79,9 @@ function router(
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     onLeave: () => () => {},
-    navigate: () => {},
+    navigate: (pathname: string) => {
+      navigations.push(pathname)
+    },
     replacePath: (pathname: string) => {
       rewrites.push(pathname)
     },
@@ -184,6 +188,7 @@ function makeConnection(): {
     sent,
     focus,
     pushFocusedChange(row?: Record<string, unknown>): void {
+      const rowKey = String(row?.rowKey ?? 'standalone:1800000000')
       act(() => {
         for (const listener of deltaListeners) {
           listener({
@@ -191,12 +196,12 @@ function makeConnection(): {
               page: HilosPages.LOGS_ROTATIONS,
               tableKey: 'hilosLogRotations',
               kind: 'row_removed',
-              rowKey: 'node-1:1800000000',
+              rowKey,
               reason: row === undefined ? 'deleted' : 'left_set',
               ...(row === undefined
                 ? {}
                 : {
-                    row: { rowKey: String(row.rowKey), slots: { batch: row } },
+                    row: { rowKey, slots: { batch: row } },
                   }),
             },
           })
@@ -286,9 +291,9 @@ function batch(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    rowKey: 'node-1:1800000000',
+    rowKey: 'standalone:1800000000',
     batchAt: 1800000000000,
-    node: null,
+    node: 'standalone',
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
     daemonFileCount: 3,
@@ -546,7 +551,7 @@ describe('HilosLogsRotationsPage', () => {
     const container = mountPage(connection)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1' })])
+    pushWindow([batch({ rowKey: 'node-1:1800000000', node: 'node-1' })])
 
     expect(
       container.querySelector('[data-id^="hilos-table-row-"]')?.textContent,
@@ -557,6 +562,117 @@ describe('HilosLogsRotationsPage', () => {
     expect(
       container.querySelector('[data-id^="hilos-table-card-"]')?.textContent,
     ).toContain('1.5 GB')
+  })
+
+  it('opens a kept batch from its row and card without reloading the page', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const navigations: string[] = []
+    const container = mountPage(
+      connection,
+      makeActions().actions,
+      router({}, [], navigations),
+    )
+    const viewerPath = '/hilos/logs/view/standalone/1800000000000'
+    const due = batch({
+      rowKey: 'standalone:1800000001',
+      batchAt: 1800000001000,
+      retentionState: 'due',
+    })
+    const taken = batch({
+      rowKey: 'standalone:1800000002',
+      batchAt: 1800000002000,
+      retentionState: 'taken',
+    })
+
+    pushHeader(header())
+    pushWindow([batch(), due, taken])
+
+    const row = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-row-standalone:1800000000"]',
+    )
+    const card = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-card-standalone:1800000000"]',
+    )
+    const dueRow = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-row-standalone:1800000001"]',
+    )
+    const takenRow = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-row-standalone:1800000002"]',
+    )
+    const dueCard = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-card-standalone:1800000001"]',
+    )
+    const takenCard = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-card-standalone:1800000002"]',
+    )
+
+    if (
+      row === null ||
+      card === null ||
+      dueRow === null ||
+      takenRow === null ||
+      dueCard === null ||
+      takenCard === null
+    ) {
+      throw new Error('The rotation batches should be rendered in the table')
+    }
+
+    const rowLink = within(row).getByRole('link', {
+      name: 'View',
+    })
+    const cardLink = within(card).getByRole('link', {
+      name: 'View',
+    })
+
+    expect(rowLink.getAttribute('href')).toBe(viewerPath)
+    expect(cardLink.getAttribute('href')).toBe(viewerPath)
+    expect(within(dueRow).queryByRole('link', { name: 'View' })).toBeNull()
+    expect(within(takenRow).queryByRole('link', { name: 'View' })).toBeNull()
+    expect(within(dueCard).queryByRole('link', { name: 'View' })).toBeNull()
+    expect(within(takenCard).queryByRole('link', { name: 'View' })).toBeNull()
+
+    fireEvent.click(rowLink)
+
+    expect(navigations).toEqual([viewerPath])
+  })
+
+  it('keeps same-time batches on different nodes on separate viewer addresses', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+    const nodeOnePath = '/hilos/logs/view/node-1/1800000000000'
+    const nodeTwoPath = '/hilos/logs/view/node-2/1800000000000'
+
+    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    pushWindow([
+      batch({ rowKey: 'node-1:1800000000', node: 'node-1' }),
+      batch({ rowKey: 'node-2:1800000000', node: 'node-2' }),
+    ])
+
+    const rowTargets = [
+      ...container.querySelectorAll<HTMLElement>(
+        '[data-id^="hilos-table-row-"]',
+      ),
+    ].flatMap((row) =>
+      within(row)
+        .queryAllByRole('link', { name: 'View' })
+        .map((link) => link.getAttribute('href')),
+    )
+    const cardTargets = [
+      ...container.querySelectorAll<HTMLElement>(
+        '[data-id^="hilos-table-card-"]',
+      ),
+    ].flatMap((card) =>
+      within(card)
+        .queryAllByRole('link', { name: 'View' })
+        .map((link) => link.getAttribute('href')),
+    )
+
+    expect(rowTargets).toEqual(
+      expect.arrayContaining([nodeOnePath, nodeTwoPath]),
+    )
+    expect(cardTargets).toEqual(
+      expect.arrayContaining([nodeOnePath, nodeTwoPath]),
+    )
   })
 
   it('offers the takeout only on a batch the rule recommends carrying off', () => {
@@ -587,7 +703,13 @@ describe('HilosLogsRotationsPage', () => {
     const container = mountPage(connection)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        retentionState: 'due',
+      }),
+    ])
     fireEvent.click(byId(container, 'hilos-rotation-takeout') as HTMLElement)
 
     expect(
@@ -637,7 +759,13 @@ describe('HilosLogsRotationsPage', () => {
     const container = mountPage(connection, actions)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        retentionState: 'due',
+      }),
+    ])
     fireEvent.click(byId(container, 'hilos-rotation-takeout') as HTMLElement)
     fireEvent.click(
       document.querySelector(
@@ -684,25 +812,73 @@ describe('HilosLogsRotationsPage', () => {
    * which neither action applies: it is not being recommended for carrying off, and
    * nobody has said it was carried off. The badge has to say where it is instead.
    */
-  it('shows a batch still being carried as such, and offers it neither action', () => {
+  it('shows a carrying batch destination and wait state without batch actions', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
     pushHeader(header())
     pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'carrying' }),
+      batch({
+        rowKey: 'standalone:1800000000',
+        path: 'staging/2027-01-15-08-00-00Z/',
+        retentionState: 'carrying',
+      }),
     ])
 
+    expect(container.textContent).toContain('staging/2027-01-15-08-00-00Z/')
+    expect(container.textContent).toContain('going to the archive')
     expect(container.textContent).toContain('Moving to the archive')
+    expect(container.textContent).toContain('wait until the move is over')
     expect(
-      container.querySelector('.badge:not([inert] *)')?.className,
-    ).toContain('text-bg-info')
-    expect(
-      container.querySelectorAll('[data-id="hilos-rotation-takeout"]'),
+      within(container).queryAllByRole('link', { name: 'View' }),
     ).toHaveLength(0)
     expect(
-      container.querySelectorAll('[data-id="hilos-rotation-undo"]'),
+      within(container).queryByRole('button', { name: 'How to carry it off' }),
+    ).toBeNull()
+    expect(
+      within(container).queryByRole('button', {
+        name: 'I did not carry this one off',
+      }),
+    ).toBeNull()
+  })
+
+  it('updates a carrying batch to its kept viewer link when the window updates', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+    const moving = batch({
+      rowKey: 'node-1:1800000000',
+      node: 'node-1',
+      path: 'staging/2027-01-15-08-00-00Z/',
+      retentionState: 'carrying',
+    })
+
+    pushHeader(header())
+    pushWindow([moving])
+
+    expect(container.textContent).toContain('wait until the move is over')
+    expect(
+      within(container).queryAllByRole('link', { name: 'View' }),
     ).toHaveLength(0)
+
+    pushWindow([
+      {
+        ...moving,
+        path: 'archive/2027-01-15-08-00-00Z/',
+        retentionState: 'kept',
+      },
+    ])
+
+    const updatedRow = container.querySelector<HTMLElement>(
+      '[data-id="hilos-table-row-node-1:1800000000"]',
+    )
+    if (updatedRow === null) {
+      throw new Error('The updated batch should remain in its table row')
+    }
+    const viewerLink = within(updatedRow).getByRole('link', { name: 'View' })
+    expect(container.textContent).not.toContain('wait until the move is over')
+    expect(viewerLink.getAttribute('href')).toBe(
+      '/hilos/logs/view/node-1/1800000000000',
+    )
   })
 
   it('offers the withdrawal only on a batch somebody said was carried off', () => {
@@ -868,7 +1044,13 @@ describe('HilosLogsRotationsPage', () => {
     const container = mountPage(connection, actions)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        retentionState: 'taken',
+      }),
+    ])
     fireEvent.click(byId(container, 'hilos-rotation-undo') as HTMLElement)
     fireEvent.click(
       document.querySelector(
@@ -997,7 +1179,13 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     const container = mountPage(connection, actions, router(), scopes)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        retentionState: 'due',
+      }),
+    ])
 
     const takeout = byId(
       container,
@@ -1031,6 +1219,38 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     ).toBeNull()
   })
 
+  it('keeps the kept batch viewer link available to a viewer', () => {
+    const scopes = makeScopes()
+    bindViewerSession(scopes).handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const navigations: string[] = []
+    const container = mountPage(
+      connection,
+      makeActions().actions,
+      router({}, [], navigations),
+      scopes,
+    )
+    const viewerPath = '/hilos/logs/view/standalone/1800000000000'
+
+    pushHeader(header())
+    pushWindow([batch()])
+
+    const row = container.querySelector<HTMLElement>(
+      '[data-id^="hilos-table-row-"]',
+    )
+    if (row === null) {
+      throw new Error('The kept batch should be rendered in the table')
+    }
+    const link = within(row).getByRole('link', {
+      name: 'View',
+    })
+    expect(link.getAttribute('href')).toBe(viewerPath)
+
+    fireEvent.click(link)
+
+    expect(navigations).toEqual([viewerPath])
+  })
+
   it('a viewer opens the withdrawal dialog and has nothing to withdraw with', async () => {
     const scopes = makeScopes()
     bindViewerSession(scopes).handshake(null, true)
@@ -1039,7 +1259,13 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     const container = mountPage(connection, actions, router(), scopes)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        retentionState: 'taken',
+      }),
+    ])
 
     const undo = byId(container, 'hilos-rotation-undo') as HTMLButtonElement
     expect(undo.disabled).toBe(false)
@@ -1111,7 +1337,13 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
     const container = mountPage(connection, actions, router(), scopes)
 
     pushHeader(header({ nodes: ['node-1'] }))
-    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        retentionState: 'due',
+      }),
+    ])
 
     fireEvent.click(byId(container, 'hilos-rotation-takeout') as HTMLElement)
     const confirm = document.querySelector<HTMLButtonElement>(
@@ -1143,7 +1375,7 @@ describe('HilosLogsRotationsPage dialogs following a batch', () => {
     pushWindow([batch({ retentionState: 'due' })])
 
     fireEvent.click(byId(container, 'hilos-rotation-takeout') as Element)
-    expect(focus).toEqual(['node-1:1800000000'])
+    expect(focus).toEqual(['standalone:1800000000'])
     pushFocusedChange(batch({ retentionState: 'kept' }))
     expect(
       document.querySelector('[data-id="hilos-rotation-takeout-notice"]')
@@ -1221,7 +1453,7 @@ describe('HilosLogsRotationsPage dialogs following a batch', () => {
     const container = mountPage(connection)
     pushWindow([batch({ retentionState: 'taken' })])
     fireEvent.click(byId(container, 'hilos-rotation-undo') as Element)
-    expect(focus).toEqual(['node-1:1800000000'])
+    expect(focus).toEqual(['standalone:1800000000'])
 
     pushFocusedChange(live)
     expect(

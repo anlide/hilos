@@ -7,6 +7,7 @@ namespace Demo\Tasks\Tests\Unit;
 use Demo\Tasks\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Tasks\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
@@ -369,6 +370,24 @@ final class TasksTopologyRegistryTest extends TestCase
         self::assertArrayNotHasKey(LicenseDependenciesPage::PAGE, PageCatalog::pages());
         $factory = new HilosPageFactory($this->createStub(PageAgentInterface::class), Hilos::class);
         self::assertInstanceOf(LicenseDependenciesPage::class, $factory->getPage(LicenseDependenciesPage::PAGE));
+    }
+
+    /** Logs opts into the shared page head through its complete project catalog entry. */
+    public function testLogsCatalogAdoptsThePageHeadWithTheCompleteFrameworkEntry(): void
+    {
+        Hilos::initBrowser();
+        try {
+            self::assertSame(PageCatalog::class, Hilos::getPageCatalogClass());
+        } finally {
+            Hilos::resetBrowser();
+        }
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            PageCatalog::pages()[HilosPageConstants::HILOS_LOGS],
+        );
     }
 
     /** Every served profile section binds the common personal identity source once. */

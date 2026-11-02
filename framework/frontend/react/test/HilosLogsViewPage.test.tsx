@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  isInaccessible,
+  render,
+  within,
+} from '@testing-library/react'
 import {
   ActionLifecycle,
   HILOS_ROUTE_DECLARATIONS,
@@ -369,22 +376,55 @@ function expectBackToTailRoom(container: HTMLElement): HTMLElement {
 }
 
 /**
- * Asserts the room of the line count stands in the strip, held by exactly
- * one invisible twin hidden from assistive technology, with one live status
- * region, and returns it.
+ * Asserts the count's auxiliary texts stay out of the accessibility tree and
+ * the search note has one permanent live status region.
  *
  * @param container The mounted page.
  */
 function expectCountRoom(container: HTMLElement): HTMLElement {
   const room = byId(container, 'hilos-log-count-room')
   expect(room).not.toBeNull()
-  const twins = (room as HTMLElement).querySelectorAll('.invisible')
-  expect(twins).toHaveLength(1)
-  expect(twins[0].getAttribute('aria-hidden')).toBe('true')
-  expect(twins[0].querySelectorAll('[data-id]')).toHaveLength(0)
+  for (const text of [
+    'Lines around the entry of 23:59:59.999',
+    'Not applied yet — press Search',
+  ]) {
+    const twin = within(room as HTMLElement).getByText(text, {
+      selector: '[aria-hidden="true"]',
+    })
+    expect(isInaccessible(twin)).toBe(true)
+    expect(
+      twin.querySelector(
+        'a[href], button, input, select, textarea, [tabindex]',
+      ),
+    ).toBeNull()
+  }
   const regions = (room as HTMLElement).querySelectorAll('[role="status"]')
   expect(regions).toHaveLength(1)
   expect(regions[0].getAttribute('aria-live')).toBe('polite')
+
+  return room as HTMLElement
+}
+
+/**
+ * Asserts the permanent status cell's auxiliary badges cannot be announced or
+ * focused, and returns the cell.
+ *
+ * @param container The mounted page.
+ */
+function expectStatusRoom(container: HTMLElement): HTMLElement {
+  const room = byId(container, 'hilos-log-status-room')
+  expect(room).not.toBeNull()
+  for (const text of ['Sticking released', 'Tail is running']) {
+    const twin = within(room as HTMLElement).getByText(text, {
+      selector: '[aria-hidden="true"]',
+    })
+    expect(isInaccessible(twin)).toBe(true)
+    expect(
+      twin.querySelector(
+        'a[href], button, input, select, textarea, [tabindex]',
+      ),
+    ).toBeNull()
+  }
 
   return room as HTMLElement
 }
@@ -1198,9 +1238,14 @@ describe('HilosLogsViewPage', () => {
   it('lights the tail badge once the start is answered', async () => {
     const { connection, pushCatalog, sent, answer } = makeConnection()
     const container = mountPage(connection, LIVE_FILE)
+    const statusRoom = expectStatusRoom(container)
     pushCatalog(catalog())
 
     expect(byId(container, 'hilos-log-tail-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '0 entries shown',
+    )
 
     answer(sent.at(-1)?.requestId, {
       readable: true,
@@ -1213,6 +1258,34 @@ describe('HilosLogsViewPage', () => {
     expect(byId(container, 'hilos-log-tail-badge')?.textContent).toBe(
       'Tail is running',
     )
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    const tail = byId(container, 'hilos-log-tail-badge') as HTMLElement
+    expect(isInaccessible(tail)).toBe(false)
+    expect(tail.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      within(statusRoom)
+        .getAllByText('Tail is running')
+        .filter((element) => !isInaccessible(element)),
+    ).toEqual([tail])
+
+    scrollUp(byId(container, 'hilos-log-pane') as Element)
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '0 entries shown',
+    )
+    expect(byId(container, 'hilos-log-tail-badge')?.textContent).toBe(
+      'Tail is running',
+    )
+
+    fireEvent.click(within(container).getByRole('checkbox', { name: 'tail' }))
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-tail-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '0 entries shown',
+    )
+    expect(expectStatusRoom(container)).toBe(statusRoom)
   })
 
   it('offers the way back with a count while the reader is above the tail', () => {
@@ -1303,7 +1376,14 @@ describe('HilosLogsViewPage', () => {
       ...LIVE_FILE,
       anchor: '1788000000250',
     })
+    const statusRoom = expectStatusRoom(container)
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
     pushCatalog(catalog())
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '0 entries shown',
+    )
 
     answer(sent.at(-1)?.requestId, {
       readable: true,
@@ -1328,6 +1408,223 @@ describe('HilosLogsViewPage', () => {
     expect(
       container.querySelectorAll('[aria-current="location"]'),
     ).toHaveLength(1)
+    const badge = byId(container, 'hilos-log-anchor-badge') as HTMLElement
+    expect(badge.textContent).toBe('Sticking released')
+    expect(isInaccessible(badge)).toBe(false)
+    expect(badge.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(byId(container, 'hilos-log-tail-badge')).toBeNull()
+    const time = byId(anchored[0] as HTMLElement, 'hilos-log-entry-time')
+    const count = byId(container, 'hilos-log-count') as HTMLElement
+    expect(count.textContent).toBe(
+      `Lines around the entry of ${time?.textContent}`,
+    )
+    expect(isInaccessible(count)).toBe(false)
+    expect(expectStatusRoom(container)).toBe(statusRoom)
+    expect(
+      within(statusRoom)
+        .getAllByText('Sticking released')
+        .filter((element) => !isInaccessible(element)),
+    ).toEqual([badge])
+    expectCountRoom(container)
+    expect(within(container).getAllByRole('status')).toHaveLength(1)
+
+    fireEvent.click(
+      within(container).getByRole('button', { name: 'Back to the tail' }),
+    )
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '2 entries shown',
+    )
+    expect(expectStatusRoom(container)).toBe(statusRoom)
+    expect(sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
+  })
+
+  it('reformats the anchored label with the reader zone without reading again', async () => {
+    const reader = readerTimeZone()
+    act(() => reader.choose('UTC'))
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+
+    try {
+      pushCatalog(catalog())
+      answer(sent.at(-1)?.requestId, {
+        readable: true,
+        lines: [
+          wireLine('[2026-09-06T10:00:02.250Z] ERROR: anchored entry', 'ERROR'),
+        ],
+        nextCursor: null,
+        hasMore: false,
+        anchorFound: true,
+      })
+      await settled()
+
+      expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+        'Lines around the entry of 10:00:02.250',
+      )
+      const asked = sent.length
+
+      act(() => reader.choose('Europe/Warsaw'))
+
+      expect(byId(container, 'hilos-log-entry-time')?.textContent).toBe(
+        '12:00:02.250',
+      )
+      expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+        'Lines around the entry of 12:00:02.250',
+      )
+      expect(byId(container, 'hilos-log-anchor-badge')?.textContent).toBe(
+        'Sticking released',
+      )
+      expect(sent).toHaveLength(asked)
+    } finally {
+      cleanup()
+      reader.release()
+    }
+  })
+
+  it('keeps the confirmed anchor through a draft and releases it when Search applies', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    const countRoom = expectCountRoom(container)
+    const region = within(countRoom).getByRole('status')
+    const statusRoom = expectStatusRoom(container)
+    pushCatalog(catalog())
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [wireLine('[2026-09-06T10:00:02.250Z] ERROR: anchored entry')],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await settled()
+    const asked = sent.length
+
+    fireEvent.change(byId(container, 'hilos-log-substring') as HTMLElement, {
+      target: { value: 'draft' },
+    })
+
+    expect(sent).toHaveLength(asked)
+    expect(byId(container, 'hilos-log-count')).toBeNull()
+    const badge = byId(container, 'hilos-log-anchor-badge') as HTMLElement
+    expect(badge.textContent).toBe('Sticking released')
+    expect(isInaccessible(badge)).toBe(false)
+    expect(region.textContent).toBe('Not applied yet — press Search')
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Search' }))
+
+    expect(sent.at(-1)?.data).toMatchObject({ substring: 'draft' })
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '1 entries shown',
+    )
+    expect(expectStatusRoom(container)).toBe(statusRoom)
+    expect(expectCountRoom(container)).toBe(countRoom)
+    expect(within(countRoom).getByRole('status')).toBe(region)
+    expect(region.textContent).toBe('')
+    expect(within(container).getAllByRole('status')).toHaveLength(1)
+  })
+
+  it('releases a confirmed anchor when Follow is enabled', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [wireLine('[2026-09-06T10:00:02.250Z] ERROR: anchored entry')],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await settled()
+
+    fireEvent.click(within(container).getByRole('checkbox', { name: 'tail' }))
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '1 entries shown',
+    )
+    expect(sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
+    expectStatusRoom(container)
+  })
+
+  it('does not confirm an anchor from a reply to a superseded read', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    const anchoredRead = sent.at(-1)?.requestId
+
+    fireEvent.change(
+      within(container).getByRole('combobox', { name: 'Level' }),
+      {
+        target: { value: 'ERROR' },
+      },
+    )
+    const currentRead = sent.at(-1)?.requestId
+    answer(anchoredRead, {
+      readable: true,
+      lines: [
+        wireLine('[2026-09-06T10:00:02.250Z] ERROR: stale entry', 'ERROR'),
+      ],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await settled()
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '0 entries shown',
+    )
+
+    answer(currentRead, {
+      readable: true,
+      lines: [
+        wireLine('[2026-09-06T11:00:00.000Z] ERROR: current entry', 'ERROR'),
+      ],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await settled()
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '1 entries shown',
+    )
+  })
+
+  it('does not claim an anchor when its read is unreadable', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    answer(sent.at(-1)?.requestId, {
+      readable: false,
+      lines: [],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: true,
+    })
+    await settled()
+
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '0 entries shown',
+    )
+    expectStatusRoom(container)
   })
 
   it('says in the feed that the entry a link named is not in the file any more', async () => {
@@ -1351,5 +1648,10 @@ describe('HilosLogsViewPage', () => {
       'The entry this link points at is no longer in this file. Showing the end of the file instead.',
     )
     expect(byId(container, 'hilos-log-entry-anchor')).toBeNull()
+    expect(byId(container, 'hilos-log-anchor-badge')).toBeNull()
+    expect(byId(container, 'hilos-log-count')?.textContent).toBe(
+      '1 entries shown',
+    )
+    expectStatusRoom(container)
   })
 })

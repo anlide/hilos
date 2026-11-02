@@ -97,7 +97,11 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
   )
 
   return (
-    <HilosAdminPage page={HilosPages.LOGS_KEYS}>
+    <HilosAdminPage
+      page={HilosPages.LOGS_KEYS}
+      headKind="section"
+      tabsLabel="Logs pages"
+    >
       <p className="text-body-secondary">
         A key is the file name that survives rotation: the same stream goes on
         being written under that name into the next batch.

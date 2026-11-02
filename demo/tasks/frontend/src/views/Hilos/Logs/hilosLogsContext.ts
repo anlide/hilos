@@ -4,23 +4,21 @@
 // history (HilosLogsRotationsPage), the logging modes (HilosLogsSettingsPage) and
 // the log viewer (HilosLogsViewPage). The framework owns the tables, the
 // view-models, the catalog and the wording; the project supplies only where the
-// data lives — and, on its backend, the registration of the hilosLogKeys,
-// hilosLogWorkers and hilosLogRotations tables against their pages.
+// data lives — and, on its backend, the registration of the hilosLogNodes,
+// hilosLogKeys, hilosLogWorkers and hilosLogRotations tables against their pages.
 //
 // Separate contexts and not one, because the screens need different things: the
-// windowed tables read the scope stores, the viewer reads one file through a tracked
-// action and therefore the action lifecycle, the logging modes read one frame and
-// send one action and so need no scope stores either, and the overview needs neither
-// — it has no table window at all, so the connection its one frame arrives on is the
-// whole of its context. The rotation history needs both: a windowed table AND the
+// overview and other windowed tables read the scope stores, the viewer reads one file
+// through a tracked action, and the logging modes read one frame and send one action
+// without scope stores. The rotation history needs both a windowed table and the
 // action lifecycle, because a recommended batch is confirmed as carried off from it
 // (HIL-483).
 import {
   type HilosLogKeysContext,
+  type HilosLogNodesContext,
   type HilosLogRotationsContext,
   type HilosLogViewerContext,
   type HilosLogWorkersContext,
-  type HilosLogsOverviewContext,
 } from '@hilos/core/admin/logs'
 import { type HilosSettingPresetsContext } from '@hilos/core/admin/settings'
 
@@ -28,8 +26,9 @@ import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'
 
 /** This project's context for the framework section overview. */
-export const hilosLogsOverviewContext: HilosLogsOverviewContext = {
+export const hilosLogsOverviewContext: HilosLogNodesContext = {
   connection,
+  scopes,
 }
 
 /** This project's context for the framework by-key page. */

@@ -43,6 +43,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import type { HilosAdminPageProps } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -60,6 +61,10 @@ export interface HilosSettingPresetsPageProps {
   signal: string
   /** Everything this section says about its own presets. */
   vocabulary: HilosSettingPresetsVocabulary
+  /** The shared head's kind, used for its placeholder before the answer. */
+  headKind?: HilosAdminPageProps['headKind']
+  /** The accessible name of the shared head's tab navigation. */
+  tabsLabel?: string
 }
 
 /**
@@ -74,6 +79,8 @@ export function HilosSettingPresetsPage({
   context,
   signal,
   vocabulary,
+  headKind,
+  tabsLabel,
 }: HilosSettingPresetsPageProps) {
   const presets = useMemo(
     () => createHilosSettingPresets(context, signal),
@@ -208,7 +215,7 @@ export function HilosSettingPresetsPage({
   }
 
   return (
-    <HilosAdminPage page={page}>
+    <HilosAdminPage page={page} headKind={headKind} tabsLabel={tabsLabel}>
       <p className="text-body-secondary">{vocabulary.intro}</p>
 
       <h2 className="h6 mb-2">{vocabulary.groupHeading}</h2>

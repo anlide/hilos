@@ -336,10 +336,10 @@ by extending `AbstractHilosLogsAgent` with an empty subclass, and it is a
 separate agent from the aggregator on purpose: where the picture **comes from**
 must not be the same object as what **shows** it, and nothing above the
 aggregator ever talks to a node-local owner. The overview header keeps the full
-`nodes[]` list for its summary, forecast and takeout banner, and for React and
-Angular until their HIL-1718 and HIL-1719 migrations. **By node** is the fourth
-ordinary viewport table, alongside keys, workers and rotations; Vue reads its
-usual bounded window. The first window arrives in `page_response.windows`, and
+`nodes[]` list for its summary, forecast and takeout banner. React and Vue read
+the page-scoped **By node** window; Angular continues to use the full header list
+until HIL-1719. **By node** is the fourth ordinary viewport table, alongside
+keys, workers and rotations. The first window arrives in `page_response.windows`, and
 later viewport requests use `table_viewport` and `table_window`. When the
 overview fingerprint changes, the page agent re-sends each subscriber's
 existing node window at its current position. Header rows and table rows are
@@ -363,8 +363,8 @@ headless page modules in `@hilos/core` are `admin/logs/hilosLogsOverview.ts`,
 `hilosLogViewer.ts` and `hilosLogSettings.ts`. The overview module continues
 to manage its header and summary; the additional
 `admin/logs/hilosLogNodes.ts` factory supplies the ordinary By node table
-window. Vue uses both modules on this page, while React and Angular continue to
-use the full overview header until their migrations. Each per-framework view
+window. Vue and React use both modules on this page; Angular continues to use
+the full overview header until HIL-1719. Each per-framework view
 renders through the headless module or modules it needs and nothing else. How
 those modules and views are laid out is not this document's: see
 [../frontend/page-module-structure.md](../frontend/page-module-structure.md) and

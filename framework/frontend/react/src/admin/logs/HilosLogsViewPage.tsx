@@ -153,6 +153,8 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   const canFollow = useSignal(viewer.canFollow)
   const pinned = useSignal(viewer.pinned)
   const pendingLines = useSignal(viewer.pendingLines)
+  const anchorClock = useSignal(viewer.anchorClock)
+  const entryCountLabel = useSignal(viewer.entryCountLabel)
 
   // The node select exists only where nodes have names: a picker with one nameless
   // option is furniture for a choice that does not exist.
@@ -172,10 +174,6 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
     readable,
     level !== '' || substring !== '',
   )
-
-  // The counter beside the Earlier button counts entries, because that is the word
-  // it uses; a note is not one.
-  const entryCount = rows.filter((row) => row.kind === 'entry').length
 
   // Newest batch first: an operator opening the archive is looking for what just
   // happened far more often than for what happened last month.
@@ -241,7 +239,11 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   }
 
   return (
-    <HilosAdminPage page={HilosPages.LOGS_VIEW}>
+    <HilosAdminPage
+      page={HilosPages.LOGS_VIEW}
+      headKind="section"
+      tabsLabel="Logs pages"
+    >
       <div className="border rounded-3 p-3 mb-3">
         <div className="row g-2 align-items-end">
           {clustered ? (
@@ -437,13 +439,16 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
         </button>
         {/* The line count and the note that the typed search is not applied
         yet share one cell (HIL-1152); the note stands in the count's place while
-        the two texts differ, and an invisible twin of the note holds the cell at
-        its width always, so neither its coming nor its going moves the pane
+        the two texts differ. Invisible twins of the note and the anchored label
+        hold the cell at its width always, so neither arriving moves the pane
         (styling-rules.md, "The room a live message takes"); the status region
         stands there always so a screen reader hears the note arrive
         (accessibility.md, "Live regions"), and the count stays outside it
         because it changes with every line of the tail. */}
         <span className="hilos-stack" data-id="hilos-log-count-room">
+          <span className="small invisible" aria-hidden="true">
+            Lines around the entry of 23:59:59.999
+          </span>
           <span className="small invisible" aria-hidden="true">
             <i className="bi bi-exclamation-circle me-1" />
             Not applied yet — press Search
@@ -467,23 +472,44 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
               className="small text-body-secondary"
               data-id="hilos-log-count"
             >
-              {entryCount} entries shown
+              {entryCountLabel}
             </span>
           )}
         </span>
-        {following ? (
+        <span className="hilos-stack ms-auto" data-id="hilos-log-status-room">
           <span
-            className="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
-            data-id="hilos-log-tail-badge"
+            className="badge text-secondary-emphasis bg-secondary-subtle border border-secondary-subtle invisible"
+            aria-hidden="true"
           >
-            <i className="bi bi-broadcast me-1" aria-hidden="true" />
+            <i className="bi bi-pin-angle-fill me-1" />
+            Sticking released
+          </span>
+          <span
+            className="badge text-bg-success-subtle text-success-emphasis border border-success-subtle invisible"
+            aria-hidden="true"
+          >
+            <i className="bi bi-broadcast me-1" />
             Tail is running
           </span>
-        ) : null}
-        <span
-          className={following ? 'hilos-stack' : 'hilos-stack ms-auto'}
-          data-id="hilos-log-back-to-tail-room"
-        >
+          {anchorClock !== null ? (
+            <span
+              className="badge text-secondary-emphasis bg-secondary-subtle border border-secondary-subtle"
+              data-id="hilos-log-anchor-badge"
+            >
+              <i className="bi bi-pin-angle-fill me-1" aria-hidden="true" />
+              Sticking released
+            </span>
+          ) : following ? (
+            <span
+              className="badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
+              data-id="hilos-log-tail-badge"
+            >
+              <i className="bi bi-broadcast me-1" aria-hidden="true" />
+              Tail is running
+            </span>
+          ) : null}
+        </span>
+        <span className="hilos-stack" data-id="hilos-log-back-to-tail-room">
           {/* Holds the room at the widest the control ever gets: a span rather
           than a button, since it keeps a place and must never take the focus. */}
           <span className="btn btn-sm invisible" aria-hidden="true">
@@ -627,7 +653,10 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                   >
                     {row.level}
                   </span>
-                  <span className="text-body-secondary text-nowrap">
+                  <span
+                    className="text-body-secondary text-nowrap"
+                    data-id="hilos-log-entry-time"
+                  >
                     {row.time}
                   </span>
                   <span className="flex-grow-1">
