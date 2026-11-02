@@ -26,7 +26,9 @@
       "@hilos/angular/admin/security": ["./src/admin/security/index.ts"],
       "@hilos/angular/admin/settings": ["./src/admin/settings/index.ts"],
       "@hilos/angular/admin/sil": ["./src/admin/sil/index.ts"],
-      "@hilos/angular/admin/users": ["./src/admin/users/index.ts"]
+      "@hilos/angular/admin/status": ["./src/admin/status/index.ts"],
+      "@hilos/angular/admin/users": ["./src/admin/users/index.ts"],
+      "@hilos/angular/status": ["./src/status/index.ts"]
     }
   },
   "include": ["src", "test"]

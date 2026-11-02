@@ -58,6 +58,12 @@ import {
   expectProfileHeadAccessibility,
   watchProfileRenameStatus,
   expectProfileTimeZone,
+  expectStatusWorksAccessibility,
+  expectStatusWorkScheduleDialog,
+  STATUS_COMPONENTS_PATH,
+  STATUS_WORKS_PATH,
+  statusPagePayload,
+  statusTableWindow,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
@@ -95,21 +101,101 @@ test('public Dependencies exposes a named table and keyboard navigation', async 
   await expectLicenseDependenciesAccessibility(expect, page, 'Hilos Polls')
 })
 
-test('the viewport table has an accessible name and a labelled search', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
+test.describe('Viewport table accessibility', () => {
+  test.use({ timezoneId: 'Atlantic/Canary', colorScheme: 'light' })
 
-  await openUsers(page)
+  test('the viewport table has an accessible name and a labelled search', async ({
+    page,
+  }) => {
+    await grantAdminToSelf(expect, page)
 
-  // The page heading is the table's accessible name: a table carries no
-  // title of its own, and points at the heading that already names it.
-  await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
+    await openUsers(page)
 
-  // The search box is reachable by an accessible name, not just a placeholder.
-  await expect(
-    page.getByRole('searchbox', { name: 'Search users…' }),
-  ).toBeVisible()
+    // The page heading is the table's accessible name: a table carries no
+    // title of its own, and points at the heading that already names it.
+    await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
+
+    // The search box is reachable by an accessible name, not just a placeholder.
+    await expect(
+      page.getByRole('searchbox', { name: 'Search users…' }),
+    ).toBeVisible()
+
+    const log = watchDeliveryFrames(page)
+    try {
+      await test.step('Status names its table and filters real rows from the keyboard', async () => {
+        await gotoPage(expect, page, STATUS_COMPONENTS_PATH)
+        await expect(page.getByRole('table', { name: 'Status' })).toBeVisible()
+        await expect
+          .poll(() => statusPagePayload(log, 'hilos_status_components'))
+          .toBeDefined()
+        const payload = statusPagePayload(log, 'hilos_status_components')!
+        const window = deliveryObject(
+          deliveryObject(payload.windows).hilosStatusComponents,
+        )
+        expect(window).toMatchObject({ totalCount: 1, totalExact: true })
+        await expect(
+          shownByTestId(page, 'hilos-status-component-service'),
+        ).toContainText('Service')
+        const search = page.getByTestId('hilos-table-search')
+        await expect(search).toHaveAccessibleName(
+          'Search by name, description or agent…',
+        )
+        await search.focus()
+        await expect(search).toBeFocused()
+        let since = log.sent.length
+        await typeInto(search, 'no-matching-status-component')
+        await expect
+          .poll(
+            () =>
+              statusTableWindow(
+                log,
+                'hilos_status_components',
+                'hilosStatusComponents',
+                since,
+              )?.rows,
+          )
+          .toEqual([])
+        await expect(
+          shownByTestId(page, 'hilos-status-component-service'),
+        ).toHaveCount(0)
+        await expect(search).toBeFocused()
+        since = log.sent.length
+        await typeInto(search, 'Service')
+        await expect
+          .poll(
+            () =>
+              statusTableWindow(
+                log,
+                'hilos_status_components',
+                'hilosStatusComponents',
+                since,
+              )?.totalCount,
+          )
+          .toBe(1)
+        await expect(
+          shownByTestId(page, 'hilos-status-component-service'),
+        ).toContainText('Service')
+        await expect(search).toBeFocused()
+      })
+
+      await test.step('The Works link and Schedule dialog support keyboard focus', async () => {
+        const tab = page.getByTestId('hilos-page-tab-hilos_status_works')
+        await tab.focus()
+        await tab.press('Enter')
+        await expect(page).toHaveURL(STATUS_WORKS_PATH)
+        await expectPageReady(expect, page)
+        await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+          'Status',
+        )
+        await expect(tab).toHaveAttribute('aria-current', 'page')
+        await expectStatusWorksAccessibility(expect, page, log)
+        await expectStatusWorkScheduleDialog(expect, page)
+      })
+    } finally {
+      log.stop()
+    }
+  })
 })
 
 test('the language Names table takes its name from the shared head', async ({

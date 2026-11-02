@@ -4,7 +4,6 @@
 // A leaf building a page strikes its layer, and the last layer removes the entry.
 // UNBUILT-PAGE keeps this honest in both directions. This is unrelated to the
 // maintenance mockup's registry of messages announcing work.
-// The public file reader PUBLIC_STATUS is also unavailable in unbuilt layers.
 import { HilosPages, type HilosPageKey } from './hilosPages.js'
 
 /** The SDK view layers an application can render with. */
@@ -18,12 +17,6 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.USER_ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.USER_ACCESS]: ['vue', 'react', 'angular'],
   [HilosPages.USER_SESSIONS]: ['react', 'angular'],
-  [HilosPages.STATUS]: ['angular'],
-  [HilosPages.STATUS_COMPONENTS]: ['angular'],
-  [HilosPages.STATUS_SUBSCRIBERS]: ['angular'],
-  [HilosPages.STATUS_WORKS]: ['angular'],
-  [HilosPages.STATUS_HISTORY]: ['angular'],
-  [HilosPages.PUBLIC_STATUS]: ['angular'],
   [HilosPages.ANALYTICS_BROWSER_SESSIONS]: ['angular'],
   [HilosPages.GUARDIAN]: ['vue', 'react', 'angular'],
   [HilosPages.GUARDIAN_AGENT]: ['vue', 'react', 'angular'],

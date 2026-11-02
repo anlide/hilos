@@ -1591,7 +1591,7 @@ describe('HilosView live access loss', () => {
   )
 
   it.each(['loading', 'error', 'public'] as const)(
-    'keeps live session loss above the %s page and a later guest answer',
+    'preserves the %s page access policy after session loss and a later guest answer',
     async (state) => {
       const session = liveSession(state === 'public' ? '/status' : '/')
       session.handshake(7)
@@ -1607,18 +1607,22 @@ describe('HilosView live access loss', () => {
       vi.advanceTimersByTime(DEFAULT_SKELETON_DELAY_MS)
       await settle(fixture)
       expect(
-        root.querySelector('[data-id="access-loss-notice"]'),
-      ).not.toBeNull()
-      expect(root.querySelector('[data-id="private-page"]')).toBeNull()
+        root.querySelector('[data-id="access-loss-notice"]') === null,
+      ).toBe(state === 'public')
+      expect(root.querySelector('[data-id="private-page"]') !== null).toBe(
+        state === 'public',
+      )
       expect(root.querySelector('[data-id="page-error"]')).toBeNull()
       expect(root.querySelector('[data-id="hilos-page-skeleton"]')).toBeNull()
 
       session.answer()
       await settle(fixture)
-      expect(root.querySelector('[data-id="private-page"]')).toBeNull()
+      expect(root.querySelector('[data-id="private-page"]') !== null).toBe(
+        state === 'public',
+      )
       expect(
-        root.querySelector('[data-id="access-loss-notice"]'),
-      ).not.toBeNull()
+        root.querySelector('[data-id="access-loss-notice"]') === null,
+      ).toBe(state === 'public')
     },
   )
 
@@ -1687,4 +1691,39 @@ describe('HilosView live access loss', () => {
       fixture.nativeElement.querySelector('[data-id="access-loss-notice"]'),
     ).toBeNull()
   })
+})
+
+describe('public Status departure cleanup', () => {
+  it.each([false, true])(
+    'clears the previous page immediately with lazy pending=%s',
+    async (pending) => {
+      const state = waitingRouter('main')
+      state.pageLoading.set(false)
+      const code = deferred<Type<unknown>>()
+      const fixture = mountPages(state.router, {
+        main: MainPage,
+        [HilosPages.PUBLIC_STATUS]: pending
+          ? lazyPage(() => code.promise)
+          : KnownPage,
+      })
+      state.depart()
+      const departure = find(fixture, 'hilos-page-departure')!
+      expect(departure.childElementCount).toBeGreaterThan(0)
+      ;(state.router.currentRoute as WritableSignal<PageRouteMatch>).set({
+        page: HilosPages.PUBLIC_STATUS,
+        params: {},
+        admin: false,
+      })
+      fixture.detectChanges()
+      expect(departure.childElementCount).toBe(0)
+      if (pending) {
+        expect(find(fixture, 'known-page')).toBeNull()
+        code.resolve(KnownPage)
+        await settleCode(fixture)
+      }
+      state.pageLoading.set(false)
+      fixture.detectChanges()
+      expect(departure.childElementCount).toBe(0)
+    },
+  )
 })

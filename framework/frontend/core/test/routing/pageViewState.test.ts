@@ -97,7 +97,7 @@ function harness(initial = '/main', unbuilt: ReadonlySet<string> = new Set()) {
 afterEach(() => vi.useRealTimers())
 
 describe('createPageViewState', () => {
-  it.each(['vue', 'react'] as const)(
+  it.each(['vue', 'react', 'angular'] as const)(
     'mounts cold public Status built in %s without a server answer',
     (layer) => {
       const { state, pages } = harness('/status', hilosUnbuiltPages(layer))
@@ -216,10 +216,13 @@ describe('createPageViewState', () => {
     state.dispose()
   })
 
-  it.each(['angular'] as const)(
-    'does not import or mount a ghost Status view in %s',
+  it.each(['react', 'angular'] as const)(
+    'does not import or mount an explicitly unbuilt Status view in %s',
     (layer) => {
-      const { state } = harness('/status', hilosUnbuiltPages(layer))
+      const { state } = harness(
+        '/status',
+        new Set([...hilosUnbuiltPages(layer), HilosPages.PUBLIC_STATUS]),
+      )
       const loader = vi.fn(() => Promise.resolve(componentB))
       state.setPages({ [HilosPages.PUBLIC_STATUS]: lazyPage(loader) })
       expect(loader).not.toHaveBeenCalled()

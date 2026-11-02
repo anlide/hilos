@@ -12,6 +12,7 @@
     "src/hilos-styles.scss",
     "base/package.json",
     "admin-views/package.json",
+    "status/package.json",
     "admin/analytics/package.json",
     "admin/appearance/package.json",
     "admin/backup/package.json",
@@ -30,6 +31,7 @@
     "admin/security/package.json",
     "admin/settings/package.json",
     "admin/sil/package.json",
+    "admin/status/package.json",
     "admin/users/package.json"
   ],
   "scripts": {

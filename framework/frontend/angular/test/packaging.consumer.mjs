@@ -23,6 +23,8 @@ try {
     import { HilosDashboardPage } from '@hilos/angular/admin/dashboard'
     import { HilosSettingsPage } from '@hilos/angular/admin/settings'
     import { HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage } from '@hilos/angular/admin/moderation'
+    import { HilosStatusPage } from '@hilos/angular/admin/status'
+    import { HilosStatusPage as PublicStatusPage } from '@hilos/angular/status'
     import { Component, createEnvironmentInjector, Injector, runInInjectionContext, type EnvironmentInjector } from '@angular/core'
     import {
       HilosProfileHead,
@@ -33,7 +35,9 @@ try {
     } from '@hilos/angular/base'
     import {
       TableViewportController,
+      type ActionLifecycle,
       type Hideable,
+      type HilosConnection,
       type HilosProfileHeadStore,
       type HilosProfilePageContext,
       type HilosTableColumn,
@@ -41,6 +45,7 @@ try {
       type HilosTableViews,
     } from '@hilos/core/base'
     import type { HilosModerationRulesContext } from '@hilos/core/admin/moderation'
+    import type { HilosStatusContext } from '@hilos/core/admin/status'
     import * as coreRoot from '@hilos/core'
     import * as coreBase from '@hilos/core/base'
     import * as coreSettings from '@hilos/core/admin/settings'
@@ -56,6 +61,20 @@ try {
     })
     class HilosModerationConsumer {
       readonly context!: HilosModerationRulesContext
+    }
+    @Component({
+      selector: 'hilos-status-consumer',
+      standalone: true,
+      imports: [HilosStatusPage, PublicStatusPage],
+      template: \`
+        <hilos-status-page [context]="context" />
+        <hilos-public-status-page [connection]="connection" [actions]="actions" />
+      \`,
+    })
+    class HilosStatusConsumer {
+      readonly context!: HilosStatusContext
+      readonly connection!: HilosConnection
+      readonly actions!: ActionLifecycle
     }
     type TableTextRow = { name: Hideable<string> }
     const tableTextFrame: HilosTableFrame = {
@@ -158,6 +177,9 @@ try {
     const sameHead: Same<typeof root.HilosProfileHead, typeof HilosProfileHead> = true
     const headContext: Same<ReturnType<HilosProfileHead['context']>, HilosProfilePageContext> = true
     const headStore: Same<ReturnType<HilosProfileHead['store']>, HilosProfileHeadStore | undefined> = true
+    const statusContext: Same<ReturnType<HilosStatusPage['context']>, HilosStatusContext> = true
+    const publicConnection: Same<ReturnType<PublicStatusPage['connection']>, HilosConnection> = true
+    const publicActions: Same<ReturnType<PublicStatusPage['actions']>, ActionLifecycle> = true
     @Component({
       selector: 'hilos-profile-head-consumer',
       standalone: true,
@@ -224,7 +246,11 @@ try {
     const samePages = root.HilosSettingsPage === HilosSettingsPage &&
       root.HilosAnalyticsPage === HilosAnalyticsPage &&
       root.HilosDashboardPage === HilosDashboardPage &&
-      root.HilosModerationPage === HilosModerationPage
+      root.HilosModerationPage === HilosModerationPage &&
+      root.HilosStatusPage === HilosStatusPage &&
+      root.HilosPublicStatusPage === PublicStatusPage &&
+      !Object.is(HilosStatusPage, PublicStatusPage) &&
+      !('HilosStatusPage' in base) && !('HilosPublicStatusPage' in base)
     class DashboardProbe extends HilosDashboardPage {
       sameRouter(): boolean {
         return this.resolvePath(coreBase.HilosPages.USERS) === '/same'
@@ -246,7 +272,7 @@ try {
     const loaded = Promise.all(defaults.map(view => {
       if (typeof view === 'function') throw new Error('Eager default')
       return view.load()
-    })).then((pages: unknown[]) => pages.length === 30 && pages.every(page => typeof page === 'function'))
+    })).then((pages: unknown[]) => pages.length === 29 && pages.every(page => typeof page === 'function'))
     Object.assign(globalThis, { hilosAngularIdentity: {
       sameCore,
       sameCoreSection,
@@ -256,6 +282,9 @@ try {
       loaded,
       moderationPages: [HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage],
       moderationHost: HilosModerationConsumer,
+      statusPages: [HilosStatusPage, PublicStatusPage],
+      statusHost: HilosStatusConsumer,
+      statusTypes: statusContext && publicConnection && publicActions,
       tableEmptyStateHost: HilosTableEmptyStateConsumer,
       tableTextHost: HilosTableTextConsumer,
       tableTilesHost: HilosTableTilesConsumer,
@@ -284,6 +313,9 @@ try {
           ],
           '@hilos/core/admin/moderation': [
             join(consumer, 'node_modules/@hilos/core/dist/admin/moderation'),
+          ],
+          '@hilos/core/admin/status': [
+            join(consumer, 'node_modules/@hilos/core/dist/admin/status'),
           ],
           '@hilos/angular': [join(consumer, 'node_modules/@hilos/angular')],
           '@hilos/angular/*': [join(consumer, 'node_modules/@hilos/angular/*')],
@@ -362,6 +394,19 @@ try {
     assert.equal(page.ɵcmp.standalone, true)
     assert.equal(typeof page.ɵcmp.template, 'function')
   }
+  assert.equal(result.statusPages.length, 2)
+  assert.ok(
+    result.statusHost.ɵcmp,
+    'Real AOT contextual and public Status host',
+  )
+  assert.equal(result.statusHost.ɵcmp.standalone, true)
+  assert.equal(typeof result.statusHost.ɵcmp.template, 'function')
+  for (const page of result.statusPages) {
+    assert.ok(page.ɵcmp, 'Real AOT Status page')
+    assert.equal(page.ɵcmp.standalone, true)
+    assert.equal(typeof page.ɵcmp.template, 'function')
+  }
+  assert.equal(result.statusTypes, true)
   assert.ok(result.tableEmptyStateHost.ɵcmp, 'Real AOT empty-state host')
   assert.equal(result.tableEmptyStateHost.ɵcmp.standalone, true)
   assert.equal(typeof result.tableEmptyStateHost.ɵcmp.template, 'function')
@@ -386,7 +431,7 @@ try {
   if (process.argv[3])
     await cp(output, resolve(process.argv[3]), { recursive: true })
   console.log(
-    'Angular CLI dist consumer: AOT table text and tiles hosts, shipped Sass, singleton identities and lazy defaults verified',
+    'Angular CLI dist consumer: AOT admin/public Status and table text/tiles hosts, shipped Sass, singleton identities and lazy defaults verified',
   )
 } finally {
   await rm(temporary, { recursive: true, force: true })

@@ -119,6 +119,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@hilos/angular/base': resolve(packageDir, 'src/base/index.ts'),
+      '@hilos/angular/status': resolve(packageDir, 'src/status/index.ts'),
       '@hilos/angular/admin-views': resolve(
         packageDir,
         'src/admin/hilosAdminViews.ts',
@@ -192,6 +193,10 @@ export default defineConfig({
         'src/admin/settings/index.ts',
       ),
       '@hilos/angular/admin/sil': resolve(packageDir, 'src/admin/sil/index.ts'),
+      '@hilos/angular/admin/status': resolve(
+        packageDir,
+        'src/admin/status/index.ts',
+      ),
       '@hilos/angular/admin/users': resolve(
         packageDir,
         'src/admin/users/index.ts',

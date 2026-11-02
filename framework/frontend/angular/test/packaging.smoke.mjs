@@ -29,7 +29,7 @@ for (const [subpath, target] of Object.entries(manifest.exports)) {
   entries.set(name, target.default.replace(/^\.\//, ''))
   typeFiles.set(name, target.types)
 }
-assert.equal(entries.size, 22)
+assert.equal(entries.size, 24)
 // Resolve the actual published APF manifest, independently of the workspace's
 // file: forwarding manifests and the unit suite's source aliases.
 async function loadEntry(name) {
@@ -42,6 +42,33 @@ const { HilosAnalyticsPage } = await loadEntry('@hilos/angular/admin/analytics')
 const { HilosDashboardPage } = await loadEntry('@hilos/angular/admin/dashboard')
 const { HilosSettingsPage } = await loadEntry('@hilos/angular/admin/settings')
 const moderation = await loadEntry('@hilos/angular/admin/moderation')
+const status = await loadEntry('@hilos/angular/admin/status')
+const publicStatus = await loadEntry('@hilos/angular/status')
+assert.deepEqual(Object.keys(status).sort(), [
+  'HilosStatusCancelWorkModal',
+  'HilosStatusComponentsPage',
+  'HilosStatusHistoryPage',
+  'HilosStatusIncidentModal',
+  'HilosStatusPage',
+  'HilosStatusRemoveSubscriberModal',
+  'HilosStatusSubscribersPage',
+  'HilosStatusWorkModal',
+  'HilosStatusWorksPage',
+])
+for (const [name, component] of Object.entries(status)) {
+  assert.ok(component.ɵcmp, `Real Angular Status component: ${name}`)
+  assert.equal(component.ɵcmp.standalone, true)
+  assert.equal(root[name], component, `Root/Status identity: ${name}`)
+  assert.equal(name in base, false)
+}
+assert.deepEqual(Object.keys(publicStatus), ['HilosStatusPage'])
+assert.ok(publicStatus.HilosStatusPage.ɵcmp)
+assert.equal(publicStatus.HilosStatusPage.ɵcmp.standalone, true)
+assert.ok(publicStatus.HilosStatusPage.ɵcmp.inputs.connection)
+assert.ok(publicStatus.HilosStatusPage.ɵcmp.inputs.actions)
+assert.equal(root.HilosPublicStatusPage, publicStatus.HilosStatusPage)
+assert.notEqual(root.HilosStatusPage, publicStatus.HilosStatusPage)
+assert.equal('HilosPublicStatusPage' in base, false)
 for (const name of [
   'HilosModerationPage',
   'HilosModerationKindPage',
@@ -129,6 +156,14 @@ for (const entry of ['@hilos/angular/base', '@hilos/angular/admin-views']) {
     return reason ? [{ id, reason }] : []
   })
   assert.deepEqual(forbidden, [], `${entry} must have a clean core closure`)
+  assert.ok(
+    !evidence
+      .modules(entry)
+      .some((id) =>
+        /\/src\/(admin\/status\/|status\/|public\/HilosStatus)/.test(id),
+      ),
+    `${entry} must not contain admin or public Status`,
+  )
 }
 for (const file of await readdir(join(dist, 'fesm2022'))) {
   if (!file.endsWith('.mjs')) continue
@@ -258,6 +293,39 @@ assert.ok(!closure(baseName).has(rootName))
 assert.deepEqual(modules(closure(metadataName)), [
   'src/admin/hilosAdminViews.ts',
 ])
+const publicStatusName = entries.get('@hilos/angular/status')
+const statusName = entries.get('@hilos/angular/admin/status')
+const publicStatusChunks = closure(publicStatusName)
+assert.ok(modules(publicStatusChunks).includes('src/public/HilosStatusPage.ts'))
+assert.ok(
+  !modules(publicStatusChunks).some((source) =>
+    source.startsWith('src/admin/'),
+  ),
+)
+assert.ok(!publicStatusChunks.has(rootName))
+assert.ok(!publicStatusChunks.has(metadataName))
+assert.ok(!publicStatusChunks.has(statusName))
+assert.ok(!graph.get(metadataName).dynamicImports.includes(statusName))
+assert.ok(!graph.get(metadataName).dynamicImports.includes(publicStatusName))
+const publicEvidence = sdkEvidence(packageDir)
+const publicInputs = publicEvidence.modules('@hilos/angular/status')
+const baseInputs = new Set(publicEvidence.modules('@hilos/angular/base'))
+assert.ok(
+  publicInputs.some((id) => id.endsWith('/core/src/status/publicStatus.ts')),
+)
+// Public Status may reuse the reviewed core/base page identity and view-mode
+// primitives, but its compiled externals add no admin implementation or root.
+assert.ok(
+  !publicInputs
+    .filter((id) => !baseInputs.has(id))
+    .some((id) => /\/src\/admin\//.test(id)),
+)
+assert.ok(!publicInputs.some((id) => /\/src\/admin\/status\//.test(id)))
+assert.ok(
+  !publicInputs.some(
+    (id) => publicEvidence.verdict(id) === 'compatibility root',
+  ),
+)
 for (const [name, entry] of entries) {
   if (!name.startsWith('@hilos/angular/admin/')) continue
   const chunks = closure(entry)
@@ -342,7 +410,11 @@ for (const name of [
     entries.get('@hilos/angular/admin/moderation'),
   )
 }
-assert.equal(graph.get(metadataName).dynamicImports.length, 30)
+for (const name of Object.keys(status)) {
+  assert.equal(owners.get(`src/admin/status/${name}.ts`), statusName)
+}
+assert.equal(owners.get('src/public/HilosStatusPage.ts'), publicStatusName)
+assert.equal(graph.get(metadataName).dynamicImports.length, 29)
 for (const [name, value] of Object.entries(base)) {
   assert.equal(root[name], value, `Root/base identity: ${name}`)
 }
@@ -380,7 +452,7 @@ try {
   injector.destroy()
 }
 const views = Object.values(hilosAdminViews())
-assert.equal(views.length, 30)
+assert.equal(views.length, 29)
 assert.ok(views.every((view) => view.kind === 'lazy-page'))
 for (const view of views) {
   const component = await view.load()
@@ -396,5 +468,5 @@ assert.ok(
   ),
 )
 console.log(
-  'Angular dist: 22 APF entries, moderation pages, base ownership, internal table image, acyclic graph, lazy defaults and singleton injection verified',
+  'Angular dist: 24 APF entries, admin/public Status exports and compiled closures, moderation pages, base ownership, internal table image, acyclic graph, 29 lazy defaults and singleton injection verified',
 )

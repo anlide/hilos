@@ -510,6 +510,7 @@ export {
 
 export {
   STATUS_SUBSCRIBERS_PATH,
+  clearStatusSubscriber,
   subscribeToStatus,
   openStatusMailLink,
   applyStatusSubscribers,
@@ -679,6 +680,8 @@ export {
   STATUS_PATH,
   STATUS_COMPONENTS_PATH,
   STATUS_LEAD,
+  statusPagePayload,
+  statusTableWindow,
   watchStatusFrames,
   expectStatusHead,
   submitStatusIncident,
@@ -699,6 +702,7 @@ export {
 export {
   PUBLIC_STATUS_PATH,
   PUBLIC_STATUS_FILES,
+  holdPublicStatusFiles,
   watchPublicStatus,
   expectPublicStatusPair,
   expectPublicStatusArchive,

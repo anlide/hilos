@@ -4,8 +4,8 @@
 // planned work rather than a generic outage. The words come from the backend
 // registry and travel the wire (the Hilos i18n model); this component holds
 // layout only and falls back to PROTECTED_MODE_FALLBACK_COPY when the state is
-// known but no sentence arrived with it. It is a state, not a page: no links,
-// no retry button — the mode lifts on its own and the core reloads the document.
+// known but no sentence arrived with it. The native Service status link opens
+// the public file reader; the mode lifts on its own and the core reloads the document.
 // The one exception is the code field, shown only while the freeze says it
 // accepts a pass AND the shell hands over an administrative surface AND at least
 // one code has been minted: that phase is the verification window, and a verifier
@@ -44,6 +44,8 @@ import {
   subscribeSignal,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
@@ -165,6 +167,13 @@ import { HilosFormError } from './HilosFormError.js'
           {{ passCopy.pending }}
         </p>
       }
+      <a
+        [href]="statusHref"
+        class="small mt-3"
+        data-id="maintenance-service-status"
+        ><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Service
+        status</a
+      >
     </div>
   `,
 })
@@ -183,6 +192,7 @@ export class HilosMaintenance {
   readonly adminSurface = input.required<boolean>()
 
   protected readonly passCopy = PROTECTED_MODE_PASS_COPY
+  protected readonly statusHref = HILOS_PAGE_ROUTES[HilosPages.PUBLIC_STATUS]
 
   protected readonly title = computed(
     () => this.status().title ?? PROTECTED_MODE_FALLBACK_COPY.title,

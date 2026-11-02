@@ -50,10 +50,11 @@ The narrow page exception is the public `/status` file reader: nginx serves its
 built shell and public files on a cold load without daemon, handshake or
 subscription. Freeze does not replace it with the stub; the stub links to it as
 **Service status**. See [status-page.md](../architecture/status-page.md#freeze-and-disconnection).
-The Vue and React shells keep this read-only page available without opening a
-page subscription or enabling shell requests, actions or modal controls. Other
-pages keep the freeze behavior above.
-This exception also applies in Angular (not in the code yet — HIL-1696).
+The Vue, React and Angular shells keep this read-only page available without
+opening a page subscription or enabling shell requests, actions or modal
+controls. Other pages keep the freeze behavior above.
+Angular applies the same public-page exception with page-local interaction;
+the shell keeps its caller's interaction policy.
 
 **The ways in belong to the verification phase, and there are two of them.** By
 then the operation is over and the agents are back up, so there is a live system
@@ -236,8 +237,8 @@ also stay outside the page binding. Sign out, Stop and Keep my account remain
 independently disabled while the connection is unavailable, even when the page
 opts into local interaction.
 
-On the built Vue and React `/status` route, the shell lets only the read-only
-page use its local file reader without a usable live connection, including under
+On the built Vue, React and Angular `/status` route, the shell lets only the
+read-only page use its local file reader without a usable live connection, including under
 freeze.
 Page-level access reactions do not clear or await it because it has no server
 subscription. This does not enable shell requests, actions or modal controls,

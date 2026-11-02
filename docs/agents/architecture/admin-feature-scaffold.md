@@ -617,9 +617,11 @@ contract.
    `/status` file-reader route. In Tasks and Ecommerce Shop, mount the public
    React reader from `@hilos/react/status` with `{connection, actions}` and the
    admin pages from `@hilos/react/admin/status` through thin wrappers carrying
-   the same Status context, each as a lazy page entry in `App.tsx`. Angular's
-   backend is ready, but its Status views stay in the unbuilt-page set until
-   HIL-1696; do not expose empty tabs.
+   the same Status context, each as a lazy page entry in `App.tsx`. In Polls
+   and OnlineTesting, mount the public Angular reader from
+   `@hilos/angular/status` with `{connection, actions}` and all five admin pages
+   from `@hilos/angular/admin/status` through thin wrappers carrying
+   `HilosStatusContext`, each as one of the six lazy page entries in `app.ts`.
 
 The shared framework tables and the existing project `TableContext` remain the
 only table binding path. Do not generate a second subscription table, a project

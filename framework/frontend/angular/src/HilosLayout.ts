@@ -50,6 +50,7 @@
 // `viewProviders`. Angular cannot tell the default slot from the named ones by
 // injector, so a control a project projects into [brand], [nav], [user] or
 // [banner] reads the takeover too — in Vue and React only the page's area does.
+import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -185,6 +186,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
     HilosThemeMenu,
     HilosToastHost,
     LoadingButton,
+    NgTemplateOutlet,
   ],
   template: `
     <!-- The one place the two boot outcomes are named, on the marker a test
@@ -195,7 +197,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
       [attr.data-state]="bootState()"
       hidden
     ></div>
-    @if (!firstFrameHeld()) {
+    @if (!firstFrameHeld() || publicStatus()) {
       <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
         <a
           href="#hilos-main-content"
@@ -217,13 +219,22 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           aria-label="Main"
         >
           <div class="container">
-            @if (!underMaintenance()) {
+            <ng-template #brand
+              ><ng-content select="[brand]">Hilos</ng-content></ng-template
+            >
+            @if (publicStatus()) {
+              <span
+                class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                data-id="nav-brand"
+                ><ng-container [ngTemplateOutlet]="brand"
+              /></span>
+            } @else if (!underMaintenance()) {
               <a
                 hilosLink="/"
                 class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
                 data-id="nav-brand"
               >
-                <ng-content select="[brand]">Hilos</ng-content>
+                <ng-container [ngTemplateOutlet]="brand" />
               </a>
             }
             @if (!underMaintenance()) {
@@ -471,7 +482,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           [class.d-flex]="underMaintenance()"
           [class.flex-column]="underMaintenance()"
         >
-          @if (underMaintenance()) {
+          @if (underMaintenance() && !publicStatus()) {
             <hilos-maintenance
               [status]="protectedMode()"
               [connection]="connection()"
@@ -483,7 +494,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
               class="border-0 m-0 p-0 min-w-0 h-100"
               data-id="page-interaction-scope"
             >
-              @if (accountBlocked(); as notice) {
+              @if (!publicStatus() && accountBlocked(); as notice) {
                 <hilos-account-blocked [notice]="notice" />
               } @else if (frozenShown()) {
                 <div
@@ -668,7 +679,7 @@ export class HilosLayout {
     PROTECTED_MODE_INACTIVE,
   )
   protected readonly underMaintenance = computed(
-    () => this.protectedMode().active,
+    () => this.protectedMode().active || this.firstFrameHeld(),
   )
   // The opposite side of the same state: whoever the mode does NOT hold, while
   // it still holds the node, is inside a system that is closed to everybody else
@@ -677,7 +688,7 @@ export class HilosLayout {
   // reconnect, an F5 and a second tab all learn it from the frame rather than
   // from a store that would have to be rebuilt on each of them.
   protected readonly verificationBanner = computed(() =>
-    protectedModeBannerCopy(this.protectedMode()),
+    this.publicStatus() ? null : protectedModeBannerCopy(this.protectedMode()),
   )
   // The second framework strip (HIL-1064): the session says an administrator
   // stands behind it, so the person is told whom they are acting as and given
@@ -737,7 +748,7 @@ export class HilosLayout {
   // second flash replacing the first.
   protected readonly firstFrameHeld = signal(false)
   protected readonly bootState = computed(() =>
-    this.firstFrameHeld() ? 'held' : 'ready',
+    this.firstFrameHeld() && !this.publicStatus() ? 'held' : 'ready',
   )
   protected readonly connSpanClass = computed(
     () =>
@@ -805,6 +816,16 @@ export class HilosLayout {
     ? hilosSignal(this.router.currentRoute)
     : signal<PageRouteMatch>({ page: null, params: {}, admin: false })
   protected readonly adminSurface = computed(() => this.currentRoute().admin)
+  protected readonly publicStatus = computed(
+    () => this.currentRoute().page === HilosPages.PUBLIC_STATUS,
+  )
+  // Derive the page exception from the same publication dialogs read, so nested
+  // regions can lock before ancestor fieldsets and release them on focus return.
+  private readonly pageBlocked = computedSignal(
+    () =>
+      this.interaction.blocked.get() &&
+      this.router?.currentRoute.get().page !== HilosPages.PUBLIC_STATUS,
+  )
 
   // The fourth framework strip (HIL-1260): a viewer of the admin view mode, on
   // an admin route — the framework's and a project's alike, the dashboard
@@ -860,14 +881,15 @@ export class HilosLayout {
   })
   protected readonly frozenShown = computed(
     () =>
+      !this.publicStatus() &&
       this.frozen() &&
       !HILOS_FROZEN_OPEN_PAGES.includes(this.currentRoute().page ?? ''),
   )
 
   constructor() {
-    inject(DestroyRef).onDestroy(() =>
-      this.connectionInteraction.get()?.dispose(),
-    )
+    inject(DestroyRef).onDestroy(() => {
+      this.connectionInteraction.get()?.dispose()
+    })
     effect(() => {
       const connection = this.connection()
       const allow = this.allowDisconnectedInteraction()
@@ -888,7 +910,7 @@ export class HilosLayout {
       onCleanup(
         bindInteractionBlock(root, {
           fieldset,
-          blocked: this.interaction.blocked,
+          blocked: this.pageBlocked,
           descriptionId: HILOS_CONNECTION_STATUS_TEXT_ID,
         }),
       )

@@ -75,6 +75,45 @@ class ConflictActionsHost {
   }
 }
 
+/** A live dialog whose parent resolves the choice emitted by its actions. */
+@Component({
+  selector: 'test-conflict-focus-host',
+  imports: [ConflictActions],
+  template: `
+    @if (open()) {
+      <div [attr.role]="inDialog() ? 'dialog' : null" aria-label="Edit title">
+        <input aria-label="Title" data-autofocus />
+        <input aria-label="Other control" />
+        @if (showActions()) {
+          <div
+            hilosConflictActions
+            [conflict]="conflict()"
+            [mergeable]="true"
+            (acceptMine)="resolve('mine')"
+            (acceptTheirs)="resolve('theirs')"
+            (merge)="resolve('merge')"
+          ></div>
+        }
+      </div>
+    }
+    <div role="dialog" aria-label="Other window">
+      <input aria-label="Other window field" data-autofocus />
+    </div>
+  `,
+})
+class ConflictFocusHost {
+  readonly conflict = signal(true)
+  readonly open = signal(true)
+  readonly inDialog = signal(true)
+  readonly showActions = signal(true)
+  resolved: string | null = null
+
+  resolve(choice: string): void {
+    this.resolved = choice
+    this.conflict.set(false)
+  }
+}
+
 /**
  * Mount the host and render its initial state.
  *
@@ -241,6 +280,110 @@ describe('ConflictActions', () => {
     fixture.detectChanges()
     expect(document.querySelector('[data-id="conflict-choices"]')).toBeNull()
     expect(readChildren('conflict-choices-idle')).toEqual(twin)
+  })
+})
+
+describe('ConflictActions focus after resolution', () => {
+  /** Mount the real host and find its controls within this fixture. */
+  function mountFocusHost() {
+    const fixture = TestBed.createComponent(ConflictFocusHost)
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+    const control = (name: string): HTMLInputElement =>
+      root.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)!
+    const choice = (name = 'accept-mine'): HTMLButtonElement =>
+      root.querySelector<HTMLButtonElement>(`[data-id="conflict-${name}"]`)!
+
+    return { fixture, host: fixture.componentInstance, root, control, choice }
+  }
+
+  it.each([
+    ['accept-mine', 'mine'],
+    ['accept-theirs', 'theirs'],
+    ['merge', 'merge'],
+  ])('returns focus to the same dialog after %s', (name, resolved) => {
+    const { fixture, host, root, control, choice } = mountFocusHost()
+    const button = choice(name)
+    button.focus()
+    expect(document.activeElement).toBe(button)
+    button.click()
+    fixture.detectChanges()
+
+    expect(host.resolved).toBe(resolved)
+    expect(root.querySelector('[data-id="conflict-choices"]')).toBeNull()
+    expect(document.activeElement).toBe(control('Title'))
+    expect(
+      root.querySelector<HTMLButtonElement>('[data-id="conflict-save"]')
+        ?.disabled,
+    ).toBe(false)
+  })
+
+  it('preserves focus moved before the conflict disappears', () => {
+    const { fixture, control, choice } = mountFocusHost()
+    choice().focus()
+    choice().click()
+    control('Other control').focus()
+    fixture.detectChanges()
+
+    expect(document.activeElement).toBe(control('Other control'))
+  })
+
+  it.each(['Other control', 'Other window field'])(
+    'preserves a deliberate move to %s before the render callback',
+    (name) => {
+      const { fixture, control, choice } = mountFocusHost()
+      choice().focus()
+      choice().click()
+      // Render the removal, then let Angular run its pending render callbacks.
+      fixture.changeDetectorRef.detectChanges()
+      expect(document.activeElement).toBe(document.body)
+      control(name).focus()
+      TestBed.tick()
+
+      expect(document.activeElement).toBe(control(name))
+    },
+  )
+
+  it('leaves focus alone outside a dialog', () => {
+    const { fixture, host, choice } = mountFocusHost()
+    host.inDialog.set(false)
+    fixture.detectChanges()
+    choice().focus()
+    choice().click()
+    fixture.detectChanges()
+
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it.each([
+    'close',
+    'detach',
+    'destroy',
+    'replace',
+    'reconflict',
+    'resolve a new conflict',
+  ])('drops a pending focus return on %s', (change) => {
+    const { fixture, host, root, choice } = mountFocusHost()
+    choice().focus()
+    choice().click()
+    fixture.changeDetectorRef.detectChanges()
+    expect(document.activeElement).toBe(document.body)
+
+    if (change === 'close') host.open.set(false)
+    else if (change === 'detach') root.remove()
+    else if (change === 'destroy') fixture.destroy()
+    else if (change === 'replace') {
+      host.showActions.set(false)
+      fixture.changeDetectorRef.detectChanges()
+      host.showActions.set(true)
+    } else if (change === 'resolve a new conflict') {
+      host.conflict.set(true)
+      fixture.changeDetectorRef.detectChanges()
+      host.conflict.set(false)
+    } else host.conflict.set(true)
+    TestBed.tick()
+
+    expect(document.activeElement).toBe(document.body)
   })
 })
 

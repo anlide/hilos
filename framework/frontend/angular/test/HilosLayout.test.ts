@@ -65,6 +65,7 @@ import {
   bindSignOut,
   bindThemeState,
   hilosToasts,
+  hilosAccessLossReason,
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
@@ -81,11 +82,14 @@ import {
   type ProjectSignal,
   type ProtectedModeStatus,
   type RtStalenessStatus,
+  type WritableSignal,
 } from '@hilos/core'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { HilosLayout } from '../src/HilosLayout.js'
+import { HilosView } from '../src/HilosView.js'
+import { HilosStatusPage as HilosPublicStatusPage } from '../src/public/HilosStatusPage.js'
 import { LoadingButton } from '../src/LoadingButton.js'
 import { HilosModal } from '../src/HilosModal.js'
 import {
@@ -2838,7 +2842,13 @@ class ViewingAction {}
   providers: [
     { provide: HILOS_ROUTER, useFactory: () => routerOn(null, true) },
   ],
-  imports: [HilosLayout, LoadingButton, InteractionProbe, ViewingAction],
+  imports: [
+    HilosLayout,
+    LoadingButton,
+    HilosModal,
+    InteractionProbe,
+    ViewingAction,
+  ],
   template: `
     <hilos-layout
       [connection]="connection()"
@@ -2870,12 +2880,21 @@ class ViewingAction {}
         Save
       </button>
       <a href="/action" data-id="page-link" (click)="clicks()">Action</a>
+      <hilos-modal
+        title="Edit draft"
+        [open]="modalOpen()"
+        [confirmOnClose]="true"
+      >
+        <input data-id="modal-initial" data-autofocus />
+        <input data-id="modal-draft" />
+      </hilos-modal>
     </hilos-layout>
   `,
 })
 class InteractionHost {
   readonly connection = signal(fakeConnection())
   readonly allow = signal(false)
+  readonly modalOpen = signal(false)
   readonly disabled = signal(false)
   readonly description = signal('validation')
   readonly clicks = vi.fn()
@@ -3034,6 +3053,129 @@ describe('HilosLayout connection interaction (HIL-1651)', () => {
       independent.componentInstance.connectionInteraction.get()?.blocked.get(),
     ).toBe(false)
     independent.destroy()
+  })
+
+  it('publishes the nested modal lock before disabling the page and restores its draft focus on every reconnect', async () => {
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    await shell.update(() =>
+      shell!.fixture.componentInstance.modalOpen.set(true),
+    )
+    const pageScope = get<HTMLFieldSetElement>('page-interaction-scope')
+    const dialog = get('modal')
+    const modalScope = get<HTMLFieldSetElement>('modal-interaction-scope')
+    const field = get<HTMLInputElement>('modal-draft')
+    field.value = 'Keep this modal draft'
+    field.setSelectionRange(2, 7)
+    expect(pageScope.contains(dialog)).toBe(true)
+    expect(modalScope.contains(field)).toBe(true)
+
+    // jsdom does not blur a field when an ancestor fieldset disables it.
+    // Observe the lock at that DOM write; the native browser owns the blur.
+    const beforeDisable: {
+      blocked: boolean
+      modalDisabled: boolean
+      focus: Element | null
+    }[] = []
+    const setAttribute = pageScope.setAttribute.bind(pageScope)
+    const write = vi
+      .spyOn(pageScope, 'setAttribute')
+      .mockImplementation((name, value) => {
+        if (name === 'disabled') {
+          beforeDisable.push({
+            blocked: shell!.probes[0]!.interaction.blocked.get(),
+            modalDisabled: modalScope.disabled,
+            focus: document.activeElement,
+          })
+        }
+        setAttribute(name, value)
+      })
+    try {
+      for (const state of ['disconnected', 'reconnecting'] as const) {
+        field.focus()
+        expect(document.activeElement).toBe(field)
+        await shell.update(() => {
+          feed.push({ state }, 'state')
+          expect(beforeDisable.at(-1)).toEqual({
+            blocked: true,
+            modalDisabled: true,
+            focus: dialog,
+          })
+          expect(pageScope.disabled).toBe(true)
+          expect(modalScope.disabled).toBe(true)
+          expect(document.activeElement).toBe(dialog)
+        })
+        expect(get('modal')).toBe(dialog)
+        expect(get('modal-draft')).toBe(field)
+        expect(field.value).toBe('Keep this modal draft')
+        expect([field.selectionStart, field.selectionEnd]).toEqual([2, 7])
+        expect(dialog.closest('[inert], [aria-hidden="true"]')).toBeNull()
+        await shell.update(() => {
+          feed.push({ state: 'connected' }, 'state')
+          expect(pageScope.disabled).toBe(false)
+          expect(modalScope.disabled).toBe(false)
+          expect(field.matches(':disabled')).toBe(false)
+          expect(document.activeElement).toBe(field)
+        })
+        expect(get('modal')).toBe(dialog)
+        expect(get('modal-draft')).toBe(field)
+        expect(field.value).toBe('Keep this modal draft')
+      }
+      expect(beforeDisable).toHaveLength(2)
+    } finally {
+      write.mockRestore()
+    }
+  })
+
+  it('keeps the public page exception separate from modal policy across routes, caller overrides and connection replacement', async () => {
+    const feed = shellFeed()
+    shell = renderInteraction(feed)
+    const route = shell.layout.injector.get(HILOS_ROUTER)
+      .currentRoute as WritableSignal<PageRouteMatch>
+    await shell.update(() =>
+      shell!.fixture.componentInstance.modalOpen.set(true),
+    )
+    const pageScope = get<HTMLFieldSetElement>('page-interaction-scope')
+    const modalScope = get<HTMLFieldSetElement>('modal-interaction-scope')
+    const dialog = get('modal')
+    const field = get<HTMLInputElement>('modal-draft')
+    field.value = 'Retain across policies'
+    field.focus()
+    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
+    await shell.update(() => {
+      route.set({ page: HilosPages.PUBLIC_STATUS, params: {}, admin: false })
+      expect(pageScope.disabled).toBe(false)
+      expect(modalScope.disabled).toBe(true)
+      expect(document.activeElement).toBe(dialog)
+    })
+    await shell.configure({ allow: true })
+    expect(modalScope.disabled).toBe(false)
+    expect(document.activeElement).toBe(field)
+    expect(shell.probes[0]!.interaction.unavailable.get()).toBe(true)
+    await shell.configure({ allow: false })
+    expect(pageScope.disabled).toBe(false)
+    expect(modalScope.disabled).toBe(true)
+    expect(document.activeElement).toBe(dialog)
+    await shell.update(() => {
+      route.set({ page: null, params: {}, admin: false })
+      expect(pageScope.disabled).toBe(true)
+    })
+    const next = shellFeed()
+    await shell.configure({ connection: next.connection })
+    expect(pageScope.disabled).toBe(false)
+    expect(modalScope.disabled).toBe(false)
+    expect(document.activeElement).toBe(field)
+    expect(get('modal-draft')).toBe(field)
+    expect(field.value).toBe('Retain across policies')
+    expect(feed.listeners.get('state')?.size).toBe(0)
+    await shell.update(() => feed.push({ state: 'reconnecting' }, 'state'))
+    expect(pageScope.disabled).toBe(false)
+    expect(modalScope.disabled).toBe(false)
+    shell.dispose()
+    shell = undefined
+    expect([...next.listeners.values()].every((set) => set.size === 0)).toBe(
+      true,
+    )
   })
 
   it('updates opt-out and the connection live, releases replaced sources and remounts cleanly', async () => {
@@ -3239,4 +3381,232 @@ describe('HilosLayout connection interaction (HIL-1651)', () => {
       true,
     )
   })
+})
+
+@Component({
+  selector: 'test-public-status-route',
+  imports: [HilosPublicStatusPage],
+  template: `<hilos-public-status-page
+    [connection]="host.connection"
+    [actions]="host.actions"
+  />`,
+})
+class PublicStatusRoute {
+  protected readonly host = inject(PublicStatusShellHost)
+}
+
+@Component({
+  selector: 'test-public-status-shell',
+  imports: [HilosLayout, HilosView],
+  template: `<hilos-layout [connection]="connection"
+    ><span brand>Public test brand</span><hilos-view [pages]="pages"
+  /></hilos-layout>`,
+})
+class PublicStatusShellHost {
+  connection = fakeConnection()
+  readonly actions = new ActionLifecycle(new ReplyingSource())
+  readonly pages = {
+    [HilosPages.PUBLIC_STATUS]: PublicStatusRoute,
+    main: LiveBlockedPage,
+  }
+}
+
+describe('public Status in the real Angular shell and outlet', () => {
+  let fixture: ComponentFixture<PublicStatusShellHost> | undefined
+  let session: ReturnType<typeof bindSession> | undefined
+  const get = (id: string) =>
+    (fixture!.nativeElement as HTMLElement).querySelector<HTMLElement>(
+      `[data-id="${id}"]`,
+    )
+  async function settle() {
+    fixture!.detectChanges()
+    await vi.advanceTimersByTimeAsync(0)
+    fixture!.detectChanges()
+  }
+  function mount(feed: ReturnType<typeof shellFeed>) {
+    const router = routerOn(HilosPages.PUBLIC_STATUS)
+    router.resolvePath = (page) =>
+      page === HilosPages.PUBLIC_STATUS ? '/status' : '/'
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router }],
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () =>
+          url.endsWith('/status.json')
+            ? {
+                schemaVersion: 2,
+                revision: 'shell-status',
+                generatedAt: Date.now(),
+                config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
+                components: [
+                  {
+                    componentKey: 'site',
+                    name: 'Site',
+                    description: null,
+                    state: 'operational',
+                  },
+                ],
+                candidates: [],
+                outages: [],
+                scheduledWorks: [],
+                maintenancePeriods: [],
+              }
+            : {
+                schemaVersion: 2,
+                revision: 'shell-status',
+                aliveAt: Date.now(),
+              },
+      })),
+    )
+    session = bindSession(router)
+    fixture = TestBed.createComponent(PublicStatusShellHost)
+    fixture.componentInstance.connection = feed.connection
+    return router
+  }
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    fixture?.destroy()
+    fixture = undefined
+    session?.unbind()
+    session = undefined
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+    document.body.classList.remove('modal-open')
+  })
+
+  it('reads files before handshake through first-frame hold and freeze, while the adjacent route stays held', async () => {
+    const feed = shellFeed()
+    feed.push(
+      {
+        state: 'connecting',
+        firstFrameHeld: true,
+        protectedMode: { ...PROTECTED_MODE_INACTIVE, active: true },
+      },
+      'state',
+    )
+    const router = mount(feed)
+    await settle()
+    expect(feed.connection.firstFrameHeld).toBe(true)
+    expect(get('public-status-banner')?.textContent).toContain(
+      'All systems operational',
+    )
+    expect(get('maintenance')).toBeNull()
+    expect(get('page-interaction-scope')?.matches(':disabled')).toBe(false)
+    expect(get('nav-brand')?.tagName).toBe('SPAN')
+    expect(get('nav-brand')?.textContent).toContain('Public test brand')
+    expect(get('protected-mode-banner')).toBeNull()
+    expect(get('public-status-subscribe')).toBeNull()
+    ;(
+      router.currentRoute as import('@hilos/core/base').WritableSignal<PageRouteMatch>
+    ).set({ page: 'main', params: {}, admin: false })
+    await settle()
+    expect(get('app-root')).toBeNull()
+    feed.push({ firstFrameHeld: false }, 'firstFrameHold')
+    await settle()
+    expect(get('maintenance')).not.toBeNull()
+    expect(get('public-status-banner')).toBeNull()
+  })
+
+  it.each([
+    'blocked',
+    'frozen',
+    'stale',
+    'takeover',
+    'session_ended',
+    'account_blocked',
+  ])(
+    'keeps the public reader mounted under %s and preserves the other route policy',
+    async (state) => {
+      const feed = shellFeed()
+      const router = mount(feed)
+      session!.handshake({
+        entities: { currentUser: { id: 2, name: 'Bob' } },
+        data: { accountBlocked: null },
+      })
+      await settle()
+      if (state === 'blocked')
+        session!.handshake({
+          entities: { currentUser: null },
+          data: { accountBlocked: { identifier: 'bob@example.net' } },
+        })
+      if (state === 'frozen')
+        session!.handshake(reconsentHandshake({ frozen: true }))
+      if (state === 'stale')
+        feed.push(
+          {
+            rtStaleness: {
+              stale: true,
+              since: Date.now(),
+              sources: [],
+            } as unknown as RtStalenessStatus,
+          },
+          'rtStaleness',
+        )
+      if (state === 'takeover') session!.handshake(TAKEOVER)
+      if (state === 'session_ended' || state === 'account_blocked')
+        session!.handshake({
+          entities: { currentUser: null },
+          data: {
+            accessLossReason: state,
+            accountBlocked:
+              state === 'account_blocked'
+                ? { identifier: 'bob@example.net' }
+                : null,
+          },
+        })
+      await settle()
+      expect(get('public-status-banner')?.textContent).toContain(
+        'All systems operational',
+      )
+      expect(get('account-blocked')).toBeNull()
+      expect(get('legal-frozen-screen')).toBeNull()
+      expect(get('access-loss-notice')).toBeNull()
+      if (state === 'session_ended' || state === 'account_blocked')
+        expect(hilosAccessLossReason.get()).toBe(state)
+      ;(
+        router.currentRoute as import('@hilos/core/base').WritableSignal<PageRouteMatch>
+      ).set({ page: 'main', params: {}, admin: false })
+      await settle()
+      expect(get('public-status-banner')).toBeNull()
+      if (state === 'blocked' || state === 'account_blocked')
+        expect(get('account-blocked')).not.toBeNull()
+      if (state === 'frozen') expect(get('legal-frozen-screen')).not.toBeNull()
+      if (state === 'session_ended')
+        expect(get('access-loss-notice')).not.toBeNull()
+    },
+  )
+
+  it.each(['nav-logout', 'impersonation-stop', 'account-deletion-strip-keep'])(
+    'lets the file reader interact offline while %s dispatches nothing',
+    async (id) => {
+      const feed = shellFeed()
+      mount(feed)
+      session!.handshake(
+        id === 'impersonation-stop'
+          ? TAKEOVER
+          : standingHandshake('deletion_scheduled', false, Date.now() + DAY_MS),
+      )
+      await settle()
+      const button = get(id) as HTMLButtonElement
+      expect(button).not.toBeNull()
+      feed.push({ state: 'disconnected' }, 'state')
+      // Exercise a stale mounted listener before the disabled attribute catches up.
+      button.click()
+      await settle()
+      button.click()
+      expect(session!.source.sent).toEqual([])
+      expect(button.disabled).toBe(true)
+      expect(get('page-interaction-scope')?.matches(':disabled')).toBe(false)
+      const day = get('public-status-days-90')!.querySelector('button')!
+      day.focus()
+      fixture!.detectChanges()
+      expect(get('public-status-day-detail')?.textContent?.trim()).toBe(
+        day.getAttribute('aria-label'),
+      )
+    },
+  )
 })

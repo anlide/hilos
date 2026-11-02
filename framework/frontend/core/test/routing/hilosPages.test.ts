@@ -194,7 +194,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       expect(resolveHilosPath(page)).toBe(path)
       expect(router.match(path)).toEqual({ page, params: {}, admin: true })
       expect(hilosUnbuiltPages('react').has(page)).toBe(false)
-      expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
+      expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
       expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
       expect(hilosUnbuiltPages('vue', [page]).has(page)).toBe(false)
       expect(router.match(`${path}/7`).page).toBeNull()
@@ -204,7 +204,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.match('/status').page).toBe(HilosPages.PUBLIC_STATUS)
   })
 
-  it('registers Subscribers with the Vue and React views built', () => {
+  it('registers Subscribers with the Vue, React and Angular views built', () => {
     const page = HilosPages.STATUS_SUBSCRIBERS
     const path = '/hilos/status/subscribers'
     expect(page).toBe('hilos_status_subscribers')
@@ -216,10 +216,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     for (const kit of ['vue', 'react', 'angular'] as const)
-      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit === 'angular')
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
   })
 
-  it('registers Works with the Vue and React views built', () => {
+  it('registers Works with the Vue, React and Angular views built', () => {
     const page = HilosPages.STATUS_WORKS
     const path = '/hilos/status/works'
     expect(page).toBe('hilos_status_works')
@@ -231,12 +231,12 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     for (const kit of ['vue', 'react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit === 'angular')
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
       expect(hilosUnbuiltPages(kit, [page]).has(page)).toBe(false)
     }
   })
 
-  it('registers History with its approved address and the Vue and React views built', () => {
+  it('registers History with its approved address and the Vue, React and Angular views built', () => {
     const page = HilosPages.STATUS_HISTORY
     const path = '/hilos/status/history'
     expect(page).toBe('hilos_status_history')
@@ -248,7 +248,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       admin: true,
     })
     for (const kit of ['vue', 'react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(kit).has(page)).toBe(kit === 'angular')
+      expect(hilosUnbuiltPages(kit).has(page)).toBe(false)
       expect(hilosUnbuiltPages(kit, [page]).has(page)).toBe(false)
     }
   })

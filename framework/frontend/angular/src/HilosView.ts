@@ -67,6 +67,7 @@ import {
   DEFAULT_SKELETON_DELAY_MS,
   focusInitial,
   hilosAccessLossReason,
+  HilosPages,
   subscribeSignal,
 } from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
@@ -210,7 +211,9 @@ export class HilosView {
     viewChild.required<ElementRef<HTMLElement>>('accessLossSurface')
   private readonly accessLossReason = hilosSignal(hilosAccessLossReason)
   private readonly sessionEnded = computed(
-    () => this.accessLossReason() === 'session_ended',
+    () =>
+      this.route().page !== HilosPages.PUBLIC_STATUS &&
+      this.accessLossReason() === 'session_ended',
   )
   protected readonly accessLossCopy = ACCESS_LOSS_COPY
   private readonly route = hilosSignal(this.router.currentRoute)
@@ -302,6 +305,13 @@ export class HilosView {
     })
     effect(() => {
       this.pageViewState.setPages(this.pages())
+    })
+    // Public Status has no server wait to clear the previous page's copy.
+    // Clear it on route entry even while the lazy reader code is pending.
+    effect(() => {
+      if (this.route().page === HilosPages.PUBLIC_STATUS) {
+        this.pageDeparture().nativeElement.replaceChildren()
+      }
     })
     effect(() => {
       this.skeletonFlag.set(this.pageLoading())

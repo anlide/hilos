@@ -312,9 +312,35 @@ export class App {
         (module) => module.MaintenanceNodes,
       ),
     ),
+    [HilosPages.STATUS]: lazyPage(() =>
+      import('./views/hilos/status/status.js').then((module) => module.Status),
+    ),
+    [HilosPages.STATUS_COMPONENTS]: lazyPage(() =>
+      import('./views/hilos/status/components.js').then(
+        (module) => module.StatusComponents,
+      ),
+    ),
+    [HilosPages.STATUS_SUBSCRIBERS]: lazyPage(() =>
+      import('./views/hilos/status/subscribers.js').then(
+        (module) => module.StatusSubscribers,
+      ),
+    ),
+    [HilosPages.STATUS_WORKS]: lazyPage(() =>
+      import('./views/hilos/status/works.js').then(
+        (module) => module.StatusWorks,
+      ),
+    ),
+    [HilosPages.STATUS_HISTORY]: lazyPage(() =>
+      import('./views/hilos/status/history.js').then(
+        (module) => module.StatusHistory,
+      ),
+    ),
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.TERMS_HISTORY]: TermsHistory,
+    [HilosPages.PUBLIC_STATUS]: lazyPage(() =>
+      import('./views/status/status.js').then((module) => module.Status),
+    ),
     [HilosPages.PRIVACY]: Privacy,
     [HilosPages.PRIVACY_HISTORY]: PrivacyHistory,
     [HilosPages.LICENSE]: License,

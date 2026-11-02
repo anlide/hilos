@@ -231,3 +231,34 @@ describe('HilosMaintenance', () => {
     expect((byId('maintenance-pass') as HTMLInputElement).value).toBe('typo')
   })
 })
+
+it.each([
+  [false, false, false],
+  [true, false, true],
+  [true, true, true],
+  [true, true, false],
+])(
+  'keeps a native Service status exit for pass=%s issued=%s admin=%s without a socket',
+  (acceptsPass, passIssued, admin) => {
+    const h = fakeConnection()
+    const fixture = mount(
+      { ...MINTED, acceptsPass, passIssued },
+      h.connection,
+      admin,
+    )
+    const link = fixture.nativeElement.querySelector(
+      '[data-id="maintenance-service-status"]',
+    ) as HTMLAnchorElement
+    expect(link.textContent).toContain('Service status')
+    expect(link.getAttribute('href')).toBe('/status')
+    expect(link.closest('form')).toBeNull()
+    expect(link.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.addEventListener('click', (event) => {
+      expect(event.defaultPrevented).toBe(false)
+      event.preventDefault()
+    })
+    link.dispatchEvent(click)
+    expect(h.presented).toEqual([])
+  },
+)

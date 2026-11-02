@@ -758,14 +758,15 @@ its list.
 
 The public `/status` file reader is the sole page exception: nginx serves it
 without a page subscription, including on a cold load in full freeze. The built
-Vue and React shells keep its read-only page available through the first-frame
-hold, disconnect, stale heartbeat and page-level access reactions. It stays
-outside the maintenance stub, which links to it as **Service status**. This
-opens no application subscription or mutation and does not enable shell
+Vue, React and Angular shells keep its read-only page available through the
+first-frame hold, disconnect, stale heartbeat and page-level access reactions.
+It stays outside the maintenance stub, which links to it as **Service status**.
+This opens no application subscription or mutation and does not enable shell
 requests, actions or modal controls; see [status-page.md](status-page.md).
 In React the exception is carried by `HilosLayout.tsx`, `HilosView.tsx` and
-`HilosMaintenance.tsx` under `framework/frontend/react/src/`.
-The same browser exception belongs in Angular (not in the code yet — HIL-1696).
+`HilosMaintenance.tsx` under `framework/frontend/react/src/`. Angular carries
+the same page exception with a separate page interaction state while retaining
+the caller's shell interaction policy.
 
 **Both halves of the rule are keyed by the browser, and for the same reason
 (HIL-666).** The verifier reads a code out once and then behaves like a person:

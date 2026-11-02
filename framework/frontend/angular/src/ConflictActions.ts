@@ -19,13 +19,24 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   contentChild,
+  inject,
   input,
   output,
+  viewChild,
 } from '@angular/core'
-import type { TemplateRef } from '@angular/core'
+import type {
+  AfterRenderRef,
+  OnChanges,
+  SimpleChanges,
+  TemplateRef,
+} from '@angular/core'
 import { NgTemplateOutlet } from '@angular/common'
+import { focusInitial } from '@hilos/core/base'
 
 import { injectLookOnly } from './hilosLookOnly.js'
 
@@ -54,6 +65,7 @@ const CHOICE_CLASS = 'btn btn-outline-secondary'
   template: `
     @if (conflict()) {
       <div
+        #choices
         class="hilos-conflict-choices d-flex gap-2"
         data-id="conflict-choices"
       >
@@ -120,7 +132,7 @@ const CHOICE_CLASS = 'btn btn-outline-secondary'
     }
   `,
 })
-export class ConflictActions {
+export class ConflictActions implements OnChanges {
   /** Whether an unresolved conflict blocks saving. */
   readonly conflict = input(false)
   /** Disable save independently (e.g. an invalid draft). */
@@ -164,5 +176,40 @@ export class ConflictActions {
   )
   protected readonly onSave = (): void => {
     this.save.emit()
+  }
+
+  private readonly root = inject<ElementRef<HTMLElement>>(ElementRef)
+  private readonly injector = inject(Injector)
+  private readonly choices = viewChild<ElementRef<HTMLElement>>('choices')
+  private focusReturn: AfterRenderRef | undefined
+
+  ngOnChanges(changes: SimpleChanges): void {
+    const change = changes['conflict']
+    if (!change) return
+    this.focusReturn?.destroy()
+    this.focusReturn = undefined
+    if (change.previousValue !== true || change.currentValue !== false) return
+
+    // Capture before this component's template removes the focused choice.
+    const choices = this.choices()?.nativeElement
+    if (!choices?.contains(choices.ownerDocument.activeElement)) return
+    const dialog = choices.closest<HTMLElement>('[role="dialog"]')
+    if (!dialog) return
+    const root = this.root.nativeElement
+    this.focusReturn = afterNextRender(
+      () => {
+        if (
+          !root.isConnected ||
+          !dialog.isConnected ||
+          root.closest('[role="dialog"]') !== dialog ||
+          this.conflict()
+        )
+          return
+        const { activeElement, body } = dialog.ownerDocument
+        if (activeElement === null || activeElement === body)
+          focusInitial(dialog)
+      },
+      { injector: this.injector },
+    )
   }
 }

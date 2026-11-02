@@ -135,7 +135,11 @@ function fakePages() {
 }
 
 describe('public Status without a server page', () => {
-  function setup(path: string, layer: 'vue' | 'react' | 'angular' = 'vue') {
+  function setup(
+    path: string,
+    layer: 'vue' | 'react' | 'angular' = 'vue',
+    unbuiltPages = hilosUnbuiltPages(layer),
+  ) {
     const frames: unknown[] = []
     const scopes = new ScopeManager()
     const pages = new PageSubscription(
@@ -158,13 +162,13 @@ describe('public Status without a server page', () => {
       pages,
       browser.env,
       (page) => resolvePageTitle(page, {}, '', undefined, false),
-      hilosUnbuiltPages(layer),
+      unbuiltPages,
     )
     navigator.start()
     return { navigator, pages, scopes, frames, browser }
   }
 
-  it.each(['vue', 'react'] as const)(
+  it.each(['vue', 'react', 'angular'] as const)(
     'cold-loads a built %s Status without a handshake, subscription or page scope',
     (layer) => {
       const { navigator, pages, scopes, frames } = setup('/status', layer)
@@ -226,10 +230,14 @@ describe('public Status without a server page', () => {
     },
   )
 
-  it.each(['angular'] as const)(
-    'refuses an unbuilt %s Status before applying the file-reader exception',
+  it.each(['react', 'angular'] as const)(
+    'refuses an explicitly unbuilt %s Status before applying the file-reader exception',
     (layer) => {
-      const { navigator, pages, frames } = setup('/status', layer)
+      const { navigator, pages, frames } = setup(
+        '/status',
+        layer,
+        new Set([HilosPages.PUBLIC_STATUS]),
+      )
       expect(navigator.resolvePath(HilosPages.PUBLIC_STATUS)).toBeUndefined()
       expect(navigator.pageError.get()).toMatchObject({
         httpCode: 404,
@@ -237,6 +245,23 @@ describe('public Status without a server page', () => {
       })
       expect(navigator.pageLoading.get()).toBe(false)
       pages.releaseOnSession()
+      expect(frames).toEqual([])
+      navigator.stop()
+    },
+  )
+
+  it.each([
+    [HilosPages.STATUS_SUBSCRIBERS, '/hilos/status/subscribers'],
+    [HilosPages.STATUS_HISTORY, '/hilos/status/history'],
+  ] as const)(
+    'still refuses %s when explicitly marked unbuilt after Angular builds it',
+    (page, path) => {
+      const { navigator, frames } = setup(path, 'angular', new Set([page]))
+      expect(navigator.resolvePath(page)).toBeUndefined()
+      expect(navigator.pageError.get()).toMatchObject({
+        httpCode: 404,
+        errorCode: 'not_served',
+      })
       expect(frames).toEqual([])
       navigator.stop()
     },

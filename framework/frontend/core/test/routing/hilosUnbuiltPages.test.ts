@@ -38,25 +38,21 @@ describe('hilosUnbuiltPages', () => {
       )
   })
 
-  it('serves the Status Overview in Vue and React and reserves Angular for parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS]).toEqual(['angular'])
+  it('serves the Status Overview in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.STATUS)
     for (const layer of ['vue', 'react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(layer).has(HilosPages.STATUS)).toBe(
-        layer === 'angular',
-      )
+      expect(hilosUnbuiltPages(layer).has(HilosPages.STATUS)).toBe(false)
       expect(
         hilosUnbuiltPages(layer, [HilosPages.STATUS]).has(HilosPages.STATUS),
       ).toBe(false)
     }
   })
 
-  it('serves Status Components in Vue and React and reserves Angular for parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_COMPONENTS]).toEqual([
-      'angular',
-    ])
+  it('serves Status Components in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.STATUS_COMPONENTS)
     for (const layer of ['vue', 'react', 'angular'] as const) {
       expect(hilosUnbuiltPages(layer).has(HilosPages.STATUS_COMPONENTS)).toBe(
-        layer === 'angular',
+        false,
       )
       expect(
         hilosUnbuiltPages(layer, [HilosPages.STATUS_COMPONENTS]).has(
@@ -66,18 +62,23 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('serves Status History in Vue and React and reserves Angular for parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_HISTORY]).toEqual(['angular'])
+  it('serves Status History in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.STATUS_HISTORY)
     for (const layer of ['vue', 'react', 'angular'] as const)
       expect(hilosUnbuiltPages(layer).has(HilosPages.STATUS_HISTORY)).toBe(
-        layer === 'angular',
+        false,
       )
+    expect(
+      hilosUnbuiltPages('angular', [HilosPages.STATUS_HISTORY]).has(
+        HilosPages.STATUS_HISTORY,
+      ),
+    ).toBe(false)
   })
 
-  it('serves Status Subscribers in Vue and React and reserves Angular for parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_SUBSCRIBERS]).toEqual([
-      'angular',
-    ])
+  it('serves Status Subscribers in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.STATUS_SUBSCRIBERS,
+    )
     expect(hilosUnbuiltPages('vue').has(HilosPages.STATUS_SUBSCRIBERS)).toBe(
       false,
     )
@@ -86,14 +87,12 @@ describe('hilosUnbuiltPages', () => {
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.STATUS_SUBSCRIBERS),
-    ).toBe(true)
+    ).toBe(false)
   })
-  it('serves Works in Vue and React and reserves Angular for parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.STATUS_WORKS]).toEqual(['angular'])
+  it('serves Works in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.STATUS_WORKS)
     for (const kit of ['vue', 'react', 'angular'] as const) {
-      expect(hilosUnbuiltPages(kit).has(HilosPages.STATUS_WORKS)).toBe(
-        kit === 'angular',
-      )
+      expect(hilosUnbuiltPages(kit).has(HilosPages.STATUS_WORKS)).toBe(false)
       expect(
         hilosUnbuiltPages(kit, [HilosPages.STATUS_WORKS]).has(
           HilosPages.STATUS_WORKS,
@@ -334,14 +333,16 @@ describe('hilosUnbuiltPages', () => {
     ).toEqual(hilosUnbuiltPages('vue'))
   })
 
-  it('keeps the public file reader unbuilt only in Angular', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.PUBLIC_STATUS]).toEqual(['angular'])
-    for (const layer of ['vue', 'react'] as const) {
+  it('serves the public file reader in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(HilosPages.PUBLIC_STATUS)
+    for (const layer of ['vue', 'react', 'angular'] as const) {
       expect(hilosUnbuiltPages(layer).has(HilosPages.PUBLIC_STATUS)).toBe(false)
+      expect(
+        hilosUnbuiltPages(layer, [HilosPages.PUBLIC_STATUS]).has(
+          HilosPages.PUBLIC_STATUS,
+        ),
+      ).toBe(false)
     }
-    expect(hilosUnbuiltPages('angular').has(HilosPages.PUBLIC_STATUS)).toBe(
-      true,
-    )
   })
 
   it('lists admin pages and only the public Status exception, with distinct layers', () => {

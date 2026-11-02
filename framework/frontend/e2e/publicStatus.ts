@@ -1,4 +1,4 @@
-import type { Expect, Page, Request, Response } from '@playwright/test'
+import type { Expect, Page, Request, Response, Route } from '@playwright/test'
 import {
   publicStatusFileSchema,
   publicStatusHeartbeatSchema,
@@ -12,6 +12,41 @@ export const PUBLIC_STATUS_FILES = [
   '/status-data/status.json',
   '/status-data/heartbeat.json',
 ] as const
+
+/** Hold real file requests across a socket drop; release continues them unchanged. */
+export async function holdPublicStatusFiles(page: Page) {
+  const requested: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const active = new Set<Promise<void>>()
+  const matches = (url: URL): boolean =>
+    PUBLIC_STATUS_FILES.some((path) => url.pathname === path)
+  const handler = async (route: Route): Promise<void> => {
+    const operation = (async () => {
+      requested.push(new URL(route.request().url()).pathname)
+      await gate
+      await route.continue()
+    })()
+    active.add(operation)
+    try {
+      await operation
+    } finally {
+      active.delete(operation)
+    }
+  }
+  await page.route(matches, handler)
+  return {
+    requested,
+    release,
+    async dispose(): Promise<void> {
+      release()
+      await Promise.all(active)
+      await page.unroute(matches, handler)
+    },
+  }
+}
 
 /** One real browser GET, including failed or incomplete reads. */
 interface FileRead {

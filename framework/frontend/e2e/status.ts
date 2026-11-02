@@ -3,7 +3,11 @@ import {
   statusOverviewSchema,
   type HilosStatusOverviewData,
 } from '../core/src/admin/status/index.js'
-import { deliveryObject, watchDeliveryFrames } from './deliveryFrames.js'
+import {
+  deliveryObject,
+  watchDeliveryFrames,
+  type DeliveryFrameLog,
+} from './deliveryFrames.js'
 import { clickSubmit } from './input.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 
@@ -11,6 +15,63 @@ export const STATUS_PATH = '/hilos/status'
 export const STATUS_COMPONENTS_PATH = '/hilos/status/components'
 export const STATUS_LEAD =
   'A public status page: service health, incidents, and planned work.'
+
+/** Latest real page payload after a navigation bookmark. */
+export function statusPagePayload(
+  log: DeliveryFrameLog,
+  page: string,
+  since = 0,
+): Record<string, unknown> | undefined {
+  return log.packets
+    .slice(since)
+    .flatMap((packet) => packet.frames)
+    .flatMap(({ wire }) => {
+      const frame = deliveryObject(wire)
+      const data = deliveryObject(frame.data)
+      return frame.type === 'page_response' && data.page === page
+        ? [deliveryObject(data.payload)]
+        : []
+    })
+    .at(-1)
+}
+
+/** Match a Status table's latest viewport request to its real socket reply. */
+export function statusTableWindow(
+  log: DeliveryFrameLog,
+  page: string,
+  tableKey: string,
+  since: number,
+): Record<string, unknown> | undefined {
+  const request = log.sent
+    .slice(since)
+    .filter(({ wire }) => {
+      const frame = deliveryObject(wire)
+      return (
+        frame.type === 'table_viewport' &&
+        frame.page === page &&
+        frame.tableKey === tableKey
+      )
+    })
+    .at(-1)
+  if (!request) return undefined
+  const requestId = deliveryObject(request.wire).requestId
+  return log.packets
+    .filter(
+      (packet) => packet.socket === request.socket && packet.at >= request.at,
+    )
+    .flatMap((packet) => packet.frames)
+    .flatMap(({ wire }) => {
+      const frame = deliveryObject(wire)
+      const data = deliveryObject(frame.data)
+      return frame.type === 'table_window' &&
+        data.page === page &&
+        data.tableKey === tableKey &&
+        data.requestId === requestId
+        ? [data]
+        : []
+    })
+    .at(-1)
+}
 
 /** Real single/batch deliveries, parsed without replacing their transport evidence. */
 export function watchStatusFrames(page: Page) {

@@ -209,3 +209,51 @@ it('exports table text once without exposing its mount internals', () => {
     expect(root).not.toHaveProperty(name)
   }
 })
+
+it('exports the built Status views through their section and root while keeping context pages out of defaults', async () => {
+  const status = await import('@hilos/angular/admin/status')
+  expect(Object.keys(status).sort()).toEqual([
+    'HilosStatusCancelWorkModal',
+    'HilosStatusComponentsPage',
+    'HilosStatusHistoryPage',
+    'HilosStatusIncidentModal',
+    'HilosStatusPage',
+    'HilosStatusRemoveSubscriberModal',
+    'HilosStatusSubscribersPage',
+    'HilosStatusWorkModal',
+    'HilosStatusWorksPage',
+  ])
+  for (const name of [
+    'HilosStatusPage',
+    'HilosStatusComponentsPage',
+    'HilosStatusHistoryPage',
+    'HilosStatusIncidentModal',
+    'HilosStatusSubscribersPage',
+    'HilosStatusRemoveSubscriberModal',
+    'HilosStatusWorksPage',
+    'HilosStatusWorkModal',
+    'HilosStatusCancelWorkModal',
+  ] as const) {
+    expect(status[name]).toBeTypeOf('function')
+    expect(root[name]).toBe(status[name])
+    expect(base).not.toHaveProperty(name)
+  }
+  for (const page of [
+    HilosPages.STATUS,
+    HilosPages.STATUS_COMPONENTS,
+    HilosPages.STATUS_SUBSCRIBERS,
+    HilosPages.STATUS_WORKS,
+    HilosPages.STATUS_HISTORY,
+  ])
+    expect(hilosAdminViews()).not.toHaveProperty(page)
+})
+
+it('exports the public Status alias from its own section without changing the admin name', async () => {
+  const status = await import('@hilos/angular/status')
+  const admin = await import('@hilos/angular/admin/status')
+  expect(Object.keys(status)).toEqual(['HilosStatusPage'])
+  expect(root.HilosPublicStatusPage).toBe(status.HilosStatusPage)
+  expect(root.HilosStatusPage).toBe(admin.HilosStatusPage)
+  expect(base).not.toHaveProperty('HilosPublicStatusPage')
+  expect(hilosAdminViews()).not.toHaveProperty(HilosPages.PUBLIC_STATUS)
+})
