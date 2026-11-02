@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import { readFile } from 'node:fs/promises'
 
 // SSG (build-and-docker.md): the public footer pages are prerendered to static

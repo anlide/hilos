@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'

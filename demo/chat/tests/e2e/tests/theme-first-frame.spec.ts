@@ -1,4 +1,5 @@
-import { expect, test, type Route } from '@playwright/test'
+import type { Route } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import {
   THEME_PICK_STORAGE_KEY,

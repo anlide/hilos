@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import {
   armSocketDrop,
   deliveryObject as object,

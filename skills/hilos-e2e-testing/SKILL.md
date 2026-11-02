@@ -27,6 +27,10 @@ use `$hilos-testing-cli`.
   `docs/agents/frontend/testing-strategy.md`, "Choose the scenario before adding
   coverage" and "What assertions prove — seven rules", including the behavioral,
   accessibility and geometry exceptions.
+- The demo-local Playwright `test` entry, its adaptive overall test cap and
+  extension log: `docs/agents/frontend/testing-strategy.md`, "The shared
+  toolbox" and "Timeouts come from the host, not from the lanes". The individual
+  test-budget rules below still apply.
 - Which demo a new spec belongs in, and whether it carries a `spec-owner`
   line: `docs/agents/frontend/testing-strategy.md`, "Which demo carries a spec".
 - Selectors — stable action hooks and semantic h1 lookup — filling inputs,
@@ -177,6 +181,9 @@ use `$hilos-testing-cli`.
   one test.
 - Never raise a test's cap that was not already near it on the base, and never
   raise an `expect`, action or navigation timeout to cure a red test.
+- Import a demo's `test` from its local `tests/e2e/test.js` entry by relative
+  path. `expect`, Playwright types, `defineConfig` and `devices` may still come
+  from `@playwright/test`. See "The shared toolbox" in the canonical strategy.
 - A file in `framework/frontend/e2e/` imports from `@playwright/test` with
   `import type` and nothing else — a value import loads a second Playwright and
   the runner refuses the run. Checks, including `clickSubmit` preparation, take

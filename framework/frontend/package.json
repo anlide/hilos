@@ -14,6 +14,7 @@
     "check": "npm run check --workspaces --if-present",
     "test": "vitest run",
     "test:quarantine": "node scripts/test/playwright-quarantine/run.mjs",
+    "test:timeout": "node scripts/test/playwright-timeout/run.mjs",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test as base } from '@playwright/test'
+import { expect, test as base } from '../test.js'
 
 import {
   addModerationRule,

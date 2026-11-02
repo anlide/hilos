@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import { gotoPage } from '../../../../../framework/frontend/e2e/index.js'
 
 // Category-1 smoke (testing-strategy.md): the Vue app renders from the built

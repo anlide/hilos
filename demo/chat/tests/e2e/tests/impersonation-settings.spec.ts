@@ -1,6 +1,7 @@
 // The administrator's impersonation settings (HIL-1170): the first case moved to
 // polls; this view-only takeover test waits for HIL-1290 and writes a chat message.
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import {
   dismissToasts,

@@ -1,4 +1,5 @@
-import { test, expect, type BrowserContext } from '@playwright/test'
+import type { BrowserContext } from '@playwright/test'
+import { test, expect } from '../test.js'
 
 import {
   logout,

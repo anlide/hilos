@@ -9,7 +9,7 @@ import {
   gotoPage,
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 test('a blocked account prepares and downloads its data after a credited password sign-in', async ({
   browser,

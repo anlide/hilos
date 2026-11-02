@@ -1,4 +1,4 @@
-import { expect as baseExpect, test as base } from '@playwright/test'
+import { expect as baseExpect, test as base } from '../test.js'
 import type { PublicStatusFile } from '../../../../../framework/frontend/core/src/status/index.js'
 import {
   STATUS_PATH,

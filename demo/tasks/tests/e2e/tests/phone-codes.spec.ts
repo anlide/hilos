@@ -1,4 +1,5 @@
-import { test, expect, type Locator } from '@playwright/test'
+import type { Locator } from '@playwright/test'
+import { test, expect } from '../test.js'
 import {
   continueFromDone,
   logout,

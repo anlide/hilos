@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../../test.js'
 
 import { CLUSTER_FOLLOWER, newMasterPage } from '../../helpers/cluster.js'
 import { FOLLOWED_STREAM } from '../../helpers/logs.js'

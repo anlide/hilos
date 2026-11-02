@@ -15,6 +15,7 @@ const timeouts = scaledTimeouts()
 export default defineConfig({
   testDir: './tests',
   timeout: timeouts.test,
+  metadata: { hilosTimeoutScale: timeouts.scale },
   expect: { timeout: timeouts.expect },
   globalSetup: './global-setup.ts',
   fullyParallel: true,

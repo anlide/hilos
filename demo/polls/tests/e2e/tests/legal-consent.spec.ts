@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import { readRegisterCode } from '../../../../../framework/frontend/scripts/mail.mjs'
 import {

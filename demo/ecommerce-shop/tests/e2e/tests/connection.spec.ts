@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import { gotoPage } from '../../../../../framework/frontend/e2e/index.js'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the

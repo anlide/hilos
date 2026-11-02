@@ -1,4 +1,4 @@
-import { expect as baseExpect, test } from '@playwright/test'
+import { expect as baseExpect, test } from '../test.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {

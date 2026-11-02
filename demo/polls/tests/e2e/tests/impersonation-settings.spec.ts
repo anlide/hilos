@@ -5,7 +5,8 @@
 //
 // The settings are the installation's own, so each test puts back what it moved
 // whatever happens.
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import {
   createTestUser,

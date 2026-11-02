@@ -1,4 +1,5 @@
-import { test, expect, type Expect, type Page } from '@playwright/test'
+import type { Expect, Page } from '@playwright/test'
+import { test, expect } from '../test.js'
 import { fileURLToPath } from 'node:url'
 import { createLegacyBackupFixture } from '../../../../../framework/frontend/scripts/backupFixture.mjs'
 import {

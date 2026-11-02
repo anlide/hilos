@@ -1,4 +1,5 @@
-import { expect, test as baseTest, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test as baseTest } from '../../test.js'
 
 import {
   dismissToasts,

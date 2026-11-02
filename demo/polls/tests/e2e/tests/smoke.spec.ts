@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import {
   HILOS_STATUS_COMPONENTS_COPY,
   statusComponentSchema,

@@ -1,4 +1,4 @@
-import { expect, test as base } from '@playwright/test'
+import { expect, test as base } from '../test.js'
 import { localDateTimeValue } from '../../../../../framework/frontend/core/src/timeZone/localDateTime.js'
 import {
   cleanupFixtures,

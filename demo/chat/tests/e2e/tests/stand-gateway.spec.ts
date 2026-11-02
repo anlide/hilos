@@ -1,6 +1,6 @@
 import { connect } from 'node:tls'
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 
 import {
   dictateGatewayBehavior,

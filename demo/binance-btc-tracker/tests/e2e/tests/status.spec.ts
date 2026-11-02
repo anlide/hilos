@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { expect as baseExpect, test } from '@playwright/test'
+import { expect as baseExpect, test } from '../test.js'
 import {
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,

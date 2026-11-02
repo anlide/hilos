@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../test.js'
 import { grantAdminToSelf } from '../../../../../framework/frontend/e2e/index.js'
 
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard

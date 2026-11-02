@@ -10,7 +10,7 @@
 // runs in the polls and tasks e2e suites through test:account:force-purge.
 // The code-sent step of the window belongs to the session (HIL-1183): its
 // tabs move together, and a reload resumes it when the person opens the window.
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 import {
   PASSWORD,
   createTestUser,

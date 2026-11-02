@@ -12,6 +12,7 @@ export default defineConfig({
   testDir: './cluster',
   globalSetup: './cluster/global-setup.ts',
   timeout: timeouts.test,
+  metadata: { hilosTimeoutScale: timeouts.scale },
   expect: { timeout: timeouts.expect },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

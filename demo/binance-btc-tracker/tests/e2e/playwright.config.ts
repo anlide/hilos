@@ -20,6 +20,7 @@ export default defineConfig({
   // so this suite keeps both one level down, beside the cluster folders.
   outputDir: 'test-results/main',
   timeout: timeouts.test,
+  metadata: { hilosTimeoutScale: timeouts.scale },
   expect: { timeout: timeouts.expect },
   globalSetup: './global-setup.ts',
   fullyParallel: true,

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../test.js'
 import { EventEmitter } from 'node:events'
 
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'

@@ -1,10 +1,5 @@
-import {
-  test,
-  expect,
-  type Browser,
-  type Locator,
-  type Page,
-} from '@playwright/test'
+import type { Browser, Locator, Page } from '@playwright/test'
+import { test, expect } from '../test.js'
 
 import {
   createTestUserJoined,

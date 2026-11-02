@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import {
   COMMUNICATIONS_FRAME_PATH,

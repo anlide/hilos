@@ -1,4 +1,4 @@
-import { expect, test as base } from '@playwright/test'
+import { expect, test as base } from '../test.js'
 import {
   applyStatusSubscribers,
   cleanupFixtures,

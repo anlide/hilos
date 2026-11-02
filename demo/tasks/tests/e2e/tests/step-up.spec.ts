@@ -2,7 +2,7 @@
 // application chooses the account's strongest available proof, the modal keeps
 // that proof as its first step, and an administrator may narrow the declared
 // operation list. Mail codes are read from the stand mailbox, never a backdoor.
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import {
   PASSWORD,

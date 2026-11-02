@@ -5,7 +5,8 @@
 // administrator turns off for everyone and back on (HIL-1303). The removal notice
 // rides notification delivery, tested in chat's second-factor-mail.spec.ts. The codes are
 // computed here from the secret the enrolment screen prints, as any app would.
-import { test, expect, type Browser, type Page } from '@playwright/test'
+import type { Browser, Page } from '@playwright/test'
+import { test, expect } from '../test.js'
 
 import {
   PASSWORD,

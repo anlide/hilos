@@ -573,6 +573,14 @@ Before creating, changing, moving, splitting or porting an e2e spec or helper:
    first consumer**. Shared meaning decides placement; a second copy is not a
    prerequisite.
 
+Each demo's Playwright `test` is imported through its local
+`tests/e2e/test.js` entry by relative path. That entry composes the demo's
+installed Playwright base with `withAdaptiveTimeouts`. Specs and helpers may
+still import `expect`, Playwright types, `defineConfig` and `devices` from
+`@playwright/test`; the demo import guard rejects value imports of `test` through
+named, aliased, namespace, default or re-export forms, with
+`demo/*/tests/e2e/test.ts` as its only exception.
+
 From `demo/*/tests/e2e/tests/`, both homes are reached directly:
 
 ```ts
@@ -1620,6 +1628,47 @@ about to swap costs far more than its load average admits. An unmeasurable host
 resolves to 1.0, and a runaway one is capped at 4.0 so a genuine hang ends. This
 is the one path there is: the heuristic runs the same inside the full run and
 under Playwright started by hand.
+
+Each demo config passes its initial factor as `metadata.hilosTimeoutScale` to
+the local test entry's `withAdaptiveTimeouts` fixture. The automatic fixture is
+test-scoped and has no browser or page dependency. It samples host pressure
+immediately during fixture setup, before `beforeEach`, then every two seconds.
+Its narrow adapter supports Playwright 1.60.0. It checks the public
+`FullConfig.version` first, then validates the timeout-manager shape before
+reading pressure, registering its finish callback or changing a timeout. An
+unsupported version throws `hilos adaptive timeouts: unsupported Playwright
+version "<actual>"; supported: 1.60.0`; an unexpected internal shape throws
+`hilos adaptive timeouts: incompatible Playwright 1.60.0 timeout internals`.
+Either error fails fixture setup, so the run is red and the test body does not
+start. There is no warning or fallback. This adapter is the only production
+access to Playwright's timeout internals.
+
+During an active test or `beforeEach`, the sampler can only raise the native
+overall cap in Playwright's `defaultSlot`, using the greatest factor reached in
+that attempt (capped at 4). It preserves the slot's elapsed time and start, and
+reschedules its live deadline only when that overall slot is active. If a timed
+fixture owns the current slot, including a lazy worker fixture, the adapter
+updates the saved overall cap without changing that fixture's timeout, deadline
+or elapsed time; Playwright uses the new cap when it returns to `defaultSlot`.
+The adapter does not use the public `TestInfo.setTimeout` for sampler writes.
+The controller scales from the attempt's baseline, preserves `slow()` and
+explicit timeout adjustments without repeatedly accumulating an extension, and
+never lowers the cap. A timeout of zero stays disabled.
+
+The finish callback stops the sampler before cleanup; the fixture's `finally`
+also stops it on every exit. Writes are limited to the active test and
+`beforeEach`, so `afterEach`, `afterAll`, teardown and worker-scoped budgets are
+not adapted. Cleanup uses Playwright's normal `afterHooksSlot`, initially capped
+at `max(project.timeout, testInfo.timeout)` with elapsed time zero. A higher cap
+reached earlier can therefore raise cleanup's starting budget, but sampling
+does not grow it after cleanup starts. This is not a fixed 30-second cleanup
+budget. `expect`, action and navigation caps remain unchanged.
+
+Only a confirmed increase to the overall cap emits one
+`hilos-timeout-extended: <JSON>` line with test context, host measurements, the
+previous and new caps, the factor and its reason. This includes a saved overall
+cap updated while a separate timed fixture is active. Rejected writes, cleanup,
+ordinary samples, non-increases and falling pressure stay quiet.
 
 `HILOS_E2E_TIMEOUT_SCALE` is a **pin made by hand** — someone debugging a step, a
 CI that knows its own box. The demo compose files only forward it into the e2e

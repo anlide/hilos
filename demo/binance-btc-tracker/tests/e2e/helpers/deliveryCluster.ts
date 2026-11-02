@@ -7,7 +7,7 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 
 import { CLUSTER_MASTERS, CLUSTER_SLAVES, type ClusterView } from './cluster.js'
 

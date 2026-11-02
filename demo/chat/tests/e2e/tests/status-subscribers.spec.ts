@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../test.js'
 import {
   STATUS_PATH,
   STATUS_SUBSCRIBERS_PATH,

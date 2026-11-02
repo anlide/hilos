@@ -3,7 +3,8 @@
 // address, then a code to the address, the warning with the date, and "Keep my
 // account" in one press. The code is read from the stand mailbox, never a
 // backdoor. The erasure case drives test:account:force-purge through the live daemon.
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../test.js'
 import {
   PASSWORD,
   createTestUser,

@@ -1,6 +1,7 @@
 // Mandatory removal notice of two-step verification rides notification delivery,
 // which is enabled only in chat and binance-btc-tracker.
-import { test, expect, type Browser, type Page } from '@playwright/test'
+import type { Browser, Page } from '@playwright/test'
+import { test, expect } from '../test.js'
 
 import {
   PASSWORD,

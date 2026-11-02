@@ -183,7 +183,7 @@ it('keeps the raw npm script and the original frontend gate around the wrapper',
   )
   expect(workspace.scripts.lint).toBe('eslint . --max-warnings 0')
   expect(composer.scripts['test:framework:frontend']).toContain(
-    `sh -c "set -e; echo '--- frontend: check'; npm run check; echo '--- frontend: unit'; npm run test; echo '--- frontend: quarantine CLI integration'; npm run test:quarantine; echo '--- frontend: lint'; node scripts/lint-with-timeout.mjs; echo '--- frontend: format-check'; npm run format:check"`,
+    `sh -c "set -e; echo '--- frontend: check'; npm run check; echo '--- frontend: unit'; npm run test; echo '--- frontend: quarantine CLI integration'; npm run test:quarantine; echo '--- frontend: timeout CLI integration'; npm run test:timeout; echo '--- frontend: lint'; node scripts/lint-with-timeout.mjs; echo '--- frontend: format-check'; npm run format:check"`,
   )
 })
 

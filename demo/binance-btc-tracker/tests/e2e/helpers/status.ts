@@ -1,4 +1,5 @@
-import { expect, test, type Expect, type Page } from '@playwright/test'
+import type { Expect, Page } from '@playwright/test'
+import { expect, test } from '../test.js'
 import { randomUUID } from 'node:crypto'
 import { readFile, rm, stat, writeFile } from 'node:fs/promises'
 import {

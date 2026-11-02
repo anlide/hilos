@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { test, expect } from '../test.js'
 import {
   PAGE_READY,
   STATUS_COMPONENTS_PATH,

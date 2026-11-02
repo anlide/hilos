@@ -1,10 +1,5 @@
-import {
-  test,
-  expect,
-  type Locator,
-  type Page,
-  type TestInfo,
-} from '@playwright/test'
+import type { Locator, Page, TestInfo } from '@playwright/test'
+import { test, expect } from '../test.js'
 
 import {
   expectDataFreeDeparture,
