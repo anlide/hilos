@@ -7,6 +7,7 @@ namespace Demo\OnlineTesting\Tests\Unit;
 use Demo\OnlineTesting\Pages\Hilos\LicenseDependenciesPage;
 use Demo\OnlineTesting\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
@@ -1602,6 +1603,24 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
         $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
         $this->assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
+    }
+
+    /** The project opts the complete Logs owner entry into the shared head. */
+    public function testLogsCatalogAdoptsTheSharedHeadWithACompleteEntry(): void
+    {
+        Hilos::initBrowser();
+        try {
+            self::assertSame(PageCatalog::class, Hilos::getPageCatalogClass());
+        } finally {
+            Hilos::resetBrowser();
+        }
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            PageCatalog::pages()[HilosPageConstants::HILOS_LOGS],
+        );
     }
 
     public function testLogsAdminFeatureIsActivated(): void

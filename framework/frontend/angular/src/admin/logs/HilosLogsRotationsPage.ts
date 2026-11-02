@@ -14,10 +14,11 @@
 // arrives, not when the ack does. A taken batch carries the other half of that
 // (HIL-759): a trigger that takes the word back while the batch is still on disk,
 // behind a modal naming when its node's cleaner may first delete it. Deleting a taken
-// batch is HIL-382, and there is no way through to the viewer yet because it takes no
-// batch address (HIL-388). All table logic, the row view-model, the empty-state
-// discrimination and the wording are the core headless's (hilosLogRotations); this view
-// owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
+// batch is HIL-382. A kept batch links to the viewer by its node and batch time;
+// a carrying batch waits until the move is over. All table logic, the row view-model,
+// the empty-state discrimination and the wording are the core headless's
+// (hilosLogRotations); this view owns only the markup, so a project mounts it by
+// passing its HilosLogRotationsContext.
 // Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
@@ -38,6 +39,7 @@ import {
 import {
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
+  HILOS_ROTATION_STATE_KEPT,
   HILOS_ROTATION_STATE_TAKEN,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
@@ -50,6 +52,7 @@ import {
   formatRotationState,
   formatRotationWeight,
   hasRotationNodes,
+  logViewerPath,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   rotationTakeoutNotice,
@@ -108,7 +111,7 @@ const RETENTION_CLASS: Record<string, string> = {
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Logs pages">
       <div
         class="d-flex flex-wrap align-items-center gap-3 border rounded-3 p-3 mb-4"
       >
@@ -147,6 +150,15 @@ const RETENTION_CLASS: Record<string, string> = {
         <ng-template hilosTableCell="batchAt" let-row>
           <div class="fw-semibold small">{{ batchTime(row) }}</div>
           <code class="small text-body-secondary">{{ row.path }}</code>
+          @if (row.retentionState === stateCarrying) {
+            <span
+              class="small text-body-secondary"
+              data-id="hilos-rotation-moving-address"
+            >
+              <i class="bi bi-arrow-right" aria-hidden="true"></i>
+              going to the archive
+            </span>
+          }
         </ng-template>
         <ng-template hilosTableCell="node" let-row>{{ row.node }}</ng-template>
         <ng-template hilosTableCell="daemonFileCount" let-row>
@@ -161,6 +173,23 @@ const RETENTION_CLASS: Record<string, string> = {
           </span>
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
+          @if (row.retentionState === stateKept) {
+            <a
+              [hilosLink]="batchViewerPath(row)"
+              class="btn btn-sm btn-outline-secondary text-nowrap"
+              data-id="hilos-rotation-view"
+            >
+              View
+            </a>
+          }
+          @if (row.retentionState === stateCarrying) {
+            <span
+              class="small text-body-secondary"
+              data-id="hilos-rotation-moving-wait"
+            >
+              wait until the move is over
+            </span>
+          }
           @if (offersTakeout(row)) {
             <button
               type="button"
@@ -444,6 +473,8 @@ export class HilosLogsRotationsPage {
   readonly context = input.required<HilosLogRotationsContext>()
 
   protected readonly page = HilosPages.LOGS_ROTATIONS
+  protected readonly stateKept = HILOS_ROTATION_STATE_KEPT
+  protected readonly stateCarrying = HILOS_ROTATION_STATE_CARRYING
   protected readonly formatFileCounts = formatRotationFileCounts
   protected readonly formatRetention = formatRetentionRule
   protected readonly formatRule = formatRotationRule
@@ -619,6 +650,15 @@ export class HilosLogsRotationsPage {
   protected batchTime(row: HilosLogRotationRow): string {
     this.timeZone()
     return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
+  }
+
+  protected batchViewerPath(row: HilosLogRotationRow): string {
+    return logViewerPath({
+      nodeId: row.node,
+      source: row.batchAt,
+      stream: null,
+      anchorAtMs: null,
+    })
   }
 
   protected retentionClass(row: HilosLogRotationRow): string {

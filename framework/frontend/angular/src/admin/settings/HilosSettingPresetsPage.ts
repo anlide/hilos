@@ -75,7 +75,11 @@ import {
     LoadingButton,
   ],
   template: `
-    <hilos-admin-page [page]="page()">
+    <hilos-admin-page
+      [page]="page()"
+      [headKind]="headKind()"
+      [tabsLabel]="tabsLabel()"
+    >
       <p class="text-body-secondary">{{ vocabulary().intro }}</p>
 
       <h2 class="h6 mb-2">{{ vocabulary().groupHeading }}</h2>
@@ -236,6 +240,10 @@ import {
 export class HilosSettingPresetsPage {
   /** The page key the admin shell draws its breadcrumb, heading and lead from. */
   readonly page = input.required<string>()
+  /** The shared head's kind, also selecting its skeleton before the answer. */
+  readonly headKind = input<'section' | 'entity'>()
+  /** The shared head's tab row navigation's accessible name. */
+  readonly tabsLabel = input('Page sections')
   /** The project context: the connection the frames arrive on and the action lifecycle. */
   readonly context = input.required<HilosSettingPresetsContext>()
   /** Server→client signal `type` this section's group frame arrives under. */

@@ -19,6 +19,8 @@ import { HilosSettingPresetsPage } from '@hilos/angular/admin/settings'
   imports: [HilosSettingPresetsPage],
   template: `
     <hilos-setting-presets-page
+      headKind="section"
+      tabsLabel="Logs pages"
       [page]="page"
       [context]="context()"
       [signal]="signal"

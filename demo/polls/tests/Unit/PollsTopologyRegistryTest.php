@@ -2015,6 +2015,24 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
     }
 
+    /** The project opts the complete Logs owner entry into the shared head. */
+    public function testLogsCatalogAdoptsTheSharedHeadWithACompleteEntry(): void
+    {
+        Hilos::initBrowser();
+        try {
+            self::assertSame(PageCatalog::class, Hilos::getPageCatalogClass());
+        } finally {
+            Hilos::resetBrowser();
+        }
+        self::assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LOGS],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            PageCatalog::pages()[HilosPageConstants::HILOS_LOGS],
+        );
+    }
+
     public function testLogsAdminFeatureIsActivated(): void
     {
         // The logs section is a configure-only framework feature: the demo registers the six

@@ -66,11 +66,13 @@ function header(
  *
  * @param params The route params the screen was entered with.
  * @param rewrites Collects every address passed to `replacePath`.
+ * @param navigations Collects every address passed to `navigate`.
  * @returns The navigator.
  */
 function router(
   params: Record<string, string> = {},
   rewrites: string[] = [],
+  navigations: string[] = [],
 ): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
@@ -89,7 +91,9 @@ function router(
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     onLeave: () => () => {},
-    navigate: () => {},
+    navigate: (pathname: string) => {
+      navigations.push(pathname)
+    },
     replacePath: (pathname: string) => {
       rewrites.push(pathname)
     },
@@ -112,6 +116,7 @@ function makeConnection(): {
   pushHeader: (frame: HilosLogRotationsHeader) => void
   pushWindow: (rows: Record<string, unknown>[]) => void
   pushPageWindow: (rows: Record<string, unknown>[]) => void
+  pushRowUpdated: (row: Record<string, unknown>) => void
   pushFocusedChange: (row?: Record<string, unknown>) => void
 } {
   const projectListeners: ((signal: {
@@ -225,6 +230,19 @@ function makeConnection(): {
         listener({ type: ROTATIONS_HEADER_SIGNAL, data: frame })
       }
     },
+    pushRowUpdated(row: Record<string, unknown>): void {
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.LOGS_ROTATIONS,
+            tableKey: 'hilosLogRotations',
+            kind: 'row_updated',
+            rowKey: String(row.rowKey),
+            row: { rowKey: String(row.rowKey), slots: { batch: row } },
+          },
+        })
+      }
+    },
     pushWindow(rows: Record<string, unknown>[]): void {
       for (const listener of windowListeners) {
         listener({
@@ -289,7 +307,7 @@ function batch(
   return {
     rowKey: 'node-1:1800000000',
     batchAt: 1800000000000,
-    node: null,
+    node: 'node-1',
     nodeName: null,
     path: 'archive/2027-01-15-08-00-00Z/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00Z/',
@@ -502,6 +520,99 @@ describe('HilosLogsRotationsPage', () => {
     )
   })
 
+  it('opens a kept standalone batch at its node and millisecond source without choosing a stream', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const navigations: string[] = []
+    const fixture = mountPage(
+      connection,
+      makeActions().actions,
+      router({}, [], navigations),
+    )
+
+    pushHeader(header())
+    pushWindow([batch({ rowKey: 'standalone:1800000000', node: 'standalone' })])
+    fixture.detectChanges()
+
+    const view = byId(fixture, 'hilos-rotation-view')
+    expect(view).toBeInstanceOf(HTMLAnchorElement)
+    expect(view?.textContent?.trim()).toBe('View')
+    expect(view?.getAttribute('href')).toBe(
+      '/hilos/logs/view/standalone/1800000000000',
+    )
+    expect(navigations).toEqual([])
+
+    const click = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    })
+    view?.dispatchEvent(click)
+
+    expect(click.defaultPrevented).toBe(true)
+    expect(navigations).toEqual(['/hilos/logs/view/standalone/1800000000000'])
+  })
+
+  it('keeps equal batch moments on different nodes distinct and offers View only for kept batches', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const fixture = mountPage(connection)
+
+    pushHeader(
+      header({
+        nodes: [
+          { nodeId: 'node-1', nodeName: null },
+          { nodeId: 'node-2', nodeName: null },
+        ],
+      }),
+    )
+    pushWindow([
+      batch(),
+      batch({ rowKey: 'node-2:1800000000', node: 'node-2' }),
+      batch({
+        rowKey: 'node-1:1800000001',
+        batchAt: 1800000001000,
+        retentionState: 'due',
+      }),
+      batch({
+        rowKey: 'node-1:1800000002',
+        batchAt: 1800000002000,
+        retentionState: 'taken',
+      }),
+    ])
+    fixture.detectChanges()
+
+    const paths = Array.from(allById(fixture, 'hilos-rotation-view'), (link) =>
+      link.getAttribute('href'),
+    )
+    expect(new Set(paths)).toEqual(
+      new Set([
+        '/hilos/logs/view/node-1/1800000000000',
+        '/hilos/logs/view/node-2/1800000000000',
+      ]),
+    )
+    expect(byId(fixture, 'hilos-rotation-takeout')).not.toBeNull()
+    expect(byId(fixture, 'hilos-rotation-undo')).not.toBeNull()
+  })
+
+  it('lets a viewer follow a kept batch without dispatching a write action', () => {
+    bindSession().handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const navigations: string[] = []
+    const fixture = mountPage(connection, actions, router({}, [], navigations))
+
+    pushHeader(header())
+    pushWindow([batch()])
+    fixture.detectChanges()
+
+    expect(byId(fixture, 'hilos-rotation-view')?.getAttribute('href')).toBe(
+      '/hilos/logs/view/node-1/1800000000000',
+    )
+    clickById(fixture, 'hilos-rotation-view')
+
+    expect(navigations).toEqual(['/hilos/logs/view/node-1/1800000000000'])
+    expect(dispatched).toEqual([])
+  })
+
   /**
    * The confirmation is not the end of the batch, and the modal that asks for it
    * has to say so: a promise that nothing will be touched would read as though the
@@ -526,7 +637,7 @@ describe('HilosLogsRotationsPage', () => {
     )
     const batchBefore = formatMoment(batchAt, { kind: 'dateTime' }) ?? '—'
     expect(title?.textContent?.trim()).toBe(
-      `Carrying off the batch of ${batchBefore}`,
+      `Carrying off the batch of ${batchBefore} · node-1`,
     )
     expect(screenText(fixture)).toContain('but not straight away')
     expect(screenText(fixture)).not.toContain(
@@ -545,7 +656,7 @@ describe('HilosLogsRotationsPage', () => {
       ),
     ).toBe(title)
     expect(title?.textContent?.trim()).toBe(
-      `Carrying off the batch of ${batchAfter}`,
+      `Carrying off the batch of ${batchAfter} · node-1`,
     )
     expect(byId(fixture, 'hilos-rotation-takeout-confirm')).not.toBeNull()
   })
@@ -571,26 +682,55 @@ describe('HilosLogsRotationsPage', () => {
   /**
    * A batch on its way to the archive is a fourth state, and it is the state in
    * which neither action applies: it is not being recommended for carrying off, and
-   * nobody has said it was carried off. The badge has to say where it is instead.
+   * nobody has said it was carried off. Reading waits until the batch is whole.
    */
-  it('shows a batch still being carried as such, and offers it neither action', () => {
-    const { connection, pushHeader, pushWindow } = makeConnection()
+  it('waits at the actual carrying path and offers View when the same row becomes kept', () => {
+    const { connection, pushHeader, pushWindow, pushRowUpdated } =
+      makeConnection()
     const fixture = mountPage(connection)
+    const moving = batch({
+      path: 'staging/2027-01-15-08-00-00Z/',
+      retentionState: 'carrying',
+    })
 
     pushHeader(header())
-    pushWindow([
-      batch({ rowKey: 'a:1', batchAt: 1000, retentionState: 'carrying' }),
-    ])
+    pushWindow([moving])
     fixture.detectChanges()
 
+    const rowId = `hilos-table-row-${String(moving.rowKey)}`
+    const row = byId(fixture, rowId)
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain('staging/2027-01-15-08-00-00Z/')
     expect(screenText(fixture)).toContain('Moving to the archive')
-    expect(
-      (fixture.nativeElement as HTMLElement).querySelector(
-        '.table-responsive .badge.text-bg-info',
-      )?.className,
-    ).toContain('text-bg-info')
+    const address = byId(fixture, 'hilos-rotation-moving-address')
+    expect(address?.textContent).toContain('going to the archive')
+    const decoration = address?.querySelector<HTMLElement>(
+      '[aria-hidden="true"]',
+    )
+    expect(decoration).not.toBeNull()
+    expect(decoration?.tabIndex).toBe(-1)
+    expect(byId(fixture, 'hilos-rotation-moving-wait')?.textContent).toContain(
+      'wait until the move is over',
+    )
+    expect(allById(fixture, 'hilos-rotation-view')).toHaveLength(0)
     expect(allById(fixture, 'hilos-rotation-takeout')).toHaveLength(0)
     expect(allById(fixture, 'hilos-rotation-undo')).toHaveLength(0)
+
+    pushRowUpdated({
+      ...moving,
+      path: 'archive/2027-01-15-08-00-00Z/',
+      retentionState: 'kept',
+    })
+    fixture.detectChanges()
+
+    expect(byId(fixture, rowId)).toBe(row)
+    expect(row?.textContent).toContain('archive/2027-01-15-08-00-00Z/')
+    expect(row?.textContent).not.toContain('staging/')
+    expect(allById(fixture, 'hilos-rotation-moving-wait')).toHaveLength(0)
+    expect(allById(fixture, 'hilos-rotation-moving-address')).toHaveLength(0)
+    expect(byId(fixture, 'hilos-rotation-view')?.getAttribute('href')).toBe(
+      '/hilos/logs/view/node-1/1800000000000',
+    )
   })
 
   /**

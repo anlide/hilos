@@ -1,16 +1,7 @@
-// HilosLogsPage — the framework Hilos logs page (HilosPages.LOGS): the root of the
-// section and its overview. It answers two questions at once, "is anything wrong with
-// the journals" and "where do I go from here", so it keeps the shell's cards to its
-// child pages and puts its own figures underneath them.
-// Everything on it arrives in ONE frame of the page's own signal and refreshes itself
-// by push; there is no table viewport, because the per-node rows are one per node that
-// reported and fit in that frame whole. The screen commands nothing: the takeout banner
-// and the per-node badge are ordinary links into the rotations history, at the
-// address that opens it on the awaiting filter (HIL-903) — the batches the counter
-// names. Which of the two empty states it is in, and the wording of every figure,
-// are the core headless's (hilosLogsOverview); this view owns only the markup, so a
-// project mounts it by passing its HilosLogsOverviewContext. Bootstrap classes only
-// (styling-rules.md).
+// The logs overview keeps the complete summary and a page-scoped By node window.
+// The subscription supplies both; later overview frames and table windows refresh
+// them by push. The core owns their data, forecast and empty-state wording. This
+// view supplies the cells and links into the rotations awaiting takeout.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -20,6 +11,7 @@ import {
   signal,
 } from '@angular/core'
 import {
+  createHilosLogNodesTable,
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
@@ -46,16 +38,28 @@ import {
   logsOverviewRecentTabLabel,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
+  logsOverviewThresholdPassed,
+  NODE_ARCHIVE_BYTES_FIELD,
+  NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD,
+  NODE_GROWTH_BYTES_PER_DAY_FIELD,
+  NODE_ID_FIELD,
+  NODE_LAST_ROTATION_AT_FIELD,
+  NODE_LIVE_BYTES_FIELD,
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import { HilosPages, hilosTimeZone, subscribeSignal } from '@hilos/core/base'
+import {
+  formatMoment,
+  HilosPages,
+  hilosTimeZone,
+  subscribeSignal,
+} from '@hilos/core/base'
 import type {
   HilosLogsOverview,
   HilosLogsOverviewRecentEntry,
 } from '@hilos/core/base'
 import type {
-  HilosLogsOverviewContext,
+  HilosLogNodesContext,
   HilosLogsRecentTab,
 } from '@hilos/core/admin/logs'
 
@@ -63,6 +67,8 @@ import {
   HilosAdminPage,
   HilosHideable,
   HilosLink,
+  HilosTableCell,
+  HilosViewportTable,
   hilosSignal,
 } from '@hilos/angular/base'
 
@@ -70,9 +76,15 @@ import {
 @Component({
   selector: 'hilos-logs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosHideable, HilosLink],
+  imports: [
+    HilosAdminPage,
+    HilosHideable,
+    HilosLink,
+    HilosTableCell,
+    HilosViewportTable,
+  ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Logs pages">
       <div
         class="row row-cols-1 row-cols-sm-2 g-3 mb-3"
         data-id="hilos-logs-tiles"
@@ -97,12 +109,19 @@ import {
         </div>
 
         <div class="col">
-          <div class="border rounded-3 p-3 h-100">
-            <div
-              class="d-flex align-items-center gap-2 text-body-secondary mb-1"
-            >
-              <i class="bi bi-graph-up-arrow" aria-hidden="true"></i>
-              <span class="small">Written per day</span>
+          <div
+            class="border rounded-3 p-3 h-100"
+            [class.border-danger]="thresholdPassed()"
+            data-id="hilos-logs-growth-tile"
+          >
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i
+                class="bi bi-graph-up-arrow"
+                [class.text-danger]="thresholdPassed()"
+                [class.text-body-secondary]="!thresholdPassed()"
+                aria-hidden="true"
+              ></i>
+              <span class="small text-body-secondary">Written per day</span>
             </div>
             <div class="fs-4 lh-1 mb-1" data-id="hilos-logs-tile-growth">
               {{ growth() }}
@@ -115,15 +134,20 @@ import {
                 {{ note }}
               </div>
             }
-            <!-- Last of the three on purpose: the note above qualifies the
-            figure, and this line says what the figure MEANS for the disk. The
-            consequence is read after the caveat, and it is shown even while the
-            caveat stands - the rate is there to divide by either way. -->
+            <!-- A reached threshold remains a warning before a rate is known. -->
             @if (growthForecast(); as forecast) {
               <div
-                class="small text-body-secondary"
+                class="small"
+                [class.text-danger-emphasis]="thresholdPassed()"
+                [class.text-body-secondary]="!thresholdPassed()"
                 data-id="hilos-logs-growth-forecast"
               >
+                @if (thresholdPassed()) {
+                  <i
+                    class="bi bi-exclamation-triangle me-1"
+                    aria-hidden="true"
+                  ></i>
+                }
                 <hilos-hideable [value]="forecast" />
               </div>
             }
@@ -347,104 +371,48 @@ import {
       }
 
       @if (clustered()) {
-        <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
-          <h2 class="h6 text-uppercase text-body-secondary mb-0">By node</h2>
-          <span
-            class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
-          >
-            <i class="bi bi-broadcast me-1" aria-hidden="true"></i>
-            Updates itself
-          </span>
-        </div>
-        <p class="small text-body-secondary">
-          A journal is written on the node the event happened on and stays
-          there. The tiles above add every node together; here you can see whose
-          journal is growing faster.
-        </p>
-        <!-- An ordinary table and not the viewport one: the rows are one per node
-        that reported and ride the same frame as the tiles, so a descriptor, a
-        pager and a busy state would all be paid for a list that never pages. -->
-        <div class="table-responsive">
-          <table class="table table-hover align-middle mb-0">
-            <thead>
-              <tr>
-                <th scope="col">Node</th>
-                <th scope="col">Last rotation</th>
-                <th scope="col" class="text-end d-none d-lg-table-cell">
-                  Live
-                </th>
-                <th scope="col" class="text-end d-none d-lg-table-cell">
-                  Archive
-                </th>
-                <th scope="col" class="text-end d-none d-lg-table-cell">
-                  Per day
-                </th>
-                <th scope="col">To take out</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (node of nodes(); track node.nodeId) {
-                <tr [attr.data-id]="'hilos-logs-node-' + node.nodeId">
-                  <td>
-                    <span
-                      class="badge bg-body-tertiary text-body-emphasis border"
-                    >
-                      {{ node.nodeId }}
-                    </span>
-                    <!-- The sub-line carries whatever the hidden columns were
-                    carrying, so a narrow screen loses the layout and not the
-                    figures. -->
-                    @if (node.available) {
-                      <div class="small text-body-secondary d-lg-none">
-                        {{ formatBytes(node.liveBytes) }} ·
-                        {{ formatBytes(node.archiveBytes) }} ·
-                        {{ formatBytes(node.growthBytesPerDay) }}
-                      </div>
-                    }
-                  </td>
-                  <!-- A node that could not read its own store says so once, in
-                  place of its figures. Dashes across every column would read as
-                  six separate unknowns instead of one node that did not answer. -->
-                  @if (!node.available) {
-                    <td
-                      colspan="5"
-                      class="small text-body-secondary"
-                      [attr.data-id]="'hilos-logs-node-nodata-' + node.nodeId"
-                    >
-                      No data — this node could not read its log store
-                    </td>
-                  } @else {
-                    <td class="small">
-                      {{ formatRotationAt(node.lastRotationAt) }}
-                    </td>
-                    <td class="text-end d-none d-lg-table-cell">
-                      {{ formatBytes(node.liveBytes) }}
-                    </td>
-                    <td class="text-end d-none d-lg-table-cell">
-                      {{ formatBytes(node.archiveBytes) }}
-                    </td>
-                    <td class="text-end d-none d-lg-table-cell">
-                      {{ formatBytes(node.growthBytesPerDay) }}
-                    </td>
-                    <td>
-                      @if ((node.batchesDueForTakeout ?? 0) > 0) {
-                        <a
-                          [hilosLink]="rotationsPath"
-                          class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none"
-                          [attr.data-id]="'hilos-logs-node-due-' + node.nodeId"
-                        >
-                          {{ node.batchesDueForTakeout }}
-                        </a>
-                      } @else {
-                        <span class="text-body-secondary small">—</span>
-                      }
-                    </td>
-                  }
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+        <hilos-viewport-table
+          [controller]="nodesHandle().controller"
+          class="mt-4"
+        >
+          <ng-template [hilosTableCell]="nodeIdField" let-row>
+            <span
+              class="badge bg-body-tertiary text-body-emphasis border"
+              [attr.data-id]="'hilos-logs-node-' + row.nodeId"
+            >
+              {{ row.nodeId }}
+            </span>
+          </ng-template>
+          <ng-template [hilosTableCell]="nodeLastRotationAtField" let-row>
+            <span [attr.data-id]="'hilos-logs-node-rotation-' + row.nodeId">
+              {{ formatNodeRotationAt(row.lastRotationAt) }}
+            </span>
+          </ng-template>
+          <ng-template [hilosTableCell]="nodeLiveBytesField" let-row>
+            <span [attr.data-id]="'hilos-logs-node-live-' + row.nodeId">
+              {{ formatBytes(row.liveBytes) }}
+            </span>
+          </ng-template>
+          <ng-template [hilosTableCell]="nodeArchiveBytesField" let-row>
+            {{ formatBytes(row.archiveBytes) }}
+          </ng-template>
+          <ng-template [hilosTableCell]="nodeGrowthBytesPerDayField" let-row>
+            {{ formatBytes(row.growthBytesPerDay) }}
+          </ng-template>
+          <ng-template [hilosTableCell]="nodeBatchesDueForTakeoutField" let-row>
+            @if ((row.batchesDueForTakeout ?? 0) > 0) {
+              <a
+                [hilosLink]="rotationsPath"
+                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none"
+                [attr.data-id]="'hilos-logs-node-due-' + row.nodeId"
+              >
+                {{ row.batchesDueForTakeout }}
+              </a>
+            } @else {
+              <span class="text-body-secondary small">—</span>
+            }
+          </ng-template>
+        </hilos-viewport-table>
       }
 
       @if (state() === 'unknown') {
@@ -483,34 +451,51 @@ import {
   `,
 })
 export class HilosLogsPage {
-  /** The project context: the connection the screen's frames arrive on. */
-  readonly context = input.required<HilosLogsOverviewContext>()
+  /** The project context: the connection and page-scoped table stores. */
+  readonly context = input.required<HilosLogNodesContext>()
 
   protected readonly page = HilosPages.LOGS
   protected readonly rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
   protected readonly formatBytes = formatLogsOverviewBytes
   protected readonly formatCount = formatLogsOverviewCount
+  protected readonly nodeIdField = NODE_ID_FIELD
+  protected readonly nodeLastRotationAtField = NODE_LAST_ROTATION_AT_FIELD
+  protected readonly nodeLiveBytesField = NODE_LIVE_BYTES_FIELD
+  protected readonly nodeArchiveBytesField = NODE_ARCHIVE_BYTES_FIELD
+  protected readonly nodeGrowthBytesPerDayField =
+    NODE_GROWTH_BYTES_PER_DAY_FIELD
+  protected readonly nodeBatchesDueForTakeoutField =
+    NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD
   private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly formatRotationAt = (moment: string | null): string => {
     this.timeZone()
     return formatLogsOverviewRotationAt(moment)
   }
+  protected readonly formatNodeRotationAt = (moment: number | null): string => {
+    this.timeZone()
+    return moment === null
+      ? '—'
+      : (formatMoment(moment, { kind: 'dateTime' }) ?? '—')
+  }
 
   private readonly logs = computed(() =>
     createHilosLogsOverview(this.context()),
+  )
+  protected readonly nodesHandle = computed(() =>
+    createHilosLogNodesTable(this.context()),
   )
 
   // The latest frame, mirrored from the (per-context) core signal into an Angular
   // signal so the template re-renders on every push.
   protected readonly overview = signal<HilosLogsOverview | null>(null)
 
-  // The per-node table exists only where nodes have names: in a single-node
-  // installation the whole idea of a node is absent, and a table of one row about
-  // "this machine" would be furniture for a distinction that does not exist.
+  // The full overview decides whether this installation has a node table.
   protected readonly clustered = computed(() =>
     hasLogsOverviewNodes(this.overview()),
   )
-  protected readonly nodes = computed(() => this.overview()?.nodes ?? [])
+  protected readonly thresholdPassed = computed(() =>
+    logsOverviewThresholdPassed(this.overview()),
+  )
 
   // Which of the two empty states the screen is in — the discrimination is the
   // headless's, because it is the same question in all three view frameworks.
@@ -578,18 +563,20 @@ export class HilosLogsPage {
   protected readonly recentPath = logsOverviewRecentPath
 
   constructor() {
-    // The frame arrives once as the answer to the subscription and again on every
-    // tick where the cluster picture moved; nothing is ever re-requested. The same
-    // effect re-subscribes on a context swap and disposes on destroy.
+    // Bind the overview and table push paths without requesting a second first
+    // window. A context swap or destroy releases both bindings together.
     effect((onCleanup) => {
       const logs = this.logs()
+      const nodesHandle = this.nodesHandle()
       logs.start()
+      nodesHandle.start()
       this.overview.set(logs.overview.get())
       const unsubscribe = subscribeSignal(logs.overview, (next) => {
         this.overview.set(next)
       })
       onCleanup(() => {
         unsubscribe()
+        nodesHandle.dispose()
         logs.dispose()
       })
     })

@@ -96,7 +96,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosAdminPage, HilosHideable, HilosLink],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Logs pages">
       <div class="border rounded-3 p-3 mb-3">
         <div class="row g-2 align-items-end">
           @if (clustered()) {
@@ -300,6 +300,9 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
         because it changes with every line of the tail. -->
         <span class="hilos-stack" data-id="hilos-log-count-room">
           <span class="small invisible" aria-hidden="true">
+            Lines around the entry of 23:59:59.999
+          </span>
+          <span class="small invisible" aria-hidden="true">
             <i class="bi bi-exclamation-circle me-1"></i>Not applied yet — press
             Search
           </span>
@@ -316,24 +319,42 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
           </span>
           @if (!substringDirty()) {
             <span class="small text-body-secondary" data-id="hilos-log-count">
-              {{ entryCount() }} entries shown
+              {{ entryCountLabel() }}
             </span>
           }
         </span>
-        @if (following()) {
+        <span class="hilos-stack ms-auto" data-id="hilos-log-status-room">
           <span
-            class="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
-            data-id="hilos-log-tail-badge"
+            class="badge text-secondary-emphasis bg-secondary-subtle border border-secondary-subtle invisible"
+            aria-hidden="true"
           >
-            <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Tail is
-            running
+            <i class="bi bi-pin-angle-fill me-1"></i>Sticking released
           </span>
-        }
-        <span
-          class="hilos-stack"
-          [class.ms-auto]="!following()"
-          data-id="hilos-log-back-to-tail-room"
-        >
+          <span
+            class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle invisible"
+            aria-hidden="true"
+          >
+            <i class="bi bi-broadcast me-1"></i>Tail is running
+          </span>
+          @if (anchorClock() !== null) {
+            <span
+              class="badge text-secondary-emphasis bg-secondary-subtle border border-secondary-subtle"
+              data-id="hilos-log-anchor-badge"
+            >
+              <i class="bi bi-pin-angle-fill me-1" aria-hidden="true"></i
+              >Sticking released
+            </span>
+          } @else if (following()) {
+            <span
+              class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
+              data-id="hilos-log-tail-badge"
+            >
+              <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Tail is
+              running
+            </span>
+          }
+        </span>
+        <span class="hilos-stack" data-id="hilos-log-back-to-tail-room">
           <!-- Holds the room at the widest the control ever gets: a span rather
           than a button, since it keeps a place and must never take the focus. -->
           <span class="btn btn-sm invisible" aria-hidden="true">
@@ -615,11 +636,9 @@ export class HilosLogsViewPage {
     ),
   )
 
-  // The counter beside the Earlier button counts entries, because that is the word
-  // it uses; a note is not one.
-  protected readonly entryCount = computed(
-    () => this.rows().filter((row) => row.kind === 'entry').length,
-  )
+  // The core confirms the anchor and owns both labels, including the reader's zone.
+  protected readonly anchorClock = signal<string | null>(null)
+  protected readonly entryCountLabel = signal('')
 
   // Newest batch first: an operator opening the archive is looking for what just
   // happened far more often than for what happened last month.
@@ -657,6 +676,8 @@ export class HilosLogsViewPage {
         this.mirror(viewer.refusal, this.refusal.set),
         this.mirror(viewer.followRequested, this.followRequested.set),
         this.mirror(viewer.following, this.following.set),
+        this.mirror(viewer.anchorClock, this.anchorClock.set),
+        this.mirror(viewer.entryCountLabel, this.entryCountLabel.set),
         this.mirror(viewer.canFollow, this.canFollow.set),
         this.mirror(viewer.pinned, this.pinned.set),
         this.mirror(viewer.pendingLines, this.pendingLines.set),

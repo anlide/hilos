@@ -255,6 +255,26 @@ const ARCHIVED_LIVE_FILE = {
   stream: 'worker-0.log',
 }
 
+/** The returned entry clock, rather than the requested moment, names the anchor. */
+const ANCHORED_FILE = {
+  ...ARCHIVED_LIVE_FILE,
+  anchor: String(Date.parse('2026-09-06T10:00:00.000Z')),
+}
+const ANCHORED_REPLY = {
+  readable: true,
+  anchorFound: true,
+  lines: [
+    {
+      time: '2026-09-06T10:00:02.250Z',
+      text: 'The entry the link asked for.',
+      level: 'ERROR',
+      isContinuation: false,
+    },
+  ],
+  nextCursor: 4096,
+  hasMore: true,
+}
+
 /** Keep the catalog honest: the selected stream has no live file. */
 function archivedStreamCatalog(): HilosLogViewerCatalog {
   return {
@@ -429,6 +449,310 @@ describe('HilosLogsViewPage moments', () => {
     expect(toggle?.getAttribute('aria-expanded')).toBe('true')
     selected(h.fixture, 'hilos-log-source', 'live')
     selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
+    expect(h.sent).toHaveLength(sentCount)
+  })
+})
+
+describe('HilosLogsViewPage confirmed anchor', () => {
+  it('shows the returned entry clock after confirmation and keeps it through Earlier', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+    const h = mountPage(ANCHORED_FILE)
+    h.pushCatalog(CLUSTER_CATALOG)
+    await settled(h.fixture)
+
+    const root = h.fixture.nativeElement as HTMLElement
+    const statusRoom = root.querySelector('[data-id="hilos-log-status-room"]')
+    expect(statusRoom).not.toBeNull()
+    expect(root.querySelector('[data-id="hilos-log-anchor-badge"]')).toBeNull()
+    expect(h.sent.at(-1)?.action).toBe(LOGS_READ_LINES_ACTION)
+
+    for (const id of [
+      'hilos-log-count-room',
+      'hilos-log-status-room',
+      'hilos-log-back-to-tail-room',
+    ]) {
+      const room = root.querySelector(`[data-id="${id}"]`)!
+      expect(room.querySelector('[aria-hidden="true"]')).not.toBeNull()
+      for (const twin of room.querySelectorAll<HTMLElement>(
+        '[aria-hidden="true"]',
+      )) {
+        expect(twin.tabIndex).toBe(-1)
+        expect(twin.matches('[id], [data-id]')).toBe(false)
+        expect(
+          twin.querySelector(
+            '[id], [data-id], a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]',
+          ),
+        ).toBeNull()
+      }
+    }
+
+    h.answer(h.sent.at(-1)?.requestId, ANCHORED_REPLY)
+    await settled(h.fixture)
+
+    const badge = root.querySelector('[data-id="hilos-log-anchor-badge"]')
+    expect(badge?.textContent?.trim()).toBe('Sticking released')
+    expect(badge?.getAttribute('aria-hidden')).toBeNull()
+    expect(badge?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(root.querySelector('[data-id="hilos-log-tail-badge"]')).toBeNull()
+    const entry = root.querySelector('[data-id="hilos-log-entry"]')
+    expect(entry?.getAttribute('aria-current')).toBe('location')
+    expect(entry?.textContent).toContain('The entry the link asked for.')
+    expect(
+      entry
+        ?.querySelector('[data-id="hilos-log-entry-time"]')
+        ?.textContent?.trim(),
+    ).toBe('10:00:02.250')
+    expect(
+      root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+    ).toBe('Lines around the entry of 10:00:02.250')
+    expect(
+      root.querySelector('[data-id="hilos-log-back-to-tail-count"]'),
+    ).toBeNull()
+
+    root
+      .querySelector<HTMLButtonElement>('[data-id="hilos-log-earlier"]')!
+      .click()
+    await settled(h.fixture)
+    h.answer(h.sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [
+        {
+          ...ANCHORED_REPLY.lines[0],
+          time: '2026-09-06T09:59:00.000Z',
+          text: 'An earlier entry.',
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await settled(h.fixture)
+
+    expect(root.textContent).toContain('An earlier entry.')
+    expect(root.querySelector('[data-id="hilos-log-anchor-badge"]')).toBe(badge)
+    expect(root.querySelector('[data-id="hilos-log-status-room"]')).toBe(
+      statusRoom,
+    )
+    expect(
+      root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+    ).toBe('Lines around the entry of 10:00:02.250')
+  })
+
+  it.each(['missing', 'unreadable', 'refused', 'ordinary'] as const)(
+    'does not promise an anchor before the answer or for %s reads',
+    async (outcome) => {
+      const h = mountPage(
+        outcome === 'ordinary' ? ARCHIVED_LIVE_FILE : ANCHORED_FILE,
+      )
+      h.pushCatalog(CLUSTER_CATALOG)
+      await settled(h.fixture)
+      const root = h.fixture.nativeElement as HTMLElement
+      expect(
+        root.querySelector('[data-id="hilos-log-anchor-badge"]'),
+      ).toBeNull()
+      expect(
+        root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+      ).toBe('0 entries shown')
+
+      if (outcome === 'refused') {
+        h.refuse(h.sent.at(-1)?.requestId, 'The selected node is offline.')
+      } else {
+        h.answer(h.sent.at(-1)?.requestId, {
+          ...ANCHORED_REPLY,
+          readable: outcome !== 'unreadable',
+          anchorFound:
+            outcome === 'ordinary' ? undefined : outcome !== 'missing',
+          lines: outcome === 'unreadable' ? [] : ANCHORED_REPLY.lines,
+          nextCursor: null,
+          hasMore: false,
+        })
+      }
+      await settled(h.fixture)
+
+      expect(
+        root.querySelector('[data-id="hilos-log-anchor-badge"]'),
+      ).toBeNull()
+      expect(root.querySelector('[aria-current="location"]')).toBeNull()
+      expect(
+        root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+      ).toBe(
+        outcome === 'missing' || outcome === 'ordinary'
+          ? '1 entries shown'
+          : '0 entries shown',
+      )
+    },
+  )
+
+  it.each(['Back to the tail', 'Follow', 'Search'] as const)(
+    'clears the confirmed anchor when %s is chosen',
+    async (control) => {
+      const h = mountPage(ANCHORED_FILE)
+      h.pushCatalog(CLUSTER_CATALOG)
+      h.answer(h.sent.at(-1)?.requestId, ANCHORED_REPLY)
+      await settled(h.fixture)
+      const root = h.fixture.nativeElement as HTMLElement
+      expect(
+        root.querySelector('[data-id="hilos-log-anchor-badge"]'),
+      ).not.toBeNull()
+
+      if (control === 'Follow') {
+        const follow = root.querySelector<HTMLInputElement>(
+          '[data-id="hilos-log-follow"]',
+        )!
+        follow.checked = true
+        follow.dispatchEvent(new Event('change', { bubbles: true }))
+      } else if (control === 'Search') {
+        const input = root.querySelector<HTMLInputElement>(
+          '[data-id="hilos-log-substring"]',
+        )!
+        input.value = 'entry'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await settled(h.fixture)
+        root
+          .querySelector<HTMLButtonElement>('[data-id="hilos-log-search"]')!
+          .click()
+      } else {
+        root
+          .querySelector<HTMLButtonElement>(
+            '[data-id="hilos-log-back-to-tail"]',
+          )!
+          .click()
+      }
+      await settled(h.fixture)
+
+      expect(
+        root.querySelector('[data-id="hilos-log-anchor-badge"]'),
+      ).toBeNull()
+      expect(
+        root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+      ).toBe('1 entries shown')
+      expect(h.address.currentRoute.get()?.params.anchor).toBeUndefined()
+      expect(h.sent.at(-1)?.action).toBe(
+        control === 'Search'
+          ? LOGS_READ_LINES_ACTION
+          : LOGS_FOLLOW_START_ACTION,
+      )
+      h.answer(h.sent.at(-1)?.requestId, {
+        ...ANCHORED_REPLY,
+        anchorFound: undefined,
+        nextCursor: null,
+        hasMore: false,
+      })
+      await settled(h.fixture)
+      expect(root.querySelector('[aria-current="location"]')).toBeNull()
+      expect(
+        root.querySelector('[data-id="hilos-log-anchor-badge"]'),
+      ).toBeNull()
+    },
+  )
+
+  it('keeps manual Follow and scrolling distinct from a confirmed anchor', async () => {
+    const h = mountPage(ARCHIVED_LIVE_FILE)
+    h.pushCatalog(CLUSTER_CATALOG)
+    h.answerFollow()
+    await settled(h.fixture)
+    const root = h.fixture.nativeElement as HTMLElement
+    const follow = root.querySelector<HTMLInputElement>(
+      '[data-id="hilos-log-follow"]',
+    )!
+    expect(
+      root
+        .querySelector('[data-id="hilos-log-tail-badge"]')
+        ?.textContent?.trim(),
+    ).toBe('Tail is running')
+
+    follow.checked = false
+    follow.dispatchEvent(new Event('change', { bubbles: true }))
+    await settled(h.fixture)
+    expect(root.querySelector('[data-id="hilos-log-tail-badge"]')).toBeNull()
+    expect(root.querySelector('[data-id="hilos-log-anchor-badge"]')).toBeNull()
+
+    follow.checked = true
+    follow.dispatchEvent(new Event('change', { bubbles: true }))
+    await settled(h.fixture)
+    h.answerFollow()
+    await settled(h.fixture)
+    const sentCount = h.sent.length
+    const pane = root.querySelector<HTMLElement>('[data-id="hilos-log-pane"]')!
+    Object.defineProperties(pane, {
+      scrollHeight: { value: 1000, configurable: true },
+      clientHeight: { value: 200, configurable: true },
+    })
+    pane.scrollTop = 0
+    pane.dispatchEvent(new Event('scroll'))
+    await settled(h.fixture)
+
+    expect(follow.checked).toBe(true)
+    expect(
+      root
+        .querySelector('[data-id="hilos-log-tail-badge"]')
+        ?.textContent?.trim(),
+    ).toBe('Tail is running')
+    expect(root.querySelector('[data-id="hilos-log-anchor-badge"]')).toBeNull()
+    expect(
+      root.querySelector('[data-id="hilos-log-back-to-tail"]'),
+    ).not.toBeNull()
+    expect(h.sent).toHaveLength(sentCount)
+  })
+
+  it('updates the reader clock and pending search label without another read', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    releases.push(timeZone.release)
+    timeZone.receive('UTC')
+    const h = mountPage(ANCHORED_FILE)
+    h.pushCatalog(CLUSTER_CATALOG)
+    h.answer(h.sent.at(-1)?.requestId, ANCHORED_REPLY)
+    await settled(h.fixture)
+    const root = h.fixture.nativeElement as HTMLElement
+    const badge = root.querySelector('[data-id="hilos-log-anchor-badge"]')
+    expect(badge).not.toBeNull()
+    const searchStatus = root.querySelector(
+      '[data-id="hilos-log-count-room"] [role="status"]',
+    )!
+    expect(searchStatus.getAttribute('aria-live')).toBe('polite')
+    expect(searchStatus.textContent?.trim()).toBe('')
+    expect(
+      root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+    ).toBe('Lines around the entry of 10:00:02.250')
+    const sentCount = h.sent.length
+    const path = h.address.currentPath.get()
+
+    timeZone.receive('America/Los_Angeles')
+    await settled(h.fixture)
+    expect(
+      root
+        .querySelector('[data-id="hilos-log-entry-time"]')
+        ?.textContent?.trim(),
+    ).toBe('03:00:02.250')
+    expect(
+      root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+    ).toBe('Lines around the entry of 03:00:02.250')
+
+    const input = root.querySelector<HTMLInputElement>(
+      '[data-id="hilos-log-substring"]',
+    )!
+    input.value = 'unapplied draft'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await settled(h.fixture)
+    expect(root.querySelector('[data-id="hilos-log-count"]')).toBeNull()
+    expect(searchStatus.textContent?.trim()).toBe(
+      'Not applied yet — press Search',
+    )
+    expect(root.querySelector('[data-id="hilos-log-anchor-badge"]')).toBe(badge)
+
+    input.value = ''
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await settled(h.fixture)
+    expect(
+      root.querySelector('[data-id="hilos-log-count"]')?.textContent?.trim(),
+    ).toBe('Lines around the entry of 03:00:02.250')
+    expect(searchStatus.textContent?.trim()).toBe('')
+    expect(
+      root.querySelector('[data-id="hilos-log-count-room"] [role="status"]'),
+    ).toBe(searchStatus)
+    expect(root.querySelector('[data-id="hilos-log-anchor-badge"]')).toBe(badge)
+    expect(h.address.currentPath.get()).toBe(path)
     expect(h.sent).toHaveLength(sentCount)
   })
 })

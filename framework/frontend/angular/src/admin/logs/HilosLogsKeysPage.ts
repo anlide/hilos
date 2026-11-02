@@ -44,7 +44,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Logs pages">
       <p class="text-body-secondary">
         A key is the file name that survives rotation: the same stream goes on
         being written under that name into the next batch.

@@ -40,7 +40,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section" tabsLabel="Logs pages">
       <p class="text-body-secondary">
         The same thing again, but only for the workers and with the distinction
         the by-key page deliberately loses: an ordinary worker or the
