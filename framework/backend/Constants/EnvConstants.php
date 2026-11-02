@@ -702,6 +702,12 @@ enum EnvConstants
     case CLUSTER_LINK_TIMEOUT_MS;
 
     /**
+     * @var string Milliseconds a node's clock may differ from the leader's before the Daemon section
+     * flags the node and the leader logs a warning; the node keeps working. Default 300.
+     */
+    case CLUSTER_CLOCK_SKEW_THRESHOLD_MS;
+
+    /**
      * @var string Grace period in ms the leader waits after a node hosting placed agents
      * goes offline before it re-places those agents elsewhere, absorbing a brief flap.
      * Held at or above the slave work grace so an isolated node stops its copy first.

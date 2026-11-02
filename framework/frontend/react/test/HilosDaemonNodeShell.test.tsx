@@ -219,6 +219,189 @@ describe('HilosDaemonNodeShell', () => {
     expect(document.querySelector('a[href=""]')).toBeNull()
   })
 
+  it.each(
+    nodeTabs.filter(
+      (tab) =>
+        tab.page !== HilosPages.DAEMON_ENV &&
+        tab.page !== HilosPages.DAEMON_ENV_ORPHANS,
+    ),
+  )(
+    'keeps the server clock warning on $label through silence and recovery',
+    ({ page }) => {
+      const h = nodeHarness({ shell: true, page })
+      const clock = {
+        reference: false,
+        offsetMs: -812,
+        measuredAt: 1_700_000_000_000,
+        thresholdMs: 300,
+        beyond: false,
+      }
+      act(() =>
+        h.answer(
+          null,
+          nodeHeading({
+            clock: {
+              ...clock,
+              reference: true,
+              offsetMs: null,
+              measuredAt: null,
+            },
+          }),
+        ),
+      )
+      const body = el('node-child-body')
+      const title = document.querySelector('h1')
+      expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+      act(() =>
+        h.publish({
+          node: nodeHeading({
+            clock: { ...clock, offsetMs: null, measuredAt: null },
+          }),
+        }),
+      )
+      expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+      act(() => h.publish({ node: nodeHeading({ clock }) }))
+      expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+      act(() =>
+        h.publish({ node: nodeHeading({ clock: { ...clock, beyond: true } }) }),
+      )
+      const warning = el('hilos-daemon-node-clock-warning')!
+      expect(warning.textContent).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      expect(warning.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
+      expect(warning.closest('[aria-hidden="true"]')).toBeNull()
+      act(() =>
+        h.publish({
+          node: nodeHeading({
+            state: 'silent',
+            clock: { ...clock, beyond: true },
+          }),
+        }),
+      )
+      expect(el('hilos-daemon-node-clock-warning')?.textContent).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      act(() =>
+        h.publish({ node: nodeHeading({ clock: { ...clock, offsetMs: 0 } }) }),
+      )
+      expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+      act(() =>
+        h.publish({
+          node: nodeHeading({ clock: { ...clock, offsetMs: 812 } }),
+        }),
+      )
+      expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+      act(() => h.publish({ node: nodeHeading({ clock: null }) }))
+      expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+      expect(document.body.textContent).not.toContain('Clock:')
+      expect(el('node-child-body')).toBe(body)
+      expect(document.querySelector('h1')).toBe(title)
+      expect(h.send).not.toHaveBeenCalled()
+      expect(h.sendAction).not.toHaveBeenCalled()
+      expect(h.registerTableWindow).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['recovery', 'null'])(
+    'offers a named warning reader and returns focus before native hiding on %s under StrictMode',
+    (clear) => {
+      const h = nodeHarness({
+        shell: true,
+        page: HilosPages.DAEMON_AGENTS,
+        strict: true,
+      })
+      const clock = {
+        reference: false,
+        offsetMs: 812,
+        measuredAt: 1_700_000_000_000,
+        thresholdMs: 300,
+        beyond: true,
+      }
+      act(() => h.answer(null))
+      expect(
+        h.view.queryByRole('region', { name: 'Node clock warning' }),
+      ).toBeNull()
+      act(() => h.publish({ node: nodeHeading({ clock }) }))
+      const scrollport = h.view.getByRole('region', {
+        name: 'Node clock warning',
+      })
+      const role = node('role')!
+      expect(scrollport.tabIndex).toBe(0)
+      expect(scrollport.textContent).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      expect(scrollport.closest('[aria-hidden="true"], [inert]')).toBeNull()
+      const focusRole = vi.spyOn(role, 'focus')
+      scrollport.focus()
+      expect(document.activeElement).toBe(scrollport)
+      act(() =>
+        h.publish({
+          node: nodeHeading({ clock: { ...clock, offsetMs: -999 } }),
+        }),
+      )
+      expect(h.view.getByRole('region', { name: 'Node clock warning' })).toBe(
+        scrollport,
+      )
+      expect(scrollport.textContent).toBe(
+        'Clock 999 ms off the leader (threshold 300 ms)',
+      )
+      expect(document.activeElement).toBe(scrollport)
+      expect(focusRole).not.toHaveBeenCalled()
+
+      // A browser can blur at the DOM mutation, before a layout/passive effect.
+      const setAttribute = scrollport.setAttribute.bind(scrollport)
+      const hiding = vi.fn()
+      vi.spyOn(scrollport, 'setAttribute').mockImplementation((name, value) => {
+        if (name === 'inert' || (name === 'aria-hidden' && value === 'true')) {
+          hiding(document.activeElement)
+          scrollport.blur()
+        }
+        setAttribute(name, value)
+      })
+      const clearedClock =
+        clear === 'null' ? null : { ...clock, offsetMs: 0, beyond: false }
+      act(() => h.publish({ node: nodeHeading({ clock: clearedClock }) }))
+      expect(hiding).toHaveBeenCalled()
+      for (const [active] of hiding.mock.calls) expect(active).toBe(role)
+      expect(role.textContent).toBe('Role: master')
+      expect(role.tabIndex).toBe(-1)
+      expect(document.activeElement).toBe(role)
+      expect(focusRole).toHaveBeenCalledTimes(1)
+      expect(
+        h.view.queryByRole('region', { name: 'Node clock warning' }),
+      ).toBeNull()
+      expect(h.view.queryByLabelText('Node clock warning')).toBeNull()
+      expect(node('clock-warning')).toBeNull()
+      expect(scrollport.hasAttribute('tabindex')).toBe(false)
+      expect(scrollport.hasAttribute('role')).toBe(false)
+      expect(scrollport.getAttribute('aria-hidden')).toBe('true')
+      expect(scrollport.hasAttribute('inert')).toBe(true)
+      expect(scrollport.querySelector('[tabindex], [id], [data-id]')).toBeNull()
+      expect(document.body.textContent).not.toContain('Clock')
+
+      const log = node('log')!
+      log.focus()
+      act(() => h.publish({ node: nodeHeading({ clock }) }))
+      expect(document.activeElement).toBe(log)
+      act(() => h.publish({ node: nodeHeading({ clock: clearedClock }) }))
+      expect(document.activeElement).toBe(log)
+      expect(focusRole).toHaveBeenCalledTimes(1)
+      expect(h.send).not.toHaveBeenCalled()
+      expect(h.sendAction).not.toHaveBeenCalled()
+      expect(h.registerTableWindow).not.toHaveBeenCalled()
+
+      act(() => h.publish({ node: nodeHeading({ clock }) }))
+      scrollport.focus()
+      h.view.unmount()
+      expect(scrollport.isConnected).toBe(false)
+      act(() => h.publish({ node: nodeHeading({ clock: clearedClock }) }))
+      expect(focusRole).toHaveBeenCalledTimes(1)
+    },
+  )
+
   it.each([
     ['leader', 'master', 'Leader', 'warning'],
     ['standby', 'master', 'Standby', 'secondary'],
@@ -263,6 +446,8 @@ describe('HilosDaemonNodeShell', () => {
     expect(node('role')!.textContent).toBe('Role: master')
     expect(node('state')).toBeNull()
     expect(document.body.textContent).not.toContain('Leader')
+    expect(document.body.textContent).not.toContain('Clock:')
+    expect(el('hilos-daemon-node-clock-warning')).toBeNull()
     act(() =>
       h.publish({ node: nodeHeading({ state: 'silent', role: 'slave' }) }),
     )
@@ -284,6 +469,7 @@ describe('HilosDaemonNodeShell', () => {
           state: 'silent',
           role: 'master',
           silentSince: 1_700_000_000_000,
+          clock: null,
         }),
       ),
     )
@@ -296,6 +482,8 @@ describe('HilosDaemonNodeShell', () => {
     expect(el('hilos-page-head-action')).toBeNull()
     expect(el('hilos-daemon-mismatch-link')).toBeNull()
     expect(el('hilos-daemon-environment-differences')!.textContent).toBe('—')
+    expect(document.body.textContent).not.toContain('Clock:')
+    expect(el('hilos-daemon-node-clock-warning')).toBeNull()
   })
 
   it('updates addressed links and releases the name on switch, clear and unmount', () => {
@@ -379,9 +567,25 @@ describe('HilosDaemonNodeShell', () => {
       release = bindAdminAccess(h.scopes)
     })
     try {
-      act(() => h.answer())
+      act(() =>
+        h.answer(
+          nodeOverview(),
+          nodeHeading({
+            clock: {
+              reference: false,
+              offsetMs: 812,
+              measuredAt: 1_700_000_000_000,
+              thresholdMs: 300,
+              beyond: true,
+            },
+          }),
+        ),
+      )
       expect(hilosAdminAccess.get()).toBe('view')
       expect(text('h1')).toEqual(['n1'])
+      expect(el('hilos-daemon-node-clock-warning')?.textContent).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
       expect(
         document.querySelectorAll('nav[aria-label="Node pages"] a'),
       ).toHaveLength(8)
@@ -458,7 +662,33 @@ describe('HilosDaemonNodeShell', () => {
     const descriptor = h.workers!.controller.descriptor()
     const requests = h.sendViewport.mock.calls.length
     expect(el('hilos-table-row-detail-regular:0')).not.toBeNull()
-    act(() => h.publish({ node: nodeHeading({ state: 'leader' }) }))
+    const detailToggle = table!.querySelector<HTMLButtonElement>(
+      'button[aria-expanded="true"]',
+    )!
+    detailToggle.focus()
+    act(() =>
+      h.publish({
+        node: nodeHeading({
+          state: 'leader',
+          clock: {
+            reference: false,
+            offsetMs: 812,
+            measuredAt: 1_700_000_000_000,
+            thresholdMs: 300,
+            beyond: true,
+          },
+        }),
+      }),
+    )
+    expect(el('hilos-daemon-node-clock-warning')?.textContent).toBe(
+      'Clock 812 ms off the leader (threshold 300 ms)',
+    )
+    expect(document.activeElement).toBe(detailToggle)
+    act(() =>
+      h.publish({ node: nodeHeading({ state: 'leader', clock: null }) }),
+    )
+    expect(el('hilos-daemon-node-clock-warning')).toBeNull()
+    expect(document.activeElement).toBe(detailToggle)
     expect(document.querySelector('table')).toBe(table)
     expect(h.workers!.controller.rows.get()).toBe(window)
     expect(h.workers!.controller.descriptor()).toEqual(descriptor)

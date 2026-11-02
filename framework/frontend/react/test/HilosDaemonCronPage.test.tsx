@@ -394,6 +394,7 @@ describe('HilosDaemonCronPage', () => {
               role: null,
               state: 'silent',
               silentSince: 1_700_000_000_000,
+              clock: null,
             })
           if (state === 'none') h.reported(true)
           expect(h.find('hilos-table-no-matches')!.textContent).toContain(
@@ -523,6 +524,7 @@ describe('HilosDaemonCronPage', () => {
         role: 'master',
         state: 'silent',
         silentSince: at,
+        clock: null,
       })
       h.reported(true)
       h.window([rule({ lastRunAt: at, nextRunAt: at + 3_600_000 })])
@@ -720,6 +722,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     expect(h.find('hilos-daemon-cron-empty-silent')?.textContent).toContain(
       'never reported',
@@ -739,6 +742,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     expect(h.find('hilos-daemon-node-state')?.textContent).toBe('Leader')
     expect(h.find('hilos-table-row-/cleanup')).toBe(row)
@@ -757,6 +761,7 @@ describe('HilosDaemonCronPage', () => {
         role: null,
         state,
         silentSince: state === 'silent' ? 1_700_000_000_000 : null,
+        clock: null,
       })
       h.window([
         rule({ idleReason: 'not_leader' }),
@@ -807,6 +812,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'standby',
       silentSince: null,
+      clock: null,
     })
     h.window([rule({ idleReason: 'not_leader' })])
     const room = h.view.container.querySelector('.alert-warning.invisible')
@@ -816,6 +822,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.window([rule()])
     expect(h.find('hilos-daemon-cron-not-leader')).toBeNull()
@@ -826,7 +833,13 @@ describe('HilosDaemonCronPage', () => {
     expect(
       h.view.container.querySelector('.alert-warning.invisible'),
     ).toBeNull()
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     h.window([rule()])
     expect(
       h.view.container.querySelector('.alert-warning.invisible'),

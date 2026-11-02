@@ -43,6 +43,8 @@ use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonAgentPicture;
+use Hilos\DaemonSection\DaemonClockPicture;
+use Hilos\DaemonSection\DaemonClockReading;
 use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonHttpPicture;
@@ -239,6 +241,9 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame(['a', 's', 'z'], array_column($nodes, 'nodeId'));
         self::assertSame([
             'nodeId' => 'a', 'online' => true, 'role' => 'master', 'state' => null, 'silentSince' => null,
+            'clock' => [
+                'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+            ],
             'workers' => null,
             'measurements' => null, 'standing' => null,
         ], $nodes[0]);
@@ -249,6 +254,40 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertNull($nodes[2]['silentSince']);
         self::assertNull($nodes[2]['role']);
         self::assertNull($nodes[2]['workers']);
+    }
+
+    public function testNodeClocksComeFromTheCurrentLeaderIncludingSilentAndUnreportedNodes(): void
+    {
+        $leader = $this->master('leader', ConsensusRole::Leader, 5, 'leader', 0, clock: new DaemonClockPicture(300, [
+            new DaemonClockReading('peer', -301, 1_790_000_000_123),
+        ]));
+        $picture = ClusterDaemonPicture::empty()
+            ->withNode($leader)
+            ->withNode($this->node(new NodeDaemonPicture('peer', NodeRole::Slave, 100), false, 90))
+            ->withNode(new ClusterDaemonNodeView('unreported', true, null));
+        $nodes = $this->projection($picture)['nodes'];
+
+        self::assertSame([
+            'reference' => true, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => 300, 'beyond' => false,
+        ], $nodes[0]['clock']);
+        self::assertSame([
+            'reference' => false, 'offsetMs' => -301, 'measuredAt' => 1_790_000_000_123, 'thresholdMs' => 300, 'beyond' => true,
+        ], $nodes[1]['clock']);
+        self::assertSame('silent', $nodes[1]['state']);
+        self::assertSame([
+            'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => 300, 'beyond' => false,
+        ], $nodes[2]['clock']);
+        foreach ($this->projection($picture, false)['nodes'] as $node) {
+            self::assertArrayHasKey('clock', $node);
+            self::assertNull($node['clock']);
+        }
+
+        $picture = $picture->withNode($this->master('candidate', ConsensusRole::Candidate, 6, null, 0));
+        foreach ($this->projection($picture)['nodes'] as $node) {
+            self::assertSame([
+                'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+            ], $node['clock']);
+        }
     }
 
     public function testOnlyActualWorkersAndConnectionsLeaveTheLeanProjection(): void
@@ -668,12 +707,23 @@ final class HilosDaemonOverviewPageTest extends TestCase
         return new ClusterDaemonNodeView($picture->nodeId, $online, new ClusterDaemonNodeSlot($picture->nodeId, $picture, $receivedAt));
     }
 
-    /** @return ClusterDaemonNodeView Master reporting its own consensus and sessions */
+    /**
+     * @param string $id Reported node id
+     * @param ConsensusRole $role Reported consensus role
+     * @param int $term Reported consensus term
+     * @param ?string $leaderId Recognized leader
+     * @param int $sessions Reported session count
+     * @param bool $online Whether the node is online
+     * @param ?int $commandPort Reported command listener
+     * @param ?int $httpPort Reported HTTP listener
+     * @param ?DaemonClockPicture $clock Reported clock measurements
+     * @return ClusterDaemonNodeView Master reporting its own consensus and sessions
+     */
     private function master(string $id, ConsensusRole $role, int $term, ?string $leaderId, int $sessions,
-        bool $online = true, ?int $commandPort = null, ?int $httpPort = null): ClusterDaemonNodeView
+        bool $online = true, ?int $commandPort = null, ?int $httpPort = null, ?DaemonClockPicture $clock = null): ClusterDaemonNodeView
     {
         return $this->node(new NodeDaemonPicture($id, NodeRole::Master, 100, standing: new DaemonNodeStanding(
-            $sessions, $sessions + 1, true, new DaemonConsensusPicture($role, $term, $leaderId, 1, 3, 2), $commandPort,
+            $sessions, $sessions + 1, true, new DaemonConsensusPicture($role, $term, $leaderId, 1, 3, 2), $commandPort, $clock,
         ), http: $httpPort === null ? null : new DaemonHttpPicture('127.0.0.1', $httpPort, 1, [], new HttpRouteTally(0, 0, 0, null))), $online);
     }
 

@@ -167,12 +167,14 @@ const LIVE: HilosDaemonNodeHeading = {
   role: null,
   state: 'leader',
   silentSince: null,
+  clock: null,
 }
 const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
   role: null,
   state: 'silent',
   silentSince: 1_700_000_000_000,
+  clock: null,
 }
 function agent(
   overrides: Record<string, unknown> = {},
@@ -298,7 +300,13 @@ describe('HilosDaemonAgentsPage', () => {
       'last report',
     )
     expect(h.find('hilos-table-row-room:12')).toBe(row)
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     h.window([agent({ idle: true, workerIndex: null, workerKind: null })])
     const updated = h.find('hilos-table-row-room:12')!
     expect(updated).not.toBe(row)
@@ -326,6 +334,7 @@ describe('HilosDaemonAgentsPage', () => {
         role: null,
         state: clustered ? 'leader' : null,
         silentSince: null,
+        clock: null,
       })
       const opener = open(h)
       expect(document.activeElement).toBe(h.find('modal'))
@@ -694,6 +703,7 @@ describe('HilosDaemonAgentsPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.reported(true)
     h.window([agent()])

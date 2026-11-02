@@ -17,6 +17,8 @@ import {
   readAnalyticsBrowserSession,
 } from './analytics.js'
 
+export { shiftClusterNodeClock } from '../scripts/clusterClock.mjs'
+
 /** Addresses supplied by the running cluster's browser harness. */
 export interface ClusterBrowserStand {
   baseURL: string
@@ -111,7 +113,13 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
   return { baseURL, leader, follower, masters, nodeHosts, nodeIps, nodeLogs }
 }
 
-/** Open an isolated context with its master cookie set before creating the page. */
+/**
+ * Open an isolated context with its master cookie set before creating the page.
+ *
+ * @param browser The spec's browser.
+ * @param stand The running stand's addresses and master roles.
+ * @param node The master selected before the first navigation.
+ */
 export async function newClusterMasterPage(
   browser: Browser,
   stand: ClusterBrowserStand,

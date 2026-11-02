@@ -15,6 +15,7 @@ import {
   dismissToasts,
   draftStatusWork,
   enterCalendarDate,
+  enterCalendarDateTime,
   expectPageReady,
   expectPublicStatusPair,
   expectSelfReload,
@@ -179,16 +180,16 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
   const stamp = Date.now()
   const startsAt = futureStart()
   const draft: StatusWorkDraft = {
-    title: `Database upgrade ${stamp}`,
-    description: 'Orders stay readable; checkout pauses.',
+    title: `A ${stamp}`,
+    description: 'A.',
     startsAt,
     endsAt: startsAt + 3_600_000,
     componentKeys: [SERVICE],
   }
   const overlapping: StatusWorkDraft = {
-    title: `Search reindex ${stamp}`,
-    description: 'Search answers slowly for a while.',
-    startsAt: startsAt + 1_800_000,
+    title: `B ${stamp}`,
+    description: 'B.',
+    startsAt: startsAt - 120_000,
     endsAt: draft.endsAt + 1_800_000,
     componentKeys: [SERVICE],
   }
@@ -201,7 +202,7 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
   // The change moves the upgrade before its neighbor, an actual order change.
   const changed: StatusWorkDraft = {
     ...draft,
-    title: `Database upgrade moved ${stamp}`,
+    title: `A2 ${stamp}`,
     startsAt: neighbor.startsAt - 120_000,
     endsAt: neighbor.startsAt,
   }
@@ -295,7 +296,12 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         )
         await expect(page.getByTestId('hilos-status-work-save')).toBeEnabled()
         // The same window, moved to end where the upgrade starts.
-        await draftStatusWork(expect, page, neighbor)
+        await enterCalendarDateTime(
+          expect,
+          page,
+          page.getByTestId('hilos-status-work-ends'),
+          neighbor.endsAt,
+        )
         await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
         const row = await scheduledRow(admin, neighbor)
         // The reader's own creation takes its place at once; the other window
@@ -343,7 +349,22 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
 
       await shownByTestId(other, `hilos-status-work-edit-${work.id}`).click()
       await expect(other.getByTestId('hilos-status-work-title')).toBeFocused()
-      await draftStatusWork(expect, other, changed)
+      await typeInto(
+        other.getByTestId('hilos-status-work-title'),
+        changed.title,
+      )
+      await enterCalendarDateTime(
+        expect,
+        other,
+        other.getByTestId('hilos-status-work-starts'),
+        changed.startsAt,
+      )
+      await enterCalendarDateTime(
+        expect,
+        other,
+        other.getByTestId('hilos-status-work-ends'),
+        changed.endsAt,
+      )
       await submitStatusWork(expect, other, second, STATUS_WORK_CHANGE)
 
       const notice = page.getByTestId('hilos-status-work-notice')

@@ -62,6 +62,9 @@ final class CliCommands
     /** @var string Command: Inspect the daemon's cluster/consensus/placement state (test-only) */
     public const string CLUSTER_TEST_INSPECT = 'test:cluster:inspect';
 
+    /** @var string Command: Shift this node's cluster clock probe answers (test-only) */
+    public const string CLUSTER_TEST_CLOCK_SHIFT = 'test:cluster:clock:shift';
+
     public const string CLUSTER_TEST_UPLOAD_POOL = 'test:cluster:upload-pool';
 
     /** @var string Command: Index an accept key as a browser attached to this node (test-only) */

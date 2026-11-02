@@ -69,7 +69,10 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
     {
         $page = new DaemonHttpServerAnswerTestPage(new DaemonCollectorAgent());
         $missing = [
-            AbstractHilosDaemonHttpServerPage::NODE => ['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null],
+            AbstractHilosDaemonHttpServerPage::NODE => [
+                    'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
+                    'clock' => null,
+                ],
             AbstractHilosDaemonHttpServerPage::HTTP => null,
         ];
         self::assertSame($missing, $page->payload($this->address())->data);
@@ -86,7 +89,10 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
         self::assertSame($missing, $page->payload($this->address())->data);
         $this->publish(null);
         self::assertSame([
-            AbstractHilosDaemonHttpServerPage::NODE => ['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'],
+            AbstractHilosDaemonHttpServerPage::NODE => [
+                    'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+                    'clock' => null,
+                ],
             AbstractHilosDaemonHttpServerPage::HTTP => null,
         ], $page->payload($this->address())->data);
     }
@@ -104,7 +110,10 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
         $page = new DaemonHttpServerAnswerTestPage(new DaemonCollectorAgent());
 
         self::assertSame([
-            AbstractHilosDaemonHttpServerPage::NODE => ['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'],
+            AbstractHilosDaemonHttpServerPage::NODE => [
+                    'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+                    'clock' => null,
+                ],
             AbstractHilosDaemonHttpServerPage::HTTP => [
                 'host' => '::', 'port' => 8080, 'countingHours' => 0, 'requests' => 0, 'serverErrors' => 0, 'slow' => 0,
             ],
@@ -173,19 +182,32 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
         Hilos::$cluster = new ClusterContext();
         $page = new DaemonHttpServerAnswerTestPage(new DaemonCollectorAgent());
         $this->publish(null, role: NodeRole::Slave);
-        self::assertSame(['clustered' => true, 'state' => 'data', 'silentSince' => null, 'role' => 'slave'],
+        self::assertSame([
+            'clustered' => true, 'state' => 'data', 'silentSince' => null, 'role' => 'slave',
+            'clock' => [
+                'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+            ],
+        ],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
 
-        foreach ([[ConsensusRole::Leader, 'leader'], [ConsensusRole::Follower, 'standby']] as [$role, $state]) {
+        foreach ([[ConsensusRole::Leader, 'leader', true], [ConsensusRole::Follower, 'standby', false]] as [$role, $state, $reference]) {
             $this->publish(null, standing: new DaemonNodeStanding(0, 0, true,
                 new DaemonConsensusPicture($role, 1, 'n1', 1, 1, 1), null));
-            self::assertSame(['clustered' => true, 'state' => $state, 'silentSince' => null, 'role' => 'master'],
+            self::assertSame([
+                'clustered' => true, 'state' => $state, 'silentSince' => null, 'role' => 'master',
+                'clock' => [
+                    'reference' => $reference, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+                ],
+            ],
                 $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
         }
 
         Hilos::$cluster = null;
         $this->publish(null, standing: new DaemonNodeStanding(0, 0, false, null, null));
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'],
+        self::assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+            'clock' => null,
+        ],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
     }
 
@@ -202,7 +224,12 @@ final class HilosDaemonHttpServerPageAnswerTest extends TestCase
             sampledAt: 3610, online: false, receivedAt: 200000);
         $page = new DaemonHttpServerAnswerTestPage(new DaemonCollectorAgent());
 
-        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 200000000, 'role' => 'master'],
+        self::assertSame([
+            'clustered' => true, 'state' => 'silent', 'silentSince' => 200000000, 'role' => 'master',
+            'clock' => [
+                'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+            ],
+        ],
             $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::NODE]);
         self::assertSame(1, $page->payload($this->address())->data[AbstractHilosDaemonHttpServerPage::HTTP]['countingHours']);
     }

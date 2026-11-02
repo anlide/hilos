@@ -567,7 +567,13 @@ describe('cold Node answer and its delivered live overview', () => {
       icon: 'bi-hdd-network',
     },
     pageTabs: DAEMON_NODE_TABS.map(({ key, label }) => ({ page: key, label })),
-    node: { clustered: false, state: null, silentSince: null, role: null },
+    node: {
+      clustered: false,
+      state: null,
+      silentSince: null,
+      clock: null,
+      role: null,
+    },
   }
   function frame(data: Record<string, unknown>): DaemonPageFrame {
     const wire = {

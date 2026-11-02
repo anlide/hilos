@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusInspection;
@@ -103,6 +104,9 @@ final class ClusterContext
 
     /** @var ?ProtectedModeLeadership Leader-side hooks of the freeze, registered by the peer transport at start; null off-cluster. */
     private ?ProtectedModeLeadership $protectedModeLeadership = null;
+
+    /** @var ?ClusterClock Clock exchanges registered by the peer transport; null off-cluster */
+    private ?ClusterClock $clock = null;
 
     /** @var ?ProtectedModeInitiatorRelay Local relay of the leader's ready/refusal to the initiator agent, registered by the daemon at start. */
     private ?ProtectedModeInitiatorRelay $protectedModeInitiatorRelay = null;
@@ -576,6 +580,18 @@ final class ClusterContext
     public function protectedModeLeadership(): ?ProtectedModeLeadership
     {
         return $this->protectedModeLeadership;
+    }
+
+    /** @param ClusterClock $clock Master-local clock exchanges to install */
+    public function registerClock(ClusterClock $clock): void
+    {
+        $this->clock = $clock;
+    }
+
+    /** @return ?ClusterClock Clock exchanges, or null without a peer transport */
+    public function clock(): ?ClusterClock
+    {
+        return $this->clock;
     }
 
     /**

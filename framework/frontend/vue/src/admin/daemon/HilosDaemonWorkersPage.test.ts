@@ -121,6 +121,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(built.view.find('[data-id="hilos-page-head-title"]').text()).toBe(
@@ -143,6 +144,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(
@@ -153,7 +155,13 @@ describe('HilosDaemonWorkersPage', () => {
 
   it('shows a single installation without a cluster state or diagram', async () => {
     const h = harness(true)
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-solo"]').text()).toBe(
       'Single installation',
@@ -180,6 +188,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
@@ -200,6 +209,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'standby',
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
@@ -216,6 +226,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.reported(true)
     h.window([
@@ -274,6 +285,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     await nextTick()
     expect(

@@ -44,6 +44,7 @@ function picture(clustered = true): HilosDaemonOverviewData {
       role: 'master',
       state: 'leader',
       silentSince: null,
+      clock: null,
       workers: [],
       measurements: null,
       standing: null,

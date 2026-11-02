@@ -10,11 +10,14 @@ import {
   Injector,
   input,
   signal,
+  untracked,
   viewChild,
+  type ElementRef,
   type TemplateRef,
 } from '@angular/core'
 import {
   daemonNodeLogPath,
+  formatDaemonNodeClockWarning,
   formatDaemonNodeSilentSince,
   formatDaemonNodeState,
   readHilosDaemonNodeHeading,
@@ -78,10 +81,48 @@ import {
               >
             }
             <span
+              #roleBadge
               class="badge bg-body-tertiary text-body border"
               data-id="hilos-daemon-node-role"
+              tabindex="-1"
               >Role: {{ heading.role ?? '—' }}</span
             >
+            <span
+              #clockScrollport
+              class="d-block w-100 overflow-x-scroll text-nowrap"
+              [attr.tabindex]="clockWarning() !== null ? 0 : null"
+              [attr.role]="clockWarning() !== null ? 'region' : null"
+              [attr.aria-label]="
+                clockWarning() !== null ? 'Node clock warning' : null
+              "
+              [attr.aria-hidden]="clockWarning() === null ? 'true' : null"
+              [attr.inert]="clockWarning() === null ? '' : null"
+            >
+              @if (clockWarning(); as warning) {
+                <span
+                  class="badge text-bg-warning"
+                  data-id="hilos-daemon-node-clock-warning"
+                >
+                  <i
+                    class="bi bi-exclamation-triangle-fill me-1"
+                    aria-hidden="true"
+                  ></i
+                  >{{ warning }}
+                </span>
+              } @else {
+                <span
+                  class="badge text-bg-warning invisible"
+                  aria-hidden="true"
+                  inert
+                >
+                  <i
+                    class="bi bi-exclamation-triangle-fill me-1"
+                    aria-hidden="true"
+                  ></i
+                  >&nbsp;
+                </span>
+              }
+            </span>
           } @else {
             <span
               class="badge bg-body-tertiary text-body border"
@@ -130,6 +171,10 @@ export class HilosDaemonNodeShell {
 
   private readonly router = inject(HILOS_ROUTER)
   private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly roleBadge =
+    viewChild<ElementRef<HTMLSpanElement>>('roleBadge')
+  private readonly clockScrollport =
+    viewChild<ElementRef<HTMLSpanElement>>('clockScrollport')
   protected readonly body = contentChild<TemplateRef<unknown>>('pageBody')
   // Reprojection alone keeps the caller’s injector, outside HilosAdminPage.
   // Instantiate the caller’s template under that real shell’s providers so
@@ -142,6 +187,9 @@ export class HilosDaemonNodeShell {
     heading: HilosDaemonNodeHeading
   } | null>(null)
   protected readonly formatDaemonNodeState = formatDaemonNodeState
+  protected readonly clockWarning = computed(() =>
+    formatDaemonNodeClockWarning(this.current()?.heading.clock ?? null),
+  )
   protected readonly headAction = computed(() =>
     this.current()?.heading.clustered
       ? {
@@ -208,7 +256,23 @@ export class HilosDaemonNodeShell {
         HilosPages.DAEMON_NODE,
         computedSignal(() => current.get()?.nodeId),
       )
-      const stop = mirrorHilosSignal(current, this.current)
+      const stop = mirrorHilosSignal(current, {
+        set: (value) => {
+          // Return an active reader before publishing the Angular signal that
+          // hides its host. Query reads must not restart this mirror.
+          untracked(() => {
+            const scrollport = this.clockScrollport()?.nativeElement
+            if (
+              formatDaemonNodeClockWarning(value?.heading.clock ?? null) ===
+                null &&
+              scrollport !== undefined &&
+              scrollport.ownerDocument.activeElement === scrollport
+            )
+              this.roleBadge()?.nativeElement.focus()
+          })
+          this.current.set(value)
+        },
+      })
       onCleanup(() => {
         unbindName()
         stop()

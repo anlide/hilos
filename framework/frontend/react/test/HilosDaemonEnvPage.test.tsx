@@ -110,6 +110,7 @@ function harness() {
             clustered: environment?.cluster ?? true,
             state: nodeSilent ? 'silent' : null,
             silentSince: null,
+            clock: null,
             role: null,
           },
         }

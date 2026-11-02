@@ -444,6 +444,7 @@ describe('HilosDaemonCronPage', () => {
         role: 'master',
         state: 'silent',
         silentSince: at,
+        clock: null,
       })
       h.reported(true)
       h.window([rule({ lastRunAt: at, nextRunAt: at + 3_600_000 })])
@@ -573,6 +574,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(built.view.find('[data-id="hilos-page-head-title"]').text()).toBe(
@@ -595,6 +597,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(
@@ -605,7 +608,13 @@ describe('HilosDaemonCronPage', () => {
 
   it('shows a single installation without a cluster state or diagram', async () => {
     const h = harness(true)
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-solo"]').text()).toBe(
       'Single installation',
@@ -642,6 +651,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     await nextTick()
     const silent = h.view.find('[data-id="hilos-daemon-cron-empty-silent"]')
@@ -685,6 +695,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.reported(true)
     h.window([rule()])
@@ -699,6 +710,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     await nextTick()
     expect(
@@ -732,6 +744,7 @@ describe('HilosDaemonCronPage', () => {
         role: null,
         state,
         silentSince: state === 'silent' ? 1_700_000_000_000 : null,
+        clock: null,
       })
       h.reported(true)
       h.window([rule({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })])
@@ -768,6 +781,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'standby',
       silentSince: null,
+      clock: null,
     })
     h.window([rule({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })])
     await nextTick()
@@ -778,6 +792,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.window([rule()])
     await nextTick()
@@ -790,7 +805,13 @@ describe('HilosDaemonCronPage', () => {
 
   it('takes no notice room on a standalone node', async () => {
     const h = harness()
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     h.window([rule()])
     await nextTick()
     expect(
@@ -809,6 +830,7 @@ describe('HilosDaemonCronPage', () => {
         role: null,
         state: 'standby',
         silentSince: null,
+        clock: null,
       })
       h.window(rows)
       await nextTick()
@@ -827,6 +849,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.window([
       rule(),
@@ -856,7 +879,13 @@ describe('HilosDaemonCronPage', () => {
     expect(agentExecutor.classes()).toContain('font-monospace')
     expect(agentExecutor.find('i').exists()).toBe(false)
 
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     await nextTick()
     expect(daemonExecutor.text()).toBe('Daemon')
     h.view.unmount()
@@ -869,6 +898,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'standby',
       silentSince: null,
+      clock: null,
     })
     h.window([
       rule({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER }),

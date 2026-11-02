@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
@@ -38,6 +39,9 @@ use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonAgentPicture;
+use Hilos\DaemonSection\DaemonClockPicture;
+use Hilos\DaemonSection\DaemonClockReading;
+use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonWorkerPicture;
@@ -245,7 +249,10 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([
             'node', 'overview', 'pageLabel', 'pageLead', 'pageBreadcrumb', 'pageChildren', 'pageHeadOwner', 'pageTabs',
         ], array_keys($response->payload->data));
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'], $response->payload->data['node']);
+        self::assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+            'clock' => null,
+        ], $response->payload->data['node']);
         self::assertSame([
             'page' => HilosPageConstants::HILOS_DAEMON_NODE,
             'label' => 'Node',
@@ -277,11 +284,17 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         $this->deliver([$this->node($this->report('a'))], false);
         $partial = $this->onlyResponse()->payload->data;
         self::assertSame(['node', 'overview'], array_keys($partial));
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'], $partial['node']);
+        self::assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+            'clock' => null,
+        ], $partial['node']);
         self::assertNull($partial['overview']);
         $this->deliver([]);
         $empty = $this->onlyResponse()->payload->data;
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null], $empty['node']);
+        self::assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
+            'clock' => null,
+        ], $empty['node']);
         self::assertNull($empty['overview']);
         $this->deliver([$this->node($this->report('b'))]);
         self::assertSame([], $this->drain());
@@ -298,7 +311,10 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertNull($this->onlyResponse()->payload->data['overview']);
         $this->deliver([$this->node($this->report('a'), false, 777)]);
         $response = $this->onlyResponse();
-        self::assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master'], $response->payload->data['node']);
+        self::assertSame([
+            'clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master',
+            'clock' => null,
+        ], $response->payload->data['node']);
         self::assertFalse($response->payload->data['overview']['online']);
         self::assertSame(2, $response->payload->data['overview']['uptimeMinutes']);
     }
@@ -325,6 +341,42 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertSame([], $this->drain());
         $this->deliver([$this->node($b->sampledAt(401))], false);
         self::assertSame([], $this->drain());
+    }
+
+    public function testLeaderClockChangesPublishTheAddressedHeadingAndRepeatedReportsStayQuiet(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        Hilos::$cluster = new ClusterContext();
+        $standing = static fn (int $offsetMs, int $measuredAt, int $thresholdMs): DaemonNodeStanding => new DaemonNodeStanding(
+            0, 0, true, new DaemonConsensusPicture(ConsensusRole::Leader, 1, 'leader', 2, 3, 2), null,
+            new DaemonClockPicture($thresholdMs, [new DaemonClockReading('peer', $offsetMs, $measuredAt)]),
+        );
+        $leader = $this->report('leader')->withStanding($standing(25, 1000, 300));
+        $this->deliver([$this->node($leader), $this->node($this->report('peer'))]);
+        $this->subscribe('reader', 'peer');
+        self::assertSame([
+            'reference' => false, 'offsetMs' => 25, 'measuredAt' => 1000, 'thresholdMs' => 300, 'beyond' => false,
+        ], $this->onlyResponse()->payload->data['node']['clock']);
+        $viewport = new TableViewportSubscription('unrelated', filter: ['search' => 'retained'], limit: 7);
+        Hilos::$sr->setTableViewport('reader', $viewport);
+
+        foreach ([[26, 1000, 300, false], [26, 2000, 300, false], [500, 2000, 300, true], [500, 2000, 600, false]]
+            as [$offsetMs, $measuredAt, $thresholdMs, $beyond]) {
+            $report = $leader->withStanding($standing($offsetMs, $measuredAt, $thresholdMs));
+            $this->deliver([$this->node($report)], false);
+            $signals = $this->drain();
+            self::assertCount(1, $signals);
+            self::assertSame('reader', $signals[0]->data->targetAcceptKey);
+            $payload = $signals[0]->data->data->payload;
+            self::assertSame(['data'], array_keys($payload->toArray()));
+            self::assertSame([
+                'reference' => false, 'offsetMs' => $offsetMs, 'measuredAt' => $measuredAt,
+                'thresholdMs' => $thresholdMs, 'beyond' => $beyond,
+            ], $payload->data['node']['clock']);
+            self::assertSame($viewport, Hilos::$sr->getTableViewport('reader', 'unrelated'));
+            $this->deliver([$this->node($report->sampledAt(400), receivedAt: 500)], false);
+            self::assertSame([], $this->drain());
+        }
     }
 
     public function testAnotherNodesComparisonChangeReachesBothOverviewsWithoutReplacingTheirOwnMetrics(): void
@@ -373,7 +425,10 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
         self::assertCount(2, $signals);
         foreach ($signals as $signal) {
             self::assertSame(6, $signal->data->data->payload->data['overview']['uptimeMinutes']);
-            self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'],
+            self::assertSame([
+                'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+                'clock' => null,
+            ],
                 $signal->data->data->payload->data['node']);
             self::assertStringNotContainsString('_hidden', json_encode($signal->data->data->toArray(), JSON_THROW_ON_ERROR));
         }

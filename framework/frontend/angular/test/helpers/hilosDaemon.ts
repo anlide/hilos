@@ -30,6 +30,7 @@ export function daemonNode(
     role: 'master',
     state: 'leader',
     silentSince: null,
+    clock: null,
     workers: [
       { index: 0, kind: 'regular', agentCount: 2 },
       { index: 4, kind: 'monopolistic', agentCount: 1 },
@@ -183,7 +184,10 @@ export function daemonHarness<T>(
     sendViewport,
     emit,
     detect: () => fixture.detectChanges(),
-    el: (id: string) => root.querySelector<HTMLElement>(`[data-id="${id}"]`),
+    el: (id: string) =>
+      [...root.querySelectorAll<HTMLElement>('[data-id]')].find(
+        (element) => element.getAttribute('data-id') === id,
+      ) ?? null,
     listeners: (event?: string) =>
       event === undefined
         ? [...listeners.values()].reduce((sum, group) => sum + group.size, 0)

@@ -25,11 +25,12 @@ namespace Hilos\Cluster\Peer;
  * 21 — peer_protected_mode_window opens the direct verification window on every master (HIL-1367).
  * 22 — peer_placement_view/report carry the complete term/revision-fenced placement snapshot (HIL-446).
  * 23 — peer_protected_mode_node_report carries node diagnostics independently of stopped agents (HIL-1678).
+ * 24 — peer_clock_probe / peer_clock_reply measure a node's clock against the leader's (HIL-1646).
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 23;
+    public const int VERSION = 24;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

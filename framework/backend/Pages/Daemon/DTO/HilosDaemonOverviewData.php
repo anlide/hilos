@@ -27,6 +27,7 @@ final readonly class HilosDaemonOverviewData
     public const string role = 'role';
     public const string state = 'state';
     public const string silentSince = 'silentSince';
+    public const string clock = 'clock';
     public const string workers = 'workers';
     public const string index = 'index';
     public const string kind = 'kind';
@@ -206,6 +207,7 @@ final readonly class HilosDaemonOverviewData
             self::role => $report?->role->value,
             self::state => $heading->state?->value,
             self::silentSince => $heading->silentSince,
+            self::clock => $heading->clock?->toArray(),
             self::workers => $report?->processes === null ? null : array_map(
                 static fn (DaemonWorkerPicture $worker): array => [
                     self::index => $worker->index,

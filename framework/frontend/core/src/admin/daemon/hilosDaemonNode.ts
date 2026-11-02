@@ -18,14 +18,25 @@ export const DAEMON_NODE_STATE_STANDBY = 'standby'
 export const DAEMON_NODE_STATE_DATA = 'data'
 export const DAEMON_NODE_STATE_SILENT = 'silent'
 
+export const daemonNodeClockSchema = z.strictObject({
+  reference: z.boolean(),
+  offsetMs: z.number().int().nullable(),
+  /** Measurement completion in the leader's epoch milliseconds. */
+  measuredAt: z.number().int().nullable(),
+  thresholdMs: z.number().int().positive().nullable(),
+  beyond: z.boolean(),
+})
+
 export const daemonNodeHeadingSchema = z.strictObject({
   clustered: z.boolean(),
   state: z.string().nullable(),
   /** Last report arrival in epoch milliseconds, only while silent. */
   silentSince: z.number().int().nullable(),
   role: z.enum(['master', 'slave']).nullable(),
+  clock: daemonNodeClockSchema.nullable(),
 })
 
+export type HilosDaemonNodeClock = z.infer<typeof daemonNodeClockSchema>
 export type HilosDaemonNodeHeading = z.infer<typeof daemonNodeHeadingSchema>
 
 /** Empty-table explanation for a node's processes. */
@@ -99,6 +110,41 @@ export function formatDaemonNodeSilentSince(
   return heading?.state === DAEMON_NODE_STATE_SILENT &&
     heading.silentSince !== null
     ? formatDaemonCronMoment(heading.silentSince, nowMs)
+    : null
+}
+
+/**
+ * Format the server's clock projection without changing the measured moment.
+ *
+ * @param clock The node's clock projection, or null outside cluster pages.
+ * @param nowMs Current browser time in milliseconds.
+ */
+export function formatDaemonNodeClock(
+  clock: HilosDaemonNodeClock | null,
+  nowMs: number,
+): string | null {
+  if (clock === null) return null
+  if (clock.reference) return 'Clock: reference'
+  if (clock.offsetMs === null) return 'Clock: not measured yet'
+  const offset =
+    clock.offsetMs >= 0 ? `+${clock.offsetMs}` : `${clock.offsetMs}`
+  const measured =
+    clock.measuredAt === null
+      ? '—'
+      : formatDaemonCronMoment(clock.measuredAt, nowMs)
+  return `Clock: ${offset} ms to the leader, measured ${measured}`
+}
+
+/**
+ * Read the server's threshold verdict; the browser does not recompute it.
+ *
+ * @param clock The node's clock projection, or null outside cluster pages.
+ */
+export function formatDaemonNodeClockWarning(
+  clock: HilosDaemonNodeClock | null,
+): string | null {
+  return clock?.beyond === true
+    ? `Clock ${Math.abs(clock.offsetMs!)} ms off the leader (threshold ${clock.thresholdMs} ms)`
     : null
 }
 

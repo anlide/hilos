@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Constants\CliCommands;
@@ -25,6 +26,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use ReflectionProperty;
 
 /**
@@ -36,12 +38,14 @@ final class DaemonManagerCronTest extends TestCase
     private ?EnvAccessor $previousEnv;
     private ?ClusterContext $previousCluster;
     private string|false $previousAppEnv;
+    private string|false $previousClusterEnabled;
 
     protected function setUp(): void
     {
         $this->previousEnv = Hilos::$env;
         $this->previousCluster = Hilos::$cluster;
         $this->previousAppEnv = getenv('APP_ENV');
+        $this->previousClusterEnabled = getenv('CLUSTER_ENABLED');
         Hilos::$cluster = null;
     }
 
@@ -51,6 +55,7 @@ final class DaemonManagerCronTest extends TestCase
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
         putenv($this->previousAppEnv === false ? 'APP_ENV' : 'APP_ENV=' . $this->previousAppEnv);
+        putenv($this->previousClusterEnabled === false ? 'CLUSTER_ENABLED' : 'CLUSTER_ENABLED=' . $this->previousClusterEnabled);
 
         parent::tearDown();
     }
@@ -71,6 +76,64 @@ final class DaemonManagerCronTest extends TestCase
         $this->assertInstanceOf(CronSignalDTO::class, $signal->data);
         $this->assertSame('cleanup_history', $signal->data->cronName);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testClockCheckRuleIsRegisteredOnlyInClusterMode(): void
+    {
+        $this->environment('test');
+        $manager = new DaemonManagerCronTestManager();
+        $register = new ReflectionMethod(DaemonManager::class, 'registerClusterClockCheckRule');
+        $register->invoke($manager);
+        self::assertSame([], $manager->getCronRules());
+
+        Hilos::$cluster = new ClusterContext();
+        putenv('CLUSTER_ENABLED=false');
+        $register->invoke($manager);
+        self::assertSame([], $manager->getCronRules());
+
+        putenv('CLUSTER_ENABLED=true');
+        $register->invoke($manager);
+        self::assertSame(['hilos_cluster_clock_check'], array_keys($manager->getCronRules()));
+        self::assertSame('0 4 * * *', $manager->getCronRules()['hilos_cluster_clock_check']->expression);
+    }
+
+    public function testClockCronFiresTheMasterMeasurementWithoutAnAgentSignal(): void
+    {
+        $this->environment('test');
+        putenv('CLUSTER_ENABLED=true');
+        $leadership = new DaemonManagerCronTestLeadership();
+        $leadership->leader = true;
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerLeadership($leadership);
+        $linkReads = 0;
+        $clock = new ClusterClock(static function () use (&$linkReads): array {
+            ++$linkReads;
+            return [];
+        });
+        Hilos::$cluster->registerClock($clock);
+        self::assertSame($clock, Hilos::$cluster->clock());
+        $manager = new DaemonManagerCronTestManager();
+        $manager->onBecameLeader(1);
+        self::assertSame(1, $linkReads, 'Winning leadership starts the first measurement');
+        new ReflectionMethod(DaemonManager::class, 'registerClusterClockCheckRule')->invoke($manager);
+        $console = $manager->addConsole();
+        $manager->markWorkersReady();
+        $manager->markMinuteChecked();
+        $manager->markFrameClean();
+
+        $manager->requestCronFire($this->ask('clock-fire', ClusterClock::CRON_RULE));
+
+        self::assertSame(2, $linkReads, 'The cron firing calls checkAll on the registered clock');
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertTrue($manager->frameDirty());
+        self::assertNotNull($manager->getCronRules()[ClusterClock::CRON_RULE]->lastFiredAt);
+        self::assertFalse($manager->getCronRules()[ClusterClock::CRON_RULE]->isArmedForNextCheck());
+        self::assertCount(1, $console->replies);
+        self::assertTrue($console->replies[0]->isOk());
+
+        $manager->onLostLeadership(1);
+        $clock->checkAll();
+        self::assertSame(2, $linkReads, 'Losing leadership stops measurement triggers');
     }
 
     /** The scheduler has checked this minute already; the armed rule fires anyway, once, and answers its moment. */
@@ -322,10 +385,12 @@ final class DaemonManagerCronTestConsole extends CommandServer
 
 final class DaemonManagerCronTestLeadership implements Leadership
 {
-    /** @return bool This node follows */
+    public bool $leader = false;
+
+    /** @return bool Whether this test node leads */
     public function amLeader(): bool
     {
-        return false;
+        return $this->leader;
     }
 
     /** @return ?string No known leader id */

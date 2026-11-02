@@ -159,6 +159,8 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeRefreezeDTO::MESSAGE_TYPE => PeerProtectedModeRefreezeDTO::fromArray($data),
             PeerPingDTO::MESSAGE_TYPE => PeerPingDTO::fromArray($data),
             PeerPongDTO::MESSAGE_TYPE => PeerPongDTO::fromArray($data),
+            PeerClockProbeDTO::MESSAGE_TYPE => PeerClockProbeDTO::fromArray($data),
+            PeerClockReplyDTO::MESSAGE_TYPE => PeerClockReplyDTO::fromArray($data),
             default => throw new PeerTransportException(
                 "Unknown peer frame type: '" . ($type ?? get_debug_type($typeValue)) . "'",
             ),

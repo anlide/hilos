@@ -345,6 +345,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 6000, emptyIsMissing: true),
             EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1000, emptyIsMissing: true),
             EnvConstants::CLUSTER_LINK_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 5000, emptyIsMissing: true),
+            EnvConstants::CLUSTER_CLOCK_SKEW_THRESHOLD_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 300, emptyIsMissing: true),
             EnvConstants::CLUSTER_FAILOVER_GRACE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8000, emptyIsMissing: true),
             EnvConstants::CLUSTER_PLACEMENT_ACK_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 16000, emptyIsMissing: true),
             EnvConstants::CLUSTER_TLS_CERT_FILE->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),

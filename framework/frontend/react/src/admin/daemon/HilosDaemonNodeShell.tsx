@@ -1,7 +1,8 @@
 // Shared node entity block and page-owned body.
-import { useContext, useMemo, type ReactNode } from 'react'
+import { useCallback, useContext, useMemo, useRef, type ReactNode } from 'react'
 import {
   daemonNodeLogPath,
+  formatDaemonNodeClockWarning,
   formatDaemonNodeSilentSince,
   formatDaemonNodeState,
   readHilosDaemonNodeHeading,
@@ -79,6 +80,21 @@ export function HilosDaemonNodeShell({
   const current = useSignal(currentSource)
   useSignal(hilosTimeZone)
   const heading = current?.heading
+  const clockWarning = formatDaemonNodeClockWarning(heading?.clock ?? null)
+  const hasClockWarning = clockWarning !== null
+  const roleBadge = useRef<HTMLSpanElement>(null)
+  // Detach the warning's ref before its host becomes hidden/inert and blurs.
+  // Keep it stable while only the warning's text changes.
+  const clockScrollport = useCallback(
+    (element: HTMLSpanElement | null) => {
+      if (element === null || !hasClockWarning) return
+      return () => {
+        if (element.ownerDocument.activeElement === element)
+          roleBadge.current?.focus()
+      }
+    },
+    [hasClockWarning],
+  )
   const logPath =
     current && showLogLinks
       ? daemonNodeLogPath(router.resolvePath, current.nodeId)
@@ -125,10 +141,46 @@ export function HilosDaemonNodeShell({
                 </span>
               )}
               <span
+                ref={roleBadge}
                 className="badge bg-body-tertiary text-body border"
                 data-id="hilos-daemon-node-role"
+                tabIndex={-1}
               >
                 Role: {heading.role ?? '—'}
+              </span>
+              <span
+                ref={clockScrollport}
+                className="d-block w-100 overflow-x-scroll text-nowrap"
+                tabIndex={hasClockWarning ? 0 : undefined}
+                role={hasClockWarning ? 'region' : undefined}
+                aria-label={hasClockWarning ? 'Node clock warning' : undefined}
+                aria-hidden={hasClockWarning ? undefined : true}
+                inert={!hasClockWarning}
+              >
+                {clockWarning !== null ? (
+                  <span
+                    className="badge text-bg-warning"
+                    data-id="hilos-daemon-node-clock-warning"
+                  >
+                    <i
+                      className="bi bi-exclamation-triangle-fill me-1"
+                      aria-hidden="true"
+                    />
+                    {clockWarning}
+                  </span>
+                ) : (
+                  <span
+                    className="badge text-bg-warning invisible"
+                    aria-hidden="true"
+                    inert
+                  >
+                    <i
+                      className="bi bi-exclamation-triangle-fill me-1"
+                      aria-hidden="true"
+                    />
+                    &nbsp;
+                  </span>
+                )}
               </span>
             </>
           ) : (

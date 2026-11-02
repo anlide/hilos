@@ -38,6 +38,7 @@ function harness(clustered = false, placement = 'node') {
     role: null,
     state: clustered ? 'leader' : null,
     silentSince: null,
+    clock: null,
   })
   h.scope.data.set(DAEMON_PROCESSES_REPORTED_DATA, true)
   const agent = (
@@ -140,6 +141,7 @@ describe('HilosDaemonAgentsPage', () => {
         role: null,
         state: 'silent',
         silentSince: 1_700_000_000_000,
+        clock: null,
       })
       h.detect()
       const line = h.el('hilos-daemon-agents-silent')!
@@ -302,6 +304,7 @@ describe('HilosDaemonAgentsPage', () => {
           role: null,
           state: 'silent',
           silentSince: 1700000000000,
+          clock: null,
         })
       if (state === 'frozen')
         h.emit('tableViewportFrozen', {
@@ -378,6 +381,7 @@ describe('HilosDaemonAgentsPage', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     })
     h.detect()
     expect(rowControls(h).why.hidden).toBe(true)
@@ -482,6 +486,7 @@ describe('HilosDaemonAgentsPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(confirm().disabled).toBe(true)
@@ -550,6 +555,7 @@ describe('HilosDaemonAgentsPage', () => {
           role: null,
           state: 'silent',
           silentSince: 1700000000000,
+          clock: null,
         })
       if (state === 'restarting') h.window(true)
       if (state === 'frozen')

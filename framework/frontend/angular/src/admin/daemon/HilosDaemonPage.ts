@@ -18,6 +18,8 @@ import {
   formatDaemonBytes,
   formatDaemonCores,
   formatDaemonDatabaseAddress,
+  formatDaemonNodeClock,
+  formatDaemonNodeClockWarning,
   formatDaemonNodeState,
   formatDaemonNodeSilentSince,
   formatDaemonNumber,
@@ -201,8 +203,16 @@ import type {
                     class="btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none"
                     [ngClass]="{ 'border-danger-subtle': !node.online }"
                     [attr.aria-label]="'Node ' + node.nodeId"
+                    [attr.aria-describedby]="
+                      picture.clustered &&
+                      node.online &&
+                      formatDaemonNodeClockWarning(node.clock) !== null
+                        ? clockWarningId(node)
+                        : null
+                    "
                     [attr.data-id]="'hilos-daemon-node-' + node.nodeId"
                     [attr.data-state]="node.state"
+                    (keydown)="onClockKeydown($event)"
                   >
                     <span
                       class="d-flex flex-wrap align-items-center gap-2 mb-3"
@@ -388,6 +398,56 @@ import type {
                                 formatDaemonNumber(node.standing?.connections)
                           }}</span
                         >
+                        @if (picture.clustered) {
+                          <span class="d-block overflow-x-scroll text-nowrap">
+                            @if (node.clock !== null) {
+                              <span
+                                class="d-block"
+                                [attr.data-id]="
+                                  'hilos-daemon-clock-' + node.nodeId
+                                "
+                                >{{ formatClock(node) }}</span
+                              >
+                            } @else {
+                              <span
+                                class="d-block invisible"
+                                aria-hidden="true"
+                                inert
+                                >&nbsp;</span
+                              >
+                            }
+                            @if (
+                              formatDaemonNodeClockWarning(node.clock);
+                              as warning
+                            ) {
+                              <span
+                                class="d-block text-warning-emphasis"
+                                [attr.id]="clockWarningId(node)"
+                                [attr.data-id]="
+                                  'hilos-daemon-clock-warning-' + node.nodeId
+                                "
+                              >
+                                <i
+                                  class="bi bi-exclamation-triangle-fill me-1"
+                                  aria-hidden="true"
+                                ></i
+                                >{{ warning }}
+                              </span>
+                            } @else {
+                              <span
+                                class="d-block text-warning-emphasis invisible"
+                                aria-hidden="true"
+                                inert
+                              >
+                                <i
+                                  class="bi bi-exclamation-triangle-fill me-1"
+                                  aria-hidden="true"
+                                ></i
+                                >&nbsp;
+                              </span>
+                            }
+                          </span>
+                        }
                       </span>
                     }
                   </a>
@@ -444,6 +504,7 @@ export class HilosDaemonPage {
   protected readonly formatDaemonBytes = formatDaemonBytes
   protected readonly formatDaemonCores = formatDaemonCores
   protected readonly formatDaemonDatabaseAddress = formatDaemonDatabaseAddress
+  protected readonly formatDaemonNodeClockWarning = formatDaemonNodeClockWarning
   protected readonly formatDaemonNodeState = formatDaemonNodeState
   protected readonly formatDaemonNumber = formatDaemonNumber
   protected readonly formatDaemonPercentage = formatDaemonPercentage
@@ -480,5 +541,36 @@ export class HilosDaemonPage {
   protected formatSilentSince(node: HilosDaemonOverviewNode): string | null {
     this.timeZone()
     return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
+  }
+  /** The server's measured clock in the current reader zone. */
+  protected formatClock(node: HilosDaemonOverviewNode): string | null {
+    this.timeZone()
+    return formatDaemonNodeClock(node.clock, Date.now())
+  }
+  /** The diagram warning id referenced by the node link. */
+  protected clockWarningId(node: HilosDaemonOverviewNode): string {
+    return `hilos-daemon-clock-warning-${encodeURIComponent(node.nodeId)}`
+  }
+
+  /** Read the Clock lines from the link without adding a Tab stop inside it. */
+  protected onClockKeydown(event: KeyboardEvent): void {
+    if (
+      event.defaultPrevented ||
+      event.target !== event.currentTarget ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+    )
+      return
+    const link = event.currentTarget as HTMLAnchorElement
+    const scrollport = link.querySelector<HTMLElement>(
+      '[data-id^="hilos-daemon-clock-"]',
+    )?.parentElement
+    if (!scrollport) return
+    event.preventDefault()
+    const step = 80
+    scrollport.scrollBy({ left: event.key === 'ArrowRight' ? step : -step })
   }
 }

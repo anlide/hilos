@@ -100,12 +100,14 @@ describe('daemon HTTP empty state', () => {
       role: null,
       state: 'silent',
       silentSince: 42000,
+      clock: null,
     }
     const leader = {
       clustered: true,
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     }
     expect(daemonHttpEmptyState(null, null)).toBe('waiting')
     expect(daemonHttpEmptyState(leader, null)).toBe('waiting')

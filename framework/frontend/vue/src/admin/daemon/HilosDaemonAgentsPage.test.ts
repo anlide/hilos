@@ -143,6 +143,7 @@ describe('HilosDaemonAgentsPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     await nextTick()
     expect(h.view.find('[data-id="hilos-daemon-node-state"]').text()).toBe(
@@ -170,6 +171,7 @@ describe('HilosDaemonAgentsPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.reported(true)
     h.window([
@@ -214,6 +216,7 @@ describe('HilosDaemonAgentsPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     await nextTick()
     expect(
@@ -227,7 +230,13 @@ describe('HilosDaemonAgentsPage', () => {
 
   it('labels a single installation without cluster placement', async () => {
     const h = harness()
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     h.reported(true)
     h.window([agent({ idle: true })])
     await nextTick()
@@ -258,6 +267,7 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
     role: null,
     state: clustered ? 'leader' : null,
     silentSince: null,
+    clock: null,
   })
   scope.data.set(DAEMON_PROCESSES_REPORTED_DATA, true)
   const listeners = new Map<string, (signal: { data: unknown }) => void>()
@@ -505,6 +515,7 @@ describe('HilosDaemonAgentsPage restart', () => {
       role: null,
       state: 'silent',
       silentSince: 10000,
+      clock: null,
     })
     await nextTick()
     expect(
@@ -568,6 +579,7 @@ describe('HilosDaemonAgentsPage restart', () => {
       role: null,
       state: 'silent',
       silentSince: 10000,
+      clock: null,
     })
     await nextTick()
     expect(restartButton(h).disabled).toBe(true)
@@ -578,6 +590,7 @@ describe('HilosDaemonAgentsPage restart', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(restartButton(h).disabled).toBe(false)

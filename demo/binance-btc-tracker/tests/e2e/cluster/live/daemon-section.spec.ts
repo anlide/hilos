@@ -114,6 +114,13 @@ test('daemon section navigation: follower entry points name the live leader and 
       clustered: true,
       state: 'leader',
       silentSince: null,
+      clock: {
+        reference: true,
+        offsetMs: null,
+        measuredAt: null,
+        thresholdMs: 300,
+        beyond: false,
+      },
       role: 'master',
     })
     await expectDaemonNodeHead(

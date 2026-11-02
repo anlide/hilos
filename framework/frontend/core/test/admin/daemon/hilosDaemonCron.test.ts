@@ -319,6 +319,7 @@ describe('daemon cron empty state', () => {
       role: null,
       state: 'silent',
       silentSince: 42000,
+      clock: null,
     }
 
     expect(daemonCronEmptyState(null, true)).toBe('none')
@@ -331,6 +332,7 @@ describe('daemon cron empty state', () => {
       role: null,
       state: 'silent',
       silentSince: 42000,
+      clock: null,
     }
 
     expect(daemonCronEmptyState(silent, false)).toBe('silent')
@@ -342,6 +344,7 @@ describe('daemon cron empty state', () => {
       role: null,
       state: 'standby',
       silentSince: null,
+      clock: null,
     }
 
     expect(daemonCronEmptyState(null, false)).toBe('waiting')
@@ -355,6 +358,7 @@ describe('daemon cron idle notice', () => {
     role: null,
     state: 'standby',
     silentSince: null,
+    clock: null,
   }
   const idle = row({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })
 
@@ -379,6 +383,7 @@ describe('daemon cron idle notice', () => {
         role: null,
         state: null,
         silentSince: null,
+        clock: null,
       }),
     ).toBe('none')
   })
@@ -410,6 +415,7 @@ describe('daemon cron idle notice', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     }
 
     expect(daemonCronHoldsIdleNotice([row()], standalone)).toBe(false)

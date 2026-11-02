@@ -147,12 +147,14 @@ const LIVE: HilosDaemonNodeHeading = {
   role: null,
   state: 'leader',
   silentSince: null,
+  clock: null,
 }
 const SILENT: HilosDaemonNodeHeading = {
   clustered: true,
   role: null,
   state: 'silent',
   silentSince: 1700000000000,
+  clock: null,
 }
 function summary(
   overrides: Partial<HilosDaemonHttpSummary> = {},
@@ -405,6 +407,7 @@ describe('HilosDaemonHttpServerPage', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     })
     expect(h.find('hilos-daemon-node-solo')?.textContent).toBe(
       'Single installation',

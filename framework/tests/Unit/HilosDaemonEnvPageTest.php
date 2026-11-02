@@ -83,7 +83,10 @@ final class HilosDaemonEnvPageTest extends TestCase
 
         $admin = $page->payload('ak', $params)->data;
         $this->assertFalse($admin[AbstractHilosDaemonEnvPage::NODE_SILENT]);
-        $this->assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave'],
+        $this->assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave',
+            'clock' => null,
+        ],
             $admin[AbstractHilosDaemonEnvPage::NODE]);
         $this->assertSame(['kind' => 'secret', 'length' => 8],
             $admin[AbstractHilosDaemonEnvPage::ENVIRONMENT][NodeEnvironmentReading::KEYS][0][NodeEnvironmentReading::VALUE]);
@@ -104,7 +107,10 @@ final class HilosDaemonEnvPageTest extends TestCase
         putenv('CLUSTER_ENABLED=true');
         Hilos::$cluster = new ClusterContext();
         $clustered = $page->payload('ak', $params)->data;
-        $this->assertSame(['clustered' => true, 'state' => null, 'silentSince' => null, 'role' => 'slave'],
+        $this->assertSame([
+            'clustered' => true, 'state' => null, 'silentSince' => null, 'role' => 'slave',
+            'clock' => null,
+        ],
             $clustered[AbstractHilosDaemonEnvPage::NODE]);
         $this->assertTrue($clustered[AbstractHilosDaemonEnvPage::ENVIRONMENT][NodeEnvironmentReading::CLUSTER]);
     }
@@ -117,7 +123,10 @@ final class HilosDaemonEnvPageTest extends TestCase
 
         $this->assertNull($data[AbstractHilosDaemonEnvPage::ENVIRONMENT]);
         $this->assertTrue($data[AbstractHilosDaemonEnvPage::NODE_SILENT]);
-        $this->assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => null],
+        $this->assertSame([
+            'clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => null,
+            'clock' => null,
+        ],
             $data[AbstractHilosDaemonEnvPage::NODE]);
         $page->afterResponse('ak', $params);
         $this->assertSame([], ClusterDaemonPictureMirror::viewerKeys());
@@ -130,7 +139,10 @@ final class HilosDaemonEnvPageTest extends TestCase
         Hilos::$rt->hilosClusterNodes->actions->publish('node-A', NodeRole::Master->value, [], null, false, 42.0);
         $page = new DaemonEnvPageTestPage(new DaemonCollectorAgent());
         $data = $page->payload('ak', new PageRouteParams(['nodeId' => 'node-A']))->data;
-        $this->assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => 'master'],
+        $this->assertSame([
+            'clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => 'master',
+            'clock' => null,
+        ],
             $data[AbstractHilosDaemonEnvPage::NODE]);
         $this->assertNull($data[AbstractHilosDaemonEnvPage::ENVIRONMENT]);
         $this->assertSame([], ClusterDaemonPictureMirror::viewerKeys());

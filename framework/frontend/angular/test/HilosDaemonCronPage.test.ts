@@ -138,6 +138,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(h.el('hilos-daemon-cron-empty-silent')).not.toBeNull()
@@ -155,6 +156,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'standby',
       silentSince: null,
+      clock: null,
     })
     h.window('hilosDaemonCron', [
       rule('z-last', null, 'not_leader'),
@@ -186,6 +188,7 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(h.el('hilos-daemon-cron-silent')?.textContent).toContain(
@@ -426,12 +429,14 @@ describe('HilosDaemonCronPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.scope.data.set(DAEMON_NODE_DATA, {
       clustered: true,
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(h.el('hilos-daemon-node-state')?.textContent).toContain('Leader')
@@ -518,6 +523,7 @@ describe('HilosDaemonCronPage', () => {
         role: null,
         state: 'silent',
         silentSince: 1700000000000,
+        clock: null,
       })
       h.window('hilosDaemonCron', [
         rule('reader-zone'),

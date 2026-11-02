@@ -381,6 +381,16 @@ takes the same `<owner>/<rule>` key. Which one a spec calls, and when it repeats
 [The Daemon section](../frontend/testing-strategy.md#the-daemon-section--names-and-checks) of the
 testing strategy.
 
+For a cluster clock-offset spec, set the measured node's probe-answer shift with
+`test:cluster:clock:shift --ms=800` (or a negative value); omit `--ms` to reset it to zero.
+The command changes only the master's in-memory `peer_clock_reply` wall time, and the shift
+lasts until reset or master restart. On the current leader, fire
+`test:cron:fire daemon/hilos_cluster_clock_check`, then use
+`test:daemon:node:report` on that leader to carry the fresh `standing.clock` through the
+existing picture chain. This is a controlled probe answer, not a clock override: browser and
+system clocks do not change. The command refuses on production, outside a cluster, for a
+non-integer `--ms`, or when its absolute value exceeds 86,400,000 milliseconds.
+
 ### Time-based features: no universal clock
 
 There is deliberately **no injectable clock, `now()` override, or global time-mock** in the

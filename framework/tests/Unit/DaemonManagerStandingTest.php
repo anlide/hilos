@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Clock\ClusterClock;
+use Hilos\Cluster\Clock\ClusterClockReading;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Consensus\ConsensusRole;
@@ -16,6 +18,8 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\DaemonSection\DaemonClockPicture;
+use Hilos\DaemonSection\DaemonClockReading;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -39,6 +43,7 @@ final class DaemonManagerStandingTest extends TestCase
     private ?RtContext $previousRt;
     private ?ClusterContext $previousCluster;
     private ?EnvAccessor $previousEnv;
+    private string|false $previousClockThreshold;
 
     /** Replaces global facade inputs with this test's node and agent topology. */
     protected function setUp(): void
@@ -47,6 +52,7 @@ final class DaemonManagerStandingTest extends TestCase
         $this->previousRt = Hilos::$rt;
         $this->previousCluster = Hilos::$cluster;
         $this->previousEnv = Hilos::$env;
+        $this->previousClockThreshold = getenv('CLUSTER_CLOCK_SKEW_THRESHOLD_MS');
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, StandingTestHilos::class);
         Hilos::$rt = null;
         Hilos::$cluster = null;
@@ -63,6 +69,9 @@ final class DaemonManagerStandingTest extends TestCase
         putenv('CLUSTER_ENABLED');
         putenv('CLUSTER_NODE_ID');
         putenv('CLUSTER_NODE_ROLE');
+        putenv($this->previousClockThreshold === false
+            ? 'CLUSTER_CLOCK_SKEW_THRESHOLD_MS'
+            : 'CLUSTER_CLOCK_SKEW_THRESHOLD_MS=' . $this->previousClockThreshold);
         parent::tearDown();
     }
 
@@ -82,6 +91,7 @@ final class DaemonManagerStandingTest extends TestCase
         self::assertSame(3, $worker->frame(0)->standing->connections);
         self::assertFalse($worker->frame(0)->standing->clustered);
         self::assertNull($worker->frame(0)->standing->consensus);
+        self::assertNull($worker->frame(0)->standing->clock);
 
         $manager->tickStandingAt(100.5);
         self::assertCount(1, $worker->delivered);
@@ -162,6 +172,124 @@ final class DaemonManagerStandingTest extends TestCase
         $manager->tickStandingAt(100.0);
         self::assertTrue($worker->frame(0)->standing->clustered);
         self::assertNull($worker->frame(0)->standing->consensus);
+    }
+
+    /** Even a retained clock source is projected only by a clustered leader. */
+    public function testClockIsPresentOnlyOnTheClusterLeader(): void
+    {
+        putenv('CLUSTER_CLOCK_SKEW_THRESHOLD_MS=450');
+        foreach ([
+            [false, 'master', true],
+            [true, 'master', false],
+            [true, 'slave', false],
+            [true, 'master', true],
+        ] as [$clustered, $role, $leader]) {
+            putenv('CLUSTER_ENABLED=' . ($clustered ? 'true' : 'false'));
+            putenv('CLUSTER_NODE_ID=n1');
+            putenv('CLUSTER_NODE_ROLE=' . $role);
+            Hilos::$cluster = new ClusterContext();
+            if ($role === 'master') {
+                $consensus = new StandingTestConsensus();
+                $consensus->leader = $leader;
+                Hilos::$cluster->registerLeadership($consensus);
+            }
+            $exchangeScans = 0;
+            $clock = new ClusterClock(static function () use (&$exchangeScans): array {
+                ++$exchangeScans;
+                return [];
+            });
+            $clock->onBecameLeader();
+            new ReflectionProperty(ClusterClock::class, 'nodeReadings')->setValue($clock, [
+                'z' => new ClusterClockReading('z', -500, 2, 1_800_000_000_123),
+                'a' => new ClusterClockReading('a', 120, 4, 1_800_000_000_456),
+            ]);
+            Hilos::$cluster->registerClock($clock);
+            $manager = new StandingTestDaemonManager();
+            $worker = $manager->addCaptureServer();
+            $manager->tickStandingAt(100.0);
+            $standing = $worker->frame(0)->standing;
+            if ($clustered && $leader) {
+                self::assertEquals(new DaemonClockPicture(450, [
+                    new DaemonClockReading('a', 120, 1_800_000_000_456),
+                    new DaemonClockReading('z', -500, 1_800_000_000_123),
+                ]), $standing->clock);
+                self::assertSame([
+                    'thresholdMs' => 450,
+                    'nodes' => [
+                        ['nodeId' => 'a', 'offsetMs' => 120, 'measuredAt' => 1_800_000_000_456],
+                        ['nodeId' => 'z', 'offsetMs' => -500, 'measuredAt' => 1_800_000_000_123],
+                    ],
+                ], $worker->frame(0)->toArray()['clock']);
+            } else {
+                self::assertNull($standing->clock);
+                self::assertArrayHasKey('clock', $worker->frame(0)->toArray());
+                self::assertNull($worker->frame(0)->toArray()['clock']);
+            }
+            self::assertCount(1, $worker->delivered);
+            new ReflectionProperty(ClusterClock::class, 'nodeReadings')->setValue($clock, [
+                'a' => new ClusterClockReading('a', 120, 4, 1_800_000_000_456),
+                'z' => new ClusterClockReading('z', -500, 2, 1_800_000_000_123),
+            ]);
+            $manager->tickStandingAt(101.0);
+            self::assertCount(1, $worker->delivered, 'Source insertion order must not change standing');
+            self::assertSame(1, $exchangeScans, 'Standing must only project completed clock readings');
+        }
+    }
+
+    /** Empty measurements are known; changed readings use the existing sample and minute repair. */
+    public function testClockChangesUseTheExistingStandingDelivery(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=n1');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_CLOCK_SKEW_THRESHOLD_MS=300');
+        Hilos::$cluster = new ClusterContext();
+        $consensus = new StandingTestConsensus();
+        Hilos::$cluster->registerLeadership($consensus);
+        $exchangeScans = 0;
+        $clock = new ClusterClock(static function () use (&$exchangeScans): array {
+            ++$exchangeScans;
+            return [];
+        });
+        $clock->onBecameLeader();
+        Hilos::$cluster->registerClock($clock);
+        $manager = new StandingTestDaemonManager();
+        $worker = $manager->addCaptureServer();
+
+        $manager->tickStandingAt(100.0);
+        self::assertEquals(new DaemonClockPicture(300, []), $worker->frame(0)->standing->clock);
+        new ReflectionProperty(ClusterClock::class, 'nodeReadings')->setValue($clock, [
+            'n2' => new ClusterClockReading('n2', -500, 2, 1_800_000_000_123),
+        ]);
+        $manager->tickStandingAt(100.5);
+        self::assertCount(1, $worker->delivered);
+        $manager->tickStandingAt(101.0);
+        self::assertSame(-500, $worker->frame(1)->standing->clock?->reading('n2')?->offsetMs);
+        $manager->tickStandingAt(102.0);
+        self::assertCount(2, $worker->delivered);
+
+        new ReflectionProperty(ClusterClock::class, 'nodeReadings')->setValue($clock, [
+            'n2' => new ClusterClockReading('n2', -500, 2, 1_800_000_000_456),
+        ]);
+        $manager->tickStandingAt(103.0);
+        self::assertSame(1_800_000_000_456, $worker->frame(2)->standing->clock?->reading('n2')?->measuredAt);
+        new ReflectionProperty(ClusterClock::class, 'nodeReadings')->setValue($clock, [
+            'n2' => new ClusterClockReading('n2', -400, 2, 1_800_000_000_456),
+        ]);
+        $manager->tickStandingAt(104.0);
+        self::assertSame(-400, $worker->frame(3)->standing->clock?->reading('n2')?->offsetMs);
+        $manager->tickStandingAt(163.0);
+        self::assertCount(4, $worker->delivered);
+        $manager->tickStandingAt(164.0);
+        self::assertCount(5, $worker->delivered);
+        self::assertEquals($worker->frame(3)->standing, $worker->frame(4)->standing);
+
+        $consensus->leader = false;
+        $manager->tickStandingAt(165.0);
+        self::assertNull($worker->frame(5)->standing->clock);
+        $manager->tickStandingAt(166.0);
+        self::assertCount(6, $worker->delivered);
+        self::assertSame(1, $exchangeScans, 'Standing must not trigger another clock measurement');
     }
 
     /** A failed sample is retried after one minute, even if config recovers sooner. */
@@ -359,16 +487,18 @@ abstract class StandingTestHilos extends Hilos
 
 final class StandingTestConsensus implements Leadership, ConsensusInspection
 {
-    /** @return bool This test master leads */
+    public bool $leader = true;
+
+    /** @return bool Whether this test master leads */
     public function amLeader(): bool
     {
-        return true;
+        return $this->leader;
     }
 
     /** @return ?string This master's leader id */
     public function leaderId(): ?string
     {
-        return 'n1';
+        return $this->leader ? 'n1' : 'n2';
     }
 
     /** @return bool No remote leader's browser server is followed */
@@ -389,10 +519,10 @@ final class StandingTestConsensus implements Leadership, ConsensusInspection
         return 4;
     }
 
-    /** @return ConsensusRole Fixed test role */
+    /** @return ConsensusRole This master's current role */
     public function consensusRole(): ConsensusRole
     {
-        return ConsensusRole::Leader;
+        return $this->leader ? ConsensusRole::Leader : ConsensusRole::Follower;
     }
 
     /** @return int Fixed visible master count */

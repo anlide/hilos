@@ -11,6 +11,7 @@ use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
+use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\Consensus\ClusterConsensusConfig;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusInspection;
@@ -24,6 +25,8 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerClockProbeDTO;
+use Hilos\Cluster\Peer\DTO\PeerClockReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
@@ -212,6 +215,9 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var ?ClusterPlacement Agent-placement coordinator, built at start on any clustered node; null when no worker executor is registered */
     private ?ClusterPlacement $placement = null;
 
+    /** @var ?ClusterClock Master-local clock exchanges, registered at peer startup */
+    private ?ClusterClock $clock = null;
+
     /** @var ?AgentRestartDoor Master receiving peer restart requests */
     private ?AgentRestartDoor $agentRestartDoor = null;
 
@@ -361,6 +367,18 @@ final class PeerServer extends AbstractTlsServer implements
             // and what the daemon drives through its leadership transitions.
             Hilos::$cluster->registerProtectedMode($protectedMode);
             Hilos::$cluster->registerProtectedModeLeadership($protectedMode);
+
+            $this->clock = new ClusterClock(function (): array {
+                $links = [];
+                foreach ($this->linkedNodeIds() as $nodeId) {
+                    $link = $this->activeLinkToNode($nodeId);
+                    if ($link !== null) {
+                        $links[$nodeId] = $link;
+                    }
+                }
+                return $links;
+            });
+            Hilos::$cluster->registerClock($this->clock);
         }
 
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
@@ -1316,6 +1334,28 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * @param PeerLink $link Link the probe arrived on
+     * @param PeerClockProbeDTO $frame Incoming correlated question
+     */
+    public function onClockProbeReceived(PeerLink $link, PeerClockProbeDTO $frame): void
+    {
+        if ($link->remoteIdentity()?->nodeId !== null && $this->clock !== null) {
+            $link->sendFrame($this->clock->answer($frame));
+        }
+    }
+
+    /**
+     * @param PeerLink $link Link the reply arrived on
+     * @param PeerClockReplyDTO $frame Incoming peer clock reading
+     */
+    public function onClockReplyReceived(PeerLink $link, PeerClockReplyDTO $frame): void
+    {
+        if ($link->remoteIdentity()?->nodeId !== null) {
+            $this->clock?->onReply($link, $frame);
+        }
+    }
+
+    /**
      * Routes a received claim refusal to the local claim sink for this node to act on.
      *
      * @param PeerLink $link Link the verdict arrived on
@@ -1993,6 +2033,7 @@ final class PeerServer extends AbstractTlsServer implements
     public function onLinkClosed(PeerLink $link): void
     {
         $this->uploadMemory?->onPeerClosed($link);
+        $this->clock?->onLinkClosed($link);
         foreach ($this->candidateLinks as $nodeId => $candidate) {
             if ($candidate === $link) {
                 unset($this->candidateLinks[$nodeId]);

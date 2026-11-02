@@ -19,6 +19,7 @@ use Hilos\Cluster\PlacementVerdictSink;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClientSignalSink;
 use Hilos\Cluster\ClusterCommandConstants;
+use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
 use Hilos\Cluster\NodeRole;
@@ -157,6 +158,8 @@ use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DaemonHttpPicture;
 use Hilos\DaemonSection\DaemonHttpRoutePicture;
+use Hilos\DaemonSection\DaemonClockPicture;
+use Hilos\DaemonSection\DaemonClockReading;
 use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
@@ -822,6 +825,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $this->registerBackupCronRules();
+        $this->registerClusterClockCheckRule();
         $this->registerProtectedModeTruthSource();
         $this->registerTableLagTruthSource();
         $this->registerTableRefusalTruthSource();
@@ -1648,7 +1652,7 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * @return DaemonNodeStanding Current browser sockets and this master's consensus view
+     * @return DaemonNodeStanding Current browser sockets, consensus, and leader clock measurements
      * @throws EnvException When cluster configuration cannot be read
      * @throws InvalidFormatException When the measured state violates the picture contract
      */
@@ -1677,7 +1681,20 @@ abstract class DaemonManager extends BaseManager implements
             $leadership->quorumSize(),
         ) : null;
 
-        return new DaemonNodeStanding(count($sessions), $connections, $clustered, $consensus, $this->findCommandServer()?->getPort());
+        $clockSource = $clustered && Hilos::$cluster->amLeader() ? Hilos::$cluster->clock() : null;
+        $clock = null;
+        if ($clockSource !== null) {
+            $nodes = [];
+            foreach ($clockSource->readings() as $reading) {
+                $nodes[] = new DaemonClockReading($reading->nodeId, $reading->offsetMs, $reading->measuredAt);
+            }
+            usort($nodes, static fn (DaemonClockReading $a, DaemonClockReading $b): int => strcmp($a->nodeId, $b->nodeId));
+            $clock = new DaemonClockPicture($clockSource->thresholdMs(), $nodes);
+        }
+
+        return new DaemonNodeStanding(
+            count($sessions), $connections, $clustered, $consensus, $this->findCommandServer()?->getPort(), $clock,
+        );
     }
 
     /**
@@ -8281,6 +8298,7 @@ abstract class DaemonManager extends BaseManager implements
     public function onNodeJoined(ClusterNode $node): void
     {
         Hilos::$cluster?->placement()?->noteNodeOnline($node->nodeId, microtime(true));
+        Hilos::$cluster?->clock()?->onNodeJoined($node->nodeId);
         try {
             $this->rerouteNodeAddressedPages($node->nodeId);
         } catch (EnvException | InvalidArgumentException | InvalidFormatException $e) {
@@ -8519,6 +8537,7 @@ abstract class DaemonManager extends BaseManager implements
 
         // The new leader takes up the protected-mode freeze orchestration.
         Hilos::$cluster?->protectedModeLeadership()?->onBecameLeader();
+        Hilos::$cluster?->clock()?->onBecameLeader();
     }
 
     /**
@@ -8554,6 +8573,7 @@ abstract class DaemonManager extends BaseManager implements
         // Drop any protected-mode freeze this node was orchestrating as leader; the follower-side
         // state stays, so a freeze the new leader ordered against this node is still honoured.
         Hilos::$cluster?->protectedModeLeadership()?->onLostLeadership();
+        Hilos::$cluster?->clock()?->onLostLeadership();
 
         // And the cluster-wide map of RT ownership, which was this node's answer to a question it
         // no longer owns; the next leader rebuilds it from the mesh (HIL-696).
@@ -8747,6 +8767,18 @@ abstract class DaemonManager extends BaseManager implements
 
         foreach (BackupSchedule::fromCatalog()->daemonEntries() as $entry) {
             $this->addCronRule($entry->name, $entry->expression);
+        }
+    }
+
+    /**
+     * Register the master-local clock check only for a clustered node.
+     *
+     * @throws EnvException When the cluster-enabled flag cannot be read
+     */
+    private function registerClusterClockCheckRule(): void
+    {
+        if (Hilos::$cluster?->isEnabled()) {
+            $this->addCronRule(ClusterClock::CRON_RULE, ClusterClock::CRON_EXPRESSION);
         }
     }
 
@@ -9149,7 +9181,11 @@ abstract class DaemonManager extends BaseManager implements
     private function runCronRuleIfDue(CronRule $rule): void
     {
         if ($rule->shouldRun()) {
-            $this->onCron($rule);
+            if ($rule->name === ClusterClock::CRON_RULE) {
+                Hilos::$cluster?->clock()?->checkAll();
+            } else {
+                $this->onCron($rule);
+            }
             $this->cronFrameDirty = true;
         }
     }

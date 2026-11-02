@@ -91,6 +91,7 @@ export function nodeHeading(
     clustered: true,
     state: 'standby',
     silentSince: null,
+    clock: null,
     role: 'master',
     ...overrides,
   }
@@ -111,6 +112,7 @@ export function nodeHarness(
     unavailable?: readonly string[]
     showLogLinks?: boolean
     initial?: boolean
+    strict?: boolean
   } = {},
 ) {
   const scopes = new ScopeManager()
@@ -261,6 +263,7 @@ export function nodeHarness(
     <HilosRouterContext.Provider value={router}>
       {options.outlet ? <HilosView pages={{ [key]: Content }} /> : <Content />}
     </HilosRouterContext.Provider>,
+    { reactStrictMode: options.strict },
   )
   return {
     view,
@@ -288,7 +291,13 @@ export function openNodePage(scopes: ScopeManager, page: string) {
   const scope = scopes.openPage(page)
   ingest(scope, {
     data: {
-      node: { clustered: true, state: null, silentSince: null, role: null },
+      node: {
+        clustered: true,
+        state: null,
+        silentSince: null,
+        clock: null,
+        role: null,
+      },
       pageLabel: page === HilosPages.DAEMON_NODE ? 'Node' : tab.label,
       pageLead: 'One node.',
       pageHeadOwner: {

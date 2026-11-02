@@ -131,6 +131,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     expect(h.find('hilos-daemon-workers-empty-silent')?.textContent).toContain(
       'never reported',
@@ -144,7 +145,13 @@ describe('HilosDaemonWorkersPage', () => {
       'The node reports no workers',
     )
     expect(h.find('hilos-daemon-workers-silent')).toBeNull()
-    h.heading({ clustered: false, role: null, state: null, silentSince: null })
+    h.heading({
+      clustered: false,
+      role: null,
+      state: null,
+      silentSince: null,
+      clock: null,
+    })
     expect(h.find('hilos-daemon-node-solo')?.textContent).toBe(
       'Single installation',
     )
@@ -159,6 +166,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.reported(true)
     h.window([
@@ -210,6 +218,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1_700_000_000_000,
+      clock: null,
     })
     expect(h.find('hilos-daemon-workers-silent')?.textContent).toContain(
       'from its last report',
@@ -263,6 +272,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'leader',
       silentSince: null,
+      clock: null,
     })
     h.reported(true)
     h.window([worker()])

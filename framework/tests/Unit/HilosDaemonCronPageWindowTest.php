@@ -149,7 +149,10 @@ final class HilosDaemonCronPageWindowTest extends TestCase
         $this->deliverNodes($agent, [$this->node('n1', false, $cron)]);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_CRON, self::VIEWER]], $this->browser()->pageData);
         self::assertSame([], $this->browser()->mutations);
-        self::assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => 10000, 'role' => 'master'],
+        self::assertSame([
+            'clustered' => false, 'state' => 'silent', 'silentSince' => 10000, 'role' => 'master',
+            'clock' => null,
+        ],
             $this->browser()->pagePayloads[1]->data['node']);
 
         $this->browser()->pageData = [];

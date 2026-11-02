@@ -101,7 +101,10 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         Hilos::$rt->hilosClusterNodes->actions->publish('standalone', NodeRole::Slave->value, [], null, true, 42.0);
         Hilos::$browser->page = new DaemonNodeEnvironmentTestPage($this->agent);
         $initial = Hilos::$browser->page->payload('ak-live')->data;
-        $this->assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave'], $initial['node']);
+        $this->assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave',
+            'clock' => null,
+        ], $initial['node']);
 
         Hilos::$sr->subscribeToPage(
             HilosPageConstants::HILOS_DAEMON_ENV,

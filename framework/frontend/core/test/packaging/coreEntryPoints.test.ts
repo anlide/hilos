@@ -19,6 +19,7 @@ import * as channelSummary from '../../src/admin/communications/hilosCommunicati
 import * as letterFrame from '../../src/admin/communications/hilosCommunicationsChannelFrame.js'
 import * as letterFrameEdit from '../../src/admin/communications/hilosCommunicationsChannelFrameEdit.js'
 import * as daemon from '../../src/admin/daemon/index.js'
+import * as daemonNode from '../../src/admin/daemon/hilosDaemonNode.js'
 import * as i18n from '../../src/admin/i18n/index.js'
 import * as legal from '../../src/admin/legal/index.js'
 import * as legalOverview from '../../src/admin/legal/hilosLegalOverview.js'
@@ -401,6 +402,13 @@ const daemonNodeValues = [
   'daemonWebsocketsSchema',
   'readHilosDaemonWebsockets',
 ]
+/** Clock projection APIs belong to the lazy Daemon section. */
+const daemonClockValues = [
+  'daemonNodeClockSchema',
+  'formatDaemonNodeClock',
+  'formatDaemonNodeClockWarning',
+]
+const daemonClockTypes = ['HilosDaemonNodeClock']
 /** Approved Status exports; keep the legacy snapshot and base graph unchanged. */
 const statusValues = [
   'HILOS_STATUS_ACTION_COPY',
@@ -1272,6 +1280,13 @@ describe('core public entries', () => {
           expect(value, name).toBe(
             changeLogPresentation[name as keyof typeof changeLogPresentation],
           )
+        } else if (
+          entry === './admin/daemon' &&
+          daemonClockValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(daemonNode[name as keyof typeof daemonNode])
         } else {
           expect(Object.is(value, root[name]), name).toBe(true)
         }
@@ -1305,6 +1320,7 @@ describe('core public entries', () => {
         ...statusWorkEditorValues,
         ...statusHistoryValues,
         ...changeLogPresentationValues,
+        ...daemonClockValues,
       ].sort(),
     )
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
@@ -1708,6 +1724,8 @@ describe('core public entries', () => {
     ]
     const legalOverviewExports = exportsOf('admin/legal/hilosLegalOverview.ts')
     const legalOverviewNames = [...legalOverviewValues, ...legalOverviewTypes]
+    const daemonClockExports = exportsOf('admin/daemon/hilosDaemonNode.ts')
+    const daemonClockNames = [...daemonClockValues, ...daemonClockTypes]
     const names = new Set<string>()
     const summaryExports = exportsOf(
       'admin/communications/hilosCommunicationsChannel.ts',
@@ -1980,6 +1998,13 @@ describe('core public entries', () => {
           expect(symbol, `${entry}:${name}`).toBe(
             changeLogPresentationExports.get(name),
           )
+        } else if (
+          entry === 'admin/daemon/index.ts' &&
+          daemonClockNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(daemonClockExports.get(name))
         } else {
           expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
             true,
@@ -2016,6 +2041,7 @@ describe('core public entries', () => {
         ...statusWorkEditorValues,
         ...historyNames,
         ...changeLogPresentationNames,
+        ...daemonClockNames,
       ].sort(),
     )
   }, 30_000)

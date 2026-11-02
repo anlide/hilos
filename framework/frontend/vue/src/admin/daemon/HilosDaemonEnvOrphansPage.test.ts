@@ -106,6 +106,7 @@ function harness(nodeId = 'n1') {
           clustered: true,
           state: nodeSilent ? 'silent' : null,
           silentSince: null,
+          clock: null,
           role: null,
         },
       }

@@ -144,6 +144,7 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
           clustered: environment?.cluster ?? true,
           state: nodeSilent ? 'silent' : null,
           silentSince: null,
+          clock: null,
           role: null,
         },
       }

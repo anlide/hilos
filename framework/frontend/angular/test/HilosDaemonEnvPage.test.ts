@@ -60,6 +60,7 @@ describe('HilosDaemonEnvPage', () => {
       clustered: true,
       state: null,
       silentSince: null,
+      clock: null,
       role: null,
     })
     h.scope.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
@@ -124,6 +125,7 @@ describe('HilosDaemonEnvPage', () => {
       clustered: true,
       state: null,
       silentSince: null,
+      clock: null,
       role: null,
     })
     h.scope.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
@@ -173,6 +175,7 @@ describe('HilosDaemonEnvPage', () => {
       clustered: true,
       state: null,
       silentSince: null,
+      clock: null,
       role: null,
     })
     h.scope.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
@@ -186,6 +189,7 @@ describe('HilosDaemonEnvPage', () => {
       clustered: true,
       state: 'silent',
       silentSince: null,
+      clock: null,
       role: null,
     })
     h.scope.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)
@@ -223,6 +227,7 @@ describe('HilosDaemonEnvPage', () => {
       clustered: true,
       state: 'silent',
       silentSince: null,
+      clock: null,
       role: null,
     })
     h.scope.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)

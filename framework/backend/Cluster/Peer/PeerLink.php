@@ -11,6 +11,8 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerClockProbeDTO;
+use Hilos\Cluster\Peer\DTO\PeerClockReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
@@ -665,6 +667,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeRefreezeDTO => $this->onProtectedModeRefreeze($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
             $frame instanceof PeerPongDTO => $this->onPong(),
+            $frame instanceof PeerClockProbeDTO => $this->onClockProbe($frame),
+            $frame instanceof PeerClockReplyDTO => $this->onClockReply($frame),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
         };
     }
@@ -1464,6 +1468,26 @@ final class PeerLink extends AbstractClient
     private function onPing(PeerPingDTO $frame): void
     {
         $this->sendFrame(new PeerPongDTO($frame->nonce));
+    }
+
+    /**
+     * @param PeerClockProbeDTO $frame Incoming clock probe
+     * @throws PeerTransportException When the probe arrives before the handshake
+     */
+    private function onClockProbe(PeerClockProbeDTO $frame): void
+    {
+        $this->requireHandshaked('clock probe');
+        $this->server->onClockProbeReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerClockReplyDTO $frame Incoming clock reply
+     * @throws PeerTransportException When the reply arrives before the handshake
+     */
+    private function onClockReply(PeerClockReplyDTO $frame): void
+    {
+        $this->requireHandshaked('clock reply');
+        $this->server->onClockReplyReceived($this, $frame);
     }
 
     /**

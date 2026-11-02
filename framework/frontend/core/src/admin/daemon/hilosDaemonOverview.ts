@@ -9,7 +9,10 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { LOG_SOURCE_LIVE } from '../logs/hilosLogViewer.js'
-import { type HilosDaemonNodeHeading } from './hilosDaemonNode.js'
+import {
+  daemonNodeClockSchema,
+  type HilosDaemonNodeHeading,
+} from './hilosDaemonNode.js'
 import { type HilosDaemonNodeOverviewData } from './hilosDaemonNodeOverview.js'
 import {
   DAEMON_WORKER_KIND_MONOPOLISTIC,
@@ -40,6 +43,7 @@ export const daemonOverviewNodeSchema = z
     state: z.enum(['leader', 'standby', 'data', 'silent']).nullable(),
     /** Last report arrival in epoch milliseconds, only while silent. */
     silentSince: z.number().int().nullable(),
+    clock: daemonNodeClockSchema.nullable(),
     workers: z.array(daemonOverviewWorkerSchema).readonly().nullable(),
     measurements: z
       .strictObject({

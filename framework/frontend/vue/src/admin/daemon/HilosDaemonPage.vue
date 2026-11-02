@@ -10,6 +10,8 @@ import {
   formatDaemonBytes,
   formatDaemonCores,
   formatDaemonDatabaseAddress,
+  formatDaemonNodeClock,
+  formatDaemonNodeClockWarning,
   formatDaemonNodeState,
   formatDaemonNodeSilentSince,
   formatDaemonNumber,
@@ -40,6 +42,34 @@ if (!router)
 function formatSilentSince(node: HilosDaemonOverviewNode): string | null {
   void timeZone.value
   return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
+}
+
+/** @param node The server's clock projection in the current reader zone. */
+function formatClock(node: HilosDaemonOverviewNode): string | null {
+  void timeZone.value
+  return formatDaemonNodeClock(node.clock, Date.now())
+}
+
+/** Scroll the Clock lines from their link without nesting a Tab stop in it. */
+function onClockKeydown(event: KeyboardEvent): void {
+  if (
+    event.defaultPrevented ||
+    event.target !== event.currentTarget ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+  )
+    return
+  const link = event.currentTarget as HTMLAnchorElement
+  const scrollport = link.querySelector<HTMLElement>(
+    '[data-id^="hilos-daemon-clock-"]',
+  )?.parentElement
+  if (!scrollport) return
+  event.preventDefault()
+  const step = 80
+  scrollport.scrollBy({ left: event.key === 'ArrowRight' ? step : -step })
 }
 
 const metricsPath = computed(() => {
@@ -196,8 +226,14 @@ const metricsPath = computed(() => {
               class="btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none"
               :class="{ 'border-danger-subtle': !node.online }"
               :aria-label="`Node ${node.nodeId}`"
+              :aria-describedby="
+                node.online && formatDaemonNodeClockWarning(node.clock) !== null
+                  ? `hilos-daemon-clock-warning-${encodeURIComponent(node.nodeId)}`
+                  : undefined
+              "
               :data-id="`hilos-daemon-node-${node.nodeId}`"
               :data-state="node.state"
+              @keydown="onClockKeydown"
             >
               <span class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <i class="bi bi-hdd-network" aria-hidden="true"></i>
@@ -347,6 +383,50 @@ const metricsPath = computed(() => {
                         : `Browser connections: ${formatDaemonNumber(node.standing?.connections)}`
                     }}</span
                   >
+                  <!-- Keep both lines and the scrollbar's room through clock
+                  updates; long values scroll without growing the node box. -->
+                  <span
+                    v-if="overview.clustered"
+                    class="d-block overflow-x-scroll text-nowrap"
+                  >
+                    <span
+                      v-if="node.clock !== null"
+                      class="d-block"
+                      :data-id="`hilos-daemon-clock-${node.nodeId}`"
+                      >{{ formatClock(node) }}</span
+                    >
+                    <span
+                      v-else
+                      class="d-block invisible"
+                      aria-hidden="true"
+                      inert
+                      >&nbsp;</span
+                    >
+                    <span
+                      v-if="formatDaemonNodeClockWarning(node.clock) !== null"
+                      :id="`hilos-daemon-clock-warning-${encodeURIComponent(node.nodeId)}`"
+                      class="d-block text-warning-emphasis"
+                      :data-id="`hilos-daemon-clock-warning-${node.nodeId}`"
+                    >
+                      <i
+                        class="bi bi-exclamation-triangle-fill me-1"
+                        aria-hidden="true"
+                      ></i
+                      >{{ formatDaemonNodeClockWarning(node.clock) }}
+                    </span>
+                    <span
+                      v-else
+                      class="d-block text-warning-emphasis invisible"
+                      aria-hidden="true"
+                      inert
+                    >
+                      <i
+                        class="bi bi-exclamation-triangle-fill me-1"
+                        aria-hidden="true"
+                      ></i
+                      >&nbsp;
+                    </span>
+                  </span>
                 </span>
               </template>
             </HilosLink>

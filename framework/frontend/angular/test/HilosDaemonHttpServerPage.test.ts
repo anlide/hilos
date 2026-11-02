@@ -47,6 +47,7 @@ describe('HilosDaemonHttpServerPage', () => {
         role: null,
         state: 'silent',
         silentSince: 1_700_000_000_000,
+        clock: null,
       })
       h.scope.data.set(DAEMON_HTTP_DATA, summary)
       h.detect()
@@ -80,6 +81,7 @@ describe('HilosDaemonHttpServerPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(h.el('hilos-daemon-http-status')?.getAttribute('data-status')).toBe(

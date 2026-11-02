@@ -72,6 +72,7 @@ describe('daemon node overview boundary', () => {
       clustered: true,
       state: null,
       silentSince: null,
+      clock: null,
       role: null,
     }
     expect(daemonEnvironmentDifferences(node, heading)).toBeNull()

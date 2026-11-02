@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import {
   daemonNodeLogPath,
+  formatDaemonNodeClockWarning,
   formatDaemonNodeSilentSince,
   formatDaemonNodeState,
   readHilosDaemonNodeHeading,
@@ -14,7 +15,7 @@ import {
   HilosPages,
   hilosTimeZone,
 } from '@hilos/core/base'
-import { computed, inject, onUnmounted } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
@@ -72,6 +73,16 @@ const unbindName = bindPageInstanceName(
 onUnmounted(unbindName)
 const current = useSignal(currentSource)
 const heading = computed(() => current.value?.heading)
+const clockWarning = computed(() =>
+  formatDaemonNodeClockWarning(heading.value?.clock ?? null),
+)
+const clockScrollport = ref<HTMLElement | null>(null)
+const roleBadge = ref<HTMLElement | null>(null)
+// Move an active reader before the warning's room becomes hidden and inert.
+watch(clockWarning, (warning) => {
+  if (warning === null && document.activeElement === clockScrollport.value)
+    roleBadge.value?.focus()
+})
 const diagramAction = computed(() =>
   heading.value?.clustered
     ? {
@@ -143,10 +154,47 @@ function stateClass(state: string): string {
           >{{ formatDaemonNodeState(heading.state) }}</span
         >
         <span
+          ref="roleBadge"
           class="badge bg-body-tertiary text-body border"
           data-id="hilos-daemon-node-role"
+          tabindex="-1"
           >Role: {{ heading.role ?? '—' }}</span
         >
+        <!-- A full-width, single-line room keeps the head below the badges
+        still when the warning arrives, clears or needs horizontal scrolling. -->
+        <span
+          ref="clockScrollport"
+          class="d-block w-100 overflow-x-scroll text-nowrap"
+          :tabindex="clockWarning !== null ? 0 : undefined"
+          :role="clockWarning !== null ? 'region' : undefined"
+          :aria-label="clockWarning !== null ? 'Node clock warning' : undefined"
+          :aria-hidden="clockWarning === null ? 'true' : undefined"
+          :inert="clockWarning === null"
+        >
+          <span
+            v-if="clockWarning !== null"
+            class="badge text-bg-warning"
+            data-id="hilos-daemon-node-clock-warning"
+          >
+            <i
+              class="bi bi-exclamation-triangle-fill me-1"
+              aria-hidden="true"
+            ></i
+            >{{ clockWarning }}
+          </span>
+          <span
+            v-else
+            class="badge text-bg-warning invisible"
+            aria-hidden="true"
+            inert
+          >
+            <i
+              class="bi bi-exclamation-triangle-fill me-1"
+              aria-hidden="true"
+            ></i
+            >&nbsp;
+          </span>
+        </span>
       </template>
       <span
         v-else

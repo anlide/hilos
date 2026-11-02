@@ -106,7 +106,10 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $admin = $page->payload('ak', $params);
         $this->assertSame(['node', 'nodeSilent'], array_keys($admin->data));
         $this->assertFalse($admin->data[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);
-        $this->assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave'],
+        $this->assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'slave',
+            'clock' => null,
+        ],
             $admin->data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertSame([], $admin->windows);
         $this->assertStringNotContainsString('password', (string)json_encode($admin->data));
@@ -120,7 +123,10 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         putenv('CLUSTER_ENABLED=true');
         Hilos::$cluster = new ClusterContext();
         $clustered = $page->payload('ak', $params)->data;
-        $this->assertSame(['clustered' => true, 'state' => null, 'silentSince' => null, 'role' => 'slave'],
+        $this->assertSame([
+            'clustered' => true, 'state' => null, 'silentSince' => null, 'role' => 'slave',
+            'clock' => null,
+        ],
             $clustered[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertFalse($clustered[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);
         $this->assertSame(['node', 'nodeSilent'], array_keys($clustered));
@@ -133,7 +139,10 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $data = $page->payload('ak', new PageRouteParams(['nodeId' => 'node-A']))->data;
 
         $this->assertTrue($data[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);
-        $this->assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => 'slave'],
+        $this->assertSame([
+            'clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => 'slave',
+            'clock' => null,
+        ],
             $data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertSame(['node', 'nodeSilent'], array_keys($data));
         $this->assertStringNotContainsString('password', (string)json_encode($data));
@@ -146,7 +155,10 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $payload = $page->payload('ak', $params);
 
         $this->assertTrue($payload->data[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);
-        $this->assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => null],
+        $this->assertSame([
+            'clustered' => false, 'state' => 'silent', 'silentSince' => null, 'role' => null,
+            'clock' => null,
+        ],
             $payload->data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertSame(['node', 'nodeSilent'], array_keys($payload->data));
         $this->assertSame([], $payload->windows);
@@ -162,7 +174,10 @@ final class HilosDaemonEnvOrphansPageTest extends TestCase
         $page = new DaemonEnvOrphansPageTestPage(new DaemonCollectorAgent());
         $data = $page->payload('ak', new PageRouteParams(['nodeId' => 'node-A']))->data;
 
-        $this->assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => 'master'],
+        $this->assertSame([
+            'clustered' => true, 'state' => 'silent', 'silentSince' => null, 'role' => 'master',
+            'clock' => null,
+        ],
             $data[AbstractHilosDaemonEnvOrphansPage::NODE]);
         $this->assertTrue($data[AbstractHilosDaemonEnvOrphansPage::NODE_SILENT]);
         $this->assertSame(['node', 'nodeSilent'], array_keys($data));

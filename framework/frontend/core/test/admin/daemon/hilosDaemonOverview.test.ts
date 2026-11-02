@@ -9,6 +9,7 @@ import {
   daemonMonopolisticCount,
   daemonNodeChildParams,
   daemonNodeLogPath,
+  daemonOverviewNodeSchema,
   daemonPercentage,
   daemonProgressWidth,
   daemonTotalMemory,
@@ -40,6 +41,7 @@ function node(
     role: 'master',
     state: 'standby',
     silentSince: null,
+    clock: null,
     workers: [
       { index: 0, kind: 'regular', agentCount: 3 },
       { index: 2, kind: 'monopolistic', agentCount: 1 },
@@ -130,6 +132,96 @@ describe('Daemon overview readers', () => {
     expect(read.get()?.nodes[0]?.workers).toBeNull()
     expect(read.get()?.nodes[0]?.standing).toBeNull()
     scopes.openPage('elsewhere')
+    expect(read.get()).toBeNull()
+  })
+
+  it('requires clock on every diagram node and preserves the server verdict', () => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    for (const clock of [
+      null,
+      {
+        reference: true,
+        offsetMs: null,
+        measuredAt: null,
+        thresholdMs: 300,
+        beyond: false,
+      },
+      {
+        reference: false,
+        offsetMs: null,
+        measuredAt: null,
+        thresholdMs: null,
+        beyond: false,
+      },
+      {
+        reference: false,
+        offsetMs: 300,
+        measuredAt: 1_790_000_000_123,
+        thresholdMs: 300,
+        beyond: false,
+      },
+      {
+        reference: false,
+        offsetMs: -301,
+        measuredAt: 1_790_000_000_123,
+        thresholdMs: 300,
+        beyond: true,
+      },
+    ]) {
+      page.data.set('daemon', picture([node('n1', { clock })]))
+      expect(read.get()?.nodes[0]?.clock).toEqual(clock)
+    }
+    const missing: Record<string, unknown> = { ...node('n1') }
+    delete missing.clock
+    expect(daemonOverviewNodeSchema.safeParse(missing).success).toBe(false)
+    page.data.set('daemon', { ...picture(), nodes: [node('valid'), missing] })
+    expect(read.get()).toBeNull()
+  })
+
+  it.each([
+    undefined,
+    {},
+    {
+      reference: false,
+      offsetMs: 1.5,
+      measuredAt: 1000,
+      thresholdMs: 300,
+      beyond: false,
+    },
+    {
+      reference: false,
+      offsetMs: 1,
+      measuredAt: '1000',
+      thresholdMs: 300,
+      beyond: false,
+    },
+    {
+      reference: false,
+      offsetMs: 1,
+      measuredAt: 1000,
+      thresholdMs: 0,
+      beyond: false,
+    },
+    {
+      reference: false,
+      offsetMs: 1,
+      measuredAt: 1000,
+      thresholdMs: 300,
+      beyond: 0,
+    },
+    {
+      reference: false,
+      offsetMs: 1,
+      measuredAt: 1000,
+      thresholdMs: 300,
+      beyond: false,
+      rttMs: 1,
+    },
+  ])('rejects a malformed clock within the strict overview: %j', (clock) => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    page.data.set('daemon', { ...picture(), nodes: [{ ...node('n1'), clock }] })
     expect(read.get()).toBeNull()
   })
 
@@ -435,6 +527,7 @@ describe('Daemon diagnostic calculations and formatting', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     }
     expect(daemonEnvironmentAttention(n)).toBe(10)
     expect(daemonEnvironmentAttention({ ...n, environment: null })).toBeNull()

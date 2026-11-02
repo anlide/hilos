@@ -95,6 +95,149 @@ describe('HilosDaemonNodeShell', () => {
     },
   )
 
+  it.each(
+    nodeTabs.filter(
+      (tab) =>
+        tab.page !== HilosPages.DAEMON_ENV &&
+        tab.page !== HilosPages.DAEMON_ENV_ORPHANS,
+    ),
+  )(
+    'keeps the server’s clock warning on $label through silence and clears it on recovery',
+    async ({ page }) => {
+      const h = nodeHarness({ shell: true, page })
+      const clock = {
+        reference: false,
+        offsetMs: -812,
+        measuredAt: 1_700_000_000_000,
+        thresholdMs: 300,
+        beyond: false,
+      }
+      h.answer(
+        null,
+        nodeHeading({
+          clock: {
+            ...clock,
+            reference: true,
+            offsetMs: null,
+            measuredAt: null,
+          },
+        }),
+      )
+      await nextTick()
+      const body = h.view.get('[data-id="node-child-body"]').element
+      const title = h.view.get('h1').element
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      h.publish({
+        node: nodeHeading({
+          clock: { ...clock, offsetMs: null, measuredAt: null },
+        }),
+      })
+      await nextTick()
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      h.publish({ node: nodeHeading({ clock }) })
+      await nextTick()
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      h.publish({ node: nodeHeading({ clock: { ...clock, beyond: true } }) })
+      await nextTick()
+      const warning = h.view.get(id('clock-warning'))
+      expect(warning.text()).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      expect(warning.get('i').attributes('aria-hidden')).toBe('true')
+      expect(warning.element.closest('[aria-hidden="true"]')).toBeNull()
+      h.publish({
+        node: nodeHeading({
+          state: 'silent',
+          clock: { ...clock, beyond: true },
+        }),
+      })
+      await nextTick()
+      expect(h.view.get(id('clock-warning')).text()).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      h.publish({ node: nodeHeading({ clock: { ...clock, offsetMs: 0 } }) })
+      await nextTick()
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      h.publish({ node: nodeHeading({ clock: null }) })
+      await nextTick()
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      expect(h.view.get('[data-id="node-child-body"]').element).toBe(body)
+      expect(h.view.get('h1').element).toBe(title)
+      expect(h.view.text()).not.toContain('Clock:')
+      expect(h.send).not.toHaveBeenCalled()
+      expect(h.sendAction).not.toHaveBeenCalled()
+      expect(h.registerTableWindow).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['recovery', 'null'])(
+    'offers a named keyboard reading region and returns its focus to Role on %s',
+    async (clear) => {
+      const h = nodeHarness({ shell: true, page: HilosPages.DAEMON_AGENTS })
+      const clock = {
+        reference: false,
+        offsetMs: 812,
+        measuredAt: 1_700_000_000_000,
+        thresholdMs: 300,
+        beyond: true,
+      }
+      h.answer(null, nodeHeading({ clock }))
+      await nextTick()
+      const region = h.view.get(
+        '[role="region"][aria-label="Node clock warning"]',
+      )
+      const scrollport = region.element as HTMLElement
+      expect(scrollport.tabIndex).toBe(0)
+      expect(region.text()).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      expect(scrollport.closest('[aria-hidden="true"], [inert]')).toBeNull()
+      scrollport.focus()
+      expect(document.activeElement).toBe(scrollport)
+
+      h.publish({ node: nodeHeading({ clock: { ...clock, offsetMs: -999 } }) })
+      await nextTick()
+      expect(region.text()).toBe(
+        'Clock 999 ms off the leader (threshold 300 ms)',
+      )
+      expect(
+        h.view.get('[role="region"][aria-label="Node clock warning"]').element,
+      ).toBe(scrollport)
+      expect(document.activeElement).toBe(scrollport)
+
+      const clearedClock =
+        clear === 'null' ? null : { ...clock, offsetMs: 0, beyond: false }
+      h.publish({ node: nodeHeading({ clock: clearedClock }) })
+      await nextTick()
+      const role = h.view.get(id('role')).element as HTMLElement
+      expect(role.textContent).toBe('Role: master')
+      expect(role.tabIndex).toBe(-1)
+      expect(document.activeElement).toBe(role)
+      expect(h.view.find('[aria-label="Node clock warning"]').exists()).toBe(
+        false,
+      )
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      expect(scrollport.hasAttribute('tabindex')).toBe(false)
+      expect(scrollport.hasAttribute('role')).toBe(false)
+      expect(scrollport.getAttribute('aria-hidden')).toBe('true')
+      expect(scrollport.hasAttribute('inert')).toBe(true)
+      expect(scrollport.querySelector('[tabindex]')).toBeNull()
+      expect(h.view.text()).not.toContain('Clock')
+
+      const log = h.view.get(id('log')).element as HTMLAnchorElement
+      log.focus()
+      h.publish({ node: nodeHeading({ clock }) })
+      await nextTick()
+      expect(document.activeElement).toBe(log)
+      h.publish({ node: nodeHeading({ clock: clearedClock }) })
+      await nextTick()
+      expect(document.activeElement).toBe(log)
+      expect(h.send).not.toHaveBeenCalled()
+      expect(h.sendAction).not.toHaveBeenCalled()
+      expect(h.registerTableWindow).not.toHaveBeenCalled()
+    },
+  )
+
   it('filters unbuilt or unavailable links through the navigator', async () => {
     const h = nodeHarness({
       unavailable: [
@@ -172,24 +315,28 @@ describe('HilosDaemonNodeShell', () => {
     },
   )
 
-  it('uses Environment’s own heading without deriving a cluster state from role', async () => {
-    const h = nodeHarness({ shell: true, page: HilosPages.DAEMON_ENV })
-    h.answer(null, nodeHeading({ state: null, role: 'master' }))
-    await nextTick()
-    expect(h.view.get('h1').text()).toBe('n1')
-    expect(h.view.get(id('role')).text()).toBe('Role: master')
-    expect(h.view.find(id('state')).exists()).toBe(false)
-    expect(h.view.text()).not.toContain('Leader')
-    h.publish({ node: nodeHeading({ state: 'silent', role: 'slave' }) })
-    await nextTick()
-    expect(h.view.get(id('state')).text()).toBe('Silent')
-    expect(h.view.get(id('role')).text()).toBe('Role: slave')
-    expect(h.view.find(id('silent')).exists()).toBe(false)
-    h.publish({ node: nodeHeading({ state: null, role: null }) })
-    await nextTick()
-    expect(h.view.find(id('state')).exists()).toBe(false)
-    expect(h.view.get(id('role')).text()).toBe('Role: —')
-  })
+  it.each([HilosPages.DAEMON_ENV, HilosPages.DAEMON_ENV_ORPHANS])(
+    'uses %s’s own heading without deriving a cluster state or clock warning',
+    async (page) => {
+      const h = nodeHarness({ shell: true, page })
+      h.answer(null, nodeHeading({ state: null, role: 'master' }))
+      await nextTick()
+      expect(h.view.get('h1').text()).toBe('n1')
+      expect(h.view.get(id('role')).text()).toBe('Role: master')
+      expect(h.view.find(id('state')).exists()).toBe(false)
+      expect(h.view.text()).not.toContain('Leader')
+      expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+      h.publish({ node: nodeHeading({ state: 'silent', role: 'slave' }) })
+      await nextTick()
+      expect(h.view.get(id('state')).text()).toBe('Silent')
+      expect(h.view.get(id('role')).text()).toBe('Role: slave')
+      expect(h.view.find(id('silent')).exists()).toBe(false)
+      h.publish({ node: nodeHeading({ state: null, role: null }) })
+      await nextTick()
+      expect(h.view.find(id('state')).exists()).toBe(false)
+      expect(h.view.get(id('role')).text()).toBe('Role: —')
+    },
+  )
 
   it('keeps standalone free of state, role and a diagram transition', async () => {
     const h = nodeHarness()
@@ -200,6 +347,7 @@ describe('HilosDaemonNodeShell', () => {
         state: 'silent',
         role: 'master',
         silentSince: 1_700_000_000_000,
+        clock: null,
       }),
     )
     await nextTick()
@@ -207,6 +355,8 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.view.find(id('state')).exists()).toBe(false)
     expect(h.view.find(id('role')).exists()).toBe(false)
     expect(h.view.find(id('silent')).exists()).toBe(false)
+    expect(h.view.find(id('clock-warning')).exists()).toBe(false)
+    expect(h.view.text()).not.toContain('Clock')
     expect(h.view.get(id('visual')).get('i').classes()).toContain(
       'bi-hdd-network',
     )
@@ -343,8 +493,22 @@ describe('HilosDaemonNodeShell', () => {
       h.view.find('[data-id="hilos-table-row-detail-regular:0"]').exists(),
     ).toBe(true)
     const requests = h.sendViewport.mock.calls.length
-    h.publish({ node: nodeHeading({ state: 'leader' }) })
+    h.publish({
+      node: nodeHeading({
+        state: 'leader',
+        clock: {
+          reference: false,
+          offsetMs: 812,
+          measuredAt: 1_700_000_000_000,
+          thresholdMs: 300,
+          beyond: true,
+        },
+      }),
+    })
     await nextTick()
+    expect(h.view.get(id('clock-warning')).text()).toBe(
+      'Clock 812 ms off the leader (threshold 300 ms)',
+    )
     expect(h.view.get('table').element).toBe(table)
     expect(h.workers!.controller.rows.get()).toBe(window)
     expect(h.workers!.controller.descriptor()).toEqual(descriptor)
@@ -361,10 +525,24 @@ describe('HilosDaemonNodeShell', () => {
     h.scopes.session.data.set('adminViewMode', true)
     const release = bindAdminAccess(h.scopes)
     try {
-      h.answer()
+      h.answer(
+        nodeOverview(),
+        nodeHeading({
+          clock: {
+            reference: false,
+            offsetMs: 812,
+            measuredAt: 1_700_000_000_000,
+            thresholdMs: 300,
+            beyond: true,
+          },
+        }),
+      )
       await nextTick()
       expect(hilosAdminAccess.get()).toBe('view')
       expect(h.view.get('h1').text()).toBe('n1')
+      expect(h.view.get(id('clock-warning')).text()).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
       expect(h.view.findAll('nav[aria-label="Node pages"] a')).toHaveLength(8)
       expect(
         h.view.get('[data-id="hilos-daemon-environment-link"]').text(),

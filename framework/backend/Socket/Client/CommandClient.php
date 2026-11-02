@@ -55,6 +55,8 @@ use Hilos\Utils\Logger;
  */
 class CommandClient extends AbstractClient implements CommandClientInterface
 {
+    private const int MAX_CLOCK_TEST_SHIFT_MS = 86_400_000;
+
     /** @var CommandServer Owning server holding the held-request registry */
     private CommandServer $server;
 
@@ -208,6 +210,13 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
+            if ($request->command === CliCommands::CLUSTER_TEST_CLOCK_SHIFT) {
+                // Test-only: change the local clock probe answer, held by the master process.
+                $reply = $this->answerClockShift($request);
                 $this->writeBuffer .= $reply->toJson() . "\n";
                 continue;
             }
@@ -552,6 +561,39 @@ class CommandClient extends AbstractClient implements CommandClientInterface
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_WINDOW_MS => $row->windowMs,
             CommandConstants::FIELD_FACETS_MS => $row->facetsMs,
+        ]);
+    }
+
+    /**
+     * Sets the master-local test shift used in cluster clock probe answers.
+     *
+     * @param CommandRequestDTO $request Request carrying the signed shift in milliseconds
+     * @return CommandReplyDTO Reply carrying the shift read from the clock, or the refusal
+     */
+    private function answerClockShift(CommandRequestDTO $request): CommandReplyDTO
+    {
+        $shiftMs = array_key_exists(CommandConstants::FIELD_SHIFT_MS, $request->payload)
+            ? $request->payload[CommandConstants::FIELD_SHIFT_MS]
+            : 0;
+        if (!is_int($shiftMs) || abs($shiftMs) > self::MAX_CLOCK_TEST_SHIFT_MS) {
+            return CommandReplyDTO::error(
+                $request->correlationId,
+                'shiftMs must be a whole number of milliseconds within one day',
+            );
+        }
+
+        $clock = Hilos::$cluster?->clock();
+        if ($clock === null) {
+            return CommandReplyDTO::error(
+                $request->correlationId,
+                'This node is not in a cluster: there is no clock check to shift',
+            );
+        }
+
+        $clock->setTestShift($shiftMs);
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_SHIFT_MS => $clock->testShiftMs(),
         ]);
     }
 

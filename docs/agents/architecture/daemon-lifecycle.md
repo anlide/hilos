@@ -1225,6 +1225,15 @@ equal agents does not pile onto one node.
   reuses the existing `onLinkClosed → markOffline → onNodeLeft → noteNodeOffline` path — no
   new registry scan. It is symmetric (slave, master↔master, master↔slave), a busy link
   never pings, and the same timeout bounds a stalled half-open handshake.
+- **Clock check (leader).** The clustered master registers `hilos_cluster_clock_check`
+  for 04:00 in the project time zone. When due, the leader starts measurements in the
+  master itself; it does not send a `DAEMON/CRON` signal to its node agent. Becoming
+  leader starts checks for every linked node, while a node joining or returning online
+  starts one for that node. Each check is five sequential `peer_clock_probe` /
+  `peer_clock_reply` exchanges, with the next probe sent only after the prior reply;
+  the leader keeps the offset from the shortest round trip. The series has no separate
+  timer. If its link closes, the unfinished series is discarded and the previous
+  reading remains; keepalive and `CLUSTER_LINK_TIMEOUT_MS` still own link liveness.
 - **Failover re-placement (leader).** `onNodeLeft` arms a failover for each placed agent the
   lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs the
   `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node

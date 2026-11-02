@@ -576,6 +576,7 @@ export {
   newClusterMasterPage,
   setClusterMaster,
   clusterCommandChannel,
+  shiftClusterNodeClock,
   expectClusterLeaderUnchanged,
   expectClusterAnalyticsAgents,
   watchClusterMasterUpgrades,

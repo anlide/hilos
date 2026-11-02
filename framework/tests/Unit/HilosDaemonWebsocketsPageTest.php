@@ -191,7 +191,10 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
         self::assertSame([
             'node', 'websockets', 'pageLabel', 'pageLead', 'pageBreadcrumb', 'pageChildren', 'pageHeadOwner', 'pageTabs',
         ], array_keys($response->payload->data));
-        self::assertSame(['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master'], $response->payload->data['node']);
+        self::assertSame([
+            'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => 'master',
+            'clock' => null,
+        ], $response->payload->data['node']);
         self::assertSame(['connections' => 0, 'dataNode' => false], $response->payload->data['websockets']);
         self::assertSame(HilosPageConstants::HILOS_DAEMON_NODE, $response->payload->data['pageHeadOwner']['page']);
         self::assertSame([
@@ -272,7 +275,12 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
         $this->onlyResponse();
         $this->deliver([$this->node($this->report('a', 13), false, 777)]);
         $silent = $this->onlyResponse()->payload->data;
-        self::assertSame(['clustered' => true, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master'], $silent['node']);
+        self::assertSame([
+            'clustered' => true, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master',
+            'clock' => [
+                'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+            ],
+        ], $silent['node']);
         self::assertSame(['connections' => 13, 'dataNode' => false], $silent['websockets']);
         $this->deliver([$this->node($this->report('a', 13, NodeRole::Slave), false, 777)]);
         $data = $this->onlyResponse()->payload->data;
@@ -306,7 +314,10 @@ final class HilosDaemonWebsocketsPageTest extends TestCase
         self::assertCount(2, $signals);
         foreach ($signals as $signal) {
             self::assertSame(['connections' => 0, 'dataNode' => false], $signal->data->data->payload->data['websockets']);
-            self::assertSame(['clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master'],
+            self::assertSame([
+                'clustered' => false, 'state' => 'silent', 'silentSince' => 777000, 'role' => 'master',
+                'clock' => null,
+            ],
                 $signal->data->data->payload->data['node']);
             self::assertStringNotContainsString('_hidden', json_encode($signal->data->data->toArray(), JSON_THROW_ON_ERROR));
         }

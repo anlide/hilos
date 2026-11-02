@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonPage } from '../src/admin/daemon/HilosDaemonPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerTimeZone } from './readerTimeZone.js'
 
 function node(
   nodeId: string,
@@ -28,6 +29,7 @@ function node(
     role: 'master',
     state: 'standby',
     silentSince: null,
+    clock: null,
     workers: [
       { index: 0, kind: 'regular', agentCount: 2 },
       { index: 4, kind: 'monopolistic', agentCount: 1 },
@@ -225,7 +227,10 @@ function harness(
   const find = (
     id: string,
     root: ParentNode = view.container,
-  ): HTMLElement | null => root.querySelector(`[data-id="${id}"]`)
+  ): HTMLElement | null =>
+    [...root.querySelectorAll<HTMLElement>('[data-id]')].find(
+      (element) => element.getAttribute('data-id') === id,
+    ) ?? null
   const click = (id: string, root?: ParentNode): void => {
     fireEvent.click(find(id, root)!)
   }
@@ -272,15 +277,318 @@ function harness(
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('HilosDaemonPage', () => {
   it('opens Overview without any placement controller or traffic', () => {
     const h = harness(true, picture([node('n1')]))
+    expect(h.find('hilos-daemon-clock-n1')).toBeNull()
+    expect(h.find('hilos-daemon-clock-warning-n1')).toBeNull()
     expect(h.register).not.toHaveBeenCalled()
     expect(h.sendViewport).not.toHaveBeenCalled()
     expect(h.sendRendered).not.toHaveBeenCalled()
     h.view.unmount()
+  })
+
+  it('shows the server clock projection and clears its warning after recovery', () => {
+    const at = Date.parse('2026-10-09T10:11:12Z')
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-02T12:00:00Z'))
+    const reader = readerTimeZone()
+    act(() => reader.choose('UTC'))
+    const clock = {
+      reference: false,
+      offsetMs: -120,
+      measuredAt: at,
+      thresholdMs: 300,
+      beyond: false,
+    }
+    const warningNodeId = 'node /?#%2F🌍'
+    const h = harness(
+      true,
+      picture([
+        node('n1', {
+          state: 'leader',
+          clock: {
+            ...clock,
+            reference: true,
+            offsetMs: null,
+            measuredAt: null,
+          },
+        }),
+        node('n2', { clock }),
+        node('n3', { clock: { ...clock, offsetMs: null, measuredAt: null } }),
+        node(warningNodeId, {
+          clock: { ...clock, offsetMs: 812, beyond: true },
+        }),
+      ]),
+    )
+    try {
+      const findDataId = (dataId: string): HTMLElement | null =>
+        [...h.view.container.querySelectorAll<HTMLElement>('[data-id]')].find(
+          (element) => element.getAttribute('data-id') === dataId,
+        ) ?? null
+      const date = new Intl.DateTimeFormat(undefined, {
+        timeZone: 'UTC',
+        dateStyle: 'medium',
+      }).format(at)
+      const time = new Intl.DateTimeFormat(undefined, {
+        timeZone: 'UTC',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(at)
+      expect(h.find('hilos-daemon-clock-n1')?.textContent).toBe(
+        'Clock: reference',
+      )
+      expect(h.find('hilos-daemon-clock-n2')?.textContent).toBe(
+        `Clock: -120 ms to the leader, measured ${date}, ${time}`,
+      )
+      expect(h.find('hilos-daemon-clock-n3')?.textContent).toBe(
+        'Clock: not measured yet',
+      )
+      expect(
+        findDataId(`hilos-daemon-clock-${warningNodeId}`)?.textContent,
+      ).toBe(`Clock: +812 ms to the leader, measured ${date}, ${time}`)
+      const warning = findDataId(`hilos-daemon-clock-warning-${warningNodeId}`)!
+      const warningId = `hilos-daemon-clock-warning-${encodeURIComponent(warningNodeId)}`
+      const link = findDataId(`hilos-daemon-node-${warningNodeId}`)!
+      expect(warning.textContent).toBe(
+        'Clock 812 ms off the leader (threshold 300 ms)',
+      )
+      expect(warning.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
+      expect(warning.closest('[aria-hidden="true"]')).toBeNull()
+      expect(warning.id).toBe(warningId)
+      expect(link.getAttribute('aria-label')).toBe(`Node ${warningNodeId}`)
+      expect(link.getAttribute('aria-describedby')).toBe(warningId)
+      expect(document.getElementById(warningId)).toBe(warning)
+
+      act(() =>
+        h.update(
+          picture([node(warningNodeId, { clock: { ...clock, offsetMs: 0 } })]),
+        ),
+      )
+      expect(
+        findDataId(`hilos-daemon-clock-${warningNodeId}`)?.textContent,
+      ).toBe(`Clock: +0 ms to the leader, measured ${date}, ${time}`)
+      expect(
+        findDataId(`hilos-daemon-clock-warning-${warningNodeId}`),
+      ).toBeNull()
+      expect(link.getAttribute('aria-describedby')).toBeNull()
+
+      act(() =>
+        h.update(
+          picture([
+            node(warningNodeId, { clock: { ...clock, offsetMs: 812 } }),
+          ]),
+        ),
+      )
+      expect(
+        findDataId(`hilos-daemon-clock-warning-${warningNodeId}`),
+      ).toBeNull()
+      act(() => h.update(picture([node(warningNodeId)])))
+      expect(findDataId(`hilos-daemon-clock-${warningNodeId}`)).toBeNull()
+      expect(
+        findDataId(`hilos-daemon-clock-warning-${warningNodeId}`),
+      ).toBeNull()
+      expect(h.send).not.toHaveBeenCalled()
+      expect(h.sendAction).not.toHaveBeenCalled()
+      expect(h.sendViewport).not.toHaveBeenCalled()
+    } finally {
+      h.view.unmount()
+      reader.release()
+    }
+  })
+
+  it('scrolls only the focused node’s Clock with plain Left and Right and preserves native activation', () => {
+    const clock = {
+      reference: false,
+      offsetMs: 812,
+      measuredAt: 1_700_000_000_000,
+      thresholdMs: 300,
+      beyond: true,
+    }
+    const nodeId = 'node /?#%2F🌍'
+    const h = harness(
+      true,
+      picture([node(nodeId, { clock }), node('n2', { clock })]),
+    )
+    const link = h.find(`hilos-daemon-node-${nodeId}`)!
+    const lines = h.find(`hilos-daemon-clock-${nodeId}`)!.parentElement!
+    const otherLines = h.find('hilos-daemon-clock-n2')!.parentElement!
+    // jsdom has no layout or scrolling: record the native requests only.
+    const scroll = vi.fn()
+    const otherScroll = vi.fn()
+    Object.defineProperty(lines, 'scrollBy', { value: scroll })
+    Object.defineProperty(otherLines, 'scrollBy', { value: otherScroll })
+    link.focus()
+    expect(document.activeElement).toBe(link)
+    expect(link.querySelector('[tabindex], button, input, a')).toBeNull()
+    for (const key of ['ArrowRight', 'ArrowRight', 'ArrowLeft']) {
+      const event = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      })
+      fireEvent(link, event)
+      expect(event.defaultPrevented).toBe(true)
+    }
+    expect(scroll.mock.calls).toEqual([
+      [{ left: 80 }],
+      [{ left: 80 }],
+      [{ left: -80 }],
+    ])
+    expect(otherScroll).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(link)
+
+    scroll.mockClear()
+    for (const options of [
+      { key: 'Enter' },
+      { key: 'Tab' },
+      { key: 'ArrowUp' },
+      { key: 'ArrowDown' },
+      { key: 'Home' },
+      { key: 'End' },
+      { key: ' ' },
+      { key: 'ArrowRight', altKey: true },
+      { key: 'ArrowLeft', ctrlKey: true },
+      { key: 'ArrowRight', metaKey: true },
+      { key: 'ArrowLeft', shiftKey: true },
+    ]) {
+      const event = new KeyboardEvent('keydown', {
+        ...options,
+        bubbles: true,
+        cancelable: true,
+      })
+      fireEvent(link, event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    const claimed = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    })
+    claimed.preventDefault()
+    fireEvent(link, claimed)
+    const childKey = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    })
+    fireEvent(lines, childKey)
+    expect(childKey.defaultPrevented).toBe(false)
+    expect(scroll).not.toHaveBeenCalled()
+    expect(otherScroll).not.toHaveBeenCalled()
+    expect(h.navigate).not.toHaveBeenCalled()
+
+    // Observe the link's verdict before stopping jsdom's hard navigation.
+    const nativeClicks: boolean[] = []
+    const stopNavigation = (event: Event) => {
+      nativeClicks.push(event.defaultPrevented)
+      event.preventDefault()
+    }
+    h.view.container.addEventListener('click', stopNavigation)
+    try {
+      for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+        fireEvent.click(link, { [modifier]: true })
+      }
+      expect(nativeClicks).toEqual([false, false, false, false])
+      expect(h.navigate).not.toHaveBeenCalled()
+    } finally {
+      h.view.container.removeEventListener('click', stopNavigation)
+    }
+    // jsdom does not synthesize the anchor's native click for Enter.
+    fireEvent.keyDown(link, { key: 'Enter' })
+    fireEvent.click(link, { detail: 0 })
+    expect(h.navigate).toHaveBeenCalledWith(
+      h.router.resolvePath(HilosPages.DAEMON_NODE, { nodeId }),
+    )
+    expect(h.router.currentPath.get()).toBe(link.getAttribute('href'))
+    expect(h.sendAction).not.toHaveBeenCalled()
+  })
+
+  it('leaves arrow keys native when the node has no Clock to read', () => {
+    const h = harness(true, picture([node('n1')]))
+    for (const value of [
+      picture([node('n1')]),
+      picture([node('n1', { online: false, state: 'silent' })]),
+      picture([node('n1')], false),
+    ]) {
+      act(() => h.update(value))
+      const link = h.find('hilos-daemon-node-n1')!
+      link.focus()
+      for (const key of ['ArrowLeft', 'ArrowRight']) {
+        const event = new KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+        })
+        fireEvent(link, event)
+        expect(event.defaultPrevented).toBe(false)
+      }
+    }
+    expect(h.navigate).not.toHaveBeenCalled()
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
+  })
+
+  it('reformats a mounted clock in the reader zone without another page answer', () => {
+    const resolved = new Intl.DateTimeFormat().resolvedOptions()
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...resolved,
+      timeZone: 'America/New_York',
+    })
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-02T12:00:00Z'))
+    const at = Date.parse('2026-10-09T01:11:12Z')
+    const reader = readerTimeZone()
+    act(() => reader.choose('UTC'))
+    const h = harness(
+      true,
+      picture([
+        node('n1', { online: false, state: 'silent', silentSince: at }),
+        node('n2', {
+          clock: {
+            reference: false,
+            offsetMs: 120,
+            measuredAt: at,
+            thresholdMs: 300,
+            beyond: false,
+          },
+        }),
+      ]),
+    )
+    try {
+      const clockLine = h.find('hilos-daemon-clock-n2')!
+      const page = h.scopes.page()
+      expect(h.find('hilos-daemon-clock-n1')).toBeNull()
+      for (const [own, zone] of [
+        ['UTC', 'UTC'],
+        ['Europe/Kyiv', 'Europe/Kyiv'],
+        [null, 'America/New_York'],
+      ] as const) {
+        act(() => reader.choose(own))
+        const date = new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          dateStyle: 'medium',
+        }).format(at)
+        const time = new Intl.DateTimeFormat(undefined, {
+          timeZone: zone,
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(at)
+        expect(clockLine.textContent).toBe(
+          `Clock: +120 ms to the leader, measured ${date}, ${time}`,
+        )
+        expect(h.scopes.page()).toBe(page)
+        expect(h.send).not.toHaveBeenCalled()
+        expect(h.sendAction).not.toHaveBeenCalled()
+        expect(h.sendViewport).not.toHaveBeenCalled()
+      }
+    } finally {
+      h.view.unmount()
+      reader.release()
+    }
   })
 
   it('consumes the lean answer and exposes each node’s real encoded Overview link', () => {
@@ -376,6 +684,7 @@ describe('HilosDaemonPage', () => {
       'Browser connections: 0',
     )
     expect(h.find('hilos-daemon-node-solo')?.textContent).toContain('0 B / 0 B')
+    expect(h.view.container.textContent).not.toContain('Clock:')
     expect(h.find('hilos-daemon-inspector')).toBeNull()
     expect(h.view.container.textContent).not.toContain('APP_ENV')
   })
@@ -411,9 +720,12 @@ describe('HilosDaemonPage', () => {
     expect(box().getAttribute('href')).toBe('/hilos/daemon/n1')
     expect(box().textContent).toContain('Silent since')
     expect(h.find('hilos-daemon-silent-n1')?.textContent).not.toContain('—')
+    expect(h.find('hilos-daemon-clock-n1')).toBeNull()
+    expect(h.find('hilos-daemon-clock-warning-n1')).toBeNull()
     expect(box().textContent).not.toContain('Daemon CPU')
     expect(box().textContent).not.toContain('Measured memory')
     expect(h.find('hilos-daemon-workers-n1')).toBeNull()
+    expect(h.view.container.textContent).not.toContain('Clock:')
     act(() =>
       h.update(
         picture([

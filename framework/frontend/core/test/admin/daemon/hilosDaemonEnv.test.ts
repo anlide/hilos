@@ -567,6 +567,7 @@ describe('readHilosDaemonEnvOrphansPage', () => {
       clustered: false,
       state: null,
       silentSince: null,
+      clock: null,
       role: null,
     }
     page.data.set('node', node)
@@ -874,6 +875,7 @@ describe('daemonEnvNodeHeading', () => {
           clustered,
           state: silent ? DAEMON_NODE_STATE_SILENT : null,
           silentSince: null,
+          clock: null,
           role: 'slave' as const,
         }
         expect(
@@ -904,6 +906,7 @@ describe('daemonEnvNodeHeading', () => {
       clustered: false,
       state: null,
       silentSince: null,
+      clock: null,
       role: 'master',
     }
     page.data.set('node', node)

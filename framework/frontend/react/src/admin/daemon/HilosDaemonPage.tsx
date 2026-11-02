@@ -1,5 +1,10 @@
 // Overview of the node picture and the selected entry points.
-import { useContext, useMemo, type CSSProperties } from 'react'
+import {
+  useContext,
+  useMemo,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react'
 import {
   createHilosDaemonOverview,
   daemonMonopolisticCount,
@@ -10,6 +15,8 @@ import {
   formatDaemonBytes,
   formatDaemonCores,
   formatDaemonDatabaseAddress,
+  formatDaemonNodeClock,
+  formatDaemonNodeClockWarning,
   formatDaemonNodeState,
   formatDaemonNodeSilentSince,
   formatDaemonNumber,
@@ -18,7 +25,7 @@ import {
   type HilosDaemonContext,
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -36,6 +43,7 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
   const daemon = useMemo(() => createHilosDaemonOverview(context), [context])
   const overview = useSignal(daemon.overview)
   const database = useSignal(daemon.database)
+  useSignal(hilosTimeZone)
   const router = useContext(HilosRouterContext)
   if (!router)
     throw new Error('HilosDaemonPage requires a provided Hilos router.')
@@ -169,8 +177,16 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                       })!}
                       className={`btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none ${!node.online ? 'border-danger-subtle' : ''}`}
                       aria-label={`Node ${node.nodeId}`}
+                      aria-describedby={
+                        overview.clustered &&
+                        node.online &&
+                        formatDaemonNodeClockWarning(node.clock) !== null
+                          ? `hilos-daemon-clock-warning-${encodeURIComponent(node.nodeId)}`
+                          : undefined
+                      }
                       data-id={`hilos-daemon-node-${node.nodeId}`}
                       data-state={node.state}
+                      onKeyDown={onClockKeydown}
                     >
                       <span className="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <i className="bi bi-hdd-network" aria-hidden="true" />
@@ -322,6 +338,55 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                                 ? 'Does not accept browsers'
                                 : `Browser connections: ${formatDaemonNumber(node.standing?.connections)}`}
                             </span>
+                            {overview.clustered && (
+                              <span className="d-block overflow-x-scroll text-nowrap">
+                                {node.clock !== null ? (
+                                  <span
+                                    className="d-block"
+                                    data-id={`hilos-daemon-clock-${node.nodeId}`}
+                                  >
+                                    {formatDaemonNodeClock(
+                                      node.clock,
+                                      Date.now(),
+                                    )}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="d-block invisible"
+                                    aria-hidden="true"
+                                    inert
+                                  >
+                                    &nbsp;
+                                  </span>
+                                )}
+                                {formatDaemonNodeClockWarning(node.clock) !==
+                                null ? (
+                                  <span
+                                    id={`hilos-daemon-clock-warning-${encodeURIComponent(node.nodeId)}`}
+                                    className="d-block text-warning-emphasis"
+                                    data-id={`hilos-daemon-clock-warning-${node.nodeId}`}
+                                  >
+                                    <i
+                                      className="bi bi-exclamation-triangle-fill me-1"
+                                      aria-hidden="true"
+                                    />
+                                    {formatDaemonNodeClockWarning(node.clock)}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="d-block text-warning-emphasis invisible"
+                                    aria-hidden="true"
+                                    inert
+                                  >
+                                    <i
+                                      className="bi bi-exclamation-triangle-fill me-1"
+                                      aria-hidden="true"
+                                    />
+                                    &nbsp;
+                                  </span>
+                                )}
+                              </span>
+                            )}
                           </span>
                         </>
                       )}
@@ -367,6 +432,27 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
       </div>
     </HilosAdminPage>
   )
+}
+
+/** Read the Clock lines from the link without adding a Tab stop inside it. */
+function onClockKeydown(event: KeyboardEvent<HTMLAnchorElement>): void {
+  if (
+    event.defaultPrevented ||
+    event.target !== event.currentTarget ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+  )
+    return
+  const scrollport = event.currentTarget.querySelector<HTMLElement>(
+    '[data-id^="hilos-daemon-clock-"]',
+  )?.parentElement
+  if (!scrollport) return
+  event.preventDefault()
+  const step = 80
+  scrollport.scrollBy({ left: event.key === 'ArrowRight' ? step : -step })
 }
 
 /** The silent node's own last-known silence boundary. */

@@ -408,7 +408,9 @@ describe('HilosDaemonNodePage', () => {
     expect(el('node-overview')).toBeNull()
     act(() => h.answer())
     act(() =>
-      h.publish({ node: { clustered: true, state: null, silentSince: null } }),
+      h.publish({
+        node: { clustered: true, state: null, silentSince: null, clock: null },
+      }),
     )
     expect(el('node-overview')).toBeNull()
     expect(el('node-role')).toBeNull()

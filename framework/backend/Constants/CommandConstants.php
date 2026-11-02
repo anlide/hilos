@@ -71,6 +71,9 @@ final class CommandConstants
     /** @var string Payload key: whether the test-only admin view mode lever turns the mode on (request and reply) */
     public const string FIELD_ENABLED = 'enabled';
 
+    /** @var string Payload key: signed test-only shift applied to cluster clock probe answers, in milliseconds */
+    public const string FIELD_SHIFT_MS = 'shiftMs';
+
     /** @var string Reply status: command handled successfully */
     public const string STATUS_OK = 'ok';
 

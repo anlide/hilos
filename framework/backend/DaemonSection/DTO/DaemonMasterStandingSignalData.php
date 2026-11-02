@@ -8,6 +8,8 @@ use Hilos\BaseDTO;
 use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\DaemonSection\DaemonClockPicture;
+use Hilos\DaemonSection\DaemonClockReading;
 use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 
@@ -20,6 +22,11 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
     public const string clustered = 'clustered';
     public const string consensus = 'consensus';
     public const string commandPort = 'commandPort';
+    public const string clock = 'clock';
+    public const string thresholdMs = 'thresholdMs';
+    public const string nodes = 'nodes';
+    public const string offsetMs = 'offsetMs';
+    public const string measuredAt = 'measuredAt';
     public const string role = 'role';
     public const string term = 'term';
     public const string leaderId = 'leaderId';
@@ -78,6 +85,14 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
                     self::needed => $consensus->quorumSize,
                 ],
             ],
+            self::clock => $standing->clock === null ? null : [
+                self::thresholdMs => $standing->clock->thresholdMs,
+                self::nodes => array_map(static fn (DaemonClockReading $reading): array => [
+                    self::nodeId => $reading->nodeId,
+                    self::offsetMs => $reading->offsetMs,
+                    self::measuredAt => $reading->measuredAt,
+                ], $standing->clock->nodes),
+            ],
         ];
     }
 
@@ -89,6 +104,7 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
     public static function standingFromArray(array $data): DaemonNodeStanding
     {
         $consensusData = self::requireNullableArray($data, self::consensus);
+        $clockData = self::requireNullableArray($data, self::clock);
         $consensus = null;
         if ($consensusData !== null) {
             $role = ConsensusRole::tryFrom(self::requireString($consensusData, self::role));
@@ -112,7 +128,33 @@ final class DaemonMasterStandingSignalData extends BaseDTO implements SignalData
             self::requireBool($data, self::clustered),
             $consensus,
             self::requiredNullableInt($data, self::commandPort),
+            $clockData === null ? null : self::clockFromArray($clockData),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data Clock wire object
+     * @return DaemonClockPicture Validated leader clock picture
+     * @throws InvalidFormatException When a clock field or reading is absent or invalid
+     */
+    private static function clockFromArray(array $data): DaemonClockPicture
+    {
+        $rows = self::requireArray($data, self::nodes);
+        if (!array_is_list($rows)) {
+            throw new InvalidFormatException('Daemon clock picture nodes must be a list');
+        }
+        $nodes = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || array_is_list($row)) {
+                throw new InvalidFormatException('Daemon clock reading must be an object');
+            }
+            $nodes[] = new DaemonClockReading(
+                self::requireString($row, self::nodeId),
+                self::requireInt($row, self::offsetMs),
+                self::requireInt($row, self::measuredAt),
+            );
+        }
+        return new DaemonClockPicture(self::requireInt($data, self::thresholdMs), $nodes);
     }
 
     /**

@@ -25,12 +25,14 @@ const LIVE_HEADING: HilosDaemonNodeHeading = {
   role: null,
   state: 'leader',
   silentSince: null,
+  clock: null,
 }
 const SILENT_HEADING: HilosDaemonNodeHeading = {
   clustered: true,
   role: null,
   state: 'silent',
   silentSince: 1_700_000_000_000,
+  clock: null,
 }
 
 function summary(
@@ -436,6 +438,7 @@ describe('HilosDaemonHttpServerPage', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     })
     await nextTick()
     expect(solo.view.find('[data-id="hilos-page-head-title"]').text()).toBe(

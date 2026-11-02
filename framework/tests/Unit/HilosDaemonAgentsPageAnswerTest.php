@@ -56,7 +56,10 @@ final class HilosDaemonAgentsPageAnswerTest extends TestCase
         $page = new DaemonAgentsAnswerTestPage(new DaemonCollectorAgent());
 
         self::assertSame([
-            AbstractHilosDaemonAgentsPage::NODE => ['clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null],
+            AbstractHilosDaemonAgentsPage::NODE => [
+                    'clustered' => false, 'state' => null, 'silentSince' => null, 'role' => null,
+                    'clock' => null,
+                ],
             AbstractHilosDaemonAgentsPage::PROCESSES_REPORTED => false,
         ], $page->payload($this->address())->data);
         self::assertEquals([
@@ -103,7 +106,12 @@ final class HilosDaemonAgentsPageAnswerTest extends TestCase
         $this->publish(new DaemonProcessRoster([], null, 0), NodeRole::Slave);
         $page = new DaemonAgentsAnswerTestPage(new DaemonCollectorAgent());
 
-        self::assertSame(['clustered' => true, 'state' => 'data', 'silentSince' => null, 'role' => 'slave'],
+        self::assertSame([
+            'clustered' => true, 'state' => 'data', 'silentSince' => null, 'role' => 'slave',
+            'clock' => [
+                'reference' => false, 'offsetMs' => null, 'measuredAt' => null, 'thresholdMs' => null, 'beyond' => false,
+            ],
+        ],
             $page->payload($this->address())->data[AbstractHilosDaemonAgentsPage::NODE]);
     }
 

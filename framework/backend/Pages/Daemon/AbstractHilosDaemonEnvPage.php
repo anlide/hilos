@@ -87,6 +87,7 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
                 $ownerAnswers ? null : DaemonNodeState::Silent,
                 null,
                 $role === null ? null : NodeRole::tryFrom($role),
+                clock: null,
             )->toArray(),
         ];
         if ($includeEnvironment) {

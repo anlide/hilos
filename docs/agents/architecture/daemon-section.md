@@ -61,6 +61,7 @@ An unfinished delivery names the leaf that will add it.
 | HTTP server, including agent addresses | [HttpRouter](../../../framework/backend/API/Router/HttpRouter.php) counts every answer per registered route in hourly cells (`HttpRouteTraffic`) | `http` part: host, port, countingSince, routes and unrouted; on change and once a minute |
 | Process measurements | `DaemonStatus`, sampled by the master every five seconds; `DaemonStatusSource` serves its last sample | `measurements` part: on change of the rounded sample, once a minute, forced when the node agent starts |
 | Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | `standing.consensus`: role, term, recognised leader, and quorum view (live masters of the static set, set size, majority) |
+| Clock gap to the leader | `ClusterClock` held by the leader's master | `standing.clock` in the leader's frame; null on other nodes |
 | Node sessions and connections | The master's own handshaked WebSocket clients | `standing.sessions` / `standing.connections`; sessions are distinct session tokens among those clients |
 | Registered command listener port | The master's registered `CommandServer` | Required-nullable `standing.commandPort`, read from `CommandServer::getPort()` (0..65535 or null) and carried through the shared `DaemonMasterStandingSignalData` standing serializer into the whole node picture and collector portion |
 
@@ -261,6 +262,49 @@ other live master. If several claim leadership in the highest term, the lowest
 node id wins. A newer candidate means there is no leader in the picture until
 the election resolves.
 
+## The Clock Gap
+
+Only the leader measures peer clocks. Its `hilos_cluster_clock_check` rule runs
+at 04:00 in the project time zone; `test:cron:fire daemon/hilos_cluster_clock_check`
+uses the same master path. A new leader measures every linked node, and a node
+joining or returning online is measured on its own. Followers start no checks.
+
+For each node, the leader sends five sequential `peer_clock_probe` frames and
+waits for each `peer_clock_reply` before sending the next. A reply carries that
+node's wall time in microseconds. The leader measures the round trip with its
+monotonic clock and computes the offset from the node time and the leader's
+wall time at the exchange midpoint; it keeps the offset from the shortest
+round trip and records the leader's completion time. A closed link abandons
+the unfinished series without replacing the last reading; a new trigger starts
+a fresh series. There is no clock-check timer of its own: link liveness and its
+timeout remain the keepalive's job.
+
+The leader judges the rounded-millisecond offset against
+`CLUSTER_CLOCK_SKEW_THRESHOLD_MS` (integer, default 300 ms; an empty value is
+treated as missing). Only an absolute offset strictly greater than the
+threshold is beyond it. The leader logs a warning when a node first goes
+beyond the threshold or returns within it; an initial in-range reading is
+quiet. The best round trip appears only in an out-of-range warning, not in the
+page data. Leadership loss clears the series, readings, and verdicts; the next
+leader measures all linked nodes again.
+These readings diagnose clock skew; they do not synchronize or adjust clocks,
+and a node beyond the threshold keeps working.
+
+The master carries its readings in the required nullable `standing.clock`
+field through the shared standing serializer. It is non-null only in the
+leader's frame; readings are ordered by `nodeId` and omit the leader itself.
+The collector carries that frame through the existing node picture chain. The
+root Overview's `daemon.nodes[]` and a mirror-backed node line use the same
+`clock` object: `{reference, offsetMs, measuredAt, thresholdMs, beyond}`.
+`reference` marks the leader. `offsetMs` is node time minus leader time;
+`measuredAt` is the leader's completion time in epoch milliseconds. The server
+derives `beyond` from the leader's threshold. With no current leader in the
+picture, every node is “not measured yet”; a node without a completed reading
+has null offset and measurement time, and a silent node keeps its last reading.
+The field is null for a standalone installation and on node Environment and Env
+orphans pages. A changed offset, measurement time, or verdict changes the
+existing page fingerprint; repeated identical reports do not resend the page.
+
 ## The Node Line
 
 Each node is an entity page at `/hilos/daemon/{nodeId}`. Its catalog entry opts
@@ -295,7 +339,9 @@ and the page has no form, actions, or table. Each project's lazy page wrapper
 supplies context; the page is not in the default `hilosAdminViews` maps.
 
 For mirror-backed node pages, `DaemonNodeHeading` carries `clustered`, `state`,
-`silentSince`, and `role`. `state` remains the picture's verdict;
+`silentSince`, `role`, and `clock`. `clock` is relative to the current leader
+in the picture; its `beyond` verdict is computed by the server from that
+leader's threshold. `state` remains the picture's verdict;
 `silentSince` is present only for a silent node. `role` is the role in the last
 report and stays null until a report exists. On standalone installations the
 head shows “Single installation” without state or role. Environment and Env

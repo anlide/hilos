@@ -52,6 +52,7 @@ function picture(clustered = true): HilosDaemonOverviewData {
       role: 'master',
       state: 'leader',
       silentSince: null,
+      clock: null,
       workers: [],
       measurements: null,
       standing: null,
@@ -358,6 +359,7 @@ function liveNode(
     role: 'master',
     state: 'standby',
     silentSince: null,
+    clock: null,
     workers: [
       { index: 0, kind: 'regular', agentCount: 2 },
       { index: 4, kind: 'monopolistic', agentCount: 1 },

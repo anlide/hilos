@@ -47,6 +47,7 @@ function harness() {
     role: null,
     state: null,
     silentSince: null,
+    clock: null,
   })
   const listeners = new Map<string, (payload: unknown) => void>()
   const sendAction = vi.fn(() => true)
@@ -172,6 +173,7 @@ describe('daemon restart confirmation', () => {
       role: null,
       state: 'silent',
       silentSince: 10000,
+      clock: null,
     })
     expect(h.restart.canSubmit.get()).toBe(false)
     h.page.data.set('node', {
@@ -179,6 +181,7 @@ describe('daemon restart confirmation', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     })
     h.controller.ingestDelta({
       kind: 'row_removed',
@@ -237,6 +240,7 @@ describe('daemon restart confirmation', () => {
       role: null,
       state: 'silent',
       silentSince: 10000,
+      clock: null,
     })
     expect(h.restart.unavailable.get()).toBe(true)
     expect(reason()).toBe(UNAVAILABLE)
@@ -245,6 +249,7 @@ describe('daemon restart confirmation', () => {
       role: null,
       state: null,
       silentSince: null,
+      clock: null,
     })
     expect(reason()).toBe(REFUSED)
 

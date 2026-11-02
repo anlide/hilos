@@ -41,6 +41,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(h.el('hilos-daemon-node-state')?.textContent).toContain('Silent')
@@ -63,6 +64,7 @@ describe('HilosDaemonWorkersPage', () => {
       role: null,
       state: 'silent',
       silentSince: 1700000000000,
+      clock: null,
     })
     h.detect()
     expect(h.el('hilos-daemon-workers-silent')?.textContent).toContain(
@@ -95,6 +97,7 @@ describe('HilosDaemonWorkersPage', () => {
         role: null,
         state: 'silent',
         silentSince: 1_700_000_000_000,
+        clock: null,
       })
       h.detect()
       const line = h.el('hilos-daemon-workers-silent')!
