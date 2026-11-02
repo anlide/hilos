@@ -340,6 +340,95 @@ final class PeerLinkMarkerTest extends TestCase
         $this->assertStringContainsString('Peer link dropped: ' . $refusal, $this->log());
     }
 
+    /** Matching project zones let the accepting side welcome and remember the peer. */
+    public function testAHelloNamingTheSameProjectTimeZoneCompletesTheHandshake(): void
+    {
+        $local = $this->localWithProjectTimeZone();
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: false, markers: $local);
+
+        $this->deliver($far, $this->hello($local->values));
+        $link->read();
+        $welcome = PeerDTO::fromWire(trim($this->flushAndReadFar($link, $far)));
+
+        $this->assertInstanceOf(PeerWelcomeDTO::class, $welcome);
+        $this->assertSame($local->values, $welcome->markers);
+
+        $this->deliver($far, new PeerReadyDTO(false));
+        $link->read();
+
+        $this->assertFalse($link->shouldClose());
+        $this->assertSame(self::REMOTE_NODE, $link->remoteIdentity()?->nodeId);
+        $this->assertContains(self::REMOTE_NODE, $this->registeredNodeIds());
+    }
+
+    /** Matching project zones let the dialing side finish the ready exchange. */
+    public function testAWelcomeNamingTheSameProjectTimeZoneCompletesTheHandshake(): void
+    {
+        $local = $this->localWithProjectTimeZone();
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: true, markers: $local);
+
+        $link->startHandshake();
+        $hello = PeerDTO::fromWire(trim($this->flushAndReadFar($link, $far)));
+        $this->assertInstanceOf(PeerHelloDTO::class, $hello);
+        $this->assertSame($local->values, $hello->markers);
+
+        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $local->values));
+        $link->read();
+        $this->deliver($far, new PeerReadyAckDTO(true));
+        $link->read();
+
+        $this->assertFalse($link->shouldClose());
+        $this->assertSame(self::REMOTE_NODE, $link->remoteIdentity()?->nodeId);
+        $this->assertContains(self::REMOTE_NODE, $this->registeredNodeIds());
+    }
+
+    /**
+     * @param array<string, string> $remoteMarkers Markers in the peer's hello
+     * @param string $refusal Exact reason the link must log
+     */
+    #[DataProvider('projectTimeZoneRefusals')]
+    public function testAHelloBreakingProjectTimeZoneAgreementIsRefusedBeforeWelcome(
+        array $remoteMarkers,
+        string $refusal,
+    ): void {
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: false, markers: $this->localWithProjectTimeZone());
+
+        $this->deliver($far, $this->hello($remoteMarkers));
+        $link->read();
+
+        $this->assertTrue($link->shouldClose());
+        $this->assertNull($link->remoteIdentity());
+        $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        $this->assertSame('', $this->flushAndReadFar($link, $far), 'no welcome goes back to a refused hello');
+        $this->assertStringContainsString('Peer link dropped: ' . $refusal, $this->log());
+    }
+
+    /**
+     * @param array<string, string> $remoteMarkers Markers in the peer's welcome
+     * @param string $refusal Exact reason the link must log
+     */
+    #[DataProvider('projectTimeZoneRefusals')]
+    public function testAWelcomeBreakingProjectTimeZoneAgreementIsRefusedBeforeRememberingThePeer(
+        array $remoteMarkers,
+        string $refusal,
+    ): void {
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: true, markers: $this->localWithProjectTimeZone());
+
+        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], $remoteMarkers));
+        $link->read();
+
+        $this->assertTrue($link->shouldClose());
+        $this->assertNull($link->remoteIdentity());
+        $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        $this->assertFalse($link->closedUnwelcomed(), 'this side refused the welcome; the peer did not close before it');
+        $this->assertSame('', $this->flushAndReadFar($link, $far), 'a refused welcome must not advance to ready');
+        $this->assertStringContainsString('Peer link dropped: ' . $refusal, $this->log());
+    }
+
     /**
      * @return array<string, array{bool, array<string, string>, string}> Breaches of the default language agreement
      */
@@ -368,6 +457,26 @@ final class PeerLinkMarkerTest extends TestCase
     }
 
     /**
+     * @return array<string, array{array<string, string>, string}> Breaches of the project time zone agreement
+     */
+    public static function projectTimeZoneRefusals(): array
+    {
+        return [
+            'another project time zone' => [
+                [...PeerTestMarkers::onWire(), PeerMarkers::PROJECT_TIME_ZONE => 'America/Havana'],
+                "Peer handshake from node 'node-b' names project-time-zone marker 'America/Havana',"
+                . " but this node reads 'UTC' from the variable HILOS_PROJECT_TIME_ZONE:"
+                . ' the two nodes do not read one project-time-zone',
+            ],
+            'missing project time zone' => [
+                PeerTestMarkers::onWire(),
+                "Peer handshake from node 'node-b' names no project-time-zone marker,"
+                . " but this node reads 'UTC' from the variable HILOS_PROJECT_TIME_ZONE",
+            ],
+        ];
+    }
+
+    /**
      * @return PeerMarkers Markers of an I18N node configured for English
      */
     private function localWithDefaultLanguage(): PeerMarkers
@@ -375,6 +484,18 @@ final class PeerLinkMarkerTest extends TestCase
         return new PeerMarkers(
             [...PeerTestMarkers::onWire(), PeerMarkers::DEFAULT_LANGUAGE => 'en'],
             [PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_PLACE, PeerMarkers::DEFAULT_LANGUAGE => 'the variable HILOS_DEFAULT_LANGUAGE'],
+        );
+    }
+
+    /** @return PeerMarkers Markers of a project configured for UTC */
+    private function localWithProjectTimeZone(): PeerMarkers
+    {
+        return new PeerMarkers(
+            [...PeerTestMarkers::onWire(), PeerMarkers::PROJECT_TIME_ZONE => 'UTC'],
+            [
+                PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_PLACE,
+                PeerMarkers::PROJECT_TIME_ZONE => 'the variable HILOS_PROJECT_TIME_ZONE',
+            ],
         );
     }
 

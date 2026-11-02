@@ -140,6 +140,54 @@ final class PeerMarkersTest extends TestCase
         );
     }
 
+    /** The project zone marker is required and compares the configured name exactly. */
+    public function testTheSameProjectTimeZonePasses(): void
+    {
+        $this->assertSame('project-time-zone', PeerMarkers::PROJECT_TIME_ZONE);
+        $this->assertNull($this->localWithProjectTimeZone('UTC')->refusalFor(self::PEER, [
+            PeerMarkers::DATABASE => self::LOCAL_MARKER,
+            PeerMarkers::PROJECT_TIME_ZONE => 'UTC',
+        ]));
+    }
+
+    /** The refusal names both zones and the environment source literally. */
+    public function testAnotherProjectTimeZoneIsRefused(): void
+    {
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names project-time-zone marker 'America/Havana',"
+            . " but this node reads 'UTC' from the variable HILOS_PROJECT_TIME_ZONE:"
+            . ' the two nodes do not read one project-time-zone',
+            $this->localWithProjectTimeZone('UTC')->refusalFor(self::PEER, [
+                PeerMarkers::DATABASE => self::LOCAL_MARKER,
+                PeerMarkers::PROJECT_TIME_ZONE => 'America/Havana',
+            ]),
+        );
+    }
+
+    /** A peer without the project zone marker is refused. */
+    public function testAMissingProjectTimeZoneIsRefused(): void
+    {
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names no project-time-zone marker,"
+            . " but this node reads 'UTC' from the variable HILOS_PROJECT_TIME_ZONE",
+            $this->localWithProjectTimeZone('UTC')->refusalFor(self::PEER, [PeerMarkers::DATABASE => self::LOCAL_MARKER]),
+        );
+    }
+
+    /** IANA aliases are not normalized before marker comparison. */
+    public function testDifferentNamesForTheSameProjectTimeZoneAreRefused(): void
+    {
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names project-time-zone marker 'Europe/Kyiv',"
+            . " but this node reads 'Europe/Kiev' from the variable HILOS_PROJECT_TIME_ZONE:"
+            . ' the two nodes do not read one project-time-zone',
+            $this->localWithProjectTimeZone('Europe/Kiev')->refusalFor(self::PEER, [
+                PeerMarkers::DATABASE => self::LOCAL_MARKER,
+                PeerMarkers::PROJECT_TIME_ZONE => 'Europe/Kyiv',
+            ]),
+        );
+    }
+
     /**
      * A cluster directory is one more kind beside the database (HIL-1242): the same rule, and the
      * same words, with the directory's kind and the place it was read from.
@@ -188,6 +236,18 @@ final class PeerMarkersTest extends TestCase
         return new PeerMarkers(
             [PeerMarkers::DATABASE => self::LOCAL_MARKER, PeerMarkers::DEFAULT_LANGUAGE => 'en'],
             [PeerMarkers::DATABASE => self::PLACE, PeerMarkers::DEFAULT_LANGUAGE => 'the variable HILOS_DEFAULT_LANGUAGE'],
+        );
+    }
+
+    /**
+     * @param string $timeZone Configured project time zone
+     * @return PeerMarkers Markers of a project configured for the zone
+     */
+    private function localWithProjectTimeZone(string $timeZone): PeerMarkers
+    {
+        return new PeerMarkers(
+            [PeerMarkers::DATABASE => self::LOCAL_MARKER, PeerMarkers::PROJECT_TIME_ZONE => $timeZone],
+            [PeerMarkers::DATABASE => self::PLACE, PeerMarkers::PROJECT_TIME_ZONE => 'the variable HILOS_PROJECT_TIME_ZONE'],
         );
     }
 }

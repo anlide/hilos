@@ -44,8 +44,8 @@ final class PeerModule implements DaemonModule
 
     /**
      * @param ?Closure(): PeerMarkers $localMarkers Reads this node's markers; the database marker, the marker of
-     *     every cluster directory, the admin view mode variable and, with I18N, the default language variable
-     *     when null - a unit test without a database hands its own
+     *     every cluster directory, the admin view mode variable, the project time zone and, with I18N, the default
+     *     language variable when null - a unit test without a database hands its own
      */
     public function __construct(?Closure $localMarkers = null)
     {
@@ -68,7 +68,8 @@ final class PeerModule implements DaemonModule
      * reads the markers it names to its peers on every handshake - the database marker
      * ({@see DatabaseMarker}), the marker of every cluster directory of `$fs`
      * ({@see ClusterDirectoryMarker}), each written here by the first node to start, and the
-     * admin view mode variable, plus the default language variable when the project declares I18N.
+     * admin view mode variable, the project time zone, plus the default language variable when the project declares
+     * I18N.
      * Those reads are the one database and file access of the master
      * outside its loop that the peer channel needs: a one-time bootstrap read before
      * {@see DaemonManager::run()}, which the rule against heavy work in the master allows
@@ -82,7 +83,7 @@ final class PeerModule implements DaemonModule
      * @throws RandomException When upload server registration cannot mint its master ledger incarnation
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config or its TLS files are missing or invalid
-     * @throws EnvException When a cluster env value or the default language cannot be read
+     * @throws EnvException When a cluster env value, the default language or the project time zone cannot be read
      * @throws EnvInvalidValueException When I18N is declared and the default language code is absent or unknown
      * @throws DatabaseException When the database marker cannot be read or written
      * @throws DirectoryCreateException When a cluster directory is absent and cannot be created
@@ -111,7 +112,8 @@ final class PeerModule implements DaemonModule
 
     /**
      * Reads the database marker, then the marker of every cluster directory, writing each first where
-     * there is none yet, then the admin view mode variable and, with I18N, the default language, and says so.
+     * there is none yet, then the admin view mode variable and project time zone, plus the default language with I18N,
+     * and says so.
      *
      * The database comes first: a refusal names the first breach, so a node on another database is
      * named by its database and not by a directory. No `$fs` context, or no cluster directory in it,
@@ -120,7 +122,7 @@ final class PeerModule implements DaemonModule
      * @return PeerMarkers This node's markers
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
-     * @throws EnvException When a cluster env value or the default language cannot be read
+     * @throws EnvException When a cluster env value, the default language or the project time zone cannot be read
      * @throws EnvInvalidValueException When I18N is declared and the default language code is absent or unknown
      * @throws DatabaseException When the database marker cannot be read or written
      * @throws DirectoryCreateException When a cluster directory is absent and cannot be created
@@ -167,6 +169,13 @@ final class PeerModule implements DaemonModule
                 . ' ' . $places[PeerMarkers::DEFAULT_LANGUAGE],
             );
         }
+
+        $values[PeerMarkers::PROJECT_TIME_ZONE] = Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string();
+        $places[PeerMarkers::PROJECT_TIME_ZONE] = 'the variable ' . EnvConstants::HILOS_PROJECT_TIME_ZONE->name;
+        Logger::info(
+            "Project time zone marker {$values[PeerMarkers::PROJECT_TIME_ZONE]}, read from"
+            . ' ' . $places[PeerMarkers::PROJECT_TIME_ZONE],
+        );
 
         return new PeerMarkers($values, $places);
     }

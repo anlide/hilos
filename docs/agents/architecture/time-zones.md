@@ -115,10 +115,25 @@ make a calendar boundary depend on which process happened to calculate it.
 calculation, and `BackupPruner` receives one from its caller; neither calls
 `date_default_timezone_set()`.
 
-Every node of a cluster must declare the same project zone. Refuse a node whose
-project zone differs; accepting it would let the cluster disagree on schedules
-and retention boundaries (owner's decision, 2026-10-17).
-(not in the code yet — HIL-1597)
+Every node of a cluster carries the `project-time-zone` marker: the exact string
+read from `Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()`. The
+existing marker rule refuses a different value at both ends of the peer link;
+it also refuses a peer that names no such marker. Scenario 47 proves this on the
+binance-btc-tracker cluster stand ([../testing.md](../testing.md)).
+
+**On a cluster.** A person's time-zone choice reaches tabs connected to other
+masters through the same session-restatement frame used for theme changes; the
+live cluster proof is
+[`theme.spec.ts`](../../../demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts).
+Cron rules read the project zone on each master from the environment, so the
+leader and a leader elected later calculate schedules in the same zone. The
+session library is one per cluster and writes to the shared database, so the
+browser zone recorded for a session is available whichever master serves that
+browser. To change the project zone on a live cluster, set the new value on
+every node and restart every node, including slaves. During a rolling restart,
+nodes with different values refuse one another's peer links; leadership stays
+with the side whose masters have a quorum, and cron on the masters uses the new
+zone once the masters with that value hold a quorum.
 
 ## The Reader's Zone In The Browser
 

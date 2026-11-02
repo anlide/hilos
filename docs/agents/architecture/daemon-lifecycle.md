@@ -591,7 +591,8 @@ The marker lives in the master's memory from here on; the handshake touches no d
 
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
 markers by kind: `database`, `directory:<name>` for every cluster directory of `$fs`,
-and `admin-view-mode` (*Cluster directories* and *The admin view mode* below). The
+`admin-view-mode`, and `default-language` and `project-time-zone` (*Cluster directories*,
+*The admin view mode*, *The default language* and *The project time zone* below). The
 field is required, and `PeerProtocol::VERSION` was raised to `9` for these markers, to
 `10` when HIL-1297 added initiator identity, to `11` when HIL-1304 added WebSocket
 readiness to the leader heartbeat, to `12` when HIL-1305 spread operator identity and
@@ -694,6 +695,21 @@ peer naming it receives the common extra-kind refusal:
 The handshake DTO shape and `PeerProtocol::VERSION` did not change for this
 marker kind. Scenario 42 proves the exact `ru`/`en` refusal on both ends,
 exclusion from the mesh and absence of a provisioned `ru` row
+([../testing.md](../testing.md)).
+
+**The project time zone (HIL-1597).** Every project carries the kind
+`project-time-zone`, whose value is the exact string from
+`Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()`. At startup,
+`PeerModule` writes the INFO line
+`Project time zone marker <zone>, read from the variable HILOS_PROJECT_TIME_ZONE`.
+Both `hello` and `welcome` use `PeerMarkers::refusalFor()`: a different value
+is refused as
+`Peer handshake from node '<id>' names project-time-zone marker '<theirs>', but this node reads '<ours>' from the variable HILOS_PROJECT_TIME_ZONE: the two nodes do not read one project-time-zone`;
+a peer without this kind is refused as
+`Peer handshake from node '<id>' names no project-time-zone marker, but this node reads '<ours>' from the variable HILOS_PROJECT_TIME_ZONE`.
+The refusal is made at both ends before the peer is remembered. The handshake
+DTO shape and `PeerProtocol::VERSION` did not change for this marker kind.
+Scenario 47 proves refusal on both ends
 ([../testing.md](../testing.md)).
 
 **Proof on the stand.** The cluster matrix starts five nodes at once on an empty database

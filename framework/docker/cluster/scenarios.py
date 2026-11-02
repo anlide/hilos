@@ -103,6 +103,8 @@ Plus scenarios beyond that matrix:
                                restarting its holder keeps the fingerprint and catalog (HIL-1505)
  42 another default language    a node naming another HILOS_DEFAULT_LANGUAGE is refused on both
     refused                    ends, stays outside the mesh and creates no language (HIL-1505)
+  47 another project time zone  a node naming another HILOS_PROJECT_TIME_ZONE is refused on both
+    refused                    ends and stays outside the mesh
  43 waiting work retries when   an Unplaced ballast with no host starts after a slave returns,
     a node returns             without another placement ask, and keeps one record (HIL-446)
  44 waiting work survives       a replicated Unplaced fleet member survives a leader's death and
@@ -3558,6 +3560,8 @@ I18N_LIBRARY_AGENT_TYPE = "hilos_i18n_library"
 I18N_REFLOW_COMMITTED = "I18n catalog reflow committed: "
 # The initial language declared by the i18n scenarios' carrier, not a framework default.
 I18N_DEFAULT_LANGUAGE = "en"
+PROJECT_TIME_ZONE = "UTC"
+OTHER_PROJECT_TIME_ZONE = "America/Havana"
 
 
 def i18n_library_placements(views):
@@ -3919,6 +3923,61 @@ def scenario_42_another_default_language_refused():
 
     return (f"{victim} named ru, {observer} named en: exact refusals on both ends, nobody admitted {victim}, "
             "one library outside it, no ru language; the stand's env, full mesh and singleton restored")
+
+
+def scenario_47_another_project_time_zone_refused():
+    """A slave naming another project time zone is refused on both ends and stays outside the mesh."""
+    wait_converge(ALL_NODES)
+    victim = SLAVES[0]
+    observer = MASTERS[0]
+    rest = [node for node in ALL_NODES if node != victim]
+    marks = {node: node_log_mark(node) for node in (observer, victim)}
+    failed = False
+
+    def refusal(peer, theirs, ours):
+        return (f"Peer handshake from node '{peer}' names project-time-zone marker '{theirs}', "
+                f"but this node reads '{ours}' from the variable HILOS_PROJECT_TIME_ZONE: "
+                "the two nodes do not read one project-time-zone")
+
+    try:
+        print(f"    recreating {victim} with HILOS_PROJECT_TIME_ZONE={OTHER_PROJECT_TIME_ZONE}", flush=True)
+        outcome = control.execute(STAND, "own-env", victim,
+                                  f"HILOS_PROJECT_TIME_ZONE={OTHER_PROJECT_TIME_ZONE}")
+        assert outcome.code == 0, f"could not give {victim} a project time zone of its own: {outcome.err or outcome.out}"
+
+        def refused_on_both_ends(_views):
+            return (refusal(victim, OTHER_PROJECT_TIME_ZONE, PROJECT_TIME_ZONE)
+                    in node_log_since(observer, marks[observer])
+                    and refusal(observer, PROJECT_TIME_ZONE, OTHER_PROJECT_TIME_ZONE)
+                    in node_log_since(victim, marks[victim]))
+
+        wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
+                   f"the exact project time zone refusals named by {observer} and {victim}", nodes=rest)
+
+        def left_out(current):
+            return converged(rest)(current) and all(
+                current.get(node) and not any(row.get("nodeId") == victim and row.get("online")
+                                              for row in current[node].get("nodes", []))
+                for node in rest)
+
+        views = wait_until(left_out, CONVERGE_TIMEOUT,
+                           f"{victim} offline everywhere, the rest under one leader", nodes=rest)
+        assert not node_online(views, victim), f"the leader admitted {victim} with another project time zone"
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            outcome = control.execute(STAND, "own-env", victim, "off")
+            assert outcome.code == 0, f"could not restore {victim}'s environment: {outcome.err or outcome.out}"
+            wait_converge(ALL_NODES)
+        except Exception as cleanup_error:
+            print(f"    scenario 47 recovery failed: {cleanup_error}", flush=True)
+            if not failed:
+                raise
+
+    return (f"{victim} named {OTHER_PROJECT_TIME_ZONE}, {observer} named {PROJECT_TIME_ZONE}: "
+            "exact refusals on both ends, nobody admitted the victim; the stand's env and full mesh restored")
 
 
 def scenario_30_ready_copy_outlives_its_node():
@@ -5527,6 +5586,8 @@ SCENARIOS = [
     Scenario("32 a node with another admin view mode refused", scenario_32_another_admin_view_mode_refused,
              Need(nodes=3)),
     Scenario("42 another default language refused", scenario_42_another_default_language_refused,
+             Need(nodes=3, slaves=1)),
+    Scenario("47 another project time zone refused", scenario_47_another_project_time_zone_refused,
              Need(nodes=3, slaves=1)),
     Scenario("30 ready copy outlives its node", scenario_30_ready_copy_outlives_its_node,
              Need(slaves=2, cluster_directory=True)),

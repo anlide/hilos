@@ -228,8 +228,8 @@ protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
 cut off with its leader stops its work (skipped as flaky since 2026-10-10;
 `docs/agents/testing.md`, "The cluster stands — three demos, three shapes"),
 38 manual maintenance from any node, 41 i18n catalog taken once, 42 another
-default language refused, 44 waiting work survives leadership changes, and
-45 upload pool across nodes. The
+default language refused, 44 waiting work survives leadership changes, 45
+upload pool across nodes, and 47 another project time zone refused. The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.
