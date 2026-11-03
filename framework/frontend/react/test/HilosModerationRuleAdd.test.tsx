@@ -165,6 +165,8 @@ describe('HilosModerationRuleAdd', () => {
     fireEvent.keyDown(field(), { key: 'Escape' })
     fireEvent.click(el('modal-confirm-discard'))
     expect(document.activeElement).toBe(opener)
+    // The discard writes nothing: the one write is the refused submit before it.
+    expect(h.writes()).toHaveLength(1)
     h.open()
     expect(field().value).toBe('')
     expect(save().disabled).toBe(true)

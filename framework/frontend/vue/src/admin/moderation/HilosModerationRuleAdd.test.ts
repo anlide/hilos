@@ -426,6 +426,10 @@ describe('HilosModerationRuleAdd', () => {
     expect(h.add.openState.get()).toBe(false)
     expect(document.activeElement).toBe(h.opener)
     expect(h.sent).toEqual([])
+    // A discarded draft does not come back with the next open.
+    await h.open()
+    expect(field().value).toBe('')
+    expect(save().disabled).toBe(true)
   })
 
   it.each(['viewer', 'takeover'] as const)(
