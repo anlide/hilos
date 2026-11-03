@@ -17,7 +17,11 @@ import {
   grantAdminToSelf,
   createTestAdmin,
   tableRowKeys,
+  deliveryObject as object,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
+
+// spec-owner: demo — Polls' published revision dates and historical demo-reset wording.
 
 /** The header line of a file of acceptance records (HIL-1234). */
 const EXPORT_HEADER = 'user_id,name,email,document,revision,in_code,accepted_at'
@@ -43,6 +47,7 @@ async function exportedLinesOf(page: Page, userId: number): Promise<string[]> {
 test('reads the legal catalog, deviations and revision comparison', async ({
   page,
 }) => {
+  const log = watchDeliveryFrames(page)
   await createTestAdmin(expect, page)
   const documentPath = '/hilos/legal/document/terms'
   const documentTabs = [
@@ -160,25 +165,97 @@ test('reads the legal catalog, deviations and revision comparison', async ({
       }
     })
   }
-  const revisionPath = '/hilos/legal/document/terms/revision/2026-10-07'
+  const revisionPath = '/hilos/legal/document/terms/revision/2026-10-01'
+  const revisionTextPath = `${revisionPath}/text`
   const revisionOpen = shownByTestId(page, 'legal-revision-open').and(
-    page.locator('[data-revision="2026-10-07"]'),
+    page.locator('[data-revision="2026-10-01"]'),
   )
   await expect(revisionOpen).toHaveAttribute('href', revisionPath)
   await clickSubmit(expect, revisionOpen)
   await expect(page).toHaveURL(revisionPath)
   await expectPageReady(expect, page)
-  await expect(page.getByTestId('legal-revision-text')).toBeVisible()
-  await expect(page.getByTestId('legal-revision-text')).toContainText(
-    'This installation only demonstrates the framework and is reset without warning',
-  )
-  await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
-  await expect(
-    page.getByTestId('legal-changes-wide').getByTestId('legal-change-row'),
-  ).toHaveCount(1)
-  await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
-    /^\s*[1-9]\d* acceptances\s*$/,
-  )
+  const openingReply = () =>
+    log.packets
+      .flatMap(({ frames }) => frames)
+      .find(({ wire }) => {
+        const frame = object(wire)
+        return (
+          frame.type === 'page_response' &&
+          object(frame.data).page === 'hilos_legal_revision'
+        )
+      })
+  await expect.poll(openingReply).toBeDefined()
+  const opening = openingReply()!
+  expect(opening.failure).toBeUndefined()
+  const payload = object(object(object(opening.wire).data).payload)
+  const exactWindow = object(object(payload.windows).hilosLegalRevisions)
+  expect(exactWindow.totalCount).toBe(1)
+  const rows = exactWindow.rows as unknown[]
+  expect(rows).toHaveLength(1)
+  expect(object(rows[0]).rowKey).toBe('2026-10-01')
+  const acceptedCount = object(
+    object(object(rows[0]).slots).revision,
+  ).acceptedCount
+  expect(acceptedCount).toEqual(expect.any(Number))
+
+  const expectRevisionIdentity = async () => {
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Revision of 2026-10-01',
+    )
+    await expect(page).toHaveTitle('Revision of 2026-10-01 · Hilos Polls')
+    await expect(page.getByTestId('legal-revision-metadata')).toHaveText(
+      'Terms · Published 2026-10-01 · Effective 2026-10-01 · Set 1',
+    )
+    await expect(page.getByTestId('legal-revision-significance')).toHaveText(
+      'substantial',
+    )
+    await expect(page.getByTestId('legal-revision-current')).toHaveCount(0)
+  }
+  const expectRevisionOverview = async () => {
+    await expectRevisionIdentity()
+    await expect(
+      page.getByTestId('hilos-page-tab-hilos_legal_revision'),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByTestId('legal-revision-text')).toHaveCount(0)
+    const comparison = page.getByTestId('legal-changes-wide')
+    await expect(comparison.getByTestId('legal-change-row')).toHaveCount(1)
+    await expect(comparison).toContainText('Before — revision 2026-09-17')
+    await expect(comparison).toContainText('After — revision 2026-10-01')
+    await expect(comparison).toContainText(
+      'The service is provided as is, with no uptime promise.',
+    )
+    await expect(comparison).toContainText(
+      'This installation is a demonstration of the framework, and it is reset without notice',
+    )
+    await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
+      `${acceptedCount} acceptances`,
+    )
+  }
+  const expectRevisionText = async () => {
+    await expectRevisionIdentity()
+    await expect(
+      page.getByTestId('hilos-page-tab-hilos_legal_revision_text'),
+    ).toHaveAttribute('aria-current', 'page')
+    const text = page.getByTestId('legal-revision-text')
+    await expect(text).toBeVisible()
+    const clauses = text.getByTestId('legal-revision-clause')
+    await expect(clauses).toHaveCount(6)
+    await expect(clauses.nth(1)).toContainText('Content is kept for 12 months.')
+    // Availability replaces its fourth standard clause; it is not appended.
+    await expect(clauses.nth(3)).toContainText(
+      'This installation is a demonstration of the framework, and it is reset without notice',
+    )
+    await expect(
+      clauses.nth(3).getByTestId('legal-revision-clause-deviation'),
+    ).toHaveText(
+      'Project deviation from: The service is provided as is, with no uptime promise. · stricter',
+    )
+    await expect(text).not.toContainText(
+      'This installation only demonstrates the framework and is reset without warning',
+    )
+  }
+  await expectRevisionOverview()
   await test.step('Back and Forward restore the document pages and their data', async () => {
     for (const tab of [...documentTabs].reverse()) {
       await page.goBack()
@@ -214,17 +291,42 @@ test('reads the legal catalog, deviations and revision comparison', async ({
     await page.goForward()
     await expect(page).toHaveURL(revisionPath)
     await expectPageReady(expect, page)
-    await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
-    await expect(page.getByTestId('legal-revision-text')).toContainText(
-      'This installation only demonstrates the framework and is reset without warning',
+    await expectRevisionOverview()
+  })
+  await test.step('Text opens the selected historical revision by keyboard and survives Back and Forward', async () => {
+    const textLink = page.getByTestId(
+      'hilos-page-tab-hilos_legal_revision_text',
     )
+    await expect(textLink).toHaveAttribute('href', revisionTextPath)
+    await expect(textLink).toHaveAccessibleName('Text')
+    await textLink.focus()
+    await expect(textLink).toBeFocused()
+    await textLink.press('Enter')
+    await expect(page).toHaveURL(revisionTextPath)
+    await expectPageReady(expect, page)
+    await expectRevisionText()
+    await page.goBack()
+    await expect(page).toHaveURL(revisionPath)
+    await expectPageReady(expect, page)
+    await expectRevisionOverview()
+    await page.goForward()
+    await expect(page).toHaveURL(revisionTextPath)
+    await expectPageReady(expect, page)
+    await expectRevisionText()
   })
   await test.step('Document and revision addresses support direct entry and F5', async () => {
     await gotoPage(expect, page, revisionPath, PAGE_READY)
-    await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await expectRevisionOverview()
     await page.reload()
     await expectPageReady(expect, page)
-    await expect(page.getByTestId('legal-revision-clause')).toHaveCount(6)
+    await expectRevisionOverview()
+    await gotoPage(expect, page, revisionTextPath, PAGE_READY)
+    await expect(page).toHaveURL(revisionTextPath)
+    await expectRevisionText()
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(revisionTextPath)
+    await expectRevisionText()
     await gotoPage(expect, page, documentPath, PAGE_READY)
     await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
     await expect(page.getByTestId('legal-document-sources')).toContainText(

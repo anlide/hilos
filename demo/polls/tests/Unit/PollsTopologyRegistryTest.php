@@ -64,6 +64,7 @@ use Demo\Polls\Pages\Hilos\Legal\LegalDocumentSetPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
@@ -839,7 +840,7 @@ final class PollsTopologyRegistryTest extends TestCase
 
     /**
      * Legal administration is bound to its own worker, page routes and tables, and adopts the
-     * section head while Document and Revision stay entities without a head of their own.
+     * section, Document and Revision heads, with no table on Revision Text.
      */
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
@@ -849,7 +850,7 @@ final class PollsTopologyRegistryTest extends TestCase
         foreach ([
             LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
             LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class,
-            LegalDocumentRevisionsPage::class, LegalRevisionPage::class,
+            LegalDocumentRevisionsPage::class, LegalRevisionPage::class, LegalRevisionTextPage::class,
             LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
@@ -864,6 +865,7 @@ final class PollsTopologyRegistryTest extends TestCase
             LegalDocumentSetPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_SET,
             LegalDocumentDeviationsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_DEVIATIONS,
             LegalDocumentRevisionsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_REVISIONS,
+            LegalRevisionTextPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION_TEXT,
         ] as $page => $signal) {
             $this->assertSame($signal, $page::BROWSER[BrowserConfigKey::SIGNAL]);
             $this->assertSame([], $page::ACTIONS);
@@ -889,6 +891,7 @@ final class PollsTopologyRegistryTest extends TestCase
         ], Hilos::PAGE_TABLES[LegalDocumentDeviationsPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentRevisionsPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
+        $this->assertSame([], Hilos::PAGE_TABLES[LegalRevisionTextPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
         $this->assertSame([PollsTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
         $catalog = PollsSettingsCatalog::getCatalog();
@@ -913,7 +916,13 @@ final class PollsTopologyRegistryTest extends TestCase
             ),
             PageCatalog::pages()[HilosPageConstants::HILOS_LEGAL_DOCUMENT],
         );
-        $this->assertArrayNotHasKey(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalog::pages());
+        $this->assertSame(
+            array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_REVISION],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ),
+            PageCatalog::pages()[HilosPageConstants::HILOS_LEGAL_REVISION],
+        );
     }
 
     /** The archive address is answered by the export owner, the address of the acceptances file by the legal agent. */
@@ -1744,6 +1753,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 LegalDocumentDeviationsPage::PAGE,
                 LegalDocumentRevisionsPage::PAGE,
                 LegalRevisionPage::PAGE,
+                LegalRevisionTextPage::PAGE,
                 LegalAcceptancesPage::PAGE,
                 LegalSettingsPage::PAGE,
                 UsersPage::PAGE,

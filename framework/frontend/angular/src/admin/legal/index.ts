@@ -6,4 +6,5 @@ export { HilosLegalDocumentRevisionsPage } from './HilosLegalDocumentRevisionsPa
 export { HilosLegalDocumentsPage } from './HilosLegalDocumentsPage.js'
 export { HilosLegalPage } from './HilosLegalPage.js'
 export { HilosLegalRevisionPage } from './HilosLegalRevisionPage.js'
+export { HilosLegalRevisionTextPage } from './HilosLegalRevisionTextPage.js'
 export { HilosLegalSettingsPage } from './HilosLegalSettingsPage.js'

@@ -73,7 +73,9 @@ describe('legal admin Angular pages', () => {
               ? HilosPages.LEGAL_DOCUMENT_DEVIATIONS
               : component === HilosLegalDocumentRevisionsPage
                 ? HilosPages.LEGAL_DOCUMENT_REVISIONS
-                : HilosPages.LEGAL
+                : component === HilosLegalRevisionPage
+                  ? HilosPages.LEGAL_REVISION
+                  : HilosPages.LEGAL
       const h = harness(page)
       await TestBed.configureTestingModule({
         imports: [component],

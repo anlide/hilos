@@ -25,6 +25,7 @@ import {
   HilosLegalDocumentSetPage,
   HilosLegalDocumentDeviationsPage,
   HilosLegalDocumentRevisionsPage,
+  HilosLegalRevisionTextPage,
   HilosDropdown,
   HilosFormError,
   HilosSendProgress,
@@ -141,6 +142,10 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosLegalDocumentRevisionsPage).toBe(
     legal.HilosLegalDocumentRevisionsPage,
   )
+  expect(HilosLegalRevisionTextPage).toBeTypeOf('function')
+  expect(HilosLegalRevisionTextPage).toBe(legal.HilosLegalRevisionTextPage)
+  expect(legal).not.toHaveProperty('HilosLegalRevisionPageShell')
+  expect(root).not.toHaveProperty('HilosLegalRevisionPageShell')
   expect(legal).not.toHaveProperty('HilosLegalDocumentPageShell')
   expect(root).not.toHaveProperty('HilosLegalDocumentPageShell')
   expect(HilosAppearancePage).toBeTypeOf('function')

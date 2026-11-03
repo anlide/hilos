@@ -377,6 +377,11 @@ export class App {
         (module) => module.LegalRevision,
       ),
     ),
+    [HilosPages.LEGAL_REVISION_TEXT]: lazyPage(() =>
+      import('./views/hilos/legal/legal-revision-text.js').then(
+        (module) => module.LegalRevisionText,
+      ),
+    ),
     [HilosPages.LEGAL_ACCEPTANCES]: lazyPage(() =>
       import('./views/hilos/legal/legal-acceptances.js').then(
         (module) => module.LegalAcceptances,

@@ -22,6 +22,7 @@ use Demo\Polls\Pages\Hilos\Legal\LegalDocumentSetPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
@@ -391,6 +392,7 @@ final class Hilos extends HilosFacade
         LegalDocumentDeviationsPage::PAGE => LegalDocumentDeviationsPage::class,
         LegalDocumentRevisionsPage::PAGE => LegalDocumentRevisionsPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
+        LegalRevisionTextPage::PAGE => LegalRevisionTextPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
@@ -859,6 +861,7 @@ final class Hilos extends HilosFacade
         LegalRevisionPage::PAGE => [
             PollsTableContext::hilosLegalRevisions => [],
         ],
+        LegalRevisionTextPage::PAGE => [],
         LegalAcceptancesPage::PAGE => [
             PollsTableContext::hilosLegalAcceptances => [],
         ],

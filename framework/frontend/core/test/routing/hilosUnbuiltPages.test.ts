@@ -10,13 +10,13 @@ import {
 } from '../../src/routing/hilosUnbuiltPages.js'
 
 describe('hilosUnbuiltPages', () => {
-  it('serves Revision Text in Vue and React and reserves Angular for parity', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.LEGAL_REVISION_TEXT]).toEqual([
-      'angular',
-    ])
+  it('serves Revision Text in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.LEGAL_REVISION_TEXT,
+    )
     for (const layer of ['vue', 'react', 'angular'] as const) {
       expect(hilosUnbuiltPages(layer).has(HilosPages.LEGAL_REVISION_TEXT)).toBe(
-        layer === 'angular',
+        false,
       )
       expect(hilosUnbuiltPages(layer).has(HilosPages.LEGAL_REVISION)).toBe(
         false,
