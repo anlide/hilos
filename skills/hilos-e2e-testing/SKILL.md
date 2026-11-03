@@ -27,6 +27,8 @@ use `$hilos-testing-cli`.
   `docs/agents/frontend/testing-strategy.md`, "Choose the scenario before adding
   coverage" and "What assertions prove — seven rules", including the behavioral,
   accessibility and geometry exceptions.
+- Before writing or reviewing literals in e2e specs or shared helpers:
+  `docs/agents/code-style/magic-values.md`, "Tests".
 - The demo-local Playwright `test` entry, its adaptive overall test cap and
   extension log: `docs/agents/frontend/testing-strategy.md`, "The shared
   toolbox" and "Timeouts come from the host, not from the lanes". The individual
@@ -155,6 +157,9 @@ use `$hilos-testing-cli`.
 - Choose coverage before a new test/file; extend the existing journey when it
   fits. Assert behavior, not cosmetics, under the canon's seven rules and
   exceptions; a cosmetic change adds no e2e.
+- For foreign vocabulary in specs and shared helpers, use the existing owner
+  for supporting values and keep the subject literal; see
+  `docs/agents/code-style/magic-values.md`, "Tests".
 - Use available test-command preconditions and owned cleanup; UI creation or
   sign-up stays when it is the subject. Prepare the admin/account once per
   scenario with the existing toolbox, without sharing away session isolation.

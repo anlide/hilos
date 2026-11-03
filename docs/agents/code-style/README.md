@@ -22,7 +22,7 @@ layer's specifics on top.
 | [exceptions.md](exceptions.md) | PHP | choosing exception classes, documenting `@throws`, handling validation/business errors |
 | [page-action-handlers.md](page-action-handlers.md) | PHP | editing `Page::onAction()`, action DTO routing, action acks/errors |
 | [signal-handlers.md](signal-handlers.md) | PHP | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
-| [magic-values.md](magic-values.md) | PHP | writing a bare number or string into production code — when a literal is magic, when it is data, and what names its cure carries |
+| [magic-values.md](magic-values.md) | both | writing or reviewing a bare number or string in production PHP or PHP/TS tests — TS is covered only in tests; see Tests for their limited scope |
 | [internal-backend-api.md](internal-backend-api.md) | PHP | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
 | [method-contracts.md](method-contracts.md) | PHP | changing method return types, success/failure contracts, command methods, predicates, or result consumption APIs |
 | [static-factories.md](static-factories.md) | PHP | adding or changing a static factory (`fromArray`, `fromRow`, `create`, named constructors) or its `self`/`static` return contract |

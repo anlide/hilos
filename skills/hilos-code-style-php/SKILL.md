@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-php
-description: Apply Hilos code style to backend PHP — PHPDoc and `@throws` contracts, exception choice, method contracts, payload readers (`fromArray`/`fromJson`), static factories, magic values, class member order, local variables, Reflection, and error suppression. Use when writing, reviewing, or refactoring a `.php` file under `framework/backend/**`, `demo/*/backend/**`, `scripts/**`, or `tests/**`, or when a PHP style guard fails. Use it too when carrying a moment in a payload or server text, choosing a process or project time zone, or calculating cron and retention boundaries. For frontend code use `$hilos-code-style-typescript` and its per-framework wrappers.
+description: Apply Hilos code style to backend PHP — PHPDoc and `@throws` contracts, exception choice, method contracts, payload readers (`fromArray`/`fromJson`), static factories, magic values, class member order, local variables, Reflection, and error suppression. Use when writing, reviewing, or refactoring a `.php` file under `framework/backend/**`, `demo/*/backend/**`, `scripts/**`, `tests/**`, `framework/tests/**`, or `demo/*/tests/**`, or when a PHP style guard fails. Use it too when carrying a moment in a payload or server text, choosing a process or project time zone, or calculating cron and retention boundaries. For frontend code use `$hilos-code-style-typescript` and its per-framework wrappers.
 ---
 
 # Hilos Code Style — PHP
@@ -24,7 +24,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker, and reading a field inside a payload or runtime-row reader |
 | `docs/agents/code-style/static-factories.md` | adding or changing `fromArray`, `fromRow`, `create`, or another named constructor |
 | `docs/agents/code-style/internal-backend-api.md` | changing backend contracts, DB actions, table actions, DTO/value-object boundaries, or typed collections |
-| `docs/agents/code-style/magic-values.md` | writing a bare number or string into production code |
+| `docs/agents/code-style/magic-values.md` | writing or reviewing a bare number or string in production PHP or PHP tests — tests follow only the Tests section |
 | `docs/agents/code-style/page-action-handlers.md` | editing `Page::onAction()`, action DTO routing, or action acks/errors |
 | `docs/agents/code-style/signal-handlers.md` | editing a named signal handler such as `onSignalAgent()` or `onSignalCron()` |
 | `docs/agents/code-style/php-class-members.md` | adding or reordering class constants, properties, or methods |
@@ -54,8 +54,11 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   on the call forms it resolves in production and script roots, and the audit
   answers for the rest. A suite root (`framework/tests`, `demo/*/tests`) owes no
   `@throws` by decision (`phpdoc.md`).
-- Two quantities that merely happen to be equal get two constants, and a repeated
-  number is cured by a name carrying the unit, never the digits (`magic-values.md`).
+- In production PHP, two quantities that merely happen to be equal get two
+  constants, and a repeated number is cured by a name carrying the unit, never
+  the digits (`magic-values.md`).
+- PHP tests follow only FOREIGN VOCABULARY: use the existing owner for supporting
+  values and keep the subject literal; see `magic-values.md`, "Tests".
 - A constant named in camelCase declares a wire field key, so its value is
   camelCase too; the `WIRE-KEY-CASE` guard fails `test:framework:unit` otherwise
   (`cross-layer-field-names.md`).

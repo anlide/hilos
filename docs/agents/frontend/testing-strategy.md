@@ -5,6 +5,9 @@ Two kinds of test: **unit** (vitest, across the whole monorepo) and **end-to-end
 — are exercised by multi-client e2e, which is why the e2e categories below are
 first-class, not an afterthought.
 
+For literals in unit/component tests, e2e and shared test helpers, read
+[Magic Values — Tests](../code-style/magic-values.md#tests).
+
 ## Unit tests — vitest across the monorepo
 
 Unit testing is **vitest** everywhere. Because the agnostic core is framework-free

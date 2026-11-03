@@ -1,14 +1,15 @@
 # Magic Values
 
-Read this before writing a bare number or a bare string into production code, and
-when a review says "that literal is magic". The rule covers the production roots —
-`framework/backend`, `demo/*/backend` and `scripts`. Test roots are out of scope — see
-[Tests are not in scope](#tests-are-not-in-scope).
+Read this before writing a bare number or a bare string into production PHP or
+PHP/TypeScript tests, and when a review says "that literal is magic". All three
+tests below cover the production PHP roots — `framework/backend`,
+`demo/*/backend` and `scripts`. In tests, only FOREIGN VOCABULARY applies, with
+the scope and exceptions in [Tests](#tests).
 
 ## The three tests
 
-A literal is magic if **any one** of these holds. If none holds, it is data and
-stays a literal.
+In production PHP, a literal is magic if **any one** of these holds. If none
+holds, it is data and stays a literal.
 
 ### 1. REPEAT — the value is read or written in more than one place
 
@@ -62,9 +63,9 @@ private const string METHOD_GET = 'GET';
 HttpConstants::METHOD_GET
 ```
 
-If the set is closed but has no owner yet, the file that reads it twice becomes
-the owner — that is test 1, not a licence to start a new `Constants` class for
-one value.
+In production PHP, if the set is closed but has no owner yet, the file that
+reads it twice becomes the owner — that is test 1, not a licence to start a new
+`Constants` class for one value. For tests, see [Tests](#tests).
 
 ## Data — the literal stays a literal
 
@@ -226,15 +227,65 @@ There is no suppression comment, by the same decision that governs the other
 checked rules. A hit you disagree with is an argument about this document: change
 the rule here, and the checker follows.
 
-## Tests are not in scope
+FOREIGN VOCABULARY in tests is a reading and review rule; it has no static guard.
+The `MAGIC-REPEAT` check keeps its production-only scope.
+
+## Tests
+
+This section covers all PHP/TypeScript unit, integration, component and e2e
+tests, including `framework/tests`, `demo/*/tests`, `framework/frontend/e2e`,
+and unit/component tests under `framework/frontend` and `demo/*/frontend`.
+Shared test helpers follow it too.
+
+**Only test 3, FOREIGN VOCABULARY, applies.** In ordinary scenario setup and
+supporting assertions, read a value from a closed vocabulary through its
+existing owner; do not declare a local copy. TypeScript examples are
+`HilosPages` for page keys, `resolveHilosPath` for framework page addresses, and
+the existing exports of `framework/frontend/core/src/protocol/pageError.ts`
+for page error codes. PHP uses its existing owner of the same concept.
+If no owner exists, this rule does not require creating one for a test.
+REPEAT and UNIT do not apply to tests, including when no owner exists.
+
+A supporting page key changes from `page: 'hilos_daemon_node'` to
+`page: HilosPages.DAEMON_NODE`. For example, from a shared e2e helper:
+
+```ts
+// Before: a supporting key copied from the page catalog.
+const subscription = { page: 'hilos_daemon_node' }
+```
+
+```ts
+// After: read the existing owners directly.
+import { HilosPages } from '../core/src/routing/hilosPages.js'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { PAGE_ERROR_NOT_SERVED } from '../core/src/protocol/pageError.js'
+
+const subscription = { page: HilosPages.DAEMON_NODE }
+const path = resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId })
+const errorCode = PAGE_ERROR_NOT_SERVED
+```
+
+These are existing owners, not a reason to add a helper or a `Constants` class.
+
+**Example data and the value under test stay literal.** When the assertion
+checks the key, route or error-code mapping itself, write the expected value
+explicitly. A test of `resolveHilosPath` compares its result with a literal
+address, rather than computing the expectation with the same resolver:
+
+```ts
+expect(resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId: 'node-a' }))
+  .toBe('/hilos/daemon/node-a')
+```
+
+Intentionally unknown keys or codes are test data too. Calling a value
+"expected" does not exempt every foreign vocabulary value: the literal
+exception belongs to the subject of that particular assertion. Supporting
+assertions still read the existing owner.
 
 A repeated number in an assertion is example data. Naming it hides from the
 reader exactly the value the test is about:
 
 ```php
-// Right in a test, wrong in production.
+// Right: the default value is the subject of this assertion.
 $this->assertSame(90.0, $catalog['chat_bot_timeout_sec']['default_value']);
 ```
-
-`framework/tests` and `demo/*/tests` are therefore outside both the rule and the
-checker.
