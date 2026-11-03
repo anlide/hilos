@@ -1082,7 +1082,6 @@ directory and mount the same directory read-only into nginx. Each of the three
 demo cluster stands provides this directory through its own named volume, shared
 by its nodes and entry where present ([filesystem.md](filesystem.md)). The one
 cluster Status owner publishes the sanitized projection independently of visitors.
-Status owner publishes the sanitized projection independently of visitors.
 The general registration, cluster marker and shared-volume rules are in
 [filesystem.md](filesystem.md).
 
