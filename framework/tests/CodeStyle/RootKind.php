@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\Rule\AgentSignalPayloadRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
+use Hilos\Tests\CodeStyle\Rule\CronNamespaceRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
@@ -27,7 +28,9 @@ use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
  * under test, drawing throwaway tokens and names from the tolerant axis of the
  * random helper, which it also has to call in order to check it, and laying a
  * claim of ownership down by hand, because an agent a test starts outside
- * `WorkerManager` gets nothing from the declaration on its class.
+ * `WorkerManager` gets nothing from the declaration on its class. A suite also
+ * declares a cron rule of either origin, to pin the reserved-name refusal and
+ * the framework form.
  *
  * A rule cannot tell the two apart on its own: it is handed the path relative to
  * the scanned root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and
@@ -70,6 +73,7 @@ enum RootKind
         MagicRepeatRule::ID,
         WiringRefusalSwallowedRule::ID,
         TruthSourceClaimRule::ID,
+        CronNamespaceRule::ID,
     ];
 
     /**

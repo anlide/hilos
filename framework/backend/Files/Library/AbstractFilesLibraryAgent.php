@@ -13,6 +13,8 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -126,7 +128,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     ];
 
     /** Name of the cron rule that removes files nobody linked. */
-    public const string FILES_SWEEP_RULE = 'hilos_files_sweep_unbound';
+    public const string FILES_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'files_sweep_unbound';
 
     /** Every 15 minutes, as the session sweep. */
     public const string FILES_SWEEP_CRON = '*/15 * * * *';
@@ -154,10 +156,16 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
 
     /**
      * Arms the unbound-file sweep.
+     *
+     * @throws CronRuleNameException When the sweep rule name does not match framework origin
      */
     public function onStart(): void
     {
-        $this->filesSweepRule = new CronRule(self::FILES_SWEEP_RULE, self::FILES_SWEEP_CRON);
+        $this->filesSweepRule = new CronRule(
+            self::FILES_SWEEP_RULE,
+            self::FILES_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
     }
 
     /**

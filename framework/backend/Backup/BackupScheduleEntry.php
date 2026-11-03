@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\BackupScheduleException;
+use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 
 /**
- * BackupScheduleEntry - one scheduled backup: a name, a cron expression, a scope, a mechanism.
+ * BackupScheduleEntry - one scheduled backup: a name, a cron expression, a scope, a mechanism,
+ * and who declared the name.
  *
  * A validated, immutable projection of one project catalog schedule entry. The name is the
  * unique job identifier (and, for the daemon mechanism, the DAEMON/CRON signal name); the
@@ -21,13 +25,17 @@ final class BackupScheduleEntry
      * @param string $expression Five-field cron expression (project time zone)
      * @param BackupScope $scope Scope the run captures
      * @param BackupScheduleMechanism $mechanism Evaluator that owns the entry
+     * @param CronRuleOrigin $origin Who declared the name; a raw catalog row stays project
+     * @throws CronRuleNameException When a project name uses the reserved prefix or a framework name lacks it
      */
     public function __construct(
         public readonly string $name,
         public readonly string $expression,
         public readonly BackupScope $scope,
         public readonly BackupScheduleMechanism $mechanism,
+        public readonly CronRuleOrigin $origin = CronRuleOrigin::PROJECT,
     ) {
+        CronRule::assertNameOrigin($name, $origin);
     }
 
     /**
@@ -35,8 +43,8 @@ final class BackupScheduleEntry
      *
      * @param array<string, mixed> $raw Raw catalog schedule entry
      * @return self Validated schedule entry
-     * @throws BackupScheduleException When the name/cron is missing or empty, or the scope
-     *     or mechanism value is unknown
+     * @throws BackupScheduleException When the name/cron is missing or empty, the name is reserved
+     *     for the framework, or the scope or mechanism value is unknown
      */
     public static function fromArray(array $raw): self
     {
@@ -62,6 +70,10 @@ final class BackupScheduleEntry
             throw new BackupScheduleException("Backup schedule entry '{$name}' has an unknown mechanism");
         }
 
-        return new self($name, $expression, $scope, $mechanism);
+        try {
+            return new self($name, $expression, $scope, $mechanism);
+        } catch (CronRuleNameException $exception) {
+            throw new BackupScheduleException($exception->getMessage(), previous: $exception);
+        }
     }
 }

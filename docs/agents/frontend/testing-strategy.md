@@ -1210,7 +1210,7 @@ and rule `name`, numeric `nextRunAt`, `idleReason === null` and no daemon rows
 `hilos-daemon-cron-not-leader` elements. Both Cron functions are exported from
 `framework/frontend/e2e/index.ts`.
 
-The carrier checks `{ agentId: 'hilos_log_store', ruleName: 'log-rotation' }` and
+The carrier checks `{ agentId: 'hilos_log_store', ruleName: 'hilos_log_rotation' }` and
 attaches the captured Cron frames to its report. A reported empty roster cannot
 satisfy this case, though it remains valid for other nodes. Do not add a daemon
 rule to produce a notice or wait for the rotation to fire or for an exact time;

@@ -163,6 +163,8 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\EmptyValueException;
@@ -694,16 +696,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     ];
 
     /** Name of the cron rule that frees the registration holds whose deadline passed. */
-    private const string RESERVATION_SWEEP_RULE = 'hilos_sweep_registration_reservations';
+    private const string RESERVATION_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'sweep_registration_reservations';
 
     /** Once a minute: expired holds notify the sessions waiting on them and cannot be left unswept. */
     private const string RESERVATION_SWEEP_CRON = '* * * * *';
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
-    private const string SECOND_FACTOR_RESET_SWEEP_RULE = 'hilos_second_factor_reset_sweep';
+    private const string SECOND_FACTOR_RESET_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'second_factor_reset_sweep';
 
     /** Name of the live verification sweep rule (HIL-1163). */
-    private const string VERIFICATION_SWEEP_RULE = 'hilos_verification_sweep';
+    private const string VERIFICATION_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'verification_sweep';
 
     /** Once a minute: a removal is carried out within a minute of its moment. */
     private const string SECOND_FACTOR_RESET_SWEEP_CRON = '* * * * *';
@@ -829,10 +831,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      *
      * Never run rather than just run: removals whose time came while no library held the table
      * are the ones waiting longest, and the first tick carries them out.
+     *
+     * @throws CronRuleNameException When a sweep rule name does not match framework origin
      */
     public function onStart(): void
     {
-        $rule = new CronRule(self::SECOND_FACTOR_RESET_SWEEP_RULE, self::SECOND_FACTOR_RESET_SWEEP_CRON);
+        $rule = new CronRule(
+            self::SECOND_FACTOR_RESET_SWEEP_RULE,
+            self::SECOND_FACTOR_RESET_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
         $rule->lastRun = 0.0;
         $this->secondFactorResetSweepRule = $rule;
         $this->armReservationSweep();
@@ -945,7 +953,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             return;
         }
 
-        $rule = new CronRule(self::RESERVATION_SWEEP_RULE, self::RESERVATION_SWEEP_CRON);
+        $rule = new CronRule(
+            self::RESERVATION_SWEEP_RULE,
+            self::RESERVATION_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
         // Never run rather than just run, which is what a fresh rule claims by default. That
         // default guards a BOOTING DAEMON from firing every rule it holds at once; this is
         // one rule in one agent, and the holds that ran out while nobody held the collection
@@ -1001,7 +1013,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $this->verificationSweepCheckedMinute = $minute;
                 $expression = VerificationSweepSettings::sweepCron();
                 if ($this->verificationSweepRule === null || $this->verificationSweepRule->expression !== $expression) {
-                    $this->verificationSweepRule = new CronRule(self::VERIFICATION_SWEEP_RULE, $expression);
+                    $this->verificationSweepRule = new CronRule(
+                        self::VERIFICATION_SWEEP_RULE,
+                        $expression,
+                        CronRuleOrigin::FRAMEWORK,
+                    );
                 }
             }
 

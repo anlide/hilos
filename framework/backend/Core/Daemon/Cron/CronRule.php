@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon\Cron;
 use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
@@ -26,6 +27,9 @@ use Hilos\Hilos;
  */
 class CronRule
 {
+    /** Prefix reserved for framework cron rule names. A project rule must not use it. */
+    public const string FRAMEWORK_NAME_PREFIX = 'hilos_';
+
     /** Number of whitespace-separated fields in a cron expression. */
     private const int FIELD_COUNT = 5;
 
@@ -90,19 +94,55 @@ class CronRule
     private bool $fireOnNextCheck = false;
 
     /**
-     * Creates cron rule with name and expression.
+     * Creates a cron rule after checking the name against its origin.
+     *
+     * The origin is a validation parameter and is not kept: a project name may not start with
+     * the reserved prefix, and a framework name must. A refused name does not produce a rule.
      *
      * @param string $name Cron job name (unique identifier)
      * @param string $expression Cron expression (minute hour day month weekday)
+     * @param CronRuleOrigin $origin Declared origin of the name, project when omitted
+     * @throws CronRuleNameException When a project name uses the reserved prefix or a framework name lacks it
      */
-    public function __construct(string $name, string $expression)
-    {
+    public function __construct(
+        string $name,
+        string $expression,
+        CronRuleOrigin $origin = CronRuleOrigin::PROJECT,
+    ) {
+        self::assertNameOrigin($name, $origin);
         $this->name = $name;
         $this->expression = $expression;
 
         // Store creation time as initial reference point (prevents immediate execution)
         // Use minute-level timestamp for consistent comparison
         $this->lastRun = floor(time() / self::SECONDS_PER_MINUTE);
+    }
+
+    /**
+     * Refuses a name that does not match the origin it was declared with.
+     *
+     * The prefix compare is case-sensitive and does not rewrite the name. Nothing else about
+     * the name's shape is decided here.
+     *
+     * @param string $name Cron job name
+     * @param CronRuleOrigin $origin Declared origin of the name
+     * @throws CronRuleNameException When a project name uses the reserved prefix or a framework name lacks it
+     */
+    public static function assertNameOrigin(string $name, CronRuleOrigin $origin): void
+    {
+        $reserved = str_starts_with($name, self::FRAMEWORK_NAME_PREFIX);
+        if ($origin === CronRuleOrigin::PROJECT && $reserved) {
+            throw new CronRuleNameException(
+                'Cron rule name "' . $name . '" starts with the reserved prefix "'
+                . self::FRAMEWORK_NAME_PREFIX . '"; framework origin is required',
+            );
+        }
+        if ($origin === CronRuleOrigin::FRAMEWORK && !$reserved) {
+            throw new CronRuleNameException(
+                'Cron rule name "' . $name . '" does not start with the reserved prefix "'
+                . self::FRAMEWORK_NAME_PREFIX . '"; project origin is required',
+            );
+        }
     }
 
     /**

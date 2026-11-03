@@ -12,6 +12,7 @@ use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
+use Hilos\Tests\CodeStyle\Rule\CronNamespaceRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
@@ -178,6 +179,14 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:24 — a ternary branch hands back '
                     . '\'\' where the value is missing; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
+                'CODE-FQN Bad/CronNamespaceSamples.php:61 — Cron\\CronRule is written against the current '
+                    . 'namespace; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CronNamespaceSamples.php:61 — Cron\\CronRuleOrigin is written against the current '
+                    . 'namespace; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CronNamespaceSamples.php:64 — \\Hilos\\Core\\Daemon\\Cron\\CronRule is written out in '
+                    . 'code; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CronNamespaceSamples.php:64 — \\Hilos\\Core\\Daemon\\Cron\\CronRuleOrigin is written out '
+                    . 'in code; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
                 'COLLECTION-ITEM-NARROWING Bad/Database/Object/Collection/CollectionItemNarrowingSamples.php:19 — first() '
                     . 'does not name the item ObjectUser; declare `@method ObjectUser|null first()` '
                     . '(see docs/agents/orm/db-collection.md)',
@@ -889,6 +898,89 @@ final class RuleFixtureTest extends TestCase
         $this->assertSame([], $suite);
     }
 
+    /**
+     * CRON-NAMESPACE reads the declaration under the root that owns it. The framework backend
+     * requires an explicit framework origin outside three bridges; a demo backend and scripts
+     * share the project policy; any other root is silent. Look-alikes stay silent on both sides.
+     */
+    public function testCronNamespaceJudgesTheDeclarationByRoot(): void
+    {
+        $badPath = 'Bad/CronNamespaceSamples.php';
+        $goodPath = 'Good/CronNamespaceLookAlikes.php';
+        $bad = token_get_all((string)file_get_contents($this->fixtureRoot() . '/' . $badPath));
+        $good = token_get_all((string)file_get_contents($this->fixtureRoot() . '/' . $goodPath));
+        $rule = new CronNamespaceRule('framework/backend');
+
+        $this->assertSame(CronNamespaceRule::ID, $rule->id());
+        $this->assertSame('docs/agents/architecture/daemon-lifecycle.md', $rule->doc());
+
+        $frameworkOnly = 'a framework cron rule passes CronRuleOrigin::FRAMEWORK explicitly; an omitted,'
+            . ' project or computed origin does not count';
+        $projectBridge = 'DaemonManager::addCronRule registers a project rule, so its origin is omitted'
+            . ' or CronRuleOrigin::PROJECT';
+        $entryBridge = 'this bridge passes the schedule entry\'s origin through as $entry->origin,'
+            . ' already resolved when the entry was built';
+        $projectRule = 'new CronRule in a project file omits its origin or passes CronRuleOrigin::PROJECT;'
+            . ' framework or computed origin is refused';
+        $projectEntry = 'new BackupScheduleEntry in a project file omits its origin or passes'
+            . ' CronRuleOrigin::PROJECT; framework or computed origin is refused';
+        $line = static fn(int $number, string $message): string => 'CRON-NAMESPACE ' . $badPath . ':' . $number
+            . ' — ' . $message . ' (see docs/agents/architecture/daemon-lifecycle.md)';
+
+        $framework = [
+            $line(43, $frameworkOnly),
+            $line(46, $frameworkOnly),
+            $line(67, $frameworkOnly),
+            $line(70, $frameworkOnly),
+            $line(73, $frameworkOnly),
+            $line(120, $projectBridge),
+            $line(123, $projectBridge),
+            $line(127, $projectBridge),
+            $line(138, $frameworkOnly),
+            $line(160, $entryBridge),
+            $line(193, $entryBridge),
+            $line(196, $entryBridge),
+        ];
+        $project = [
+            $line(49, $projectRule),
+            $line(52, $projectRule),
+            $line(55, $projectRule),
+            $line(58, $projectRule),
+            $line(61, $projectRule),
+            $line(64, $projectRule),
+            $line(67, $projectRule),
+            $line(70, $projectRule),
+            $line(73, $projectRule),
+            $line(82, $projectEntry),
+            $line(85, $projectEntry),
+            $line(88, $projectEntry),
+            $line(120, $projectRule),
+            $line(123, $projectRule),
+            $line(127, $projectRule),
+            $line(151, $projectRule),
+            $line(154, $projectRule),
+            $line(157, $projectRule),
+            $line(160, $projectRule),
+            $line(170, $projectRule),
+            $line(190, $projectRule),
+            $line(193, $projectRule),
+            $line(196, $projectRule),
+        ];
+
+        $this->assertSame($framework, $this->cronNamespaceReport('framework/backend', $badPath, $bad));
+        $demo = $this->cronNamespaceReport('demo/chat/backend', $badPath, $bad);
+        $this->assertSame($project, $demo);
+        $this->assertSame($demo, $this->cronNamespaceReport('demo/polls/backend', $badPath, $bad));
+        $this->assertSame($demo, $this->cronNamespaceReport('scripts', $badPath, $bad));
+        $this->assertSame([], $this->cronNamespaceReport('framework/tests', $badPath, $bad));
+        $this->assertSame([], $this->cronNamespaceReport('demo/chat/tests', $badPath, $bad));
+        $this->assertSame([], $this->cronNamespaceReport('framework/tests/CodeStyle/Fixtures', $badPath, $bad));
+
+        foreach (['framework/backend', 'demo/chat/backend', 'scripts'] as $root) {
+            $this->assertSame([], $this->cronNamespaceReport($root, $goodPath, $good), $root);
+        }
+    }
+
     /** Scope entry is admitted by explicit suite kind or the exact common harness path only. */
     public function testRollbackScopeEntryUsesTheRootAndExactHarnessPath(): void
     {
@@ -1209,6 +1301,7 @@ final class RuleFixtureTest extends TestCase
             new BlockingResolutionRule(),
             new ProcessForkRule('framework/tests/CodeStyle/Fixtures'),
             new NestableTransactionRule('framework/tests/CodeStyle/Fixtures'),
+            new CronNamespaceRule('framework/tests/CodeStyle/Fixtures'),
             new TestRollbackScopeRule('framework/tests/CodeStyle/Fixtures', RootKind::Suite),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
@@ -1222,5 +1315,21 @@ final class RuleFixtureTest extends TestCase
             new MemberIndentRule(),
             new SpellingRule(),
         ];
+    }
+
+    /**
+     * @param string $root Scanned root the rule is constructed with
+     * @param string $relativePath Fixture path relative to the fixture root
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Tokens of that fixture
+     * @return list<string> Report lines, in file order
+     */
+    private function cronNamespaceReport(string $root, string $relativePath, array $tokens): array
+    {
+        $rule = new CronNamespaceRule($root);
+
+        return array_map(
+            static fn(Violation $hit): string => $hit->describe($rule->doc()),
+            iterator_to_array($rule->check($relativePath, $tokens), false),
+        );
     }
 }

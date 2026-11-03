@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
@@ -116,6 +117,22 @@ final class AgentCronReportTest extends TestCase
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
+    public function testProjectStartRefusesReservedNameBeforeAReportEvenWithoutDaemonFeature(): void
+    {
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, CronReportDisabledHilos::class);
+        $agent = new CronReportReservedPrefixAgent();
+
+        try {
+            $agent->onStart();
+            self::fail('A project rule with the reserved prefix must be refused at start');
+        } catch (CronRuleNameException $exception) {
+            self::assertStringContainsString('hilos_project_rule', $exception->getMessage());
+            self::assertStringContainsString(CronRule::FRAMEWORK_NAME_PREFIX, $exception->getMessage());
+        }
+
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
     /** @return DaemonAgentCronSignalData Queued agent report */
     private function takeReport(): DaemonAgentCronSignalData
     {
@@ -154,6 +171,20 @@ abstract class CronReportEnabledHilos extends Hilos
 abstract class CronReportDisabledHilos extends Hilos
 {
     protected const array FEATURES = [];
+}
+
+final class CronReportReservedPrefixAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'cron_reserved';
+
+    public function onStart(): void
+    {
+        new CronRule('hilos_project_rule', '* * * * *');
+    }
+
+    public function onStop(): void
+    {
+    }
 }
 
 final class CronReportFixedClockRule extends CronRule

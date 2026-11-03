@@ -887,7 +887,7 @@ PHP);
         self::assertSame($now, self::property($agent, 'lastLiveScanAt'));
         if ($cron) {
             self::assertNotNull($observed[0]);
-            $this->assertCron($observed[0], 'log-rotation', self::EXPRESSION, $agent->getId(), 1);
+            $this->assertCron($observed[0], 'hilos_log_rotation', self::EXPRESSION, $agent->getId(), 1);
         } else {
             self::assertNull($observed[0]);
             self::assertSame(0, $this->newReceiptCount());
@@ -895,7 +895,7 @@ PHP);
         $this->assertLastReceipt($observed[0]);
         $this->consumeLogIndex();
         if ($cron) {
-            $this->assertCron($observed[0], 'log-rotation', self::EXPRESSION, $agent->getId(), 0);
+            $this->assertCron($observed[0], 'hilos_log_rotation', self::EXPRESSION, $agent->getId(), 0);
         }
         $agent->rotateIfDue($now);
         self::assertCount(1, $observed, 'The same minute and empty live store do not rotate twice');
@@ -952,7 +952,7 @@ PHP);
             self::assertSame($failure, $caught);
         }
         self::assertNotNull($id);
-        $this->assertCron($id, 'log-rotation', self::EXPRESSION, $agent->getId(), 0);
+        $this->assertCron($id, 'hilos_log_rotation', self::EXPRESSION, $agent->getId(), 0);
         $this->assertClear();
         $this->writeSetting();
         $this->assertLastReceipt(null);
@@ -1144,7 +1144,7 @@ PHP);
         }
         self::assertSame($rowId, $frame->data->row[EntityChangeLogReceipt::id]);
         self::assertSame('cron', $frame->data->row[EntityChangeLogReceipt::channel]);
-        self::assertSame('log-rotation', $frame->data->row[EntityChangeLogReceipt::action]);
+        self::assertSame('hilos_log_rotation', $frame->data->row[EntityChangeLogReceipt::action]);
         self::assertSame(0, $frame->data->row[EntityChangeLogReceipt::open_handovers]);
 
         return $rowId;

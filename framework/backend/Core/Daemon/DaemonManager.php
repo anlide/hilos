@@ -80,6 +80,8 @@ use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\Module\DaemonModule;
@@ -8700,14 +8702,28 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Add cron rule.
+     * Add a project cron rule.
+     *
+     * The name is accepted as {@see CronRuleOrigin::PROJECT}, so a project cannot register a name
+     * under the reserved prefix or replace a framework rule that already holds it.
      *
      * @param string $name Cron job name (unique identifier)
      * @param string $expression Cron expression (minute hour day month weekday), e.g., "*\/5 * * * *"
+     * @throws CronRuleNameException When the name uses the reserved framework prefix
      */
     protected function addCronRule(string $name, string $expression): void
     {
-        $this->cronRules[$name] = new CronRule($name, $expression);
+        $this->registerCronRule(new CronRule($name, $expression));
+    }
+
+    /**
+     * Stores an already checked rule and marks the cron picture dirty.
+     *
+     * @param CronRule $rule Rule whose name was accepted for its origin
+     */
+    private function registerCronRule(CronRule $rule): void
+    {
+        $this->cronRules[$rule->name] = $rule;
         $this->cronFrameDirty = true;
     }
 
@@ -8777,7 +8793,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         foreach (BackupSchedule::fromCatalog()->daemonEntries() as $entry) {
-            $this->addCronRule($entry->name, $entry->expression);
+            $this->registerCronRule(new CronRule($entry->name, $entry->expression, $entry->origin));
         }
     }
 
@@ -8789,7 +8805,11 @@ abstract class DaemonManager extends BaseManager implements
     private function registerClusterClockCheckRule(): void
     {
         if (Hilos::$cluster?->isEnabled()) {
-            $this->addCronRule(ClusterClock::CRON_RULE, ClusterClock::CRON_EXPRESSION);
+            $this->registerCronRule(new CronRule(
+                ClusterClock::CRON_RULE,
+                ClusterClock::CRON_EXPRESSION,
+                CronRuleOrigin::FRAMEWORK,
+            ));
         }
     }
 

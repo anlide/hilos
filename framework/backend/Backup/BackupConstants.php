@@ -6,6 +6,7 @@ namespace Hilos\Backup;
 
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Runtime\State\Item\RestoreRuntime;
@@ -143,7 +144,7 @@ final class BackupConstants
     public const string SCHEDULE_MECHANISM = 'mechanism';
 
     /** Default schedule entry name used when a project declares no schedule. */
-    public const string DEFAULT_SCHEDULE_NAME = 'daily-full';
+    public const string DEFAULT_SCHEDULE_NAME = CronRule::FRAMEWORK_NAME_PREFIX . 'backup_daily_full';
 
     /** Default schedule cron: a daily full backup at 03:00 server time. */
     public const string DEFAULT_SCHEDULE_CRON = '0 3 * * *';

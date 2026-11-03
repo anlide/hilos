@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\BackupScheduleException;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Hilos;
 
 /**
@@ -39,6 +41,7 @@ final class BackupSchedule
      *
      * @return self Schedule over the declared entries, or the default single-entry schedule
      * @throws BackupScheduleException When a declared entry is malformed or a name is duplicated
+     * @throws CronRuleNameException When the default framework name does not carry the reserved prefix
      */
     public static function fromCatalog(): self
     {
@@ -85,7 +88,11 @@ final class BackupSchedule
     /**
      * The default schedule: one daily full backup at 03:00 server time on the agent mechanism.
      *
+     * The entry is a framework rule. A project's own catalog rows stay project, including when
+     * the catalog is read by {@see fromArray()} or {@see fromCatalog()}.
+     *
      * @return self Single-entry default schedule
+     * @throws CronRuleNameException When the default name does not carry the reserved prefix
      */
     public static function default(): self
     {
@@ -95,6 +102,7 @@ final class BackupSchedule
                 BackupConstants::DEFAULT_SCHEDULE_CRON,
                 BackupScope::FULL,
                 BackupScheduleMechanism::AGENT,
+                CronRuleOrigin::FRAMEWORK,
             ),
         ]);
     }

@@ -10,6 +10,7 @@ use Hilos\Cluster\Peer\DTO\PeerClockReplyDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -23,7 +24,7 @@ final class ClusterClock
 {
     public const int SERIES_EXCHANGES = 5;
 
-    public const string CRON_RULE = 'hilos_cluster_clock_check';
+    public const string CRON_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'cluster_clock_check';
 
     public const string CRON_EXPRESSION = '0 4 * * *';
 

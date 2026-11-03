@@ -14,6 +14,7 @@ use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
+use Hilos\Tests\CodeStyle\Rule\CronNamespaceRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
@@ -267,6 +268,7 @@ final class CodeStyleGuardTest extends TestCase
             new BlockingResolutionRule(),
             new ProcessForkRule($root),
             new NestableTransactionRule($root),
+            new CronNamespaceRule($root),
             new TestRollbackScopeRule($root, $kind),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),

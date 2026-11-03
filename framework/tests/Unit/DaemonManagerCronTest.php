@@ -15,7 +15,9 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Daemon\CronFireTestRequests;
+use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -95,6 +97,37 @@ final class DaemonManagerCronTest extends TestCase
         $register->invoke($manager);
         self::assertSame(['hilos_cluster_clock_check'], array_keys($manager->getCronRules()));
         self::assertSame('0 4 * * *', $manager->getCronRules()['hilos_cluster_clock_check']->expression);
+    }
+
+    public function testProjectAddCronRuleRejectsReservedNameWithoutChangingTheRegistry(): void
+    {
+        $manager = new DaemonManagerCronTestManager();
+        $manager->addRule('cleanup_history', '*/30 * * * *');
+
+        try {
+            $manager->addRule('hilos_cleanup_history', '* * * * *');
+            self::fail('A project registration must not take the reserved prefix');
+        } catch (CronRuleNameException $exception) {
+            self::assertStringContainsString('hilos_cleanup_history', $exception->getMessage());
+            self::assertStringContainsString(CronRule::FRAMEWORK_NAME_PREFIX, $exception->getMessage());
+        }
+
+        self::assertSame(['cleanup_history'], array_keys($manager->getCronRules()));
+        self::assertSame('*/30 * * * *', $manager->getCronRules()['cleanup_history']->expression);
+    }
+
+    public function testFrameworkClockRuleIsRegisteredForAClusteredNode(): void
+    {
+        $this->environment('test');
+        putenv('CLUSTER_ENABLED=true');
+        Hilos::$cluster = new ClusterContext();
+        $manager = new DaemonManagerCronTestManager();
+
+        $manager->boot(new DaemonContext('.', '.'));
+
+        self::assertSame('hilos_cluster_clock_check', ClusterClock::CRON_RULE);
+        self::assertArrayHasKey(ClusterClock::CRON_RULE, $manager->getCronRules());
+        self::assertSame(ClusterClock::CRON_EXPRESSION, $manager->getCronRules()[ClusterClock::CRON_RULE]->expression);
     }
 
     public function testClockCronFiresTheMasterMeasurementWithoutAnAgentSignal(): void

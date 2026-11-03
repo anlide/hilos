@@ -88,6 +88,7 @@ use Hilos\Fs\FsPath;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
@@ -549,6 +550,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws BackupScheduleException When the project backup schedule is malformed
      * @throws EnvException When a backup env value or a cluster env value is missing or cannot be read as its type
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     * @throws CronRuleNameException When a schedule name does not match the origin it was declared with
      */
     public function onStart(): void
     {
@@ -1120,7 +1122,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     /**
      * Forces the scheduled backup named in the payload and replies with its id and scope.
      *
-     * Resolves the schedule entry name (defaulting to the fallback daily-full name when the
+     * Resolves the schedule entry name (defaulting to {@see BackupConstants::DEFAULT_SCHEDULE_NAME} when the
      * payload omits it) to a scope and funnels through the guarded {@see startBackup()}. An
      * unknown name, a busy single-flight lock, or a create that could not start each reply
      * with an error; the reply is immediate (the backup runs asynchronously in the child).
@@ -3665,7 +3667,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $this->agentSchedule = [];
         foreach ($this->schedule?->agentEntries() ?? [] as $entry) {
             $this->agentSchedule[] = new BackupCronJob(
-                new CronRule($entry->name, $entry->expression),
+                new CronRule($entry->name, $entry->expression, $entry->origin),
                 $entry->scope,
             );
         }

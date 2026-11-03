@@ -6,6 +6,8 @@ namespace Hilos\Log;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
@@ -24,7 +26,7 @@ use Hilos\Hilos;
 final class LogRotationTriggerPolicy
 {
     /** Name of the cron rule the schedule axis builds. */
-    private const string CRON_RULE_NAME = 'log-rotation';
+    private const string CRON_RULE_NAME = CronRule::FRAMEWORK_NAME_PREFIX . 'log_rotation';
 
     /**
      * @param int $maxAgeSeconds Elapsed-since-last-rotation threshold in seconds; 0 disables the age axis
@@ -81,6 +83,7 @@ final class LogRotationTriggerPolicy
      *
      * @return ?CronRule Rule carrying the configured expression, or null when it is empty or not a
      *                   schedule {@see CronRule} can run
+     * @throws CronRuleNameException When the schedule rule name does not match framework origin
      */
     public function createCronRule(): ?CronRule
     {
@@ -89,7 +92,7 @@ final class LogRotationTriggerPolicy
             return null;
         }
 
-        return new CronRule(self::CRON_RULE_NAME, $expression);
+        return new CronRule(self::CRON_RULE_NAME, $expression, CronRuleOrigin::FRAMEWORK);
     }
 
     /**

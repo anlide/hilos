@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
@@ -312,6 +313,7 @@ final class LogStoreAgent extends AbstractAgent
      * @throws EnvException When the cluster-enabled flag or a cluster environment value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
      * @throws InvalidArgumentException When the first frame to the aggregator cannot be named
+     * @throws CronRuleNameException When the rotation rule name does not match framework origin
      */
     public function onStart(): void
     {
@@ -821,6 +823,7 @@ final class LogStoreAgent extends AbstractAgent
      * @param string $name Signal name (unused; the routing is on $data->command)
      * @throws InvalidArgumentException When the command reply carries an empty correlation id, or
      *     the index frame the rotation or the walk sends cannot be named
+     * @throws CronRuleNameException When the rotation rule name does not match framework origin
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {

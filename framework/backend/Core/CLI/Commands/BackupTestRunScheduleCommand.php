@@ -53,22 +53,26 @@ class BackupTestRunScheduleCommand extends AbstractCommandChannelTestCommand
      */
     public function getHelp(): string
     {
-        return <<<HELP
+        return sprintf(
+            <<<'HELP'
 Command: test:backup:run-schedule [name]
 
 Description:
   Force a scheduled backup now through the running backup agent. The agent resolves the
   named schedule entry to a scope and starts the backup, replying immediately with the new
   backup id and scope; the capture runs asynchronously. Omitting [name] uses the default
-  daily-full entry. Refuses on a production-like environment.
+  %s entry. Refuses on a production-like environment.
 
 Arguments:
-  [name]   Schedule entry name to run (defaults to the fallback daily-full entry)
+  [name]   Schedule entry name to run (defaults to the fallback %s entry)
 
 Usage:
   php cli.php test:backup:run-schedule
   php cli.php test:backup:run-schedule nightly-schema
-HELP;
+HELP,
+            BackupConstants::DEFAULT_SCHEDULE_NAME,
+            BackupConstants::DEFAULT_SCHEDULE_NAME,
+        );
     }
 
     /**

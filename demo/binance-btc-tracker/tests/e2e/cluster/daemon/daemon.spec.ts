@@ -291,7 +291,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
                 reports,
                 nodePage,
                 cron.frames,
-                { agentId: RESTART_AGENT, ruleName: 'log-rotation' },
+                { agentId: RESTART_AGENT, ruleName: 'hilos_log_rotation' },
               )
             } else if (child === 'http_server') {
               // This stand binds HTTP_STATUS_HOST/PORT on every member. The heading

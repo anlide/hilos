@@ -151,6 +151,8 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -724,10 +726,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private const int TOAST_KEY_RANDOM_BYTES = 16;
 
     /** Name of the cron rule that clears abandoned registrations off session rows. */
-    private const string PENDING_REGISTRATION_SWEEP_RULE = 'hilos_sweep_pending_registrations';
+    private const string PENDING_REGISTRATION_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'sweep_pending_registrations';
 
     /** Name of the cron rule that removes ended session rows. */
-    private const string SESSION_SWEEP_RULE = 'hilos_sessions_expire';
+    private const string SESSION_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'sessions_expire';
 
     /** Every 15 minutes, matching the daemon cron catalog. */
     private const string SESSION_SWEEP_CRON = '*/15 * * * *';
@@ -745,7 +747,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private const int NEVER_RETURNED_GRACE_SECONDS = 7 * TimeConstants::SECONDS_PER_DAY;
 
     /** Name of the cron rule that erases the accounts whose deletion fell due (HIL-302). */
-    private const string ACCOUNT_DELETION_SWEEP_RULE = 'hilos_account_deletion_sweep';
+    private const string ACCOUNT_DELETION_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'account_deletion_sweep';
 
     /**
      * Once a minute: an account is erased within a minute of its moment, and an erasure that
@@ -754,7 +756,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private const string ACCOUNT_DELETION_SWEEP_CRON = '* * * * *';
 
     /** Name of the cron rule that removes access log rows past their life (HIL-1174). */
-    private const string ACCESS_LOG_SWEEP_RULE = 'hilos_access_log_expire';
+    private const string ACCESS_LOG_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'access_log_expire';
 
     /** Once an hour: a row is kept 12 months, and an hour more over that is not worth a tick a minute. */
     private const string ACCESS_LOG_SWEEP_CRON = '0 * * * *';
@@ -835,6 +837,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
+     * @throws CronRuleNameException When a sweep rule name does not match framework origin
      */
     public function onStart(): void
     {
@@ -1083,7 +1086,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->pendingRegistrationSweepRule = new CronRule(self::PENDING_REGISTRATION_SWEEP_RULE, $expression);
+        $this->pendingRegistrationSweepRule = new CronRule(
+            self::PENDING_REGISTRATION_SWEEP_RULE,
+            $expression,
+            CronRuleOrigin::FRAMEWORK,
+        );
     }
 
     /**
@@ -1091,7 +1098,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function armSessionSweep(): void
     {
-        $this->sessionSweepRule = new CronRule(self::SESSION_SWEEP_RULE, self::SESSION_SWEEP_CRON);
+        $this->sessionSweepRule = new CronRule(
+            self::SESSION_SWEEP_RULE,
+            self::SESSION_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
     }
 
     /**
@@ -6775,7 +6786,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $rule = new CronRule(self::ACCOUNT_DELETION_SWEEP_RULE, self::ACCOUNT_DELETION_SWEEP_CRON);
+        $rule = new CronRule(
+            self::ACCOUNT_DELETION_SWEEP_RULE,
+            self::ACCOUNT_DELETION_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
         $rule->lastRun = 0.0;
         $this->accountDeletionSweepRule = $rule;
     }
@@ -6822,7 +6837,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->accessLogSweepRule = new CronRule(self::ACCESS_LOG_SWEEP_RULE, self::ACCESS_LOG_SWEEP_CRON);
+        $this->accessLogSweepRule = new CronRule(
+            self::ACCESS_LOG_SWEEP_RULE,
+            self::ACCESS_LOG_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
     }
 
     /**

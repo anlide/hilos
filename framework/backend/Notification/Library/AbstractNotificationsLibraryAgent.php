@@ -23,6 +23,8 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -257,7 +259,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     private const string DELIVERY_LOG_PRUNE_SCHEDULE = '20 3 * * *';
 
     /** Name of the cron rule that prunes terminal rows out of the delivery journal. */
-    private const string DELIVERY_LOG_PRUNE_RULE = 'hilos_delivery_log_prune';
+    private const string DELIVERY_LOG_PRUNE_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'delivery_log_prune';
 
     /** @var ?CronRule Once-per-day guard for the delivery-log prune */
     private ?CronRule $deliveryLogPruneRule = null;
@@ -289,11 +291,17 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * The letters a restore wrote while this library was not running are not sent from here any
      * more (HIL-846): they arrive as a frame from the agent holding them ({@see emitHandedOverNotices()}).
+     *
+     * @throws CronRuleNameException When the prune rule name does not match framework origin
      */
     public function onStart(): void
     {
         if (Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY)) {
-            $this->deliveryLogPruneRule = new CronRule(self::DELIVERY_LOG_PRUNE_RULE, self::DELIVERY_LOG_PRUNE_SCHEDULE);
+            $this->deliveryLogPruneRule = new CronRule(
+                self::DELIVERY_LOG_PRUNE_RULE,
+                self::DELIVERY_LOG_PRUNE_SCHEDULE,
+                CronRuleOrigin::FRAMEWORK,
+            );
         }
     }
 

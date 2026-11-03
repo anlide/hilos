@@ -106,6 +106,7 @@ final class LogRotationTriggerPolicyTest extends TestCase
         $this->assertTrue($policy->isActive());
         $rule = $policy->createCronRule();
         $this->assertInstanceOf(CronRule::class, $rule);
+        $this->assertSame('hilos_log_rotation', $rule->name);
         $this->assertSame('0 3 * * *', $rule->expression);
         // The schedule axis is not part of the numeric predicate: both numeric axes off stays false.
         $this->assertFalse($policy->shouldRotate(PHP_INT_MAX, PHP_INT_MAX));

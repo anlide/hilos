@@ -1378,6 +1378,39 @@ equal agents does not pile onto one node.
 Register rules in the daemon manager constructor:
 `$this->addCronRule('name', '*/5 * * * *')`.
 
+A name belongs to the project or to the framework. The reserved prefix is the
+constant `CronRule::FRAMEWORK_NAME_PREFIX` (`hilos_`). A project name must not
+start with it, and a framework name must. `CronRule` takes an origin, and the
+default is `CronRuleOrigin::PROJECT`. The origin is checked and then dropped:
+it is not stored on the rule. The constructor throws `CronRuleNameException`
+when the name and the origin disagree. That is the runtime refusal. Registration
+refuses the same way: `DaemonManager::addCronRule()` builds the rule as a
+project rule, so the call above cannot register a reserved name or take a name
+the framework already holds.
+
+`CronRuleOrigin::FRAMEWORK` is written only under `framework/backend`. A demo
+backend and a script omit the origin or pass `CronRuleOrigin::PROJECT`. The
+backup catalog is the project boundary. `BackupScheduleEntry::fromArray()` does
+not read an origin out of a raw row; the entry it builds leaves the origin
+omitted, which is project. The framework's own default schedule entry is built
+with `FRAMEWORK`. The two bridges that turn schedule entries into rules,
+`DaemonManager::registerBackupCronRules()` and
+`BackupAgent::buildAgentCronRules()`, pass `$entry->origin` through. A catalog
+row has already been parsed as project, and the default entry already carries
+framework.
+
+Checked automatically: `CRON-NAMESPACE`, see
+[automated-checks.md](../code-style/automated-checks.md). The guard reads
+declarations in the source, not a running call. It tokenizes `new CronRule`
+and, outside the framework backend, `new BackupScheduleEntry`, resolving
+imports, aliases, fully qualified names and named arguments. It does not follow
+a call into another function, does not read the caller's class by Reflection,
+and does not decide the origin from the name's prefix. A string, a comment, and
+a different class that shares the short name are not declarations. `self`,
+`static` and `parent` are not resolved to a class, and a grouped `use` is not
+followed. A root other than `framework/backend`, `demo/*/backend` and `scripts`
+is handed an empty report.
+
 When a rule is due, `DaemonManager::onCron()` queues a `DAEMON/CRON` signal.
 Handle the cron name in the target agent's `onSignalCron()` (or on a page cron
 handler declared in topology). Override `onCron()` only for daemon-local work

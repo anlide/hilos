@@ -25,6 +25,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\JournalReceiptData;
@@ -89,7 +91,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     private const int STORED_NAME_BYTES = 16;
     private const string ZIP_EXTENSION = '.zip';
     private const string BUILDING_EXTENSION = '.building.zip';
-    private const string EXPIRE_RULE = 'hilos_data_export_expire';
+    private const string EXPIRE_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'data_export_expire';
     private const string EXPIRE_CRON = '0 * * * *';
 
     private ?FsDirectory $directory = null;
@@ -109,12 +111,13 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      * Reconciles persisted requests with storage before resuming unfinished copies.
      *
      * @throws HilosException When storage, reconciliation or publication fails
+     * @throws CronRuleNameException When the expiry rule name does not match framework origin
      */
     public function onStart(): void
     {
         $this->directory = Hilos::$fs->getDirectory(FsContext::DATA_EXPORT);
         $this->directory->ensureDirectory();
-        $this->expireRule = new CronRule(self::EXPIRE_RULE, self::EXPIRE_CRON);
+        $this->expireRule = new CronRule(self::EXPIRE_RULE, self::EXPIRE_CRON, CronRuleOrigin::FRAMEWORK);
         foreach (Hilos::$db->dataExports->allReady() as $export) {
             if ($export->storedName === null || !$this->directory[$export->storedName]->exists()) {
                 $this->removeExport($export);

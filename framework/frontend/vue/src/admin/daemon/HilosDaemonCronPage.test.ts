@@ -924,7 +924,7 @@ describe('HilosDaemonCronPage', () => {
         nextRunAt: null,
       }),
       rule({
-        rowKey: 'hilos_log_store/log-rotation',
+        rowKey: 'hilos_log_store/hilos_log_rotation',
         agentId: 'hilos_log_store',
       }),
     ])
@@ -934,7 +934,7 @@ describe('HilosDaemonCronPage', () => {
       '[data-id="hilos-table-row-hilos_backup/hilos_backup_yearly"]',
     )
     const active = h.view.find(
-      '[data-id="hilos-table-row-hilos_log_store/log-rotation"]',
+      '[data-id="hilos-table-row-hilos_log_store/hilos_log_rotation"]',
     )
     expect(idle.findAll('td')[3]?.text()).toBe('Not on this node')
     expect(idle.findAll('td')[4]?.text()).toBe('—')

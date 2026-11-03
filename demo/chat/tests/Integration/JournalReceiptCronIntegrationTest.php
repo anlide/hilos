@@ -23,6 +23,7 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -522,7 +523,7 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $worker->handleDaemonMessage(new AgentStartDTO(SessionsLibraryAgent::AGENT_TYPE));
         $holder = $worker->sessions();
         foreach (['sessionSweep' => 'hilos_sessions_expire', 'accessLogSweep' => 'hilos_access_log_expire'] as $field => $name) {
-            $rule = new CronRule($name, '* * * * *');
+            $rule = new CronRule($name, '* * * * *', CronRuleOrigin::FRAMEWORK);
             $rule->lastRun = 0.0;
             new ReflectionProperty(AbstractSessionsLibraryAgent::class, $field . 'Rule')->setValue($holder, $rule);
         }

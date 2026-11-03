@@ -15,6 +15,8 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -72,7 +74,7 @@ final class LegalAcceptancesExports
     private const int STORED_NAME_BYTES = 16;
     private const string CSV_EXTENSION = '.csv';
     private const string BUILDING_EXTENSION = '.building.csv';
-    private const string EXPIRE_RULE = 'hilos_legal_acceptances_export_expire';
+    private const string EXPIRE_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'legal_acceptances_export_expire';
     private const string EXPIRE_CRON = '0 * * * *';
     private const string CONTENT_TYPE = 'text/csv; charset=utf-8';
     private const string FILENAME_PREFIX = 'legal-acceptances-';
@@ -100,12 +102,13 @@ final class LegalAcceptancesExports
      *
      * @param PageAgentInterface $agent The legal agent starting
      * @throws HilosException When the directory, an order or a state frame cannot be read or written
+     * @throws CronRuleNameException When the expiry rule name does not match framework origin
      */
     public static function onStart(PageAgentInterface $agent): void
     {
         self::$directory = Hilos::$fs->getDirectory(FsContext::LEGAL_EXPORT);
         self::$directory->ensureDirectory();
-        self::$expireRule = new CronRule(self::EXPIRE_RULE, self::EXPIRE_CRON);
+        self::$expireRule = new CronRule(self::EXPIRE_RULE, self::EXPIRE_CRON, CronRuleOrigin::FRAMEWORK);
         foreach (Hilos::$db->legalAcceptanceExports->allReady() as $export) {
             if ($export->storedName === null || !self::$directory[$export->storedName]->exists()) {
                 self::remove($export);

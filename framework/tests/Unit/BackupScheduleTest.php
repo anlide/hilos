@@ -9,6 +9,8 @@ use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\BackupScheduleMechanism;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupScheduleException;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -25,10 +27,12 @@ final class BackupScheduleTest extends TestCase
         $entries = BackupSchedule::default()->entries();
 
         $this->assertCount(1, $entries);
+        $this->assertSame('hilos_backup_daily_full', $entries[0]->name);
         $this->assertSame(BackupConstants::DEFAULT_SCHEDULE_NAME, $entries[0]->name);
         $this->assertSame(BackupConstants::DEFAULT_SCHEDULE_CRON, $entries[0]->expression);
         $this->assertSame(BackupScope::FULL, $entries[0]->scope);
         $this->assertSame(BackupScheduleMechanism::AGENT, $entries[0]->mechanism);
+        $this->assertSame(CronRuleOrigin::FRAMEWORK, $entries[0]->origin);
     }
 
     public function testFromArrayParsesEntriesInDeclarationOrder(): void
@@ -53,6 +57,8 @@ final class BackupScheduleTest extends TestCase
 
         $this->assertSame(['a', 'a2'], array_map(static fn ($e) => $e->name, $schedule->agentEntries()));
         $this->assertSame(['d'], array_map(static fn ($e) => $e->name, $schedule->daemonEntries()));
+        $this->assertSame(CronRuleOrigin::PROJECT, $schedule->agentEntries()[0]->origin);
+        $this->assertSame(CronRuleOrigin::PROJECT, $schedule->daemonEntries()[0]->origin);
     }
 
     public function testMechanismDefaultsToAgentWhenAbsent(): void
@@ -118,6 +124,41 @@ final class BackupScheduleTest extends TestCase
         $this->expectException(BackupScheduleException::class);
 
         BackupSchedule::fromArray([$this->entry('n', '0 3 * * *', 'full', 'sidecar')]);
+    }
+
+    public function testProjectScheduleRejectsReservedNameOnTheAgentMechanism(): void
+    {
+        $this->assertReservedScheduleNameRefused('agent');
+    }
+
+    public function testProjectScheduleRejectsReservedNameOnTheDaemonMechanism(): void
+    {
+        $this->assertReservedScheduleNameRefused('daemon');
+    }
+
+    public function testRawOriginDoesNotPromoteACatalogEntryToFramework(): void
+    {
+        $raw = $this->entry('nightly', '0 3 * * *', 'full', 'agent');
+        $raw['origin'] = 'framework';
+
+        $entry = BackupSchedule::fromArray([$raw])->entries()[0];
+
+        $this->assertSame('nightly', $entry->name);
+        $this->assertSame(CronRuleOrigin::PROJECT, $entry->origin);
+    }
+
+    /** @param string $mechanism Catalog mechanism value under test */
+    private function assertReservedScheduleNameRefused(string $mechanism): void
+    {
+        try {
+            BackupSchedule::fromArray([
+                $this->entry('hilos_nightly', '0 3 * * *', 'full', $mechanism),
+            ]);
+            $this->fail('A project schedule must not declare a reserved name');
+        } catch (BackupScheduleException $exception) {
+            $this->assertInstanceOf(CronRuleNameException::class, $exception->getPrevious());
+            $this->assertStringContainsString('hilos_nightly', $exception->getMessage());
+        }
     }
 
     /**
