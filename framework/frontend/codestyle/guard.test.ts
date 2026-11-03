@@ -114,11 +114,16 @@ const EXPLANATION =
  * narrow run beside a full one had crossed the minute before the declarations
  * were shared. Ninety keeps over that the margin a minute kept over 36.5.
  *
- * What a minute and a half still catches is the failure worth catching — a
- * rule that stopped terminating or a walk that left the repository — and the
- * cure for that is the rule that hangs, not a larger number written here.
+ * Ninety held until a full seven-lane run on the home box (2026-11-03): the
+ * guard took 92.9 seconds beside every e2e lane, while the same tree passed
+ * it alone in 24, and the line spent 43 to 65 on it over the twelve runs
+ * before. Two minutes keeps the old margin over that.
+ *
+ * What two minutes still catches is the failure worth catching — a rule that
+ * stopped terminating or a walk that left the repository — and the cure for
+ * that is the rule that hangs, not a larger number written here.
  */
-const GUARD_TIMEOUT_MS = 90_000
+const GUARD_TIMEOUT_MS = 120_000
 
 it(
   'carries no code-style violation the baseline does not already own',
