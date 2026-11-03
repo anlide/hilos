@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-page-registry
-description: Set up and review a frontend project's page registry — the pages/ folder (page keys, routes, entity-slot types) and its @hilos/core binding. Use when adding or moving page keys or routes, wiring the page scope (bindPageScope), declaring page entity types, building the app router (createAppPageRouter), or registering the page_response schema (PAGE_SIGNAL_SCHEMAS) across the Vue/React/Angular demos. Use it too when declaring page identity, breadcrumbs, owner tabs or dynamic titles for a page-head redraw.
+description: Set up and review a frontend project's page registry — the pages/ folder (page keys, routes, entity-slot types) and its @hilos/core binding. Use when choosing singular/plural page names, URL segments or an entity identifier in a URL, including in mockups; adding or moving page keys or routes; wiring the page scope (bindPageScope); declaring page entity types; building the app router (createAppPageRouter); or registering the page_response schema (PAGE_SIGNAL_SCHEMAS) across the Vue/React/Angular demos. Use it too when declaring page identity, breadcrumbs, owner tabs or dynamic titles for a page-head redraw.
 ---
 
 # Hilos Frontend Page Registry
@@ -27,24 +27,28 @@ canonical rule.
 Before binding an owner's head identity or title, read the adoption workflow
 and implementation status in `docs/agents/architecture/page-head.md`.
 
-1. Keep the app's page topology in one `pages/` folder under `src/` (Angular:
+1. Before choosing a page key, URL segment or entity ID, follow
+   [Entity page keys and routes](../../docs/agents/frontend/page-registry.md#entity-page-keys-and-routes),
+   including its transitional exceptions; apply it to mockups too.
+2. Keep the app's page topology in one `pages/` folder under `src/` (Angular:
    `src/app/pages/`): `keys.ts` (page-key constants) and `routes.ts`
    (`APP_ROUTES` + the exported `router`) always, and `entityTypes.ts` only when
    the app's page payloads carry entity slots.
-2. Build the router with `createAppPageRouter(APP_ROUTES)` — it
+3. Build the router with `createAppPageRouter(APP_ROUTES)` — it
    mounts the framework `hilos_*` admin catalog under the app routes. Never
    spread `HILOS_PAGE_ROUTES` by hand; keep `createPageRouter` for the engine.
-3. Bind the page scope with `bindPageScope(connection, scopes, { entityTypes? })`
+4. Bind the page scope with `bindPageScope(connection, scopes, { entityTypes? })`
    in the entry point and hand the returned manager to `createHilosRouter`. Do
    not re-implement the `projectSignal` → `ingestPageResponse` plumbing (no
    hand-written `pageScope.ts`).
-4. Spread `PAGE_SIGNAL_SCHEMAS` into the connection's `projectSchemas`; never
+5. Spread `PAGE_SIGNAL_SCHEMAS` into the connection's `projectSchemas`; never
    restate the `{ page_response: pageResponseSchema }` pair in a project.
-5. Page keys mirror the backend `PageConstants` byte-for-byte; the app shell and
+6. Page keys mirror the backend `PageConstants` byte-for-byte; the app shell and
    views import keys from `pages/keys`, never from `routes.ts`.
-6. Page keys, routes, and the `page_response` payload shape are FE↔BE wire
+7. Page keys, routes, and the `page_response` payload shape are FE↔BE wire
    contract — a change passes the Contract approval gate in `agents.md` before
-   implementation. This rule governs file layout and SDK binding, not the wire.
+   implementation. Naming, file layout and SDK binding guidance do not change
+   that wire contract.
 
 ## Hard Rules
 

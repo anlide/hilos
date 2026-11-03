@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Frontend Page Registry"
-  short_description: "Page keys, routes, entity types and SDK binding"
-  default_prompt: "Use $hilos-frontend-page-registry when setting up pages and the page scope or declaring identity, breadcrumbs, owner tabs and dynamic titles; read the page-head canon before a head redraw."
+  short_description: "Singular/plural page names, URL IDs and registry binding"
+  default_prompt: "Use $hilos-frontend-page-registry for page setup and scope binding; read Entity page keys and routes in the page-registry canon before choosing singular/plural names or URL entity IDs, including in mockups. Read the page-head canon before declaring identity, breadcrumbs, owner tabs or dynamic titles."

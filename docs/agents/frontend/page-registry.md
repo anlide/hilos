@@ -55,7 +55,9 @@ view files, which live in `views/<Page>/`:
   detail declaration precedes the optional-period list declaration and constrains
   its id to digits with an optional leading plus: `/64` and `/+64` resolve to the
   detail page, while `/today` and `/unknown` fall through to the list. This is a
-  route-specific constraint, not a general singular-URL naming convention.
+  route-specific constraint. The shared plural prefix of that detail and list
+  is a [transitional exception](#transitional-route-exceptions), not a pattern
+  for new pages; naming follows [the entity rule below](#entity-page-keys-and-routes).
 
   **`admin` is required on every row and has no default.** It names the surface
   *type*, not any one feature that reads it — say `admin`, never
@@ -99,6 +101,88 @@ view files, which live in `views/<Page>/`:
 
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
 path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.
+
+## Entity page keys and routes
+
+Apply this rule when naming a new or changed page declaration, including in an
+approved mockup. First decide whether the page addresses one entity or a list:
+the key and URL should make that distinction visible without knowing the page.
+
+1. Use a singular entity noun in the page key and its corresponding URL segment
+   for one entity; use the plural for a list. Use ordinary English forms such as
+   `person` / `people`; do not derive a singular by mechanically removing `s`.
+2. Name the entity explicitly before its identifier, including under a section:
+   use `/hilos/communications/channel/{channelId}` and
+   `/hilos/daemon/node/{nodeId}`. A section name alone does not identify the kind
+   of entity addressed by `section/{id}`.
+3. Preserve the owner's full singular address prefix on child pages and append
+   the child's own segment. In `/hilos/user/{userId}/sessions`, `user` is one
+   owner and `sessions` is its list. Keep each segment's own meaning and number;
+   do not singularize a static section just because a parameter occurs later.
+4. Prefer a stable numeric entity ID in the URL whenever one can be used. Do not
+   choose a name, slug, or arbitrary string key instead of an available numeric
+   ID: the address should survive a display-name change. If the model only
+   offers a stable nonnumeric code or key, document why it is needed. This rule
+   does not introduce IDs, artificial numbering, or a data-model migration.
+5. Keep frontend page keys byte-for-byte equal to backend `PageConstants` and
+   follow the [contract gate](#contract-note) before changing runtime keys or
+   routes. A naming decision does not waive that gate.
+
+| Page | Canonical key | Canonical URL |
+|---|---|---|
+| Users list | `hilos_users` | `/hilos/users` |
+| One user | `hilos_user` | `/hilos/user/{userId}`, for example `/hilos/user/42` |
+| A user's sessions | `hilos_user_sessions` | `/hilos/user/{userId}/sessions` |
+| One Analytics person | `hilos_analytics_person` | `/hilos/analytics/person/{userId}` |
+
+These are naming examples, not a claim that every current route already uses
+them. For a new single-user page, `hilos_users` and `/hilos/users/{userId}` are
+wrong; use `hilos_user` and `/hilos/user/{userId}`. A new channel page at
+`/hilos/communications/{channelId}` is missing `channel` before its identifier.
+When user `42` is available, use `/hilos/user/42`, not `/hilos/user/alice`.
+
+The ID preference concerns entity identifiers, not constant path segments or
+every filter and period in a URL. For example, `{period?}` on a list does not
+make that list an entity detail page. This convention adds neither a router
+change nor runtime validators for grammatical number or digits; existing
+`paramPatterns` continue to mean exactly what their declarations say.
+
+### Transitional route exceptions
+
+The following current addresses in
+[`hilosPages.ts`](../../../framework/frontend/core/src/routing/hilosPages.ts)
+depart from the naming rule. Treat them as transition inventory, not examples
+to copy or permission for new exceptions. Bringing these addresses into line
+is assigned to HIL-1806 (not in the code yet — HIL-1806).
+
+Each child suffix below is appended to the complete address in its row.
+
+| Current entity address | Current child suffixes |
+|---|---|
+| `/hilos/analytics/browser-sessions/{browserSessionId}` | none; the list shares `/hilos/analytics/browser-sessions/{period?}` |
+| `/hilos/analytics/people/{userId}` | none |
+| `/hilos/i18n/languages/{languageCode}` | `/names`, `/locales` |
+| `/hilos/i18n/countries/{countryCode}` | `/names` |
+| `/hilos/i18n/ui-pages/{uiPageId}` | none |
+| `/hilos/i18n/groups/{groupId}` | none |
+| `/hilos/i18n/actions/{actionId}` | none |
+| `/hilos/change-log/tables/{tableId}` | `/columns`, `/triggers`, `/history/{record?}` |
+| `/hilos/daemon/{nodeId}` | `/workers`, `/agents`, `/cron`, `/websockets`, `/http`, `/env`, `/env/orphans` |
+| `/hilos/mcp-skills/{mcpId}` | `/logs`, `/logs/view` |
+| `/hilos/communications/{channelId}` | `/configuration`, `/deliveries`, `/frame` |
+| `/hilos/security/oauth/{providerId}` | none |
+| `/hilos/billing/{providerId}` | `/payments`, `/refunds` |
+
+Legal already uses `/hilos/legal/document/{documentKey}`; do not list
+`/hilos/legal/{documentKey}` as a current route. Existing code/key parameters,
+including `languageCode`, `countryCode` and `documentKey`, remain unchanged by
+this documentation; applying the ID preference requires checking the model.
+
+Two other legacy addresses need separate scope decisions: SIL still declares
+`/hilos/sil/users/{userId}` in code, although its page was removed from the
+approved mockup; this inventory promises no replacement page. Guardian still
+declares `/hilos/guardian/{agentId}`; its rename belongs to the separate
+Superfans work. Neither address is a naming example for new pages.
 
 ## The public Status route
 
@@ -241,6 +325,14 @@ The three conformance demos exercise the registry at different sizes:
 - A barrel `index.ts` inside `pages/`.
 - A page key in `keys.ts` that diverges from its backend `PageConstants` value,
   or framework `hilos_*` keys restated in `keys.ts`.
+- Naming one entity with a plural key or URL segment, or a list with a singular
+  noun; use the number of the entity or list that the page addresses.
+- Omitting the entity noun before its ID under a section; keep the explicit
+  noun and preserve that full owner prefix on child pages.
+- Choosing a name, slug, or string key when a stable numeric entity ID is
+  available; document a model's necessary nonnumeric code/key instead.
+- Copying a transitional route into a new declaration or treating an optional
+  list filter as an entity ID; follow the naming rule for the page's meaning.
 - An `entityTypes.ts` present when the app's page payloads carry no entity
   slots.
 - The app shell or a view importing the page key from `routes.ts` (pulling in
@@ -252,5 +344,5 @@ The page keys, routes, and the `page_response` payload shape are part of the
 FE↔BE wire contract: adding, removing, or renaming a page key or route, or
 changing the page payload shape, passes the Contract approval gate in
 [agents.md](../../../agents.md) — the backend `PageConstants` and the page
-catalog mirror it. This rule governs the project's file layout and SDK binding,
-not the wire.
+catalog mirror it. The naming convention, file layout and SDK binding guidance
+do not themselves change the wire or authorize a runtime route migration.
