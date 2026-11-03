@@ -13,10 +13,16 @@ import { nextTick } from 'vue'
 
 import HilosPushDeviceToggle from '../HilosPushDeviceToggle.vue'
 import HilosProfileDevices from './HilosProfileDevices.vue'
+import {
+  registerProfileDeviceRemoveCases,
+  type ProfileDeviceMountFn,
+} from '../../../test/profileDeviceRemoveCases.js'
 
 let releaseTimeZone: (() => void) | undefined
 
 afterEach(() => {
+  document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
   releaseTimeZone?.()
   releaseTimeZone = undefined
   vi.restoreAllMocks()
@@ -200,93 +206,80 @@ describe('HilosProfileDevices (Vue)', () => {
     )
   })
 
-  it('handles the Remove action lifecycle and disables button before refresh', async () => {
-    const connection = createStubConnection()
-    const supported = createSignal(true)
-    const permission = createSignal<HilosPushPermission>('granted')
-    const subscribed = createSignal(false)
-    const endpointHash = createSignal<string | null>(null)
-    const refreshed = createSignal(false)
-    const busy = createSignal(false)
-
-    let resolveRefresh!: () => void
-    const refreshPromise = new Promise<void>((resolve) => {
-      resolveRefresh = resolve
-    })
-
-    const pushStore: HilosPushSubscriptionStore = {
-      supported,
-      permission,
-      subscribed,
-      endpointHash,
-      refreshed,
-      busy,
-      refresh: vi.fn(() => refreshPromise),
-      enable: vi.fn(async () => true),
-      disable: vi.fn(async () => true),
-      clear: vi.fn(),
-    }
-
-    const devices: readonly HilosProfileDevice[] = [
+  const mountVue: ProfileDeviceMountFn = async (overrides = {}) => {
+    const connection = overrides.connection ?? createStubConnection()
+    const devices = overrides.devices ?? [
       {
-        id: 10,
-        deviceName: 'Phone',
+        id: 1,
+        deviceName: 'Test Device',
         createdAt: 1767227400000,
         current: false,
         expired: false,
       },
     ]
-
-    let resolveAction!: () => void
-    const done = new Promise<{ reply: null }>((resolve) => {
-      resolveAction = () => resolve({ reply: null })
-    })
-    const removeDevice = vi.fn(() => ({
-      requestId: 'remove-device-10',
-      done,
-      loading: createSignal(false),
-    }))
+    const actions = overrides.actions ?? {
+      removeDevice: vi.fn(() => ({
+        requestId: 'test-req',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply: null }),
+      })),
+    }
+    const pushChannel =
+      overrides.pushChannel !== undefined ? overrides.pushChannel : null
+    const pushStore = overrides.pushStore ?? {
+      supported: createSignal(true),
+      permission: createSignal<HilosPushPermission>('granted'),
+      subscribed: createSignal(false),
+      endpointHash: createSignal<string | null>(null),
+      refreshed: createSignal(true),
+      busy: createSignal(false),
+      refresh: async () => {},
+      enable: async () => true,
+      disable: async () => true,
+      clear: () => {},
+    }
 
     const wrapper = mount(HilosProfileDevices, {
       props: {
         devices,
-        actions: { removeDevice },
+        actions,
         connection,
-        pushChannel: null,
+        pushChannel,
         pushStore,
       },
+      attachTo: document.body,
     })
-    await nextTick()
-
-    const removeBtn = wrapper.get('[data-id="profile-device-remove"]')
-    // Before refreshed: button is disabled
-    expect(removeBtn.attributes('disabled')).toBeDefined()
-
-    // Trigger refresh completion
-    refreshed.set(true)
-    resolveRefresh()
     await flushPromises()
 
-    // After refreshed: button is enabled
-    expect(removeBtn.attributes('disabled')).toBeUndefined()
+    return {
+      container: document.body,
+      update: async (next) => {
+        if (next.devices !== undefined) {
+          await wrapper.setProps({ devices: next.devices })
+        }
+        if (next.actions !== undefined) {
+          await wrapper.setProps({ actions: next.actions })
+        }
+        if (next.pushChannel !== undefined) {
+          await wrapper.setProps({ pushChannel: next.pushChannel })
+        }
+        if (next.pushStore !== undefined) {
+          await wrapper.setProps({ pushStore: next.pushStore })
+        }
+        await flushPromises()
+      },
+      flush: async () => {
+        await flushPromises()
+        await nextTick()
+      },
+      unmount: async () => {
+        wrapper.unmount()
+        await flushPromises()
+      },
+    }
+  }
 
-    // Click Remove: dispatches action with exact device id
-    await removeBtn.trigger('click')
-    expect(removeDevice).toHaveBeenCalledExactlyOnceWith(10)
-
-    // While action is in-flight: button is busy/loading and repeated click is blocked
-    expect(removeBtn.attributes('aria-busy')).toBe('true')
-    await removeBtn.trigger('click')
-    expect(removeDevice).toHaveBeenCalledTimes(1)
-
-    // Row is not removed locally before props update
-    expect(wrapper.findAll('[data-id="profile-device-row"]')).toHaveLength(1)
-
-    // Action finishes
-    resolveAction()
-    await flushPromises()
-    expect(removeBtn.attributes('aria-busy')).toBeUndefined()
-  })
+  registerProfileDeviceRemoveCases({ it, expect, vi }, mountVue)
 
   it('renders Remove button for current device when pushChannel is null', async () => {
     const connection = createStubConnection()
@@ -518,6 +511,7 @@ describe('HilosProfileDevices (Vue)', () => {
         },
         pushStore,
       },
+      attachTo: document.body,
     })
     await flushPromises()
     const originalDevices = wrapper.props('devices')
@@ -538,8 +532,17 @@ describe('HilosProfileDevices (Vue)', () => {
       expect(remove.attributes('disabled')).toBeUndefined(),
     )
     await remove.trigger('click')
+    await flushPromises()
+
+    const confirmButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="profile-device-remove-confirm"]',
+    )
+    expect(confirmButton).not.toBeNull()
+    confirmButton?.click()
+    await flushPromises()
+
     expect(removeDevice).toHaveBeenCalledExactlyOnceWith(2)
-    expect(remove.attributes('aria-busy')).toBe('true')
+    expect(confirmButton?.getAttribute('aria-busy')).toBe('true')
 
     browserZone = 'America/New_York'
     window.dispatchEvent(new Event('focus'))
@@ -561,11 +564,12 @@ describe('HilosProfileDevices (Vue)', () => {
       expired.element,
     )
     expect(rows[2]!.text()).not.toContain('added')
-    expect(remove.attributes('aria-busy')).toBe('true')
+    expect(confirmButton?.getAttribute('aria-busy')).toBe('true')
     expect(removeDevice).toHaveBeenCalledTimes(1)
     expect(connection.sendAction).not.toHaveBeenCalled()
     resolveAction()
     await flushPromises()
-    expect(remove.attributes('aria-busy')).toBeUndefined()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
   })
 })

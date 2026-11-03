@@ -10,13 +10,19 @@ import {
   type HilosPushSubscriptionSnapshot,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosProfileDevices } from '../src/profile/HilosProfileDevices.js'
+import {
+  registerProfileDeviceRemoveCases,
+  type ProfileDeviceMountFn,
+} from '../../test/profileDeviceRemoveCases.js'
 
 afterEach(() => {
   cleanup()
+  document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
   vi.restoreAllMocks()
 })
 
@@ -215,98 +221,105 @@ describe('HilosProfileDevices (React)', () => {
     ).toBeNull()
   })
 
-  it('handles the Remove action lifecycle and disables button before refresh', async () => {
-    const connection = createStubConnection()
-
-    let resolveSubscription!: (
-      sub: HilosPushSubscriptionSnapshot | null,
-    ) => void
-    const getSubscriptionPromise =
-      new Promise<HilosPushSubscriptionSnapshot | null>((resolve) => {
-        resolveSubscription = resolve
-      })
-
-    const pushStore = createHilosPushSubscriptionStore({
-      isSupported: () => true,
-      permission: () => 'granted',
-      userAgent: () => 'Test browser',
-      requestPermission: async () => 'granted',
-      getSubscription: () => getSubscriptionPromise,
-      subscribe: async () => null as unknown as HilosPushSubscriptionSnapshot,
-      unsubscribe: async () => {},
-    })
-
-    const devices: readonly HilosProfileDevice[] = [
+  const mountReact: ProfileDeviceMountFn = async (overrides = {}) => {
+    const connection = overrides.connection ?? createStubConnection()
+    const devices = overrides.devices ?? [
       {
-        id: 10,
-        deviceName: 'Phone',
+        id: 1,
+        deviceName: 'Test Device',
         createdAt: 1767227400000,
         current: false,
         expired: false,
       },
     ]
+    const actions: HilosProfileDeviceActions = overrides.actions ?? {
+      removeDevice: vi.fn(() => ({
+        requestId: 'test-req',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply: null }),
+      })),
+    }
+    const pushChannel =
+      overrides.pushChannel !== undefined ? overrides.pushChannel : null
+    const pushStore: HilosPushSubscriptionStore = overrides.pushStore ?? {
+      supported: createSignal(true),
+      permission: createSignal<HilosPushPermission>('granted'),
+      subscribed: createSignal(false),
+      endpointHash: createSignal<string | null>(null),
+      refreshed: createSignal(true),
+      busy: createSignal(false),
+      refresh: async () => {},
+      enable: async () => true,
+      disable: async () => true,
+      clear: () => {},
+    }
 
-    let resolveAction!: () => void
-    const done = new Promise<{ reply: null }>((resolve) => {
-      resolveAction = () => resolve({ reply: null })
-    })
-    const removeDevice = vi.fn(() => ({
-      requestId: 'remove-device-10',
-      done,
-      loading: createSignal(false),
-    }))
+    let currentProps = {
+      devices,
+      actions,
+      connection,
+      pushChannel,
+      pushStore,
+    }
 
-    const { container } = render(
-      <HilosProfileDevices
-        devices={devices}
-        actions={{ removeDevice }}
-        connection={connection}
-        pushChannel={null}
-        pushStore={pushStore}
-      />,
-    )
-
-    const removeBtn = container.querySelector<HTMLButtonElement>(
-      '[data-id="profile-device-remove"]',
-    )!
-    // 1. Before refreshed: button is disabled
-    expect(removeBtn.disabled).toBe(true)
-
-    // Trigger refresh completion
+    let renderResult!: ReturnType<typeof render>
     await act(async () => {
-      resolveSubscription(null)
-      await getSubscriptionPromise
+      renderResult = render(
+        <HilosProfileDevices
+          devices={currentProps.devices}
+          actions={currentProps.actions}
+          connection={currentProps.connection}
+          pushChannel={currentProps.pushChannel}
+          pushStore={currentProps.pushStore}
+        />,
+      )
     })
 
-    // 2. After refreshed: button is enabled
-    expect(removeBtn.disabled).toBe(false)
+    return {
+      container: document.body,
+      update: async (next) => {
+        currentProps = {
+          devices:
+            next.devices !== undefined ? next.devices : currentProps.devices,
+          actions:
+            next.actions !== undefined ? next.actions : currentProps.actions,
+          connection:
+            next.connection !== undefined
+              ? next.connection
+              : currentProps.connection,
+          pushChannel:
+            next.pushChannel !== undefined
+              ? next.pushChannel
+              : currentProps.pushChannel,
+          pushStore:
+            next.pushStore !== undefined
+              ? next.pushStore
+              : currentProps.pushStore,
+        }
+        await act(async () => {
+          renderResult.rerender(
+            <HilosProfileDevices
+              devices={currentProps.devices}
+              actions={currentProps.actions}
+              connection={currentProps.connection}
+              pushChannel={currentProps.pushChannel}
+              pushStore={currentProps.pushStore}
+            />,
+          )
+        })
+      },
+      flush: async () => {
+        await act(async () => {})
+      },
+      unmount: async () => {
+        await act(async () => {
+          renderResult.unmount()
+        })
+      },
+    }
+  }
 
-    // 3. Click Remove: dispatches action with exact device id
-    await act(async () => {
-      fireEvent.click(removeBtn)
-    })
-    expect(removeDevice).toHaveBeenCalledTimes(1)
-    expect(removeDevice).toHaveBeenCalledWith(10)
-
-    // 4. While action handle is in flight: button is locked/busy and repeated clicks are blocked
-    expect(removeBtn.getAttribute('aria-busy')).toBe('true')
-    await act(async () => {
-      fireEvent.click(removeBtn)
-    })
-    expect(removeDevice).toHaveBeenCalledTimes(1)
-
-    // 5. Row is not removed locally before props update
-    expect(
-      container.querySelectorAll('[data-id="profile-device-row"]'),
-    ).toHaveLength(1)
-
-    // Action finishes
-    await act(async () => {
-      resolveAction()
-      await done
-    })
-    expect(removeBtn.getAttribute('aria-busy')).toBeNull()
-  })
+  registerProfileDeviceRemoveCases({ it, expect, vi }, mountReact)
 
   it('renders Remove button for current device when pushChannel is null', async () => {
     const connection = createStubConnection()

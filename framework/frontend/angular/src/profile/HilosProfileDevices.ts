@@ -22,6 +22,8 @@ import {
 } from '@hilos/core/base'
 
 import { hilosSignal } from '../hilosSignal.js'
+import { HilosFormError } from '../HilosFormError.js'
+import { HilosModal } from '../HilosModal.js'
 import { HilosPushDeviceToggle } from '../HilosPushDeviceToggle.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
@@ -37,7 +39,7 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
 @Component({
   selector: 'hilos-profile-devices',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosPushDeviceToggle, LoadingButton],
+  imports: [HilosPushDeviceToggle, LoadingButton, HilosFormError, HilosModal],
   template: `
     <section aria-label="Devices" data-id="profile-devices">
       <p>
@@ -93,10 +95,10 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
               <button
                 hilosLoadingButton
                 class="btn-outline-secondary btn-sm"
-                [loading]="removeAction.busy()"
                 [disabled]="!refreshed()"
+                [opensWindow]="true"
                 data-id="profile-device-remove"
-                (click)="removeDevice(device.id)"
+                (click)="openRemove(device)"
               >
                 Remove
               </button>
@@ -120,6 +122,44 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
           </div>
         </article>
       }
+
+      <hilos-modal
+        [open]="target() !== null"
+        (openChange)="$event ? null : target.set(null)"
+        [title]="removeTitle()"
+        initialFocus="dialog"
+        [busy]="removeAction.busy()"
+      >
+        <p>
+          This device will stop receiving notifications. To receive them again,
+          subscribe from that device.
+        </p>
+        <hilos-form-error
+          [message]="removeError()"
+          dataId="profile-device-remove-error"
+          [announce]="true"
+        />
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="removeAction.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-danger"
+            [loading]="removeAction.busy()"
+            [disabled]="!refreshed() || !targetInDevices()"
+            data-id="profile-device-remove-confirm"
+            (click)="confirmRemove()"
+          >
+            Remove
+          </button>
+        </ng-template>
+      </hilos-modal>
     </section>
   `,
 })
@@ -138,6 +178,22 @@ export class HilosProfileDevices implements OnInit {
   protected readonly permission = signal(this.boundStore.permission.get())
   protected readonly refreshed = signal(this.boundStore.refreshed.get())
   protected readonly removeAction = createHilosTrackedAction()
+  protected readonly target = signal<{
+    id: number
+    deviceName: string | null
+  } | null>(null)
+  protected readonly targetInDevices = computed(() => {
+    const t = this.target()
+    return t !== null && this.devices().some((device) => device.id === t.id)
+  })
+  protected readonly removeError = computed(() =>
+    this.targetInDevices()
+      ? this.removeAction.error()
+      : 'This device has already been removed.',
+  )
+  protected readonly removeTitle = computed(
+    () => `Remove ${this.target()?.deviceName ?? 'Unknown device'}?`,
+  )
   protected readonly showUnsubscribedCurrent = computed(
     () =>
       !this.devices().some((device) => device.current) &&
@@ -184,7 +240,26 @@ export class HilosProfileDevices implements OnInit {
     return formatProfileDateTime(value)
   }
 
-  protected async removeDevice(subscriptionId: number): Promise<void> {
-    await this.removeAction.run(this.actions().removeDevice(subscriptionId))
+  protected openRemove(device: HilosProfileDevice): void {
+    if (!this.refreshed() || this.removeAction.busy()) {
+      return
+    }
+    this.removeAction.clearError()
+    this.target.set({ id: device.id, deviceName: device.deviceName })
+  }
+
+  protected async confirmRemove(): Promise<void> {
+    const t = this.target()
+    if (
+      this.removeAction.busy() ||
+      !this.refreshed() ||
+      !this.targetInDevices() ||
+      t === null
+    ) {
+      return
+    }
+    if (await this.removeAction.run(this.actions().removeDevice(t.id))) {
+      this.target.set(null)
+    }
   }
 }

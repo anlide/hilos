@@ -11,8 +11,10 @@ import {
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
+import HilosFormError from '../HilosFormError.vue'
+import HilosModal from '../HilosModal.vue'
 import HilosPushDeviceToggle from '../HilosPushDeviceToggle.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
@@ -59,6 +61,27 @@ const showUnsubscribedCurrent = computed(
     permission.value !== 'denied',
 )
 
+interface RemoveTarget {
+  readonly id: number
+  readonly deviceName: string | null
+}
+
+const target = ref<RemoveTarget | null>(null)
+const targetInDevices = computed(
+  () =>
+    target.value !== null &&
+    props.devices.some((device) => device.id === target.value?.id),
+)
+const modalTitle = computed(
+  () => `Remove ${target.value?.deviceName ?? 'Unknown device'}?`,
+)
+const removeError = computed(() => {
+  if (target.value !== null && !targetInDevices.value) {
+    return 'This device has already been removed.'
+  }
+  return removeAction.error.value
+})
+
 onMounted(() => {
   void props.pushStore.refresh()
 })
@@ -69,8 +92,30 @@ function dateTime(moment: number): string {
   return formatProfileDateTime(moment)
 }
 
-async function removeDevice(subscriptionId: number): Promise<void> {
-  await removeAction.run(props.actions.removeDevice(subscriptionId))
+function openRemove(device: HilosProfileDevice): void {
+  if (!refreshed.value || removeBusy.value) {
+    return
+  }
+  removeAction.clearError()
+  target.value = {
+    id: device.id,
+    deviceName: device.deviceName,
+  }
+}
+
+async function confirmRemove(): Promise<void> {
+  const currentTarget = target.value
+  if (
+    currentTarget === null ||
+    removeBusy.value ||
+    !refreshed.value ||
+    !targetInDevices.value
+  ) {
+    return
+  }
+  if (await removeAction.run(props.actions.removeDevice(currentTarget.id))) {
+    target.value = null
+  }
 }
 </script>
 
@@ -126,10 +171,10 @@ async function removeDevice(subscriptionId: number): Promise<void> {
       <LoadingButton
         v-else
         class="btn-outline-secondary btn-sm"
-        :loading="removeBusy"
         :disabled="!refreshed"
+        :opens-window="true"
         data-id="profile-device-remove"
-        @click="removeDevice(device.id)"
+        @click="openRemove(device)"
       >
         Remove
       </LoadingButton>
@@ -152,5 +197,42 @@ async function removeDevice(subscriptionId: number): Promise<void> {
         />
       </div>
     </article>
+
+    <HilosModal
+      :model-value="target !== null"
+      :title="modalTitle"
+      :busy="removeBusy"
+      initial-focus="dialog"
+      @update:model-value="target = $event ? target : null"
+    >
+      <p>
+        This device will stop receiving notifications. To receive them again,
+        subscribe from that device.
+      </p>
+      <HilosFormError
+        :message="removeError"
+        data-id="profile-device-remove-error"
+        announce
+      />
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="removeBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-danger"
+          :loading="removeBusy"
+          :disabled="!refreshed || !targetInDevices"
+          data-id="profile-device-remove-confirm"
+          @click="confirmRemove"
+        >
+          Remove
+        </LoadingButton>
+      </template>
+    </HilosModal>
   </section>
 </template>

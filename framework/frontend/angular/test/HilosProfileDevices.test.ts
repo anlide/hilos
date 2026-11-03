@@ -3,7 +3,6 @@ import {
   createHilosPushSubscriptionStore,
   createSignal,
   formatProfileDateTime,
-  type ActionHandle,
   type HilosConnection,
   type HilosProfileDevice,
   type HilosProfileDeviceActions,
@@ -14,6 +13,10 @@ import {
 } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  registerProfileDeviceRemoveCases,
+  type ProfileDeviceMountFn,
+} from '../../test/profileDeviceRemoveCases.js'
 import { HilosProfileDevices } from '../src/profile/HilosProfileDevices.js'
 import {
   bindTestTimeZone,
@@ -30,12 +33,16 @@ afterEach(() => {
     timeZoneBinding = null
   }
   document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
   vi.restoreAllMocks()
 })
 
 async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
   await fixture.whenStable()
-  fixture.detectChanges()
+  if (!fixture.componentRef.hostView.destroyed) {
+    fixture.detectChanges()
+  }
 }
 
 function createStubConnection(): HilosConnection {
@@ -281,101 +288,85 @@ describe('HilosProfileDevices (Angular)', () => {
     )
   })
 
-  it('handles the Remove action lifecycle and disables button before refresh', async () => {
-    const connection = createStubConnection()
-    const supported = createSignal(true)
-    const permission = createSignal<HilosPushPermission>('granted')
-    const subscribed = createSignal(false)
-    const endpointHash = createSignal<string | null>(null)
-    const refreshed = createSignal(false)
-    const busy = createSignal(false)
-
-    let resolveRefresh!: () => void
-    const refreshPromise = new Promise<void>((resolve) => {
-      resolveRefresh = resolve
-    })
-
-    const pushStore: HilosPushSubscriptionStore = {
-      supported,
-      permission,
-      subscribed,
-      endpointHash,
-      refreshed,
-      busy,
-      refresh: vi.fn(() => refreshPromise),
-      enable: vi.fn(async () => true),
-      disable: vi.fn(async () => true),
-      clear: vi.fn(),
-    }
-
-    const devices: readonly HilosProfileDevice[] = [
+  const mountAngular: ProfileDeviceMountFn = async (overrides = {}) => {
+    const connection = overrides.connection ?? createStubConnection()
+    const devices = overrides.devices ?? [
       {
-        id: 10,
-        deviceName: 'Phone',
+        id: 1,
+        deviceName: 'Test Device',
         createdAt: 1767227400000,
         current: false,
         expired: false,
       },
     ]
-
-    let resolveAction!: () => void
-    const done = new Promise<{ reply: null }>((resolve) => {
-      resolveAction = () => resolve({ reply: null })
-    })
-    const removeActionHandle: ActionHandle = {
-      requestId: 'remove-device-10',
-      done,
-      loading: createSignal(false),
+    const actions: HilosProfileDeviceActions = overrides.actions ?? {
+      removeDevice: vi.fn(() => ({
+        requestId: 'test-req',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply: null }),
+      })),
     }
-    const removeDevice = vi.fn(() => removeActionHandle)
-    const actions: HilosProfileDeviceActions = { removeDevice }
+    const pushChannel =
+      overrides.pushChannel !== undefined ? overrides.pushChannel : null
+    const pushStore: HilosPushSubscriptionStore = overrides.pushStore ?? {
+      supported: createSignal(true),
+      permission: createSignal<HilosPushPermission>('granted'),
+      subscribed: createSignal(false),
+      endpointHash: createSignal<string | null>(null),
+      refreshed: createSignal(true),
+      busy: createSignal(false),
+      refresh: async () => {},
+      enable: async () => true,
+      disable: async () => true,
+      clear: () => {},
+    }
 
     const fixture = TestBed.createComponent(HilosProfileDevices)
+    if (!fixture.nativeElement.parentElement) {
+      document.body.appendChild(fixture.nativeElement)
+    }
     fixture.componentRef.setInput('devices', devices)
     fixture.componentRef.setInput('actions', actions)
     fixture.componentRef.setInput('connection', connection)
-    fixture.componentRef.setInput('pushChannel', null)
+    fixture.componentRef.setInput('pushChannel', pushChannel)
     fixture.componentRef.setInput('store', pushStore)
     fixture.detectChanges()
     await settle(fixture)
 
-    const root = fixture.nativeElement as HTMLElement
-    const removeBtn = root.querySelector<HTMLButtonElement>(
-      '[data-id="profile-device-remove"]',
-    )
-    expect(removeBtn).not.toBeNull()
+    return {
+      container: document.body,
+      update: async (next) => {
+        if (next.devices !== undefined) {
+          fixture.componentRef.setInput('devices', next.devices)
+        }
+        if (next.actions !== undefined) {
+          fixture.componentRef.setInput('actions', next.actions)
+        }
+        if (next.connection !== undefined) {
+          fixture.componentRef.setInput('connection', next.connection)
+        }
+        if (next.pushChannel !== undefined) {
+          fixture.componentRef.setInput('pushChannel', next.pushChannel)
+        }
+        if (next.pushStore !== undefined) {
+          fixture.componentRef.setInput('store', next.pushStore)
+        }
+        fixture.detectChanges()
+        await settle(fixture)
+      },
+      flush: async () => {
+        for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+        fixture.detectChanges()
+        await settle(fixture)
+      },
+      unmount: async () => {
+        fixture.destroy()
+        await settle(fixture)
+      },
+    }
+  }
 
-    // Before refreshed: button is disabled
-    expect(removeBtn!.hasAttribute('disabled')).toBe(true)
-
-    // Trigger refresh completion
-    refreshed.set(true)
-    resolveRefresh()
-    await settle(fixture)
-
-    // After refreshed: button is enabled
-    expect(removeBtn!.hasAttribute('disabled')).toBe(false)
-
-    // Click Remove: dispatches action with exact device id
-    removeBtn!.click()
-    expect(removeDevice).toHaveBeenCalledExactlyOnceWith(10)
-
-    // While action is in-flight: button is busy/loading and repeated click is blocked
-    await settle(fixture)
-    expect(removeBtn!.getAttribute('aria-busy')).toBe('true')
-    removeBtn!.click()
-    expect(removeDevice).toHaveBeenCalledTimes(1)
-
-    // Row is not removed locally before props update
-    expect(
-      root.querySelectorAll('[data-id="profile-device-row"]'),
-    ).toHaveLength(1)
-
-    // Action finishes
-    resolveAction()
-    await settle(fixture)
-    expect(removeBtn!.getAttribute('aria-busy')).toBeNull()
-  })
+  registerProfileDeviceRemoveCases({ it, expect, vi }, mountAngular)
 
   it('renders Remove button for current device when pushChannel is null', async () => {
     const connection = createStubConnection()

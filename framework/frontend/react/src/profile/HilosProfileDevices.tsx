@@ -9,8 +9,10 @@ import {
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
+import { HilosFormError } from '../HilosFormError.js'
+import { HilosModal } from '../HilosModal.js'
 import { HilosPushDeviceToggle } from '../HilosPushDeviceToggle.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
@@ -21,6 +23,11 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
   tablet: 'bi bi-tablet',
   laptop: 'bi bi-laptop',
   display: 'bi bi-display',
+}
+
+interface RemoveTarget {
+  readonly id: number
+  readonly deviceName: string | null
 }
 
 /** Props for {@link HilosProfileDevices}. */
@@ -40,10 +47,16 @@ export function HilosProfileDevices({
   pushChannel,
   pushStore = hilosPushSubscription,
 }: HilosProfileDevicesProps) {
+  const [target, setTarget] = useState<RemoveTarget | null>(null)
   const supported = useSignal(pushStore.supported)
   const permission = useSignal(pushStore.permission)
   const refreshed = useSignal(pushStore.refreshed)
   const removeAction = useTrackedAction()
+  const targetInDevices =
+    target !== null && devices.some((device) => device.id === target.id)
+  const removeError = targetInDevices
+    ? removeAction.error
+    : 'This device has already been removed.'
   const hasCurrent = devices.some((device) => device.current)
   const showUnsubscribedCurrent =
     !hasCurrent &&
@@ -56,8 +69,26 @@ export function HilosProfileDevices({
     void pushStore.refresh()
   }, [pushStore])
 
-  async function removeDevice(subscriptionId: number): Promise<void> {
-    await removeAction.run(actions.removeDevice(subscriptionId))
+  function openRemove(device: HilosProfileDevice): void {
+    if (!refreshed || removeAction.busy) {
+      return
+    }
+    removeAction.clearError()
+    setTarget({ id: device.id, deviceName: device.deviceName })
+  }
+
+  async function confirmRemove(): Promise<void> {
+    if (
+      target === null ||
+      removeAction.busy ||
+      !refreshed ||
+      !targetInDevices
+    ) {
+      return
+    }
+    if (await removeAction.run(actions.removeDevice(target.id))) {
+      setTarget(null)
+    }
   }
 
   return (
@@ -113,10 +144,10 @@ export function HilosProfileDevices({
             ) : (
               <LoadingButton
                 className="btn-outline-secondary btn-sm"
-                loading={removeAction.busy}
                 disabled={!refreshed}
+                opensWindow={true}
                 data-id="profile-device-remove"
-                onClick={() => void removeDevice(device.id)}
+                onClick={() => openRemove(device)}
               >
                 Remove
               </LoadingButton>
@@ -138,6 +169,45 @@ export function HilosProfileDevices({
           </div>
         </article>
       ) : null}
+
+      <HilosModal
+        open={target !== null}
+        title={`Remove ${target?.deviceName ?? 'Unknown device'}?`}
+        initialFocus="dialog"
+        onClose={() => setTarget(null)}
+        busy={removeAction.busy}
+        actions={(args) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={removeAction.busy}
+              onClick={args.requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-danger"
+              loading={removeAction.busy}
+              disabled={!refreshed || !targetInDevices}
+              data-id="profile-device-remove-confirm"
+              onClick={() => void confirmRemove()}
+            >
+              Remove
+            </LoadingButton>
+          </>
+        )}
+      >
+        <p>
+          This device will stop receiving notifications. To receive them again,
+          subscribe from that device.
+        </p>
+        <HilosFormError
+          message={removeError}
+          dataId="profile-device-remove-error"
+          announce
+        />
+      </HilosModal>
     </section>
   )
 }
