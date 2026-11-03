@@ -45,7 +45,7 @@ import {
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import { formatMoment, HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import type {
   HilosLogNodeRow,
   HilosLogNodesContext,
@@ -433,11 +433,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
               ),
               [NODE_LAST_ROTATION_AT_FIELD]: (row: HilosLogNodeRow) => (
                 <span data-id={`hilos-logs-node-rotation-${row.nodeId}`}>
-                  {row.lastRotationAt === null
-                    ? '—'
-                    : (formatMoment(row.lastRotationAt, {
-                        kind: 'dateTime',
-                      }) ?? '—')}
+                  {formatLogsOverviewRotationAt(row.lastRotationAt)}
                 </span>
               ),
               [NODE_LIVE_BYTES_FIELD]: (row: HilosLogNodeRow) => (

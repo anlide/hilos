@@ -376,6 +376,14 @@ describe('formatLogsOverviewRotationAt', () => {
       '—',
     )
   })
+
+  it('prints an epoch moment of a table row exactly as the tile prints it', () => {
+    const at = '2026-09-02T03:00:00.000Z'
+
+    expect(formatLogsOverviewRotationAt(Date.parse(at))).toBe(
+      formatLogsOverviewRotationAt(at),
+    )
+  })
 })
 
 describe('formatLogsOverviewGrowth', () => {

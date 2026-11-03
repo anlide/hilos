@@ -19,11 +19,7 @@ import {
   ScopeManager,
   createSignal,
 } from '@hilos/core'
-import {
-  formatMoment,
-  hilosBrowserTimeZone,
-  hilosTimeZone,
-} from '@hilos/core/base'
+import { hilosBrowserTimeZone, hilosTimeZone } from '@hilos/core/base'
 import type { HilosLogNodeRow } from '@hilos/core/admin/logs'
 import type {
   HilosConnection,
@@ -380,8 +376,9 @@ describe('HilosLogsPage', () => {
       const warningTab = byId(container, 'hilos-logs-recent-tab-warnings')
       const daemonTile = textOf(container, 'hilos-logs-tile-daemon')
       const rotationBefore = formatLogsOverviewRotationAt(moment)
-      const nodeRotationBefore =
-        formatMoment(Date.parse(moment), { kind: 'dateTime' }) ?? '—'
+      const nodeRotationBefore = formatLogsOverviewRotationAt(
+        Date.parse(moment),
+      )
       const recentBefore = formatLogsOverviewRecentAt(moment)
       const registrationsBeforeZoneChange = listenerRegistrations()
       const framesBeforeZoneChange = pushedFrames()
@@ -414,8 +411,7 @@ describe('HilosLogsPage', () => {
       expect(textOf(container, 'hilos-logs-tile-rotation')).not.toBe(
         rotationBefore,
       )
-      const nodeRotationAfter =
-        formatMoment(Date.parse(moment), { kind: 'dateTime' }) ?? '—'
+      const nodeRotationAfter = formatLogsOverviewRotationAt(Date.parse(moment))
       expect(nodeRotation?.textContent).toBe(nodeRotationAfter)
       expect(nodeRotation?.textContent).not.toBe(nodeRotationBefore)
       expect(recentRow.children[1]?.textContent).toBe(

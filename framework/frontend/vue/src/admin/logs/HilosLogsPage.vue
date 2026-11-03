@@ -50,7 +50,7 @@ import {
   type HilosLogNodesContext,
   type HilosLogsRecentTab,
 } from '@hilos/core/admin/logs'
-import { formatMoment, HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -81,9 +81,7 @@ function recentAt(moment: string): string {
 }
 function nodeRotationAt(moment: number | null): string {
   void timeZone.value
-  return moment === null
-    ? '—'
-    : (formatMoment(moment, { kind: 'dateTime' }) ?? '—')
+  return formatLogsOverviewRotationAt(moment)
 }
 
 // The subscription supplies the first overview and table window. Bind both push

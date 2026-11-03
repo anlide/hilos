@@ -591,13 +591,8 @@ describe('HilosLogsPage', () => {
         'table [data-id="hilos-logs-node-rotation-node-1"]',
       )
       const element = cell.element
-      const label = (timeZone: string) =>
-        new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'medium',
-          timeZone,
-        }).format(new Date(DST_MOMENT))
-      expect(cell.text()).toBe(label('UTC'))
+      // The table prints the instant in the overview tile's own format.
+      expect(cell.text()).toBe(rotationLabel('UTC'))
 
       zone.setZone('America/Los_Angeles')
       await nextTick()
@@ -605,7 +600,7 @@ describe('HilosLogsPage', () => {
         wrapper.get('table [data-id="hilos-logs-node-rotation-node-1"]')
           .element,
       ).toBe(element)
-      expect(cell.text()).toBe(label('America/Los_Angeles'))
+      expect(cell.text()).toBe(rotationLabel('America/Los_Angeles'))
     } finally {
       wrapper.unmount()
       zone.restore()

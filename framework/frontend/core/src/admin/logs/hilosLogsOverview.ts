@@ -230,12 +230,17 @@ export function formatLogsOverviewCount(count: number | null): string {
 /**
  * A rotation instant in the reader's own locale, or a dash when there was none.
  *
- * An instant that cannot be read is a dash as well rather than the words `Invalid
- * Date`: we do not know when it was, which is exactly what the dash says.
+ * One format for the overview tile and the By node table, so the same instant
+ * never reads two ways on one screen. An instant that cannot be read is a dash as
+ * well rather than the words `Invalid Date`: we do not know when it was, which is
+ * exactly what the dash says.
  *
- * @param at The instant as ISO 8601, or null when nothing has rotated.
+ * @param at The instant as ISO 8601 or epoch milliseconds, or null when nothing
+ *   has rotated.
  */
-export function formatLogsOverviewRotationAt(at: string | null): string {
+export function formatLogsOverviewRotationAt(
+  at: string | number | null,
+): string {
   if (at === null) {
     return NOTHING_KNOWN
   }
