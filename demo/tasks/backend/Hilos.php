@@ -13,6 +13,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentSetPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
@@ -390,6 +391,7 @@ final class Hilos extends HilosFacade
         LegalDocumentDeviationsPage::PAGE => LegalDocumentDeviationsPage::class,
         LegalDocumentRevisionsPage::PAGE => LegalDocumentRevisionsPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
+        LegalRevisionTextPage::PAGE => LegalRevisionTextPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
@@ -841,6 +843,7 @@ final class Hilos extends HilosFacade
         LegalRevisionPage::PAGE => [
             TasksTableContext::hilosLegalRevisions => [],
         ],
+        LegalRevisionTextPage::PAGE => [],
         LegalAcceptancesPage::PAGE => [
             TasksTableContext::hilosLegalAcceptances => [],
         ],

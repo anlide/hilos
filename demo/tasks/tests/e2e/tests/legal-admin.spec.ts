@@ -11,24 +11,58 @@ import {
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — Tasks' historical Privacy precedes its analytics exception.
+
 /*
  * Legal Documents on Tasks: the React tab mounted by this demo reaches the
  * server's real window — through the Overview tab, its search and sort, the
  * Open link and back, and on a cold entry and a reload of its own address.
  * Document tabs keep their scope through revision Open/Back and cold entry.
+ * Historical Privacy Text keeps its clauses through keyboard navigation,
+ * Back/Forward, direct entry and F5, without the current analytics exception.
  * Frames and live updates are proven by the Chat scenario on the same server
- * path; revision dates are Tasks' own and not asserted here.
+ * path.
  */
 
 test.use({ colorScheme: 'light', timezoneId: 'Atlantic/Canary' })
 
 const DOCUMENTS_PATH = '/hilos/legal/documents'
 const DOCUMENT_PATH = '/hilos/legal/document/privacy'
+const HISTORICAL_REVISION_PATH = `${DOCUMENT_PATH}/revision/2026-09-17`
 const OPENING_ROWS = ['privacy', 'terms']
 
 /** The Documents rows the server window put into the DOM. */
 async function expectDocumentRows(page: Page, keys: string[]) {
   await expect.poll(() => tableRowKeys(page)).toEqual(keys)
+}
+
+/** Tasks' first Privacy revision keeps the deletion promise it declared. */
+async function expectHistoricalPrivacyText(page: Page) {
+  await expect(page).toHaveURL(`${HISTORICAL_REVISION_PATH}/text`)
+  await expectPageReady(expect, page)
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveCount(1)
+  await expect(heading).toHaveText('Revision of 2026-09-17')
+  await expect(page.getByTestId('legal-revision-metadata')).toContainText(
+    'Privacy policy · Published 2026-09-17 · Effective 2026-09-17 · Set 1',
+  )
+  await expect(
+    page.getByTestId('hilos-page-tab-hilos_legal_revision_text'),
+  ).toHaveAttribute('aria-current', 'page')
+  const text = page.getByTestId('legal-revision-text')
+  await expect(text).toContainText('Your account is deleted on request.')
+  await expect(text).toContainText(
+    'You can ask for your account to be deleted, and it will be.',
+  )
+  await expect(text).toContainText(
+    'Deleting an account removes your profile and the personal data attached to it.',
+  )
+  await expect(text).not.toContainText(
+    'Account deletion leaves numbered analytics events and network addresses',
+  )
+  await expect(text).not.toContainText(
+    'Analytics is an exception to full erasure',
+  )
 }
 
 test('Legal Documents serve real rows through tabs, search, sort, open, back and reload', async ({
@@ -127,19 +161,48 @@ test('Legal Documents serve real rows through tabs, search, sort, open, back and
     }
   })
 
-  await test.step('Open follows the selected revision and Back restores Revisions rows', async () => {
-    const open = shownByTestId(page, 'legal-revision-open').first()
-    await expect(open).toHaveAttribute('data-revision', /.+/)
-    const revisionId = await open.getAttribute('data-revision')
-    const path = `${DOCUMENT_PATH}/revision/${revisionId}`
-    await expect(open).toHaveAttribute('href', path)
+  await test.step('Historical Privacy Text survives keyboard navigation and Back/Forward', async () => {
+    const open = shownByTestId(page, 'legal-revision-open').and(
+      page.locator('[data-revision="2026-09-17"]'),
+    )
+    await expect(open).toHaveAttribute('href', HISTORICAL_REVISION_PATH)
     await open.click()
-    await expect(page).toHaveURL(path)
+    await expect(page).toHaveURL(HISTORICAL_REVISION_PATH)
+    await expectPageReady(expect, page)
+    const overview = page.getByTestId('hilos-page-tab-hilos_legal_revision')
+    const text = page.getByTestId('hilos-page-tab-hilos_legal_revision_text')
+    await expect(overview).toHaveAttribute('aria-current', 'page')
+    await expect(text).toHaveRole('link')
+    await expect(text).toHaveAccessibleName('Text')
+    await expect(text).toHaveAttribute(
+      'href',
+      `${HISTORICAL_REVISION_PATH}/text`,
+    )
+    await overview.focus()
+    await page.keyboard.press('Tab')
+    await expect(text).toBeFocused()
+    await text.press('Enter')
+    await expectHistoricalPrivacyText(page)
+    await page.goBack()
+    await expect(page).toHaveURL(HISTORICAL_REVISION_PATH)
+    await expectPageReady(expect, page)
+    await expect(overview).toHaveAttribute('aria-current', 'page')
+    await page.goForward()
+    await expectHistoricalPrivacyText(page)
+    await page.goBack()
+    await expect(page).toHaveURL(HISTORICAL_REVISION_PATH)
     await expectPageReady(expect, page)
     await page.goBack()
     await expect(page).toHaveURL(`${DOCUMENT_PATH}/revisions`)
     await expectPageReady(expect, page)
     await expect.poll(() => tableRowKeys(page)).not.toHaveLength(0)
+  })
+
+  await test.step('Direct entry and F5 keep the historical Privacy text', async () => {
+    await gotoPage(expect, page, `${HISTORICAL_REVISION_PATH}/text`, PAGE_READY)
+    await expectHistoricalPrivacyText(page)
+    await page.reload()
+    await expectHistoricalPrivacyText(page)
   })
 
   await test.step('A cold entry and F5 keep the privacy deviation scoped', async () => {

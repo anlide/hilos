@@ -83,11 +83,10 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
-    /** Tasks and Polls retain the legacy Revision head until their view adoption. */
-    public function testTasksAndPollsKeepTheLegacyRevisionHead(): void
+    /** Polls retains the legacy Revision head until its view adoption. */
+    public function testPollsKeepsTheLegacyRevisionHead(): void
     {
         foreach ([
-            TasksLegalPageHeadTestHilos::class => TasksPageCatalog::class,
             PollsLegalPageHeadTestHilos::class => PollsPageCatalog::class,
         ] as $facade => $catalog) {
             self::assertSame(
@@ -167,7 +166,7 @@ final class PageCatalogResolverTest extends TestCase
                 HilosPageConstants::HILOS_LEGAL_REVISION,
                 new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'declared']),
             );
-            if ($facade === ChatLegalPageHeadTestHilos::class) {
+            if ($facade === ChatLegalPageHeadTestHilos::class || $facade === TasksLegalPageHeadTestHilos::class) {
                 self::assertNotNull($revisionHead);
             } else {
                 self::assertNull($revisionHead, $facade);
@@ -182,42 +181,47 @@ final class PageCatalogResolverTest extends TestCase
             PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_DOCUMENT, new PageRouteParams([]))->pageTabs);
     }
 
-    /** The production Chat provider adopts both pages and filters Text by the exact declaration. */
-    public function testChatRevisionHeadSharesItsTrailAndFiltersTextByTheExactDeclaration(): void
+    /** Production Chat and Tasks providers adopt both pages and filter Text by the exact declaration. */
+    public function testRevisionHeadsShareTheirTrailAndFilterTextByTheExactDeclaration(): void
     {
-        self::assertSame(array_replace(
-            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_REVISION],
-            [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
-        ), ChatPageCatalog::pages()[HilosPageConstants::HILOS_LEGAL_REVISION]);
-        ChatLegalPageHeadTestHilos::initBrowser();
-        $params = new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'declared']);
-        foreach ([HilosPageConstants::HILOS_LEGAL_REVISION, HilosPageConstants::HILOS_LEGAL_REVISION_TEXT] as $page) {
-            self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalogResolver::rowOwner($page));
-            $head = PageCatalogResolver::head($page, $params);
-            self::assertSame([
-                'page' => HilosPageConstants::HILOS_LEGAL_REVISION,
-                'label' => 'Revision',
-                'lead' => 'The exact text, its changes, and its acceptances.',
-                'icon' => 'bi-file-earmark-text',
-            ], $head->pageHeadOwner);
-            self::assertSame([
-                ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
-                ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Legal'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENTS, 'label' => 'Documents'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT, 'label' => 'Document'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS, 'label' => 'Revisions'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_REVISION, 'label' => 'Revision'],
-            ], $head->pageBreadcrumb);
+        foreach ([
+            ChatLegalPageHeadTestHilos::class => ChatPageCatalog::class,
+            TasksLegalPageHeadTestHilos::class => TasksPageCatalog::class,
+        ] as $facade => $catalog) {
+            self::assertSame(array_replace(
+                HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_REVISION],
+                [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
+            ), $catalog::pages()[HilosPageConstants::HILOS_LEGAL_REVISION]);
+            $facade::initBrowser();
+            $params = new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'declared']);
+            foreach ([HilosPageConstants::HILOS_LEGAL_REVISION, HilosPageConstants::HILOS_LEGAL_REVISION_TEXT] as $page) {
+                self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, PageCatalogResolver::rowOwner($page));
+                $head = PageCatalogResolver::head($page, $params);
+                self::assertSame([
+                    'page' => HilosPageConstants::HILOS_LEGAL_REVISION,
+                    'label' => 'Revision',
+                    'lead' => 'The exact text, its changes, and its acceptances.',
+                    'icon' => 'bi-file-earmark-text',
+                ], $head->pageHeadOwner);
+                self::assertSame([
+                    ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
+                    ['page' => HilosPageConstants::HILOS_LEGAL, 'label' => 'Legal'],
+                    ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENTS, 'label' => 'Documents'],
+                    ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT, 'label' => 'Document'],
+                    ['page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS, 'label' => 'Revisions'],
+                    ['page' => HilosPageConstants::HILOS_LEGAL_REVISION, 'label' => 'Revision'],
+                ], $head->pageBreadcrumb);
+                self::assertSame([
+                    ['page' => HilosPageConstants::HILOS_LEGAL_REVISION, 'label' => 'Overview'],
+                    ['page' => HilosPageConstants::HILOS_LEGAL_REVISION_TEXT, 'label' => 'Text'],
+                ], $head->pageTabs);
+            }
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_LEGAL_REVISION, 'label' => 'Overview'],
-                ['page' => HilosPageConstants::HILOS_LEGAL_REVISION_TEXT, 'label' => 'Text'],
-            ], $head->pageTabs);
+            ], PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION,
+                new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'recorded-only']))->pageTabs);
+            self::assertSame(2, count(PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION, $params)->pageTabs));
         }
-        self::assertSame([
-            ['page' => HilosPageConstants::HILOS_LEGAL_REVISION, 'label' => 'Overview'],
-        ], PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION,
-            new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'recorded-only']))->pageTabs);
-        self::assertSame(2, count(PageCatalogResolver::head(HilosPageConstants::HILOS_LEGAL_REVISION, $params)->pageTabs));
     }
 
     /** The framework default keeps the legacy composition: no Legal page carries a head. */
@@ -2436,7 +2440,7 @@ final class PageCatalogResolverTest extends TestCase
             HilosPageConstants::HILOS_LEGAL_REVISION,
             new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'declared']),
         );
-        if ($facade === ChatLegalPageHeadTestHilos::class) {
+        if ($facade === ChatLegalPageHeadTestHilos::class || $facade === TasksLegalPageHeadTestHilos::class) {
             self::assertSame(HilosPageConstants::HILOS_LEGAL_REVISION, $revisionHead->pageHeadOwner['page']);
         } else {
             self::assertNull($revisionHead, $facade);
@@ -3409,10 +3413,11 @@ abstract class LegacyLegalPageHeadTestHilos extends Hilos
     ];
 }
 
-/** Tasks adopts Legal and Document while Revision keeps its legacy head. */
+/** Tasks adopts Legal, Document and Revision through its production provider. */
 abstract class TasksLegalPageHeadTestHilos extends LegacyLegalPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = TasksPageCatalog::class;
+    protected const ?string LEGAL_CATALOG = RevisionPageHeadLegalCatalog::class;
 }
 
 /** Polls adopts Legal and Document while Revision keeps its legacy head. */

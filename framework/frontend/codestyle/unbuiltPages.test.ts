@@ -532,55 +532,56 @@ it('recognizes only explicit React Node Shell page bindings', () => {
   })
 })
 
-it.each(['HilosLegalDocumentPageShell', 'HilosChangeLogTableShell'])(
-  'recognizes only explicit React %s page bindings',
-  (shell) => {
-    withHonestCopy((root) => {
-      const path = 'framework/frontend/react/src/admin/Built.tsx'
+it.each([
+  'HilosLegalDocumentPageShell',
+  'HilosLegalRevisionPageShell',
+  'HilosChangeLogTableShell',
+])('recognizes only explicit React %s page bindings', (shell) => {
+  withHonestCopy((root) => {
+    const path = 'framework/frontend/react/src/admin/Built.tsx'
+    writeFileSync(
+      join(root, path),
+      `export function Built() {
+      // <${shell} page={HilosPages.STUB} />
+      const example = '<${shell} page={HilosPages.STUB} />'
+      return <${shell} page={HilosPages.BUILT}><p>Legal overview</p></${shell}>
+    }`,
+    )
+    const views = readViews(root, 'react', readPages(source(root, KEYS_PATH)))
+    expect(views.get('hilos_built')).toEqual({ path, line: 4, bare: false })
+    expect(views.get('hilos_stub')?.bare).toBe(true)
+    expect(checkTree(root)).toEqual([])
+    // Remove the lazy map to judge these negative examples only by their JSX.
+    writeFileSync(
+      join(root, 'framework/frontend/react/src/admin/hilosAdminViews.ts'),
+      'export function hilosAdminViews() { return {} }',
+    )
+    for (const opening of [
+      '<OtherShell page={HilosPages.BUILT}>',
+      `<${shell}Like page={HilosPages.BUILT}>`,
+      `<${shell} page="HilosPages.BUILT">`,
+      `<${shell} page={'HilosPages.BUILT'}>`,
+      `<${shell} page={page}>`,
+      `<${shell} page={HilosPages[key]}>`,
+    ]) {
+      const tag = opening.match(/^<([A-Za-z]+)/)![1]
       writeFileSync(
         join(root, path),
         `export function Built() {
-      // <${shell} page={HilosPages.STUB} />
-      const example = '<${shell} page={HilosPages.STUB} />'
-      return <${shell} page={HilosPages.BUILT}><p>Document overview</p></${shell}>
-    }`,
-      )
-      const views = readViews(root, 'react', readPages(source(root, KEYS_PATH)))
-      expect(views.get('hilos_built')).toEqual({ path, line: 4, bare: false })
-      expect(views.get('hilos_stub')?.bare).toBe(true)
-      expect(checkTree(root)).toEqual([])
-      // Remove the lazy map to judge these negative examples only by their JSX.
-      writeFileSync(
-        join(root, 'framework/frontend/react/src/admin/hilosAdminViews.ts'),
-        'export function hilosAdminViews() { return {} }',
-      )
-      for (const opening of [
-        '<OtherShell page={HilosPages.BUILT}>',
-        `<${shell}Like page={HilosPages.BUILT}>`,
-        `<${shell} page="HilosPages.BUILT">`,
-        `<${shell} page={'HilosPages.BUILT'}>`,
-        `<${shell} page={page}>`,
-        `<${shell} page={HilosPages[key]}>`,
-      ]) {
-        const tag = opening.match(/^<([A-Za-z]+)/)![1]
-        writeFileSync(
-          join(root, path),
-          `export function Built() {
         // <${shell} page={HilosPages.BUILT} />
         const example = '<${shell} page={HilosPages.BUILT} />'
-        return ${opening}<p>Document overview</p></${tag}>
+        return ${opening}<p>Legal overview</p></${tag}>
       }`,
-        )
-        const invalid = readViews(
-          root,
-          'react',
-          readPages(source(root, KEYS_PATH)),
-        )
-        expect(invalid.has('hilos_built')).toBe(false)
-      }
-    })
-  },
-)
+      )
+      const invalid = readViews(
+        root,
+        'react',
+        readPages(source(root, KEYS_PATH)),
+      )
+      expect(invalid.has('hilos_built')).toBe(false)
+    }
+  })
+})
 
 it.each(LAYERS)(
   'accepts a %s eager named import through a public section entrypoint',

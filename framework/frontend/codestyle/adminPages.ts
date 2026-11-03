@@ -305,6 +305,7 @@ function reactBindings(file: ts.SourceFile, scope: ts.Node = file): Binding[] {
         'HilosDaemonNodeShell',
         'HilosChangeLogTableShell',
         'HilosLegalDocumentPageShell',
+        'HilosLegalRevisionPageShell',
       ].includes(node.tagName.getText(file))
     ) {
       const attribute = node.attributes.properties.find(

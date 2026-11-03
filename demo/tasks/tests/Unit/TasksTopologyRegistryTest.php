@@ -75,6 +75,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentSetPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentDeviationsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentRevisionsPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
@@ -800,7 +801,7 @@ final class TasksTopologyRegistryTest extends TestCase
         foreach ([
             LegalPage::class, LegalDocumentsPage::class, LegalDocumentPage::class,
             LegalDocumentSetPage::class, LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class,
-            LegalRevisionPage::class,
+            LegalRevisionPage::class, LegalRevisionTextPage::class,
             LegalAcceptancesPage::class, LegalSettingsPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
@@ -815,6 +816,7 @@ final class TasksTopologyRegistryTest extends TestCase
             LegalDocumentSetPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_SET,
             LegalDocumentDeviationsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_DEVIATIONS,
             LegalDocumentRevisionsPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT_REVISIONS,
+            LegalRevisionTextPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION_TEXT,
         ] as $page => $signal) {
             $this->assertSame($signal, $page::BROWSER[BrowserConfigKey::SIGNAL]);
             $this->assertSame([], $page::ACTIONS);
@@ -844,6 +846,7 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame([TasksTableContext::hilosLegalRevisions => []],
             Hilos::PAGE_TABLES[LegalDocumentRevisionsPage::PAGE]);
         $this->assertSame([TasksTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
+        $this->assertSame([], Hilos::PAGE_TABLES[LegalRevisionTextPage::PAGE]);
         $this->assertSame([TasksTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
         $this->assertSame([TasksTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
         $catalog = TasksSettingsCatalog::getCatalog();
@@ -1803,6 +1806,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 LegalDocumentDeviationsPage::PAGE,
                 LegalDocumentRevisionsPage::PAGE,
                 LegalRevisionPage::PAGE,
+                LegalRevisionTextPage::PAGE,
                 LegalAcceptancesPage::PAGE,
                 LegalSettingsPage::PAGE,
                 UsersPage::PAGE,

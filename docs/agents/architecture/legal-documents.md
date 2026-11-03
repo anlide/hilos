@@ -444,16 +444,17 @@ Revision Overview reuses the last table with both document and revision filters
 and alone draws the accepted-count summary. Revision Text has an empty
 `PAGE_TABLES` binding.
 
-Tasks (React) connects nine backend Legal pages: the root Overview, Documents,
-Document Overview, Standard set, Deviations, Revisions, exact Revision,
-Acceptances and Settings. Its root binds Checks and Settings; Documents binds
-the Documents and Settings tables. Document Overview binds only
+Tasks (React) connects ten backend Legal pages: the root Overview, Documents,
+Document Overview, Standard set, Deviations, Revisions, Revision Overview,
+Revision Text, Acceptances and Settings. Its root binds Checks and Settings;
+Documents binds the Documents and Settings tables. Document Overview binds only
 `hilosLegalSettings`. On Documents and Document Overview, Settings is a hidden
 carrier for the refusal-policy label of lapsed counts; no settings table is
 drawn. Standard set binds `hilosLegalDocumentSet`, Deviations binds
 `hilosLegalDocumentDeviations`, and Revisions binds `hilosLegalRevisions`. The
-exact Revision page reuses the last table with both document and revision
-filters; Acceptances and Settings bind their own tables.
+Revision Overview page reuses the last table with both document and revision
+filters; Revision Text has an empty `PAGE_TABLES` binding. Acceptances and
+Settings bind their own tables.
 
 Polls (Angular) connects nine backend Legal pages: the root Overview, Documents,
 Document Overview, Standard set, Deviations, Revisions, exact Revision,
@@ -468,9 +469,9 @@ document and revision filters; Acceptances and Settings bind their own tables.
 The React and Angular roots are the Overview: the declared-document
 summary and the four checks without a document window, while the document
 coverage table lives on its own Documents page.
-Chat/Vue connects Revision Text. The React and Angular SDK views still mark
-that page unbuilt; Tasks/React and Polls/Angular keep their legacy Revision
-heads while HIL-1874 and HIL-1875 carry those ports.
+Chat/Vue and Tasks/React connect Revision Text and opt Revision into the shared
+entity head. The Angular SDK view still marks Text unbuilt; Polls/Angular keeps
+its legacy Revision head until HIL-1875.
 
 Each of the four Document pages receives the common `legalDocument` projection,
 page identity and its bound windows in the first ordinary `page_response`.
@@ -490,17 +491,18 @@ refusal is carried in `legalCatalogRefusal`. Revision Overview also receives
 its first exact `hilosLegalRevisions` window in that response; Text has no
 table. The owner is Revision, with the Dashboard →
 Legal → Documents → Document → Document
-Revisions → Revision chain and the Overview / Text row. Chat/Vue's shared
-Revision page shell binds the Document name through `hilosLegalDocumentLabel`
-and the Revision name as `Revision of <publishedOn>` or, for a recorded-only
-revision, `Revision <revisionId>`. Those bindings are active only for the
-current answered page with valid data and no catalog refusal; the head, final
-breadcrumb and browser title use the same Revision name, while the Document
-breadcrumb uses the shared Document name. The shell releases both bindings on
-departure or when the data is absent or malformed. No extra action fetches the
-name, catalog or revision text. Both pages keep the existing full
-`legalRevision` payload, including `clauses`, while only Text renders the
-assembled text.
+Revisions → Revision chain and the Overview / Text row. Chat/Vue and Tasks/React
+use shared `HilosLegalRevisionPageShell` components, with `bindPageInstanceName`
+in Vue and `usePageInstanceName()` in React. They bind the Document name through
+`hilosLegalDocumentLabel` and the Revision name as `Revision of <publishedOn>`
+or, for a recorded-only revision, `Revision <revisionId>`. Those bindings are
+active only for the current answered page with valid data and no catalog
+refusal; the head, final breadcrumb and browser title use the same Revision
+name, while the Document breadcrumb uses the shared Document name. The shells
+release both bindings on departure or when the data is absent or malformed. No
+extra action fetches the name, catalog or revision text. Both pages keep the
+existing full `legalRevision` payload, including `clauses`, while only Text
+renders the assembled text.
 
 Document Overview shows `covered`, `window` and `lapsed`, the `newerSet` warning,
 and read-only registration-consent and re-consent previews. Its source labels
