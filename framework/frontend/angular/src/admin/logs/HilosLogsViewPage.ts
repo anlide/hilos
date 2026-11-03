@@ -34,6 +34,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   HILOS_LOG_LEVEL_OPTIONS,
   LOG_SOURCE_LIVE,
@@ -125,7 +126,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
                     [value]="entry.nodeId"
                     [selected]="entry.nodeId === selection().nodeId"
                   >
-                    {{ entry.nodeId }}
+                    {{ formatNodeLabel(entry.nodeId, entry.nodeName) }}
                   </option>
                 }
               </select>
@@ -549,6 +550,7 @@ export class HilosLogsViewPage {
   readonly context = input.required<HilosLogViewerContext>()
 
   protected readonly page = HilosPages.LOGS_VIEW
+  protected readonly formatNodeLabel = formatHilosNodeLabel
   protected readonly live = LOG_SOURCE_LIVE
   protected readonly levelOptions = HILOS_LOG_LEVEL_OPTIONS
   protected readonly noticeIcons = NOTICE_ICONS

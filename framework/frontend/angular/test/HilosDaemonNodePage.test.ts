@@ -16,6 +16,28 @@ const text = (name: string) =>
   el(name)!.textContent?.replace(/\s+/g, ' ').trim()
 
 describe('HilosDaemonNodePage', () => {
+  it('shows the current heading name separately from the technical node id', () => {
+    const h = nodeHarness()
+    const tile = (label: string) =>
+      [...h.root.querySelectorAll('dl')].find(
+        (item) => item.querySelector('dt')?.textContent?.trim() === label,
+      )!
+    h.act(() => h.answer(nodeOverview(), nodeHeading({ name: 'Узел <main>' })))
+    expect(tile('Node name').querySelector('dd')?.textContent?.trim()).toBe(
+      'Узел <main>',
+    )
+    expect(tile('Node name').textContent).toContain('CLUSTER_NODE_NAME')
+    expect(tile('Node name').querySelector('main')).toBeNull()
+    expect(tile('Node ID').querySelector('dd')?.textContent?.trim()).toBe('n1')
+    h.act(() => h.publish({ node: nodeHeading({ name: 'Новый' }) }))
+    expect(tile('Node name').querySelector('dd')?.textContent?.trim()).toBe(
+      'Новый',
+    )
+    h.act(() => h.publish({ node: nodeHeading() }))
+    expect(tile('Node name').querySelector('dd')?.textContent?.trim()).toBe('—')
+    expect(tile('Node ID').querySelector('dd')?.textContent?.trim()).toBe('n1')
+  })
+
   it('waits for a full addressed picture and renders all four groups with their original diagnostics', () => {
     const h = nodeHarness()
     expect(text('node-waiting')).toContain('Waiting for the node picture')
@@ -38,7 +60,7 @@ describe('HilosDaemonNodePage', () => {
     const rows = [...el('node-overview')!.querySelectorAll('.row')]
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.querySelectorAll('dl').length)).toEqual([
-      4, 4, 4, 4,
+      4, 4, 4, 5,
     ])
     expect(
       [...rows[0]!.querySelectorAll('dt')].map((cell) =>

@@ -28,6 +28,63 @@ function seed(h: ReturnType<typeof harness>): void {
 }
 
 describe('HilosDaemonPage', () => {
+  it('names node boxes, consensus and membership links with literal names while keeping id addresses', () => {
+    const h = harness()
+    const name = 'Варшава 🌍 <b>main</b>'
+    const picture = daemonPicture([
+      daemonNode('n1', { nodeName: name }),
+      daemonNode('n2', { nodeName: 'Запасной' }),
+    ])
+    h.scope.data.set(DAEMON_OVERVIEW_DATA, {
+      ...picture,
+      consensus: { ...picture.consensus!, nodeName: name },
+    })
+    h.detect()
+    const box = h.el('hilos-daemon-node-n1')!
+    expect(box.textContent).toContain(name)
+    expect(box.textContent).toContain('n1')
+    expect(box.querySelector('b')).toBeNull()
+    expect(box.getAttribute('aria-label')).toBe(`Node ${name} (n1)`)
+    expect(box.getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(
+      h.el('hilos-daemon-consensus')?.textContent?.replace(/\s+/g, ' '),
+    ).toContain(`Report: ${name} (n1) · Majority: 3`)
+    expect(
+      h.el('hilos-daemon-link-n2')?.textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe(`${name} (n1) ↔ Запасной (n2) · Membership link`)
+    box.click()
+    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/daemon/n1')
+    expect(h.connection.sendAction).not.toHaveBeenCalled()
+    h.fixture.destroy()
+  })
+
+  it('renames an existing box and falls back to its id when the name is unknown', () => {
+    const h = harness()
+    const update = (nodeName: string | null) => {
+      h.scope.data.set(
+        DAEMON_OVERVIEW_DATA,
+        daemonPicture([daemonNode('n1', { nodeName }), daemonNode('n2')]),
+      )
+      h.detect()
+    }
+    update('Первый')
+    const box = h.el('hilos-daemon-node-n1')!
+    update('Второй')
+    expect(h.el('hilos-daemon-node-n1')).toBe(box)
+    expect(box.getAttribute('aria-label')).toBe('Node Второй (n1)')
+    update(null)
+    expect(h.el('hilos-daemon-node-n1')).toBe(box)
+    expect(box.getAttribute('aria-label')).toBe('Node n1')
+    expect(box.getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(box.textContent).not.toContain('Второй')
+    expect(
+      h.el('hilos-daemon-link-n2')?.textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe('n1 ↔ n2 · Membership link')
+    expect(h.register).not.toHaveBeenCalled()
+    expect(h.sendViewport).not.toHaveBeenCalled()
+    h.fixture.destroy()
+  })
+
   it('waits for the lean picture and draws addressable node boxes with live metrics', () => {
     const h = harness()
     expect(h.el('hilos-daemon-overview-waiting')).not.toBeNull()

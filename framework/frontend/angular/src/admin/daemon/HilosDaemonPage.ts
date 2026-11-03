@@ -25,6 +25,7 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
+  formatHilosNodeLabel,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
 import { HilosPages, hilosTimeZone } from '@hilos/core/base'
@@ -142,8 +143,14 @@ import type {
               >
               @if (picture.consensus) {
                 <span class="text-body-secondary text-break"
-                  >Report: {{ picture.consensus.nodeId }} · Majority:
-                  {{ picture.consensus.quorumSize }}</span
+                  >Report:
+                  {{
+                    formatHilosNodeLabel(
+                      picture.consensus.nodeId,
+                      picture.consensus.nodeName
+                    )
+                  }}
+                  · Majority: {{ picture.consensus.quorumSize }}</span
                 >
               }
             </div>
@@ -184,8 +191,14 @@ import type {
                         aria-hidden="true"
                       ></i>
                       <span class="visually-hidden"
-                        >{{ picture.nodes[nodeIndex - 1]?.nodeId }} ↔
-                        {{ node.nodeId }} ·
+                        >{{
+                          formatHilosNodeLabel(
+                            picture.nodes[nodeIndex - 1]!.nodeId,
+                            picture.nodes[nodeIndex - 1]!.nodeName
+                          )
+                        }}
+                        ↔
+                        {{ formatHilosNodeLabel(node.nodeId, node.nodeName) }} ·
                         {{
                           !node.online || !picture.nodes[nodeIndex - 1]?.online
                             ? 'Silent member'
@@ -202,7 +215,9 @@ import type {
                     "
                     class="btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none"
                     [ngClass]="{ 'border-danger-subtle': !node.online }"
-                    [attr.aria-label]="'Node ' + node.nodeId"
+                    [attr.aria-label]="
+                      'Node ' + formatHilosNodeLabel(node.nodeId, node.nodeName)
+                    "
                     [attr.aria-describedby]="
                       picture.clustered &&
                       node.online &&
@@ -218,9 +233,19 @@ import type {
                       class="d-flex flex-wrap align-items-center gap-2 mb-3"
                     >
                       <i class="bi bi-hdd-network" aria-hidden="true"></i>
-                      <span class="fw-semibold font-monospace text-break">{{
-                        node.nodeId
-                      }}</span>
+                      <span
+                        class="d-inline-flex flex-wrap gap-1 text-break fw-semibold flex-column"
+                      >
+                        @if (node.nodeName !== null) {
+                          <span>{{ node.nodeName }}</span>
+                          <span
+                            class="font-monospace text-body-secondary small"
+                            >{{ node.nodeId }}</span
+                          >
+                        } @else {
+                          <span class="font-monospace">{{ node.nodeId }}</span>
+                        }
+                      </span>
                       @if (picture.clustered) {
                         <span
                           class="badge border"
@@ -509,6 +534,7 @@ export class HilosDaemonPage {
   protected readonly formatDaemonNumber = formatDaemonNumber
   protected readonly formatDaemonPercentage = formatDaemonPercentage
   protected readonly formatDaemonWorkerName = formatDaemonWorkerName
+  protected readonly formatHilosNodeLabel = formatHilosNodeLabel
   /** The project's existing connection and page scopes. */
   readonly context = input.required<HilosDaemonContext>()
   protected readonly page = HilosPages.DAEMON

@@ -32,6 +32,7 @@ import {
   expectCommunicationsAccessibility,
   expectDesktopShell,
   DAEMON_NODE_PATH,
+  DAEMON_STANDALONE_NODE_NAME,
   DAEMON_NODE_TABS,
   expectLicenseDependenciesAccessibility,
   expectLanguagePageHead,
@@ -794,20 +795,44 @@ test('Node pages expose one entity heading, link tabs and tables named through t
   try {
     await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, DAEMON_NODE_PATH)
-    await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+    await expectDaemonNodeHead(
+      expect,
+      page,
+      'hilos_daemon_node',
+      'standalone',
+      {
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      },
+    )
     for (const tab of DAEMON_NODE_TABS.slice(1)) {
       const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
       await link.focus()
       await expect(link).toBeFocused()
       await link.press('Enter')
       await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
-      await expectDaemonNodeHead(expect, page, tab.key)
+      await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      })
       if (tab.key === 'hilos_daemon_websockets') {
-        await expectStandaloneWebsockets(expect, page, reports.frames)
+        await expectStandaloneWebsockets(expect, page, reports.frames, {
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        })
       } else if (tab.key !== 'hilos_daemon_env')
-        await expectDaemonNodeTableName(expect, page)
+        await expectDaemonNodeTableName(
+          expect,
+          page,
+          DAEMON_STANDALONE_NODE_NAME,
+        )
       await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
-      await expectDaemonNodeHead(expect, page, 'hilos_daemon_node')
+      await expectDaemonNodeHead(
+        expect,
+        page,
+        'hilos_daemon_node',
+        'standalone',
+        {
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        },
+      )
     }
   } finally {
     reports.stop()
@@ -1060,7 +1085,12 @@ test.describe('Daemon section accessibility', () => {
       await expect(placement).toBeFocused()
       await placement.press('Enter')
       await expectDaemonPage(expect, page, 'hilos_daemon_placement')
-      await expectDaemonSectionAccessibility(expect, page)
+      await expectDaemonSectionAccessibility(
+        expect,
+        page,
+        false,
+        DAEMON_STANDALONE_NODE_NAME,
+      )
       if (viewer)
         await expect(page.getByTestId('view-mode-banner')).toBeVisible()
       const overview = page.getByTestId('hilos-page-tab-hilos_daemon')

@@ -36,6 +36,7 @@ import {
   hilosTimeZone,
   subscribeSignal,
 } from '@hilos/core/base'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
@@ -160,7 +161,18 @@ const RETENTION_CLASS: Record<string, string> = {
             </span>
           }
         </ng-template>
-        <ng-template hilosTableCell="node" let-row>{{ row.node }}</ng-template>
+        <ng-template hilosTableCell="node" let-row>
+          <span class="d-inline-flex flex-wrap gap-1 text-break">
+            @if (row.nodeName !== null) {
+              <span>{{ row.nodeName }}</span>
+              <span class="font-monospace text-body-secondary small">{{
+                row.node
+              }}</span>
+            } @else {
+              <span class="font-monospace">{{ row.node }}</span>
+            }
+          </span>
+        </ng-template>
         <ng-template hilosTableCell="daemonFileCount" let-row>
           <span class="small">{{ formatFileCounts(row) }}</span>
         </ng-template>
@@ -323,12 +335,13 @@ const RETENTION_CLASS: Record<string, string> = {
             to copy from here. Look it up on the node itself.
           </div>
         }
-        @if (clustered() && takeoutRow()?.node) {
+        @let row = takeoutRow();
+        @if (clustered() && row !== null && row.node) {
           <div class="alert alert-warning small py-2 mb-0">
             The batch lies on node
-            <span class="font-monospace">{{ takeoutRow()?.node }}</span> and
-            only there: logs do not converge anywhere. Take it from that node,
-            and the confirmation covers this batch on this node.
+            <span>{{ formatNodeLabel(row.node, row.nodeName) }}</span> and only
+            there: logs do not converge anywhere. Take it from that node, and
+            the confirmation covers this batch on this node.
           </div>
         } @else {
           <div class="alert alert-secondary small py-2 mb-0">
@@ -475,6 +488,7 @@ export class HilosLogsRotationsPage {
   protected readonly page = HilosPages.LOGS_ROTATIONS
   protected readonly stateKept = HILOS_ROTATION_STATE_KEPT
   protected readonly stateCarrying = HILOS_ROTATION_STATE_CARRYING
+  protected readonly formatNodeLabel = formatHilosNodeLabel
   protected readonly formatFileCounts = formatRotationFileCounts
   protected readonly formatRetention = formatRetentionRule
   protected readonly formatRule = formatRotationRule
@@ -580,7 +594,7 @@ export class HilosLogsRotationsPage {
       return 'Carrying off a batch'
     }
 
-    return `Carrying off the batch of ${this.batchTime(row)}${row.node ? ` · ${row.node}` : ''}`
+    return `Carrying off the batch of ${this.batchTime(row)}${row.node ? ` · ${formatHilosNodeLabel(row.node, row.nodeName)}` : ''}`
   })
 
   // What the batch's own node promises: the instant its cleaner may first take it.

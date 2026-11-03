@@ -58,6 +58,7 @@ import {
   isBackupSubsystemBusy,
   offersBackupRestore,
 } from '@hilos/core/admin/backup'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   HilosPages,
   backupProgressPercent,
@@ -226,12 +227,12 @@ import {
             data-id="hilos-backup-created-at"
           >
             {{ formatTime(row.createdAt) }}
-            @if (isOutOfReach(row)) {
+            @if (row.holderNode !== null) {
               <span
                 class="badge text-bg-secondary"
                 [attr.title]="formatOutOfReach(row)"
                 [attr.data-id]="'hilos-backup-holder-' + row.id"
-                >{{ row.holderNode }}</span
+                >{{ formatNodeLabel(row.holderNode, row.holderNodeName) }}</span
               ><span class="visually-hidden">{{ formatOutOfReach(row) }}</span>
             }
           </span>
@@ -783,6 +784,7 @@ export class HilosBackupPage {
   protected readonly isShipFailed = isBackupShipFailed
   protected readonly isOutOfReach = isBackupOutOfReach
   protected readonly formatOutOfReach = formatBackupOutOfReach
+  protected readonly formatNodeLabel = formatHilosNodeLabel
   protected readonly formatBackupRunCaption = formatBackupRunCaption
 
   /** Format an absolute backup moment in the reader's current time zone. */

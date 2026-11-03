@@ -216,6 +216,79 @@ function textOf(fixture: ComponentFixture<HilosLogsPage>, id: string): string {
 }
 
 describe('HilosLogsPage', () => {
+  it('names nodes from the table window with separate ids and a null fallback', () => {
+    const { connection, push, pushPageWindow, sendTableViewport } =
+      makeConnection()
+    const fixture = mountPage(connection)
+    const root = fixture.nativeElement as HTMLElement
+    const name = '<b>Узел & β</b>'
+    push(overview({ nodes: [node({ nodeName: 'Summary only' })] }))
+    pushPageWindow([
+      tableNode({ nodeName: name }),
+      tableNode({ nodeId: 'node-2', nodeName: null }),
+    ])
+    fixture.detectChanges()
+
+    for (const projection of ['table', '[data-id="hilos-table-cards"]']) {
+      const named = root.querySelector(
+        `${projection} [data-id="hilos-logs-node-node-1"]`,
+      )!
+      expect(named.textContent).toContain(name)
+      expect(
+        [...named.children].map((part) => part.textContent?.trim()),
+      ).toEqual([name, 'node-1'])
+      expect(named.querySelector('b')).toBeNull()
+      expect(
+        root
+          .querySelector(`${projection} [data-id="hilos-logs-node-node-2"]`)
+          ?.textContent?.trim(),
+      ).toBe('node-2')
+    }
+    expect(root.textContent).not.toContain('Summary only')
+    expect(sendTableViewport).not.toHaveBeenCalled()
+  })
+
+  it('uses the core node labels in recent origins and the takeout banner', () => {
+    const { connection, push, sendTableViewport } = makeConnection()
+    const fixture = mountPage(connection)
+    push(
+      overview({
+        batchesDueForTakeout: 2,
+        nodes: [
+          node({ nodeName: 'Север & <edge>', batchesDueForTakeout: 1 }),
+          node({ nodeId: 'node-2', batchesDueForTakeout: 1 }),
+        ],
+        recentErrors: [
+          {
+            nodeId: 'node-1',
+            nodeName: 'Север & <edge>',
+            stream: 'worker-0.log',
+            at: '2026-09-02T03:00:00.000Z',
+            message: 'Failure',
+            traceFrames: 0,
+          },
+        ],
+      }),
+    )
+    fixture.detectChanges()
+
+    expect(textOf(fixture, 'hilos-logs-takeout')).toContain(
+      'Север & <edge> (node-1)',
+    )
+    expect(textOf(fixture, 'hilos-logs-takeout')).toContain('node-2')
+    expect(textOf(fixture, 'hilos-logs-recent-row')).toContain(
+      'Север & <edge> (node-1) · worker-0.log',
+    )
+    const root = fixture.nativeElement as HTMLElement
+    expect(root.querySelector('edge')).toBeNull()
+    expect(
+      root
+        .querySelector('[data-id="hilos-logs-recent-row"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/logs/view/node-1/live/worker-0.log/1788318000000')
+    expect(sendTableViewport).not.toHaveBeenCalled()
+  })
+
   it('draws a hidden recent message and forecast as separate marks', () => {
     const { connection, push } = makeConnection()
     const fixture = mountPage(connection)

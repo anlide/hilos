@@ -758,6 +758,93 @@ describe('HilosLogsViewPage confirmed anchor', () => {
 })
 
 describe('HilosLogsViewPage native selections', () => {
+  it('labels catalog options with names and a null fallback while requests use the selected id', async () => {
+    const h = mountPage({ nodeId: 'beta', source: 'live' })
+    const name = '<b>Север & β</b>'
+    h.pushCatalog({
+      ...CLUSTER_CATALOG,
+      nodes: CLUSTER_CATALOG.nodes.map((node) => ({
+        ...node,
+        nodeName: node.nodeId === 'beta' ? name : null,
+      })),
+    })
+    await settled(h.fixture)
+    const select = selected(h.fixture, 'hilos-log-node', 'beta')
+    expect(
+      [...select.options].map((option) => [
+        option.value,
+        option.textContent?.trim(),
+      ]),
+    ).toEqual([
+      ['', 'Choose a node'],
+      ['alpha', 'alpha'],
+      ['beta', name + ' (beta)'],
+    ])
+    expect(select.querySelector('b')).toBeNull()
+    await change(h.fixture, 'hilos-log-stream', 'worker-0.log')
+    expect(
+      h.sent.filter((entry) => entry.action === LOGS_FOLLOW_START_ACTION),
+    ).toMatchObject([
+      {
+        data: { nodeId: 'beta', stream: 'worker-0.log' },
+      },
+    ])
+    expect(h.address.currentPath.get()).toBe(
+      '/hilos/logs/view/beta/live/worker-0.log',
+    )
+  })
+
+  it('keeps the actual selected id through a late named catalog and rename without another request', async () => {
+    const h = mountPage({
+      nodeId: 'beta',
+      source: String(BATCH),
+      stream: 'worker-0.log',
+    })
+    h.pushCatalog({ ...CLUSTER_CATALOG, nodes: [] })
+    await settled(h.fixture)
+    h.pushCatalog({
+      ...CLUSTER_CATALOG,
+      nodes: CLUSTER_CATALOG.nodes.map((node) => ({
+        ...node,
+        nodeName: 'Initial ' + node.nodeId,
+      })),
+    })
+    await settled(h.fixture)
+    const select = selected(h.fixture, 'hilos-log-node', 'beta')
+    expect(select.selectedOptions[0]?.textContent?.trim()).toBe(
+      'Initial beta (beta)',
+    )
+    const reads = h.sent.filter(
+      (entry) => entry.action === LOGS_READ_LINES_ACTION,
+    )
+    expect(reads).toHaveLength(1)
+    expect(reads[0]?.data).toMatchObject({
+      nodeId: 'beta',
+      source: 'batch',
+      batchTimestamp: BATCH,
+      stream: 'worker-0.log',
+    })
+    const sentBefore = [...h.sent]
+    const pathBefore = h.address.currentPath.get()
+
+    h.pushCatalog({
+      ...CLUSTER_CATALOG,
+      nodes: CLUSTER_CATALOG.nodes.map((node) => ({
+        ...node,
+        nodeName: 'Renamed ' + node.nodeId,
+      })),
+    })
+    await settled(h.fixture)
+    expect(selected(h.fixture, 'hilos-log-node', 'beta')).toBe(select)
+    expect(select.selectedOptions[0]?.textContent?.trim()).toBe(
+      'Renamed beta (beta)',
+    )
+    selected(h.fixture, 'hilos-log-source', String(BATCH))
+    selected(h.fixture, 'hilos-log-stream', 'worker-0.log')
+    expect(h.sent).toEqual(sentBefore)
+    expect(h.address.currentPath.get()).toBe(pathBefore)
+  })
+
   it.each<{
     name: string
     params: PageRouteMatch['params']

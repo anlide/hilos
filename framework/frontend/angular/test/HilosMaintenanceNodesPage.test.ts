@@ -406,6 +406,42 @@ describe('HilosMaintenanceNodesPage', () => {
     ).toBe('node-1')
   })
 
+  it('shows the reported name and separate id as text, keeping row addresses and the null-name fallback', () => {
+    const harness = seededContext([
+      node('node-1', { nodeName: 'Київ <b>主节点</b> & "one"' }),
+      node('node-2'),
+      node('node-3', { nodeName: '' }),
+    ])
+    const viewport = vi.spyOn(harness.context.connection, 'sendTableViewport')
+    const fixture = mountPage(harness.context)
+    const original = row('node-1')
+    const label = (nodeId: string) =>
+      row(nodeId)?.querySelector(
+        `[data-id="hilos-maintenance-nodes-row-${nodeId}"]`,
+      )
+    const parts = (nodeId: string) =>
+      [...(label(nodeId)?.children ?? [])].map((part) =>
+        part.textContent?.trim(),
+      )
+
+    expect(parts('node-1')).toEqual(['Київ <b>主节点</b> & "one"', 'node-1'])
+    expect(parts('node-2')).toEqual(['node-2'])
+    expect(parts('node-3')).toEqual(['', 'node-3'])
+    expect(label('node-1')?.querySelector('b')).toBeNull()
+
+    harness.updateRow(node('node-1', { nodeName: 'Renamed Ω' }))
+    fixture.detectChanges()
+    expect(parts('node-1')).toEqual(['Renamed Ω', 'node-1'])
+    expect(row('node-1')).toBe(original)
+
+    harness.updateRow(node('node-1'))
+    fixture.detectChanges()
+    expect(parts('node-1')).toEqual(['node-1'])
+    expect(row('node-1')).toBe(original)
+    expect(viewport).not.toHaveBeenCalled()
+    expect(harness.dispatch).not.toHaveBeenCalled()
+  })
+
   it('tells yes from no and draws both independent roles', () => {
     const { context } = seededContext([
       node('node-1', {

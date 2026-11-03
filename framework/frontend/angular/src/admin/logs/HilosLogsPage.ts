@@ -377,10 +377,17 @@ import {
         >
           <ng-template [hilosTableCell]="nodeIdField" let-row>
             <span
-              class="badge bg-body-tertiary text-body-emphasis border"
+              class="d-inline-flex flex-wrap gap-1 text-break"
               [attr.data-id]="'hilos-logs-node-' + row.nodeId"
             >
-              {{ row.nodeId }}
+              @if (row.nodeName !== null) {
+                <span>{{ row.nodeName }}</span>
+                <span class="font-monospace text-body-secondary small">{{
+                  row.nodeId
+                }}</span>
+              } @else {
+                <span class="font-monospace">{{ row.nodeId }}</span>
+              }
             </span>
           </ng-template>
           <ng-template [hilosTableCell]="nodeLastRotationAtField" let-row>

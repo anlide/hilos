@@ -516,6 +516,68 @@ describe('HilosBackupPage why a restore is blocked', () => {
     'Stored on node node-2 - the backup agent runs elsewhere, so this archive cannot be reached from here'
   const HIDDEN = { _hidden: true }
 
+  it('names the holder in the badge and explanation as text, falls back to its id and keeps remote archives unavailable', () => {
+    const { actions, dispatched } = makeActions()
+    const remote: BackupFixture = {
+      ...ARCHIVE_FIXTURE,
+      backup: {
+        ...ARCHIVE_FIXTURE.backup,
+        holderNode: 'node-2',
+        holderNodeName: 'Київ <b>倉庫</b> & "two"',
+      },
+    }
+    const { context, pushUpdate } = seededContext(
+      [remote],
+      actions,
+      RESTORE_GATE,
+    )
+    const fixture = mountPage(context)
+
+    for (const [name, label] of [
+      ['Київ <b>倉庫</b> & "two"', 'Київ <b>倉庫</b> & "two" (node-2)'],
+      [null, 'node-2'],
+    ] as const) {
+      pushUpdate({
+        ...remote,
+        backup: { ...remote.backup, holderNodeName: name },
+      })
+      fixture.detectChanges()
+      const reason = `Stored on node ${label} - the backup agent runs elsewhere, so this archive cannot be reached from here`
+
+      for (const projection of [inTable, inCard]) {
+        const badge = projection(`hilos-backup-holder-${ARCHIVE_ID}`)
+        expect(badge?.textContent?.trim()).toBe(label)
+        expect(badge?.getAttribute('title')).toBe(reason)
+        expect(badge?.querySelector('b')).toBeNull()
+        expect(badge?.parentElement?.textContent).toContain(reason)
+        expect(
+          projection<HTMLButtonElement>(`hilos-backup-restore-${ARCHIVE_ID}`)
+            ?.disabled,
+        ).toBe(true)
+        expect(projection(`hilos-backup-delete-${ARCHIVE_ID}`)).toBeNull()
+        expect(projection(`hilos-backup-keep-${ARCHIVE_ID}`)).toBeNull()
+        expect(
+          projection<HTMLButtonElement>('hilos-action-reason')?.title,
+        ).toBe(reason)
+      }
+
+      click(fixture, inTable('hilos-action-reason'))
+      expect(byId('hilos-action-reason-body')?.textContent?.trim()).toBe(reason)
+      expect(byId('hilos-action-reason-body')?.querySelector('b')).toBeNull()
+      expect(byId('hilos-backup-restore-confirm')).toBeNull()
+      click(fixture, byId('hilos-action-reason-close'))
+    }
+
+    pushUpdate(ARCHIVE_FIXTURE)
+    fixture.detectChanges()
+    expect(byId(`hilos-backup-holder-${ARCHIVE_ID}`)).toBeNull()
+    expect(
+      inTable<HTMLButtonElement>(`hilos-backup-restore-${ARCHIVE_ID}`)
+        ?.disabled,
+    ).toBe(false)
+    expect(dispatched).toHaveLength(0)
+  })
+
   it.each([
     [
       'an archive stored on another node',

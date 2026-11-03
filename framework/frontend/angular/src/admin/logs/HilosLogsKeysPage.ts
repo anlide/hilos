@@ -59,7 +59,18 @@ import {
         <ng-template hilosTableCell="key" let-row>
           <code class="fw-semibold small">{{ row.key }}</code>
         </ng-template>
-        <ng-template hilosTableCell="node" let-row>{{ row.node }}</ng-template>
+        <ng-template hilosTableCell="node" let-row>
+          <span class="d-inline-flex flex-wrap gap-1 text-break">
+            @if (row.nodeName !== null) {
+              <span>{{ row.nodeName }}</span>
+              <span class="font-monospace text-body-secondary small">{{
+                row.node
+              }}</span>
+            } @else {
+              <span class="font-monospace">{{ row.node }}</span>
+            }
+          </span>
+        </ng-template>
         <ng-template hilosTableCell="class" let-row>
           <span
             class="badge text-bg-secondary-subtle text-secondary-emphasis border"

@@ -16,6 +16,7 @@ import {
   formatDaemonNumber,
   formatDaemonPlacementKind,
   formatDaemonPlacementState,
+  formatHilosNodeLabel,
   type HilosDaemonOverviewData,
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
@@ -126,7 +127,7 @@ import {
                   [attr.aria-label]="
                     row.agentType +
                     ' on ' +
-                    node.nodeId +
+                    formatHilosNodeLabel(node.nodeId, node.nodeName) +
                     ': ' +
                     cellIds(row, node.nodeId)?.length +
                     ' instances'
@@ -178,9 +179,12 @@ import {
                     </h2>
                     <span
                       >on
-                      <code class="text-break">{{
-                        selected.nodeId
-                      }}</code></span
+                      <span class="text-break">{{
+                        formatHilosNodeLabel(
+                          selected.nodeId,
+                          selectedNodeName()
+                        )
+                      }}</span></span
                     ><span class="badge bg-body text-body border"
                       >{{ selected.agentIds.length }} instances</span
                     >
@@ -232,6 +236,11 @@ export class HilosDaemonPlacement {
   protected readonly nodes = signal<readonly HilosDaemonPlacementNode[]>([])
   protected readonly selectedCell =
     signal<HilosDaemonPlacementSelection | null>(null)
+  protected readonly selectedNodeName = computed(
+    () =>
+      this.nodes().find((node) => node.nodeId === this.selectedCell()?.nodeId)
+        ?.nodeName ?? null,
+  )
   protected readonly placement = computed(() => this.overview()?.placement)
   protected readonly unplacedTypes = computed(
     () => this.placement()?.unplacedTypes ?? null,
@@ -248,6 +257,7 @@ export class HilosDaemonPlacement {
   protected readonly formatDaemonNumber = formatDaemonNumber
   protected readonly formatDaemonPlacementKind = formatDaemonPlacementKind
   protected readonly formatDaemonPlacementState = formatDaemonPlacementState
+  protected readonly formatHilosNodeLabel = formatHilosNodeLabel
   constructor() {
     effect((onCleanup) => {
       const view = this.view()

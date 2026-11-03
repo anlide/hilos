@@ -1419,6 +1419,49 @@ describe('HilosMaintenancePage moments', () => {
 })
 
 describe('HilosMaintenancePage restore card', () => {
+  it('renders the core initiator, diagnostic and other-browser labels as literal text with id fallbacks', async () => {
+    const { context, pushState } = seededContext()
+    const fixture = mountPage(context)
+    pushState(
+      restoreFrame({
+        isInitiator: false,
+        initiatorNodeName: 'Київ <b>主节点</b>',
+        diagnosticsNodeId: 'node-2',
+        diagnosticsNodeName: '診断 <em>Ω</em>',
+      }),
+    )
+    await settled(fixture)
+
+    expect(byId('hilos-maintenance-initiator')?.textContent?.trim()).toBe(
+      'hilos_backup · node Київ <b>主节点</b> (node-1)',
+    )
+    expect(
+      byId('hilos-maintenance-diagnostics-node')?.textContent?.trim(),
+    ).toBe('診断 <em>Ω</em> (node-2)')
+    expect(byId('hilos-maintenance-other-browser')?.textContent?.trim()).toBe(
+      'The operation is run by hilos_backup on node Київ <b>主节点</b> (node-1). Only the browser that started it can open the system.',
+    )
+    expect(byId('hilos-maintenance-initiator')?.querySelector('b')).toBeNull()
+    expect(
+      byId('hilos-maintenance-diagnostics-node')?.querySelector('em'),
+    ).toBeNull()
+    expect(
+      byId('hilos-maintenance-other-browser')?.querySelector('b'),
+    ).toBeNull()
+
+    pushState(restoreFrame({ isInitiator: false, diagnosticsNodeId: 'node-2' }))
+    await settled(fixture)
+    expect(byId('hilos-maintenance-initiator')?.textContent?.trim()).toBe(
+      'hilos_backup · node node-1',
+    )
+    expect(
+      byId('hilos-maintenance-diagnostics-node')?.textContent?.trim(),
+    ).toBe('node-2')
+    expect(byId('hilos-maintenance-other-browser')?.textContent?.trim()).toBe(
+      'The operation is run by hilos_backup on node node-1. Only the browser that started it can open the system.',
+    )
+  })
+
   it('draws published facts in the reader zone and ages the last movement on the shared clock', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     vi.setSystemTime(new Date('2026-09-11T03:24:14.000Z'))

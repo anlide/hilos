@@ -17,6 +17,7 @@ import {
   DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   readHilosDaemonEnvMismatchSummary,
+  formatHilosNodeLabel,
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchSummary,
 } from '@hilos/core/admin/daemon'
@@ -60,9 +61,12 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
             </div>
             <p class="small mb-0">
               There is one node,
-              <code data-id="hilos-daemon-env-mismatch-standalone-node">{{
-                summary.servingNodeId
-              }}</code
+              <span data-id="hilos-daemon-env-mismatch-standalone-node">{{
+                formatHilosNodeLabel(
+                  summary.servingNodeId,
+                  summary.servingNodeName
+                )
+              }}</span
               >, and nothing to compare it with.
             </p>
           </div>
@@ -272,6 +276,7 @@ import { HilosDaemonEnvMismatchCell } from './HilosDaemonEnvMismatchCell.js'
 export class HilosDaemonEnvMismatchPage {
   readonly context = input.required<HilosDaemonEnvMismatchContext>()
   protected readonly page = HilosPages.DAEMON_ENV_MISMATCH
+  protected readonly formatHilosNodeLabel = formatHilosNodeLabel
   protected readonly DAEMON_ENV_SENSITIVE_HINT = DAEMON_ENV_SENSITIVE_HINT
   protected readonly DAEMON_ENV_MISMATCH_SOURCES_DIFFER =
     DAEMON_ENV_MISMATCH_SOURCES_DIFFER

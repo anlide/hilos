@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createSignal,
   HilosPages,
@@ -44,6 +44,7 @@ function harness() {
     (signal: { type: string; data: HilosLogKeysHeader }) => void
   > = []
   const windows: Array<(signal: { data: unknown }) => void> = []
+  const sendTableViewport = vi.fn()
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'projectSignal') headers.push(listener as never)
@@ -53,7 +54,7 @@ function harness() {
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(): void {},
+    sendTableViewport,
     sendTableRendered(): void {},
     sendTableFacets(): void {},
   } as unknown as HilosConnection
@@ -69,6 +70,7 @@ function harness() {
 
   return {
     fixture,
+    sendTableViewport,
     header(value: HilosLogKeysHeader): void {
       for (const listener of headers)
         listener({ type: KEYS_HEADER_SIGNAL, data: value })
@@ -100,6 +102,80 @@ function harness() {
 afterEach(() => TestBed.resetTestingModule())
 
 describe('HilosLogsKeysPage', () => {
+  it('labels node rows and filters while keeping links and queries addressed by id', () => {
+    const page = harness()
+    const name = '<b>Узел & β</b>'
+    page.header({
+      available: true,
+      nodes: [
+        { nodeId: 'node-1', nodeName: name },
+        { nodeId: 'node-2', nodeName: null },
+      ],
+    })
+    page.window(
+      ['node-1', 'node-2'].map((node) => ({
+        rowKey: node + ':worker-0.log',
+        key: 'worker-0.log',
+        node,
+        nodeName: node === 'node-1' ? name : null,
+        class: 'worker',
+        growthPerDay: 512,
+        live: true,
+        batchCount: 1,
+        lastBatchAt: null,
+        bytes: 1024,
+      })),
+    )
+    const root = page.fixture.nativeElement as HTMLElement
+    for (const projection of ['row', 'card']) {
+      const named = root.querySelector(
+        `[data-id="hilos-table-${projection}-node-1:worker-0.log"]`,
+      )!
+      expect(named.textContent).toContain(name)
+      expect(named.textContent).toContain('node-1')
+      expect(named.querySelector('b')).toBeNull()
+      expect(
+        named
+          .querySelector('[data-id="hilos-log-key-open-node-1:worker-0.log"]')
+          ?.getAttribute('href'),
+      ).toBe('/hilos/logs/view/node-1/live/worker-0.log')
+      const unknown = root.querySelector(
+        `[data-id="hilos-table-${projection}-node-2:worker-0.log"]`,
+      )!
+      expect(unknown.textContent).toContain('node-2')
+      expect(unknown.textContent).not.toContain(name)
+      expect(unknown.textContent).not.toContain('null')
+    }
+    expect(
+      root
+        .querySelector(
+          '[data-id="hilos-table-row-node-2:worker-0.log"] td:nth-child(2)',
+        )
+        ?.textContent?.trim(),
+    ).toBe('node-2')
+    const filter = root.querySelector<HTMLElement>(
+      '[data-id="hilos-table-filter-node"]',
+    )!
+    filter
+      .querySelector<HTMLButtonElement>('[data-id="hilos-dropdown-toggle"]')!
+      .click()
+    page.fixture.detectChanges()
+    expect(
+      [...filter.querySelectorAll('[role="option"]')].map((option) =>
+        option.textContent?.trim(),
+      ),
+    ).toEqual(['All nodes', name + ' (node-1)', 'node-2'])
+    filter
+      .querySelector<HTMLButtonElement>('[data-id="hilos-dropdown-option-0"]')!
+      .click()
+    page.fixture.detectChanges()
+    expect(page.sendTableViewport).toHaveBeenLastCalledWith(
+      HilosPages.LOGS_KEYS,
+      'hilosLogKeys',
+      expect.objectContaining({ filter: { node: 'node-1' } }),
+    )
+  })
+
   it('draws the shared bar, node filter, footer, and narrow card from the header', () => {
     const page = harness()
     page.header({

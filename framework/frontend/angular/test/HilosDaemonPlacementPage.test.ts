@@ -192,6 +192,62 @@ function harness(
 }
 
 describe('HilosDaemonPlacementPage', () => {
+  it('names columns, cell controls and selected details while selection and instances stay keyed by id', () => {
+    const h = liveHarness()
+    const update = (nodeName: string | null) => {
+      h.scope.data.set(
+        DAEMON_OVERVIEW_DATA,
+        daemonPicture([
+          daemonNode('n1', { nodeName }),
+          daemonNode('n2', { nodeName: 'Same name' }),
+        ]),
+      )
+      h.detect()
+    }
+    update('Same name')
+    h.window('hilosDaemonPlacement', [placementRow()])
+    const cell = h.el('hilos-daemon-placement-cell-room-n1')!
+    expect(h.root.querySelector('thead')?.textContent).toContain(
+      'Same name (n1)',
+    )
+    expect(h.root.querySelector('thead')?.textContent).toContain(
+      'Same name (n2)',
+    )
+    expect(cell.getAttribute('aria-label')).toBe(
+      'room on Same name (n1): 1 instances',
+    )
+    cell.click()
+    h.detect()
+    const detail = () => h.el('hilos-daemon-placement-selection')!
+    expect(detail().textContent?.replace(/\s+/g, ' ')).toContain(
+      'on Same name (n1)',
+    )
+    expect(detail().textContent).toContain('room:n1')
+    expect(detail().textContent).not.toContain('room:n2')
+    const controller = h.register.mock.calls[0]![1]
+    const window = controller.rows.get()
+    const descriptor = controller.descriptor()
+    const requests = h.sendViewport.mock.calls.length
+    update('Новый <node>')
+    expect(h.el('hilos-daemon-placement-cell-room-n1')).toBe(cell)
+    expect(cell.getAttribute('aria-expanded')).toBe('true')
+    expect(cell.getAttribute('aria-label')).toBe(
+      'room on Новый <node> (n1): 1 instances',
+    )
+    expect(detail().textContent).toContain('Новый <node> (n1)')
+    expect(detail().querySelector('node')).toBeNull()
+    expect(controller.rows.get()).toStrictEqual(window)
+    expect(controller.descriptor()).toStrictEqual(descriptor)
+    expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+    update(null)
+    expect(detail().textContent?.replace(/\s+/g, ' ')).toContain('on n1')
+    expect(cell.getAttribute('aria-label')).toBe('room on n1: 1 instances')
+    expect(detail().textContent).toContain('room:n1')
+    expect(h.register).toHaveBeenCalledTimes(1)
+    expect(h.connection.sendAction).not.toHaveBeenCalled()
+    h.fixture.destroy()
+  })
+
   it.each([
     [true, false],
     [false, false],

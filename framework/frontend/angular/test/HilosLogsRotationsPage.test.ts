@@ -493,6 +493,91 @@ function bindSession(): {
 }
 
 describe('HilosLogsRotationsPage', () => {
+  it('names the row and takeout dialog while keeping the copy command and confirmation addressed by id', async () => {
+    const { connection, pushHeader, pushWindow, sent } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const fixture = mountPage(connection, actions)
+    const name = '<b>Север & β</b>'
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: name }] }))
+    pushWindow([batch({ nodeName: name, retentionState: 'due' })])
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+    for (const projection of ['row', 'card']) {
+      const row = root.querySelector(
+        `[data-id="hilos-table-${projection}-node-1:1800000000"]`,
+      )!
+      expect(row.textContent).toContain(name)
+      expect(row.textContent).toContain('node-1')
+      expect(row.querySelector('b')).toBeNull()
+    }
+    const filter = byId(fixture, 'hilos-table-filter-node')!
+    filter
+      .querySelector<HTMLButtonElement>('[data-id="hilos-dropdown-toggle"]')!
+      .click()
+    fixture.detectChanges()
+    expect(
+      filter
+        .querySelector('[data-id="hilos-dropdown-option-0"]')
+        ?.textContent?.trim(),
+    ).toBe(name + ' (node-1)')
+    filter
+      .querySelector<HTMLButtonElement>('[data-id="hilos-dropdown-option-0"]')!
+      .click()
+    fixture.detectChanges()
+    expect(sent.at(-1)?.filter).toEqual({ node: 'node-1' })
+
+    clickById(fixture, 'hilos-rotation-takeout')
+    const modal = root.querySelector('[data-id="modal"]')!
+    expect(modal.querySelector('.modal-title')?.textContent?.trim()).toBe(
+      `Carrying off the batch of ${formatMoment(1800000000000, { kind: 'dateTime' })} · ${name} (node-1)`,
+    )
+    expect(modal.textContent?.replace(/\s+/g, ' ')).toContain(
+      `The batch lies on node ${name} (node-1) and only there`,
+    )
+    expect(modal.querySelector('b')).toBeNull()
+    expect(
+      byId(fixture, 'hilos-rotation-takeout-path')?.textContent?.trim(),
+    ).toBe('node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/')
+    expect(
+      byId(fixture, 'hilos-rotation-takeout-command')?.textContent?.trim(),
+    ).toBe(
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/node-1/2027-01-15-08-00-00Z/',
+    )
+    clickById(fixture, 'hilos-rotation-takeout-confirm')
+    await settled(fixture)
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_confirm',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
+      },
+    ])
+  })
+
+  it('falls back to the id in the node cell and takeout dialog when the name is null', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const fixture = mountPage(connection)
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: null }] }))
+    pushWindow([batch({ retentionState: 'due' })])
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+    expect(
+      root
+        .querySelector(
+          '[data-id="hilos-table-row-node-1:1800000000"] td:nth-child(2)',
+        )
+        ?.textContent?.trim(),
+    ).toBe('node-1')
+    clickById(fixture, 'hilos-rotation-takeout')
+    const modal = root.querySelector('[data-id="modal"]')!
+    expect(modal.querySelector('.modal-title')?.textContent?.trim()).toBe(
+      `Carrying off the batch of ${formatMoment(1800000000000, { kind: 'dateTime' })} · node-1`,
+    )
+    expect(modal.textContent?.replace(/\s+/g, ' ')).toContain(
+      'The batch lies on node node-1 and only there',
+    )
+    expect(modal.textContent).not.toContain('null')
+  })
+
   it('draws each half of a partly hidden rule as its own mark', () => {
     const { connection, pushHeader } = makeConnection()
     const fixture = mountPage(connection)

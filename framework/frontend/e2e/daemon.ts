@@ -254,7 +254,11 @@ export async function expectDaemonNodeHead(
   }
   await expect(tabs.locator('[aria-current]')).toHaveCount(1)
   await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
-  await expect(page.getByTestId('hilos-daemon-node-id')).toHaveCount(0)
+  if (options.nodeName !== undefined) {
+    await expect(
+      page.getByTestId('hilos-page-head').getByText(nodeId, { exact: true }),
+    ).toHaveCount(1)
+  } else await expect(page.getByTestId('hilos-daemon-node-id')).toHaveCount(0)
   await expect(page.getByTestId('hilos-daemon-inspector')).toHaveCount(0)
   const log = page.getByTestId('hilos-daemon-node-log')
   if (options.showLogLinks ?? true) {

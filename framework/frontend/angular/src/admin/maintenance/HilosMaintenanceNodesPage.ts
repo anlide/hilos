@@ -51,9 +51,19 @@ import {
         [controller]="nodes().controller"
       >
         <ng-template [hilosTableCell]="fields.nodeId" let-row>
-          <span [attr.data-id]="'hilos-maintenance-nodes-row-' + row.nodeId">{{
-            row.nodeId
-          }}</span>
+          <span
+            class="d-inline-flex flex-wrap gap-1 text-break"
+            [attr.data-id]="'hilos-maintenance-nodes-row-' + row.nodeId"
+          >
+            @if (row.nodeName !== null) {
+              <span>{{ row.nodeName }}</span>
+              <span class="font-monospace text-body-secondary small">{{
+                row.nodeId
+              }}</span>
+            } @else {
+              <span class="font-monospace">{{ row.nodeId }}</span>
+            }
+          </span>
         </ng-template>
         <ng-template [hilosTableCell]="fields.quiesced" let-row>
           @let quiesced = present(row).quiesced;

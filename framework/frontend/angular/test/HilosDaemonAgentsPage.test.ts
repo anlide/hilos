@@ -438,13 +438,30 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.listeners()).toBe(0)
   })
 
-  it('blocks duplicate submit, Cancel, Escape and backdrop until the successful reply', async () => {
-    const h = harness()
+  it('names the node while targeting its id and blocks closing until the successful reply', async () => {
+    const h = harness(true)
+    h.scope.data.set(DAEMON_NODE_DATA, {
+      clustered: true,
+      name: 'Варшава <main>',
+      role: 'master',
+      state: 'leader',
+      silentSince: null,
+      clock: null,
+    })
+    h.detect()
     open(h)
+    expect(h.el('hilos-daemon-restart-node')?.textContent?.trim()).toBe(
+      'Варшава <main> (n1)',
+    )
+    expect(h.el('hilos-daemon-restart-node')?.querySelector('main')).toBeNull()
+    expect(h.el('hilos-daemon-restart-cli')?.textContent?.trim()).toBe(
+      'php cli.php agent:restart agent:1 --node=n1',
+    )
     const confirm = h.el('hilos-daemon-restart-confirm') as HTMLButtonElement
     confirm.click()
     h.detect()
     confirm.click()
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
     expect(h.dispatch).toHaveBeenCalledExactlyOnceWith(
       'hilos_daemon_agent_restart',
       { agentId: 'agent:1', nodeId: 'n1' },
@@ -608,6 +625,18 @@ describe('HilosDaemonAgentsPage', () => {
     const off = bindAdminAccess(scopes)
     try {
       const h = harness()
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        clustered: false,
+        name: 'Viewer node',
+        role: null,
+        state: null,
+        silentSince: null,
+        clock: null,
+      })
+      h.detect()
+      expect(h.root.querySelector('h1')?.textContent?.trim()).toBe(
+        'Viewer node',
+      )
       expect(h.root.textContent).toContain('rooms · set')
       expect(h.root.textContent).toContain('users · rows')
       expect(

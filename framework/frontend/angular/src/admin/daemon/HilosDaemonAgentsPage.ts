@@ -25,6 +25,7 @@ import {
   formatDaemonAgentOwnership,
   formatDaemonAgentWorker,
   formatDaemonNodeSilentSince,
+  formatHilosNodeLabel,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonAgentRow,
@@ -184,7 +185,9 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
               restartIdentity()?.agentId
             }}</code>
             on node
-            <code data-id="hilos-daemon-restart-node">{{ nodeId() }}</code>
+            <span data-id="hilos-daemon-restart-node">{{
+              formatHilosNodeLabel(nodeId(), heading()?.name ?? null)
+            }}</span>
             will be stopped and will immediately start again under its placement
             rules.
           </p>
@@ -263,6 +266,7 @@ export class HilosDaemonAgentsPage {
     () => this.route().params['nodeId'] ?? '',
   )
   protected readonly heading = signal<HilosDaemonNodeHeading | null>(null)
+  protected readonly formatHilosNodeLabel = formatHilosNodeLabel
   protected readonly reported = signal(false)
   protected readonly emptyState = computed(() =>
     daemonProcessesEmptyState(this.heading(), this.reported()),

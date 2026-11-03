@@ -78,6 +78,40 @@ function row(key: string, same = false) {
 }
 
 describe('HilosDaemonEnvMismatchPage', () => {
+  it('labels the standalone serving node literally with an id fallback and exposes no values', () => {
+    const h = harness()
+    for (const servingNodeName of ['Узел 🌍 <b>main</b>', null]) {
+      h.scope.data.set(DAEMON_ENV_MISMATCH_DATA, {
+        clustered: false,
+        servingNodeId: 'n1',
+        servingNodeName,
+        comparison: null,
+      })
+      h.detect()
+      const label = h.el('hilos-daemon-env-mismatch-standalone-node')!
+      expect(label.textContent?.trim()).toBe(
+        servingNodeName === null ? 'n1' : `${servingNodeName} (n1)`,
+      )
+      expect(label.querySelector('b')).toBeNull()
+      expect(h.root.querySelector('table')).toBeNull()
+      expect(h.root.querySelector('input')).toBeNull()
+    }
+    h.scope.data.set(DAEMON_ENV_MISMATCH_DATA, summary())
+    h.detect()
+    const secret = row('TOKEN')
+    secret.slots.key.sensitive = true
+    h.window('hilosDaemonEnvMismatch', [secret])
+    expect(
+      h
+        .el('hilos-daemon-env-mismatch-cell-TOKEN-n1')
+        ?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(h.root.textContent).not.toContain('aaaa1111')
+    expect(h.root.textContent).not.toContain('bbbb2222')
+    expect(h.connection.sendAction).not.toHaveBeenCalled()
+    h.fixture.destroy()
+  })
+
   it('waits for the picture and shows the standalone explanation without starting tables', () => {
     const h = harness()
     expect(h.el('hilos-daemon-env-mismatch-waiting')).not.toBeNull()

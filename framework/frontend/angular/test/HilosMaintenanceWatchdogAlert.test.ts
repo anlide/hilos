@@ -221,6 +221,41 @@ describe('HilosMaintenanceWatchdogAlert', () => {
     expect(open.querySelectorAll('input, select, textarea')).toHaveLength(0)
   })
 
+  it('renders every named pending and diagnostic node from core as text and keeps unknown node ids', async () => {
+    const fixture = await mountAlert(
+      alarm('quiesce-overdue', {
+        watchdogPendingNodes: [
+          { nodeId: 'node-3', nodeName: 'Київ <b>三</b>' },
+          { nodeId: 'node-4', nodeName: '東京 & "four"' },
+          { nodeId: 'unknown-node', nodeName: null },
+        ],
+        diagnosticsNodeId: 'node-1',
+        diagnosticsNodeName: '診断 <em>Ω</em>',
+      }),
+    )
+    await openDetails(fixture)
+
+    expect(factTexts('dd')).toContain(
+      'Київ <b>三</b> (node-3), 東京 & "four" (node-4), unknown-node',
+    )
+    expect(factTexts('dd')).toContain('診断 <em>Ω</em> (node-1)')
+    expect(
+      byId('hilos-maintenance-watchdog-full')?.querySelector('b, em'),
+    ).toBeNull()
+
+    await setAlert(
+      fixture,
+      alarm('quiesce-overdue', {
+        watchdogPendingNodes: [{ nodeId: 'node-3', nodeName: null }],
+      }),
+    )
+    expect(factTexts('dd')).toContain('node-3')
+    expect(factTexts('dd')).toContain('node-1')
+    expect(byId('hilos-maintenance-watchdog-full')?.textContent).not.toContain(
+      'Київ',
+    )
+  })
+
   it('leaves unpublished diagnostics and unnamed pending nodes absent without inventing a node', async () => {
     const fixture = await mountAlert(
       alarm('quiesce-overdue', {
