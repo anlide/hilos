@@ -263,9 +263,11 @@ every attempt the first of a fresh window, and a limit of zero would refuse
 everybody's first attempt. `ThrottlePolicy::fromEnv()` falls back to *off* when there
 is no environment at all, which is the no-configuration case and not the deployment
 default. The test environment turns the layer **off** deliberately
-(`demo/chat/tests/.env.example`) — suites request codes far faster than a human
-would, and counters carried across a run would make every test depend on the ones
-before it.
+(`demo/chat/tests/.env.example`; the polls, tasks and online-testing test stacks pin
+it off on their daemon in `docker/docker-compose.test.yml`) — suites request codes
+far faster than a human would, and counters carried across a run would make every
+test depend on the ones before it. binance-btc-tracker and ecommerce-shop run their
+test stands with it on, because their specs prove it.
 
 **One number is a setting, not an env value:** `auth.throttle.outage_grace_seconds`,
 how many seconds of the agent's silence the guarded doors still run through

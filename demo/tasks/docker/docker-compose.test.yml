@@ -156,6 +156,13 @@ services:
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
       - HILOS_STATUS_URL=https://tasks-nginx-test/status
+      # The sign-in throttle off, as the test environment keeps it
+      # (docs/agents/architecture/auth-throttle.md): every browser of a run signs
+      # in from the runner's one address, so counters carried across the suite
+      # would make a test depend on the ones before it. The process value wins
+      # over a stale tests/.env. No spec of this demo proves the throttle;
+      # binance-btc-tracker and ecommerce-shop keep it on for theirs.
+      - HILOS_AUTH_THROTTLE_ENABLED=false
       - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
       - HILOS_LEGAL_EXPORT_XACCEL_LOCATION=/__hilos_legal_export
       - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
