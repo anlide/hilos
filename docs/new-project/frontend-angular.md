@@ -1,9 +1,9 @@
 # New Hilos frontend: Angular
 
-Reference implementations:
+The Angular demos:
 [demo/online-testing/frontend](../../demo/online-testing/frontend), the minimal
-one — copy it — and [demo/polls/frontend](../../demo/polls/frontend), the one
-with every framework feature switched on.
+one — copy it — and [demo/polls/frontend](../../demo/polls/frontend), which
+mounts every admin section.
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is Angular-specific.
 

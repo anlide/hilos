@@ -2,13 +2,12 @@
 
 How to stand up a new end project on the Hilos framework: a PHP backend
 (daemon + workers + agents) and a browser frontend on the Hilos SDK, both
-running in project-owned docker stacks. The reference implementations, from
-minimal to full:
+running in project-owned docker stacks. The demos, each with what it carries:
 
 | Project | Backend | Frontend | Role |
 |---|---|---|---|
-| [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every framework feature activated |
-| [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every framework feature activated, Angular toolchain |
+| [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every admin section on React |
+| [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every admin section on Angular, Angular toolchain |
 | [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
@@ -272,7 +271,7 @@ validator, because monopolistic-ness is declared by the daemon instance, which t
 validator never builds. The pool does not shrink either: a worker lives until the
 node stops, and a freed one is handed to the next agent that needs one.
 
-Every framework feature a project activates still costs workers — the logs feature
+Each framework feature a project activates still costs workers — the logs feature
 runs two monopolistic agents, `hilos_log_store`, which owns the directory
 (HIL-753), and `hilos_log_carrier`, which moves rotated batches into the archive
 (HIL-870); settings runs one, `hilos_settings_library` (HIL-946) — but the cost is

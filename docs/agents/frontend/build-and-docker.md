@@ -57,9 +57,9 @@ container the env_file would feed ever exists.
 `docker/.env.example` per demo listing the overridable knobs and their compose
 defaults. It is optional: every knob has a `:-default` in the compose file, so a
 fresh clone with no `docker/.env` publishes the demo's default host ports and
-needs no setup step. The same split holds across all three reference demos
-(polls, tasks, chat); `docker/.env` is also where a host keeps other
-non-committable interpolation overrides (e.g. the chat demo's `LLM_LOCAL_URL`).
+needs no setup step. The same split holds in every demo; `docker/.env` is also
+where a host keeps other non-committable interpolation overrides (e.g. the chat
+demo's `LLM_LOCAL_URL`).
 
 ## Published ports bind to loopback (the bind-host knob)
 

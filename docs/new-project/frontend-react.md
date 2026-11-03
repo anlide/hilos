@@ -1,8 +1,8 @@
 # New Hilos frontend: React
 
-Reference implementations: [demo/ecommerce-shop/frontend](../../demo/ecommerce-shop/frontend),
+The React demos: [demo/ecommerce-shop/frontend](../../demo/ecommerce-shop/frontend),
 the minimal one — copy it — and [demo/tasks/frontend](../../demo/tasks/frontend),
-the one with every framework feature switched on.
+which mounts every admin section.
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is React-specific.
 
