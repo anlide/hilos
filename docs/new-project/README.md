@@ -234,6 +234,30 @@ test, `10.22x` the cluster stand — and the column is the demo: 1
 binance-btc-tracker, 2 ecommerce-shop, 3 online-testing. The next project
 takes the next column: `10.204` / `10.214` / `10.224`.
 
+**Project time zone.** Copy the approved
+[warning and full consequences](../agents/architecture/calculated-results.md#warning-at-the-configuration-source)
+into your project's own `.env.example`, immediately before the commented
+`# HILOS_PROJECT_TIME_ZONE=UTC` assignment; the
+[Binance example](../../demo/binance-btc-tracker/.env.example) shows the complete
+block. Projects do not inherit the root `.env.example`. Keep the OLAP reset
+marked **PLANNED** until HIL-1402 implements it. Use the same zone on every
+cluster node and restart all nodes after changing it.
+
+History without retained raw data cannot be rebuilt; archived raw data must be
+available to the normal rebuild pipeline. A zone change can alter the calendar
+buckets used by ordinary backup retention to select what to keep or delete;
+it does not itself delete all backups. See the
+[time-zone guide](../agents/architecture/time-zones.md) and the full consequences
+above for calendar boundaries, cron, server text in project mode or using the
+project-zone fallback, and the planned reset of current OLAP cubes and dependent
+results until rebuilt.
+
+Existing `.env` files do not receive new comments automatically:
+`composer run setup-env` uses `cp -n`, which preserves an existing file instead
+of overwriting it. Process environment or Compose can also set the value without
+going through the example. This visibility limit is accepted; it does not add a
+confirmation gate or a startup stop.
+
 **Worker pool.** The daemon pre-starts `WORKER_MIN_REGULAR` regular and
 `WORKER_MIN_MONOPOLISTIC` monopolistic workers (regular ones scale up to
 `WORKER_MAX_REGULAR`). Set these in the daemon's compose `environment`, NOT in
