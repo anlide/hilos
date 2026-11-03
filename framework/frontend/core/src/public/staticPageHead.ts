@@ -1,4 +1,4 @@
-import type { HilosPageCrumb } from '../admin/identity/hilosPageIdentity.js'
+import type { HilosPageCrumb } from '../routing/hilosPageIdentity.js'
 import type { HilosPathResolver } from '../routing/hilosAdmin.js'
 
 /**

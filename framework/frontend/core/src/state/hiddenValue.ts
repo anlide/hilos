@@ -16,7 +16,7 @@
 // It lives in `state`, beside the field readers, and not in `admin`: it is the
 // shape of a value on the wire, as the readers' coercions are, and whoever reads
 // a field may meet it. Which screens draw it, and with which word, is the admin
-// view mode's (admin/viewMode.ts).
+// view mode's (state/viewMode.ts).
 
 /** The hidden mark: a value the server keeps from a viewer of the view mode. */
 export interface HiddenValue {

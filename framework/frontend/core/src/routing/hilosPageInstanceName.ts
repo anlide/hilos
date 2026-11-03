@@ -1,10 +1,10 @@
-import { type ScopeManager } from '../../state/ScopeManager.js'
+import { type ScopeManager } from '../state/ScopeManager.js'
 import {
   createSignal,
   type ReadonlySignal,
   type Unsubscribe,
   type WritableSignal,
-} from '../../state/signal.js'
+} from '../state/signal.js'
 
 /** One setup registration; its token protects a later producer on unmount. */
 interface PageInstanceNameBinding {

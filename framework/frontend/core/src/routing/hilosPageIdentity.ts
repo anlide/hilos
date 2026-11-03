@@ -1,4 +1,4 @@
-// The admin page's own identity, read off the page it is standing on: the
+// A page's own identity, read off the page it is standing on: the
 // heading, the lead, the breadcrumb chain and the cards of its subsections, plus
 // the dashboard's section grouping. None of it is a frontend constant any more —
 // a screen's name is text in the visitor's language, and only the backend knows
@@ -12,9 +12,9 @@
 // signals underneath (the page scope and the data slot), so a computed over a
 // selector recomputes both when the page changes and when its answer lands.
 
-import { readString, readStringOrNull } from '../../state/fieldReaders.js'
-import { type ScopeManager } from '../../state/ScopeManager.js'
-import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
+import { readString, readStringOrNull } from '../state/fieldReaders.js'
+import { type ScopeManager } from '../state/ScopeManager.js'
+import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { pageInstanceName } from './hilosPageInstanceName.js'
 
 /** Wire key of the subscribing page's own heading. */

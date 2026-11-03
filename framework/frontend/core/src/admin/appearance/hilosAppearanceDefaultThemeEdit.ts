@@ -8,7 +8,7 @@ import {
 import { HIDDEN_VALUE, type Hideable } from '../../state/hiddenValue.js'
 import { type TableViewportController } from '../../table/TableViewportController.js'
 import { THEME_POSITIONS, type ThemePosition } from '../../theme/themeChoice.js'
-import { hiddenAsWord } from '../viewMode.js'
+import { hiddenAsWord } from '../../state/viewMode.js'
 import {
   HilosAppearanceSettingKey,
   type HilosAppearanceActions,

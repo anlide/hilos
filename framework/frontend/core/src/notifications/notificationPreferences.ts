@@ -2,7 +2,7 @@
 // Initial state rides in page_response; updates arrive on the user's existing
 // notification group. The shared store never makes an optimistic toggle.
 import { z } from 'zod'
-import { type HilosPageCrumb } from '../admin/identity/hilosPageIdentity.js'
+import { type HilosPageCrumb } from '../routing/hilosPageIdentity.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import {

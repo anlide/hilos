@@ -18,7 +18,7 @@
 // visitor's language, and only the backend knows the language. The label, the
 // lead, the icon and the place in the admin tree live in the PHP catalog
 // (Database/Pages/HilosPageCatalog) and reach the page in its own page_response;
-// the frontend reads them through admin/identity/hilosPageIdentity. A URL is not
+// the frontend reads them through routing/hilosPageIdentity. A URL is not
 // translated, and a cold load has to resolve a path to a page key before the
 // socket is up, which is why the addresses stay here.
 

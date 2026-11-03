@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   dashboardSections,
   pageIdentity,
-} from '../../../src/admin/identity/hilosPageIdentity.js'
-import { ScopeManager } from '../../../src/state/ScopeManager.js'
-import { bindPageInstanceName } from '../../../src/admin/identity/hilosPageInstanceName.js'
-import { computedSignal, createSignal } from '../../../src/state/signal.js'
+} from '../../src/routing/hilosPageIdentity.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { bindPageInstanceName } from '../../src/routing/hilosPageInstanceName.js'
+import { computedSignal, createSignal } from '../../src/state/signal.js'
 
 describe('pageIdentity', () => {
   it('reads nothing before a page is subscribed', () => {

@@ -3,15 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   bindPageInstanceName,
   pageInstanceName,
-} from '../../../src/admin/identity/hilosPageInstanceName.js'
-import { bindPageInstanceName as baseBinding } from '../../../src/base/index.js'
-import { bindPageInstanceName as rootBinding } from '../../../src/index.js'
-import { ScopeManager } from '../../../src/state/ScopeManager.js'
+} from '../../src/routing/hilosPageInstanceName.js'
+import { bindPageInstanceName as baseBinding } from '../../src/base/index.js'
+import { bindPageInstanceName as rootBinding } from '../../src/index.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
 import {
   computedSignal,
   createSignal,
   subscribeSignal,
-} from '../../../src/state/signal.js'
+} from '../../src/state/signal.js'
 
 describe('bindPageInstanceName', () => {
   it('shares one public binding implementation between root and base', () => {

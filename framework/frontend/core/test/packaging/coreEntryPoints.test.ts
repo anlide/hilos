@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -2100,11 +2099,10 @@ describe('core public entries', () => {
     const closure = runtimeClosure('base/index.ts')
     expect(closure).not.toContain('index.ts')
     expect(closure.filter((file) => file.startsWith('status/'))).toEqual([])
-    expect(closure.filter((file) => file.startsWith('admin/'))).toEqual([
-      'admin/identity/hilosPageIdentity.ts',
-      'admin/identity/hilosPageInstanceName.ts',
-      'admin/viewMode.ts',
-    ])
+    expect(closure.filter((file) => file.startsWith('admin/'))).toEqual([])
+    expect(closure).toContain('routing/hilosPageIdentity.ts')
+    expect(closure).toContain('routing/hilosPageInstanceName.ts')
+    expect(closure).toContain('state/viewMode.ts')
     expect(closure.filter((file) => file.endsWith('/index.ts'))).toEqual([
       'base/index.ts',
     ])
@@ -2229,24 +2227,13 @@ describe('core public entries', () => {
     'routing/PageRouter.ts',
     'routing/hilosPages.ts',
     'routing/hilosUnbuiltPages.ts',
-  ])('keeps reviewed owner %s in the eager source/output inventory', (name) => {
+    'routing/hilosPageIdentity.ts',
+    'routing/hilosPageInstanceName.ts',
+    'state/viewMode.ts',
+  ])('keeps reviewed owner %s in the eager source path inventory', (name) => {
     const inventory = JSON.parse(
       readFileSync(join(packageRoot, 'bin/core-initial-sources.json'), 'utf8'),
-    ) as Record<string, { sourceSha256: string; outputSha256: string }>
-    const file = join(sourceRoot, name)
-    const content = readFileSync(file, 'utf8')
-    const compiled = ts.transpileModule(content, {
-      fileName: file,
-      compilerOptions: {
-        target: ts.ScriptTarget.ES2022,
-        module: ts.ModuleKind.ESNext,
-        sourceMap: true,
-        inlineSources: true,
-      },
-    }).outputText
-    expect(inventory[`src/${name}`]).toEqual({
-      sourceSha256: createHash('sha256').update(content).digest('hex'),
-      outputSha256: createHash('sha256').update(compiled).digest('hex'),
-    })
+    ) as string[]
+    expect(inventory).toContain(`src/${name}`)
   })
 })

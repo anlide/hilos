@@ -20,7 +20,7 @@ import {
   parseLocalDateTimeValue,
 } from '../../timeZone/localDateTime.js'
 import { hilosTimeZone } from '../../timeZone/timeZoneState.js'
-import { HILOS_VIEW_MODE_COPY } from '../viewMode.js'
+import { HILOS_VIEW_MODE_COPY } from '../../state/viewMode.js'
 import {
   HILOS_STATUS_WORK_SLOT,
   type HilosStatusWorkRow,

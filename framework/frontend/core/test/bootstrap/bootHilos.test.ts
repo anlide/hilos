@@ -23,7 +23,7 @@ import {
   createSignal,
   subscribeSignal,
 } from '../../src/state/signal.js'
-import { bindPageInstanceName } from '../../src/admin/identity/hilosPageInstanceName.js'
+import { bindPageInstanceName } from '../../src/routing/hilosPageInstanceName.js'
 import {
   createHilosI18nCountryCard,
   hilosI18nCountryDisplayName,

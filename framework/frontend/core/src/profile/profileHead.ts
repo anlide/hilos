@@ -1,8 +1,8 @@
 import {
   pageIdentity,
   type HilosPageIdentity,
-} from '../admin/identity/hilosPageIdentity.js'
-import { bindPageInstanceName } from '../admin/identity/hilosPageInstanceName.js'
+} from '../routing/hilosPageIdentity.js'
+import { bindPageInstanceName } from '../routing/hilosPageInstanceName.js'
 import { HilosPages } from '../routing/hilosPages.js'
 import { sessionUserName, sessionUserPhoto } from '../session/sessionScope.js'
 import {

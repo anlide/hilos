@@ -12,7 +12,7 @@ import {
   pageIdentity,
   type HilosDashboardSection,
   type HilosPageIdentity,
-} from '../admin/identity/hilosPageIdentity.js'
+} from '../routing/hilosPageIdentity.js'
 import {
   FIELD_PAGE,
   FIELD_PARAMS,

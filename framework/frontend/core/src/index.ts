@@ -732,7 +732,7 @@ export {
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   VIEW_MODE_ERROR_CODE,
-} from './admin/viewMode.js'
+} from './state/viewMode.js'
 export {
   bindUploads,
   cancelUpload,
@@ -1368,8 +1368,8 @@ export {
   type HilosPageIdentity,
   type HilosPageHeadOwner,
   type HilosDashboardSection,
-} from './admin/identity/hilosPageIdentity.js'
-export { bindPageInstanceName } from './admin/identity/hilosPageInstanceName.js'
+} from './routing/hilosPageIdentity.js'
+export { bindPageInstanceName } from './routing/hilosPageInstanceName.js'
 export { resolvePageTitle } from './routing/pageTitle.js'
 export { assertNever } from './protocol/assertNever.js'
 export {

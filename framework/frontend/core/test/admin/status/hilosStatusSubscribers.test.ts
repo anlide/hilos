@@ -9,7 +9,7 @@ import {
   statusSubscribersDataSchema,
   statusSubscriberSchema,
 } from '../../../src/admin/status/index.js'
-import { HILOS_VIEW_MODE_COPY } from '../../../src/admin/viewMode.js'
+import { HILOS_VIEW_MODE_COPY } from '../../../src/state/viewMode.js'
 import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'

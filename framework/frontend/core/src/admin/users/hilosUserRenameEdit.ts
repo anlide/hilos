@@ -12,7 +12,7 @@ import {
 } from '../../conflict/rowEditSession.js'
 import { isHiddenValue, type Hideable } from '../../state/hiddenValue.js'
 import { type ReadonlySignal } from '../../state/signal.js'
-import { hiddenAsWord } from '../viewMode.js'
+import { hiddenAsWord } from '../../state/viewMode.js'
 import { type HilosUserDetailRow, type HilosUserRename } from './hilosUsers.js'
 
 /** The shortest display name the rename accepts. */

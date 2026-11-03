@@ -93,7 +93,7 @@ import {
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { ANALYTICS_PERSON_ROUTE_PARAM } from '../analytics/hilosAnalyticsPerson.js'
-import { hiddenAsWord } from '../viewMode.js'
+import { hiddenAsWord } from '../../state/viewMode.js'
 
 export {
   SIGNAL_ACCOUNT_STANDING_STATE,

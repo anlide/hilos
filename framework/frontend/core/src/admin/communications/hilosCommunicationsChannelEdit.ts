@@ -15,7 +15,7 @@ import {
   type Hideable,
 } from '../../state/hiddenValue.js'
 import { type TableViewportController } from '../../table/TableViewportController.js'
-import { hiddenAsWord } from '../viewMode.js'
+import { hiddenAsWord } from '../../state/viewMode.js'
 import {
   type HilosChannelFieldRow,
   type HilosCommunicationsActions,

@@ -1,4 +1,4 @@
-import { pageIdentity } from '../../src/admin/identity/hilosPageIdentity.js'
+import { pageIdentity } from '../../src/routing/hilosPageIdentity.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type HilosRouter } from '../../src/routing/HilosRouter.js'
 import { type ScopeManager } from '../../src/state/ScopeManager.js'

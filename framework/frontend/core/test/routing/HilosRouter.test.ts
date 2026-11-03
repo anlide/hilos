@@ -18,7 +18,7 @@ import { ROUTE_NOT_FOUND_ERROR } from '../../src/routing/pageError.js'
 import {
   type HilosDashboardSection,
   type HilosPageIdentity,
-} from '../../src/admin/identity/hilosPageIdentity.js'
+} from '../../src/routing/hilosPageIdentity.js'
 import { createSignal } from '../../src/state/signal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { PageSubscription } from '../../src/subscription/PageSubscription.js'

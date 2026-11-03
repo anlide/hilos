@@ -18,7 +18,7 @@ import {
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
-import { HILOS_VIEW_MODE_COPY } from '../viewMode.js'
+import { HILOS_VIEW_MODE_COPY } from '../../state/viewMode.js'
 import { type HilosStatusContext } from './hilosStatus.js'
 
 /** Page-data key in the existing page_response payload. */

@@ -4,7 +4,7 @@ import {
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   VIEW_MODE_ERROR_CODE,
-} from '../../src/admin/viewMode.js'
+} from '../../src/state/viewMode.js'
 import { HIDDEN_VALUE } from '../../src/state/hiddenValue.js'
 
 describe('admin view mode words', () => {

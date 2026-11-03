@@ -1,4 +1,4 @@
-import { type HilosPageCrumb } from '../admin/identity/hilosPageIdentity.js'
+import { type HilosPageCrumb } from '../routing/hilosPageIdentity.js'
 import { copyToClipboard } from '../dom/clipboard.js'
 import { downloadTextFile } from '../dom/downloadTextFile.js'
 import { HilosPages } from '../routing/hilosPages.js'

@@ -6,7 +6,7 @@ import {
   hilosTabLinks,
   resolveHilosPath,
 } from '../../src/routing/hilosAdmin.js'
-import { type HilosDashboardSection } from '../../src/admin/identity/hilosPageIdentity.js'
+import { type HilosDashboardSection } from '../../src/routing/hilosPageIdentity.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
 

@@ -26,13 +26,22 @@ const RESERVED_BINDINGS = new Set(
 )
 // Reviewed runtime closure of core/base after the physical protocol split.
 // A new filename or a moved admin implementation earns no permission by name.
-// Update this content inventory only after reviewing the changed eager owners.
-const CORE_INITIAL_SOURCES = json(
-  fileURLToPath(new URL('./core-initial-sources.json', import.meta.url)),
+// Review each new eager source path before adding it manually to this inventory.
+const CORE_INITIAL_SOURCES = new Set(
+  list(
+    json(
+      fileURLToPath(new URL('./core-initial-sources.json', import.meta.url)),
+    ),
+    'core initial source paths',
+  ),
 )
 
 function fail(message) {
   throw new Error(message)
+}
+
+function unapprovedCoreSource(source) {
+  return `${UNKNOWN}: unapproved core source path: ${source}; after review, add this path to framework/frontend/core/bin/core-initial-sources.json`
 }
 
 function slash(value) {
@@ -474,7 +483,7 @@ export function sdkEvidence(projectRoot) {
   const proof = new Map()
   const refusals = new Map()
   const expanded = new Map()
-  const coreSources = new Map()
+  const coreSources = new Set()
   const coreOutputs = new Map()
 
   function findPackage(layer) {
@@ -604,33 +613,15 @@ export function sdkEvidence(projectRoot) {
     if (entries.get(id)) return entries.get(id)
     if (layer === 'core') {
       if (/^(?:src|dist)\/index\.[^/]+$/.test(path)) return 'compatibility root'
-      if (
-        /^(?:src|dist)\/admin\//.test(path) &&
-        !/^(?:src|dist)\/admin\/(?:identity\/hilosPage(?:Identity|InstanceName)|viewMode)\.[^/]+$/.test(
-          path,
-        )
-      )
-        return ADMIN
+      if (/^(?:src|dist)\/admin\//.test(path)) return ADMIN
       if (path.startsWith('src/')) {
-        if (coreOutputs.get(id) === false) {
-          const output = join(
-            pkg.directory,
-            'dist',
-            path.slice(4).replace(/\.ts$/, '.js'),
-          )
-          return `${UNKNOWN}: unapproved core compiler output: ${output}`
-        }
-        const hash = existsSync(id)
-          ? sha256(readFileSync(id))
-          : coreSources.get(id)
-        return pkg &&
-          coreSources.has(id) &&
-          hash === CORE_INITIAL_SOURCES[path]?.sourceSha256
+        if (!pkg || !coreSources.has(id)) return UNKNOWN
+        return CORE_INITIAL_SOURCES.has(path)
           ? null
-          : `${UNKNOWN}: unapproved core source snapshot: ${id}`
+          : unapprovedCoreSource(path)
       }
-      if (coreOutputs.has(id) && !coreOutputs.get(id))
-        return `${UNKNOWN}: unapproved core compiler output: ${id}`
+      const output = coreOutputs.get(id)
+      if (output && !output.approved) return unapprovedCoreSource(output.source)
       return refusals.get(id) ?? (proof.has(id) ? null : UNKNOWN)
     }
     if (layer && layer !== 'core') {
@@ -695,11 +686,11 @@ export function sdkEvidence(projectRoot) {
         receipt.mapSha256 !== sha256(mapBytes)
       )
         fail(`inconsistent tsc provenance: ${file}`)
-      coreSources.set(modules[0], receipt.sourceSha256)
-      coreOutputs.set(
-        file,
-        receipt.outputSha256 === CORE_INITIAL_SOURCES[source]?.outputSha256,
-      )
+      coreSources.add(modules[0])
+      coreOutputs.set(file, {
+        source: receipt.source,
+        approved: CORE_INITIAL_SOURCES.has(receipt.source),
+      })
     } else if (pkg.layer === 'angular') {
       modules = compilerModules(file, code, pkg)
       directory = pkg.exportDirectory

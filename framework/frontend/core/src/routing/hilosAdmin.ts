@@ -2,7 +2,7 @@
 // chain, the owner's tab row and the subsection cards a page answered with, each
 // entry resolved to a path in the context of the current route params, plus the
 // framework's own key→path resolver. The chain and the cards themselves arrive from the backend
-// catalog (admin/identity/hilosPageIdentity); this module holds only the mapping
+// catalog (routing/hilosPageIdentity); this module holds only the mapping
 // to a target, so the Vue/React/Angular breadcrumb and admin-page-shell
 // components stay thin. No page's content or render logic lives here — those are
 // one-per-file under each project's views/ (page-module-structure rule).
@@ -15,7 +15,7 @@ import {
   type HilosDashboardSection,
   type HilosPageChild,
   type HilosPageCrumb,
-} from '../admin/identity/hilosPageIdentity.js'
+} from './hilosPageIdentity.js'
 import { createPageRouter } from './PageRouter.js'
 import {
   HILOS_PAGE_ROUTES,

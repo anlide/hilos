@@ -11,7 +11,7 @@
 import {
   type HilosDashboardSection,
   type HilosPageIdentity,
-} from '../admin/identity/hilosPageIdentity.js'
+} from './hilosPageIdentity.js'
 import { isAuthReturnPath } from '../auth/authRoutes.js'
 import { type PageSubscriptionError } from '../protocol/pageError.js'
 import {

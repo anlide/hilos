@@ -155,8 +155,9 @@ Existing mixed definitions have their single implementation under `protocol/`:
 backup, logs, maintenance, legal-acceptance and account-standing signals, plus
 setting-preset schemas. Root and former direct-module exports reexport those
 same values/types; they do not build new schema objects. Shared shell selectors
-still live at `admin/identity/hilosPageIdentity.ts` and `admin/viewMode.ts` — an
-`admin/` directory name alone does not make a module a lazy implementation.
+have their common owners at `routing/hilosPageIdentity.ts`,
+`routing/hilosPageInstanceName.ts` and `state/viewMode.ts`; base and root reexport
+them. No source under `admin/**` is exempt from the initial-graph proof.
 Restore progress and its formatters/clock have their common owner at
 `connection/restoreProgress.ts`, reexported by base, root, `admin/backup` and the
 former `hilosBackups` module. The root-facing `hilosLegalDocumentLabel` has its

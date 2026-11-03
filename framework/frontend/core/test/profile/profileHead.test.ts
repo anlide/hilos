@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { pageIdentity } from '../../src/admin/identity/hilosPageIdentity.js'
-import { bindPageInstanceName } from '../../src/admin/identity/hilosPageInstanceName.js'
+import { pageIdentity } from '../../src/routing/hilosPageIdentity.js'
+import { bindPageInstanceName } from '../../src/routing/hilosPageInstanceName.js'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { createHilosProfileHeadStore } from '../../src/profile/profileHead.js'

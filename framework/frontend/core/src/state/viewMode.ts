@@ -9,7 +9,7 @@
 // one is one per document, and the controls the mode disables in all three
 // frontends point at it (aria-describedby), as does the strip itself.
 
-import { type Hideable, isHiddenValue } from '../state/hiddenValue.js'
+import { type Hideable, isHiddenValue } from './hiddenValue.js'
 
 /**
  * The refusal the server answers a viewer of the admin view mode with (PHP

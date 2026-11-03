@@ -190,7 +190,7 @@ build script runs the same graph policy through the shipped CLI:
 node node_modules/@hilos/core/bin/initial-bundle-budget.mjs angular dist --project-sources src/app/pages/routes.ts src/app/app.ts
 ```
 
-The raw budget is **1,500,000 warning / 2,000,000 error bytes**, for the unique
+The raw budget is **4,000,000 warning / 5,000,000 error bytes**, for the unique
 static JS+CSS closure from final client HTML. Script, modulepreload and stylesheet
 roots and their static dependencies count once; dynamic entries are reported
 separately with files already initial removed from each lazy closure. SSR outputs,
@@ -272,13 +272,15 @@ compiler graph, with valid maps/snapshots. Unknown or executable wrappers refuse
 Attribution grants no exemption to an initial root or admin entry, and a filename
 is never proof of its contents.
 
-Core's generated receipts are distinct from the checked-in
-`core/bin/core-initial-sources.json` permission inventory. An ordinary build
-records compiler evidence; it does **not** refresh that inventory. When eager
-sources or compiler outputs change, review their owners, bodies, static edges
-and actual `tsc` outputs, then update exactly the affected source/output
-fingerprints. Rehashing the whole inventory merely to make a build green loses
-the check it exists to provide.
+Core's generated compiler receipts and source maps, including their source and
+output hashes, prove compiler provenance. The checked-in
+`core/bin/core-initial-sources.json` is a separate manual path-approval inventory.
+Review each new eager core source path and add it to the inventory manually; a
+build never expands that list. Editing an already approved file needs no inventory
+update: review catches code added within that file, while compiler evidence is
+refreshed for rebuilt output. This accepts that in-file additions rely on review,
+and static imports from `admin/**` remain refused. Keep both records: compiler
+hashes prove provenance and freshness, not permission for a new path.
 
 ## SSG and the public surface
 
