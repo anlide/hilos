@@ -35,6 +35,11 @@ use `$hilos-testing-cli`.
   test-budget rules below still apply.
 - Which demo a new spec belongs in, and whether it carries a `spec-owner`
   line: `docs/agents/frontend/testing-strategy.md`, "Which demo carries a spec".
+- Before sharing a screen scenario already repeated across SDKs:
+  `docs/agents/frontend/testing-strategy.md`, "Shared behavior across view
+  frameworks", "Which demo carries a spec" and "Shared screen scenario
+  registration" — the narrow exception retains one carrier for server proof
+  and each screen spec's local `test`/`expect` and fixtures.
 - Selectors — stable action hooks and semantic h1 lookup — filling inputs,
   submit discipline, source-vs-build, test categories and the shared toolbox:
   `docs/agents/frontend/testing-strategy.md`.
@@ -95,7 +100,10 @@ use `$hilos-testing-cli`.
    in `framework/frontend/e2e/`, network-only work in
    `framework/frontend/scripts/`. Read stand addresses from the runner
    environment through the shared helpers. Checks receive the spec's `expect`;
-   scenario order and navigation stay in the spec.
+   scenario order and navigation stay in the spec or its explicit shared screen
+   registrar. Before extracting one, follow "Shared screen scenario registration"
+   in `docs/agents/frontend/testing-strategy.md`; ordinary helpers do not own
+   that order.
 7. Use test-command operations for available preconditions with test-scoped,
    awaited cleanup, including failures and timeouts. Reserve cleanup before a
    UI creation that is itself the subject. Prepare an ordinary admin once per

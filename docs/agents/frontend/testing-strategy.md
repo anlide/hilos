@@ -45,6 +45,105 @@ no longer in the DOM, and the failure never names its cause (HIL-994). The
 `<!--v-if-->` placeholder the runtime writes for a branch-less `v-if` is not a
 template comment and stays.
 
+### Shared behavior across view frameworks
+
+Shared SDK behavior has one text of **steps and expectations**, exercised by
+the real Vue, React and Angular components in their own test environments.
+Define a subject's scenarios once and register them from each SDK's local test
+entry. A small, subject-specific mount/update/flush/unmount adapter connects
+props, context and signals and performs that framework's lifecycle and cleanup.
+It contains no assertions, expected result, or implementation of the behavior
+under test. Do not reshape product components or core to fit the adapter.
+
+This is an ordinary TypeScript registration pattern to adopt through the pilots
+below, not a shipped harness, test package or public `@hilos/*` API. It needs no
+new dependency, Browser Mode, Storybook or universal adapter. This compact
+sketch illustrates the boundary; its registrar and adapter types are proposed
+test-local shapes, not existing exports:
+
+```ts
+function registerActionErrorCases(runner: LocalVitest, mount: MountActionError) {
+  runner.it('announces the current refusal', async () => {
+    const view = await mount({ error: null })
+    try {
+      await view.update({ error: 'Value must be an integer of 0 or more' })
+      await view.flush()
+      const alert = view.root.querySelector('[role="alert"]')
+      runner.expect(alert?.getAttribute('aria-live')).toBe('assertive')
+      runner.expect(alert?.textContent).toContain('Value must be an integer of 0 or more')
+    } finally {
+      await view.unmount()
+    }
+  })
+}
+
+// Each call belongs to its own existing local discovery entry.
+registerActionErrorCases({ it, expect }, mountVueActionError)     // Vue
+registerActionErrorCases({ it, expect }, mountReactActionError)   // React
+registerActionErrorCases({ it, expect }, mountAngularActionError) // Angular
+```
+
+The contract supplies the expected result; another SDK is not the oracle. An
+identical bug in all three must fail the explicit expectation. Before migrating
+a family, write down what its existing checks mean. Matching file names or the
+intersection of three check lists is not a semantic inventory: preserve useful
+behavioral and accessibility proof found in only one SDK too. A conflicting or
+undefined product expectation needs an interview in the future migration leaf;
+do not choose whichever SDK currently happens to do it. Different `loadingDelay`
+checks, for example, do not make React's result authoritative.
+
+Keep framework-specific API, lifecycle, SSR and hooks tests local when they
+need that framework, with a short explanation of why. Avoid private copies of
+shared behavior (the owner's decision, P-668). CSS snapshots and appearance
+checks do not become a shared behavioral contract: apply
+[the assertion rules below](#unit-and-component-assertions--behavior-accessibility-and-semantics).
+Shared fixtures read their existing owners through `@hilos/core/base` and
+`@hilos/core/admin/<section>`, not the compatibility root. Supporting vocabulary
+comes from its owner; checked values remain explicit examples under
+[Magic Values — Tests](../code-style/magic-values.md#tests). Do not invent a
+local page or error-code dictionary for the shared fixture.
+
+#### Rollout
+
+HIL-1787 records this decision and the following proposal for later work. It
+does not implement a harness, run a pilot, migrate tests or inventory every
+assertion. Creating follow-up leaves or an epic, or changing other tickets and
+their dependencies, needs separate explicit owner approval. These acceptance
+checks belong to those future leaves, not to this documentation change:
+
+1. **Component pilot:** one small family, one scenario module and three real
+   mount adapters. `HilosActionError` is a candidate for the subject interview:
+   `framework/frontend/vue/src/HilosActionError.test.ts`,
+   `framework/frontend/react/test/HilosActionError.test.tsx` and
+   `framework/frontend/angular/test/HilosActionError.test.ts`. Preserve its
+   behavior and ARIA semantics; judge existing cosmetic checks by the assertion
+   rules instead of copying them. Completion means one text of steps and
+   expectations, three real component runs, no root imports in touched files,
+   isolated state and cleanup, no duplicate old test body, and failures that
+   identify both SDK and case. The pilot determines the concrete files and
+   wiring; complex settings-page suites are not the starting family.
+2. **Browser pilot:** share the text of one comparable screen scenario already
+   run on Vue, React and Angular. The candidate is `theme-guest.spec.ts` in
+   `demo/{chat,tasks,polls}/tests/e2e/tests/`. Keep all useful steps and
+   expectations, local registration entries, fixtures and cleanup, and the same
+   number and distribution of runs. Verify local spec attribution in reports.
+   The theme feature may choose dark to prove the mode selection under the
+   existing exception; other scenarios gain no palette matrix. The
+   demo-specific `theme-smoke` specs in Binance, Ecommerce and Online do not
+   become portable framework scenarios because their names match.
+3. **After both pilots:** migrate bounded behavioral areas — basic controls and
+   forms, then tables and editing, then admin/account sections. Each leaf carries
+   the shared scenario and all three registrations together; do not split by
+   framework and leave three independent bodies alive. The pilots determine
+   grouping, scope and leaf count. Basename overlap is not a completed inventory,
+   and no timing measurements or bulk-migration readiness are claimed here.
+4. **Compatibility roots:** migrate each area's actual importers to `/base` and
+   `/admin/<section>` as that area moves, including justified framework-specific
+   tests. Removing the compatibility roots themselves remains HIL-1788. Before
+   that removal can proceed, verify that the actual importers have migrated and
+   connect its prerequisites to the approved migration work. This research
+   neither changes those dependencies nor declares that prerequisite fulfilled.
+
 ### Unit and component assertions — behavior, accessibility and semantics
 
 When creating, changing or reviewing a unit/component test, assert behavior,
@@ -108,6 +207,14 @@ happy-dom` (`framework/frontend/core/test/auth/oauthTrip.test.ts` is one), and a
 view-package test that renders on the server says `// @vitest-environment node`
 (`framework/frontend/vue/src/serverRender.test.ts`,
 `framework/frontend/react/test/serverRender.test.tsx`).
+
+For shared behavior, the existing local `*.test.ts` / `*.test.tsx` files stay
+discovery entries in the places above and call the common scenario module.
+That test-only module is not a second SDK API and does not enter the runtime
+bundle; the pilot determines its files and wiring. Keep the package DOM
+environments, Vue template compiler option, Angular JIT transform and setup,
+and per-test environment overrides. Do not simplify them to make a common
+registration shape pass.
 
 Browser APIs are stubbed in place rather than mocked as modules: `vi.spyOn` for
 functions (`framework/frontend/core/test/auth/oauthTrip.test.ts:187`) and
@@ -262,6 +369,17 @@ a code or a link, step-up, second factor and session rotation check the server;
 the sign-in card and its still button check the screen. A spec whose subject is
 the **screen** stays with its view framework and its area. Every demo keeps its
 own smoke and its own sign-in.
+
+Keep one instance of a server proof in its chosen demo. A shared **screen**
+scenario already exercised on several SDKs may instead have one source body
+and local registration entries using their current `test`, `expect` and
+fixtures. All steps and expectations live in that shared scenario; local
+composition contains no independent copy. This narrow source-sharing exception
+preserves demo/stand ownership, smoke/sign-in and the current distribution of
+runs. It neither runs every e2e on every demo nor moves specs between demos, and
+sharing text alone does not reduce run time. A scenario registrar owns the
+scenario; an ordinary toolbox helper does not acquire its caller's order or
+navigation. See [the shared registrar sketch](#shared-screen-scenario-registration).
 
 For a **new file** that checks the server, choose where the load is least at
 the moment:
@@ -650,8 +768,9 @@ Two rules keep it working:
 
 Section checks all three kits must meet alike — what a page shows, its totals,
 the node's page — live here as `expect…(expect, page, …)` functions. Tests stay
-in the demo's spec: the scenario, its order and navigation, and which checks it
-calls. Playwright reports a test under that demo spec's path; the Tests tab and
+in the demo's spec, directly or through the shared screen registrar below:
+the scenario owns its order, navigation and choice of checks, never an ordinary
+toolbox helper. Playwright reports a test under that demo spec's path; the Tests tab and
 flake accounting use that path. Three copies of the Daemon checks drifted:
 placement totals were fixed in only two of them. Sharing the checks keeps that
 contract in one place. A driving helper that checks readiness, such as
@@ -667,6 +786,46 @@ environment and delegates transport to `createCommandChannel`
 cluster host override remains supported by `createStandCommandChannel`.
 The scripts folder is a vitest project, so the shared transport has its unit
 test beside it.
+
+### Shared screen scenario registration
+
+For the screen exception in
+[Which demo carries a spec](#which-demo-carries-a-spec--the-server-check-travels-the-product-stays-home),
+a common browser registrar receives the local `test` and `expect`. It imports
+Playwright types only, never a second runner by value. Keep the shared homes:
+browser scenarios and helpers in `framework/frontend/e2e/`, network operations
+in `framework/frontend/scripts/`. Local entries supply their existing fixtures
+and product composition without copying the scenario's steps or assertions.
+Ordinary helpers retain the rules above; extracting a scenario is an explicit
+choice, not permission to hide changing scenario order inside a helper.
+
+This is a registration sketch, not an existing module or export. `LocalTest`
+and `LocalExpect` stand for the local runner's types; the pilot supplies the
+concrete typing and registration wiring without adding a dependency:
+
+```ts
+function registerGuestThemeCase(test: LocalTest, expect: LocalExpect) {
+  test('guest can choose the dark mode', async ({ page }) => {
+    await gotoPage(expect, page, '/', PAGE_READY)
+    await chooseHeaderTheme(expect, page, 'dark')
+    await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
+  })
+}
+
+// Three separate existing local spec entries, each with its own imports:
+// import { test, expect } from '../test.js'
+registerGuestThemeCase(test, expect) // Chat / Vue
+registerGuestThemeCase(test, expect) // Tasks / React
+registerGuestThemeCase(test, expect) // Polls / Angular
+```
+
+This excerpt illustrates one body, not the full pilot's coverage. The migration
+must retain the useful cases and cleanup of its existing specs. It inherits
+each carrier's settings, including its declared browser time zone, and adds no
+runtime randomness or cross-demo environment matrix. Keep the theme exception
+limited to proving the theme choice. Local reporting, fixtures and test-owned
+cleanup must survive registration; their verification is part of the
+[browser pilot](#rollout), not a claim that the harness already exists.
 
 ### Preconditions — test commands with owned cleanup
 
