@@ -407,6 +407,10 @@ activation refuses either artifact without the feature. The dashboard's served
 page list controls card availability; the overview card is visible in a view
 layer that has built the section, which all three layers have.
 
+The approved research design for calculation bases, invalidation and rebuilding
+is [calculated-results.md](calculated-results.md). It is a target, not built
+behavior; the first-snapshot reader-zone Overview below remains today's code.
+
 - The overview has a stable server/core contract: an opening of
   `hilos_analytics` returns one `data.analyticsOverview` snapshot with the
   captured reader zone, week/day/hour starts, one common `asOfTs`, and exact

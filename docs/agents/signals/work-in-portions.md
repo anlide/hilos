@@ -65,7 +65,13 @@ one is still there. A bulk action shows as a strip, under
 
 Show the **whole only** when a part makes the missing look absent: a cluster
 picture, a total, an export file. Before the first whole, the screen says
-"not known yet", never zero. Keep the last whole until the new one is ready.
+"not known yet", never zero. For ordinary rebuilding under still-valid
+calculation grounds, keep the last whole until the new one is ready. An
+accepted reset that invalidates those grounds need not keep the previous
+version serving: [calculated-results.md](../architecture/calculated-results.md)
+is the approved research design for that case. It requires ordinary
+unavailability until rebuilt, without partial totals or invented zeros. This
+is a target, not a change to today's readers or the rule for other pages.
 
 Known exceptions: the Daemon agents and workers tables and the node page, and
 the logs overview, draw the first portion of the cluster picture. The Daemon

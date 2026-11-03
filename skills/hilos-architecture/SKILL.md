@@ -1,6 +1,6 @@
 ---
 name: hilos-architecture
-description: Work with Hilos daemon, worker, agent lifecycle, event loop, cron, startup, shutdown, server registration, sockets, I/O, and blocking behavior. Use when modifying process boundaries, lifecycle hooks, event-loop code, worker forking, daemon registration, cron handling, or cross-process behavior in a Hilos project, and when deciding how many nodes of a cluster run a given agent and which of them holds an entity, and when registering a `$fs` directory or passing a file to an agent that may run on another node. Use it too when setting process or database UTC at startup, choosing the project time zone, or calculating cron and calendar retention boundaries.
+description: Work with Hilos daemon, worker, agent lifecycle, event loop, cron, startup, shutdown, server registration, sockets, I/O, and blocking behavior. Use when modifying process boundaries, lifecycle hooks, event-loop code, worker forking, daemon registration, cron handling, or cross-process behavior in a Hilos project, and when deciding how many nodes of a cluster run a given agent and which of them holds an entity, and when registering a `$fs` directory or passing a file to an agent that may run on another node. Use it too when setting process or database UTC at startup, choosing the project time zone, or calculating cron and calendar retention boundaries, and when designing the basis, invalidation, reset or rebuilding of a calculated result that depends on settings or environment values.
 ---
 
 # Hilos Architecture
@@ -13,6 +13,9 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
 - Explicit UTC at process/database startup, the project time zone, cron and
   calendar retention boundaries, including backups and disk log timestamps:
   `docs/agents/architecture/time-zones.md`
+- A calculated result's basis, invalidation and rebuilding when settings or
+  environment values change, and the approved research boundary with code:
+  `docs/agents/architecture/calculated-results.md`
 - Worker processes, forking, worker message handling: `docs/agents/architecture/worker-lifecycle.md`
 - Agent creation, lifecycle hooks, signal sending: `docs/agents/architecture/agent-lifecycle.md`
 - Sockets, event loop, I/O, blocking operations: `docs/agents/architecture/event-loop.md`

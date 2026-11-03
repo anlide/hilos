@@ -685,9 +685,14 @@ refused send, including one held by protected mode, can prepare it again on the
 next attempt. An opening that was sent successfully reuses its captured params
 on reconnect and `pageResubscribe`; a new opening prepares a fresh context. No
 zone-change observer refreshes the current snapshot. Today it remains until a
-new opening or reload, and leaving the page releases it. The full zone-change
-lifecycle, including retaining the old snapshot until replacement and its
-warning, remains P-703 work.
+new opening or reload, and leaving the page releases it.
+
+The approved research design for future project-zone calculations, reset and
+rebuilding is [calculated-results.md](calculated-results.md). It does not retain
+an invalidated result as a served fallback and does not change today's snapshot
+behavior. The full consequences of changing the project env value and the
+planned warning at its configuration source are in
+[Warning At The Configuration Source](calculated-results.md#warning-at-the-configuration-source).
 
 ### A Calendar Date Or Duration Is Not A Moment
 
