@@ -2,7 +2,6 @@ import { expect, test as base } from '../test.js'
 import {
   applyStatusSubscribers,
   cleanupFixtures,
-  clearStatusSubscriber,
   clickSubmit,
   clickUnavailableControl,
   deliveryObject,
@@ -14,6 +13,7 @@ import {
   openMountedStatusMailLink,
   PAGE_READY,
   removeStatusSubscriber,
+  removeStatusSubscribersIfAny,
   shownByTestId,
   STATUS_SUBSCRIBERS_PATH,
   statusSubscriberId,
@@ -73,17 +73,10 @@ test('Status subscription confirms, stays private to a viewer and leaves through
   cleanup.defer(() => setAdminViewMode(originalMode as boolean))
   const firstEmail = uniqueEmail()
   const secondEmail = uniqueEmail()
-  let firstRemoved = false
-  let secondRemoved = false
   // Reserve both UI subjects before either submit, including failed mail reads.
-  cleanup.defer(async () => {
-    if (!firstRemoved)
-      await clearStatusSubscriber(expect, page, adminLog, firstEmail)
-  })
-  cleanup.defer(async () => {
-    if (!secondRemoved)
-      await clearStatusSubscriber(expect, page, adminLog, secondEmail)
-  })
+  cleanup.defer(() =>
+    removeStatusSubscribersIfAny(expect, page, [firstEmail, secondEmail]),
+  )
 
   let firstLinks!: ReturnType<typeof statusMailLinks>
   let id!: string
@@ -172,7 +165,6 @@ test('Status subscription confirms, stays private to a viewer and leaves through
 
   await test.step('Admin removes the confirmed subscriber with the modal and its own ack', async () => {
     await removeStatusSubscriber(expect, page, adminLog, id)
-    firstRemoved = true
     await expectStatusSubscriberCounts(expect, page, adminLog, 0, 0)
   })
 
@@ -217,7 +209,6 @@ test('Status subscription confirms, stays private to a viewer and leaves through
       before,
       { status: 'unsubscribed' },
     )
-    secondRemoved = true
     await expect(
       guest.getByTestId('public-status-subscription-notice'),
     ).toHaveText('You are unsubscribed. No more letters will come.')

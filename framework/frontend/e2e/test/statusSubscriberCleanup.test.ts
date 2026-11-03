@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { Expect, Page } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
-import { watchDeliveryFrames } from '../deliveryFrames.js'
-import { clearStatusSubscriber } from '../statusSubscriptions.js'
+import { removeStatusSubscribersIfAny } from '../statusSubscriptions.js'
 
 describe('reserved Status subscriber cleanup', () => {
   for (const ownExists of [false, true]) {
@@ -13,8 +12,7 @@ describe('reserved Status subscriber cleanup', () => {
       const removed: number[] = []
       const peer = new EventEmitter()
       const socket = new EventEmitter()
-      const log = watchDeliveryFrames(peer as unknown as Page)
-      peer.emit('websocket', socket)
+      let closed = false
       let target: number | undefined
       const send = (wire: unknown) =>
         socket.emit('framesent', { payload: JSON.stringify(wire) })
@@ -85,9 +83,20 @@ describe('reserved Status subscriber cleanup', () => {
           }
         },
       })
-      const page = {
-        goto: async () => {},
+      // The helper opens its own tab in the admin's context and watches it:
+      // the tab's socket opens on the first navigation.
+      const page = Object.assign(peer, {
+        goto: async () => {
+          if (peer.listenerCount('websocket') > 0)
+            peer.emit('websocket', socket)
+        },
         getByTestId: (id: string | RegExp) => locator(id),
+        close: async () => {
+          closed = true
+        },
+      }) as unknown as Page
+      const admin = {
+        context: () => ({ newPage: async () => page }),
       } as unknown as Page
       // Evaluate the real helper's predicates once, without a browser timeout.
       const check = Object.assign(
@@ -117,13 +126,10 @@ describe('reserved Status subscriber cleanup', () => {
         },
         { poll: (read: () => unknown) => expect(read()) },
       ) as unknown as Expect
-      try {
-        await clearStatusSubscriber(check, page, log, email)
-        expect(removed).toEqual(ownExists ? [7] : [])
-        expect(rows).toEqual([neighbor])
-      } finally {
-        log.stop()
-      }
+      await removeStatusSubscribersIfAny(check, admin, [email])
+      expect(removed).toEqual(ownExists ? [7] : [])
+      expect(rows).toEqual([neighbor])
+      expect(closed).toBe(true)
     })
   }
 })

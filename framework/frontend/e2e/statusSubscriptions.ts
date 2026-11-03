@@ -14,28 +14,6 @@ import { expectDataFreeDeparture, shownByTestId } from './table.js'
 
 export const STATUS_SUBSCRIBERS_PATH = '/hilos/status/subscribers'
 
-/** Remove only a reserved UI subject, even when its creation or mail read failed. */
-export async function clearStatusSubscriber(
-  expect: Expect,
-  page: Page,
-  log: DeliveryFrameLog,
-  email: string,
-): Promise<void> {
-  await gotoPage(expect, page, STATUS_SUBSCRIBERS_PATH, PAGE_READY)
-  const since = log.sent.length
-  await typeInto(page.getByTestId('hilos-table-search'), email)
-  await expect
-    .poll(() => searchedStatusSubscriberIds(log, since, email))
-    .toBeDefined()
-  await expect(page.getByTestId('hilos-table-loading')).toBeHidden()
-  const window = statusSubscriberWindow(log, since)!
-  expect(Array.isArray(window.rows)).toBe(true)
-  expect(window.totalExact).toBe(true)
-  if ((window.rows as unknown[]).length === 0) expect(window.totalCount).toBe(0)
-  for (const id of searchedStatusSubscriberIds(log, since, email)!)
-    await removeStatusSubscriber(expect, page, log, id)
-}
-
 /** Inspect the real table deliveries, including inner frames of a batch. */
 export function statusSubscriberFrames(log: DeliveryFrameLog, type: string) {
   return log.packets.flatMap((packet) =>

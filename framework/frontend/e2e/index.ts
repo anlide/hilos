@@ -511,7 +511,6 @@ export {
 
 export {
   STATUS_SUBSCRIBERS_PATH,
-  clearStatusSubscriber,
   subscribeToStatus,
   openStatusMailLink,
   applyStatusSubscribers,
