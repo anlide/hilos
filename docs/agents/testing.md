@@ -686,7 +686,9 @@ container target, retaining per-node logs and the stand's export storage.
 Binance shares one named export volume among its nodes and entry. Online-testing
 shares its host `data/data_export` and serves Angular's `frontend/dist` at
 `/usr/share/nginx/html`. Ecommerce-shop has no entry, cluster browser suite or
-additional export volume.
+additional export volume. Each of the three stands gives Status a separate named
+volume, suffixed with `${HILOS_STAND_SUFFIX:-}` and shared by all its nodes and
+the entry where one exists.
 
 The CLI carrier is default-on. It uses `APP_ENV=test`, explicit cluster database
 credentials and command port, and mounts tracked `tests/.env.example` read-only

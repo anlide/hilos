@@ -3466,6 +3466,13 @@ abstract class DaemonManager extends BaseManager implements
                 if ($signal->signalType->getType() === SignalTypeConstants::DB_REHYDRATE) {
                     $reHydrateRound = $this->openReHydrateRound($workerServer, $peerServer, $signal);
                 }
+                // The router's local publication does not confirm its subject is reachable;
+                // that row stays stale until the peer handshake (HIL-876).
+                if ($signal->data instanceof RtSyncSignalDataInterface
+                    && $signal->data->collectionKey !== StateHilosClusterNode::RT_COLLECTION) {
+                    $this->agentManagerDaemon->rtReplicaOriginMap()->forget($signal->data->collectionKey, $signal->data->stateId);
+                    $this->clearStaleness($signal->data->collectionKey, [$signal->data->stateId]);
+                }
                 $this->sendSyncToWorkers($workerServer, $signal, reHydrateRound: $reHydrateRound);
                 $this->handleDaemonSignal($signal);
                 $this->broadcastRtSyncToPeers($peerServer, $signal);

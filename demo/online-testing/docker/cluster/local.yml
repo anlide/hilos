@@ -22,6 +22,7 @@ services:
     volumes:
       - ../../data/data_export:/app/data/data_export
       - ../../data/logs-cluster/m1:/var/log/hilos
+      - status:/app/data/status
     depends_on:
       online-testing-cluster-mysql:
         condition: service_healthy
@@ -40,6 +41,7 @@ services:
     volumes:
       - ../../data/data_export:/app/data/data_export
       - ../../data/logs-cluster/m2:/var/log/hilos
+      - status:/app/data/status
     depends_on:
       online-testing-cluster-mysql:
         condition: service_healthy
@@ -58,6 +60,7 @@ services:
     volumes:
       - ../../data/data_export:/app/data/data_export
       - ../../data/logs-cluster/m3:/var/log/hilos
+      - status:/app/data/status
     depends_on:
       online-testing-cluster-mysql:
         condition: service_healthy
@@ -71,9 +74,16 @@ services:
     ports: !reset []
     volumes:
       - ../../data/data_export:/data_export:ro
+      - status:/status:ro
     networks:
       cluster-net:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.30
+
+volumes:
+  # Independent test installations must not overwrite each other's Status files.
+  # Every node and the entry within this cluster share this one volume.
+  status:
+    name: hilos-online-testing-cluster-status${HILOS_STAND_SUFFIX:-}
 
 networks:
   cluster-net:

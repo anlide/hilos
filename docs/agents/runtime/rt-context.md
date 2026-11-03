@@ -506,6 +506,10 @@ hearing about that row, and `RtCollection::staleSince()` the earliest such momen
 among its rows — `null` in both when the copy is current, which is what a local
 row and every row off a cluster always are.
 
+A former replica this node writes itself becomes local at that write: the write
+clears its stale mark and forgets its former replica origin (HIL-1694). The
+locally published cluster router rows keep their exception described below.
+
 The mark is uniform across every RT collection and enumerates none of them. It is
 kept BESIDE the rows (`RtStaleness`) rather than in them, because a row is the
 owner's copy byte for byte and a housekeeping field inside it would travel into

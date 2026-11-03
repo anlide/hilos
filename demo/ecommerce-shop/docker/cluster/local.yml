@@ -21,6 +21,7 @@ services:
       hilos.role: app
     volumes:
       - ../../data/logs-cluster/m1:/var/log/hilos
+      - status:/app/data/status
     depends_on:
       ecommerce-shop-cluster-mysql:
         condition: service_healthy
@@ -38,6 +39,7 @@ services:
       - ./nodes/s1.env
     volumes:
       - ../../data/logs-cluster/s1:/var/log/hilos
+      - status:/app/data/status
     depends_on:
       ecommerce-shop-cluster-mysql:
         condition: service_healthy
@@ -55,12 +57,19 @@ services:
       - ./nodes/s2.env
     volumes:
       - ../../data/logs-cluster/s2:/var/log/hilos
+      - status:/app/data/status
     depends_on:
       ecommerce-shop-cluster-mysql:
         condition: service_healthy
     networks:
       cluster-net:
         ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15
+
+volumes:
+  # Independent test installations must not overwrite each other's Status files.
+  # Every node within this cluster shares this one volume.
+  status:
+    name: hilos-ecommerce-shop-cluster-status${HILOS_STAND_SUFFIX:-}
 
 networks:
   cluster-net:

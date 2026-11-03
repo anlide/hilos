@@ -174,6 +174,12 @@ the daemon (`env_file: ../tests/.env` — must exist; created by
 runner (its image tag MUST equal the `@playwright/test` version). Teardown
 always via `--profile "*" down` or profiled services leak.
 
+When Status is enabled, keep its files separate per installation: local stacks
+use `data/status`, test stacks use `data/status-test`, and each cluster stand uses
+its own named volume suffixed with `${HILOS_STAND_SUFFIX:-}`, shared by its nodes
+and entry where present. A new project that copies a demo's cluster stand must
+copy its Status volume definition too.
+
 **Ports.** In-container daemon ports are FIXED for every project: 8090
 (status) / 8091 (worker comm) / 8092 (websocket) — the nginx template proxies
 `/ws` to the hardcoded `:8092`. Only host-side publishes shift. Current

@@ -48,12 +48,14 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestMarkers;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use Hilos\TruthSource\RtReplicaOriginMap;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -1829,6 +1831,148 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * Publishing the lost node as offline is a local write about an unreachable subject;
+     * only its handshake may thaw the router row and the workers reading it (HIL-1694).
+     */
+    public function testPublishingANodeOfflineKeepsItsRouterRowStaleUntilTheLinkReturns(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        Hilos::$rt->mountFeatureRuntime([]);
+        $daemon->workerReads(StateHilosClusterNode::RT_COLLECTION);
+        $worker = $daemon->workerServer->getClients()[0];
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestWorkerClient::class, $worker);
+        RtTruthSourceRegistry::registerDaemon(StateHilosClusterNode::RT_COLLECTION);
+
+        try {
+            Hilos::$rt->hilosClusterNodes->actions->publish(
+                self::REMOTE_NODE,
+                'Node ' . self::REMOTE_NODE,
+                NodeRole::Master->value,
+                [],
+                null,
+                true,
+                self::FROZE_AT,
+            );
+            $daemon->dispatch();
+            $daemon->workerServer->forgetFrames();
+
+            $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+            $this->assertSame(
+                self::FROZE_AT,
+                RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, self::REMOTE_NODE),
+            );
+            $this->assertSame(
+                [(new WorkerRtStalenessMessageDTO(StateHilosClusterNode::RT_COLLECTION, [self::REMOTE_NODE], self::FROZE_AT))->toArray()],
+                $worker->stalenessFrames(),
+            );
+
+            Hilos::$rt->hilosClusterNodes->actions->publish(
+                self::REMOTE_NODE,
+                'Node ' . self::REMOTE_NODE,
+                NodeRole::Master->value,
+                [],
+                null,
+                false,
+                self::FROZE_AT,
+            );
+            $daemon->dispatch();
+
+            $this->assertFalse(Hilos::$rt->hilosClusterNodes[self::REMOTE_NODE]->online);
+            $this->assertSame(
+                self::FROZE_AT,
+                RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, self::REMOTE_NODE),
+            );
+            $this->assertSame(
+                [WorkerConstants::MESSAGE_RT_STALENESS, WorkerConstants::MESSAGE_RT_SYNC_UPDATED],
+                $worker->frameTypes(),
+                'The offline publication reaches the reader without a thaw frame',
+            );
+            $this->assertSame(
+                [(new WorkerRtStalenessMessageDTO(StateHilosClusterNode::RT_COLLECTION, [self::REMOTE_NODE], self::FROZE_AT))->toArray()],
+                $worker->stalenessFrames(),
+            );
+            $daemon->workerServer->forgetFrames();
+
+            $daemon->noteNodeReachable(self::REMOTE_NODE);
+
+            $this->assertNull(RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, self::REMOTE_NODE));
+            $this->assertSame(
+                [(new WorkerRtStalenessMessageDTO(StateHilosClusterNode::RT_COLLECTION, [self::REMOTE_NODE], null))->toArray()],
+                $worker->stalenessFrames(),
+            );
+        } finally {
+            RtTruthSourceRegistry::unregisterDaemon(StateHilosClusterNode::RT_COLLECTION);
+        }
+    }
+
+    /**
+     * A local write takes the row over from its former origin; another loss of that origin
+     * must neither freeze the row again nor tell a reader worker that it froze (HIL-1694).
+     *
+     * @param string $signalType Local row mutation to dispatch
+     */
+    #[TestWith([SignalTypeConstants::RT_SYNC_CREATED])]
+    #[TestWith([SignalTypeConstants::RT_SYNC_UPDATED])]
+    #[TestWith([SignalTypeConstants::RT_SYNC_DELETED])]
+    public function testARowThisNodeWritesItselfStopsBeingStale(string $signalType): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+        $this->assertSame(
+            self::FROZE_AT,
+            RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID),
+        );
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+        $daemon->workerServer->forgetFrames();
+
+        $signal = match ($signalType) {
+            SignalTypeConstants::RT_SYNC_CREATED => $daemon->rtSyncCreated('Ada'),
+            SignalTypeConstants::RT_SYNC_UPDATED => new SignalDTO(
+                new SignalSource(SignalSource::RT),
+                new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
+                new SignalName(SignalConstants::RT_SYNC_UPDATED),
+                new RtSyncUpdatedSignalData(
+                    DaemonManagerRtSyncPeerTestRtContext::ROWS,
+                    self::ROW_ID,
+                    [DaemonManagerRtSyncPeerTestState::name => 'Ada'],
+                ),
+            ),
+            SignalTypeConstants::RT_SYNC_DELETED => $daemon->rtSyncDeleted(),
+        };
+        Hilos::$sr->queueSignal(
+            signalSource: $signal->signalSource,
+            signalType: $signal->signalType,
+            signalName: $signal->signalName,
+            signalData: $signal->data,
+        );
+        $daemon->dispatch();
+
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+        $this->assertNull($daemon->originMap()->nodeOfRow(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+        $this->assertSame($signalType, $daemon->mesh->singleAnnouncement()->signalType);
+        $worker = $daemon->workerServer->getClients()[0];
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestWorkerClient::class, $worker);
+        $this->assertSame(
+            [(new WorkerRtStalenessMessageDTO(DaemonManagerRtSyncPeerTestRtContext::ROWS, [self::ROW_ID], null))->toArray()],
+            $worker->stalenessFrames(),
+        );
+        $daemon->workerServer->forgetFrames();
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
      * The router row travels to the workers as its own frame, because a frame is per collection
      * and this one belongs to no origin map: a worker reading both is told about both.
      *
@@ -3529,6 +3673,22 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
         }
 
         return $types;
+    }
+
+    /**
+     * @return list<array<string, mixed>> Freshness payloads written to this reader, in order
+     */
+    public function stalenessFrames(): array
+    {
+        $frames = [];
+        foreach ($this->written as $frame) {
+            $decoded = json_decode($frame, true);
+            if (is_array($decoded) && ($decoded[WorkerDTO::TYPE] ?? null) === WorkerConstants::MESSAGE_RT_STALENESS) {
+                $frames[] = $decoded;
+            }
+        }
+
+        return $frames;
     }
 
     /**
