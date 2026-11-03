@@ -51,6 +51,30 @@ export async function expectChangeLogDashboardCard(
   await expect(card).toContainText(CHANGE_LOG_LEAD)
 }
 
+/** The current crumb has one complete label, excluding aria-hidden decoration. */
+async function expectChangeLogCurrentCrumb(
+  expect: Expect,
+  crumbs: Locator,
+  label: string,
+): Promise<void> {
+  const currentCrumb = crumbs.locator('[aria-current="page"]')
+  await expect(currentCrumb).toHaveCount(1)
+  await expect
+    .poll(() =>
+      currentCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent
+          ?.replace(/[\u200b\u00ad]/g, '')
+          .trim()
+          .replace(/\s+/g, ' ')
+      }),
+    )
+    .toBe(label)
+  await expect(currentCrumb.locator('a')).toHaveCount(0)
+}
+
 /**
  * The adopted Vue section has one owner head and four native page links.
  *
@@ -83,22 +107,7 @@ export async function expectChangeLogSectionHead(
     'href',
     '/hilos',
   )
-  const currentCrumb = crumbs.locator('[aria-current="page"]')
-  await expect(currentCrumb).toHaveCount(1)
-  await expect
-    .poll(() =>
-      currentCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent
-          ?.replace(/[\u200b\u00ad]/g, '')
-          .trim()
-          .replace(/\s+/g, ' ')
-      }),
-    )
-    .toBe('Change Log')
-  await expect(currentCrumb.locator('a')).toHaveCount(0)
+  await expectChangeLogCurrentCrumb(expect, crumbs, 'Change Log')
 
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveRole('navigation')
@@ -644,22 +653,7 @@ export async function expectChangeLogTableHead(
       href!,
     )
   }
-  const currentCrumb = crumbs.locator('[aria-current="page"]')
-  await expect(currentCrumb).toHaveCount(1)
-  await expect
-    .poll(() =>
-      currentCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent
-          ?.replace(/[\u200b\u00ad]/g, '')
-          .trim()
-          .replace(/\s+/g, ' ')
-      }),
-    )
-    .toBe(table)
-  await expect(currentCrumb.locator('a')).toHaveCount(0)
+  await expectChangeLogCurrentCrumb(expect, crumbs, table)
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Table pages')
   await expect(tabs).toHaveRole('navigation')
@@ -704,13 +698,13 @@ export async function expectChangeLogTableHead(
 }
 
 /**
- * Keep exact legacy headings while checking all head metadata in adopted Vue.
+ * Check the table owner head when the current view exposes it.
  *
  * @param expect The spec's expect.
  * @param page The current page.
  * @param table The scenario's table fixture.
  * @param currentPage The current table page key.
- * @param legacyTitle The legacy page's exact catalog heading.
+ * @param legacyTitle The fallback page's exact catalog heading.
  * @param recordKey The optional record route context retained by the History tab.
  * @param since The scenario's migration number, overriding the shared fixture.
  */
@@ -733,12 +727,14 @@ async function expectTrackedTableOwnerHead(
     } as const
     const declaration = declarations[table as keyof typeof declarations]
     if (!declaration) throw new Error(`No table head fixture for ${table}.`)
+    const expectedDeclaration =
+      since === undefined ? declaration : { ...declaration, since }
     await expectChangeLogTableHead(
       expect,
       page,
       table,
       currentPage,
-      { ...declaration, since: since ?? declaration.since },
+      expectedDeclaration,
       recordKey,
     )
   } else {

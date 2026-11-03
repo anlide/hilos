@@ -144,8 +144,23 @@ function router(detailBuilt: boolean): HilosRouter {
     pageIdentity: createSignal<HilosPageIdentity | undefined>({
       label: 'Tracked tables',
       lead: 'Database tables, their journal label and column rules.',
-      breadcrumb: [],
+      breadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+      ],
       children: [],
+      pageHeadOwner: {
+        page: HilosPages.CHANGE_LOG,
+        label: 'Change Log',
+        lead: 'Who changed what in the tracked tables, and through which action.',
+        icon: 'bi-clock-history',
+      },
+      pageTabs: [
+        { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+        { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+        { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+        { page: HilosPages.CHANGE_LOG_NOISY, label: 'Noisy columns' },
+      ],
     }),
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page, params) =>
@@ -245,8 +260,11 @@ describe('HilosChangeLogTablesPage', () => {
       expect(hilosAdminAccess.get()).toBe(access)
       await mountPage(h)
       expect(document.querySelectorAll('h1')).toHaveLength(1)
-      expect(text(get('h1'))).toBe('Tracked tables')
+      expect(text(get('h1'))).toBe('Change Log')
       const tracked = get('table [data-id="hilos-table-row-project_record"]')
+      expect(get('table').getAttribute('aria-labelledby')).toBe(
+        get('h1').getAttribute('id'),
+      )
       expect(text(get('code', tracked))).toBe('project_record')
       expect(tracked.textContent).toContain('Project')
       expect(tracked.textContent).toContain(

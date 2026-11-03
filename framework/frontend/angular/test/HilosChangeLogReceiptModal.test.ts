@@ -15,7 +15,10 @@ import {
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { formatChangeLogTime } from '@hilos/core/admin/change-log'
+import {
+  CHANGE_LOG_RECEIPT_COPY,
+  formatChangeLogTime,
+} from '@hilos/core/admin/change-log'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogReceiptModal } from '../src/admin/changeLog/HilosChangeLogReceiptModal.js'
@@ -198,20 +201,18 @@ describe('HilosChangeLogReceiptModal', () => {
     rebound.destroy()
   })
 
-  it('shows complete escaped long values and distinct absent, NULL, and empty sides', () => {
-    const oldText = 'old <script>bad()</script>\n' + 'x'.repeat(6000)
-    const newText = 'new <img src=x onerror=bad()>\n' + 'y'.repeat(6000)
+  it('draws inline values as literal text with neighboring Was and Now labels', () => {
     const { detail } = render(
       dialog([
         entry({
           changes: [
             {
               field: 'description',
-              kind: 'long',
+              kind: 'inline',
               oldPresent: true,
               newPresent: true,
-              oldValue: oldText,
-              newValue: newText,
+              oldValue: '<b>old</b>',
+              newValue: '<script>new</script>',
               bodyOmitted: false,
             },
             {
@@ -245,17 +246,28 @@ describe('HilosChangeLogReceiptModal', () => {
         }),
       ]),
     )
-    expect(
-      detail.querySelector(
-        '[data-id="hilos-change-log-value-11-description-old"]',
-      )?.textContent,
-    ).toBe(oldText)
-    expect(
-      detail.querySelector(
-        '[data-id="hilos-change-log-value-11-description-new"]',
-      )?.textContent,
-    ).toBe(newText)
-    expect(detail.querySelectorAll('script, img')).toHaveLength(0)
+    const entryNode = detail.querySelector(
+      '[data-id="hilos-change-log-entry-11"]',
+    ) as HTMLElement
+    const oldValue = entryNode.querySelector(
+      '[data-id="hilos-change-log-value-11-description-old"]',
+    ) as HTMLElement
+    const newValue = entryNode.querySelector(
+      '[data-id="hilos-change-log-value-11-description-new"]',
+    ) as HTMLElement
+    expect(oldValue.textContent).toBe('<b>old</b>')
+    expect(newValue.textContent).toBe('<script>new</script>')
+    expect(oldValue.previousElementSibling?.textContent?.trim()).toBe(
+      CHANGE_LOG_RECEIPT_COPY.oldValue,
+    )
+    expect(newValue.previousElementSibling?.textContent?.trim()).toBe(
+      CHANGE_LOG_RECEIPT_COPY.newValue,
+    )
+    expect(entryNode.querySelectorAll('b, script, img')).toHaveLength(0)
+    expect(entryNode.querySelector('h3')?.textContent).toContain('updated')
+    expect(entryNode.querySelector('h3 i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
     expect(
       detail.querySelector('[data-id="hilos-change-log-value-11-nullable-old"]')
         ?.textContent,
@@ -268,9 +280,79 @@ describe('HilosChangeLogReceiptModal', () => {
       detail.querySelector('[data-id="hilos-change-log-value-11-added-old"]')
         ?.textContent,
     ).toBe('Absent')
-    expect(detail.textContent).toContain('Personal — no value')
-    expect(detail.textContent).not.toContain('private old')
-    expect(detail.textContent).not.toContain('private new')
+  })
+
+  it('shows fact changes without putting personal values in the DOM', () => {
+    const { detail } = render(
+      dialog([
+        entry({
+          changes: [
+            {
+              field: 'name',
+              kind: 'fact',
+              oldPresent: true,
+              newPresent: true,
+              oldValue: 'private old',
+              newValue: 'private new',
+              bodyOmitted: false,
+            },
+          ],
+        }),
+      ]),
+    )
+    const fact = detail.querySelector(
+      '[data-id="hilos-change-log-entry-11"] li',
+    ) as HTMLElement
+    expect(fact.textContent).toContain(CHANGE_LOG_RECEIPT_COPY.changed)
+    expect(fact.textContent).toContain('Personal — no value')
+    expect(fact.textContent).not.toContain('private old')
+    expect(fact.textContent).not.toContain('private new')
+    expect(
+      fact.querySelector('[data-id^="hilos-change-log-value-11-name-"]'),
+    ).toBeNull()
+    expect(fact.querySelector('hilos-long-text')).toBeNull()
+    expect(fact.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('shows complete escaped long values through the full-text reader', () => {
+    const oldText = 'old <script>bad()</script>\n' + 'x'.repeat(6000)
+    const newText = 'new <img src=x onerror=bad()>\n' + 'y'.repeat(6000)
+    const { detail } = render(
+      dialog([
+        entry({
+          changes: [
+            {
+              field: 'description',
+              kind: 'long',
+              oldPresent: true,
+              newPresent: true,
+              oldValue: oldText,
+              newValue: newText,
+              bodyOmitted: false,
+            },
+          ],
+        }),
+      ]),
+    )
+    const oldValue = detail.querySelector(
+      '[data-id="hilos-change-log-value-11-description-old"]',
+    ) as HTMLElement
+    const newValue = detail.querySelector(
+      '[data-id="hilos-change-log-value-11-description-new"]',
+    ) as HTMLElement
+    expect(oldValue.textContent).toBe(oldText)
+    expect(newValue.textContent).toBe(newText)
+    expect(
+      oldValue
+        .closest('hilos-long-text')
+        ?.previousElementSibling?.textContent?.trim(),
+    ).toBe(CHANGE_LOG_RECEIPT_COPY.oldValue)
+    expect(
+      newValue
+        .closest('hilos-long-text')
+        ?.previousElementSibling?.textContent?.trim(),
+    ).toBe(CHANGE_LOG_RECEIPT_COPY.newValue)
+    expect(detail.querySelectorAll('script, img')).toHaveLength(0)
     expect(
       detail.querySelector('pre')?.classList.contains('hilos-pre-wrap'),
     ).toBe(true)
@@ -308,11 +390,13 @@ describe('HilosChangeLogReceiptModal', () => {
     expect(created.textContent).toContain(
       'Created as a fact; values belong to the record itself.',
     )
+    expect(created.querySelector('h3')?.textContent).toContain('created')
     expect(created.textContent).not.toContain('saved snapshot')
     const deleted = detail.querySelector(
       '[data-id="hilos-change-log-entry-12"]',
     )!
     expect(deleted.textContent).toContain('bot #?, retained')
+    expect(deleted.querySelector('h3')?.textContent).toContain('deleted')
     expect(deleted.textContent).toContain('Snapshot before deletion:')
     expect(deleted.textContent).toContain('saved snapshot')
     expect(

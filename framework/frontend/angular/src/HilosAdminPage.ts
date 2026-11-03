@@ -137,6 +137,7 @@ let adminPageHeadingSeq = 0
             [params]="params()"
             [resolvePath]="resolvePath"
             [headingId]="headingId"
+            [titleClass]="headTitleClass()"
             [kind]="headKind() ?? 'section'"
             [action]="headAction()"
             [skeletonVisual]="headSkeletonVisual()"
@@ -248,6 +249,9 @@ export class HilosAdminPage {
 
   /** The one transition the shared head offers as a button. */
   readonly headAction = input<HilosPageHeadAction>()
+
+  /** Extra presentation classes on the shared head's one h1. */
+  readonly headTitleClass = input<string>()
 
   /** The shared head's breadcrumb navigation's accessible name. */
   readonly breadcrumbLabel = input('Breadcrumb')

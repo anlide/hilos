@@ -700,21 +700,19 @@ the router: Vue, React and Angular draw it. The address uses the live table
 name, never a journal dictionary number.
 
 The standalone Noisy columns page (`/hilos/change-log/noisy`) answers in its
-first `page_response` with the noisy-column snapshot in
-`data.changeLogNoisyColumns` for React and Angular, plus the first
-`windows.hilosChangeLogNoisyColumns` viewport. The snapshot covers live
-journaled tables and has each column's live `table`, `column` and non-empty
-`reason` from `_journalNoise`, in table-then-column order. These are schema
-metadata, declared `WireField::notPersonal()`; an admin
+first `page_response` with the compatible snapshot in
+`data.changeLogNoisyColumns` and the first `windows.hilosChangeLogNoisyColumns`
+viewport. The snapshot covers live journaled tables and has each column's live
+`table`, `column` and non-empty `reason` from `_journalNoise`, in table-then-column
+order. These are schema metadata, declared `WireField::notPersonal()`; an admin
 and a view-mode viewer receive the same data. A valid empty list means no noisy
 columns are declared; absent or malformed data is not an empty result. The
-snapshot is read at subscription, while each viewport is read for its window
-request; Angular reads the snapshot and React reads the viewport. There is no
-polling, cache, source-driven update or live mutation.
+snapshot is read at subscription; each viewport is read for its window request.
+The compatible payload and core reader remain. Vue, React and Angular read and
+draw the standard server window. There is no polling, cache, source-driven
+update or live mutation.
 
-Vue and React read and draw the server window. Angular keeps the snapshot table
-on wide screens and cards on narrow screens on this separate page. The
-`hilosChangeLogNoisyColumns` table reads
+The `hilosChangeLogNoisyColumns` table reads
 `Hilos::$db->changeLogTables->sectionNoisyColumns()` into windows of 25, ordered
 by table and column. Its row key and `columnKey` are `table.column`; the
 `noisyColumn` slot contains only `{columnKey, table, column, reason}`, with no
@@ -723,37 +721,65 @@ The ordinary count, anchors and window apply; the view offers no search,
 filters or row actions. It draws `Column` (the qualified `table.column`) and
 `Why noisy`, and the existing page and table gates still apply.
 
-The Tracked table page `hilos_change_log_table` lives at
-`/hilos/change-log/tables/{tableId}/{record?}`. `tableId` is the live table
-name; the optional `record` is the record key, each part through
-`encodeURIComponent` and the parts joined by `,`, which the router then encodes
-once more as one segment (`/hilos/change-log/tables/bot/57`). The page answers
-in its opening `page_response`, and again on `page_update_subscription`, with
-`payload.data.changeLogTable`: the table's name, owner, journal label, writes in
-the last 24 hours and last change, its columns in live-schema order with their
-SQL type, journal mode and storage, and its three service triggers with the
-migration each body is valid from. The section is schema metadata, declared
-`WireField::notPersonal()`, so an admin and a view-mode viewer receive the same
-one. An unknown name is refused as not found; an untracked table answers with
-`journaled` false, no modes and no triggers. The server never parses `record`:
-the view builds the `hilosChangeLogHistory` window after the page answers, only
-for a journaled table, with the table and the record as its preset, and builds
-it again when the address changes. The page declares no action of its own: its
-receipt modal reads through the Feed-owned `hilos_change_log_receipt_read`,
-which is addressed by name and needs no subscription to the Feed.
+The eight Change Log page routes are `/hilos/change-log`,
+`/hilos/change-log/feed`, `/hilos/change-log/tables` and
+`/hilos/change-log/noisy`; the table owner uses
+`/hilos/change-log/tables/{tableId}`, `/hilos/change-log/tables/{tableId}/columns`,
+`/hilos/change-log/tables/{tableId}/triggers` and
+`/hilos/change-log/tables/{tableId}/history/{record?}`. `tableId` is the live
+table name. Only History accepts the optional record key; composite key parts
+are encoded, comma-joined and encoded as one route segment. The plural `/tables`
+address remains the list page.
 
-In the receipt modal — on the Change Log and on this page alike — the `table
-#key` of an entry links to this page narrowed to that record, and following it
-closes the modal. The link is drawn only when the router gives the page an
-address and no part of the key is masked; otherwise the label stays text.
+The Tracked table Overview answers in its opening `page_response`, and again on
+`page_update_subscription`, with `payload.data.changeLogTable`: the table's
+name, owner, journal label, writes in the last 24 hours and last change, its
+columns in live-schema order with their SQL type, journal mode and storage, and
+its three service triggers with the migration each body is valid from. The
+section is schema metadata, declared `WireField::notPersonal()`, so an admin and
+a view-mode viewer receive the same one. An unknown name is refused as not
+found; an untracked table answers with `journaled` false, no modes and no
+triggers. Overview draws the table details without a list window. The Vue, React and
+Angular table shells supply the shared entity head and its row: journaled tables
+show Overview, Columns, Triggers and History; untracked tables show Overview
+and Triggers. The Tracked tables list opens a journaled table at its Overview
+address. Angular's internal `HilosChangeLogTableShell` renders `#pageBody` via
+`NgTemplateOutlet` with the `Injector` of its real `HilosAdminPage`, so body
+controls retain admin view mode and tables receive the h1 for their accessible
+name.
+
+Columns and Triggers read their standard server windows only for the matching
+permitted page, scope, context and table address; cleanup clears their current
+answer and the views rebind when those inputs change. History reads a
+`hilosChangeLogHistory` window for the table and optional record, only for a
+journaled table, and rebuilds it when the address changes. The History row's
+unmasked record key links to the record-filtered History route; its `×` clears
+the filter to History without a record. The page declares no action of its own:
+its receipt modal reads through the Feed-owned
+`hilos_change_log_receipt_read`, which is addressed by name and needs no Feed
+subscription.
+
+In the receipt modal — on the Change Log and in History — an unmasked `table
+#key` entry links to that table's record-filtered History route and closes the
+modal. A key with any masked part stays text. History renders inline values in
+the row, marks fact-only fields without personal values, and summarizes long
+values without their bodies. The receipt detail shows complete long values
+through the long-text reader and keeps personal values out of the DOM. Angular's
+History and receipt component tests cover these renderings in
+`framework/frontend/angular/test/HilosChangeLogTableHistoryPage.test.ts` and
+`framework/frontend/angular/test/HilosChangeLogReceiptModal.test.ts`.
 
 The shared receipt and history scenarios remain in chat (Vue), tasks (React)
 and polls (Angular), using a person's block receipt and checks from
-`framework/frontend/e2e/changeLog.ts`. Chat checks the adopted Vue section
-head, overview tiles, navigation with Back, and direct Feed and Noisy columns
-entry with a complete first answer through F5. Tasks checks the React section
-head through the shared owner-page helper; Angular keeps its legacy section
-head. Chat's `change-log-bot.spec.ts` checks full long-text values (HIL-1464).
+`framework/frontend/e2e/changeLog.ts`. Chat additionally checks the adopted
+Vue section head, overview tiles, navigation with Back, and direct Feed and
+Noisy columns entry with a complete first answer through F5. Tasks checks the
+React section head through the shared owner-page helper. Polls covers the
+Angular section and table routes, including direct table-route entry,
+reload/F5, Back and Forward, and checks the Noisy page, block and registration
+receipts, record-history links, the record-filter clear link and the old
+address refusal. Chat's `change-log-bot.spec.ts` checks full long-text values
+(HIL-1464).
 
 ## Triggers Are Files
 

@@ -287,6 +287,7 @@ describe('HilosAdminPage', () => {
       headKind="entity"
       breadcrumbLabel="Path"
       tabsLabel="Section pages"
+      [headTitleClass]="titleClass"
       [headAction]="action"
     >
       <ng-template #headSkeletonVisual>
@@ -312,6 +313,7 @@ describe('HilosAdminPage', () => {
 })
 class HeadHost {
   page: string = HilosPages.I18N_LANGUAGES
+  readonly titleClass = 'test-head-title-class'
   action: HilosPageHeadAction = {
     page: HilosPages.I18N_COUNTRIES,
     label: 'Countries',
@@ -452,6 +454,9 @@ describe('HilosAdminPage with the shared head', () => {
     const fixture = mount(HeadHost, OWNER_IDENTITY)
 
     const block = el(fixture, 'hilos-page-head-block')
+    expect(el(fixture, 'hilos-page-head-title')?.classList).toContain(
+      'test-head-title-class',
+    )
     for (const probe of ['tile', 'code', 'badge', 'description']) {
       expect(
         block?.querySelector(`[data-id="probe-${probe}"]`),

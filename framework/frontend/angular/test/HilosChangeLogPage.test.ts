@@ -39,6 +39,24 @@ const OVERVIEW: HilosChangeLogOverview = {
   liveTables: 32,
 }
 
+function identityWithTabs(
+  pageTabs: HilosPageIdentity['pageTabs'],
+): HilosPageIdentity {
+  return {
+    label: 'Overview',
+    lead: '',
+    breadcrumb: [],
+    children: [],
+    pageHeadOwner: {
+      page: HilosPages.CHANGE_LOG,
+      label: 'Change Log',
+      lead: 'Who changed what in the tracked tables, and through which action.',
+      icon: 'bi-clock-history',
+    },
+    pageTabs,
+  }
+}
+
 function element(id: string, root: ParentNode = document): HTMLElement {
   const found = root.querySelector(`[data-id="${id}"]`)
   expect(found).not.toBeNull()
@@ -106,9 +124,11 @@ function router(tablesBuilt = false) {
     pageIdentity: identity,
     dashboardSections: createSignal(undefined),
     resolvePath: (page) =>
-      tablesBuilt && page === HilosPages.CHANGE_LOG_TABLES
-        ? '/hilos/change-log/tables'
-        : undefined,
+      page === HilosPages.CHANGE_LOG_FEED
+        ? '/hilos/change-log/feed'
+        : tablesBuilt && page === HilosPages.CHANGE_LOG_TABLES
+          ? '/hilos/change-log/tables'
+          : undefined,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -288,6 +308,82 @@ async function unmount(): Promise<void> {
 }
 
 describe('HilosChangeLogPage', () => {
+  it('links both journal tiles to the pages named in the current answer', async () => {
+    const h = harness()
+    const r = router(true)
+    await mountPage(h, true, r)
+    r.identity.set(
+      identityWithTabs([
+        { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+        { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+        { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+      ]),
+    )
+    await settle()
+
+    expect(element('hilos-change-log-link-feed').tagName).toBe('A')
+    expect(element('hilos-change-log-link-feed').getAttribute('href')).toBe(
+      '/hilos/change-log/feed',
+    )
+    expect(element('hilos-change-log-link-tables').tagName).toBe('A')
+    expect(element('hilos-change-log-link-tables').getAttribute('href')).toBe(
+      '/hilos/change-log/tables',
+    )
+    expect(element('hilos-change-log-tile-journal').textContent?.trim()).toBe(
+      '12',
+    )
+    expect(element('hilos-change-log-tile-tracked').textContent?.trim()).toBe(
+      '2 of 32',
+    )
+  })
+
+  it('reacts when the answer removes a tab and leaves that tile noninteractive', async () => {
+    const h = harness()
+    const r = router(true)
+    await mountPage(h, true, r)
+    r.identity.set(
+      identityWithTabs([
+        { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+        { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+        { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+      ]),
+    )
+    await settle()
+
+    r.identity.set(
+      identityWithTabs([
+        { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+        { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+      ]),
+    )
+    await settle()
+    expect(element('hilos-change-log-link-feed').tagName).toBe('A')
+    expect(
+      document.querySelector('[data-id="hilos-change-log-link-tables"]'),
+    ).toBeNull()
+    const tiles = document.querySelectorAll(
+      '[data-id="hilos-change-log-tile-tracked"]',
+    )
+    expect(tiles).toHaveLength(1)
+    expect(tiles[0]?.closest('a')).toBeNull()
+
+    r.identity.set(
+      identityWithTabs([{ page: HilosPages.CHANGE_LOG, label: 'Overview' }]),
+    )
+    await settle()
+    expect(
+      document.querySelector('[data-id="hilos-change-log-link-feed"]'),
+    ).toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-change-log-link-tables"]'),
+    ).toBeNull()
+    expect(
+      document
+        .querySelector('[data-id="hilos-change-log-tile-journal"]')
+        ?.closest('a'),
+    ).toBeNull()
+  })
+
   it('draws the page snapshot and offers its table names in the feed filter', async () => {
     const h = harness()
     await mountPage(h)

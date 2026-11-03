@@ -170,9 +170,15 @@ function router(tablesBuilt = false) {
     pageIdentity: identity,
     dashboardSections: createSignal(undefined),
     resolvePath: (page) =>
-      tablesBuilt && page === HilosPages.CHANGE_LOG_TABLES
-        ? '/hilos/change-log/tables'
-        : undefined,
+      page === HilosPages.CHANGE_LOG
+        ? '/hilos/change-log'
+        : page === HilosPages.CHANGE_LOG_FEED
+          ? '/hilos/change-log/feed'
+          : page === HilosPages.CHANGE_LOG_TABLES && tablesBuilt
+            ? '/hilos/change-log/tables'
+            : page === HilosPages.CHANGE_LOG_NOISY
+              ? '/hilos/change-log/noisy'
+              : undefined,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -413,6 +419,51 @@ async function closeDetails(close: 'escape' | 'footer'): Promise<void> {
 }
 
 describe('HilosChangeLogFeedPage', () => {
+  it('uses the shared section heading to name its viewport', async () => {
+    const h = harness()
+    const r = router(true)
+    await mountPage(h, true, r)
+    r.identity.set({
+      label: 'Feed',
+      lead: 'Every action on the tracked tables, newest first.',
+      breadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+      ],
+      children: [],
+      pageHeadOwner: {
+        page: HilosPages.CHANGE_LOG,
+        label: 'Change Log',
+        lead: 'Who changed what in the tracked tables, and through which action.',
+        icon: 'bi-clock-history',
+      },
+      pageTabs: [
+        { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+        { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+        { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+        { page: HilosPages.CHANGE_LOG_NOISY, label: 'Noisy columns' },
+      ],
+    })
+    await settle()
+
+    const headings = document.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]?.textContent?.trim()).toBe('Change Log')
+    expect(
+      document.querySelector('table')?.getAttribute('aria-labelledby'),
+    ).toBe(headings[0]?.id)
+    expect(
+      document
+        .querySelector('[data-id="hilos-page-tabs"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Change Log pages')
+    expect(
+      document
+        .querySelector('[data-id="hilos-page-tab-hilos_change_log_feed"]')
+        ?.getAttribute('aria-current'),
+    ).toBe('page')
+  })
+
   it('draws the page snapshot and offers its table names in the feed filter', async () => {
     const h = harness()
     await mountPage(h)

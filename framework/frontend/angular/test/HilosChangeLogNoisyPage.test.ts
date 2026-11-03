@@ -24,7 +24,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosChangeLogNoisyPage } from '../src/admin/changeLog/HilosChangeLogNoisyPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
-const TABLE = 'hilosChangeLogTables'
+const TABLE = 'hilosChangeLogNoisyColumns'
 const NOISY = [
   {
     table: 'project_record',
@@ -37,41 +37,39 @@ const NOISY = [
     reason: 'Moves with every read',
   },
 ]
-const ROWS = [
-  {
-    rowKey: 'project_record',
-    slots: {
-      table: {
-        name: 'project_record',
-        owner: 'project',
-        journaled: true,
-        columns: {
-          value: 4,
-          personal: 2,
-          binary: 3,
-          secret: 1,
-          noise: 2,
-          key: 77,
-        },
-        changesLast24h: 0,
-        lastChangeAt: null,
-      },
+const ROWS = NOISY.map((column) => ({
+  rowKey: `${column.table}.${column.column}`,
+  slots: {
+    noisyColumn: {
+      ...column,
+      columnKey: `${column.table}.${column.column}`,
     },
   },
+}))
+const TABS = [
+  { page: HilosPages.CHANGE_LOG, label: 'Overview', path: '/hilos/change-log' },
   {
-    rowKey: 'hilos_session',
-    slots: {
-      table: {
-        name: 'hilos_session',
-        owner: 'framework',
-        journaled: false,
-        columns: null,
-        changesLast24h: null,
-        lastChangeAt: null,
-      },
-    },
+    page: HilosPages.CHANGE_LOG_FEED,
+    label: 'Feed',
+    path: '/hilos/change-log/feed',
+  },
+  {
+    page: HilosPages.CHANGE_LOG_TABLES,
+    label: 'Tracked tables',
+    path: '/hilos/change-log/tables',
+  },
+  {
+    page: HilosPages.CHANGE_LOG_NOISY,
+    label: 'Noisy columns',
+    path: '/hilos/change-log/noisy',
   },
 ]
+const OWNER = {
+  page: HilosPages.CHANGE_LOG,
+  label: 'Change Log',
+  lead: 'Who changed what in the tracked tables, and through which action.',
+  icon: 'bi-clock-history',
+}
 
 type Listener = (signal: {
   type?: string
@@ -126,7 +124,18 @@ function harness(noisy: unknown = NOISY) {
       })
     }
   }
-  return { context, scope, connection, listeners, pushWindow }
+  function pushRefusal(): void {
+    for (const listener of listeners.get('tableWindowRefused') ?? []) {
+      listener({
+        data: {
+          page: HilosPages.CHANGE_LOG_NOISY,
+          tableKey: TABLE,
+          errorCode: 'unavailable',
+        },
+      })
+    }
+  }
+  return { context, scope, connection, listeners, pushWindow, pushRefusal }
 }
 
 function router(detailBuilt: boolean): HilosRouter {
@@ -143,14 +152,21 @@ function router(detailBuilt: boolean): HilosRouter {
     pageIdentity: createSignal<HilosPageIdentity | undefined>({
       label: 'Noisy columns',
       lead: 'Database tables, their journal label and column rules.',
-      breadcrumb: [],
+      breadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+      ],
       children: [],
+      pageHeadOwner: OWNER,
+      pageTabs: TABS.map(({ page, label }) => ({ page, label })),
     }),
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page, params) =>
       detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
         ? `/hilos/change-log/tables/${params.tableId}`
-        : undefined,
+        : page === HilosPages.DASHBOARD
+          ? '/hilos'
+          : TABS.find((tab) => tab.page === page)?.path,
     ),
     clearPageError: () => {},
     denyCurrentPage: () => {},
@@ -225,9 +241,11 @@ async function mountPage(h = harness(), detailBuilt = false) {
 
 describe('HilosChangeLogNoisyPage', () => {
   it.each(['full', 'view'] as const)(
-    'draws the same schema metadata under %s access',
+    'draws the server window under %s access and ignores the legacy snapshot',
     async (access) => {
-      const h = harness()
+      const h = harness([
+        { table: 'wrong', column: 'snapshot', reason: 'Unused' },
+      ])
       bindSessionScope(h.context.connection, h.context.scopes)
       releases.push(bindAdminAccess(h.context.scopes))
       for (const listener of h.listeners.get('projectSignal') ?? []) {
@@ -244,37 +262,63 @@ describe('HilosChangeLogNoisyPage', () => {
       expect(hilosAdminAccess.get()).toBe(access)
       await mountPage(h)
       expect(document.querySelectorAll('h1')).toHaveLength(1)
-      expect(text(get('h1'))).toBe('Noisy columns')
-      const noise = get('[data-id="hilos-change-log-noisy-columns"]')
-      expect(get('table', noise).getAttribute('aria-labelledby')).toBe(
-        get('h2', noise).getAttribute('id'),
+      expect(text(get('h1'))).toBe('Change Log')
+      const table = get('table')
+      expect(table.getAttribute('aria-labelledby')).toBe(
+        get('h1').getAttribute('id'),
       )
-      expect(
-        Array.from(noise.querySelectorAll('th'), (th) =>
-          th.getAttribute('scope'),
-        ),
-      ).toEqual(['col', 'col'])
-      expect(noise.querySelectorAll('tbody tr')).toHaveLength(2)
-      expect(get('tbody', noise).textContent).toContain(
+      const headers = Array.from(table.querySelectorAll('th'), (th) => text(th))
+      expect(headers).toContain('Column')
+      expect(headers).toContain('Why noisy')
+      expect(table.querySelectorAll('tbody tr')).toHaveLength(2)
+      expect(get('tbody', table).textContent).toContain(
         'project_record.heartbeat',
       )
-      expect(get('tbody', noise).textContent).toContain(NOISY[0]!.reason)
-      expect(get('.d-md-none', noise).textContent).toContain(NOISY[0]!.reason)
-      expect(noise.querySelector('em')).toBeNull()
+      expect(get('tbody', table).textContent).toContain(NOISY[0]!.reason)
+      expect(table.querySelector('em')).toBeNull()
+      expect(document.body.textContent).not.toContain('wrong.snapshot')
+      expect(
+        document.querySelector('[data-id="hilos-change-log-noisy-columns"]'),
+      ).toBeNull()
+      expect(h.connection.sendTableViewport).not.toHaveBeenCalled()
     },
   )
 
-  it('uses the core empty copy only for a valid empty snapshot', async () => {
+  it('draws the table empty and unavailable states, then releases its window', async () => {
     const h = harness([])
     await mountPage(h)
-    const noise = get('[data-id="hilos-change-log-noisy-columns"]')
-    expect(noise.textContent).toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-    expect(noise.querySelector('table')).toBeNull()
-    for (const invalid of [null, [{ table: 'broken', column: 'heartbeat' }]]) {
-      h.scope.data.set(CHANGE_LOG_NOISY_COLUMNS_SECTION, invalid)
-      await settle()
-      expect(noise.textContent).not.toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-      expect(noise.querySelector('table')).toBeNull()
-    }
+    h.pushWindow([])
+    await settle()
+    expect(document.body.textContent).toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
+    expect(h.connection.registerTableWindow).toHaveBeenCalledWith(
+      TABLE,
+      expect.anything(),
+    )
+
+    h.pushRefusal()
+    await settle()
+    expect(text(get('[data-id="hilos-table-unavailable"]'))).toContain(
+      'List unavailable',
+    )
+    expect(document.body.textContent).not.toContain(
+      CHANGE_LOG_NOISY_COLUMNS_EMPTY,
+    )
+
+    h.pushWindow(ROWS)
+    await settle()
+    expect(
+      document.querySelector('[data-id="hilos-table-unavailable"]'),
+    ).toBeNull()
+    expect(get('tbody').textContent).toContain('project_record.heartbeat')
+
+    fixture.componentInstance.shown.set(false)
+    await settle()
+    expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+      TABLE,
+      h.connection.registerTableWindow.mock.calls[0]?.[1],
+    )
+    expect(
+      [...h.listeners.values()].every((listeners) => listeners.size === 0),
+    ).toBe(true)
   })
 })

@@ -23,6 +23,7 @@ import {
   CHANGE_LOG_RECORD_ROUTE_PARAM,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   changeLogEntryDetails,
+  changeLogMutationBadge,
   changeLogReceiptAttribution,
   changeLogReceiptPagination,
   changeLogRecordRouteParam,
@@ -211,31 +212,83 @@ import {
                   } @else {
                     <code class="text-break">{{ entry.details.record }}</code>
                   }
-                  <span class="badge bg-body-secondary text-body border">{{
-                    entry.details.mutation
-                  }}</span>
+                  <span [class]="'badge text-wrap ' + entry.operation.tone">
+                    <i
+                      [class]="'bi ' + entry.operation.icon + ' me-1'"
+                      aria-hidden="true"
+                    ></i>
+                    {{ entry.operation.label }}
+                  </span>
                 </h3>
                 @if (entry.details.explanation) {
                   <p class="small text-body-secondary mb-1">
                     {{ entry.details.explanation }}
                   </p>
                 }
-                <ul class="list-unstyled mb-0 d-flex flex-column gap-3">
+                <ul class="list-unstyled mb-0 d-flex flex-column gap-1">
                   @for (field of entry.details.fields; track field.field) {
-                    <li>
+                    <li class="small text-break">
                       <code class="text-break">{{ field.field }}</code>
                       @if (field.kind === 'fact') {
+                        @if (field.newValue) {
+                          {{ ' ' }}{{ copy.changed }}
+                        }
                         <span
-                          class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap"
+                          class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap text-start"
                         >
+                          <i
+                            class="bi bi-incognito me-1"
+                            aria-hidden="true"
+                          ></i>
                           {{ field.oldValue.text }}
                         </span>
+                      } @else if (field.kind === 'inline') {
+                        @if (field.newValue) {
+                          <span class="visually-hidden">{{
+                            copy.oldValue
+                          }}</span>
+                        }
+                        {{ ' ' }}
+                        <span
+                          class="text-body-secondary"
+                          [attr.data-id]="
+                            'hilos-change-log-value-' +
+                            entry.entryId +
+                            '-' +
+                            field.field +
+                            '-old'
+                          "
+                          >{{ field.oldValue.text }}</span
+                        >
+                        @if (field.newValue; as newValue) {
+                          {{ ' ' }}
+                          <i
+                            class="bi bi-arrow-right text-body-secondary"
+                            aria-hidden="true"
+                          ></i>
+                          <span class="visually-hidden">{{
+                            copy.newValue
+                          }}</span>
+                          {{ ' ' }}
+                          <strong
+                            [attr.data-id]="
+                              'hilos-change-log-value-' +
+                              entry.entryId +
+                              '-' +
+                              field.field +
+                              '-new'
+                            "
+                            >{{ newValue.text }}</strong
+                          >
+                        }
                       } @else {
-                        <div class="row g-2 mt-1">
+                        <div class="row g-2 mt-1 p-2">
                           <div [class]="field.newValue ? 'col-sm-6' : 'col-12'">
-                            <div class="small text-body-secondary mb-1">
-                              {{ copy.oldValue }}
-                            </div>
+                            @if (field.newValue) {
+                              <div class="small text-body-secondary mb-1">
+                                {{ copy.oldValue }}
+                              </div>
+                            }
                             <hilos-long-text
                               kind="output"
                               [text]="field.oldValue.text"
@@ -356,6 +409,7 @@ export class HilosChangeLogReceiptModal {
     (this.dialog()?.entries ?? []).map((entry) => ({
       entryId: entry.entryId,
       details: changeLogEntryDetails(entry),
+      operation: changeLogMutationBadge(entry.mutation),
       recordPath: this.recordPath(entry),
     })),
   )

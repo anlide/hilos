@@ -111,6 +111,7 @@ interface HeadInputs {
   params: Record<string, string>
   resolvePath: HilosPathResolver
   headingId: string
+  titleClass: string
   kind: 'section' | 'entity'
   breadcrumbLabel: string
   tabsLabel: string
@@ -337,6 +338,12 @@ afterEach(() => {
 })
 
 describe('HilosPageHead', () => {
+  it('adds the caller title class to the one heading', () => {
+    const head = mountHead({ titleClass: 'test-head-title-class' })
+
+    expect(get(head, 'h1').classList).toContain('test-head-title-class')
+  })
+
   it('draws a section head: its icon, its title in the one h1, its lead', () => {
     const head = mountHead({ headingId: 'page-heading' })
 

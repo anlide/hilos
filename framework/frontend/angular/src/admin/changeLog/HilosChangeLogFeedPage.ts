@@ -64,7 +64,11 @@ import { HilosChangeLogReceiptModal } from './HilosChangeLogReceiptModal.js'
     HilosViewportTable,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page
+      [page]="page"
+      headKind="section"
+      tabsLabel="Change Log pages"
+    >
       <hilos-viewport-table [controller]="feed().controller">
         <ng-template [hilosTableCell]="keys.createdAt" let-row>{{
           time(row.createdAt)
