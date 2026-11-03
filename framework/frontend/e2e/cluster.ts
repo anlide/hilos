@@ -223,14 +223,25 @@ export async function expectClusterLeaderUnchanged(
 const ANALYTICS_READER = 'hilos_analytics'
 const ANALYTICS_WRITER = 'hilos_analytics_writer'
 const ANALYTICS_JOURNAL = 'hilos_analytics_journal'
-const ANALYTICS_AGENTS = new Set([
+const ANALYTICS_AGENTS = [
   ANALYTICS_READER,
   ANALYTICS_WRITER,
   ANALYTICS_JOURNAL,
-])
+] as const
 
-/** Replay the current daemon life; a rotated or incomplete journal proves nothing. */
-function activeClusterAnalyticsAgents(path: string): readonly string[] {
+/**
+ * Replay the current daemon life; a rotated or incomplete journal proves nothing.
+ * Exported only from this module so unit tests can exercise real log files.
+ *
+ * @param path The node's complete daemon journal.
+ * @param agentIds The agent ids whose active copies are needed.
+ * @internal
+ */
+export function activeClusterAgents(
+  path: string,
+  agentIds: readonly string[],
+): readonly string[] {
+  const tracked = new Set(agentIds)
   const descriptor = openSync(path, 'r')
   let journal: string
   try {
@@ -280,7 +291,7 @@ function activeClusterAnalyticsAgents(path: string): readonly string[] {
     const agent = line.match(
       /\] Agent '([^']+)' (started|stopped) on worker #(\d+)$/,
     )
-    if (agent && ANALYTICS_AGENTS.has(agent[1])) {
+    if (agent && tracked.has(agent[1])) {
       if (agent[2] === 'started') {
         active.push({ agentId: agent[1], worker: agent[3] })
       } else {
@@ -288,18 +299,70 @@ function activeClusterAnalyticsAgents(path: string): readonly string[] {
           (entry) => entry.agentId !== agent[1] || entry.worker !== agent[3],
         )
       }
-    } else if (
-      /\] Agent 'hilos_analytics(?:_writer|_journal)?' .* on worker #/.test(
-        line,
-      )
-    ) {
-      throw new Error(
-        `Incomplete Analytics lifecycle record in ${path}: ${line}`,
-      )
+    } else {
+      const incomplete = line.match(/\] Agent '([^']+)' .* on worker #/)
+      if (incomplete && tracked.has(incomplete[1])) {
+        throw new Error(`Incomplete agent lifecycle record in ${path}: ${line}`)
+      }
     }
   }
   if (!running) throw new Error(`No current daemon start in ${path}`)
   return active.map((entry) => entry.agentId)
+}
+
+/**
+ * Prove each POLICY singleton has one started placement and one live log copy
+ * on that same node, checking every member journal while placement converges.
+ *
+ * @param expect The spec's expect.
+ * @param stand The running stand's roles and readable node journals.
+ * @param agentIds The POLICY singleton ids to check.
+ */
+export async function expectClusterSingleAgents(
+  expect: Expect,
+  stand: ClusterBrowserStand,
+  agentIds: readonly string[],
+): Promise<void> {
+  const nodes = Object.keys(stand.nodeLogs).sort()
+  const inspect = clusterCommandChannel(stand, stand.leader)
+  await expect
+    .poll(
+      async () => {
+        const inspection = (await inspect(
+          'test:cluster:inspect',
+          {},
+        )) as unknown as ClusterInspection
+        const active = nodes.flatMap((node) =>
+          activeClusterAgents(stand.nodeLogs[node], agentIds).map(
+            (agentId) => ({ node, agentId }),
+          ),
+        )
+        return agentIds.map((agentId) => {
+          const placements = inspection.placements.filter(
+            (placement) => placement.agentId === agentId,
+          )
+          const activeNodes = active
+            .filter((entry) => entry.agentId === agentId)
+            .map((entry) => entry.node)
+          return {
+            agentId,
+            placements,
+            activeNodes,
+            matchesPlacement:
+              placements.length === 1 &&
+              placements[0].state === 'started' &&
+              activeNodes.length === 1 &&
+              activeNodes[0] === placements[0].nodeId,
+          }
+        })
+      },
+      {
+        message: 'Live POLICY singletons agree with their started placements',
+      },
+    )
+    .toMatchObject(
+      agentIds.map((agentId) => ({ agentId, matchesPlacement: true })),
+    )
 }
 
 /**
@@ -329,10 +392,9 @@ export async function expectClusterAnalyticsAgents(
           (placement) => placement.agentId === ANALYTICS_WRITER,
         )
         const active = nodes.flatMap((node) =>
-          activeClusterAnalyticsAgents(stand.nodeLogs[node]).map((agentId) => ({
-            node,
-            agentId,
-          })),
+          activeClusterAgents(stand.nodeLogs[node], ANALYTICS_AGENTS).map(
+            (agentId) => ({ node, agentId }),
+          ),
         )
         const hosts = (agentId: string) =>
           active

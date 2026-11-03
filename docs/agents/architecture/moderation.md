@@ -656,6 +656,11 @@ Polls mounts the Angular SDK section through three lazy page wrappers and a
 shared moderation context.
 Tasks and polls also switch on profile photos, checked through the photo kind
 (HIL-1644, HIL-1645).
+Online-testing mounts the Angular SDK Profile root and the Moderation section's
+three lazy pages with a shared moderation context. It moderates the Profile name
+only, registers the Profile page on `ONLINE_TESTING` with
+`HilosProfileIdentitiesBrowserList`, and serves the Moderation pages through
+`HILOS_INDEX`; profile photos remain off.
 
 ## Anti-Patterns
 
@@ -682,9 +687,12 @@ e2e runs on all three kits — chat (Vue), tasks (React) and polls (Angular) —
 as one set of tests with shared checks, and each kit's accessibility spec walks
 it too (HIL-1638); where the specs live and what each kit adds is in
 [testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a
-spec".
-
-**Not built yet:** cluster coverage of moderation (HIL-1639).
+spec". Online-testing also carries live cluster browser coverage: an admin's
+name rule reaches another admin without reload, governs a person's own-name
+change through one model request using the rule's model key, and is removed from
+the writer's view after the standard Apply action. The cluster spec checks the
+moderator and rules library placements and journal agents across all three
+masters while the leader and term stay unchanged.
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

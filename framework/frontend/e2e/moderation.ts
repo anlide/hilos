@@ -84,6 +84,25 @@ function moderationRuleRow(page: Page, rule: string): Locator {
     .filter({ has: page.getByText(rule, { exact: true }) })
 }
 
+/**
+ * Check the exact rule text in the currently open Rules table.
+ *
+ * @param expect The spec's expect.
+ * @param page The browser with the Rules page already open.
+ * @param rule The exact text of the rule.
+ * @param shown Whether the rule row should be visible or absent.
+ */
+export async function expectModerationRuleShown(
+  expect: Expect,
+  page: Page,
+  rule: string,
+  shown: boolean,
+): Promise<void> {
+  const row = moderationRuleRow(page, rule)
+  if (shown) await expect(row).toBeVisible()
+  else await expect(row).toHaveCount(0)
+}
+
 /** The id of the own rule whose text is exactly `rule`, as its Edit opener names it. */
 async function moderationRuleId(page: Page, rule: string): Promise<number> {
   const opener = moderationRuleRow(page, rule).getByTestId(

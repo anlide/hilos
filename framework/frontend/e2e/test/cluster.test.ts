@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { readClusterBrowserStand } from '../cluster.js'
+import { activeClusterAgents, readClusterBrowserStand } from '../cluster.js'
 
 const nodeNames = {
   m1: 'Главный, узел=🌍',
@@ -98,5 +102,148 @@ describe('cluster browser environment', () => {
   ])('keeps refusing malformed existing maps: %s', (key, value, reason) => {
     vi.stubEnv(key, value)
     expect(() => readClusterBrowserStand()).toThrow(reason)
+  })
+})
+
+describe('current cluster agent journal', () => {
+  let directory: string
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'hilos-cluster-journal-'))
+  })
+
+  afterEach(() => rmSync(directory, { recursive: true, force: true }))
+
+  /** Write complete daemon lines to a real, test-owned journal. */
+  function journal(...lines: string[]): string {
+    const path = join(directory, 'daemon.log')
+    writeFileSync(path, lines.map((line) => `[test] ${line}\n`).join(''))
+    return path
+  }
+
+  it('starts a new daemon life without agents from the previous life', () => {
+    const path = journal(
+      "Agent 'hilos_moderation' started on worker #1",
+      'Daemon started with epoll',
+      "Agent 'hilos_moderation' started on worker #1",
+      'Daemon started with epoll',
+      "Agent 'hilos_files' started on worker #2",
+    )
+    expect(
+      activeClusterAgents(path, ['hilos_moderation', 'hilos_files']),
+    ).toEqual(['hilos_files'])
+  })
+
+  it.each(['Daemon stopped', 'Daemon stopped after a failure'])(
+    'refuses a journal whose current daemon ended: %s',
+    (stop) => {
+      const path = journal(
+        'Daemon started with epoll',
+        "Agent 'hilos_moderation' started on worker #1",
+        stop,
+        "Agent 'hilos_moderation' started on worker #2",
+      )
+      expect(() => activeClusterAgents(path, ['hilos_moderation'])).toThrow(
+        'No current daemon start',
+      )
+    },
+  )
+
+  it('ignores agent records while stopped and accepts a fresh empty daemon', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'hilos_moderation' started on worker #1",
+      'Daemon stopped',
+      "Agent 'hilos_moderation' started on worker #2",
+      'Daemon started with epoll',
+    )
+    expect(activeClusterAgents(path, ['hilos_moderation'])).toEqual([])
+  })
+
+  it('drops every agent of a dead worker while keeping other workers', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'hilos_moderation' started on worker #1",
+      "Agent 'hilos_files' started on worker #1",
+      "Agent 'hilos_files' started on worker #2",
+      'Worker #1 died hosting 2 agent(s): hilos_moderation, hilos_files',
+    )
+    expect(
+      activeClusterAgents(path, ['hilos_moderation', 'hilos_files']),
+    ).toEqual(['hilos_files'])
+  })
+
+  it('does not carry agents into a reused worker number without stop records', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'hilos_moderation' started on worker #1",
+      "Agent 'hilos_files' started on worker #2",
+      'Worker #1 started [type=agent]',
+      "Agent 'hilos_files' started on worker #1",
+    )
+    expect(
+      activeClusterAgents(path, ['hilos_moderation', 'hilos_files']),
+    ).toEqual(['hilos_files', 'hilos_files'])
+  })
+
+  it('retains duplicate copies and stops only the named agent on its worker', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'hilos_moderation' started on worker #1",
+      "Agent 'hilos_files' started on worker #1",
+      "Agent 'hilos_moderation' started on worker #2",
+      "Agent 'hilos_moderation' stopped on worker #1",
+      "Agent 'hilos_files' started on worker #3",
+    )
+    expect(
+      activeClusterAgents(path, ['hilos_moderation', 'hilos_files']),
+    ).toEqual(['hilos_files', 'hilos_moderation', 'hilos_files'])
+    expect(activeClusterAgents(path, ['hilos_moderation'])).toEqual([
+      'hilos_moderation',
+    ])
+  })
+
+  it('uses exact requested ids instead of Analytics names or a pattern', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'review.v2+name' started on worker #1",
+      "Agent 'reviewXv2name' started on worker #2",
+      "Agent 'hilos_analytics_writer' started on worker #3",
+      "Agent 'hilos_moderation' starting on worker #4",
+    )
+    expect(activeClusterAgents(path, ['review.v2+name'])).toEqual([
+      'review.v2+name',
+    ])
+    expect(activeClusterAgents(path, ['hilos_analytics_writer'])).toEqual([
+      'hilos_analytics_writer',
+    ])
+  })
+
+  it('refuses an incomplete lifecycle record for a requested agent', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'hilos_moderation' started on worker #1 (partial)",
+    )
+    expect(() => activeClusterAgents(path, ['hilos_moderation'])).toThrow(
+      'Incomplete agent lifecycle record',
+    )
+  })
+
+  it('refuses an unfinished last line even after a valid agent start', () => {
+    const path = join(directory, 'daemon.log')
+    writeFileSync(
+      path,
+      "[test] Daemon started with epoll\n[test] Agent 'hilos_moderation' started on worker #1",
+    )
+    expect(() => activeClusterAgents(path, ['hilos_moderation'])).toThrow(
+      'Incomplete daemon journal',
+    )
+  })
+
+  it('refuses agent records with no known daemon start', () => {
+    const path = journal("Agent 'hilos_moderation' started on worker #1")
+    expect(() => activeClusterAgents(path, ['hilos_moderation'])).toThrow(
+      'No current daemon start',
+    )
   })
 })

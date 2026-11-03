@@ -18,6 +18,10 @@ on the chat stand, through the ordinary router and client; the spec dictates
 the answer.
 Tasks wires those roles on its stand.
 Polls sets both roles to the same `/model` resident on its test stand.
+Online-testing wires both roles to this resident on its cluster browser stand;
+the gateway and browser runner are provided by that stand's `e2e` profile. Its
+ordinary single-node test stack and standalone configuration do not use this
+gateway path.
 This reuses `/model`; it does not introduce a moderator stub or a new container.
 The external-provider emulator is separate HIL-263 work, not a resident this
 moderation change supplies or claims already exists.
@@ -367,16 +371,19 @@ spoke TLS itself: the scenario `signs in when the provider keeps the connection
 open after its answer (HIL-732)` in `demo/chat/tests/e2e/tests/auth.spec.ts`
 turns red on the defect ten runs out of ten (HIL-929).
 
-The three demos reach the gateway as `https://stand-gateway:18000`
+Chat, tasks and polls reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
 `docker/docker-compose.{local,dev,test}.yml`; the framework moderation role
 URLs `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` on the chat
 test stack;
-`OAUTH_ENDPOINT_URL` on the test stacks of all three).
-`stand-gateway` is a network alias the gateway service carries in every stack,
-and it is also the name its certificate is issued for: the daemon checks the
-name of the peer it reaches, so the service name, which differs from stack to
-stack, cannot be the address. One name means one certificate, and a new demo
+`OAUTH_ENDPOINT_URL` on the test stacks of all three). Online-testing's cluster
+browser stand uses the same address for both moderation roles; its gateway is
+provided by the `e2e` profile, and the nodes trust the gateway CA. Its single-node
+test stack and standalone configuration do not configure this gateway address.
+`stand-gateway` is a network alias the gateway service carries in each enabled
+stack, and it is also the name its certificate is issued for: the daemon checks
+the name of the peer it reaches, so the service name, which differs from stack
+to stack, cannot be the address. One name means one certificate, and a new demo
 does not reissue it.
 
 Both framework moderation profiles resolve to
@@ -385,6 +392,8 @@ role key: `HILOS_MODERATION_TEXT_URL` and `HILOS_MODERATION_IMAGE_URL` in the
 chat test stack's compose file.
 Tasks uses that same address for both roles.
 Polls sets both roles to `https://stand-gateway:18000/model` in its test stack.
+Online-testing sets both roles to that address on its cluster browser stand;
+that stand's gateway is provided under the `e2e` profile.
 
 The certificate is fixed and lives in the repository
 (`framework/docker/stand-gateway/tls/`: `server.pem` is what the gateway
@@ -601,6 +610,9 @@ and name it before writing.
    move only moderation: the bot and context analyzer also fall back to it.
    Tasks wires both roles.
    Polls wires both roles to `https://stand-gateway:18000/model` in its test stack.
+   Online-testing wires both roles to that address on its cluster browser
+   stand, whose gateway is provided under the `e2e` profile; its ordinary test
+   and standalone setups do not opt in.
    An address the environment gives one role reaches that role's agent only if the
    project's settings layer, finding its own URL setting empty, falls back to the
    profile env resolved rather than to the global address. Chat's does since

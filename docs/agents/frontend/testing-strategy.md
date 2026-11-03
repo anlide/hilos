@@ -300,7 +300,7 @@ polls (Angular) → online-testing (Angular).
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
 | Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset, Change Log and live i18n edits across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
-| Cluster browser — Analytics across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423 |
+| Cluster browser — Analytics and Moderation across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423, HIL-1639 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | ecommerce-shop: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop | HIL-1225 |
@@ -385,11 +385,15 @@ at are the registration of the person and of the administrator, because tasks
 and polls declare no actions of their own; no demo's product takes part in them,
 and they carry no `spec-owner` line (HIL-1422).
 
-online-testing additionally carries the cluster Analytics proof in
-`tests/e2e/cluster/live/analytics.spec.ts`, with three sequential source/viewer
-pairs over the stand's masters. It uses the same Analytics checks and real
-registrations; it is a framework spec too. Its separate cluster config keeps it
-out of the single-node suite, and it runs live only (HIL-1423).
+online-testing additionally carries cluster browser proofs for Analytics and
+Moderation over the stand's three masters. The Analytics spec uses three
+sequential source/viewer pairs and the shared checks. The Moderation spec
+rotates a person, a rule-writing administrator and an observing administrator
+across distinct masters: the saved name rule reaches the observer without
+reload, governs one own-name model request, and its removal reaches the writer
+as pending until the standard Apply action removes the row. Both are framework
+specs; the separate cluster config keeps them out of the single-node suite, and
+the stand runs live only (HIL-1423, HIL-1639).
 
 Theme coverage has one full UI owner per kit and separate build probes:
 

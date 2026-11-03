@@ -46,6 +46,9 @@ use Demo\OnlineTesting\Pages\Hilos\Analytics\PeoplePage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
 use Demo\OnlineTesting\Pages\Hilos\LicenseDependenciesPage;
+use Demo\OnlineTesting\Pages\Hilos\Moderation\ModerationPage;
+use Demo\OnlineTesting\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\OnlineTesting\Pages\Hilos\Moderation\ModerationKindRulesPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPlacementPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonNodePage;
@@ -81,6 +84,7 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyHistoryPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
+use Demo\OnlineTesting\Pages\Hilos\ProfilePage;
 use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
@@ -137,6 +141,11 @@ use Hilos\Log\LogCarrierAgent;
 use Hilos\Log\LogCarrierAgentDaemon;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogStoreAgentDaemon;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
@@ -160,6 +169,8 @@ use Hilos\Tables\Daemon\HilosDaemonEnvMismatchTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
@@ -239,6 +250,7 @@ final class Hilos extends HilosFacade
         HilosFeature::NOTIFICATION_DELIVERY,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
+        HilosFeature::MODERATION,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -247,6 +259,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGES = [
+        ModerationPage::PAGE => ModerationPage::class,
+        ModerationKindPage::PAGE => ModerationKindPage::class,
+        ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
         ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
@@ -294,6 +309,7 @@ final class Hilos extends HilosFacade
         CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+        ProfilePage::PAGE => ProfilePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
@@ -432,6 +448,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        ModerationAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationAgent::class,
+            AgentRegistryKey::DAEMON => ModerationAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ModerationRulesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModerationRulesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         // The probes of this demo's cluster stand - scenario 24 reads the fleet, scenario 11
         // writes and reads through the database probe. A probe starts only on a clustered node of
         // a non-production environment, so this demo on one node, on its Playwright stand and in
@@ -442,6 +468,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        OnlineTestingTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+        OnlineTestingTableContext::hilosModerationRules => HilosModerationRulesTable::class,
         OnlineTestingTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
         OnlineTestingTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
         OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
@@ -499,6 +527,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_LISTS = [
+        ProfilePage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
         ProfileNotificationsPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
@@ -523,6 +554,16 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ModerationPage::PAGE => [
+            OnlineTestingTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindPage::PAGE => [
+            OnlineTestingTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindRulesPage::PAGE => [
+            OnlineTestingTableContext::hilosModerationKinds => [],
+            OnlineTestingTableContext::hilosModerationRules => [],
+        ],
         TermsHistoryPage::PAGE => [
             OnlineTestingTableContext::hilosTermsHistory => [],
         ],

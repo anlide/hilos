@@ -47,6 +47,34 @@ services:
       cluster-net:
         ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.20
 
+  online-testing-cluster-stand-gateway:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: ../../../../framework/docker/stand-gateway
+    container_name: online-testing-cluster-stand-gateway${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ../../../../framework:/hilos/framework:ro
+    environment:
+      MAILPIT_SMTP_HOST: online-testing-cluster-mailpit
+      MAILPIT_SMTP_PORT: 1025
+      SSL_CERT_FILE: /app/tls/ca.pem
+      TZ: UTC
+    depends_on:
+      online-testing-cluster-mailpit:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"https://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+    profiles: [e2e]
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ONLINE_TESTING_CLUSTER:-223}.0.21
+        aliases:
+          - stand-gateway
+
   online-testing-cluster-e2e-runner:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.60.0-noble
@@ -61,6 +89,7 @@ services:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       COMMAND_PORT: "8094"
       MAILPIT_URL: http://online-testing-cluster-mailpit:8025
+      NODE_EXTRA_CA_CERTS: /hilos/framework/docker/stand-gateway/tls/ca.pem
       HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
     profiles: [e2e]
     networks:

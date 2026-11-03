@@ -4,6 +4,24 @@ declare(strict_types=1);
 
 namespace Demo\OnlineTesting\Tests\Unit;
 
+use Demo\OnlineTesting\Pages\Hilos\Moderation\ModerationPage;
+use Demo\OnlineTesting\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\OnlineTesting\Pages\Hilos\Moderation\ModerationKindRulesPage;
+use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
+use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
+use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationInput;
+use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleUpdateActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
+use Hilos\Runtime\View\Collection\HilosModerationChecks;
+use Demo\OnlineTesting\Pages\Hilos\ProfilePage;
 use Demo\OnlineTesting\Pages\Hilos\LicenseDependenciesPage;
 use Demo\OnlineTesting\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
@@ -297,11 +315,15 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     /** Every served profile section binds the common personal identity source once. */
     public function testEveryProfileSectionBindsTheIdentityList(): void
     {
+        self::assertSame(ProfilePage::class, Hilos::PAGES[ProfilePage::PAGE]);
+        self::assertSame(AgentType::ONLINE_TESTING, ProfilePage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::ONLINE_TESTING, Hilos::getPageRoutes()[ProfilePage::PAGE]);
         self::assertSame(
             HilosProfileIdentitiesBrowserList::class,
             Hilos::BROWSER_LISTS[HilosProfileIdentitiesBrowserList::LIST],
         );
         foreach ([
+            ProfilePage::class,
             ProfileNotificationsPage::class,
         ] as $page) {
             self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
@@ -591,6 +613,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testPageRegistryIncludesTheAdminSections(): void
     {
         $this->assertSame([
+            ModerationPage::PAGE => ModerationPage::class,
+            ModerationKindPage::PAGE => ModerationKindPage::class,
+            ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
             ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
             ChangeLogFeedPage::PAGE => ChangeLogFeedPage::class,
             ChangeLogNoisyPage::PAGE => ChangeLogNoisyPage::class,
@@ -638,6 +663,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+            ProfilePage::PAGE => ProfilePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
             MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
@@ -657,6 +683,102 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             StatusWorksPage::PAGE => StatusWorksPage::class,
             StatusHistoryPage::PAGE => StatusHistoryPage::class,
         ], Hilos::PAGES);
+    }
+
+    /** The framework moderation feature is active with the kinds this demo supports. */
+    public function testModerationIsOnWithItsRulesLibraryAndItsModerator(): void
+    {
+        $this->assertContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
+        self::assertSame(HilosModerationKindsTable::TABLE, OnlineTestingTableContext::hilosModerationKinds);
+        self::assertSame(HilosModerationKindsTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosModerationKinds]);
+        self::assertSame(HilosModerationRulesTable::TABLE, OnlineTestingTableContext::hilosModerationRules);
+        self::assertSame(HilosModerationRulesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosModerationRules]);
+
+        foreach ([
+            ModerationPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION,
+            ModerationKindPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND,
+            ModerationKindRulesPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
+        ] as $page => $signal) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[$page::PAGE]);
+            self::assertSame([BrowserConfigKey::SIGNAL => $signal], $page::BROWSER);
+        }
+
+        self::assertSame([OnlineTestingTableContext::hilosModerationKinds => []],
+            Hilos::PAGE_TABLES[ModerationPage::PAGE]);
+        self::assertSame([OnlineTestingTableContext::hilosModerationKinds => []],
+            Hilos::PAGE_TABLES[ModerationKindPage::PAGE]);
+        self::assertSame([
+            OnlineTestingTableContext::hilosModerationKinds => [],
+            OnlineTestingTableContext::hilosModerationRules => [],
+        ], Hilos::PAGE_TABLES[ModerationKindRulesPage::PAGE]);
+        self::assertSame(PageAccessLevel::ADMIN, ModerationKindPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, ModerationKindPage::REACH);
+        self::assertSame([], ModerationKindPage::ACTIONS);
+        self::assertSame([], ModerationKindPage::SIGNALS);
+        self::assertSame([
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE => HilosModerationRuleUpdateActionDTO::class,
+        ], ModerationKindRulesPage::ACTIONS);
+        self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ]], ModerationKindRulesPage::SIGNALS);
+
+        foreach (ModerationKindRulesPage::ACTIONS as $action => $dto) {
+            self::assertSame(ModerationKindRulesPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+        }
+        self::assertSame(ModerationKindRulesPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_MODERATION_VERDICT, Hilos::getAgentSignalRoutes());
+
+        foreach ([
+            HilosAgentType::HILOS_MODERATION_RULES_LIBRARY => [
+                ModerationRulesLibraryAgent::class,
+                ModerationRulesLibraryAgentDaemon::class,
+            ],
+            HilosAgentType::HILOS_MODERATOR => [ModerationAgent::class, ModerationAgentDaemon::class],
+        ] as $agentType => [$workerClass, $daemonClass]) {
+            $entry = Hilos::AGENTS[$agentType];
+            self::assertSame($workerClass, AgentRegistry::workerClass($entry));
+            self::assertSame($daemonClass, AgentRegistry::daemonClass($entry));
+            self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+            self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+            self::assertFalse(AgentRegistry::requiresIndex($entry));
+        }
+        self::assertTrue((new ModerationRulesLibraryAgentDaemon())->requiresMonopolisticProcess());
+        self::assertTrue((new ModerationAgentDaemon())->requiresMonopolisticProcess());
+
+        $catalog = OnlineTestingSettingsCatalog::getCatalog();
+        foreach (ModerationSettingsCatalog::getCatalog() as $key => $settingEntry) {
+            self::assertSame($settingEntry, $catalog[$key]);
+        }
+        self::assertSame(ModerationKindDirectory::class, Hilos::moderationKindDirectoryClass());
+        $kinds = Hilos::moderationKinds();
+        self::assertSame([ModerationKindKey::PROFILE_NAME], array_keys($kinds));
+        self::assertSame(ModerationInput::TEXT, $kinds[ModerationKindKey::PROFILE_NAME]->input);
+        self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $kinds[ModerationKindKey::PROFILE_NAME]->verdictTo);
+
+        $requirements = (new FeatureRegistry())->definition(HilosFeature::MODERATION)->requirements();
+        self::assertSame([HilosAgentType::HILOS_MODERATOR], $requirements->requiredAgents);
+        self::assertSame([HilosAgentType::HILOS_MODERATION_RULES_LIBRARY, HilosAgentType::HILOS_SETTINGS_LIBRARY],
+            $requirements->requiredSharedAgents);
+        self::assertSame([ModerationSettingsCatalog::class], $requirements->requiredCatalogFragments);
+        self::assertSame(['hilos_moderation_rule'], $requirements->requiredDbTables);
+        $previousRt = Hilos::$rt;
+        try {
+            Hilos::$rt = new OnlineTestingRtContext();
+            $registry = new FeatureRegistry();
+            Hilos::$rt->mountFeatureRuntime(array_map($registry->definition(...), Hilos::features()));
+            Hilos::$rt->configure();
+            Hilos::$rt->assertFeatureRuntimeIntact();
+            self::assertInstanceOf(HilosModerationChecks::class, Hilos::$rt->hilosModerationChecks);
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
     }
 
     /** The Overview binds no verifier window, Circle owns it with its mutations, and Words binds the words table without actions. */
@@ -864,6 +986,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_STATUS,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_AUTH_THROTTLE,
+            HilosAgentType::HILOS_MODERATOR,
+            HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_DB,
         ], array_keys(Hilos::AGENTS));
@@ -1180,6 +1304,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => HilosAgentType::HILOS_AUTH_THROTTLE,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => HilosAgentType::HILOS_AUTH_THROTTLE,
+                HilosSignalConstants::MODERATION_RULE_ADD => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_DELETE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
+                HilosSignalConstants::MODERATION_RULE_UPDATE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
             ],
             Hilos::getAgentSignalRoutes(),
         );
@@ -1205,6 +1332,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosFeature::NOTIFICATION_DELIVERY,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
+            HilosFeature::MODERATION,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -1346,6 +1474,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testSettingsAndUsersAdminFeaturesAreActivated(): void
     {
         $this->assertSame([
+            OnlineTestingTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+            OnlineTestingTableContext::hilosModerationRules => HilosModerationRulesTable::class,
             OnlineTestingTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
             OnlineTestingTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,
             OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
@@ -1393,6 +1523,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             Hilos::BROWSER_TABLES,
         );
         $this->assertSame([
+            ModerationPage::PAGE,
+            ModerationKindPage::PAGE,
+            ModerationKindRulesPage::PAGE,
             TermsHistoryPage::PAGE,
             PrivacyHistoryPage::PAGE,
             BrowserSessionPage::PAGE,

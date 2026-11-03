@@ -12,6 +12,8 @@ use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -49,6 +51,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 /**
  * OnlineTestingTableContext - table bindings for this demo's admin sections.
  *
+ * @property-read HilosModerationKindsTable $hilosModerationKinds
+ * @property-read HilosModerationRulesTable $hilosModerationRules
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosTermsHistoryTable $hilosTermsHistory
  * @property-read HilosPrivacyHistoryTable $hilosPrivacyHistory
@@ -91,6 +95,8 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  */
 final class OnlineTestingTableContext extends TableContext
 {
+    public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
+    public const string hilosModerationRules = HilosModerationRulesTable::TABLE;
     public const string hilosStatusWorks = HilosStatusWorksTable::TABLE;
     public const string hilosStatusHistory = HilosStatusHistoryTable::TABLE;
 

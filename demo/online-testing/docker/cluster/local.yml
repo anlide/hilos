@@ -17,6 +17,10 @@ services:
       - ../../.env.example
       - ./common.env
       - ./nodes/m1.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     labels:
       hilos.role: app
     volumes:
@@ -38,6 +42,10 @@ services:
       - ../../.env.example
       - ./common.env
       - ./nodes/m2.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     volumes:
       - ../../data/data_export:/app/data/data_export
       - ../../data/logs-cluster/m2:/var/log/hilos
@@ -57,6 +65,10 @@ services:
       - ../../.env.example
       - ./common.env
       - ./nodes/m3.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     volumes:
       - ../../data/data_export:/app/data/data_export
       - ../../data/logs-cluster/m3:/var/log/hilos

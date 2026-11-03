@@ -989,8 +989,9 @@ collector, so preserve its journals before starting the next fresh stand. After
 node loss the wait checks only placements that host an agent (`placing` or
 `started`); a refused record is no running work.
 
-The `online-testing-cluster-e2e` step proves Analytics on the existing three-master
-stand (HIL-1423). After `composer -d demo/online-testing run test:e2e-build`,
+The `online-testing-cluster-e2e` step proves Analytics and Moderation on the
+existing three-master stand (HIL-1423, HIL-1639). After
+`composer -d demo/online-testing run test:e2e-build`,
 `composer -d demo/online-testing run test:cluster:e2e` runs three sequential
 source/viewer pairs, each master followed by the next in the harness's list.
 The entry serves Angular's `dist/index.csr.html`; Mailpit and the browser runner
@@ -1007,6 +1008,19 @@ single started POLICY placement, and every member has one journal agent.
 Fresh node logs prove the LEADER/NODE agents, accounting for stops, worker death
 and daemon restarts; inspect's POLICY placements are not their registry.
 The leader and term must stay unchanged throughout each pair.
+
+The same step runs `cluster/live/moderation.spec.ts` in three master rotations.
+Each rotation puts a person (S), the rule-writing administrator (A) and the
+observing administrator (O) on distinct masters, and checks every actual socket
+upgrade against its assigned master. A saves a Profile name rule with a
+`modelKey`; O sees the exact rule without reload. S changes their own name
+without supplying a key and sees it published, with exactly one model request
+using the key from A's rule. O deletes the rule; A receives a pending removal,
+uses the standard Apply action, and then sees the row disappear without reload.
+Before and after the browser work, the spec checks both POLICY singleton
+placements and the current journal agents on all nodes. The leader and term
+remain unchanged. The removal is not expected to disappear from A's view before
+A applies it.
 
 The graph runs this step after `online-testing-e2e`, and both it and
 `online-testing-cluster` share the `online-testing-cluster` group. A directed graph

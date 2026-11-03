@@ -565,6 +565,7 @@ export {
   expectModerationPagesAccessibility,
   expectModerationRemovalEcho,
   expectModerationRowDialogsAccessibility,
+  expectModerationRuleShown,
   expectModerationRulesInForce,
   expectModerationRulesOpening,
   expectModerationSortReply,
@@ -582,6 +583,7 @@ export {
   shiftClusterNodeClock,
   expectClusterLeaderUnchanged,
   expectClusterAnalyticsAgents,
+  expectClusterSingleAgents,
   watchClusterMasterUpgrades,
   markClusterNodeLogs,
   expectNoProtectedModeAgentStops,
@@ -725,6 +727,7 @@ export {
 } from './communications.js'
 
 export {
+  changeOwnName,
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
   watchProfileRenameStatus,

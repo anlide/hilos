@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["moderation_rule"],"parts":[{"changeId":"20261022205657000000_HIL-1624_add_moderation_rules","unit":"moderation_rule","upSha256":"de30787b88b5e0f945159688f8427e7eb278a2c77a0477c9ff40a0eae303064f","downSha256":"62a45b5fb2c723f7d5126e3eeb0df8871ed775735829fe3f1b7ab0630e7d0379"}],"upSha256":"19b2663be034f5f0c658e17a4f387a05ec4b3be8d6023f618bfc73d2238ba5dc","downSha256":"62a45b5fb2c723f7d5126e3eeb0df8871ed775735829fe3f1b7ab0630e7d0379"}
+DROP TABLE IF EXISTS `hilos_moderation_rule`;

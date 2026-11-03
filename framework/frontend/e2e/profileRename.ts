@@ -7,7 +7,31 @@ import {
 } from '../core/src/protocol/profileNameStateSignal.js'
 import { deliveryObject } from './deliveryFrames.js'
 import { watchHeight, watchTop } from './geometry.js'
+import { clickSubmit, typeInto } from './input.js'
+import { PASSWORD } from './session.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
+
+/**
+ * Open the name editor, confirm with a password and submit the new name.
+ * The caller waits for the operation's success or refusal before checking it.
+ *
+ * @param expect The spec's assertion function.
+ * @param page The browser with /profile already open.
+ * @param name The new display name to submit.
+ * @param password The signed-in person's password for step-up.
+ */
+export async function changeOwnName(
+  expect: Expect,
+  page: Page,
+  name: string,
+  password = PASSWORD,
+): Promise<void> {
+  await clickSubmit(expect, page.getByTestId('profile-edit'))
+  await typeInto(page.getByTestId('step-up-password'), password)
+  await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
+  await typeInto(page.getByTestId('profile-name-input'), name)
+  await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+}
 
 /** A validated session-holder snapshot, retaining its socket identity. */
 export interface ProfileNameSnapshot {

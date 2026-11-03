@@ -9,12 +9,12 @@
 // it via proxy.conf.json (Angular has no import.meta.env URL-override mechanism,
 // unlike the Vite demos), so no url is passed.
 //
-// `actions` is the requestId-correlated reply lifecycle: a modal submit calls
-// `actions.dispatch(...)` and closes on the returned handle's resolved `done`.
+// `actions` is the requestId-correlated mutation lifecycle; `actionErrors` lets
+// SDK forms read the matching action_error, including profile rename.
 //
 // No projectSchemas: the demo declares no inbound signal of its own. The sign-in
 // ones it is answered by are the framework's and are merged by
 // createHilosConnection itself, like every other framework signal.
 import { createHilosConnection } from '@hilos/core/base'
 
-export const { connection, actions } = createHilosConnection()
+export const { connection, actions, actionErrors } = createHilosConnection()

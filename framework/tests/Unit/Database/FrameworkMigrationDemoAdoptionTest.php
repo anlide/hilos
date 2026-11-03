@@ -105,10 +105,15 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame('20261022124515804554_HIL-1582_browser_time_zones/' . $unit, $change->parts[0]->key());
                 $origins[] = $change;
             }
-            if ($index === 0 || $index === 1 || $index === 2) {
-                // Chat installed rules for its seed; tasks and polls install them with MODERATION.
+            if ($index === 0 || $index === 1 || $index === 2 || $index === 5) {
+                // Chat installed rules for its seed; tasks, polls and online-testing use MODERATION.
                 $unit = $schema->unit('moderation_rule');
-                $base = $project->root . ($index === 0 ? '/101' : '/070') . '_framework_install_moderation_rule';
+                $migrationNumber = match ($index) {
+                    0 => '101',
+                    1, 2 => '070',
+                    5 => '058',
+                };
+                $base = $project->root . '/' . $migrationNumber . '_framework_install_moderation_rule';
                 $up = FsPath::read($base . '.sql');
                 $down = FsPath::read($base . '_down.sql');
                 $install = $catalog->verifyPair($up, $down);

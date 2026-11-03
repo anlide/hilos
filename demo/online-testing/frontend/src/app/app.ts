@@ -9,12 +9,14 @@ import {
   HILOS_AUTH_GATE,
   HilosAvatar,
   HilosLayout,
+  HilosLink,
   HilosNotificationBell,
   HilosView,
   hilosSignal,
 } from '@hilos/angular/base'
 import { hilosAdminViews } from '@hilos/angular/admin-views'
 import {
+  HILOS_PAGE_ROUTES,
   HilosPages,
   lazyPage,
   hilosSessionAvatarMark,
@@ -32,13 +34,20 @@ import { Main } from './views/main/main.js'
 import { MainSkeleton } from './views/main/main-skeleton.js'
 import { Privacy } from './views/privacy/privacy.js'
 import { PrivacyHistory } from './views/privacy-history/privacy-history.js'
+import { Profile } from './views/profile/profile.js'
 import { Terms } from './views/terms/terms.js'
 import { TermsHistory } from './views/terms-history/terms-history.js'
 
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAvatar, HilosLayout, HilosNotificationBell, HilosView],
+  imports: [
+    HilosAvatar,
+    HilosLayout,
+    HilosLink,
+    HilosNotificationBell,
+    HilosView,
+  ],
   // The user region is ONE projected node, not two: the shell's slot is
   // `<ng-content select="[user]">`, which matches the root nodes of what is
   // projected, and a conditional block sitting on that boundary is the known
@@ -55,12 +64,15 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
     <ng-container ngProjectAs="[user]">
       @if (userName()) {
         <hilos-notification-bell [connection]="connection" />
-        <!-- The avatar is not a link: the demo has no profile of its own, and
-        signing out is the shell's own button. -->
-        <span class="small" data-id="nav-profile-name" [title]="userName()">
+        <a
+          [hilosLink]="profileHref"
+          class="nav-link d-inline-flex align-items-center p-0"
+          data-id="nav-profile-name"
+          [title]="userName()"
+        >
           <hilos-avatar [name]="userName()" [mark]="avatarMark()" />
           <span class="visually-hidden">{{ userName() }}</span>
-        </span>
+        </a>
       } @else {
         <!-- A visitor gets one button that opens the surface over the page
         they are standing on (mockups/framework/layout, the "guest" tile). The
@@ -88,6 +100,9 @@ export class App {
   protected readonly connection = connection
 
   protected readonly userName = hilosSignal(currentUserName)
+
+  /** The profile root the avatar leads to. */
+  protected readonly profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
@@ -312,6 +327,21 @@ export class App {
         (module) => module.MaintenanceNodes,
       ),
     ),
+    [HilosPages.MODERATION]: lazyPage(() =>
+      import('./views/hilos/moderation/moderation.js').then(
+        (module) => module.Moderation,
+      ),
+    ),
+    [HilosPages.MODERATION_KIND]: lazyPage(() =>
+      import('./views/hilos/moderation/kind.js').then(
+        (module) => module.ModerationKind,
+      ),
+    ),
+    [HilosPages.MODERATION_KIND_RULES]: lazyPage(() =>
+      import('./views/hilos/moderation/rules/rules.js').then(
+        (module) => module.ModerationKindRules,
+      ),
+    ),
     [HilosPages.STATUS]: lazyPage(() =>
       import('./views/hilos/status/status.js').then((module) => module.Status),
     ),
@@ -336,6 +366,7 @@ export class App {
       ),
     ),
     [HilosPages.ABOUT]: About,
+    [HilosPages.PROFILE]: Profile,
     [HilosPages.TERMS]: Terms,
     [HilosPages.TERMS_HISTORY]: TermsHistory,
     [HilosPages.PUBLIC_STATUS]: lazyPage(() =>

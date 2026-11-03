@@ -331,7 +331,7 @@ $steps = array_merge($steps, [
         'seconds' => 165,
         'downsStand' => true,
     ],
-    // Analytics across all three masters (HIL-1423), live only. The single-node e2e
+    // Analytics and Moderation in three master rotations, live only. The single-node e2e
     // finishes using the shared dist, node_modules and reports before this starts;
     // the cluster group keeps the scenario matrix from resetting the browser stand.
     [
@@ -342,9 +342,9 @@ $steps = array_merge($steps, [
         'deps' => ['online-testing-e2e'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'e2e'],
-        // 2026-10-17, HIL-1423: 84s for the fresh-stand command with cached images,
-        // one worker, timeout scale 1; all three pairs passed without retries.
-        'seconds' => 84,
+        // 2026-11-03, HIL-1639: 301.304s measured for the fresh-stand command; no retries.
+        // Includes reset, startup and browser; excludes production build/check.
+        'seconds' => 302,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

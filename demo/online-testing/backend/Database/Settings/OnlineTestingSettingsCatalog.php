@@ -11,6 +11,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Moderation\ModerationSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
@@ -22,10 +23,10 @@ use Hilos\Status\StatusSettingsCatalog;
  * Project settings catalog for the online-testing demo.
  *
  * The three example keys are exercised by settings and notification e2e coverage. The catalog
- * also carries shared theme settings, the logs fragment needed to persist logging modes, and
- * the auth throttle fragment its feature requires. Auth, OAuth and legal fragments are absent
- * because those settings features are not activated here; step-up and account deletion use
- * their framework defaults.
+ * also carries shared theme settings, the logs fragment needed to persist logging modes, the auth
+ * throttle fragment its feature requires, and the framework moderation settings. Auth, OAuth and
+ * legal fragments are absent because those settings features are not activated here; step-up and
+ * account deletion use their framework defaults.
  *
  * @see SettingsCatalogConstants
  * @see LogSettingsCatalog
@@ -69,6 +70,7 @@ final class OnlineTestingSettingsCatalog implements CatalogProviderInterface
             AnalyticsSettingsCatalog::getCatalog(),
             ProtectedModeSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
+            ModerationSettingsCatalog::getCatalog(),
         );
     }
 }
