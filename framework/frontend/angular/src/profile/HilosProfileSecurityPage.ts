@@ -147,7 +147,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
       </div>
     </ng-template>
 
-    <section data-id="profile-security" class="mx-auto py-3">
+    <section data-id="profile-security">
       <hilos-profile-head [context]="context()" />
 
       @if (state(); as section) {

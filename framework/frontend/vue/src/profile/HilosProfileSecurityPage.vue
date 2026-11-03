@@ -486,7 +486,7 @@ watch(view, (current) => {
 </script>
 
 <template>
-  <section data-id="profile-security" class="mx-auto py-3">
+  <section data-id="profile-security">
     <HilosProfileHead :context="context" />
 
     <div v-if="state === null" class="text-body-secondary" role="status">

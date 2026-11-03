@@ -477,7 +477,7 @@ export function HilosProfileSecurityPage({
   }, [view])
 
   return (
-    <section data-id="profile-security" className="mx-auto py-3">
+    <section data-id="profile-security">
       <HilosProfileHead context={context} />
 
       {state === null ? (
