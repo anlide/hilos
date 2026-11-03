@@ -120,7 +120,11 @@ export function HilosChangeLogFeedPage({
   }
 
   return (
-    <HilosAdminPage page={HilosPages.CHANGE_LOG_FEED}>
+    <HilosAdminPage
+      page={HilosPages.CHANGE_LOG_FEED}
+      headKind="section"
+      tabsLabel="Change Log pages"
+    >
       <HilosViewportTable
         controller={feed.controller}
         cells={{

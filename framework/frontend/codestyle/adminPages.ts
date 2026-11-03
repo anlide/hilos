@@ -303,6 +303,7 @@ function reactBindings(file: ts.SourceFile, scope: ts.Node = file): Binding[] {
         'HilosAdminPage',
         'HilosSettingPresetsPage',
         'HilosDaemonNodeShell',
+        'HilosChangeLogTableShell',
         'HilosLegalDocumentPageShell',
       ].includes(node.tagName.getText(file))
     ) {

@@ -101,6 +101,8 @@ export interface HilosAdminPageProps {
   breadcrumbLabel?: string
   /** The shared head's tab row navigation's accessible name. */
   tabsLabel?: string
+  /** Extra classes for the shared head's h1. */
+  headTitleClass?: string
   /** The shared head's loading picture; omitted keeps its kind's default. */
   headSkeletonVisual?: ReactNode
   /**
@@ -142,6 +144,7 @@ export function HilosAdminPage({
   headAction,
   breadcrumbLabel,
   tabsLabel,
+  headTitleClass,
   headSkeletonVisual,
   headVisual,
   headMeta,
@@ -224,6 +227,7 @@ export function HilosAdminPage({
                   action={headAction}
                   breadcrumbLabel={breadcrumbLabel}
                   tabsLabel={tabsLabel}
+                  titleClass={headTitleClass}
                   skeletonVisual={headSkeletonVisual}
                   visual={headVisual}
                   meta={headMeta}

@@ -1,18 +1,31 @@
-import { useContext, useId, useMemo } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  CHANGE_LOG_TABLE_TRIGGERS_NAME_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_OWNER_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_EVENT_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_WRITES_TO_FIELD,
+  CHANGE_LOG_TABLE_TRIGGERS_MIGRATION_FIELD,
   CHANGE_LOG_TABLE_COPY as copy,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   CHANGE_LOG_TABLE_SECTION,
+  createHilosChangeLogTableTriggersTable,
   formatChangeLogTrigger,
   readHilosChangeLogTable,
+  type HilosChangeLogReceiptContext,
+  type HilosChangeLogTableTriggersTable,
 } from '@hilos/core/admin/change-log'
-import { HilosPages } from '@hilos/core/base'
-import type { HilosChangeLogReceiptContext } from '@hilos/core/admin/change-log'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
+import { HilosChangeLogTableShell } from './HilosChangeLogTableShell.js'
+
+/** The current trigger window and the generation owning its viewport. */
+interface TriggersWindow {
+  readonly table: HilosChangeLogTableTriggersTable
+  readonly generation: number
+}
 
 /** @param props Project connection and page scope. */
 export function HilosChangeLogTableTriggersPage({
@@ -20,122 +33,95 @@ export function HilosChangeLogTableTriggersPage({
 }: {
   context: HilosChangeLogReceiptContext
 }) {
-  const router = useContext(HilosRouterContext)!
+  const router = useContext(HilosRouterContext)
+  if (!router)
+    throw new Error(
+      'HilosChangeLogTableTriggersPage requires a provided Hilos router.',
+    )
   const route = useSignal(router.currentRoute)
-  const tableSection = useMemo(
-    () => context.scopes.pageDataSignal(CHANGE_LOG_TABLE_SECTION),
-    [context],
+  const tableId = route.params[CHANGE_LOG_TABLE_ROUTE_PARAM] ?? ''
+  const scope = useSignal(
+    useMemo(() => computedSignal(() => context.scopes.page()), [context]),
   )
-  const table = readHilosChangeLogTable(useSignal(tableSection))
-  const triggersHeadingId = useId()
-  const overviewPath = router.resolvePath(HilosPages.CHANGE_LOG_TABLE, {
-    [CHANGE_LOG_TABLE_ROUTE_PARAM]:
-      route.params[CHANGE_LOG_TABLE_ROUTE_PARAM] ?? '',
-  })
+  const currentSource = useMemo(() => {
+    const section = context.scopes.pageDataSignal(CHANGE_LOG_TABLE_SECTION)
+    return computedSignal(() => {
+      const currentRoute = router.currentRoute.get()
+      if (
+        context.scopes.page()?.key !== HilosPages.CHANGE_LOG_TABLE_TRIGGERS ||
+        currentRoute.page !== HilosPages.CHANGE_LOG_TABLE_TRIGGERS ||
+        router.pageError.get() !== null
+      )
+        return null
+      const table = readHilosChangeLogTable(section.get())
+      return table?.name === currentRoute.params[CHANGE_LOG_TABLE_ROUTE_PARAM]
+        ? table
+        : null
+    })
+  }, [context, router])
+  const table = useSignal(currentSource)
+  const tableName = table?.name
+  const [viewport, setViewport] = useState<TriggersWindow | null>(null)
+  const generations = useRef(0)
+
+  // A new scope is a new answer even at the same address. Bind after the
+  // router publishes its route and clears the buffered departing answer.
+  useEffect(() => {
+    if (tableName === undefined || tableName !== tableId) return
+    const next = createHilosChangeLogTableTriggersTable(context, {
+      table: tableId,
+    })
+    next.start()
+    generations.current += 1
+    setViewport({ table: next, generation: generations.current })
+    return () => {
+      next.dispose()
+      setViewport(null)
+    }
+  }, [context, scope, tableId, tableName])
+
   return (
-    <HilosAdminPage page={HilosPages.CHANGE_LOG_TABLE_TRIGGERS}>
-      <p>
-        {overviewPath !== undefined && (
-          <HilosLink
-            to={overviewPath}
-            data-id="hilos-change-log-table-overview"
-          >
-            Overview
-          </HilosLink>
-        )}
-      </p>
-      {table !== null && (
-        <>
-          <section className="mb-4" data-id="hilos-change-log-table-triggers">
-            <h2 id={triggersHeadingId} className="h5">
-              {copy.triggers}
-            </h2>
-            <p className="small text-body-secondary mb-2">
-              {copy.triggersLead}
-            </p>
-            <div className="table-responsive d-none d-md-block">
-              <table
-                className="table table-sm align-middle mb-0"
-                aria-labelledby={triggersHeadingId}
-              >
-                <thead>
-                  <tr>
-                    <th scope="col">{copy.trigger}</th>
-                    <th scope="col">{copy.owner}</th>
-                    <th scope="col">{copy.fires}</th>
-                    <th scope="col">{copy.writesTo}</th>
-                    <th scope="col">{copy.validFrom}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {table.triggers.map((trigger) => (
-                    <tr key={trigger.name}>
-                      <td>
-                        <code className="text-break">{trigger.name}</code>
-                      </td>
-                      <td>
-                        <span className="badge bg-body-secondary text-body border">
-                          {copy.service}
-                        </span>
-                      </td>
-                      <td className="small text-nowrap">
-                        {formatChangeLogTrigger(trigger).fires}
-                      </td>
-                      <td className="small">
-                        {formatChangeLogTrigger(trigger).writesTo}
-                      </td>
-                      <td className="small text-nowrap">
-                        {formatChangeLogTrigger(trigger).validFrom}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div
-              className="d-md-none"
-              role="list"
-              aria-labelledby={triggersHeadingId}
-            >
-              {table.triggers.map((trigger) => (
-                <div key={trigger.name} className="card mb-2" role="listitem">
-                  <div className="card-body py-2 px-3">
-                    <div className="d-flex flex-wrap align-items-center gap-1 fw-medium mb-1">
-                      <code className="text-break">{trigger.name}</code>
-                      <span className="badge bg-body-secondary text-body border">
-                        {copy.service}
-                      </span>
-                    </div>
-                    <dl className="row mb-0 small g-0">
-                      <dt className="col-5 fw-normal text-body-secondary">
-                        {copy.fires}
-                      </dt>
-                      <dd className="col-7 mb-0">
-                        {formatChangeLogTrigger(trigger).fires}
-                      </dd>
-                      <dt className="col-5 fw-normal text-body-secondary">
-                        {copy.writesTo}
-                      </dt>
-                      <dd className="col-7 mb-0">
-                        {formatChangeLogTrigger(trigger).writesTo}
-                      </dd>
-                      <dt className="col-5 fw-normal text-body-secondary">
-                        {copy.validFrom}
-                      </dt>
-                      <dd className="col-7 mb-0">
-                        {formatChangeLogTrigger(trigger).validFrom}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="small text-body-secondary mt-2 mb-0">
-              {copy.triggersFootnote}
-            </p>
-          </section>
-        </>
+    <HilosChangeLogTableShell
+      context={context}
+      page={HilosPages.CHANGE_LOG_TABLE_TRIGGERS}
+    >
+      {viewport && (
+        <section className="mb-4" data-id="hilos-change-log-table-triggers">
+          <p className="small text-body-secondary mb-2">{copy.triggersLead}</p>
+          <HilosViewportTable
+            key={viewport.generation}
+            controller={viewport.table.controller}
+            cells={{
+              [CHANGE_LOG_TABLE_TRIGGERS_NAME_FIELD]: (row) => (
+                <code className="text-break">{row.name}</code>
+              ),
+              [CHANGE_LOG_TABLE_TRIGGERS_OWNER_FIELD]: () => (
+                <span className="badge bg-body-secondary text-body border">
+                  {copy.service}
+                </span>
+              ),
+              [CHANGE_LOG_TABLE_TRIGGERS_EVENT_FIELD]: (row) => (
+                <span className="small text-nowrap">
+                  {formatChangeLogTrigger(row).fires}
+                </span>
+              ),
+              [CHANGE_LOG_TABLE_TRIGGERS_WRITES_TO_FIELD]: (row) => (
+                <span className="small">
+                  {formatChangeLogTrigger(row).writesTo}
+                </span>
+              ),
+              [CHANGE_LOG_TABLE_TRIGGERS_MIGRATION_FIELD]: (row) => (
+                <span className="small text-nowrap">
+                  {formatChangeLogTrigger(row).validFrom}
+                </span>
+              ),
+            }}
+          />
+          <p className="small text-body-secondary mt-2 mb-0">
+            {copy.triggersFootnote}
+          </p>
+        </section>
       )}
-    </HilosAdminPage>
+    </HilosChangeLogTableShell>
   )
 }

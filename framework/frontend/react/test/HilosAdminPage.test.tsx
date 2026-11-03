@@ -432,6 +432,28 @@ describe('HilosAdminPage with the shared head', () => {
     )
   })
 
+  it('passes the title class only to the shared head', () => {
+    const shared = renderShell(OWNER_IDENTITY, {
+      page: HilosPages.I18N,
+      headTitleClass: 'head-title-extra',
+    })
+    const sharedHeading = shared.container.querySelector('h1')
+
+    expect(sharedHeading?.classList.contains('head-title-extra')).toBe(true)
+    shared.unmount()
+
+    const legacy = renderShell(SECTION_IDENTITY, {
+      page: HilosPages.I18N,
+      headKind: 'section',
+      headTitleClass: 'head-title-extra',
+    })
+    const legacyHeading = legacy.container.querySelector(
+      '[data-id="hilos-admin-title"]',
+    )
+
+    expect(legacyHeading?.classList.contains('head-title-extra')).toBe(false)
+  })
+
   it('keeps its own head for an answer without an owner, even when the page names a head kind', () => {
     const { container } = renderShell(SECTION_IDENTITY, {
       page: HilosPages.I18N,

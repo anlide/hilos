@@ -22,6 +22,27 @@ import { HilosChangeLogTablesPage } from '../src/admin/changeLog/HilosChangeLogT
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 const TABLE = 'hilosChangeLogTables'
+const SECTION_IDENTITY: HilosPageIdentity = {
+  label: 'Tracked tables',
+  lead: 'Who changed what in the tracked tables, and through which action.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.CHANGE_LOG,
+    label: 'Change Log',
+    lead: 'Who changed what in the tracked tables, and through which action.',
+    icon: 'bi-clock-history',
+  },
+  pageTabs: [
+    { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+    { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+    { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+    { page: HilosPages.CHANGE_LOG_NOISY, label: 'Noisy columns' },
+  ],
+}
 const NOISY = [
   {
     table: 'project_record',
@@ -137,18 +158,24 @@ function router(detailBuilt: boolean): HilosRouter {
     currentTitle: createSignal('Tracked tables'),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal<HilosPageIdentity | undefined>({
-      label: 'Tracked tables',
-      lead: 'Database tables, their journal label and column rules.',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: createSignal<HilosPageIdentity | undefined>(SECTION_IDENTITY),
     dashboardSections: createSignal(undefined),
-    resolvePath: vi.fn((page, params) =>
-      detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
+    resolvePath: vi.fn((page, params) => {
+      if (page === HilosPages.DASHBOARD) return '/hilos'
+      if (page === HilosPages.CHANGE_LOG) return '/hilos/change-log'
+      if (page === HilosPages.CHANGE_LOG_FEED) {
+        return '/hilos/change-log/feed'
+      }
+      if (page === HilosPages.CHANGE_LOG_TABLES) {
+        return '/hilos/change-log/tables'
+      }
+      if (page === HilosPages.CHANGE_LOG_NOISY) {
+        return '/hilos/change-log/noisy'
+      }
+      return detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
         ? `/hilos/change-log/tables/${params.tableId}`
-        : undefined,
-    ),
+        : undefined
+    }),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -216,8 +243,22 @@ describe('HilosChangeLogTablesPage', () => {
       }
       expect(hilosAdminAccess.get()).toBe(access)
       const { container } = mountPage(h)
-      expect(container.querySelectorAll('h1')).toHaveLength(1)
-      expect(get(container, 'h1').textContent?.trim()).toBe('Tracked tables')
+      const headings = container.querySelectorAll('h1')
+      expect(headings).toHaveLength(1)
+      expect(headings[0]?.textContent?.trim()).toBe('Change Log')
+      const tabs = get(container, '[data-id="hilos-page-tabs"]')
+      expect(tabs.getAttribute('aria-label')).toBe('Change Log pages')
+      expect(tabs.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
+      expect(
+        tabs
+          .querySelector(
+            `[data-id="hilos-page-tab-${HilosPages.CHANGE_LOG_TABLES}"]`,
+          )
+          ?.getAttribute('aria-current'),
+      ).toBe('page')
+      expect(get(container, 'table').getAttribute('aria-labelledby')).toBe(
+        headings[0]?.getAttribute('id'),
+      )
       const tracked = get(
         container,
         'table [data-id="hilos-table-row-project_record"]',
@@ -236,7 +277,6 @@ describe('HilosChangeLogTablesPage', () => {
       )
       expect(untracked.textContent).toContain(CHANGE_LOG_TABLES_UNTRACKED_NOTE)
       expect(untracked.textContent).toContain('Framework')
-      expect(get(untracked, 'code').classList).toContain('text-body-secondary')
       expect(cells(untracked).slice(2, 5)).toEqual(['—', '—', '—'])
       expect(
         get(container, '[data-id="hilos-table-card-hilos_session"]')

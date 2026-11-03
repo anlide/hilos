@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, render, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { HilosPages, createSignal } from '@hilos/core'
 import * as core from '@hilos/core/base'
@@ -386,9 +386,110 @@ describe('HilosChangeLogReceiptModal', () => {
     expect(detail.textContent).toContain('Personal — no value')
     expect(detail.textContent).not.toContain('private old')
     expect(detail.textContent).not.toContain('private new')
+    const fact = within(detail).getByText('name', {
+      selector: 'code',
+    }).parentElement!
+    expect(fact.textContent).toContain('changed')
     expect(
-      detail.querySelector('pre')?.classList.contains('hilos-pre-wrap'),
+      fact.querySelector('[data-id^="hilos-change-log-value-"]'),
+    ).toBeNull()
+    expect(fact.querySelector('strong, pre')).toBeNull()
+    const operation = within(detail).getByText('updated')
+    expect(operation.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    const inline = within(detail).getByText('nullable', {
+      selector: 'code',
+    }).parentElement!
+    expect(
+      Array.from(
+        inline.querySelectorAll('.visually-hidden'),
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Was', 'Now'])
+    expect(inline.querySelector('strong')?.textContent).toBe('Empty string')
+    expect(inline.querySelector('pre')).toBeNull()
+    expect(
+      Array.from(detail.querySelectorAll('pre'), (value) => value.textContent),
+    ).toEqual([oldText, newText])
+    for (const icon of detail.querySelectorAll('i'))
+      expect(icon.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('uses the projected kind for large inline and short long values and escapes both', () => {
+    const oldValue = '<script>bad()</script>' + 'x'.repeat(6000)
+    const newValue = '<img src=x onerror=bad()>' + 'y'.repeat(6000)
+    const { detail } = mountModal(
+      dialog([
+        entry({
+          changes: [
+            {
+              field: 'inline',
+              kind: 'inline',
+              oldPresent: true,
+              newPresent: true,
+              oldValue,
+              newValue,
+              bodyOmitted: false,
+            },
+            {
+              field: 'long',
+              kind: 'long',
+              oldPresent: true,
+              newPresent: true,
+              oldValue: '<b>short old</b>',
+              newValue: '<em>short new</em>',
+              bodyOmitted: false,
+            },
+            {
+              field: 'omitted',
+              kind: 'inline',
+              oldPresent: true,
+              newPresent: true,
+              oldValue: 'raw old',
+              newValue: 'raw new',
+              bodyOmitted: true,
+            },
+          ],
+        }),
+      ]),
+    )
+    const inline = within(detail).getByText('inline', {
+      selector: 'code',
+    }).parentElement!
+    const oldNode = inline.querySelector(
+      '[data-id="hilos-change-log-value-11-inline-old"]',
+    )!
+    const newNode = inline.querySelector(
+      '[data-id="hilos-change-log-value-11-inline-new"]',
+    )!
+    expect(oldNode.textContent).toBe(oldValue)
+    expect(newNode.textContent).toBe(newValue)
+    expect(newNode.tagName).toBe('STRONG')
+    expect(oldNode.querySelector('.visually-hidden')).toBeNull()
+    expect(newNode.querySelector('.visually-hidden')).toBeNull()
+    expect(
+      within(inline).getByText('Was').classList.contains('visually-hidden'),
     ).toBe(true)
+    expect(
+      within(inline).getByText('Now').classList.contains('visually-hidden'),
+    ).toBe(true)
+    expect(inline.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(inline.querySelector('pre')).toBeNull()
+    expect(
+      Array.from(detail.querySelectorAll('pre'), (value) => value.textContent),
+    ).toEqual(['<b>short old</b>', '<em>short new</em>'])
+    expect(
+      detail.querySelector('[data-id="hilos-change-log-value-11-omitted-old"]')
+        ?.textContent,
+    ).toBe('Value omitted')
+    expect(
+      detail.querySelector('[data-id="hilos-change-log-value-11-omitted-new"]')
+        ?.textContent,
+    ).toBe('Value omitted')
+    expect(detail.textContent).not.toContain('raw old')
+    expect(detail.textContent).not.toContain('raw new')
+    expect(detail.querySelector('script, img, b, em')).toBeNull()
   })
 
   it('draws creation as a fact and deletion from its saved snapshot with an anonymized key', () => {
@@ -398,8 +499,26 @@ describe('HilosChangeLogReceiptModal', () => {
         kind: 'long' as const,
         oldPresent: true,
         newPresent: false,
-        oldValue: 'saved snapshot',
+        oldValue: 'saved <script>snapshot</script>\n' + 'x'.repeat(6000),
         newValue: null,
+        bodyOmitted: false,
+      },
+      {
+        field: 'name',
+        kind: 'inline' as const,
+        oldPresent: true,
+        newPresent: true,
+        oldValue: '<b>saved name</b>',
+        newValue: 'should not appear',
+        bodyOmitted: false,
+      },
+      {
+        field: 'email',
+        kind: 'fact' as const,
+        oldPresent: true,
+        newPresent: true,
+        oldValue: 'private old',
+        newValue: 'private new',
         bodyOmitted: false,
       },
     ]
@@ -423,13 +542,64 @@ describe('HilosChangeLogReceiptModal', () => {
     expect(created.textContent).toContain(
       'Created as a fact; values belong to the record itself.',
     )
-    expect(created.textContent).not.toContain('saved snapshot')
+    expect(
+      created.querySelector('[data-id^="hilos-change-log-value-"]'),
+    ).toBeNull()
+    expect(created.querySelector('li')).toBeNull()
+    expect(
+      within(created as HTMLElement)
+        .getByText('created')
+        .querySelector('i')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    expect(created.textContent).not.toContain('saved')
     const deleted = detail.querySelector(
       '[data-id="hilos-change-log-entry-12"]',
     )!
     expect(deleted.textContent).toContain('bot #?, retained')
     expect(deleted.textContent).toContain('Snapshot before deletion:')
-    expect(deleted.textContent).toContain('saved snapshot')
+    expect(deleted.querySelector('pre')?.textContent).toBe(changes[0]!.oldValue)
+    expect(
+      deleted.querySelector('[data-id="hilos-change-log-value-12-name-old"]')
+        ?.textContent,
+    ).toBe('<b>saved name</b>')
+    expect(
+      deleted.querySelector('[data-id="hilos-change-log-value-12-email-old"]'),
+    ).toBeNull()
+    expect(deleted.querySelector('[data-id$="-new"]')).toBeNull()
+    expect(
+      deleted.querySelector('strong, .visually-hidden, b, script'),
+    ).toBeNull()
+    expect(
+      within(deleted as HTMLElement)
+        .getByText('deleted')
+        .querySelector('i')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    const fact = within(deleted as HTMLElement).getByText('email', {
+      selector: 'code',
+    }).parentElement!
+    expect(fact.textContent).toContain('Personal — no value')
+    expect(fact.textContent).not.toContain('changed')
+    expect(fact.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      within(deleted as HTMLElement)
+        .getByText('name', { selector: 'code' })
+        .parentElement!.querySelector('i'),
+    ).toBeNull()
+    expect(
+      within(deleted as HTMLElement)
+        .getByText('description', { selector: 'code' })
+        .parentElement!.querySelector('i'),
+    ).toBeNull()
+    for (const value of [
+      'private old',
+      'private new',
+      'should not appear',
+      'Was',
+      'Now',
+    ])
+      expect(detail.textContent).not.toContain(value)
     expect(
       deleted.querySelector(
         '[data-id="hilos-change-log-value-12-description-new"]',

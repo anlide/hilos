@@ -54,6 +54,8 @@ export interface HilosPageHeadProps {
   resolvePath: HilosPathResolver
   /** The id the h1 carries, from the caller; a local one when omitted. */
   headingId?: string
+  /** Extra classes for the shared h1, such as a monospace entity name. */
+  titleClass?: string
   /** A section head or an entity block: the defaults and the skeleton's tile. */
   kind?: 'section' | 'entity'
   /** The breadcrumb navigation's accessible name. */
@@ -86,6 +88,7 @@ export function HilosPageHead({
   params,
   resolvePath,
   headingId,
+  titleClass,
   kind = 'section',
   breadcrumbLabel = 'Breadcrumb',
   tabsLabel = 'Page sections',
@@ -197,7 +200,11 @@ export function HilosPageHead({
             <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
               <h1
                 id={headingId ?? localHeadingId}
-                className="h4 mb-0 text-break"
+                className={
+                  titleClass === undefined
+                    ? 'h4 mb-0 text-break'
+                    : `h4 mb-0 text-break ${titleClass}`
+                }
                 data-id="hilos-page-head-title"
               >
                 {owner.label}

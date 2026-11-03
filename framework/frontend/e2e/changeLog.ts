@@ -85,7 +85,19 @@ export async function expectChangeLogSectionHead(
   )
   const currentCrumb = crumbs.locator('[aria-current="page"]')
   await expect(currentCrumb).toHaveCount(1)
-  await expect(currentCrumb).toHaveText('Change Log')
+  await expect
+    .poll(() =>
+      currentCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent
+          ?.replace(/[\u200b\u00ad]/g, '')
+          .trim()
+          .replace(/\s+/g, ' ')
+      }),
+    )
+    .toBe('Change Log')
   await expect(currentCrumb.locator('a')).toHaveCount(0)
 
   const tabs = page.getByTestId('hilos-page-tabs')
@@ -600,8 +612,12 @@ export async function expectChangeLogTableHead(
   await expect(icon).toHaveClass(/\brounded-circle\b/)
   await expect(icon.locator('i.bi-table')).toHaveCount(1)
   await expect(
-    page.getByTestId('hilos-change-log-table-head-badges'),
-  ).toHaveText(journaled ? `${declaration.owner} Journaled` : declaration.owner)
+    page
+      .getByTestId('hilos-change-log-table-head-badges')
+      .locator(':scope > span'),
+  ).toHaveText(
+    journaled ? [declaration.owner, 'Journaled'] : [declaration.owner],
+  )
   await expect(
     page.getByTestId('hilos-change-log-table-head-description'),
   ).toHaveText(
@@ -628,8 +644,22 @@ export async function expectChangeLogTableHead(
       href!,
     )
   }
-  await expect(crumbs.locator('[aria-current="page"]')).toHaveText(table)
-  await expect(crumbs.locator('[aria-current="page"] a')).toHaveCount(0)
+  const currentCrumb = crumbs.locator('[aria-current="page"]')
+  await expect(currentCrumb).toHaveCount(1)
+  await expect
+    .poll(() =>
+      currentCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent
+          ?.replace(/[\u200b\u00ad]/g, '')
+          .trim()
+          .replace(/\s+/g, ' ')
+      }),
+    )
+    .toBe(table)
+  await expect(currentCrumb.locator('a')).toHaveCount(0)
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Table pages')
   await expect(tabs).toHaveRole('navigation')
@@ -682,6 +712,7 @@ export async function expectChangeLogTableHead(
  * @param currentPage The current table page key.
  * @param legacyTitle The legacy page's exact catalog heading.
  * @param recordKey The optional record route context retained by the History tab.
+ * @param since The scenario's migration number, overriding the shared fixture.
  */
 async function expectTrackedTableOwnerHead(
   expect: Expect,
@@ -690,6 +721,7 @@ async function expectTrackedTableOwnerHead(
   currentPage: string,
   legacyTitle: string,
   recordKey?: string,
+  since?: number,
 ): Promise<void> {
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
@@ -706,7 +738,7 @@ async function expectTrackedTableOwnerHead(
       page,
       table,
       currentPage,
-      declaration,
+      { ...declaration, since: since ?? declaration.since },
       recordKey,
     )
   } else {
@@ -725,6 +757,7 @@ export async function expectTrackedTableOverview(
   expect: Expect,
   page: Page,
   table: string,
+  since?: number,
 ): Promise<void> {
   await expect(page).toHaveURL(
     new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}$`),
@@ -739,6 +772,8 @@ export async function expectTrackedTableOverview(
     table,
     'hilos_change_log_table',
     'Tracked table',
+    undefined,
+    since,
   )
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   await expect(page.getByTestId('hilos-change-log-table-columns')).toHaveCount(
@@ -755,6 +790,7 @@ export async function expectTrackedTableRecord(
   page: Page,
   table: string,
   recordKey: string,
+  since?: number,
 ): Promise<void> {
   await expect(page).toHaveURL(
     new RegExp(
@@ -772,6 +808,7 @@ export async function expectTrackedTableRecord(
     'hilos_change_log_table_history',
     'History',
     recordKey,
+    since,
   )
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-change-log-table-columns')).toHaveCount(
@@ -790,6 +827,7 @@ export async function expectTrackedTableWhole(
   expect: Expect,
   page: Page,
   table: string,
+  since?: number,
 ): Promise<void> {
   await expect(page).toHaveURL(
     new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}/history$`),
@@ -804,6 +842,8 @@ export async function expectTrackedTableWhole(
     table,
     'hilos_change_log_table_history',
     'History',
+    undefined,
+    since,
   )
   await expect(page.getByTestId('hilos-change-log-record-filter')).toHaveCount(
     0,

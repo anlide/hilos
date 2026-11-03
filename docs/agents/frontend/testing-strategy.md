@@ -415,8 +415,9 @@ that person's card: the column's value is journaled in every demo, and the
 signed-in person is the author (a registration receipt has no author because it
 comes from a guest). Chat additionally covers the adopted Vue section head,
 overview tiles, four section links with Back, and direct Feed and Noisy columns
-entry through F5. React and Angular retain their legacy section heads; these
-specs do not promise head parity. Only chat carries `change-log-bot.spec.ts`
+entry through F5. Tasks checks the React section head through the shared
+owner-page checks; Angular keeps its legacy section head. Only chat carries
+`change-log-bot.spec.ts`
 (`spec-owner: demo`): a bot's description is the only long text under the
 journal. binance-btc-tracker, ecommerce-shop and online-testing mount the section
 without the single-node specs (HIL-1464).
@@ -1296,18 +1297,23 @@ exported checks are re-exported from `framework/frontend/e2e/index.ts`.
 `expectChangeLogReference` and `expectChangeLogNoisyColumns` check their own
 page bodies. `expectChangeLog…`, `expectRegistrationReceiptFacts` and
 `expectTracked…` take the spec's `expect` first, then its `Page`.
-`expectChangeLogSectionHead(expect, page, currentPage)` checks the adopted Vue
+`expectChangeLogSectionHead(expect, page, currentPage)` checks the adopted
 owner, its four section links, current page and absence of child cards. The
-owner-page checks preserve the exact legacy heading fallback for React and
-Angular.
+owner-page checks exercise the shared head in Vue Chat and React Tasks and
+preserve the exact legacy heading fallback only for Angular.
 `expectChangeLogReceiptWriter(expect, page, actorLabel, action, agentId)` checks
 the exact Who, Action and Agent values in the receipt's first attribution `dl`.
 It returns the complete visible header with whitespace normalized, including
 When and Source, for comparison across masters.
 The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`; chat keeps a wrapper.
-The shared receipt checks remain common across kits; Chat's section-head,
-overview-tile, direct-entry, F5 and Back scenarios are additional to its Vue
-adoption. React and Angular keep the legacy section drawing.
+`expectTrackedTableOverview`, `expectTrackedTableRecord` and
+`expectTrackedTableWhole` accept an optional final `since` migration override;
+the private owner-head reader passes it to the table-head check. Tasks passes
+51 for its `hilos_user` fixture.
+The shared receipt checks remain common across kits. Chat's section-head,
+overview-tile, direct-entry, F5 and Back scenarios cover Vue adoption; Tasks'
+table specs check the React shared head through the same owner-page checks.
+Angular keeps its legacy section drawing.
 
 ### The Moderation section — names and checks
 

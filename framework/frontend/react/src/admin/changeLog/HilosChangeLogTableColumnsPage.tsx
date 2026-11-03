@@ -1,23 +1,34 @@
-import { useContext, useId, useMemo } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  CHANGE_LOG_TABLE_COLUMNS_NAME_FIELD,
+  CHANGE_LOG_TABLE_COLUMNS_STORAGE_FIELD,
+  CHANGE_LOG_TABLE_COLUMNS_MODE_FIELD,
   CHANGE_LOG_TABLE_COPY as copy,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   CHANGE_LOG_TABLE_SECTION,
   changeLogColumnModeCard,
+  createHilosChangeLogTableColumnsTable,
   formatChangeLogColumnStorage,
   readHilosChangeLogTable,
 } from '@hilos/core/admin/change-log'
-import { HilosPages } from '@hilos/core/base'
+import { computedSignal, HilosPages } from '@hilos/core/base'
 import type {
   HilosChangeLogReceiptContext,
   HilosChangeLogTableColumn,
+  HilosChangeLogTableColumnsTable,
 } from '@hilos/core/admin/change-log'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosLink } from '../../HilosLink.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
+import { HilosChangeLogTableShell } from './HilosChangeLogTableShell.js'
+
+/** The current schema window and the generation owning its viewport. */
+interface ColumnsWindow {
+  readonly table: HilosChangeLogTableColumnsTable
+  readonly generation: number
+}
 
 /**
  * Draw the badge of the mode a column enters the journal with, or a dash.
@@ -42,99 +53,84 @@ export function HilosChangeLogTableColumnsPage({
 }: {
   context: HilosChangeLogReceiptContext
 }) {
-  const router = useContext(HilosRouterContext)!
+  const router = useContext(HilosRouterContext)
+  if (!router)
+    throw new Error(
+      'HilosChangeLogTableColumnsPage requires a provided Hilos router.',
+    )
   const route = useSignal(router.currentRoute)
-  const tableSection = useMemo(
-    () => context.scopes.pageDataSignal(CHANGE_LOG_TABLE_SECTION),
-    [context],
+  const tableId = route.params[CHANGE_LOG_TABLE_ROUTE_PARAM] ?? ''
+  const scope = useSignal(
+    useMemo(() => computedSignal(() => context.scopes.page()), [context]),
   )
-  const table = readHilosChangeLogTable(useSignal(tableSection))
-  const columnsHeadingId = useId()
+  const currentSource = useMemo(() => {
+    const section = context.scopes.pageDataSignal(CHANGE_LOG_TABLE_SECTION)
+    return computedSignal(() => {
+      const currentRoute = router.currentRoute.get()
+      if (
+        context.scopes.page()?.key !== HilosPages.CHANGE_LOG_TABLE_COLUMNS ||
+        currentRoute.page !== HilosPages.CHANGE_LOG_TABLE_COLUMNS ||
+        router.pageError.get() !== null
+      )
+        return null
+      const table = readHilosChangeLogTable(section.get())
+      return table?.name === currentRoute.params[CHANGE_LOG_TABLE_ROUTE_PARAM]
+        ? table
+        : null
+    })
+  }, [context, router])
+  const table = useSignal(currentSource)
+  const tableName = table?.name
+  const [viewport, setViewport] = useState<ColumnsWindow | null>(null)
+  const generations = useRef(0)
   const hasNoise = table?.columns.some(({ mode }) => mode === 'noise') === true
-  const overviewPath = router.resolvePath(HilosPages.CHANGE_LOG_TABLE, {
-    [CHANGE_LOG_TABLE_ROUTE_PARAM]:
-      route.params[CHANGE_LOG_TABLE_ROUTE_PARAM] ?? '',
-  })
+
+  // A new scope is a new answer even at the same address. Bind after the
+  // router publishes its route and clears the buffered departing answer.
+  useEffect(() => {
+    if (tableName === undefined || tableName !== tableId) return
+    const next = createHilosChangeLogTableColumnsTable(context, {
+      table: tableId,
+    })
+    next.start()
+    generations.current += 1
+    setViewport({ table: next, generation: generations.current })
+    return () => {
+      next.dispose()
+      setViewport(null)
+    }
+  }, [context, scope, tableId, tableName])
+
   return (
-    <HilosAdminPage page={HilosPages.CHANGE_LOG_TABLE_COLUMNS}>
-      <p>
-        {overviewPath !== undefined && (
-          <HilosLink
-            to={overviewPath}
-            data-id="hilos-change-log-table-overview"
-          >
-            Overview
-          </HilosLink>
-        )}
-      </p>
-      {table !== null && (
-        <>
-          <section className="mb-4" data-id="hilos-change-log-table-columns">
-            <h2 id={columnsHeadingId} className="h5">
-              {copy.columns}
-            </h2>
-            <div className="table-responsive d-none d-md-block">
-              <table
-                className="table table-sm align-middle mb-0"
-                aria-labelledby={columnsHeadingId}
-              >
-                <thead>
-                  <tr>
-                    <th scope="col">{copy.column}</th>
-                    <th scope="col">{copy.storedAs}</th>
-                    <th scope="col">{copy.inJournal}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {table.columns.map((column) => (
-                    <tr key={column.name}>
-                      <td>
-                        <code className="text-break">{column.name}</code>
-                      </td>
-                      <td className="small">
-                        {formatChangeLogColumnStorage(column)}
-                      </td>
-                      <td>{modeBadge(column.mode)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div
-              className="d-md-none"
-              role="list"
-              aria-labelledby={columnsHeadingId}
-            >
-              {table.columns.map((column) => (
-                <div key={column.name} className="card mb-2" role="listitem">
-                  <div className="card-body py-2 px-3">
-                    <div className="fw-medium mb-1">
-                      <code className="text-break">{column.name}</code>
-                    </div>
-                    <dl className="row mb-0 small g-0">
-                      <dt className="col-5 fw-normal text-body-secondary">
-                        {copy.storedAs}
-                      </dt>
-                      <dd className="col-7 mb-0">
-                        {formatChangeLogColumnStorage(column)}
-                      </dd>
-                      <dt className="col-5 fw-normal text-body-secondary">
-                        {copy.inJournal}
-                      </dt>
-                      <dd className="col-7 mb-0">{modeBadge(column.mode)}</dd>
-                    </dl>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {hasNoise && (
-              <p className="small text-body-secondary mt-2 mb-0">
-                {copy.noisyNote}
-              </p>
-            )}
-          </section>
-        </>
+    <HilosChangeLogTableShell
+      context={context}
+      page={HilosPages.CHANGE_LOG_TABLE_COLUMNS}
+    >
+      {viewport && (
+        <section className="mb-4" data-id="hilos-change-log-table-columns">
+          <HilosViewportTable
+            key={viewport.generation}
+            controller={viewport.table.controller}
+            cells={{
+              [CHANGE_LOG_TABLE_COLUMNS_NAME_FIELD]: (row) => (
+                <code className="text-break">{row.name}</code>
+              ),
+              [CHANGE_LOG_TABLE_COLUMNS_STORAGE_FIELD]: (row) => (
+                <span className="small">
+                  {formatChangeLogColumnStorage(row)}
+                </span>
+              ),
+              [CHANGE_LOG_TABLE_COLUMNS_MODE_FIELD]: (row) =>
+                modeBadge(row.mode),
+            }}
+          />
+          {hasNoise && (
+            <p className="small text-body-secondary mt-2 mb-0">
+              {copy.noisyNote}
+            </p>
+          )}
+        </section>
       )}
-    </HilosAdminPage>
+    </HilosChangeLogTableShell>
   )
 }

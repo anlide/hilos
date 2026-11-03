@@ -13,6 +13,7 @@ import {
   CHANGE_LOG_RECORD_ROUTE_PARAM,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   changeLogEntryDetails,
+  changeLogMutationBadge,
   changeLogReceiptAttribution,
   changeLogReceiptPagination,
   changeLogRecordRouteParam,
@@ -101,6 +102,7 @@ export function HilosChangeLogReceiptModal({
   const entries = (dialog?.entries ?? []).map((entry) => ({
     entryId: entry.entryId,
     details: changeLogEntryDetails(entry),
+    operation: changeLogMutationBadge(entry.mutation),
     recordPath: recordPath(router, entry),
   }))
   const pagination = dialog ? changeLogReceiptPagination(dialog) : null
@@ -274,8 +276,12 @@ export function HilosChangeLogReceiptModal({
                   ) : (
                     <code className="text-break">{entry.details.record}</code>
                   )}
-                  <span className="badge bg-body-secondary text-body border">
-                    {entry.details.mutation}
+                  <span className={`badge text-wrap ${entry.operation.tone}`}>
+                    <i
+                      className={`bi ${entry.operation.icon} me-1`}
+                      aria-hidden="true"
+                    />
+                    {entry.operation.label}
                   </span>
                 </h3>
                 {entry.details.explanation && (
@@ -283,22 +289,62 @@ export function HilosChangeLogReceiptModal({
                     {entry.details.explanation}
                   </p>
                 )}
-                <ul className="list-unstyled mb-0 d-flex flex-column gap-3">
+                <ul className="list-unstyled mb-0 d-flex flex-column gap-1">
                   {entry.details.fields.map((field) => (
-                    <li key={field.field}>
+                    <li key={field.field} className="small text-break">
                       <code className="text-break">{field.field}</code>
                       {field.kind === 'fact' ? (
-                        <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap">
-                          {field.oldValue.text}
-                        </span>
+                        <>
+                          {field.newValue && <span> {copy.changed}</span>}{' '}
+                          <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap text-start">
+                            <i
+                              className="bi bi-incognito me-1"
+                              aria-hidden="true"
+                            />
+                            {field.oldValue.text}
+                          </span>
+                        </>
+                      ) : field.kind === 'inline' ? (
+                        <>
+                          {field.newValue && (
+                            <span className="visually-hidden">
+                              {copy.oldValue}
+                            </span>
+                          )}{' '}
+                          <span
+                            className="text-body-secondary"
+                            data-id={`hilos-change-log-value-${entry.entryId}-${field.field}-old`}
+                          >
+                            {field.oldValue.text}
+                          </span>
+                          {field.newValue && (
+                            <>
+                              {' '}
+                              <i
+                                className="bi bi-arrow-right text-body-secondary"
+                                aria-hidden="true"
+                              />
+                              <span className="visually-hidden">
+                                {copy.newValue}
+                              </span>{' '}
+                              <strong
+                                data-id={`hilos-change-log-value-${entry.entryId}-${field.field}-new`}
+                              >
+                                {field.newValue.text}
+                              </strong>
+                            </>
+                          )}
+                        </>
                       ) : (
-                        <div className="row g-2 mt-1">
+                        <div className="row g-2 mt-1 p-2">
                           <div
                             className={field.newValue ? 'col-sm-6' : 'col-12'}
                           >
-                            <div className="small text-body-secondary mb-1">
-                              {copy.oldValue}
-                            </div>
+                            {field.newValue && (
+                              <div className="small text-body-secondary mb-1">
+                                {copy.oldValue}
+                              </div>
+                            )}
                             <HilosLongText
                               kind="output"
                               text={field.oldValue.text}

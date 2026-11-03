@@ -35,6 +35,27 @@ const OVERVIEW: HilosChangeLogOverview = {
   journaledTables: ['bot', 'hilos_user'],
   liveTables: 32,
 }
+const SECTION_IDENTITY: HilosPageIdentity = {
+  label: 'Feed',
+  lead: 'Who changed what in the tracked tables, and through which action.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.CHANGE_LOG,
+    label: 'Change Log',
+    lead: 'Who changed what in the tracked tables, and through which action.',
+    icon: 'bi-clock-history',
+  },
+  pageTabs: [
+    { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+    { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+    { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+    { page: HilosPages.CHANGE_LOG_NOISY, label: 'Noisy columns' },
+  ],
+}
 
 function header(
   overrides: Partial<HilosChangeLogReceiptHeader> = {},
@@ -125,7 +146,7 @@ async function reply(
 }
 
 function router(tablesBuilt = false) {
-  const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+  const identity = createSignal<HilosPageIdentity | undefined>(SECTION_IDENTITY)
   const leaves = new Set<() => void>()
   const value: HilosRouter = {
     currentRoute: createSignal<PageRouteMatch>({
@@ -139,10 +160,20 @@ function router(tablesBuilt = false) {
     pageLoading: createSignal(false),
     pageIdentity: identity,
     dashboardSections: createSignal(undefined),
-    resolvePath: (page) =>
-      tablesBuilt && page === HilosPages.CHANGE_LOG_TABLES
-        ? '/hilos/change-log/tables'
-        : undefined,
+    resolvePath: (page) => {
+      if (page === HilosPages.DASHBOARD) return '/hilos'
+      if (page === HilosPages.CHANGE_LOG) return '/hilos/change-log'
+      if (page === HilosPages.CHANGE_LOG_FEED) {
+        return '/hilos/change-log/feed'
+      }
+      if (page === HilosPages.CHANGE_LOG_TABLES) {
+        return tablesBuilt ? '/hilos/change-log/tables' : undefined
+      }
+      if (page === HilosPages.CHANGE_LOG_NOISY) {
+        return '/hilos/change-log/noisy'
+      }
+      return undefined
+    },
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -368,6 +399,22 @@ describe('HilosChangeLogFeedPage', () => {
 
   it('draws the page snapshot and offers its table names in the feed filter', () => {
     mountPage(harness())
+    const headings = document.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]?.textContent).toBe('Change Log')
+    const tabs = element('hilos-page-tabs')
+    expect(tabs.getAttribute('aria-label')).toBe('Change Log pages')
+    expect(tabs.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
+    expect(
+      tabs
+        .querySelector(
+          `[data-id="hilos-page-tab-${HilosPages.CHANGE_LOG_FEED}"]`,
+        )
+        ?.getAttribute('aria-current'),
+    ).toBe('page')
+    expect(
+      document.querySelector('table')?.getAttribute('aria-labelledby'),
+    ).toBe(headings[0]?.getAttribute('id'))
     const tableFilter = document.querySelector(
       '[data-id="hilos-table-filter-table"]',
     ) as HTMLElement

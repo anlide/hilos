@@ -20,7 +20,28 @@ import type {
 import { HilosChangeLogNoisyPage } from '../src/admin/changeLog/HilosChangeLogNoisyPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
-const TABLE = 'hilosChangeLogTables'
+const TABLE = 'hilosChangeLogNoisyColumns'
+const SECTION_IDENTITY: HilosPageIdentity = {
+  label: 'Noisy columns',
+  lead: 'Who changed what in the tracked tables, and through which action.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.CHANGE_LOG,
+    label: 'Change Log',
+    lead: 'Who changed what in the tracked tables, and through which action.',
+    icon: 'bi-clock-history',
+  },
+  pageTabs: [
+    { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+    { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+    { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+    { page: HilosPages.CHANGE_LOG_NOISY, label: 'Noisy columns' },
+  ],
+}
 const NOISY = [
   {
     table: 'project_record',
@@ -33,51 +54,25 @@ const NOISY = [
     reason: 'Moves with every read',
   },
 ]
-const ROWS = [
-  {
-    rowKey: 'project_record',
-    slots: {
-      table: {
-        name: 'project_record',
-        owner: 'project',
-        journaled: true,
-        columns: {
-          value: 4,
-          personal: 2,
-          binary: 3,
-          secret: 1,
-          noise: 2,
-          key: 77,
-        },
-        changesLast24h: 0,
-        lastChangeAt: null,
-      },
+const ROWS = NOISY.map((column) => ({
+  rowKey: `${column.table}.${column.column}`,
+  slots: {
+    noisyColumn: {
+      ...column,
+      columnKey: `${column.table}.${column.column}`,
     },
   },
-  {
-    rowKey: 'hilos_session',
-    slots: {
-      table: {
-        name: 'hilos_session',
-        owner: 'framework',
-        journaled: false,
-        columns: null,
-        changesLast24h: null,
-        lastChangeAt: null,
-      },
-    },
-  },
-]
+}))
 
 type Listener = (signal: {
   type?: string
   data: Record<string, unknown>
 }) => void
 
-function harness(noisy: unknown = NOISY) {
+function harness(legacySnapshot: unknown = NOISY) {
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.CHANGE_LOG_NOISY)
-  scope.data.set(CHANGE_LOG_NOISY_COLUMNS_SECTION, noisy)
+  scope.data.set(CHANGE_LOG_NOISY_COLUMNS_SECTION, legacySnapshot)
   const listeners = new Map<string, Set<Listener>>()
   const connection = {
     registerTableWindow: vi.fn(),
@@ -89,15 +84,14 @@ function harness(noisy: unknown = NOISY) {
       const set = listeners.get(event) ?? new Set<Listener>()
       listeners.set(event, set)
       set.add(listener)
-      return () => {
-        set.delete(listener)
-      }
+      return () => set.delete(listener)
     },
   }
   const context: HilosChangeLogContext = {
     connection: connection as unknown as HilosChangeLogContext['connection'],
     scopes,
   }
+
   function pushWindow(rows = ROWS) {
     for (const listener of listeners.get('projectSignal') ?? []) {
       listener({
@@ -114,7 +108,7 @@ function harness(noisy: unknown = NOISY) {
                 lastAnchor: null,
                 offset: 0,
                 limit: 25,
-                sort: [{ field: 'name', direction: 'asc' }],
+                sort: [{ field: 'column', direction: 'asc' }],
               },
             },
           },
@@ -122,37 +116,42 @@ function harness(noisy: unknown = NOISY) {
       })
     }
   }
+
   return { context, scope, connection, listeners, pushWindow }
 }
 
-function router(detailBuilt: boolean): HilosRouter {
+function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.CHANGE_LOG_NOISY,
       params: {},
       admin: true,
     }),
-    currentPath: createSignal('/hilos/change-log/tables'),
+    currentPath: createSignal('/hilos/change-log/noisy'),
     currentTitle: createSignal('Noisy columns'),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal<HilosPageIdentity | undefined>({
-      label: 'Noisy columns',
-      lead: 'Database tables, their journal label and column rules.',
-      breadcrumb: [],
-      children: [],
-    }),
+    pageIdentity: createSignal<HilosPageIdentity | undefined>(SECTION_IDENTITY),
     dashboardSections: createSignal(undefined),
-    resolvePath: vi.fn((page, params) =>
-      detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
-        ? `/hilos/change-log/tables/${params.tableId}`
-        : undefined,
-    ),
+    resolvePath: (page) => {
+      if (page === HilosPages.DASHBOARD) return '/hilos'
+      if (page === HilosPages.CHANGE_LOG) return '/hilos/change-log'
+      if (page === HilosPages.CHANGE_LOG_FEED) {
+        return '/hilos/change-log/feed'
+      }
+      if (page === HilosPages.CHANGE_LOG_TABLES) {
+        return '/hilos/change-log/tables'
+      }
+      if (page === HilosPages.CHANGE_LOG_NOISY) {
+        return '/hilos/change-log/noisy'
+      }
+      return undefined
+    },
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     onLeave: () => () => {},
-    navigate: vi.fn(),
+    navigate: () => {},
     replacePath: () => {},
     start: () => {},
     stop: () => {},
@@ -161,21 +160,15 @@ function router(detailBuilt: boolean): HilosRouter {
 
 const releases: (() => void)[] = []
 
-/**
- * Mount the page inside a navigator and answer its tables window.
- *
- * @param h The harness whose context the page is mounted with.
- * @param detailBuilt Whether the Tracked table page has an address.
- */
-function mountPage(h = harness(), detailBuilt = false) {
-  const r = router(detailBuilt)
+function mountPage(h: ReturnType<typeof harness>) {
+  const r = router()
   const result = render(
     <HilosRouterContext.Provider value={r}>
       <HilosChangeLogNoisyPage context={h.context} />
     </HilosRouterContext.Provider>,
   )
   act(() => h.pushWindow())
-  return { container: result.container, unmount: result.unmount, r }
+  return { container: result.container, unmount: result.unmount }
 }
 
 function get(root: ParentNode, selector: string): HTMLElement {
@@ -191,9 +184,11 @@ describe('HilosChangeLogNoisyPage', () => {
   })
 
   it.each(['full', 'view'] as const)(
-    'draws the same schema metadata under %s access',
+    'draws the server table and shared section head under %s access',
     (access) => {
-      const h = harness()
+      const h = harness([
+        { table: 'wrong', column: 'snapshot', reason: 'Unused legacy data' },
+      ])
       bindSessionScope(h.context.connection, h.context.scopes)
       releases.push(bindAdminAccess(h.context.scopes))
       for (const listener of h.listeners.get('projectSignal') ?? []) {
@@ -208,38 +203,73 @@ describe('HilosChangeLogNoisyPage', () => {
         })
       }
       expect(hilosAdminAccess.get()).toBe(access)
-      const { container } = mountPage(h)
-      expect(container.querySelectorAll('h1')).toHaveLength(1)
-      expect(get(container, 'h1').textContent?.trim()).toBe('Noisy columns')
-      const noise = get(container, '[data-id="hilos-change-log-noisy-columns"]')
-      expect(get(noise, 'table').getAttribute('aria-labelledby')).toBe(
-        get(noise, 'h2').getAttribute('id'),
+
+      const listenersBeforePage = [...h.listeners.values()].reduce(
+        (total, set) => total + set.size,
+        0,
+      )
+      const { container, unmount } = mountPage(h)
+      const headings = container.querySelectorAll('h1')
+      expect(headings).toHaveLength(1)
+      expect(headings[0]?.textContent).toBe('Change Log')
+      const tabs = get(container, '[data-id="hilos-page-tabs"]')
+      expect(tabs.getAttribute('aria-label')).toBe('Change Log pages')
+      expect(tabs.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
+      expect(
+        tabs
+          .querySelector(
+            `[data-id="hilos-page-tab-${HilosPages.CHANGE_LOG_NOISY}"]`,
+          )
+          ?.getAttribute('aria-current'),
+      ).toBe('page')
+      expect(
+        container.querySelector('[data-id="hilos-admin-children"]'),
+      ).toBeNull()
+
+      const table = get(container, 'table')
+      expect(table.getAttribute('aria-labelledby')).toBe(
+        headings[0]?.getAttribute('id'),
+      )
+      const headers = Array.from(table.querySelectorAll('th'))
+      const columnHeader = headers.find(
+        (header) => header.textContent?.trim() === 'Column',
+      )
+      const reasonHeader = headers.find(
+        (header) => header.textContent?.trim() === 'Why noisy',
+      )
+      expect(columnHeader?.getAttribute('scope')).toBe('col')
+      expect(reasonHeader?.getAttribute('scope')).toBe('col')
+      const row = get(
+        container,
+        'table [data-id="hilos-table-row-project_record.heartbeat"]',
+      )
+      expect(row.textContent).toContain('project_record.heartbeat')
+      expect(row.textContent).toContain(NOISY[0]!.reason)
+      expect(row.querySelector('em')).toBeNull()
+      expect(row.textContent).not.toContain('Unused legacy data')
+      expect(
+        container.querySelector('[data-id="hilos-table-title"]'),
+      ).toBeNull()
+      expect(h.connection.sendTableViewport).not.toHaveBeenCalled()
+      expect(h.connection.sendTableRendered).toHaveBeenCalled()
+      expect(h.connection.registerTableWindow).toHaveBeenCalledWith(
+        TABLE,
+        expect.anything(),
+      )
+      act(() => h.pushWindow([]))
+      expect(
+        container.querySelector('[data-id="hilos-table-empty-title"]')
+          ?.textContent,
+      ).toBe(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
+
+      unmount()
+      expect(h.connection.unregisterTableWindow).toHaveBeenCalledWith(
+        TABLE,
+        h.connection.registerTableWindow.mock.calls[0]?.[1],
       )
       expect(
-        Array.from(noise.querySelectorAll('th'), (th) =>
-          th.getAttribute('scope'),
-        ),
-      ).toEqual(['col', 'col'])
-      expect(noise.querySelectorAll('tbody tr')).toHaveLength(2)
-      expect(get(noise, 'tbody').textContent).toContain(
-        'project_record.heartbeat',
-      )
-      expect(get(noise, 'tbody').textContent).toContain(NOISY[0]!.reason)
-      expect(get(noise, '.d-md-none').textContent).toContain(NOISY[0]!.reason)
-      expect(noise.querySelector('em')).toBeNull()
+        [...h.listeners.values()].reduce((total, set) => total + set.size, 0),
+      ).toBe(listenersBeforePage)
     },
   )
-
-  it('uses the core empty copy only for a valid empty snapshot', () => {
-    const h = harness([])
-    const { container } = mountPage(h)
-    const noise = get(container, '[data-id="hilos-change-log-noisy-columns"]')
-    expect(noise.textContent).toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-    expect(noise.querySelector('table')).toBeNull()
-    for (const invalid of [null, [{ table: 'broken', column: 'heartbeat' }]]) {
-      act(() => h.scope.data.set(CHANGE_LOG_NOISY_COLUMNS_SECTION, invalid))
-      expect(noise.textContent).not.toContain(CHANGE_LOG_NOISY_COLUMNS_EMPTY)
-      expect(noise.querySelector('table')).toBeNull()
-    }
-  })
 })

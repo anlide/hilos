@@ -56,7 +56,11 @@ export function HilosChangeLogTablesPage({
   }
 
   return (
-    <HilosAdminPage page={HilosPages.CHANGE_LOG_TABLES}>
+    <HilosAdminPage
+      page={HilosPages.CHANGE_LOG_TABLES}
+      headKind="section"
+      tabsLabel="Change Log pages"
+    >
       <p className="text-body-secondary">{CHANGE_LOG_TABLES_NOTE}</p>
 
       <HilosViewportTable

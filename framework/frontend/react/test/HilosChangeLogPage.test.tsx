@@ -32,8 +32,30 @@ const OVERVIEW: HilosChangeLogOverview = {
   liveTables: 32,
 }
 
-function router(tablesBuilt = false) {
-  const identity = createSignal<HilosPageIdentity | undefined>(undefined)
+const SECTION_IDENTITY: HilosPageIdentity = {
+  label: 'Overview',
+  lead: 'Who changed what in the tracked tables, and through which action.',
+  breadcrumb: [
+    { page: HilosPages.DASHBOARD, label: 'Hilos' },
+    { page: HilosPages.CHANGE_LOG, label: 'Change Log' },
+  ],
+  children: [],
+  pageHeadOwner: {
+    page: HilosPages.CHANGE_LOG,
+    label: 'Change Log',
+    lead: 'Who changed what in the tracked tables, and through which action.',
+    icon: 'bi-clock-history',
+  },
+  pageTabs: [
+    { page: HilosPages.CHANGE_LOG, label: 'Overview' },
+    { page: HilosPages.CHANGE_LOG_FEED, label: 'Feed' },
+    { page: HilosPages.CHANGE_LOG_TABLES, label: 'Tracked tables' },
+    { page: HilosPages.CHANGE_LOG_NOISY, label: 'Noisy columns' },
+  ],
+}
+
+function router(feedBuilt = true, tablesBuilt = true) {
+  const identity = createSignal<HilosPageIdentity | undefined>(SECTION_IDENTITY)
   const leaves = new Set<() => void>()
   const value: HilosRouter = {
     currentRoute: createSignal<PageRouteMatch>({
@@ -47,10 +69,20 @@ function router(tablesBuilt = false) {
     pageLoading: createSignal(false),
     pageIdentity: identity,
     dashboardSections: createSignal(undefined),
-    resolvePath: (page) =>
-      tablesBuilt && page === HilosPages.CHANGE_LOG_TABLES
-        ? '/hilos/change-log/tables'
-        : undefined,
+    resolvePath: (page) => {
+      if (page === HilosPages.DASHBOARD) return '/hilos'
+      if (page === HilosPages.CHANGE_LOG) return '/hilos/change-log'
+      if (page === HilosPages.CHANGE_LOG_FEED) {
+        return feedBuilt ? '/hilos/change-log/feed' : undefined
+      }
+      if (page === HilosPages.CHANGE_LOG_TABLES) {
+        return tablesBuilt ? '/hilos/change-log/tables' : undefined
+      }
+      if (page === HilosPages.CHANGE_LOG_NOISY) {
+        return '/hilos/change-log/noisy'
+      }
+      return undefined
+    },
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -200,8 +232,7 @@ function harness(
  */
 function mountPage(
   h: ReturnType<typeof harness>,
-  tablesBuilt = false,
-  r = router(tablesBuilt),
+  r = router(),
   strict = false,
 ) {
   const tree = (
@@ -224,33 +255,122 @@ describe('HilosChangeLogPage', () => {
 
   it('draws the page snapshot and offers its table names in the feed filter', () => {
     const h = harness()
-    mountPage(h)
+    const { container } = mountPage(h)
+    const headings = container.querySelectorAll('h1')
+    expect(headings).toHaveLength(1)
+    expect(headings[0]?.textContent).toBe('Change Log')
+    const head = container.querySelector('[data-id="hilos-page-head"]')
+    expect(head?.textContent).toContain(
+      'Who changed what in the tracked tables, and through which action.',
+    )
     expect(
-      document
+      head?.querySelector('i')?.parentElement?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    const breadcrumb = container.querySelector('[data-id="hilos-breadcrumb"]')
+    expect(
+      Array.from(breadcrumb?.querySelectorAll('a') ?? [], (link) =>
+        link.textContent?.trim(),
+      ),
+    ).toEqual(['Hilos'])
+    expect(breadcrumb?.querySelector('a')?.getAttribute('href')).toBe('/hilos')
+    const currentCrumb = breadcrumb?.querySelector('[aria-current="page"]')
+    expect(
+      Array.from(currentCrumb?.childNodes ?? [])
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent?.trim())
+        .join(''),
+    ).toBe('Change Log')
+    const tabs = container.querySelector('[data-id="hilos-page-tabs"]')
+    expect(tabs?.getAttribute('aria-label')).toBe('Change Log pages')
+    expect(tabs?.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
+    expect(
+      tabs?.querySelector(
+        `[data-id="hilos-page-tab-${HilosPages.CHANGE_LOG}"]`,
+      ),
+    ).not.toBeNull()
+    expect(
+      Array.from(tabs?.querySelectorAll('a') ?? [], (link) =>
+        link.textContent?.trim(),
+      ),
+    ).toEqual(['Overview', 'Feed', 'Tracked tables', 'Noisy columns'])
+    expect(
+      Array.from(tabs?.querySelectorAll('a') ?? [], (link) =>
+        link.getAttribute('href'),
+      ),
+    ).toEqual([
+      '/hilos/change-log',
+      '/hilos/change-log/feed',
+      '/hilos/change-log/tables',
+      '/hilos/change-log/noisy',
+    ])
+    const feedLink = container.querySelector(
+      '[data-id="hilos-change-log-link-feed"]',
+    )
+    const tablesLink = container.querySelector(
+      '[data-id="hilos-change-log-link-tables"]',
+    )
+    expect(feedLink?.tagName).toBe('A')
+    expect(feedLink?.getAttribute('href')).toBe('/hilos/change-log/feed')
+    expect(tablesLink?.tagName).toBe('A')
+    expect(tablesLink?.getAttribute('href')).toBe('/hilos/change-log/tables')
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-id^="hilos-change-log-link-"] i'),
+        (icon) => icon.getAttribute('aria-hidden'),
+      ),
+    ).toEqual(['true', 'true'])
+    expect(
+      container
         .querySelector('[data-id="hilos-change-log-tile-journal"]')
         ?.textContent?.trim(),
     ).toBe('12')
     expect(
-      document
+      container
         .querySelector('[data-id="hilos-change-log-tile-tracked"]')
         ?.textContent?.trim(),
     ).toBe('2 of 32')
-    expect(document.body.textContent).toContain('since September 2026')
+    expect(container.textContent).toContain('since September 2026')
 
     expect(
-      document.querySelector('[data-id="hilos-change-log-feed-empty"]'),
+      container.querySelector('[data-id="hilos-change-log-feed-empty"]'),
     ).toBeNull()
     expect(h.connection.registerTableWindow).not.toHaveBeenCalled()
+  })
+
+  it('leaves a tile without a link when its page has no address', () => {
+    const { container } = mountPage(harness(), router(false, false))
+
+    expect(
+      container.querySelector('[data-id="hilos-change-log-link-feed"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-change-log-link-tables"]'),
+    ).toBeNull()
+    expect(
+      container
+        .querySelector('[data-id="hilos-change-log-tile-journal"]')
+        ?.closest('a'),
+    ).toBeNull()
+    expect(
+      container
+        .querySelector('[data-id="hilos-change-log-tile-tracked"]')
+        ?.closest('a'),
+    ).toBeNull()
+    expect(
+      container.querySelector(
+        `[data-id="hilos-page-tab-${HilosPages.CHANGE_LOG_FEED}"]`,
+      ),
+    ).toBeNull()
   })
 })
 
 describe('overview isolation', () => {
   it('keeps schema figures without a reader or feed', () => {
-    mountPage(harness())
+    const { container } = mountPage(harness())
     expect(
-      document.querySelector('[data-id="hilos-change-log-tile-tracked"]')
+      container.querySelector('[data-id="hilos-change-log-tile-tracked"]')
         ?.textContent,
     ).toContain('2 of 32')
-    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(container.querySelector('[data-id="modal"]')).toBeNull()
   })
 })

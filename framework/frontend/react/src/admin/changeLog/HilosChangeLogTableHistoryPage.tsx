@@ -6,16 +6,17 @@ import {
   CHANGE_LOG_HISTORY_MUTATION_FIELD,
   CHANGE_LOG_HISTORY_RECORD_KEY_FIELD,
   CHANGE_LOG_ON_BEHALF_OF_TEXT,
+  CHANGE_LOG_RECEIPT_COPY,
   CHANGE_LOG_RECORD_ROUTE_PARAM,
   CHANGE_LOG_TABLE_COPY as copy,
   CHANGE_LOG_TABLE_ROUTE_PARAM,
   CHANGE_LOG_TABLE_SECTION,
   changeLogChannelBadge,
+  changeLogHistoryChangeLines,
+  changeLogMutationBadge,
   changeLogRecordRouteParam,
   createHilosChangeLogHistoryTable,
   createHilosChangeLogReceiptReader,
-  formatChangeLogHistoryChanges,
-  formatChangeLogMutation,
   formatChangeLogOnBehalfOf,
   formatChangeLogRecordKey,
   formatChangeLogTime,
@@ -37,13 +38,13 @@ import type {
   HilosChangeLogReceiptContext,
 } from '@hilos/core/admin/change-log'
 
-import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 import { HilosChangeLogReceiptModal } from './HilosChangeLogReceiptModal.js'
+import { HilosChangeLogTableShell } from './HilosChangeLogTableShell.js'
 
 /** Props for {@link HilosChangeLogTableHistoryPage}. */
 export interface HilosChangeLogTableHistoryPageProps {
@@ -131,6 +132,7 @@ export function HilosChangeLogTableHistoryPage({
     const next = createHilosChangeLogHistoryTable(context, {
       table: tableId,
       record: readChangeLogRecordRouteParam(recordParam),
+      pageHeading: true,
       fields: () =>
         (readHilosChangeLogTable(tableSection.get())?.columns ?? [])
           .filter(({ mode }) => mode !== 'record_key')
@@ -175,26 +177,24 @@ export function HilosChangeLogTableHistoryPage({
     if (row.receiptId !== null) void reader.openReceipt(row.receiptId)
   }
 
-  const overviewPath = router.resolvePath(HilosPages.CHANGE_LOG_TABLE, {
-    [CHANGE_LOG_TABLE_ROUTE_PARAM]: tableId,
-  })
   return (
-    <HilosAdminPage page={HilosPages.CHANGE_LOG_TABLE_HISTORY}>
-      <p>
-        {overviewPath !== undefined && (
-          <HilosLink
-            to={overviewPath}
-            data-id="hilos-change-log-table-overview"
-          >
-            Overview
-          </HilosLink>
-        )}
-      </p>{' '}
+    <HilosChangeLogTableShell
+      context={context}
+      page={HilosPages.CHANGE_LOG_TABLE_HISTORY}
+    >
       {table !== null && !table.journaled && (
         <p className="alert alert-secondary small py-2">{copy.untracked}</p>
       )}
       {history && (
         <section>
+          {history.table.controller.frame.declaration.subtitle && (
+            <p
+              className="small text-body-secondary mb-2"
+              data-id="hilos-table-subtitle"
+            >
+              {history.table.controller.frame.declaration.subtitle}
+            </p>
+          )}
           {record !== null && (
             <div className="mb-2">
               <span
@@ -234,15 +234,61 @@ export function HilosChangeLogTableHistoryPage({
                   <span>{formatChangeLogRecordKey(row.recordKey)}</span>
                 )
               },
-              [CHANGE_LOG_HISTORY_MUTATION_FIELD]: (row) => (
-                <span className="badge bg-body-secondary text-body border">
-                  {formatChangeLogMutation(row.mutation)}
-                </span>
-              ),
+              [CHANGE_LOG_HISTORY_MUTATION_FIELD]: (row) => {
+                const operation = changeLogMutationBadge(row.mutation)
+                return (
+                  <span className={`badge text-wrap ${operation.tone}`}>
+                    <i
+                      className={`bi ${operation.icon} me-1`}
+                      aria-hidden="true"
+                    />
+                    {operation.label}
+                  </span>
+                )
+              },
               [CHANGE_LOG_HISTORY_CHANGES_FIELD]: (row) =>
-                formatChangeLogHistoryChanges(row).map((line, index) => (
+                changeLogHistoryChangeLines(row).map((line, index) => (
                   <div key={index} className="small text-break">
-                    {line}
+                    {line.kind === 'message' ? (
+                      <span className="text-body-secondary">{line.text}</span>
+                    ) : (
+                      <>
+                        <code>{line.field}</code>{' '}
+                        {line.kind === 'inline' ? (
+                          <>
+                            <span className="visually-hidden">
+                              {CHANGE_LOG_RECEIPT_COPY.oldValue}
+                            </span>{' '}
+                            <span className="text-body-secondary">
+                              {line.oldValue.text}
+                            </span>{' '}
+                            <i
+                              className="bi bi-arrow-right text-body-secondary"
+                              aria-hidden="true"
+                            />
+                            <span className="visually-hidden">
+                              {CHANGE_LOG_RECEIPT_COPY.newValue}
+                            </span>{' '}
+                            <strong>{line.newValue.text}</strong>
+                          </>
+                        ) : line.kind === 'fact' ? (
+                          <>
+                            {CHANGE_LOG_RECEIPT_COPY.changed}{' '}
+                            <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-wrap text-start">
+                              <i
+                                className="bi bi-incognito me-1"
+                                aria-hidden="true"
+                              />
+                              {line.text}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-body-secondary">
+                            {line.text}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
                 )),
               [CHANGE_LOG_HISTORY_ACTOR_LABEL_FIELD]: (row) => {
@@ -319,6 +365,6 @@ export function HilosChangeLogTableHistoryPage({
         </section>
       )}
       <HilosChangeLogReceiptModal reader={reader} dialog={dialog} />
-    </HilosAdminPage>
+    </HilosChangeLogTableShell>
   )
 }

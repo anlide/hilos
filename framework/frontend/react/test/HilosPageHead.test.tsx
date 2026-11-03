@@ -234,6 +234,19 @@ describe('HilosPageHead', () => {
     expect(document.getElementById(heading?.id ?? '')).toBe(heading)
   })
 
+  it('appends the optional title class to its one named h1', () => {
+    const head = mountHead({
+      headingId: 'page-heading',
+      titleClass: 'head-title-extra',
+    })
+    const headings = findAll(head, 'h1')
+
+    expect(headings).toHaveLength(1)
+    expect(headings[0]?.id).toBe('page-heading')
+    expect(headings[0]?.textContent).toBe('Demo section')
+    expect(headings[0]?.classList.contains('head-title-extra')).toBe(true)
+  })
+
   it('draws an entity block from the page content, without the section defaults', () => {
     const head = mountHead({
       identity: ENTITY,

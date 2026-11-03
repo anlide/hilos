@@ -701,18 +701,19 @@ name, never a journal dictionary number.
 
 The standalone Noisy columns page (`/hilos/change-log/noisy`) answers in its
 first `page_response` with the noisy-column snapshot in
-`data.changeLogNoisyColumns` for the current React and Angular views, plus the
-first `windows.hilosChangeLogNoisyColumns` viewport. The snapshot covers live
+`data.changeLogNoisyColumns` for React and Angular, plus the first
+`windows.hilosChangeLogNoisyColumns` viewport. The snapshot covers live
 journaled tables and has each column's live `table`, `column` and non-empty
 `reason` from `_journalNoise`, in table-then-column order. These are schema
 metadata, declared `WireField::notPersonal()`; an admin
 and a view-mode viewer receive the same data. A valid empty list means no noisy
 columns are declared; absent or malformed data is not an empty result. The
 snapshot is read at subscription, while each viewport is read for its window
-request; there is no polling, cache, source-driven update or live mutation.
+request; Angular reads the snapshot and React reads the viewport. There is no
+polling, cache, source-driven update or live mutation.
 
-Vue reads and draws the server window. React and Angular keep the snapshot
-table on wide screens and cards on narrow screens on this separate page. The
+Vue and React read and draw the server window. Angular keeps the snapshot table
+on wide screens and cards on narrow screens on this separate page. The
 `hilosChangeLogNoisyColumns` table reads
 `Hilos::$db->changeLogTables->sectionNoisyColumns()` into windows of 25, ordered
 by table and column. Its row key and `columnKey` are `table.column`; the
@@ -748,11 +749,11 @@ address and no part of the key is masked; otherwise the label stays text.
 
 The shared receipt and history scenarios remain in chat (Vue), tasks (React)
 and polls (Angular), using a person's block receipt and checks from
-`framework/frontend/e2e/changeLog.ts`. Chat additionally checks the adopted
-Vue section head, overview tiles, navigation with Back, and direct Feed and
-Noisy columns entry with a complete first answer through F5. React and Angular
-keep their legacy section heads. Chat's `change-log-bot.spec.ts` checks full
-long-text values (HIL-1464).
+`framework/frontend/e2e/changeLog.ts`. Chat checks the adopted Vue section
+head, overview tiles, navigation with Back, and direct Feed and Noisy columns
+entry with a complete first answer through F5. Tasks checks the React section
+head through the shared owner-page helper; Angular keeps its legacy section
+head. Chat's `change-log-bot.spec.ts` checks full long-text values (HIL-1464).
 
 ## Triggers Are Files
 
