@@ -365,6 +365,104 @@ final class AnalyticsSectionReader
     }
 
     /**
+     * Membership, total and position share one non-locking statement snapshot.
+     * Account labels and action counts are enriched afterward for this window only.
+     *
+     * @param AnalyticsPeriodFilter $filter Validated calendar context and selected period
+     * @param AnalyticsWindowOrder $order Canonical last-seen or row-number order
+     * @param ?AnalyticsWindowAnchor $anchor Complete row key, or an edge of the set
+     * @param TableAnchorDirection $direction Side of the anchor in the chosen order
+     * @param int $limit Requested number of rows, capped at MAX_PAGE_ROWS
+     * @param ?int $pageIndex Zero-based numbered page, or null for a keyset window
+     * @param int $asOfTs Server upper bound in UTC epoch milliseconds
+     * @return AnalyticsBrowserSessionListSnapshot One response, empty without SQL before context arrives
+     * @throws InvalidArgumentException When a numbered page accompanies an anchor or a time anchor lacks its moment
+     * @throws HilosException When the period is invalid or an analytics or mounted account read fails
+     */
+    public function browserSessionPeriodSnapshot(
+        AnalyticsPeriodFilter $filter,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        int $limit,
+        ?int $pageIndex,
+        int $asOfTs,
+    ): AnalyticsBrowserSessionListSnapshot {
+        $filter->validateAsOf($asOfTs);
+        if ($anchor !== null && $pageIndex !== null) {
+            throw new InvalidArgumentException('Analytics numbered page requires an edge');
+        }
+        $periodParams = [];
+        $periodClause = $this->browserSessionPeriodWhereSql($filter, $asOfTs, $periodParams);
+        $cursorParams = [];
+        $cursor = $this->anchorClause(self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $anchor, $direction, $cursorParams);
+        $limit = $this->boundedLimit($limit);
+        if (!$filter->hasContext()) {
+            return new AnalyticsBrowserSessionListSnapshot([], 0, true, 0);
+        }
+        $skip = $pageIndex === null ? 0 : max(0, $pageIndex) * $limit;
+        $take = $skip > TableConstants::COUNT_CEILING ? 0 : $limit;
+        $direction = $pageIndex === null ? $direction : TableAnchorDirection::After;
+        $sqlOrder = $this->windowOrder(self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $direction);
+        $probeLimit = TableConstants::COUNT_CEILING + 1;
+        $boundarySql = 'SELECT 0 AS `boundary_count`';
+        $boundaryParams = [];
+        if ($anchor !== null) {
+            // After excludes the whole prefix through the anchor; Before reads the prefix strictly before it.
+            $prefix = $direction === TableAnchorDirection::After ? ' AND NOT (1' . $cursor . ')' : $cursor;
+            $boundarySql = 'SELECT COUNT(*) AS `boundary_count` FROM
+                (SELECT 1 FROM `hilos_analytics_browser_session` b
+                 WHERE ' . $periodClause . $prefix . ' LIMIT ' . $probeLimit . ') capped_boundary';
+            $boundaryParams = [...$periodParams, ...$cursorParams];
+        }
+        // A numbered page takes the same slice from the front; only the bounded offset changes.
+        // TODO(owner, 2026-10-19): replace this raw-data SQL when the analytics reading model lands.
+        Database::sql(
+            'WITH session_total AS (
+                SELECT COUNT(*) AS `total_count` FROM
+                    (SELECT 1 FROM `hilos_analytics_browser_session` b
+                     WHERE ' . $periodClause . ' LIMIT ' . $probeLimit . ') capped_total
+             ), window_rows AS (
+                SELECT b.`id`, b.`first_seen_ts`, b.`last_seen_ts`, u.`value` AS `user_agent`,
+                       CASE WHEN b.`user_identity_type` = ? THEN b.`user_identity_value` END AS `user_id_value`
+                FROM `hilos_analytics_browser_session` b
+                LEFT JOIN `hilos_analytics_user_agent` u ON u.`id` = b.`current_user_agent_id`
+                WHERE ' . $periodClause . $cursor . '
+                ORDER BY ' . $sqlOrder . ' LIMIT ' . $take . ' OFFSET ' . ($take === 0 ? 0 : $skip) . '
+             ), window_boundary AS (' . $boundarySql . ')
+             SELECT t.`total_count`, p.`boundary_count`, b.*
+             FROM session_total t CROSS JOIN window_boundary p
+             LEFT JOIN window_rows b ON 1
+             ORDER BY ' . $sqlOrder,
+            [...$periodParams, self::IDENTITY_TYPE_USER_ID, ...$periodParams, ...$cursorParams, ...$boundaryParams],
+        );
+        $rows = Database::rows();
+        $count = (int)$rows[0]['total_count'];
+        $exact = $count <= TableConstants::COUNT_CEILING;
+        $total = min($count, TableConstants::COUNT_CEILING);
+        $boundaryCount = (int)$rows[0]['boundary_count'];
+        $window = $rows[0]['id'] === null ? [] : $rows;
+        $rowsBefore = null;
+        if ($exact) {
+            $rowsBefore = match (true) {
+                $pageIndex !== null => $skip,
+                $anchor === null && $direction === TableAnchorDirection::After => 0,
+                $window === [] => $direction === TableAnchorDirection::Before ? 0 : $total,
+                $direction === TableAnchorDirection::Before => ($anchor === null ? $total : $boundaryCount) - count($window),
+                default => $boundaryCount,
+            };
+        }
+        $sessions = $this->browserSessionPeriodRows($window);
+
+        return new AnalyticsBrowserSessionListSnapshot(
+            $direction === TableAnchorDirection::Before ? array_reverse($sessions) : $sessions,
+            $total,
+            $exact,
+            $rowsBefore,
+        );
+    }
+
+    /**
      * Reads the intersecting session set before applying the window boundary.
      * Successive requests read current facts rather than a repeatable snapshot.
      *
@@ -411,30 +509,7 @@ final class AnalyticsSectionReader
              ORDER BY ' . $sqlOrder . ' LIMIT ' . $limit . ' OFFSET ' . $skip,
             $params,
         );
-        $rows = Database::rows();
-        if ($rows === []) {
-            return [];
-        }
-
-        $counts = $this->actionCounts(array_map(static fn(array $row): int => (int)$row['id'], $rows));
-        $sessions = [];
-        foreach ($rows as $row) {
-            if (filter_var($row['id'], FILTER_VALIDATE_INT, [
-                'options' => ['min_range' => 1, 'max_range' => self::MAX_SAFE_SESSION_ID],
-            ]) === false) {
-                throw new DatabaseRuntimeException('Analytics session number is outside the positive safe integer range');
-            }
-            $userId = null;
-            if ($row['user_id_value'] !== null && ctype_digit((string)$row['user_id_value'])) {
-                $parsed = filter_var(ltrim((string)$row['user_id_value'], '0'), FILTER_VALIDATE_INT, [
-                    'options' => ['min_range' => 1, 'max_range' => self::MAX_SAFE_USER_ID],
-                ]);
-                $userId = $parsed === false ? null : $parsed;
-            }
-            $label = $userId === null ? null : (isset(Hilos::$db->users[$userId])
-                ? Hilos::$db->users[$userId]->name : 'Deleted user #' . $userId);
-            $sessions[] = $this->sessionFromRow($row, $counts, $userId, $label);
-        }
+        $sessions = $this->browserSessionPeriodRows(Database::rows());
 
         return $direction === TableAnchorDirection::Before ? array_reverse($sessions) : $sessions;
     }
@@ -627,6 +702,39 @@ final class AnalyticsSectionReader
         }
 
         return $counts;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows Raw session rows from the selected window only
+     * @return list<AnalyticsSectionBrowserSession> Validated sessions in SQL order
+     * @throws HilosException When a session number is unsafe or action counts or mounted account reads fail
+     */
+    private function browserSessionPeriodRows(array $rows): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+        $counts = $this->actionCounts(array_map(static fn(array $row): int => (int)$row['id'], $rows));
+        $sessions = [];
+        foreach ($rows as $row) {
+            if (filter_var($row['id'], FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1, 'max_range' => self::MAX_SAFE_SESSION_ID],
+            ]) === false) {
+                throw new DatabaseRuntimeException('Analytics session number is outside the positive safe integer range');
+            }
+            $userId = null;
+            if ($row['user_id_value'] !== null && ctype_digit((string)$row['user_id_value'])) {
+                $parsed = filter_var(ltrim((string)$row['user_id_value'], '0'), FILTER_VALIDATE_INT, [
+                    'options' => ['min_range' => 1, 'max_range' => self::MAX_SAFE_USER_ID],
+                ]);
+                $userId = $parsed === false ? null : $parsed;
+            }
+            $label = $userId === null ? null : (isset(Hilos::$db->users[$userId])
+                ? Hilos::$db->users[$userId]->name : 'Deleted user #' . $userId);
+            $sessions[] = $this->sessionFromRow($row, $counts, $userId, $label);
+        }
+
+        return $sessions;
     }
 
     /**

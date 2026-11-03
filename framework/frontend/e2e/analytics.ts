@@ -434,6 +434,8 @@ export async function expectAnalyticsSectionHead(
   current: 'overview' | 'sessions' | 'people',
   kit: 'vue' | 'react' | 'angular' = 'vue',
 ): Promise<void> {
+  // Callers keep their kit argument; all three now serve the same navigation.
+  void kit
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveText('Analytics')
@@ -443,17 +445,12 @@ export async function expectAnalyticsSectionHead(
   await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
   for (const [key, name, path, active] of [
     ['hilos_analytics', 'Overview', '/hilos/analytics', current === 'overview'],
-    // Angular has no Browser sessions list until HIL-1744.
-    ...(kit !== 'angular'
-      ? ([
-          [
-            SESSION_LIST_PAGE,
-            'Browser sessions',
-            ANALYTICS_SESSION_LIST_PATH,
-            current === 'sessions',
-          ],
-        ] as const)
-      : []),
+    [
+      SESSION_LIST_PAGE,
+      'Browser sessions',
+      ANALYTICS_SESSION_LIST_PATH,
+      current === 'sessions',
+    ],
     [PEOPLE_PAGE, 'People', '/hilos/analytics/people', current === 'people'],
   ] as const) {
     const link = tabs.getByTestId(`hilos-page-tab-${key}`)
@@ -607,7 +604,7 @@ export async function expectAnalyticsSessionListAccessibility(
   expect: Expect,
   page: Page,
   direction: 'ascending' | 'descending',
-  kit: 'vue' | 'react' = 'vue',
+  kit: 'vue' | 'react' | 'angular' = 'vue',
 ): Promise<void> {
   await expectAnalyticsSectionHead(expect, page, 'sessions', kit)
   const heading = page.getByRole('heading', { level: 1 })
@@ -878,14 +875,14 @@ export async function expectAnalyticsDashboardCard(
  *
  * @param expect The spec's expect.
  * @param page The page showing the ready overview.
- * @param kit Vue and React have both lists and count links; Angular has People navigation.
+ * @param kit The view kit; all three have both lists and count links.
  */
 export async function expectAnalyticsOverview(
   expect: Expect,
   page: Page,
   kit: 'legacy' | 'vue' | 'react' | 'angular' = 'legacy',
 ): Promise<void> {
-  const counted = kit === 'vue' || kit === 'react'
+  const counted = kit !== 'legacy'
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveText('Analytics')

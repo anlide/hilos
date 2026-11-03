@@ -414,25 +414,28 @@ layer that has built the section, which all three layers have.
   valid answer for the current page scope; a later answer or reconnect does not
   replace it, though reconnect may cause the backend subscription to run again.
   Vue, React and Angular render three aggregate tiles from that captured snapshot,
-  under the shared section head. Vue and React also link each tile to Browser
-  sessions at the corresponding `this-week`, `today` or `this-hour` period,
-  including when its count is zero; React leaves a count as plain text when its
-  project does not serve the list. Angular currently renders its tiles without
-  those links (HIL-1744).
+  under the shared section head. Each layer links a tile to Browser sessions at
+  the corresponding `this-week`, `today` or `this-hour` period, including when
+  its count is zero, when its router resolves that list path; otherwise the count
+  remains text. Links appear only after the overview snapshot is complete. The
+  captured snapshot is not carried into the list, which opens with its own period
+  context.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
   `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is
   `HilosAnalyticsBrowserSessionPage` in Vue, React and Angular. The opening `page_response` carries the
   short browser description and last signed-in person in `data.browserSession`,
   with `data.pageLabel` naming the session. Chat and Binance opt the Vue detail
-  page, and Tasks and ecommerce-shop the React one, into the shared entity head
-  through their complete project provider entries. Its circular visual uses the
-  shared catalog's `bi-window` icon, its description is the owner lead, and the
-  existing `bindPageInstanceName` in Vue, or `usePageInstanceName()` in React,
-  sends the permitted live label to the head, final breadcrumb entry and
-  document title. Only Overview is eligible, so the shared head remains while
-  its tab row is hidden. Before identity arrives, Vue and React show a circular
-  head skeleton with two bars and no breadcrumb, `h1` or tabs; the body keeps
+  page, Tasks and ecommerce-shop the React page, and Polls and OnlineTesting the
+  Angular page into the shared entity head through their complete project
+  provider entries. Its circular visual uses the shared catalog's `bi-window`
+  icon, its description is the owner lead, and `bindPageInstanceName` in Vue and
+  Angular, or `usePageInstanceName()` in React, sends the permitted live label to
+  the head, final breadcrumb entry and document title. Angular reads the label
+  from the current page scope; an undefined label falls back to the catalog, an
+  empty string is valid, and the URL number is not reconstructed as a name. Only
+  Overview is eligible, so the shared head remains while its tab row is hidden.
+  Before identity arrives, the views show a circular head skeleton; the body keeps
   its existing two-line header skeleton. The existing two-line
   browser/last-signed-in header and actions table remain in the body. A
   view-mode viewer gets the generic label `Browser session`; personal header
@@ -543,37 +546,51 @@ layer that has built the section, which all three layers have.
   numeric id breaking ties. Windows open at 25 and cap at 50. Aggregate totals
   are capped at 500 with a probe row to report whether the ceiling was exceeded;
   facets exclude the current Period facet while retaining the captured context.
+- For this list, `AnalyticsSectionReader` remains the raw read boundary; the
+  analytics tables are not mounted in the analytics ORM.
+  `AnalyticsSectionReader::browserSessionPeriodSnapshot()` builds one Browser
+  sessions table response.
+  Its single non-locking SQL statement reads the selected window, bounded total
+  and any anchor boundary count used to derive its position together. The
+  internal `AnalyticsBrowserSessionListSnapshot` carries
+  `sessions`, `totalCount`, `totalExact` and `rowsBefore` for that call only;
+  each viewport response uses its own captured `asOfTs`.
+  Afterward, action counts are read for the selected window and account labels
+  are read from the mounted users collection. This enrichment is outside the
+  statement snapshot and does not affect its membership or metadata. Later
+  viewport requests, facets and Overview use separate reads and do not share
+  this snapshot.
 - `AnalyticsSectionReader::browserSessionPeriodWindow()`,
-  `browserSessionPeriodCount()` and
-  `browserSessionPeriodCountBefore()` are the approved narrow raw analytics
-  reads for this list; analytics tables are not mounted in the analytics ORM.
-  The closed interval overlap includes guests: `first_seen_ts <= asOfTs`, and,
-  when the selected period has a lower bound, `last_seen_ts >= periodStart`.
-  Action counts cover only the returned window and do not multiply totals or
-  facets. A cold read without context returns an empty result without SQL;
-  partial or invalid context is refused. A request uses one `asOfTs` for its
-  window and counts, and each facet request shares its own `asOfTs` across
-  options. These reads do not promise a repeatable snapshot. The existing
-  FILTER_USER detail table and person-page behavior are unchanged.
-- In Chat and Binance, Vue currently renders the Browser sessions page and its
-  Overview, Browser sessions and People tabs. Tasks and ecommerce-shop render
-  the same page and tabs in React. Each project's `BrowserSessionsPage` extends
+  `browserSessionPeriodCount()` and `browserSessionPeriodCountBefore()` remain
+  independent reads; `browserSessionPeriodCount()` supplies the list's Period
+  facets. Each facet request shares its captured `asOfTs` across options, but
+  those counts are separate from the table statement. The closed interval
+  overlap includes guests: `first_seen_ts <= asOfTs`, and, when the selected
+  period has a lower bound, `last_seen_ts >= periodStart`. Action counts cover
+  only the selected window and do not multiply totals or facets. A cold read
+  without context returns an empty result without SQL; partial or invalid
+  context is refused.
+  The existing FILTER_USER detail table and person-page behavior are unchanged.
+- In Chat and Binance, Vue renders the Browser sessions page and its Overview,
+  Browser sessions and People tabs. Tasks and ecommerce-shop render the same
+  page and tabs in React; Polls and OnlineTesting do so in Angular. Each
+  project's `BrowserSessionsPage` extends
   `AbstractHilosAnalyticsBrowserSessionsPage` and is registered in `PAGES`; its
   existing Analytics agent supplies the subscription route. Each project
   registers `HilosAnalyticsBrowserSessionListTable` in its `TableContext` and
   `TABLES` and binds it to `BrowserSessionsPage::PAGE` in `PAGE_TABLES`. The
   project's lazy view mounts `HilosAnalyticsBrowserSessionsPage` with its
   `HilosAnalyticsContext` — from `@hilos/vue/admin/analytics` in Chat and
-  Binance, from `@hilos/react/admin/analytics` in Tasks and ecommerce-shop.
-  Angular's list remains with HIL-1744, and its existing browser-session detail
-  child route remains available through `STAGED_CHILDREN`. This list adds no
+  Binance, `@hilos/react/admin/analytics` in Tasks and ecommerce-shop, and
+  `@hilos/angular/admin/analytics` in Polls and OnlineTesting. This list adds no
   separate Analytics feature requirement. The session catalog entry remains a
   child of Browser sessions, so that ancestor is present whether the detail is
   opened from the list, from Person, or directly (the list, period and parent
   breadcrumb behavior is HIL-1741). In Chat and Binance, the complete Vue
   provider entries opt the detail into the shared entity head, and the complete
-  React entries of Tasks and ecommerce-shop do the same. Angular's session
-  detail keeps its legacy head until HIL-1744.
+  React entries of Tasks and ecommerce-shop and Angular entries of Polls and
+  OnlineTesting do the same. The framework default and other providers retain
+  the legacy head.
   The first existing `page_response` supplies the head identity with
   the page data. No DB/RT field, signal, DTO, route, request, payload key or URL
   was added for this head. The existing two-line session header, actions table
@@ -630,8 +647,8 @@ frontend core supplies their controllers, column declarations, row readers and
 local-time labels. In all three view layers the browser-session page opens the
 actions table with its route's session number as the preset, and the person
 page opens the browser-sessions table with its route's `userId` as the preset.
-The People table is rendered in Vue, React and Angular; the Browser sessions list
-in Vue and React, and Angular's remains with HIL-1744.
+The People table and Browser sessions list are rendered in Vue, React and
+Angular.
 
 The section agent also answers the read-only `test:analytics:browser-session`
 command through the existing non-production command-channel gate. Given a

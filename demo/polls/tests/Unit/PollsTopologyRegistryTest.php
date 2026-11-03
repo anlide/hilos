@@ -42,6 +42,7 @@ use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Demo\Polls\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Polls\Pages\Hilos\AnalyticsPage;
+use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionsPage;
 use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Polls\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
@@ -69,6 +70,7 @@ use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
@@ -1688,6 +1690,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
             PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
             PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+            PollsTableContext::hilosAnalyticsBrowserSessionList => HilosAnalyticsBrowserSessionListTable::class,
             PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
             PollsTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
             HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
@@ -1711,6 +1714,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 ModerationKindRulesPage::PAGE,
                 TermsHistoryPage::PAGE,
                 PrivacyHistoryPage::PAGE,
+                BrowserSessionsPage::PAGE,
                 BrowserSessionPage::PAGE,
                 PeoplePage::PAGE,
                 PersonPage::PAGE,
@@ -2227,6 +2231,34 @@ final class PollsTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([PollsTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The period sessions list uses the Analytics owner and its own table, beside the person's sessions table. */
+    public function testAnalyticsBrowserSessionsPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionsPage::class, Hilos::PAGES[BrowserSessionsPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, BrowserSessionsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionsPage::PAGE]);
+        self::assertSame(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_BROWSER_SESSIONS,
+            BrowserSessionsPage::BROWSER[BrowserConfigKey::SIGNAL],
+        );
+        self::assertSame(
+            HilosAnalyticsBrowserSessionListTable::TABLE,
+            PollsTableContext::hilosAnalyticsBrowserSessionList,
+        );
+        self::assertSame(
+            HilosAnalyticsBrowserSessionListTable::class,
+            Hilos::TABLES[PollsTableContext::hilosAnalyticsBrowserSessionList],
+        );
+        self::assertSame(
+            [PollsTableContext::hilosAnalyticsBrowserSessionList => []],
+            Hilos::PAGE_TABLES[BrowserSessionsPage::PAGE],
+        );
+        self::assertSame(
+            [PollsTableContext::hilosAnalyticsBrowserSessions => []],
+            Hilos::PAGE_TABLES[PersonPage::PAGE],
+        );
     }
 
     /** The People list uses the framework table and the Analytics agent's browser signal. */

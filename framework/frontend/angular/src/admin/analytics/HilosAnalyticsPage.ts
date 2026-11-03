@@ -2,35 +2,51 @@
 // the core's captured snapshot beneath the shared catalog head. Counts and
 // periods stay together for this page opening. Bootstrap classes only
 // (styling-rules.md).
+import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   effect,
+  inject,
   input,
   signal,
 } from '@angular/core'
 import {
+  ANALYTICS_BROWSER_SESSIONS_PERIOD_ROUTE_PARAM,
   analyticsOverviewTiles,
   createHilosAnalyticsOverview,
+  type HilosAnalyticsOverviewTile,
   type HilosAnalyticsContext,
   type HilosAnalyticsOverviewSnapshot,
 } from '@hilos/core/admin/analytics'
 import { HilosPages } from '@hilos/core/base'
 
-import { HilosAdminPage, mirrorHilosSignal } from '@hilos/angular/base'
+import {
+  HilosAdminPage,
+  HilosLink,
+  HILOS_ROUTER,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 
 /** The Analytics overview: week, day and hour visitors from the first valid answer. */
 @Component({
   selector: 'hilos-analytics-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage],
+  imports: [HilosAdminPage, HilosLink, NgTemplateOutlet],
   template: `
-    <hilos-admin-page
-      [page]="page"
-      headKind="section"
-      tabsLabel="Analytics pages"
-    >
+    @if (router) {
+      <hilos-admin-page
+        [page]="page"
+        headKind="section"
+        tabsLabel="Analytics pages"
+      >
+        <ng-container [ngTemplateOutlet]="overviewBody" />
+      </hilos-admin-page>
+    } @else {
+      <ng-container [ngTemplateOutlet]="overviewBody" />
+    }
+    <ng-template #overviewBody>
       @if (tiles(); as tiles) {
         <div
           class="row row-cols-1 row-cols-sm-3 g-3 mb-4"
@@ -51,7 +67,18 @@ import { HilosAdminPage, mirrorHilosSignal } from '@hilos/angular/base'
                     'hilos-analytics-visitors-' + tile.key + '-count'
                   "
                 >
-                  {{ tile.count }}
+                  @if (sessionPath(tile.key); as path) {
+                    <a
+                      [hilosLink]="path"
+                      class="text-decoration-none"
+                      [attr.data-id]="
+                        'hilos-analytics-visitors-' + tile.key + '-link'
+                      "
+                      >{{ tile.count }}</a
+                    >
+                  } @else {
+                    {{ tile.count }}
+                  }
                 </dd>
                 <dd
                   class="small text-body-secondary mb-0"
@@ -84,7 +111,7 @@ import { HilosAdminPage, mirrorHilosSignal } from '@hilos/angular/base'
           }
         </div>
       }
-    </hilos-admin-page>
+    </ng-template>
   `,
 })
 export class HilosAnalyticsPage {
@@ -93,6 +120,8 @@ export class HilosAnalyticsPage {
 
   /** The admin page key the shell draws the identity of. */
   protected readonly page = HilosPages.ANALYTICS
+  /** Standalone aggregates do not require the router-backed admin shell. */
+  protected readonly router = inject(HILOS_ROUTER, { optional: true })
   private readonly scopes = computed(() => this.context().scopes)
   private readonly overview = computed(() =>
     createHilosAnalyticsOverview(this.scopes()),
@@ -114,6 +143,19 @@ export class HilosAnalyticsPage {
         unmirror()
         overview.dispose()
       })
+    })
+  }
+
+  /** Resolve the browser-session list address for one overview period. */
+  protected sessionPath(
+    key: HilosAnalyticsOverviewTile['key'],
+  ): string | undefined {
+    return this.router?.resolvePath(HilosPages.ANALYTICS_BROWSER_SESSIONS, {
+      [ANALYTICS_BROWSER_SESSIONS_PERIOD_ROUTE_PARAM]: {
+        week: 'this-week',
+        day: 'today',
+        hour: 'this-hour',
+      }[key],
     })
   }
 }

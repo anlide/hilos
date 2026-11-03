@@ -25,7 +25,6 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
-use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -132,7 +131,6 @@ class HilosAnalyticsBrowserSessionListTable extends TableDefinition implements V
     {
         $limit = $query->limit === TableConstants::NO_LIMIT
             ? AnalyticsSectionReader::MAX_PAGE_ROWS : min($query->limit, AnalyticsSectionReader::MAX_PAGE_ROWS);
-        $served = $query->withLimit($limit);
         $asOfTs = TimeHelper::nowMs();
         $filter = AnalyticsPeriodFilter::fromArray($query->filter, $asOfTs);
         $order = $query->sort === null ? AnalyticsWindowOrder::NUMBER
@@ -142,48 +140,24 @@ class HilosAnalyticsBrowserSessionListTable extends TableDefinition implements V
         if (!$filter->hasContext()) {
             return new TableSnapshotDTO(limit: $limit, rowsBefore: 0);
         }
-        $reader = new AnalyticsSectionReader();
-        $count = $reader->browserSessionPeriodCount($filter, $asOfTs);
-        $exact = $count <= TableConstants::COUNT_CEILING;
-        $total = min($count, TableConstants::COUNT_CEILING);
-
-        $direction = $query->anchorDirection;
-        $skip = 0;
-        $take = $limit;
-        if ($query->pageIndex !== null) {
-            $plan = TableWindowPlan::numberedSlice($query->pageIndex, $limit, $total, $exact);
-            if ($plan === null) {
-                return new TableSnapshotDTO(
-                    totalCount: $total, totalExact: $exact, limit: $limit,
-                    rowsBefore: $exact ? TableWindowPlan::knownRowsBefore($served, null, $total) : null,
-                );
-            }
-            $direction = $plan['direction'];
-            $skip = $plan['skip'];
-            $take = $plan['take'];
-        }
-        $items = $reader->browserSessionPeriodWindow($filter, $order, $anchor, $direction, $take, $skip, $asOfTs);
+        $snapshot = new AnalyticsSectionReader()->browserSessionPeriodSnapshot(
+            $filter, $order, $anchor, $query->anchorDirection, $limit, $query->pageIndex, $asOfTs,
+        );
+        $items = $snapshot->sessions;
         $first = $items === [] ? null : self::anchorFor($items[0], $order);
         $last = $items === [] ? null : self::anchorFor($items[count($items) - 1], $order);
-        $rowsBefore = null;
-        if ($exact) {
-            $rowsBefore = TableWindowPlan::knownRowsBefore($served, $first, $total);
-            if ($rowsBefore === null && $first !== null) {
-                $rowsBefore = $reader->browserSessionPeriodCountBefore($filter, $order, self::readAnchor($first, $order), $asOfTs);
-            }
-        }
         return new TableSnapshotDTO(
             rows: array_map(static fn(AnalyticsSectionBrowserSession $session): HilosAnalyticsBrowserSessionListTableRow =>
                 HilosAnalyticsBrowserSessionListTableRow::fromSession(
                     $session,
                     isset(Hilos::$db->users[$session->lastSignedInUserId]) ? Hilos::$db->users[$session->lastSignedInUserId]->name : null,
                 ), $items),
-            totalCount: $total,
-            totalExact: $exact,
+            totalCount: $snapshot->totalCount,
+            totalExact: $snapshot->totalExact,
             limit: $limit,
             firstAnchor: $first,
             lastAnchor: $last,
-            rowsBefore: $rowsBefore,
+            rowsBefore: $snapshot->rowsBefore,
         );
     }
 

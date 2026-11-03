@@ -44,6 +44,7 @@ use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
+use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionsPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\PeoplePage;
 use Demo\OnlineTesting\Pages\Hilos\Analytics\PersonPage;
@@ -192,6 +193,7 @@ use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
@@ -627,6 +629,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
+            BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
             BrowserSessionPage::PAGE => BrowserSessionPage::class,
             PeoplePage::PAGE => PeoplePage::class,
             PersonPage::PAGE => PersonPage::class,
@@ -1511,6 +1514,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
             OnlineTestingTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
             OnlineTestingTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+            OnlineTestingTableContext::hilosAnalyticsBrowserSessionList => HilosAnalyticsBrowserSessionListTable::class,
             OnlineTestingTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
             OnlineTestingTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
             HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
@@ -1528,6 +1532,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             ModerationKindRulesPage::PAGE,
             TermsHistoryPage::PAGE,
             PrivacyHistoryPage::PAGE,
+            BrowserSessionsPage::PAGE,
             BrowserSessionPage::PAGE,
             PeoplePage::PAGE,
             PersonPage::PAGE,
@@ -1988,6 +1993,34 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
         self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
         self::assertSame([OnlineTestingTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
+    }
+
+    /** The period sessions list uses the Analytics owner and its own table, beside the person's sessions table. */
+    public function testAnalyticsBrowserSessionsPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionsPage::class, Hilos::PAGES[BrowserSessionsPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, BrowserSessionsPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionsPage::PAGE]);
+        self::assertSame(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS_BROWSER_SESSIONS,
+            BrowserSessionsPage::BROWSER[BrowserConfigKey::SIGNAL],
+        );
+        self::assertSame(
+            HilosAnalyticsBrowserSessionListTable::TABLE,
+            OnlineTestingTableContext::hilosAnalyticsBrowserSessionList,
+        );
+        self::assertSame(
+            HilosAnalyticsBrowserSessionListTable::class,
+            Hilos::TABLES[OnlineTestingTableContext::hilosAnalyticsBrowserSessionList],
+        );
+        self::assertSame(
+            [OnlineTestingTableContext::hilosAnalyticsBrowserSessionList => []],
+            Hilos::PAGE_TABLES[BrowserSessionsPage::PAGE],
+        );
+        self::assertSame(
+            [OnlineTestingTableContext::hilosAnalyticsBrowserSessions => []],
+            Hilos::PAGE_TABLES[PersonPage::PAGE],
+        );
     }
 
     /** The People list uses the framework table and the Analytics agent's browser signal. */

@@ -14,8 +14,12 @@ import {
   openSignIn,
   PASSWORD,
   createTestUser,
+  ANALYTICS_SESSION_LIST_HANDLE,
+  ANALYTICS_SESSION_LIST_PATH,
   analyticsPersonLink,
+  analyticsSessionListCell,
   deliveryObject,
+  expectAnalyticsBrowserSessionHead,
   expectAnalyticsOverview,
   expectAnalyticsOverviewTiles,
   expectAnalyticsPeopleAccessibility,
@@ -23,6 +27,8 @@ import {
   expectAnalyticsPeopleWindow,
   expectAnalyticsPersonNavigation,
   expectAnalyticsPersonSession,
+  expectAnalyticsSessionListAccessibility,
+  expectAnalyticsSessionListWindow,
   readAnalyticsOverviewSnapshot,
   uniqueEmail,
   waitAnalyticsBrowserSession,
@@ -842,7 +848,7 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 test.describe('Analytics accessibility', () => {
   test.use({ timezoneId: 'Asia/Kathmandu' })
 
-  test('exposes visitor data and keyboard People/Person navigation, sorting and table names', async ({
+  test('exposes visitor data and keyboard Browser sessions/People/Person navigation, sorting and table names', async ({
     page,
     browser,
     baseURL,
@@ -913,12 +919,158 @@ test.describe('Analytics accessibility', () => {
         }
       }
 
-      // These aggregates are read-only text, with no keyboard focus target.
-      await expect(
-        tiles.locator(
-          'a, button, input, select, textarea, [tabindex], [contenteditable="true"], [role="link"], [role="button"]',
-        ),
-      ).toHaveCount(0)
+      await test.step('count links are named by their numbers and Enter opens their Period', async () => {
+        const overview = page.getByTestId('hilos-page-tab-hilos_analytics')
+        for (const [tile, period] of [
+          ['week', 'this-week'],
+          ['day', 'today'],
+          ['hour', 'this-hour'],
+        ] as const) {
+          const link = page.getByTestId(`hilos-analytics-visitors-${tile}-link`)
+          await expect(link).toHaveRole('link')
+          // The link is named by the very number its tile shows (WCAG 2.5.3).
+          const count = page.getByTestId(
+            `hilos-analytics-visitors-${tile}-count`,
+          )
+          await expect(count).toHaveText(/\d/)
+          await expect(link).toHaveAccessibleName(
+            (await count.innerText()).trim(),
+          )
+          await expect(link).toHaveAttribute(
+            'href',
+            `${ANALYTICS_SESSION_LIST_PATH}/${period}`,
+          )
+          const opening = delivery.sent.length
+          await link.focus()
+          await expect(link).toBeFocused()
+          await link.press('Enter')
+          await expect(page).toHaveURL(
+            `${ANALYTICS_SESSION_LIST_PATH}/${period}`,
+          )
+          await expectPageReady(expect, page)
+          await expectAnalyticsSessionListWindow(
+            expect,
+            page,
+            delivery,
+            period,
+            opening,
+          )
+
+          await overview.focus()
+          await expect(overview).toBeFocused()
+          await overview.press('Enter')
+          await expect(page).toHaveURL('/hilos/analytics')
+          await expectPageReady(expect, page)
+          await expectAnalyticsOverview(expect, page, 'angular')
+        }
+      })
+
+      await test.step('Browser sessions names its table and supports keyboard sorting and session return', async () => {
+        const sessions = page.getByTestId(
+          'hilos-page-tab-hilos_analytics_browser_sessions',
+        )
+        await sessions.focus()
+        await expect(sessions).toBeFocused()
+        let changing = delivery.sent.length
+        await sessions.press('Enter')
+        await expect(page).toHaveURL(ANALYTICS_SESSION_LIST_PATH)
+        await expectPageReady(expect, page)
+        const listed = await expectAnalyticsSessionListWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          changing,
+        )
+        await expectAnalyticsSessionListAccessibility(
+          expect,
+          page,
+          'descending',
+          'angular',
+        )
+        changing = delivery.sent.length
+        const sort = page
+          .getByTestId(ANALYTICS_SESSION_LIST_HANDLE)
+          .getByTestId('hilos-table-sort-lastSeenTs')
+        await sort.focus()
+        await expect(sort).toBeFocused()
+        await sort.press('Enter')
+        const ascending = await expectAnalyticsSessionListWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          changing,
+        )
+        expect(ascending.request.sort).toEqual([
+          { field: 'lastSeenTs', direction: 'asc' },
+        ])
+        expect(ascending.request.filter).toEqual(listed.request.filter)
+        await expectAnalyticsSessionListAccessibility(
+          expect,
+          page,
+          'ascending',
+          'angular',
+        )
+        await expect(sort).toBeFocused()
+        changing = delivery.sent.length
+        await sort.press('Enter')
+        const descending = await expectAnalyticsSessionListWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          changing,
+        )
+        expect(descending.request.sort).toEqual([
+          { field: 'lastSeenTs', direction: 'desc' },
+        ])
+        expect(descending.request.filter).toEqual(listed.request.filter)
+        await expectAnalyticsSessionListAccessibility(
+          expect,
+          page,
+          'descending',
+          'angular',
+        )
+        await expect(sort).toBeFocused()
+
+        const sessionId = session.browserSessionId!
+        const open = analyticsSessionListCell(page, 'session', sessionId)
+        await open.focus()
+        await expect(open).toBeFocused()
+        await open.press('Enter')
+        await expect(page).toHaveURL(
+          `${ANALYTICS_SESSION_LIST_PATH}/${sessionId}`,
+        )
+        await expectPageReady(expect, page)
+        await expectAnalyticsBrowserSessionHead(
+          expect,
+          page,
+          `Browser session #${sessionId}`,
+        )
+        const crumb = page.getByTestId(
+          'hilos-breadcrumb-hilos_analytics_browser_sessions',
+        )
+        await crumb.focus()
+        await expect(crumb).toBeFocused()
+        changing = delivery.sent.length
+        await crumb.press('Enter')
+        await expect(page).toHaveURL(ANALYTICS_SESSION_LIST_PATH)
+        await expectPageReady(expect, page)
+        await expectAnalyticsSessionListWindow(
+          expect,
+          page,
+          delivery,
+          'today',
+          changing,
+        )
+        await expectAnalyticsSessionListAccessibility(
+          expect,
+          page,
+          'descending',
+          'angular',
+        )
+      })
 
       await test.step('People link and Last seen sort work from the keyboard', async () => {
         const people = page.getByTestId('hilos-page-tab-hilos_analytics_people')

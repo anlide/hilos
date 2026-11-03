@@ -1162,16 +1162,15 @@ locator `analyticsSessionLink`. `expectAnalyticsDashboardCard` checks the way
 in. The shared Overview check always requires tiles and has no body `kind` or
 empty mode. Its signature is
 `expectAnalyticsOverview(expect: Expect, page: Page, kit: 'legacy' | 'vue' | 'react' | 'angular' = 'legacy'): Promise<void>`:
-Vue and React expect Overview, Browser sessions and People tabs plus count
-links; Angular expects Overview and People tabs without count links; legacy
-checks the breadcrumb and tiles without a shared head.
+Vue, React and Angular expect Overview, Browser sessions and People tabs plus
+count links; legacy checks the breadcrumb and tiles without a shared head.
 `expectAnalyticsSectionHead(expect: Expect, page: Page, current: 'overview' | 'sessions' | 'people', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 and
 `expectAnalyticsPeopleAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 select the right tab row and People table; React and Angular callers pass their
 kit explicitly, while Vue callers retain the default. The section head expects
-the Browser sessions tab for Vue and React and none for Angular.
-`expectAnalyticsSessionListAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' = 'vue'): Promise<void>`
+the Browser sessions tab in all three kits.
+`expectAnalyticsSessionListAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 checks the Browser sessions list the same way: the section head, one `h1` that
 names the list's table through `aria-labelledby` with no table title of its own,
 and the `aria-sort` and accessible name of Last seen. The chat (Vue) and polls
@@ -1233,17 +1232,18 @@ list/People/Person/session outlet, including keyboard navigation and table
 semantics; its keyboard path starts at the list, with the table name and the
 Last seen sort, then People and Person, the session by Enter and the return by
 its crumb.
-Polls' Angular `analytics.spec.ts`
-uses the shared helpers with the `'angular'` kit and covers People-to-Person
-navigation, one opening Today viewport without an extra Any time request,
-Period and Reset over the captured context, direct entry, F5, Back/Forward, and
-the first Person reply's name and photo. Its separate
-`analytics-browser-session.spec.ts` keeps the User-to-Person-to-session
-privacy and action-order regression; its Analytics accessibility group in
-`a11y.spec.ts` covers keyboard links, `aria-current`, `aria-sort`, the single
-heading and table name, and the People return and focus. These are the Tasks
-React and Polls Angular carriers; other demo carriers keep their own existing
-scenario coverage.
+Polls' Angular `analytics.spec.ts` uses the shared helpers with the `'angular'`
+kit. It checks that each overview count opens Browser sessions on its period,
+and that Period, Reset, F5, Back, Forward and an unknown route tail preserve the
+addressed period; it also covers a real session from the list and
+People-to-Person navigation with the captured Today context. Its separate
+`analytics-browser-session.spec.ts` checks the real sign-in session's privacy
+and action order, the shared session head, F5 and return to the list by its
+crumb. The Analytics accessibility group in `a11y.spec.ts` checks count-link
+names and Enter on a period, the Browser sessions table name and sort, keyboard
+navigation to a session and return by its crumb, plus `aria-current` and focus
+on the People return. These are the Tasks React and Polls Angular carriers;
+other demo carriers keep their own existing scenario coverage.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master

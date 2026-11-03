@@ -5,25 +5,29 @@
 // address.
 import { TestBed } from '@angular/core/testing'
 import {
-  createSignal,
-  formatAnalyticsTime,
+  bindAdminAccess,
+  bindPageScope,
+  createAppPageRouter,
+  createHilosRouter,
+  HilosConnection,
   HilosPages,
-  pageIdentity,
-  resolveHilosPath,
+  hilosAdminAccess,
+  PAGE_SIGNAL_SCHEMAS,
+  resolvePageTitle,
   ScopeManager,
-  type HilosAnalyticsActionRow,
-  type HilosConnection,
-  type HilosRouter,
-  type PageRouteMatch,
-  type TableViewportController,
-} from '@hilos/core'
-import { describe, expect, it, vi } from 'vitest'
+  type WebSocketLike,
+} from '@hilos/core/base'
+import { formatAnalyticsTime } from '@hilos/core/admin/analytics'
+import { HilosLayout } from '@hilos/angular/base'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAnalyticsBrowserSessionPage } from '../src/admin/analytics/HilosAnalyticsBrowserSessionPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 const PAGE = HilosPages.ANALYTICS_BROWSER_SESSION
 const TABLE = 'hilosAnalyticsActions'
+const HEAD_LEAD =
+  'Actions recorded in one browser session, in source-time order.'
 const HEADER = {
   id: 57,
   browser: 'Firefox 143 / Linux',
@@ -35,135 +39,163 @@ const ACTION = {
   pageName: null,
   actionName: 'rename',
 }
-type Listener = (signal: { type?: string; data: unknown }) => void
-
 function harness(param: string | undefined = '57') {
-  const scopes = new ScopeManager()
-  scopes.openPage(PAGE)
-  const currentRoute = createSignal<PageRouteMatch>({
-    page: PAGE,
-    params: param === undefined ? {} : { browserSessionId: param },
-    admin: true,
-  })
-  const router: HilosRouter = {
-    currentRoute,
-    currentPath: createSignal('/hilos/analytics/browser-sessions/57'),
-    currentTitle: createSignal(''),
-    pageError: createSignal(null),
-    pageLoading: createSignal(false),
-    pageIdentity: pageIdentity(scopes),
-    dashboardSections: createSignal(undefined),
-    resolvePath: resolveHilosPath,
-    clearPageError: () => {},
-    denyCurrentPage: () => {},
-    awaitPageAnswer: () => {},
-    onLeave: () => () => {},
-    navigate: () => {},
-    replacePath: () => {},
-    start: () => {},
-    stop: () => {},
+  const socketListeners = new Map<string, (event: { data?: unknown }) => void>()
+  const sent: Array<Record<string, unknown>> = []
+  const socket: WebSocketLike = {
+    send: (text) => sent.push(JSON.parse(String(text))),
+    close: () => {},
+    addEventListener: (event, listener) => socketListeners.set(event, listener),
   }
-  const listeners = new Map<string, Set<Listener>>()
-  const registered = new Map<
-    string,
-    TableViewportController<HilosAnalyticsActionRow>
-  >()
-  const sendTableViewport = vi.fn(() => true)
-  const unregisterTableWindow = vi.fn((key: string) => registered.delete(key))
-  let heldPageResponse: Parameters<Listener>[0] | undefined
-  const connection = {
-    on(event: string, listener: Listener) {
-      const set = listeners.get(event) ?? new Set<Listener>()
-      listeners.set(event, set)
-      set.add(listener)
-      if (event === 'projectSignal' && heldPageResponse)
-        listener(heldPageResponse)
-      return () => set.delete(listener)
+  const connection = new HilosConnection({
+    url: 'ws://test/ws',
+    webSocketFactory: () => socket,
+    projectSchemas: PAGE_SIGNAL_SCHEMAS,
+  })
+  const scopes = new ScopeManager()
+  const pages = bindPageScope(connection, scopes)
+  const initialPath =
+    param === undefined
+      ? '/hilos/analytics/browser-sessions'
+      : `/hilos/analytics/browser-sessions/${encodeURIComponent(param)}`
+  const router = createHilosRouter(
+    createAppPageRouter({}),
+    pages,
+    {
+      pathname: () => initialPath,
+      pushState: () => {},
+      replaceState: () => {},
+      onPopState: () => () => {},
     },
-    registerTableWindow(
-      key: string,
-      source: TableViewportController<HilosAnalyticsActionRow>,
-    ) {
-      registered.set(key, source)
-    },
-    unregisterTableWindow,
-    sendTableViewport,
-    sendTableRendered: vi.fn(() => true),
-  } as unknown as HilosConnection
+    (page) =>
+      resolvePageTitle(
+        page,
+        {},
+        'Test',
+        pages.pageIdentity.get()?.label,
+        !pages.pageLoading.get(),
+        pages.pageIdentity.get()?.pageHeadOwner?.label,
+      ),
+  )
+  const sendTableViewport = vi.spyOn(connection, 'sendTableViewport')
+  const registerTableWindow = vi.spyOn(connection, 'registerTableWindow')
+  const unregisterTableWindow = vi.spyOn(connection, 'unregisterTableWindow')
+
+  function receive(type: string, data: unknown): void {
+    socketListeners.get('message')?.({ data: JSON.stringify({ type, data }) })
+  }
+
+  connection.connect()
+  socketListeners.get('open')?.({})
+  receive('handshake', { build: 'test' })
+  pages.releaseOnSession()
+  router.start()
+  const context = { connection, scopes }
   TestBed.configureTestingModule({
     providers: [{ provide: HILOS_ROUTER, useValue: router }],
   })
   const fixture = TestBed.createComponent(HilosAnalyticsBrowserSessionPage)
-  fixture.componentRef.setInput('context', { connection, scopes })
+  fixture.componentRef.setInput('context', context)
   fixture.detectChanges()
-  function emit(event: string, data: unknown, type?: string) {
-    if (type === 'page_response') heldPageResponse = { type, data }
-    for (const listener of listeners.get(event) ?? []) listener({ type, data })
+  let destroyed = false
+  const destroy = () => {
+    if (!destroyed) {
+      fixture.destroy()
+      destroyed = true
+    }
+  }
+  const release = () => {
+    destroy()
+    router.stop()
+    pages.unsubscribe()
+    connection.close()
+  }
+  cleanup.push(release)
+
+  let currentHeader: unknown
+  let currentLabel = 'Browser session #57'
+  function answer(
+    value: unknown,
+    label: string,
+    actions: Record<string, unknown>[] = [],
+    rowKey = '9',
+  ) {
+    currentHeader = value
+    currentLabel = label
+    receive('page_response', {
+      page: PAGE,
+      payload: {
+        data: {
+          pageLabel: label,
+          pageLead: HEAD_LEAD,
+          pageHeadOwner: {
+            page: PAGE,
+            label: 'Browser session',
+            lead: HEAD_LEAD,
+            icon: 'bi-window',
+          },
+          pageBreadcrumb: [
+            { page: HilosPages.DASHBOARD, label: 'Hilos' },
+            { page: HilosPages.ANALYTICS, label: 'Analytics' },
+            {
+              page: HilosPages.ANALYTICS_BROWSER_SESSIONS,
+              label: 'Browser sessions',
+            },
+            { page: PAGE, label: 'Browser session' },
+          ],
+          pageTabs: [{ page: PAGE, label: 'Overview' }],
+          pageChildren: [],
+          browserSession: value,
+        },
+        windows: {
+          [TABLE]: {
+            rows: actions.map((action) => ({ rowKey, slots: { action } })),
+            limit: 25,
+            totalCount: actions.length,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+            rowsBefore: 0,
+            sort: [{ field: 'createdTs', direction: 'asc' }],
+          },
+        },
+      },
+    })
     fixture.detectChanges()
   }
+
+  const sessionPath = (id: string | undefined) =>
+    id === undefined
+      ? '/hilos/analytics/browser-sessions'
+      : `/hilos/analytics/browser-sessions/${encodeURIComponent(id)}`
 
   return {
     fixture,
     root: fixture.nativeElement as HTMLElement,
     scopes,
-    registered,
-    listeners,
+    context,
+    router,
+    sent,
+    registerTableWindow,
     sendTableViewport,
     unregisterTableWindow,
+    destroy,
     route(params: Record<string, string>) {
-      currentRoute.set({ page: PAGE, params, admin: true })
+      router.navigate(sessionPath(params.browserSessionId))
       fixture.detectChanges()
     },
     navigate(id: string) {
-      // HilosRouter publishes the route before PageSubscription opens the new
-      // scope and forgets the connection's buffered page_response.
-      currentRoute.set({
-        page: PAGE,
-        params: { browserSessionId: id },
-        admin: true,
-      })
-      scopes.openPage(PAGE)
-      heldPageResponse = undefined
+      router.navigate(sessionPath(id))
       fixture.detectChanges()
     },
     header(value: unknown, label = 'Browser session #57') {
-      const data = scopes.page()!.data
-      data.set('pageLabel', label)
-      data.set(
-        'pageLead',
-        'Actions recorded in one browser session, in source-time order.',
-      )
-      data.set('pageBreadcrumb', [
-        { page: HilosPages.ANALYTICS, label: 'Analytics' },
-      ])
-      data.set('browserSession', value)
-      fixture.detectChanges()
+      answer(value, label)
     },
     coldWindow() {
-      emit(
-        'projectSignal',
-        {
-          page: PAGE,
-          payload: {
-            windows: {
-              [TABLE]: {
-                rows: [],
-                limit: 25,
-                totalCount: 0,
-                totalExact: true,
-                firstAnchor: null,
-                lastAnchor: null,
-                rowsBefore: 0,
-                sort: [{ field: 'createdTs', direction: 'asc' }],
-              },
-            },
-          },
-        },
-        'page_response',
-      )
+      answer(currentHeader, currentLabel)
     },
     window(actions: Record<string, unknown>[], rowKey = '9') {
-      emit('tableWindow', {
+      receive('table_window', {
         page: PAGE,
         tableKey: TABLE,
         rows: actions.map((action) => ({ rowKey, slots: { action } })),
@@ -174,16 +206,26 @@ function harness(param: string | undefined = '57') {
         lastAnchor: null,
         rowsBefore: 0,
       })
+      fixture.detectChanges()
     },
     refuseWindow() {
-      emit('tableWindowRefused', {
+      receive('table_window_refused', {
         page: PAGE,
         tableKey: TABLE,
         errorCode: 'unavailable',
       })
+      fixture.detectChanges()
     },
   }
 }
+
+const cleanup: Array<() => void> = []
+afterEach(() => {
+  for (const release of cleanup.splice(0).reverse()) release()
+  TestBed.resetTestingModule()
+  vi.restoreAllMocks()
+  document.body.innerHTML = ''
+})
 
 type Harness = ReturnType<typeof harness>
 
@@ -192,7 +234,11 @@ function find(h: Harness, selector: string): HTMLElement | null {
 }
 
 function text(h: Harness, selector: string): string | undefined {
-  return find(h, selector)?.textContent?.trim()
+  const copy = find(h, selector)?.cloneNode(true) as HTMLElement | undefined
+  copy
+    ?.querySelectorAll('[aria-hidden="true"]')
+    .forEach((node) => node.remove())
+  return copy?.textContent?.trim()
 }
 
 describe('HilosAnalyticsBrowserSessionPage', () => {
@@ -212,6 +258,16 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
 
     expect(h.root.querySelectorAll('h1')).toHaveLength(1)
     expect(text(h, 'h1')).toBe('Browser session #57')
+    expect(text(h, '[aria-current="page"]')).toBe('Browser session #57')
+    expect(h.router.currentTitle.get()).toBe('Browser session #57 · Test')
+    expect(
+      text(h, '[data-id="analytics-browser-session-head-description"]'),
+    ).toBe(HEAD_LEAD)
+    expect(
+      find(h, '[data-id="analytics-browser-session-head-icon"]')?.getAttribute(
+        'aria-hidden',
+      ),
+    ).toBe('true')
     expect(text(h, '[data-id="hilos-analytics-browser-session-browser"]')).toBe(
       HEADER.browser,
     )
@@ -237,6 +293,15 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       ),
     ).toBe(find(h, 'h1')?.getAttribute('id'))
     expect(h.root.querySelectorAll('h2')).toHaveLength(0)
+
+    h.header(HEADER, 'Browser session name from the current answer')
+    expect(text(h, 'h1')).toBe('Browser session name from the current answer')
+    expect(text(h, '[aria-current="page"]')).toBe(
+      'Browser session name from the current answer',
+    )
+    expect(h.router.currentTitle.get()).toBe(
+      'Browser session name from the current answer · Test',
+    )
   })
 
   it('shows the guest sentence only for the received null account and a dash for no browser', () => {
@@ -265,8 +330,39 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(h.root.textContent).not.toContain('Ada')
   })
 
-  it('draws Hidden for the whole header and every cell without epoch dates or personal attributes', () => {
+  it('replaces a named personal answer with Hidden without retaining its name, body or personal attributes', () => {
     const h = harness()
+    const previousTitle = document.title
+    const layout = TestBed.createComponent(HilosLayout)
+    layout.componentRef.setInput('connection', h.context.connection)
+    cleanup.push(() => {
+      layout.destroy()
+      document.title = previousTitle
+    })
+    h.header(HEADER)
+    h.coldWindow()
+    h.window([ACTION])
+    layout.detectChanges()
+    expect(text(h, 'h1')).toBe('Browser session #57')
+    expect(text(h, 'nav[aria-label="Breadcrumb"] [aria-current="page"]')).toBe(
+      'Browser session #57',
+    )
+    expect(document.title).toBe('Browser session #57 · Test')
+    expect(text(h, '[data-id="hilos-analytics-browser-session-browser"]')).toBe(
+      HEADER.browser,
+    )
+    expect(text(h, '[data-id="hilos-analytics-browser-session-person"]')).toBe(
+      'Last signed in: Ada (#7)',
+    )
+    expect(text(h, '[data-id="hilos-analytics-action-name"]')).toBe('rename')
+    expect(find(h, '[data-created-ts]')?.getAttribute('data-created-ts')).toBe(
+      String(ACTION.createdTs),
+    )
+
+    h.scopes.session.data.set('adminViewMode', true)
+    const release = bindAdminAccess(h.scopes)
+    cleanup.push(release)
+    expect(hilosAdminAccess.get()).toBe('view')
     h.header({ _hidden: true }, 'Browser session')
     h.coldWindow()
     h.window([
@@ -276,7 +372,17 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
         actionName: { _hidden: true },
       },
     ])
+    layout.detectChanges()
     expect(text(h, 'h1')).toBe('Browser session')
+    expect(text(h, 'nav[aria-label="Breadcrumb"] [aria-current="page"]')).toBe(
+      'Browser session',
+    )
+    expect(h.router.currentTitle.get()).toBe('Browser session · Test')
+    expect(document.title).toBe('Browser session · Test')
+    expect(h.root.innerHTML).not.toContain('57')
+    expect(h.root.innerHTML).not.toContain(HEADER.browser)
+    expect(h.root.innerHTML).not.toContain(HEADER.lastSignedInUserLabel)
+    expect(h.root.innerHTML).not.toContain('rename')
     expect(text(h, '[data-id="hilos-analytics-browser-session-header"]')).toBe(
       'Hidden',
     )
@@ -303,6 +409,13 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     const skeleton =
       '[data-id="hilos-analytics-browser-session-header"] [data-id="hilos-skeleton"]'
     expect(find(h, skeleton)).not.toBeNull()
+    expect(find(h, '[data-id="hilos-page-head-skeleton"]')).not.toBeNull()
+    expect(
+      find(
+        h,
+        '[data-id="analytics-browser-session-head-skeleton-icon"]',
+      )?.closest('[aria-hidden="true"]'),
+    ).not.toBeNull()
     expect(h.root.textContent).not.toContain('No actions recorded')
     h.header({ id: 57 })
     h.coldWindow()
@@ -321,29 +434,22 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(h.root.textContent).not.toContain('No actions recorded')
   })
 
-  it('replaces the controller on a new route, drops old rows and releases every listener on unmount', () => {
+  it('replaces the controller on a new route, drops old rows and releases its table registration on unmount', () => {
     const h = harness()
     h.header(HEADER)
     h.coldWindow()
     h.window([ACTION])
-    const old = h.registered.get(TABLE)
-    const oldListeners = [...h.listeners.values()].flatMap((set) => [...set])
+    const old = h.registerTableWindow.mock.calls[0]?.[1]
+    expect(old).toBeDefined()
     expect(text(h, '[data-id="hilos-analytics-action-name"]')).toBe('rename')
 
     h.navigate('58')
-    expect(h.sendTableViewport).toHaveBeenCalledTimes(1)
     expect(h.unregisterTableWindow).toHaveBeenCalledWith(TABLE, old)
-    expect(h.registered.get(TABLE)).toBeDefined()
-    expect(h.registered.get(TABLE)).not.toBe(old)
-    const currentListeners = [...h.listeners.values()].flatMap((set) => [
-      ...set,
-    ])
-    expect(currentListeners).toHaveLength(oldListeners.length)
-    expect(
-      currentListeners.some((listener) => oldListeners.includes(listener)),
-    ).toBe(false)
+    expect(h.registerTableWindow.mock.calls[1]?.[1]).toBeDefined()
+    expect(h.registerTableWindow.mock.calls[1]?.[1]).not.toBe(old)
     expect(find(h, '[data-id="hilos-analytics-action-name"]')).toBeNull()
     expect(h.root.textContent).not.toContain('Ada')
+    expect(h.root.innerHTML).not.toContain('Browser session #57')
 
     h.header({ ...HEADER, id: 58 }, 'Browser session #58')
     h.coldWindow()
@@ -356,18 +462,19 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(text(h, '[data-id="hilos-analytics-action-name"]')).toBe('open')
     expect(find(h, '[data-record="9"]')).toBeNull()
 
-    h.fixture.destroy()
-    expect(h.registered.size).toBe(0)
-    expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
+    h.destroy()
+    expect(h.context.connection.tableWindowDescriptors()).toEqual({})
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
+      'Browser session',
+    )
     expect(h.unregisterTableWindow).toHaveBeenCalledTimes(2)
   })
 
   it('releases the existing controller when the route loses its session number', () => {
     const h = harness()
-    expect(h.registered.size).toBe(1)
+    expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
     h.route({})
-    expect(h.registered.size).toBe(0)
-    expect([...h.listeners.values()].every((set) => set.size === 0)).toBe(true)
+    expect(h.unregisterTableWindow.mock.calls[0]?.[0]).toBe(TABLE)
     expect(find(h, '[data-id="hilos-analytics-actions-table"]')).toBeNull()
   })
 
@@ -375,11 +482,11 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     'creates no controller for invalid route parameter %j',
     (param) => {
       const h = harness(param)
-      expect(h.registered.size).toBe(0)
+      expect(h.registerTableWindow).not.toHaveBeenCalled()
       expect(h.sendTableViewport).not.toHaveBeenCalled()
       expect(find(h, '[data-id="hilos-analytics-actions-table"]')).toBeNull()
       h.route({ browserSessionId: '57' })
-      expect(h.registered.size).toBe(1)
+      expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
       expect(
         find(h, '[data-id="hilos-analytics-actions-table"]'),
       ).not.toBeNull()

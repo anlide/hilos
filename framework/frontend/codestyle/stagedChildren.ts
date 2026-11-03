@@ -9,11 +9,4 @@ export interface StagedChild {
   child: string
   leaf: string
 }
-export const STAGED_CHILDREN: readonly StagedChild[] = [
-  {
-    layer: 'angular',
-    parent: 'hilos_analytics_browser_sessions',
-    child: 'hilos_analytics_browser_session',
-    leaf: 'HIL-1741',
-  },
-]
+export const STAGED_CHILDREN: readonly StagedChild[] = []

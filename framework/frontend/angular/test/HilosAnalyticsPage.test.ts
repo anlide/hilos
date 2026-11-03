@@ -70,7 +70,13 @@ function answer(
   data.set(ANALYTICS_OVERVIEW_SECTION, snapshot)
 }
 
-function harness(initial?: HilosAnalyticsOverviewSnapshot) {
+function harness(
+  initial?: HilosAnalyticsOverviewSnapshot,
+  options: {
+    includeRouter?: boolean
+    resolvePath?: HilosRouter['resolvePath']
+  } = {},
+) {
   const scopes = new ScopeManager()
   scopes.openPage(PAGE)
   if (initial !== undefined) answer(scopes, initial)
@@ -87,7 +93,7 @@ function harness(initial?: HilosAnalyticsOverviewSnapshot) {
     pageLoading: createSignal(false),
     pageIdentity: computedSignal(() => identity.get().get()),
     dashboardSections: createSignal(undefined),
-    resolvePath: resolveHilosPath,
+    resolvePath: options.resolvePath ?? resolveHilosPath,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -102,7 +108,10 @@ function harness(initial?: HilosAnalyticsOverviewSnapshot) {
     on: () => () => {},
   } as unknown as HilosConnection
   TestBed.configureTestingModule({
-    providers: [{ provide: HILOS_ROUTER, useValue: router }],
+    providers:
+      options.includeRouter === false
+        ? []
+        : [{ provide: HILOS_ROUTER, useValue: router }],
   })
   const fixture = TestBed.createComponent(HilosAnalyticsPage)
   fixture.componentRef.setInput('context', { connection, scopes })
@@ -137,6 +146,21 @@ function tileText(root: HTMLElement): string | undefined {
     ?.textContent?.trim()
 }
 
+function expectPlainCounts(h: ReturnType<typeof harness>): void {
+  for (const [period, expectedCount] of [
+    ['week', 38],
+    ['day', 7],
+    ['hour', 4],
+  ] as const) {
+    expect(count(h.root, period)).toBe(String(expectedCount))
+    expect(
+      h.root.querySelector(
+        `[data-id="hilos-analytics-visitors-${period}-link"]`,
+      ),
+    ).toBeNull()
+  }
+}
+
 describe('HilosAnalyticsPage', () => {
   it('waits on three decorative tiles without false zeros, headings or tabs', () => {
     const h = harness()
@@ -164,6 +188,7 @@ describe('HilosAnalyticsPage', () => {
     ).toBe(skeleton)
     expect(tileText(h.root)).toBeUndefined()
     expect(h.root.querySelectorAll('[data-id$="-count"]')).toHaveLength(0)
+    expect(h.root.querySelectorAll('[data-id$="-link"]')).toHaveLength(0)
   })
 
   it.each([4, 0])(
@@ -231,6 +256,15 @@ describe('HilosAnalyticsPage', () => {
         expect(tile?.querySelector('dt')?.textContent?.trim()).toBe(label)
         expect(tile?.querySelectorAll('dd')).toHaveLength(2)
         expect(count(h.root, period)).toBe(String(expectedCount))
+        const link = tile?.querySelector<HTMLAnchorElement>(
+          `[data-id="hilos-analytics-visitors-${period}-link"]`,
+        )
+        expect(link?.getAttribute('href')).toBe(
+          `/hilos/analytics/browser-sessions/${
+            { week: 'this-week', day: 'today', hour: 'this-hour' }[period]
+          }`,
+        )
+        expect(link?.textContent?.trim()).toBe(String(expectedCount))
         expect(
           tile
             ?.querySelector(
@@ -239,10 +273,6 @@ describe('HilosAnalyticsPage', () => {
             ?.textContent?.trim(),
         ).toBe(since)
       }
-      // Counts remain plain readable text until the Angular list/link leaf.
-      expect(
-        tiles?.querySelectorAll('a, button, [tabindex], [aria-hidden="true"]'),
-      ).toHaveLength(0)
       expect(h.root.querySelectorAll('h2, h3, table')).toHaveLength(0)
       for (const id of [
         'hilos-admin-children',
@@ -259,6 +289,38 @@ describe('HilosAnalyticsPage', () => {
     },
   )
 
+  it.each([false, true])(
+    'keeps counts as text without a router, with snapshot ready at mount=%s',
+    (readyAtMount) => {
+      const h = harness(readyAtMount ? SNAPSHOT : undefined, {
+        includeRouter: false,
+      })
+      if (!readyAtMount) {
+        expect(
+          h.root
+            .querySelector('[data-id="hilos-analytics-overview-skeleton"]')
+            ?.getAttribute('aria-hidden'),
+        ).toBe('true')
+        expect(tileText(h.root)).toBeUndefined()
+        expect(h.root.querySelectorAll('a')).toHaveLength(0)
+        h.answer({ ...SNAPSHOT, visitorsThisHour: undefined })
+        expect(tileText(h.root)).toBeUndefined()
+        expect(h.root.querySelectorAll('a')).toHaveLength(0)
+        h.answer()
+      }
+
+      expectPlainCounts(h)
+      expect(h.root.querySelectorAll('a')).toHaveLength(0)
+    },
+  )
+
+  it('keeps ready counts as text when the browser-session path is unavailable', () => {
+    const h = harness(undefined, { resolvePath: () => undefined })
+    h.answer()
+
+    expectPlainCounts(h)
+  })
+
   it('preserves all zero counts when week, day and hour are zero', () => {
     const h = harness()
     h.answer({
@@ -269,6 +331,11 @@ describe('HilosAnalyticsPage', () => {
     })
     for (const period of ['week', 'day', 'hour']) {
       expect(count(h.root, period)).toBe('0')
+      expect(
+        h.root
+          .querySelector(`[data-id="hilos-analytics-visitors-${period}-link"]`)
+          ?.textContent?.trim(),
+      ).toBe('0')
     }
   })
 
@@ -302,8 +369,6 @@ describe('HilosAnalyticsPage', () => {
 
   it('delegates two available catalog tabs to the shared head', () => {
     const h = harness()
-    // Supply two catalog tabs with existing addresses without building the
-    // future Angular list view or changing the production catalog.
     h.answer(SNAPSHOT, [
       OVERVIEW_TAB,
       {

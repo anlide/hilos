@@ -10,6 +10,7 @@ use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -123,6 +124,7 @@ use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
+ * @property-read HilosAnalyticsBrowserSessionListTable $hilosAnalyticsBrowserSessionList
  * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
  * @property-read HilosAnalyticsPeopleTable $hilosAnalyticsPeople
  */
@@ -182,6 +184,7 @@ final class PollsTableContext extends TableContext
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
+    public const string hilosAnalyticsBrowserSessionList = HilosAnalyticsBrowserSessionListTable::TABLE;
     public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
     public const string hilosAnalyticsPeople = HilosAnalyticsPeopleTable::TABLE;
 

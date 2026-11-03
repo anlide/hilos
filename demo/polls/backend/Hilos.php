@@ -27,6 +27,7 @@ use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
@@ -85,6 +86,7 @@ use Demo\Polls\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\AnalyticsPage;
+use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionsPage;
 use Demo\Polls\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Polls\Pages\Hilos\Analytics\PeoplePage;
 use Demo\Polls\Pages\Hilos\Analytics\PersonPage;
@@ -334,6 +336,7 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         PeoplePage::PAGE => PeoplePage::class,
         PersonPage::PAGE => PersonPage::class,
@@ -629,6 +632,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
         PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+        PollsTableContext::hilosAnalyticsBrowserSessionList => HilosAnalyticsBrowserSessionListTable::class,
         PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         PollsTableContext::hilosAnalyticsPeople => HilosAnalyticsPeopleTable::class,
         HilosStatusComponentsTable::TABLE => HilosStatusComponentsTable::class,
@@ -730,6 +734,9 @@ final class Hilos extends HilosFacade
         ],
         PrivacyHistoryPage::PAGE => [
             PollsTableContext::hilosPrivacyHistory => [],
+        ],
+        BrowserSessionsPage::PAGE => [
+            PollsTableContext::hilosAnalyticsBrowserSessionList => [],
         ],
         BrowserSessionPage::PAGE => [
             PollsTableContext::hilosAnalyticsActions => [],

@@ -32,16 +32,18 @@ Analytics owner, alongside Overview and People. Its browser-session detail page
 is a child of the list in the catalog, so the list appears among the session's
 ancestors whether the detail page is opened from the list, from Person, or
 directly. Chat and Binance expose the list tab in Vue; Tasks and ecommerce-shop
-expose it in React, beside Overview and People. The Vue and React session pages
-adopt the shared entity head through each project's complete provider entry.
-Its circular visual uses the shared catalog's `bi-window` icon, and its
-description comes from the owner lead. The permitted live `pageLabel` reaches
-the head, final breadcrumb entry and document title through
-`bindPageInstanceName` in Vue and `usePageInstanceName()` in React. With only
-Overview eligible, the tab row is hidden while the shared head remains; the
-existing two-line session header and actions table stay in the body. The
-framework default and other providers keep their legacy presentation. Angular's
-session head remains legacy until HIL-1744.
+expose it in React; Polls and OnlineTesting expose it in Angular, beside Overview
+and People. Each project's complete provider entry opts its session page into
+the shared entity head. Its circular visual uses the shared catalog's
+`bi-window` icon, and its description comes from the owner lead. The permitted
+live `pageLabel` reaches the head, final breadcrumb entry and document title
+through `bindPageInstanceName` in Vue and Angular and `usePageInstanceName()` in
+React. Angular reads the permitted label from the current page scope; an
+undefined label falls back to the catalog, an empty string is valid, and the URL
+number is not reconstructed as a name. With only Overview eligible, the tab row
+is hidden while the shared head remains; the existing two-line session header
+and actions table stay in the body. The framework default and other providers
+keep their legacy presentation.
 
 Backups is opted into the shared section head only by the Chat and Binance Vue
 providers. The framework catalog default, React and Angular retain the legacy

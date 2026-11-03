@@ -30,6 +30,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosAnalyticsPage;
 use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Integration coverage for bounded, private section reads over the shipped analytics schema. */
 final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegrationTestCase
@@ -664,6 +665,11 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
             self::assertSame(2, $rows[0]->actionCount);
             self::assertSame('Edge 129 · Windows', $rows[0]->browser);
             self::assertSame(array_fill(0, count($ids) - 1, 0), array_column(array_slice($rows, 1), 'actionCount'));
+            $snapshot = $reader->browserSessionPeriodSnapshot(
+                $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, null, 400,
+            );
+            self::assertEquals($rows, $snapshot->sessions);
+            self::assertSame([count($ids), true, 0], [$snapshot->totalCount, $snapshot->totalExact, $snapshot->rowsBefore]);
         }
     }
 
@@ -770,6 +776,78 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
         }
     }
 
+    /**
+     * @param int $sessionCount Fixture size before the read
+     * @param AnalyticsWindowOrder $order Served order
+     * @param ?AnalyticsWindowAnchor $anchor Existing or stale keyset boundary
+     * @param TableAnchorDirection $direction Side of the boundary
+     * @param int $limit Requested window size
+     * @param ?int $pageIndex Numbered page, when present
+     * @param list<int> $expectedIds Exact ordered session keys
+     * @param array{int, bool, ?int} $expectedMetadata Total, exactness and window position
+     */
+    #[DataProvider('sessionPeriodSnapshots')]
+    public function testSessionPeriodSnapshotMetadataAndWindows(
+        int $sessionCount,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        int $limit,
+        ?int $pageIndex,
+        array $expectedIds,
+        array $expectedMetadata,
+    ): void {
+        $moments = [400, 100, 100, 300, 200, 500, 600];
+        for ($index = 0; $index < $sessionCount; $index++) {
+            $this->session('snapshot-' . $index, $index % 2 === 0 ? 7 : null, 100, $moments[$index] ?? 300);
+        }
+        $snapshot = new AnalyticsSectionReader()->browserSessionPeriodSnapshot(
+            $this->personFilter(), $order, $anchor, $direction, $limit, $pageIndex, 400,
+        );
+        self::assertSame($expectedIds, $this->rowIds($snapshot->sessions));
+        self::assertSame($expectedMetadata, [$snapshot->totalCount, $snapshot->totalExact, $snapshot->rowsBefore]);
+    }
+
+    /** @return iterable<string, array> Empty, exact, overflow, keyset and numbered snapshots */
+    public static function sessionPeriodSnapshots(): iterable
+    {
+        $number = AnalyticsWindowOrder::NUMBER;
+        $ascending = AnalyticsWindowOrder::TIME_ASC;
+        $descending = AnalyticsWindowOrder::TIME_DESC;
+        $after = TableAnchorDirection::After;
+        $before = TableAnchorDirection::Before;
+        yield 'empty set' => [0, $number, null, $after, 25, null, [], [0, true, 0]];
+        yield 'empty numbered page' => [0, $number, null, $after, 2, 3, [], [0, true, 6]];
+        yield 'number first' => [7, $number, null, $after, 2, null, [1, 2], [7, true, 0]];
+        yield 'number tail' => [7, $number, null, $before, 2, null, [6, 7], [7, true, 5]];
+        yield 'number after' => [7, $number, new AnalyticsWindowAnchor(null, 2), $after, 2, null, [3, 4], [7, true, 2]];
+        yield 'number before' => [7, $number, new AnalyticsWindowAnchor(null, 6), $before, 2, null, [4, 5], [7, true, 3]];
+        yield 'stale number after' => [7, $number, new AnalyticsWindowAnchor(null, 100), $after, 2, null, [], [7, true, 7]];
+        yield 'stale number before' => [7, $number, new AnalyticsWindowAnchor(null, 100), $before, 2, null, [6, 7], [7, true, 5]];
+        yield 'ascending first' => [7, $ascending, null, $after, 2, null, [2, 3], [7, true, 0]];
+        yield 'ascending tie after' => [7, $ascending, new AnalyticsWindowAnchor(100, 2), $after, 2, null, [3, 5], [7, true, 1]];
+        yield 'ascending before' => [7, $ascending, new AnalyticsWindowAnchor(300, 4), $before, 2, null, [3, 5], [7, true, 1]];
+        yield 'descending first' => [7, $descending, null, $after, 2, null, [7, 6], [7, true, 0]];
+        yield 'descending after' => [7, $descending, new AnalyticsWindowAnchor(300, 4), $after, 2, null, [5, 3], [7, true, 4]];
+        yield 'descending before' => [7, $descending, new AnalyticsWindowAnchor(300, 4), $before, 2, null, [6, 1], [7, true, 1]];
+        yield 'stale ascending after' => [7, $ascending, new AnalyticsWindowAnchor(150, 1), $after, 2, null, [5, 4], [7, true, 2]];
+        yield 'stale ascending before' => [7, $ascending, new AnalyticsWindowAnchor(150, 1), $before, 2, null, [2, 3], [7, true, 0]];
+        yield 'stale descending after' => [7, $descending, new AnalyticsWindowAnchor(350, 1), $after, 2, null, [4, 5], [7, true, 3]];
+        yield 'stale descending before' => [7, $descending, new AnalyticsWindowAnchor(350, 1), $before, 2, null, [6, 1], [7, true, 1]];
+        yield 'before start' => [7, $ascending, new AnalyticsWindowAnchor(100, 2), $before, 2, null, [], [7, true, 0]];
+        yield 'after end' => [7, $ascending, new AnalyticsWindowAnchor(600, 7), $after, 2, null, [], [7, true, 7]];
+        yield 'numbered front' => [7, $number, null, $before, 2, 0, [1, 2], [7, true, 0]];
+        yield 'numbered far half' => [7, $number, null, $after, 2, 2, [5, 6], [7, true, 4]];
+        yield 'numbered partial tail' => [7, $number, null, $after, 2, 3, [7], [7, true, 6]];
+        yield 'numbered past end' => [7, $number, null, $after, 2, 4, [], [7, true, 8]];
+        yield 'numbered ascending' => [7, $ascending, null, $after, 2, 2, [1, 6], [7, true, 4]];
+        yield 'numbered descending' => [7, $descending, null, $after, 2, 2, [5, 3], [7, true, 4]];
+        yield 'exact ceiling and maximum window' => [500, $number, null, $after, 1000, null, range(1, 50), [500, true, 0]];
+        yield 'overflow first' => [501, $number, null, $after, 25, null, range(1, 25), [500, false, null]];
+        yield 'overflow numbered tail' => [502, $number, null, $after, 25, 20, [501, 502], [500, false, null]];
+        yield 'overflow past allowed offset' => [502, $number, null, $after, 25, 21, [], [500, false, null]];
+    }
+
     public function testColdSessionPeriodContextAndOutOfBoundsWindowsDoNotReadSql(): void
     {
         Database::sql('SET FOREIGN_KEY_CHECKS = 0');
@@ -780,6 +858,9 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
         self::assertSame(0, $reader->browserSessionPeriodCount($cold, 400));
         self::assertSame(0, $reader->browserSessionPeriodCountBefore($cold, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1), 400));
         self::assertSame([], $reader->browserSessionPeriodWindow($cold, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, 0, 400));
+        $snapshot = $reader->browserSessionPeriodSnapshot($cold, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, null, 400);
+        self::assertSame([], $snapshot->sessions);
+        self::assertSame([0, true, 0], [$snapshot->totalCount, $snapshot->totalExact, $snapshot->rowsBefore]);
         $filter = $this->personFilter();
         foreach ([
             [0, 0, TableAnchorDirection::After], [-1, 0, TableAnchorDirection::Before],
@@ -797,7 +878,7 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
         $reader = new AnalyticsSectionReader();
         $filter = $this->personFilter();
         $failures = [];
-        foreach (['window', 'count', 'countBefore'] as $read) {
+        foreach (['window', 'count', 'countBefore', 'snapshot'] as $read) {
             try {
                 match ($read) {
                     'window' => $reader->browserSessionPeriodWindow(
@@ -807,13 +888,16 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
                     'countBefore' => $reader->browserSessionPeriodCountBefore(
                         $filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 1), 400,
                     ),
+                    'snapshot' => $reader->browserSessionPeriodSnapshot(
+                        $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, null, 400,
+                    ),
                 };
                 self::fail('A failed session period read must throw');
             } catch (DatabaseException) {
                 $failures[] = $read;
             }
         }
-        self::assertSame(['window', 'count', 'countBefore'], $failures);
+        self::assertSame(['window', 'count', 'countBefore', 'snapshot'], $failures);
     }
 
     public function testInvalidSessionPeriodAnchorsSkipsAndChangedServerBoundsAreRefusedBeforeSql(): void
@@ -834,15 +918,26 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
                     self::assertStringContainsString('skip', $exception->getMessage());
                 }
             }
+            try {
+                $reader->browserSessionPeriodSnapshot(
+                    $filter, $order, new AnalyticsWindowAnchor(350, 2), TableAnchorDirection::After, 50, 1, 400,
+                );
+                self::fail('A numbered snapshot cannot accompany an anchor');
+            } catch (InvalidArgumentException $exception) {
+                self::assertStringContainsString('edge', $exception->getMessage());
+            }
         }
         foreach ([AnalyticsWindowOrder::TIME_ASC, AnalyticsWindowOrder::TIME_DESC] as $order) {
-            foreach (['window', 'countBefore'] as $read) {
+            foreach (['window', 'countBefore', 'snapshot'] as $read) {
                 try {
                     match ($read) {
                         'window' => $reader->browserSessionPeriodWindow(
                             $filter, $order, new AnalyticsWindowAnchor(null, 2), TableAnchorDirection::After, 50, 0, 400,
                         ),
                         'countBefore' => $reader->browserSessionPeriodCountBefore($filter, $order, new AnalyticsWindowAnchor(null, 2), 400),
+                        'snapshot' => $reader->browserSessionPeriodSnapshot(
+                            $filter, $order, new AnalyticsWindowAnchor(null, 2), TableAnchorDirection::After, 50, null, 400,
+                        ),
                     };
                     self::fail('A time anchor requires its moment');
                 } catch (InvalidArgumentException $exception) {
@@ -850,7 +945,7 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
                 }
             }
         }
-        foreach (['window', 'count', 'countBefore'] as $read) {
+        foreach (['window', 'count', 'countBefore', 'snapshot'] as $read) {
             try {
                 match ($read) {
                     'window' => $reader->browserSessionPeriodWindow(
@@ -859,6 +954,9 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
                     'count' => $reader->browserSessionPeriodCount($filter, 299),
                     'countBefore' => $reader->browserSessionPeriodCountBefore(
                         $filter, AnalyticsWindowOrder::NUMBER, new AnalyticsWindowAnchor(null, 2), 299,
+                    ),
+                    'snapshot' => $reader->browserSessionPeriodSnapshot(
+                        $filter, AnalyticsWindowOrder::NUMBER, null, TableAnchorDirection::After, 50, null, 299,
                     ),
                 };
                 self::fail('Every read must recheck the server upper bound');

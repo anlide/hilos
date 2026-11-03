@@ -1,7 +1,7 @@
 // HilosAnalyticsBrowserSessionPage — one browser session's page in the Analytics
 // section (HilosPages.ANALYTICS_BROWSER_SESSION): the session's header and the
-// actions recorded in it. The admin shell draws the one heading (the session's
-// number from the page's answer), the lead, and the table's accessible name; the
+// actions recorded in it. The admin shell draws the shared entity head from the
+// catalog and the permitted session name, plus the table's accessible name; the
 // header comes whole with that answer, and the table is the core's actions
 // viewport, preset to the session in the address. A viewer of the admin view
 // mode sees Hidden in place of the header and of every value. The core owns the
@@ -34,6 +34,7 @@ import {
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
 import {
+  bindPageInstanceName,
   computedSignal,
   HilosPages,
   hilosTimeZone,
@@ -63,7 +64,29 @@ import {
     HilosViewportTable,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="entity">
+      <ng-template #headVisual>
+        <span
+          class="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
+          aria-hidden="true"
+          data-id="analytics-browser-session-head-icon"
+          ><i [class]="'bi ' + identity()?.pageHeadOwner?.icon"></i
+        ></span>
+      </ng-template>
+      <ng-template #headDescription>
+        <p
+          class="text-body-secondary mb-0"
+          data-id="analytics-browser-session-head-description"
+        >
+          {{ identity()?.pageHeadOwner?.lead }}
+        </p>
+      </ng-template>
+      <ng-template #headSkeletonVisual>
+        <span
+          class="bg-body-secondary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-3 fs-3 lh-1"
+          data-id="analytics-browser-session-head-skeleton-icon"
+        ></span>
+      </ng-template>
       <div
         data-id="hilos-analytics-browser-session-header"
         class="mb-4 text-break"
@@ -154,6 +177,7 @@ export class HilosAnalyticsBrowserSessionPage {
   } as const
 
   private readonly router = inject(HILOS_ROUTER)
+  protected readonly identity = hilosSignal(this.router.pageIdentity)
   // The session the address names now — read live: another number on the same
   // page is a new subject.
   protected readonly browserSessionId = hilosSignal(
@@ -183,12 +207,27 @@ export class HilosAnalyticsBrowserSessionPage {
   constructor() {
     // The header comes with the page's answer; mirror it once the context binds.
     effect((onCleanup) => {
-      onCleanup(
-        mirrorHilosSignal(
-          hilosAnalyticsBrowserSession(this.context().scopes),
-          this.header,
-        ),
+      const { scopes } = this.context()
+      const stop = mirrorHilosSignal(
+        hilosAnalyticsBrowserSession(scopes),
+        this.header,
       )
+      const pageLabel = scopes.pageDataSignal('pageLabel')
+      const unbindName = bindPageInstanceName(
+        scopes,
+        HilosPages.ANALYTICS_BROWSER_SESSION,
+        computedSignal(() => {
+          if (scopes.page()?.key !== HilosPages.ANALYTICS_BROWSER_SESSION) {
+            return undefined
+          }
+          const label = pageLabel.get()
+          return typeof label === 'string' ? label : undefined
+        }),
+      )
+      onCleanup(() => {
+        unbindName()
+        stop()
+      })
     })
     // Bind the session's table after the change that published its route, once
     // the router has dropped the previous page's buffered answer, and release it

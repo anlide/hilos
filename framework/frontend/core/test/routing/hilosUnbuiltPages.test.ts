@@ -120,14 +120,17 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('serves the session list in Vue and React while keeping session detail served', () => {
-    expect(HILOS_UNBUILT_PAGES[HilosPages.ANALYTICS_BROWSER_SESSIONS]).toEqual([
-      'angular',
-    ])
+  it('serves the session list and detail in all three view layers', () => {
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.ANALYTICS_BROWSER_SESSIONS,
+    )
+    expect(HILOS_UNBUILT_PAGES).not.toHaveProperty(
+      HilosPages.ANALYTICS_BROWSER_SESSION,
+    )
     for (const layer of ['vue', 'react', 'angular'] as const) {
       expect(
         hilosUnbuiltPages(layer).has(HilosPages.ANALYTICS_BROWSER_SESSIONS),
-      ).toBe(layer === 'angular')
+      ).toBe(false)
       expect(
         hilosUnbuiltPages(layer).has(HilosPages.ANALYTICS_BROWSER_SESSION),
       ).toBe(false)

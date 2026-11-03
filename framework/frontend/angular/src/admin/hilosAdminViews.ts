@@ -14,10 +14,12 @@
 // HilosChangeLogPage / HilosChangeLogTablesPage / HilosChangeLogTablePage /
 // HilosI18nPage) that require a project-supplied context, so a project mounts them
 // directly rather than through this default map.
-// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage, HilosAnalyticsPeoplePage
-// and HilosAnalyticsPersonPage likewise need the project's Analytics context and
-// mount explicitly under HilosPages.ANALYTICS, ANALYTICS_BROWSER_SESSION,
-// ANALYTICS_PEOPLE and ANALYTICS_PERSON. The dashboard is the real
+// HilosAnalyticsPage, HilosAnalyticsBrowserSessionPage,
+// HilosAnalyticsBrowserSessionsPage, HilosAnalyticsPeoplePage and
+// HilosAnalyticsPersonPage likewise need the project's Analytics context and mount
+// explicitly under HilosPages.ANALYTICS, ANALYTICS_BROWSER_SESSION,
+// ANALYTICS_BROWSER_SESSIONS, ANALYTICS_PEOPLE and ANALYTICS_PERSON.
+// The dashboard is the real
 // HilosDashboardPage (self-contained, no project context), reused here as its own
 // default.
 //

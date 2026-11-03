@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Core\Analytics\AnalyticsSectionReader;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -21,8 +22,10 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
+use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
@@ -792,6 +795,104 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
     }
 
     /**
+     * A writer commit during label enrichment must not move the already selected window.
+     * E2e sees the wrong range, but cannot place a commit between reads within one stand tick.
+     */
+    public function testSessionListSnapshotSurvivesConcurrentInsert(): void
+    {
+        Database::sql('INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, ?)', ['Current name']);
+        $ids = [];
+        for ($moment = 200; $moment < 220; $moment++) {
+            $ids[] = $this->session('original-' . $moment, 7, 100, $moment);
+        }
+        $writerIndex = 15;
+        $this->openSessionListWriter($writerIndex);
+        $commits = 0;
+        $insertedIds = [];
+        $db = Hilos::$db;
+        self::assertInstanceOf(AnalyticsTablesTestDbContext::class, $db);
+        $table = new HilosAnalyticsBrowserSessionListTable();
+        $query = new TableQueryDTO(
+            filter: self::PEOPLE_CONTEXT,
+            sort: TableSortOrderDTO::of(new TableSortDTO('lastSeenTs', TableConstants::ORDER_ASC)),
+            anchor: new TableAnchorDTO(['lastSeenTs' => 100, 'rowKey' => 1]),
+            limit: 25,
+        );
+        $db->beforeUsersRead = static function () use ($writerIndex, &$commits, &$insertedIds): void {
+            for ($moment = 150; $moment < 154; $moment++) {
+                Database::sql(
+                    'INSERT INTO `hilos_analytics_browser_session`
+                        (`session_token`, `user_identity_type`, `user_identity_value`, `first_seen_ts`, `last_seen_ts`)
+                     VALUES (?, ?, ?, ?, ?)',
+                    ['concurrent-' . $moment, 'user_id', '7', 100, $moment],
+                    index: $writerIndex,
+                );
+                $insertedIds[] = Database::lastInsertId($writerIndex);
+            }
+            $commits++;
+        };
+        try {
+            $first = $table->getPage($query);
+            self::assertSame(1, $commits);
+            self::assertNull($db->beforeUsersRead);
+            self::assertSame($ids, self::rowKeys($first));
+            self::assertSame([20, true, 0], [$first->totalCount, $first->totalExact, $first->rowsBefore]);
+            $next = $table->getPage($query);
+            self::assertSame([...$insertedIds, ...$ids], self::rowKeys($next));
+            self::assertSame([24, true, 0], [$next->totalCount, $next->totalExact, $next->rowsBefore]);
+            self::assertSame(1, $commits);
+        } finally {
+            $db->beforeUsersRead = null;
+            Database::close($writerIndex);
+        }
+    }
+
+    /** Crossing the period boundary after selection affects only the following snapshot. */
+    public function testSessionListSnapshotSurvivesConcurrentUpdate(): void
+    {
+        Database::sql('INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, ?)', ['Current name']);
+        $ids = [];
+        for ($moment = 210; $moment < 230; $moment++) {
+            $ids[] = $this->session('original-' . $moment, 7, 100, $moment);
+        }
+        $outsideId = $this->session('outside-period', 7, 100, 199);
+        $writerIndex = 15;
+        $this->openSessionListWriter($writerIndex);
+        $commits = 0;
+        $db = Hilos::$db;
+        self::assertInstanceOf(AnalyticsTablesTestDbContext::class, $db);
+        $table = new HilosAnalyticsBrowserSessionListTable();
+        $query = new TableQueryDTO(
+            filter: ['period' => 'today'] + self::PEOPLE_CONTEXT,
+            sort: TableSortOrderDTO::of(new TableSortDTO('lastSeenTs', TableConstants::ORDER_ASC)),
+            anchor: new TableAnchorDTO(['lastSeenTs' => 205, 'rowKey' => 1]),
+            limit: 25,
+        );
+        $db->beforeUsersRead = static function () use ($writerIndex, $outsideId, &$commits): void {
+            Database::sql(
+                'UPDATE `hilos_analytics_browser_session` SET `last_seen_ts` = ? WHERE `id` = ?',
+                [200, $outsideId],
+                index: $writerIndex,
+            );
+            $commits++;
+        };
+        try {
+            $first = $table->getPage($query);
+            self::assertSame(1, $commits);
+            self::assertNull($db->beforeUsersRead);
+            self::assertSame($ids, self::rowKeys($first));
+            self::assertSame([20, true, 0], [$first->totalCount, $first->totalExact, $first->rowsBefore]);
+            $next = $table->getPage($query);
+            self::assertSame($ids, self::rowKeys($next));
+            self::assertSame([21, true, 1], [$next->totalCount, $next->totalExact, $next->rowsBefore]);
+            self::assertSame(1, $commits);
+        } finally {
+            $db->beforeUsersRead = null;
+            Database::close($writerIndex);
+        }
+    }
+
+    /**
      * @param TableDefinition $table Frozen table under test
      * @param array<string, mixed> $filter Valid subject or calendar preset
      * @param ?TableSortOrderDTO $sort Served order
@@ -832,6 +933,17 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
         $afterEnd = $table->getPage(new TableQueryDTO(filter: $filter, sort: $sort, limit: 2, anchor: $tail->lastAnchor));
         self::assertSame([], $afterEnd->rows);
         self::assertSame(count($expected), $afterEnd->rowsBefore);
+    }
+
+    /** @param int $writerIndex Case-local SQL session on the same physical schema */
+    private function openSessionListWriter(int $writerIndex): void
+    {
+        $primary = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(
+            $writerIndex, $primary->host, $primary->user, $primary->password,
+            $primary->database, $primary->port, $primary->charset,
+        );
+        Database::connect($writerIndex);
     }
 
     /**
@@ -978,4 +1090,21 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
 /** Framework collections used by the session reader for account labels. */
 final class AnalyticsTablesTestDbContext extends HilosDbContext
 {
+    /** @var ?Closure One-shot writer commit at the first account-label read */
+    public ?Closure $beforeUsersRead = null;
+
+    /**
+     * @param string $name Requested mounted collection
+     * @return DbCollection Real collection after the optional writer commit
+     */
+    public function __get(string $name): DbCollection
+    {
+        if ($name === self::users && $this->beforeUsersRead !== null) {
+            $callback = $this->beforeUsersRead;
+            $this->beforeUsersRead = null;
+            $callback();
+        }
+
+        return parent::__get($name);
+    }
 }
