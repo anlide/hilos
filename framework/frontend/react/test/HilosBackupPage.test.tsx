@@ -662,6 +662,53 @@ describe('HilosBackupPage why a restore is blocked', () => {
   const OUT_OF_REACH_REASON =
     'Stored on node node-2 - the backup agent runs elsewhere, so this archive cannot be reached from here'
 
+  it('names the holder badge and refusal, falls back to id, and keeps restore unavailable', () => {
+    const { actions, dispatched } = makeActions()
+    const archive = {
+      ...ARCHIVE_FIXTURE,
+      backup: {
+        ...ARCHIVE_FIXTURE.backup,
+        holderNode: 'node-2',
+        holderNodeName: 'North',
+      },
+    }
+    const context = seededContext([archive], actions, RESTORE_GATE)
+    mountPage(context)
+
+    const holder = inTable(`hilos-backup-holder-${ARCHIVE_ID}`)!
+    expect(holder.textContent).toBe('North (node-2)')
+    expect(holder.title).toBe(
+      'Stored on node North (node-2) - the backup agent runs elsewhere, so this archive cannot be reached from here',
+    )
+    const restore = inTable<HTMLButtonElement>(
+      `hilos-backup-restore-${ARCHIVE_ID}`,
+    )!
+    expect(restore.disabled).toBe(true)
+    fireEvent.click(inBackupRow(ARCHIVE_ID, 'hilos-action-reason')!)
+    expect(byId('hilos-action-reason-body')?.textContent).toBe(holder.title)
+    fireEvent.keyDown(byId('modal')!, { key: 'Escape' })
+
+    context.updateBackupRow({
+      ...archive,
+      backup: { ...archive.backup, holderNodeName: null },
+    })
+    expect(inTable(`hilos-backup-holder-${ARCHIVE_ID}`)?.textContent).toBe(
+      'node-2',
+    )
+    expect(inBackupRow(ARCHIVE_ID, 'hilos-action-reason')?.title).toBe(
+      OUT_OF_REACH_REASON,
+    )
+    expect(inTable(`hilos-backup-restore-${ARCHIVE_ID}`)).toBe(restore)
+    expect(restore.disabled).toBe(true)
+    expect(dispatched).toHaveLength(0)
+
+    context.updateBackupRow({
+      ...archive,
+      backup: { ...archive.backup, holderNode: null, holderNodeName: null },
+    })
+    expect(inTable(`hilos-backup-holder-${ARCHIVE_ID}`)).toBeNull()
+  })
+
   it.each([
     [
       'an archive stored on another node',

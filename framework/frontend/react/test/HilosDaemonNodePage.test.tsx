@@ -35,7 +35,7 @@ describe('HilosDaemonNodePage', () => {
     const rows = [...el('node-overview')!.querySelectorAll('.row')]
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.querySelectorAll('dl').length)).toEqual([
-      4, 4, 4, 4,
+      4, 4, 4, 5,
     ])
     expect(
       [...rows[0]!.querySelectorAll('dt')].map((cell) => cell.textContent),
@@ -74,6 +74,34 @@ describe('HilosDaemonNodePage', () => {
     expect(h.send).not.toHaveBeenCalled()
     expect(h.sendAction).not.toHaveBeenCalled()
     expect(h.registerTableWindow).not.toHaveBeenCalled()
+  })
+
+  it('reads both the node name and stable id from the addressed answer', () => {
+    const h = nodeHarness()
+    const property = (label: string) =>
+      [...el('node-overview')!.querySelectorAll('dl')].find(
+        (item) => item.querySelector('dt')?.textContent === label,
+      )!
+    for (const clustered of [true, false]) {
+      act(() =>
+        h.answer(
+          nodeOverview(),
+          nodeHeading({ name: '<North> & West', clustered }),
+        ),
+      )
+      expect(property('Node ID').querySelector('dd')?.textContent).toBe('n1')
+      expect(property('Node name').querySelector('dd')?.textContent).toBe(
+        '<North> & West',
+      )
+      expect(property('Node name').textContent).toContain('CLUSTER_NODE_NAME')
+      act(() =>
+        h.answer(nodeOverview(), nodeHeading({ name: null, clustered })),
+      )
+      expect(property('Node name').querySelector('dd')?.textContent).toBe('—')
+      expect(property('Node ID').querySelector('dd')?.textContent).toBe('n1')
+    }
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
   })
 
   it('distinguishes no report even with a declared role, null sections and known zeroes', () => {

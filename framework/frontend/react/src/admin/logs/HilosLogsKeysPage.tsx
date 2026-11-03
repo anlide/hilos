@@ -23,6 +23,7 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'
+import { HilosNodeName } from '../HilosNodeName.js'
 
 /** Props for {@link HilosLogsKeysPage}. */
 export interface HilosLogsKeysPageProps {
@@ -121,7 +122,9 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
           key: (row: HilosLogKeyRow) => (
             <code className="fw-semibold small">{row.key}</code>
           ),
-          node: (row: HilosLogKeyRow) => row.node,
+          node: (row: HilosLogKeyRow) => (
+            <HilosNodeName nodeId={row.node} nodeName={row.nodeName} />
+          ),
           class: (row: HilosLogKeyRow) => (
             <span className="badge text-bg-secondary-subtle text-secondary-emphasis border">
               {formatLogKeyClass(row)}

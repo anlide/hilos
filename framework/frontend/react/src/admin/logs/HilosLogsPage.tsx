@@ -57,6 +57,7 @@ import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'
+import { HilosNodeName } from '../HilosNodeName.js'
 
 /** The tabs of the recent-failures panel, in the order they stand. */
 const RECENT_TABS: readonly HilosLogsRecentTab[] = [
@@ -427,7 +428,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                   className="badge bg-body-tertiary text-body-emphasis border"
                   data-id={`hilos-logs-node-${row.nodeId}`}
                 >
-                  {row.nodeId}
+                  <HilosNodeName nodeId={row.nodeId} nodeName={row.nodeName} />
                 </span>
               ),
               [NODE_LAST_ROTATION_AT_FIELD]: (row: HilosLogNodeRow) => (

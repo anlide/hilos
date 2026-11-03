@@ -22,6 +22,7 @@ import {
   formatDaemonNumber,
   formatDaemonPercentage,
   formatDaemonWorkerName,
+  formatHilosNodeLabel,
   type HilosDaemonContext,
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
@@ -31,6 +32,7 @@ import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
+import { HilosNodeName } from '../HilosNodeName.js'
 
 /** Props for the Daemon section root. */
 export interface HilosDaemonPageProps {
@@ -129,8 +131,12 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                 </span>
                 {overview.consensus && (
                   <span className="text-body-secondary text-break">
-                    Report: {overview.consensus.nodeId} · Majority:{' '}
-                    {overview.consensus.quorumSize}
+                    Report:{' '}
+                    {formatHilosNodeLabel(
+                      overview.consensus.nodeId,
+                      overview.consensus.nodeName,
+                    )}{' '}
+                    · Majority: {overview.consensus.quorumSize}
                   </span>
                 )}
               </div>
@@ -162,8 +168,11 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                           aria-hidden="true"
                         />
                         <span className="visually-hidden">
-                          {overview.nodes[nodeIndex - 1]?.nodeId} ↔{' '}
-                          {node.nodeId} ·{' '}
+                          {formatHilosNodeLabel(
+                            overview.nodes[nodeIndex - 1]!.nodeId,
+                            overview.nodes[nodeIndex - 1]!.nodeName,
+                          )}{' '}
+                          ↔ {formatHilosNodeLabel(node.nodeId, node.nodeName)} ·{' '}
                           {!node.online ||
                           !overview.nodes[nodeIndex - 1]?.online
                             ? 'Silent member'
@@ -176,7 +185,7 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                         nodeId: node.nodeId,
                       })!}
                       className={`btn bg-body text-body border rounded shadow-sm w-100 p-3 text-start text-decoration-none ${!node.online ? 'border-danger-subtle' : ''}`}
-                      aria-label={`Node ${node.nodeId}`}
+                      aria-label={`Node ${formatHilosNodeLabel(node.nodeId, node.nodeName)}`}
                       aria-describedby={
                         overview.clustered &&
                         node.online &&
@@ -190,8 +199,11 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                     >
                       <span className="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <i className="bi bi-hdd-network" aria-hidden="true" />
-                        <span className="fw-semibold font-monospace text-break">
-                          {node.nodeId}
+                        <span className="fw-semibold">
+                          <HilosNodeName
+                            nodeId={node.nodeId}
+                            nodeName={node.nodeName}
+                          />
                         </span>
                         {overview.clustered ? (
                           <span

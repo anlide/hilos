@@ -66,6 +66,27 @@ function addressMap(name: string): Record<string, string> {
   return Object.fromEntries(entries)
 }
 
+/** Read the node-name map without requiring cluster roles or addresses. */
+export function readClusterNodeNames(): Readonly<Record<string, string>> {
+  const names: unknown = JSON.parse(required('CLUSTER_NODE_NAMES'))
+  if (
+    names === null ||
+    typeof names !== 'object' ||
+    Array.isArray(names) ||
+    Object.keys(names).length === 0
+  ) {
+    throw new Error('CLUSTER_NODE_NAMES must be a nonempty node-to-name object')
+  }
+  const nodeNames: Record<string, string> = {}
+  for (const [node, name] of Object.entries(names)) {
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new Error(`Invalid cluster node name for ${node}`)
+    }
+    nodeNames[node] = name
+  }
+  return nodeNames
+}
+
 /** Read the harness environment, refusing missing roles or incomplete node maps. */
 export function readClusterBrowserStand(): ClusterBrowserStand {
   const baseURL = required('BASE_URL')
@@ -86,17 +107,7 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
   }
   const nodeHosts = addressMap('CLUSTER_NODE_HOSTS')
   const nodeIps = addressMap('CLUSTER_NODE_IPS')
-  const names: unknown = JSON.parse(required('CLUSTER_NODE_NAMES'))
-  if (names === null || typeof names !== 'object' || Array.isArray(names)) {
-    throw new Error('CLUSTER_NODE_NAMES must be a node-to-name object')
-  }
-  const nodeNames: Record<string, string> = {}
-  for (const [node, name] of Object.entries(names)) {
-    if (typeof name !== 'string' || name.trim() === '') {
-      throw new Error(`Invalid cluster node name for ${node}`)
-    }
-    nodeNames[node] = name
-  }
+  const nodeNames = readClusterNodeNames()
   const logs: unknown = JSON.parse(required('CLUSTER_NODE_LOGS'))
   if (logs === null || typeof logs !== 'object' || Array.isArray(logs)) {
     throw new Error('CLUSTER_NODE_LOGS must be a node-to-path object')

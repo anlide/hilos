@@ -360,6 +360,25 @@ describe('HilosDaemonAgentsPage', () => {
       )
     },
   )
+  it('names the restart confirmation from the heading and dispatches only ids', async () => {
+    const h = ready()
+    h.heading({ ...LIVE, name: '<North> & West' })
+    open(h)
+    expect(h.find('hilos-daemon-restart-node')?.textContent).toBe(
+      '<North> & West (n1)',
+    )
+    expect(h.find('hilos-daemon-restart-cli')?.textContent).toBe(
+      'php cli.php agent:restart room:12 --node=n1',
+    )
+    fireEvent.click(button(h))
+    expect(h.dispatch).toHaveBeenCalledExactlyOnceWith(
+      'hilos_daemon_agent_restart',
+      { agentId: 'room:12', nodeId: 'n1' },
+    )
+    await h.success()
+    expect(h.find('modal')).toBeNull()
+  })
+
   it('dispatches the exact target once, blocks every close path while busy and closes on success', async () => {
     const h = ready()
     open(h)

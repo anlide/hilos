@@ -15,6 +15,7 @@ import {
   formatDaemonAgentOwnership,
   formatDaemonAgentWorker,
   formatDaemonNodeSilentSince,
+  formatHilosNodeLabel,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonAgentRow,
@@ -286,8 +287,12 @@ function Agents({
         <p>
           Agent{' '}
           <code data-id="hilos-daemon-restart-agent">{identity?.agentId}</code>{' '}
-          on node <code data-id="hilos-daemon-restart-node">{nodeId}</code> will
-          be stopped and will immediately start again under its placement rules.
+          on node{' '}
+          <span className="text-break" data-id="hilos-daemon-restart-node">
+            {formatHilosNodeLabel(nodeId, heading?.name ?? null)}
+          </span>{' '}
+          will be stopped and will immediately start again under its placement
+          rules.
         </p>
         <p className="text-body-secondary">
           Neighboring agents on the same worker are unaffected.

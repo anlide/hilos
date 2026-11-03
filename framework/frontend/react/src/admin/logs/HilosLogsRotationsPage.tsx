@@ -26,6 +26,7 @@ import {
   hilosTimeZone,
   HilosPages,
 } from '@hilos/core/base'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
@@ -66,6 +67,7 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+import { HilosNodeName } from '../HilosNodeName.js'
 
 /** Props for {@link HilosLogsRotationsPage}. */
 export interface HilosLogsRotationsPageProps {
@@ -365,7 +367,9 @@ export function HilosLogsRotationsPage({
               ) : null}
             </>
           ),
-          node: (row: HilosLogRotationRow) => row.node,
+          node: (row: HilosLogRotationRow) => (
+            <HilosNodeName nodeId={row.node} nodeName={row.nodeName} />
+          ),
           daemonFileCount: (row: HilosLogRotationRow) => (
             <span className="small">{formatRotationFileCounts(row)}</span>
           ),
@@ -486,7 +490,7 @@ export function HilosLogsRotationsPage({
         open={takeoutOpen}
         title={
           takeoutRow
-            ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${takeoutRow.node}` : ''}`
+            ? `Carrying off the batch of ${batchTime(takeoutRow)}${takeoutRow.node ? ` · ${formatHilosNodeLabel(takeoutRow.node, takeoutRow.nodeName)}` : ''}`
             : 'Carrying off a batch'
         }
         busy={takeout.busy}
@@ -558,9 +562,11 @@ export function HilosLogsRotationsPage({
         {clustered && takeoutRow?.node ? (
           <div className="alert alert-warning small py-2 mb-0">
             The batch lies on node{' '}
-            <span className="font-monospace">{takeoutRow.node}</span> and only
-            there: logs do not converge anywhere. Take it from that node, and
-            the confirmation covers this batch on this node.
+            <span className="font-monospace">
+              {formatHilosNodeLabel(takeoutRow.node, takeoutRow.nodeName)}
+            </span>{' '}
+            and only there: logs do not converge anywhere. Take it from that
+            node, and the confirmation covers this batch on this node.
           </div>
         ) : (
           <div className="alert alert-secondary small py-2 mb-0">

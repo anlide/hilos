@@ -186,6 +186,27 @@ describe('HilosDaemonEnvMismatchPage', () => {
     expect(h.activeWindows.size).toBe(0)
   })
 
+  it('names a standalone node from the serving summary without a comparison', () => {
+    const standalone: HilosDaemonEnvMismatchSummary = {
+      clustered: false,
+      servingNodeId: 'solo',
+      servingNodeName: '<North> & West',
+      comparison: null,
+    }
+    const h = harness(standalone)
+    expect(
+      h.find('hilos-daemon-env-mismatch-standalone-node')?.textContent,
+    ).toBe('<North> & West (solo)')
+    h.response({ ...standalone, servingNodeName: null })
+    expect(
+      h.find('hilos-daemon-env-mismatch-standalone-node')?.textContent,
+    ).toBe('solo')
+    expect(h.find('hilos-daemon-env-mismatch-waiting')).toBeNull()
+    expect(h.find('hilos-viewport-table')).toBeNull()
+    expect(h.register).not.toHaveBeenCalled()
+    expect(h.sendViewport).not.toHaveBeenCalled()
+  })
+
   it('keeps null summary and null comparison waiting rather than agreeing at zero', () => {
     const h = harness()
     expect(h.find('hilos-daemon-env-mismatch-waiting')?.textContent).toContain(

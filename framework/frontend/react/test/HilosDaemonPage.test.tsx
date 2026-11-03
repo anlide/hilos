@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import {
   HilosPages,
   ScopeManager,
@@ -283,6 +283,72 @@ afterEach(() => {
 })
 
 describe('HilosDaemonPage', () => {
+  it('names node links literally while keeping duplicate names addressable by id', () => {
+    const nodeId = 'node /?#%2F🌍'
+    const nodeName = '<Edge> & North'
+    const h = harness(
+      true,
+      picture([
+        node('n1', { nodeName }),
+        node(nodeId, { nodeName }),
+        node('unknown'),
+      ]),
+    )
+    const content = within(h.view.container)
+    for (const id of ['n1', nodeId]) {
+      const link = content.getByRole('link', {
+        name: `Node ${nodeName} (${id})`,
+      })
+      expect(within(link).getByText(nodeName).textContent).toBe(nodeName)
+      expect(within(link).getByText(id).textContent).toBe(id)
+      expect(link.getAttribute('href')).toBe(
+        h.router.resolvePath(HilosPages.DAEMON_NODE, { nodeId: id }),
+      )
+    }
+    const fallback = content.getByRole('link', { name: 'Node unknown' })
+    expect(within(fallback).getByText('unknown').textContent).toBe('unknown')
+    expect(fallback.getAttribute('href')).toBe('/hilos/daemon/unknown')
+    fireEvent.click(
+      content.getByRole('link', { name: `Node ${nodeName} (${nodeId})` }),
+    )
+    expect(h.navigate).toHaveBeenCalledExactlyOnceWith(
+      h.router.resolvePath(HilosPages.DAEMON_NODE, { nodeId }),
+    )
+    expect(h.sendAction).not.toHaveBeenCalled()
+  })
+
+  it('uses reported names for consensus and membership links with a null fallback', () => {
+    const base = picture([
+      node('n1', { nodeName: 'North' }),
+      node('n2', { nodeName: 'South', online: false, state: 'silent' }),
+      node('n3'),
+    ])
+    const h = harness(true, {
+      ...base,
+      consensus: { ...base.consensus!, nodeName: 'Reporter' },
+    })
+    expect(h.find('hilos-daemon-consensus')?.textContent).toContain(
+      'Report: Reporter (n1) · Majority: 3',
+    )
+    expect(h.find('hilos-daemon-link-n2')?.textContent).toBe(
+      'North (n1) ↔ South (n2) · Silent member',
+    )
+    expect(h.find('hilos-daemon-link-n3')?.textContent).toBe(
+      'South (n2) ↔ n3 · Silent member',
+    )
+    act(() =>
+      h.update(picture([node('n1'), node('n2', { nodeName: 'South' })])),
+    )
+    expect(h.find('hilos-daemon-consensus')?.textContent).toContain(
+      'Report: n1 · Majority: 3',
+    )
+    expect(h.find('hilos-daemon-link-n2')?.textContent).toBe(
+      'n1 ↔ South (n2) · Membership link',
+    )
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
+  })
+
   it('opens Overview without any placement controller or traffic', () => {
     const h = harness(true, picture([node('n1')]))
     expect(h.find('hilos-daemon-clock-n1')).toBeNull()

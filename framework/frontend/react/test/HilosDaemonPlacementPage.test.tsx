@@ -26,6 +26,7 @@ import {
   render,
   type RenderResult,
   fireEvent,
+  within,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -647,6 +648,57 @@ const CELL = 'hilos-daemon-placement-cell-chat_room-n1'
 const PANEL = 'hilos-daemon-placement-selection'
 
 describe('HilosDaemonPlacementPage live windows', () => {
+  it('names cells and their selected node while selecting duplicate names by id', () => {
+    const base = placementPicture()
+    const named = {
+      ...base,
+      nodes: base.nodes.map((node) => ({
+        ...node,
+        nodeName: '<Shared> & West',
+      })),
+    }
+    const h = liveHarness(
+      false,
+      named,
+      placementRows(['chat_room:1', 'chat_room:2'], ['chat_room:55']),
+    )
+    const table = h.view.container.querySelector('table')!
+    const content = within(table)
+    fireEvent.click(
+      content.getByRole('button', {
+        name: 'chat_room on <Shared> & West (n1): 2 instances',
+      }),
+    )
+    expect(h.find(PANEL, table)?.textContent).toContain(
+      'on <Shared> & West (n1)',
+    )
+    expect(h.find(PANEL, table)?.textContent).toContain('chat_room:2')
+    expect(h.find(PANEL, table)?.textContent).not.toContain('chat_room:55')
+    fireEvent.click(
+      content.getByRole('button', {
+        name: 'chat_room on <Shared> & West (n2): 1 instances',
+      }),
+    )
+    expect(h.find(PANEL, table)?.textContent).toContain(
+      'on <Shared> & West (n2)',
+    )
+    expect(h.find(PANEL, table)?.textContent).toContain('chat_room:55')
+    expect(h.find(PANEL, table)?.textContent).not.toContain('chat_room:2')
+    act(() => h.update(base))
+    expect(
+      content
+        .getByRole('button', {
+          name: 'chat_room on n2: 1 instances',
+        })
+        .getAttribute('aria-expanded'),
+    ).toBe('true')
+    expect(h.find(PANEL, table)?.textContent).toContain('on n2')
+    expect(h.find(PANEL, table)?.textContent).not.toContain('<Shared> & West')
+    expect(h.register).toHaveBeenCalledTimes(1)
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
+  })
+
   it('retains its matrix, search and open cell on data-only source changes', () => {
     const h = liveHarness(false, placementPicture(), placementRows())
 

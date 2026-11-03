@@ -183,6 +183,35 @@ function subLine(container: HTMLElement): HTMLElement | null {
 describe('HilosLogsKeysPage', () => {
   afterEach(cleanup)
 
+  it('names the stream node and filter choice while opening and filtering by id', () => {
+    const { connection, pushHeader, pushWindow, filters } = makeConnection()
+    const container = mountPage(connection)
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: 'North' }] }))
+    pushWindow([
+      stream({
+        rowKey: 'node-1:worker-0.log',
+        node: 'node-1',
+        nodeName: 'North',
+      }),
+    ])
+
+    const row = container.querySelector<HTMLElement>(
+      'table [data-id="hilos-table-row-node-1:worker-0.log"]',
+    )!
+    expect(row.textContent).toContain('North')
+    expect(row.textContent).toContain('node-1')
+    expect(
+      byId(row, 'hilos-log-key-open-node-1:worker-0.log')?.getAttribute('href'),
+    ).toBe('/hilos/logs/view/node-1/live/worker-0.log')
+
+    const filter = byId(container, 'hilos-table-filter-node')!
+    fireEvent.click(byId(filter, 'hilos-dropdown-toggle')!)
+    const choice = byId(filter, 'hilos-dropdown-option-0')!
+    expect(choice.textContent).toBe('North (node-1)')
+    fireEvent.click(choice)
+    expect(filters.at(-1)).toEqual({ node: 'node-1' })
+  })
+
   it('waits rather than reporting a fault before any picture arrives', () => {
     const { connection, pushEmptyWindow } = makeConnection()
     const container = mountPage(connection)

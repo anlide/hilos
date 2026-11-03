@@ -577,6 +577,7 @@ export {
 
 export {
   readClusterBrowserStand,
+  readClusterNodeNames,
   newClusterMasterPage,
   setClusterMaster,
   clusterCommandChannel,

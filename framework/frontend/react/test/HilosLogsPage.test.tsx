@@ -288,6 +288,33 @@ function textOf(container: HTMLElement, id: string): string {
 describe('HilosLogsPage', () => {
   afterEach(cleanup)
 
+  it('names By node and recent sources while keeping node identity and links', () => {
+    const { connection, push, pushPageWindow } = makeConnection()
+    const container = mountPage(connection)
+    push(
+      overview({
+        nodes: [node({ nodeName: 'North' })],
+        recentErrors: [failure({ nodeId: 'node-1', nodeName: 'North' })],
+      }),
+    )
+    pushPageWindow([tableNode({ nodeName: 'North', batchesDueForTakeout: 2 })])
+
+    const row = screen.getByRole('row', { name: /North.*node-1/ })
+    const caption = byId(row, 'hilos-logs-node-node-1')!
+    expect(within(caption).getByText('North')).toBeTruthy()
+    expect(within(caption).getByText('node-1')).toBeTruthy()
+    const due = byId(row, 'hilos-logs-node-due-node-1')!
+    expect(due.textContent).toBe('2')
+    expect(due.getAttribute('href')).toBe('/hilos/logs/rotations/due')
+    const recent = byId(container, 'hilos-logs-recent-row')!
+    expect(recent.textContent).toContain(
+      'North (node-1) · worker-monopolistic-5.error.log',
+    )
+    expect(recent.getAttribute('href')).toBe(
+      `/hilos/logs/view/node-1/live/worker-monopolistic-5.error.log/${Date.parse('2026-09-06T10:00:02.125Z')}`,
+    )
+  })
+
   it('reformats overview and node moments live without another frame or window', () => {
     const reader = readerTimeZone()
     const browserZone = hilosBrowserTimeZone.get() ?? 'UTC'

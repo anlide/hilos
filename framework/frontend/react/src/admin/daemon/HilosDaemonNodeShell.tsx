@@ -72,7 +72,11 @@ export function HilosDaemonNodeShell({
     })
   }, [context, router])
   const name = useMemo(
-    () => computedSignal(() => currentSource.get()?.nodeId),
+    () =>
+      computedSignal(() => {
+        const current = currentSource.get()
+        return current?.heading.name ?? current?.nodeId
+      }),
     [currentSource],
   )
   // The hook re-renders this subtree before paint; the head reads the bound name.
@@ -130,67 +134,76 @@ export function HilosDaemonNodeShell({
       }
       headBadges={
         heading ? (
-          heading.clustered ? (
-            <>
-              {heading.state !== null && (
-                <span
-                  className={`badge border ${stateClass(heading.state)}`}
-                  data-id="hilos-daemon-node-state"
-                >
-                  {formatDaemonNodeState(heading.state)}
-                </span>
-              )}
-              <span
-                ref={roleBadge}
-                className="badge bg-body-tertiary text-body border"
-                data-id="hilos-daemon-node-role"
-                tabIndex={-1}
-              >
-                Role: {heading.role ?? '—'}
+          <>
+            {heading.name !== null && (
+              <span className="font-monospace text-body-secondary small text-break">
+                {current?.nodeId}
               </span>
-              <span
-                ref={clockScrollport}
-                className="d-block w-100 overflow-x-scroll text-nowrap"
-                tabIndex={hasClockWarning ? 0 : undefined}
-                role={hasClockWarning ? 'region' : undefined}
-                aria-label={hasClockWarning ? 'Node clock warning' : undefined}
-                aria-hidden={hasClockWarning ? undefined : true}
-                inert={!hasClockWarning}
-              >
-                {clockWarning !== null ? (
+            )}
+            {heading.clustered ? (
+              <>
+                {heading.state !== null && (
                   <span
-                    className="badge text-bg-warning"
-                    data-id="hilos-daemon-node-clock-warning"
+                    className={`badge border ${stateClass(heading.state)}`}
+                    data-id="hilos-daemon-node-state"
                   >
-                    <i
-                      className="bi bi-exclamation-triangle-fill me-1"
-                      aria-hidden="true"
-                    />
-                    {clockWarning}
-                  </span>
-                ) : (
-                  <span
-                    className="badge text-bg-warning invisible"
-                    aria-hidden="true"
-                    inert
-                  >
-                    <i
-                      className="bi bi-exclamation-triangle-fill me-1"
-                      aria-hidden="true"
-                    />
-                    &nbsp;
+                    {formatDaemonNodeState(heading.state)}
                   </span>
                 )}
+                <span
+                  ref={roleBadge}
+                  className="badge bg-body-tertiary text-body border"
+                  data-id="hilos-daemon-node-role"
+                  tabIndex={-1}
+                >
+                  Role: {heading.role ?? '—'}
+                </span>
+                <span
+                  ref={clockScrollport}
+                  className="d-block w-100 overflow-x-scroll text-nowrap"
+                  tabIndex={hasClockWarning ? 0 : undefined}
+                  role={hasClockWarning ? 'region' : undefined}
+                  aria-label={
+                    hasClockWarning ? 'Node clock warning' : undefined
+                  }
+                  aria-hidden={hasClockWarning ? undefined : true}
+                  inert={!hasClockWarning}
+                >
+                  {clockWarning !== null ? (
+                    <span
+                      className="badge text-bg-warning"
+                      data-id="hilos-daemon-node-clock-warning"
+                    >
+                      <i
+                        className="bi bi-exclamation-triangle-fill me-1"
+                        aria-hidden="true"
+                      />
+                      {clockWarning}
+                    </span>
+                  ) : (
+                    <span
+                      className="badge text-bg-warning invisible"
+                      aria-hidden="true"
+                      inert
+                    >
+                      <i
+                        className="bi bi-exclamation-triangle-fill me-1"
+                        aria-hidden="true"
+                      />
+                      &nbsp;
+                    </span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <span
+                className="badge bg-body-tertiary text-body border"
+                data-id="hilos-daemon-node-solo"
+              >
+                Single installation
               </span>
-            </>
-          ) : (
-            <span
-              className="badge bg-body-tertiary text-body border"
-              data-id="hilos-daemon-node-solo"
-            >
-              Single installation
-            </span>
-          )
+            )}
+          </>
         ) : undefined
       }
       headDescription={

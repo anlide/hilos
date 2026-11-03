@@ -4,6 +4,7 @@ import { expect, test } from '../test.js'
 import {
   DAEMON_NODE_PATH,
   DAEMON_NODE_TABS,
+  DAEMON_STANDALONE_NODE_NAME,
   clickSubmit,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
@@ -59,6 +60,7 @@ test('Node pages expose one entity heading, link tabs and tables named through t
       'standalone',
       {
         showLogLinks: false,
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
       },
     )
     for (const tab of DAEMON_NODE_TABS.slice(1)) {
@@ -69,13 +71,19 @@ test('Node pages expose one entity heading, link tabs and tables named through t
       await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
       await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
         showLogLinks: false,
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
       })
       if (tab.key === 'hilos_daemon_websockets') {
         await expectStandaloneWebsockets(expect, page, reports.frames, {
           showLogLinks: false,
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
         })
       } else if (tab.key !== 'hilos_daemon_env')
-        await expectDaemonNodeTableName(expect, page)
+        await expectDaemonNodeTableName(
+          expect,
+          page,
+          DAEMON_STANDALONE_NODE_NAME,
+        )
       await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
       await expectDaemonNodeHead(
         expect,
@@ -84,6 +92,7 @@ test('Node pages expose one entity heading, link tabs and tables named through t
         'standalone',
         {
           showLogLinks: false,
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
         },
       )
     }

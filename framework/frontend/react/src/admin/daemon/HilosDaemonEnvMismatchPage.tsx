@@ -10,6 +10,7 @@ import {
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   DAEMON_ENV_SENSITIVE_HINT,
   DAEMON_ENV_MISMATCH_SOURCES_DIFFER,
+  formatHilosNodeLabel,
   readHilosDaemonEnvMismatchSummary,
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchRow,
@@ -108,12 +109,15 @@ export function HilosDaemonEnvMismatchPage({
             </div>
             <p className="small mb-0">
               There is one node,{' '}
-              <code
+              <span
                 className="text-break"
                 data-id="hilos-daemon-env-mismatch-standalone-node"
               >
-                {summary.servingNodeId}
-              </code>
+                {formatHilosNodeLabel(
+                  summary.servingNodeId,
+                  summary.servingNodeName,
+                )}
+              </span>
               , and nothing to compare it with.
             </p>
           </div>

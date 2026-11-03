@@ -17,6 +17,7 @@ import { HilosPages } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
+import { HilosNodeName } from '../HilosNodeName.js'
 
 /** Props for {@link HilosMaintenanceNodesPage}. */
 export interface HilosMaintenanceNodesPageProps {
@@ -55,7 +56,7 @@ export function HilosMaintenanceNodesPage({
         cells={{
           [MAINTENANCE_NODE_ID_FIELD]: (row) => (
             <span data-id={`hilos-maintenance-nodes-row-${row.nodeId}`}>
-              {row.nodeId}
+              <HilosNodeName nodeId={row.nodeId} nodeName={row.nodeName} />
             </span>
           ),
           [MAINTENANCE_NODE_QUIESCED_FIELD]: (row) => {

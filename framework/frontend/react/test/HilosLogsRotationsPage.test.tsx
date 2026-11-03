@@ -388,6 +388,62 @@ describe('HilosLogsRotationsPage', () => {
   // would leave its modal there for the next case to find.
   afterEach(cleanup)
 
+  it('names the batch node while retaining its row identity and viewer address', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: 'North' }] }))
+    pushWindow([
+      batch({ rowKey: 'node-1:1800000000', node: 'node-1', nodeName: 'North' }),
+    ])
+
+    const row = container.querySelector<HTMLElement>(
+      'table [data-id="hilos-table-row-node-1:1800000000"]',
+    )!
+    expect(within(row).getByText('North')).toBeTruthy()
+    expect(within(row).getByText('node-1')).toBeTruthy()
+    expect(
+      within(row).getByRole('link', { name: 'View' }).getAttribute('href'),
+    ).toBe('/hilos/logs/view/node-1/1800000000000')
+  })
+
+  it('names the takeout node while copying and confirming the batch by id', async () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const container = mountPage(connection, actions)
+    pushHeader(header({ nodes: [{ nodeId: 'node-1', nodeName: 'North' }] }))
+    pushWindow([
+      batch({
+        rowKey: 'node-1:1800000000',
+        node: 'node-1',
+        nodeName: 'North',
+        retentionState: 'due',
+      }),
+    ])
+    fireEvent.click(byId(container, 'hilos-rotation-takeout')!)
+
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(dialog.getAttribute('aria-label')).toContain(' · North (node-1)')
+    expect(dialog.textContent).toContain(
+      'The batch lies on node North (node-1) and only there',
+    )
+    expect(byId(dialog, 'hilos-rotation-takeout-path')?.textContent).toBe(
+      'node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/',
+    )
+    expect(byId(dialog, 'hilos-rotation-takeout-command')?.textContent).toBe(
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00Z/ ./cold-logs/node-1/2027-01-15-08-00-00Z/',
+    )
+    fireEvent.click(byId(dialog, 'hilos-rotation-takeout-confirm')!)
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_confirm',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000000 },
+      },
+    ])
+    dispatched[0]?.settle({ action: 'logs_takeout_confirm' } as ActionResult)
+    await settled()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
   it('draws each half of a partly hidden rule as its own mark', () => {
     const { connection, pushHeader } = makeConnection()
     const container = mountPage(connection)

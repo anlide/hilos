@@ -11,6 +11,7 @@ import {
   formatDaemonNumber,
   formatDaemonPlacementKind,
   formatDaemonPlacementState,
+  formatHilosNodeLabel,
   type HilosDaemonOverviewData,
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
@@ -59,7 +60,7 @@ export function HilosDaemonPlacement({
         <button
           type="button"
           className="btn btn-sm btn-outline-secondary"
-          aria-label={`${row.agentType} on ${node.nodeId}: ${ids.length} instances`}
+          aria-label={`${row.agentType} on ${formatHilosNodeLabel(node.nodeId, node.nodeName)}: ${ids.length} instances`}
           aria-expanded={
             selectedCell?.rowKey === row.rowKey &&
             selectedCell?.nodeId === node.nodeId
@@ -171,9 +172,14 @@ export function HilosDaemonPlacement({
                       </h2>
                       <span>
                         on{' '}
-                        <code className="text-break">
-                          {selectedCell.nodeId}
-                        </code>
+                        <span className="text-break">
+                          {formatHilosNodeLabel(
+                            selectedCell.nodeId,
+                            nodes.find(
+                              (node) => node.nodeId === selectedCell.nodeId,
+                            )?.nodeName ?? null,
+                          )}
+                        </span>
                       </span>
                       <span className="badge bg-body text-body border">
                         {selectedCell.agentIds.length} instances

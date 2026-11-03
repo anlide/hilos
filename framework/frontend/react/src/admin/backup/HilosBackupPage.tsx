@@ -61,6 +61,7 @@ import {
   isBackupSubsystemBusy,
   offersBackupRestore,
 } from '@hilos/core/admin/backup'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   HILOS_TABLE_ACTIONS_KEY,
   formatMoment,
@@ -527,7 +528,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               data-id="hilos-backup-created-at"
             >
               {formatMoment(row.createdAt, { kind: 'dateTime' }) ?? '—'}
-              {isBackupOutOfReach(row) ? (
+              {row.holderNode !== null ? (
                 <>
                   {' '}
                   <span
@@ -535,7 +536,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                     title={formatBackupOutOfReach(row) ?? undefined}
                     data-id={`hilos-backup-holder-${row.id}`}
                   >
-                    {row.holderNode}
+                    {formatHilosNodeLabel(row.holderNode, row.holderNodeName)}
                   </span>
                   <span className="visually-hidden">
                     {formatBackupOutOfReach(row)}

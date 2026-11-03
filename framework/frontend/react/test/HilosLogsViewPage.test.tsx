@@ -479,6 +479,50 @@ describe('HilosLogsViewPage', () => {
 
   afterEach(cleanup)
 
+  it('distinguishes equal node names and follows the selected node id', () => {
+    const { connection, pushCatalog, sent } = makeConnection()
+    const navigator = router({
+      nodeId: 'node-1',
+      source: 'live',
+      stream: 'worker-0.log',
+    })
+    const container = mountPage(connection, {}, navigator)
+    const picture = clusterCatalog()
+    for (const node of picture.nodes) node.nodeName = 'North'
+    picture.nodes[1].streams = picture.nodes[0].streams
+    pushCatalog(picture)
+
+    const select = within(container).getByRole<HTMLSelectElement>('combobox', {
+      name: 'Node',
+    })
+    expect(
+      within(select).getByRole<HTMLOptionElement>('option', {
+        name: 'North (node-1)',
+      }).value,
+    ).toBe('node-1')
+    expect(
+      within(select).getByRole<HTMLOptionElement>('option', {
+        name: 'North (node-2)',
+      }).value,
+    ).toBe('node-2')
+    expect(select.value).toBe('node-1')
+    fireEvent.change(select, { target: { value: 'node-2' } })
+
+    expect(select.value).toBe('node-2')
+    expect(navigator.currentPath.get()).toBe(
+      '/hilos/logs/view/node-2/live/worker-0.log',
+    )
+    expect(sent.at(-1)).toMatchObject({
+      action: LOGS_FOLLOW_START_ACTION,
+      data: {
+        nodeId: 'node-2',
+        stream: 'worker-0.log',
+        level: null,
+        substring: null,
+      },
+    })
+  })
+
   it('waits rather than reporting a fault before any catalog arrives', () => {
     const { connection } = makeConnection()
     const container = mountPage(connection)

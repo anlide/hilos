@@ -282,6 +282,27 @@ function expectReadOnly(): void {
 }
 
 describe('HilosMaintenanceNodesPage', () => {
+  it('keeps named and unknown nodes read only under their stable ids', () => {
+    const { context, dispatch, sendAction } = seededContext([
+      node('node-1', { nodeName: 'North', isLeader: true }),
+      node('node-2', { nodeName: null }),
+    ])
+    context.scopes.session.data.set('adminViewMode', true)
+    releases.push(bindAdminAccess(context.scopes))
+    mountPage(context)
+
+    const named = document.querySelector<HTMLElement>(
+      'table [data-id="hilos-maintenance-nodes-row-node-1"]',
+    )!
+    expect(within(named).getByText('North')).toBeTruthy()
+    expect(within(named).getByText('node-1')).toBeTruthy()
+    expect(cells('node-1').slice(1)).toEqual(['—', 'inactive', 'Leader'])
+    expect(cells('node-2')).toEqual(['node-2', '—', 'inactive', '—'])
+    expectReadOnly()
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(sendAction).not.toHaveBeenCalled()
+  })
+
   it('is the public section entry with the shared head and four named read-only columns', () => {
     expect(exportedPage).toBe(HilosMaintenanceNodesPage)
     const { context } = seededContext([node('node-1')])

@@ -391,6 +391,19 @@ export function HilosDaemonNodePage({
             <div className="col">
               <dl className="bg-body-tertiary rounded p-3 h-100 mb-0">
                 <dt className="small text-body-secondary fw-normal">
+                  Node name
+                </dt>
+                <dd className="small text-break mb-0 mt-2">
+                  {heading?.name ?? '—'}
+                </dd>
+                <dd className="small text-body-secondary mb-0 mt-1">
+                  CLUSTER_NODE_NAME
+                </dd>
+              </dl>
+            </div>
+            <div className="col">
+              <dl className="bg-body-tertiary rounded p-3 h-100 mb-0">
+                <dt className="small text-body-secondary fw-normal">
                   Requires attention
                 </dt>
                 <dd

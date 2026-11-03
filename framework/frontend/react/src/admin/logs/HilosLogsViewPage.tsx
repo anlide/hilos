@@ -52,6 +52,7 @@ import {
   hilosTimeZone,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
 } from '@hilos/core/base'
+import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import type {
   HilosLogViewerAddress,
   HilosLogViewerContext,
@@ -268,7 +269,7 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                 </option>
                 {(catalog?.nodes ?? []).map((entry) => (
                   <option key={entry.nodeId} value={entry.nodeId}>
-                    {entry.nodeId}
+                    {formatHilosNodeLabel(entry.nodeId, entry.nodeName)}
                   </option>
                 ))}
               </select>

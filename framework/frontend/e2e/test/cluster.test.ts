@@ -4,7 +4,11 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { activeClusterAgents, readClusterBrowserStand } from '../cluster.js'
+import {
+  activeClusterAgents,
+  readClusterBrowserStand,
+  readClusterNodeNames,
+} from '../cluster.js'
 
 const nodeNames = {
   m1: 'Главный, узел=🌍',
@@ -12,28 +16,64 @@ const nodeNames = {
   s1: 'Data node',
 }
 
-beforeEach(() => {
-  for (const [key, value] of Object.entries({
-    BASE_URL: 'https://entry.example.test',
-    CLUSTER_LEADER: 'm1',
-    CLUSTER_FOLLOWER: 'm2',
-    CLUSTER_MASTERS: 'm1,m2',
-    CLUSTER_NODE_HOSTS: 'm1=master-one,m2=master-two,s1=slave-one',
-    CLUSTER_NODE_IPS: 'm1=192.0.2.1,m2=192.0.2.2,s1=192.0.2.3',
-    CLUSTER_NODE_NAMES: JSON.stringify(nodeNames),
-    CLUSTER_NODE_LOGS: JSON.stringify({
-      m1: '/logs/m1',
-      m2: '/logs/m2',
-      s1: '/logs/s1',
-    }),
-  })) {
-    vi.stubEnv(key, value)
-  }
-})
-
 afterEach(() => vi.unstubAllEnvs())
 
+describe('cluster node names', () => {
+  beforeEach(() => {
+    for (const key of [
+      'BASE_URL',
+      'CLUSTER_LEADER',
+      'CLUSTER_FOLLOWER',
+      'CLUSTER_MASTERS',
+      'CLUSTER_NODE_HOSTS',
+      'CLUSTER_NODE_IPS',
+      'CLUSTER_NODE_LOGS',
+    ]) {
+      vi.stubEnv(key, undefined)
+    }
+  })
+
+  it('preserves free-text names without other stand variables', () => {
+    vi.stubEnv('CLUSTER_NODE_NAMES', JSON.stringify(nodeNames))
+    expect(readClusterNodeNames()).toEqual(nodeNames)
+  })
+
+  it.each([undefined, '', '   ', '{', 'null', '[]', '{}', '42', '"name"'])(
+    'refuses a missing, malformed or empty name map: %s',
+    (value) => {
+      vi.stubEnv('CLUSTER_NODE_NAMES', value)
+      expect(() => readClusterNodeNames()).toThrow()
+    },
+  )
+
+  it.each([null, 42, '', '   '])('refuses an invalid node name: %s', (name) => {
+    vi.stubEnv('CLUSTER_NODE_NAMES', JSON.stringify({ ...nodeNames, m2: name }))
+    expect(() => readClusterNodeNames()).toThrow(
+      'Invalid cluster node name for m2',
+    )
+  })
+})
+
 describe('cluster browser environment', () => {
+  beforeEach(() => {
+    for (const [key, value] of Object.entries({
+      BASE_URL: 'https://entry.example.test',
+      CLUSTER_LEADER: 'm1',
+      CLUSTER_FOLLOWER: 'm2',
+      CLUSTER_MASTERS: 'm1,m2',
+      CLUSTER_NODE_HOSTS: 'm1=master-one,m2=master-two,s1=slave-one',
+      CLUSTER_NODE_IPS: 'm1=192.0.2.1,m2=192.0.2.2,s1=192.0.2.3',
+      CLUSTER_NODE_NAMES: JSON.stringify(nodeNames),
+      CLUSTER_NODE_LOGS: JSON.stringify({
+        m1: '/logs/m1',
+        m2: '/logs/m2',
+        s1: '/logs/s1',
+      }),
+    })) {
+      vi.stubEnv(key, value)
+    }
+  })
+
   it('preserves free-text names alongside every member address', () => {
     expect(readClusterBrowserStand()).toEqual({
       baseURL: 'https://entry.example.test',

@@ -1,4 +1,4 @@
-import { act, cleanup } from '@testing-library/react'
+import { act, cleanup, within } from '@testing-library/react'
 import { bindAdminAccess, HilosPages, hilosAdminAccess } from '@hilos/core/base'
 import * as core from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -143,6 +143,54 @@ describe('HilosDaemonNodeShell', () => {
     expect(ready.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
       'ready-node',
     )
+  })
+
+  it.each([false, true])(
+    'uses the permitted name for the head, crumb and table with clustered=%s',
+    (clustered) => {
+      const h = nodeHarness({ child: true, page: HilosPages.DAEMON_WORKERS })
+      act(() => h.answer(null, nodeHeading({ name: 'North', clustered })))
+
+      expect(h.view.getByRole('heading', { level: 1 }).textContent).toBe(
+        'North',
+      )
+      expect(
+        h.view
+          .getByRole('navigation', { name: 'Breadcrumb' })
+          .querySelector('[aria-current="page"]')!.textContent,
+      ).toBe('/North')
+      expect(h.view.getByRole('table', { name: 'North' })).not.toBeNull()
+      expect(h.view.getByText('n1').textContent).toBe('n1')
+      expect(node('log')!.getAttribute('href')).toBe('/hilos/logs/view/n1/live')
+      expect(h.send).not.toHaveBeenCalled()
+      expect(h.sendAction).not.toHaveBeenCalled()
+    },
+  )
+
+  it('falls back to the id in the head, crumb and table when the name becomes unknown', () => {
+    const h = nodeHarness({ child: true, page: HilosPages.DAEMON_WORKERS })
+    act(() => h.answer(null, nodeHeading({ name: 'North' })))
+    const table = h.view.getByRole('table', { name: 'North' })
+    const requests = h.sendViewport.mock.calls.length
+    const registrations = h.registerTableWindow.mock.calls.length
+
+    act(() => h.publish({ node: nodeHeading({ name: null }) }))
+
+    expect(h.view.getByRole('heading', { level: 1 }).textContent).toBe('n1')
+    expect(
+      h.view
+        .getByRole('navigation', { name: 'Breadcrumb' })
+        .querySelector('[aria-current="page"]')!.textContent,
+    ).toBe('/n1')
+    expect(h.view.getByRole('table', { name: 'n1' })).toBe(table)
+    expect(el('hilos-page-head')!.textContent).not.toContain('North')
+    expect(
+      within(el('hilos-page-head-block')!).getAllByText('n1', { exact: true }),
+    ).toHaveLength(1)
+    expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+    expect(h.registerTableWindow).toHaveBeenCalledTimes(registrations)
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
   })
 
   it.each(nodeTabs)(
@@ -489,7 +537,8 @@ describe('HilosDaemonNodeShell', () => {
 
   it('updates addressed links and releases the name on switch, clear and unmount', () => {
     const h = nodeHarness()
-    act(() => h.answer())
+    act(() => h.answer(nodeOverview(), nodeHeading({ name: 'North' })))
+    expect(text('h1')).toEqual(['North'])
     expect(node('log')!.getAttribute('href')).toBe('/hilos/logs/view/n1/live')
     act(() =>
       h.router.navigate(
@@ -499,8 +548,19 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.router.pageIdentity.get()).toBeUndefined()
     expect(document.querySelector('h1')).toBeNull()
     expect(node('overview')).toBeNull()
-    act(() => h.answer(nodeOverview({ nodeId: 'n2' })))
-    expect(text('h1')).toEqual(['n2'])
+    expect(document.body.textContent).not.toContain('North')
+    act(() =>
+      h.answer(
+        nodeOverview({ nodeId: 'n1' }),
+        nodeHeading({ name: 'Wrong node' }),
+      ),
+    )
+    expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Node')
+    expect(el('hilos-page-head')!.textContent).not.toContain('Wrong node')
+    act(() =>
+      h.answer(nodeOverview({ nodeId: 'n2' }), nodeHeading({ name: 'East' })),
+    )
+    expect(text('h1')).toEqual(['East'])
     expect(node('log')!.getAttribute('href')).toBe('/hilos/logs/view/n2/live')
     expect(el('hilos-daemon-environment-link')!.getAttribute('href')).toBe(
       '/hilos/daemon/n2/env',
@@ -508,7 +568,17 @@ describe('HilosDaemonNodeShell', () => {
     act(() => h.scopes.openPage(HilosPages.DAEMON_NODE))
     expect(document.querySelector('h1')).toBeNull()
     expect(node('overview')).toBeNull()
-    act(() => h.answer(nodeOverview({ nodeId: 'n2' })))
+    expect(document.body.textContent).not.toContain('East')
+    act(() =>
+      h.answer(nodeOverview({ nodeId: 'n2' }), nodeHeading({ name: 'East' })),
+    )
+    act(() => h.scopes.openPage(HilosPages.DAEMON))
+    expect(document.querySelector('h1')).toBeNull()
+    expect(document.body.textContent).not.toContain('East')
+    act(() => h.scopes.openPage(HilosPages.DAEMON_NODE))
+    act(() =>
+      h.answer(nodeOverview({ nodeId: 'n2' }), nodeHeading({ name: 'East' })),
+    )
     h.view.unmount()
     expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Node')
     expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe('Node')
@@ -516,13 +586,16 @@ describe('HilosDaemonNodeShell', () => {
 
   it('inherits the real outlet refusal and recovery without retaining the previous head', async () => {
     const h = nodeHarness({ outlet: true })
-    await act(async () => h.answer())
-    expect(text('h1')).toEqual(['n1'])
+    await act(async () =>
+      h.answer(nodeOverview(), nodeHeading({ name: 'North' })),
+    )
+    expect(text('h1')).toEqual(['North'])
     await act(async () => h.refuse())
     expect(document.body.textContent).toContain('This page is closed.')
     expect(el('hilos-page-head')).toBeNull()
     expect(node('overview')).toBeNull()
     expect(h.router.pageIdentity.get()).toBeUndefined()
+    expect(document.body.textContent).not.toContain('North')
     await act(async () => h.answer(nodeOverview({ uptimeMinutes: 126 })))
     expect(text('h1')).toEqual(['n1'])
     expect(el('hilos-daemon-uptime')!.textContent).toBe('2 h 6 min')
@@ -601,13 +674,13 @@ describe('HilosDaemonNodeShell', () => {
     }
   })
 
-  it('keeps a child table’s window, expansion and mount through live heading updates', () => {
+  it('keeps a child table’s window, expansion and focus through name-only and clock updates', () => {
     const h = nodeHarness({
       shell: true,
       workers: true,
       page: HilosPages.DAEMON_WORKERS,
     })
-    act(() => h.answer(null))
+    act(() => h.answer(null, nodeHeading({ name: 'North' })))
     const rows = [
       {
         rowKey: 'regular:0',
@@ -667,9 +740,24 @@ describe('HilosDaemonNodeShell', () => {
       'button[aria-expanded="true"]',
     )!
     detailToggle.focus()
+    act(() => h.publish({ node: nodeHeading({ name: 'South' }) }))
+    expect(h.view.getByRole('heading', { level: 1 }).textContent).toBe('South')
+    expect(
+      h.view
+        .getByRole('navigation', { name: 'Breadcrumb' })
+        .querySelector('[aria-current="page"]')!.textContent,
+    ).toBe('/South')
+    expect(h.view.getByRole('table', { name: 'South' })).toBe(table)
+    expect(document.activeElement).toBe(detailToggle)
+    expect(h.workers!.controller.rows.get()).toBe(window)
+    expect(h.workers!.controller.descriptor()).toEqual(descriptor)
+    expect(el('hilos-table-row-detail-regular:0')).not.toBeNull()
+    expect(h.sendViewport).toHaveBeenCalledTimes(requests)
+    expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
     act(() =>
       h.publish({
         node: nodeHeading({
+          name: 'South',
           state: 'leader',
           clock: {
             reference: false,
@@ -686,7 +774,9 @@ describe('HilosDaemonNodeShell', () => {
     )
     expect(document.activeElement).toBe(detailToggle)
     act(() =>
-      h.publish({ node: nodeHeading({ state: 'leader', clock: null }) }),
+      h.publish({
+        node: nodeHeading({ name: 'South', state: 'leader', clock: null }),
+      }),
     )
     expect(el('hilos-daemon-node-clock-warning')).toBeNull()
     expect(document.activeElement).toBe(detailToggle)
@@ -696,7 +786,9 @@ describe('HilosDaemonNodeShell', () => {
     expect(el('hilos-table-row-detail-regular:0')).not.toBeNull()
     expect(h.sendViewport).toHaveBeenCalledTimes(requests)
     expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
-    expect(text('h1')).toEqual(['n1'])
+    expect(text('h1')).toEqual(['South'])
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
   })
 })
 
