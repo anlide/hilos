@@ -66,6 +66,7 @@ import {
   expectProfileHeadAccessibility,
   watchProfileRenameStatus,
   expectProfileTimeZone,
+  expectTimeZoneEnvironment,
   expectStatusWorksAccessibility,
   expectStatusWorkScheduleDialog,
   STATUS_COMPONENTS_PATH,
@@ -726,13 +727,23 @@ test('the profile name dialog exposes accessible focus and dirty-close behavior'
 })
 
 test.describe('Profile time zone accessibility', () => {
-  test.use({ timezoneId: 'Europe/Warsaw', colorScheme: 'light' })
+  test.use({ timezoneId: 'Asia/Bahrain', colorScheme: 'light' })
 
   test('names the picker, supports keyboard search, choice and Close, and returns focus', async ({
     page,
   }) => {
-    await createTestUser(expect, page)
-    await gotoPage(expect, page, '/profile')
+    const frames: SocketFrame[] = []
+    const observer = watchSocketFrames(page, (frame) => frames.push(frame))
+    try {
+      await createTestUser(expect, page)
+      await gotoPage(expect, page, '/profile')
+      await expectTimeZoneEnvironment(expect, page, frames, {
+        browserTimeZone: 'Asia/Bahrain',
+        projectTimeZone: 'Europe/Warsaw',
+      })
+    } finally {
+      observer.stop()
+    }
     const opener = page.getByTestId('profile-time-zone-change')
     await expect(opener).toHaveAccessibleName('Change')
     await opener.focus()
@@ -748,9 +759,9 @@ test.describe('Profile time zone accessibility', () => {
     const automatic = page.getByTestId('profile-time-zone-automatic')
     await expect(automatic).toHaveAttribute('aria-current', 'true')
     await expect(automatic).toContainText('Automatic')
-    await expect(automatic).toContainText('Europe/Warsaw — from this browser')
+    await expect(automatic).toContainText('Asia/Bahrain — from this browser')
     await expect(page.getByTestId('profile-time-zone')).toHaveText(
-      'Europe/Warsaw · automatic',
+      'Asia/Bahrain · automatic',
     )
 
     await typeInto(search, 'new york')
@@ -765,7 +776,7 @@ test.describe('Profile time zone accessibility', () => {
       expect,
       page,
       'America/New_York',
-      'Europe/Warsaw',
+      'Asia/Bahrain',
     )
 
     await opener.press('Enter')

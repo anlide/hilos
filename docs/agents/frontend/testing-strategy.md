@@ -359,6 +359,89 @@ server path. One leaf's 1440/375 × light/dark matrix grew chat-e2e from 180 to
 406 tests and from ~14 to ~26 minutes (HIL-1749), and chat-e2e is the floor of
 the full run.
 
+### Explicit browser time zones
+
+Every new or edited e2e scenario runs with an **explicit, fixed IANA browser
+time zone**, different from UTC and the stand's effective project time zone.
+Compare canonical identities: another alias of UTC or of the project zone is
+still the same zone. Keep an existing explicit zone that already meets the
+rule and the scenario's behavioral preconditions; changing a spec does not
+require drawing its suitable zones again.
+
+Draw a new or replacement browser zone **once, while writing the test**, with
+the demo's `test:e2e-time-zone` Composer command. All six demos provide it;
+`binance-btc-tracker` and `online-testing` also provide
+`test:cluster:e2e-time-zone` for their cluster browser entries. Use the command
+for the same stand the scenario runs on. From the repository root, for example:
+
+```bash
+composer -d demo/chat run test:e2e-time-zone -- --count 2 \
+  --exclude Europe/Kyiv --exclude Asia/Tokyo
+composer -d demo/binance-btc-tracker run test:cluster:e2e-time-zone -- --count 1
+```
+
+`--count N` asks for N different zones and defaults to 1. Repeat `--exclude IANA`
+for roles already saved in the scenario, including a person's chosen zone, so
+those roles can stay as they are. The generator draws without replacement using
+`node:crypto`'s `randomInt`; exclusions and distinctness include equivalent IANA
+aliases. Copy the returned names into literals in `use.timezoneId`, `test.use`
+or explicit context options. This is real randomness at authoring time; the
+committed literal stays unchanged on every run and retry. Do not import the
+generator into a config or call it from `globalSetup` or a test run. Do not add
+a time-zone matrix or randomize zones at runtime. A zone literal is test data,
+not a reason to introduce a product constant.
+
+The command reads metadata through the project's Hilos facade in the selected
+stand's **application service**, with a PHP entrypoint and `--no-deps`.
+`EntrypointPrelude::initEnvironment` reads that service's process environment,
+`tests/.env` and environment catalog at `/app`; the metadata contains only
+`projectTimeZone` and PHP's IANA names. The Node step runs in that stand's e2e
+runner and opens blank Chromium to intersect its actual supported names with
+PHP's catalog, excluding UTC, the project zone and `--exclude` roles. Do not
+infer the project zone from `.env.example`, the host or the e2e runner's own
+environment. The commands use the already installed test environment; they do
+not install dependencies, visit the product, start its daemon or require a DB.
+
+On success stdout contains exactly N IANA names, one per line; diagnostics and
+instructions use stderr. Invalid arguments or metadata, an unsupported zone,
+too few distinct candidates, or PHP/Chromium failure produce a nonzero exit
+without a partial list or fallback. The PHP metadata is validated even for
+`--help`, so a failed first step cannot look like a successful pipeline;
+`--help` itself needs neither Chromium nor a running daemon.
+
+An explicit config `use.timezoneId` covers contexts that inherit it. In the
+pinned Playwright Test 1.60.0, combined `use` options fill **absent keys**, also
+for `browser.newContext()` and `browser.newPage()`. An explicit override wins;
+`timezoneId: undefined` is a present key and does not inherit the default.
+Do not duplicate the config literal at every context creation. A scenario with
+an explicit browser role can use the toolbox's `timeZoneContextOptions` while
+preserving its other context options and session isolation. Chromium launched
+outside Playwright Test has no such inheritance: set the explicit zone at that
+entry itself.
+
+In a scenario about browser, project and a person's own time zones, keep those
+roles distinct. A person's pick through the profile is a separate role from
+the browser's `timezoneId`; preserve a suitable existing pick. Different zone
+names alone do not prove different displayed times or calendar days. Keep a
+fixture that makes the result the scenario asserts distinguishable for the
+chosen zones. If the draw fails that precondition, draw again manually while
+authoring, then save the final literal. Calculate time expectations with the
+toolbox's independent `Intl` oracle from the original UTC timestamps and the
+expected zone, never from the DOM result being checked. Preserve useful actions,
+records, isolated sessions, Automatic and reload checks; fix UTC assumptions in
+expectations without weakening the proof or changing the product's formatter,
+the stand's project zone or the Node unit process's zone.
+
+For time-zone journeys, use `expectTimeZoneEnvironment` from the shared toolbox
+with browser and project zones named by the spec in advance. It checks the
+original welcome's `projectTimeZone`, rejects decoder failures, reads real
+browser `Intl`, and refuses a browser zone equal to UTC or the project zone,
+including aliases. Do not derive the expected project zone from that same
+welcome, or rewrite the welcome to pass the check. This existing runtime check
+does not call for a new static time-zone guard. A cold public Status scenario
+whose subject is reading without a daemon or connection does not open a socket
+just to run this helper.
+
 ### Which demo carries a spec — the server check travels, the product stays home
 
 A spec whose screen only leads the scenario while what it checks is the

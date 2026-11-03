@@ -11,6 +11,7 @@ import {
   expectDataFreeDeparture,
   expectMaintenancePageHead,
   expectPageReady,
+  expectTimeZoneEnvironment,
   leaveSecondAdmin,
   shownByTestId,
   watchDeliveryFrames,
@@ -195,15 +196,15 @@ async function createNamedBackup(page: Page): Promise<string> {
 }
 
 test.describe('backup moments and Period in the reader zone', () => {
-  test.use({ timezoneId: 'Europe/Warsaw', locale: 'en-GB' })
+  test.use({ timezoneId: 'Europe/Gibraltar', locale: 'en-GB' })
 
   test('keeps real UTC moments and reads a legacy offset sidecar into each visible calendar day', async ({
     page,
     browser,
   }) => {
     test.slow() // A real dump, two readers and four complete Period round trips.
-    const warsaw = watchDeliveryFrames(page)
-    const warsawWindow = await watchTableSearch(page, {
+    const firstReader = watchDeliveryFrames(page)
+    const firstWindow = await watchTableSearch(page, {
       page: 'hilos_backup',
       tableKey: 'hilosBackups',
     })
@@ -225,16 +226,34 @@ test.describe('backup moments and Period in the reader zone', () => {
       Awaited<ReturnType<typeof createLegacyBackupFixture>> | undefined
     try {
       await openBackups(page)
+      await expectTimeZoneEnvironment(
+        expect,
+        page,
+        firstReader.packets.flatMap((packet) => packet.frames),
+        {
+          browserTimeZone: 'Europe/Gibraltar',
+          projectTimeZone: 'Europe/Warsaw',
+        },
+      )
       sourceId = await createNamedBackup(page)
       await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
       const actual = await expectBackupMoments(
         expect,
         page,
-        warsaw,
+        firstReader,
         sourceId,
-        'Europe/Warsaw',
+        'Europe/Gibraltar',
       )
       await openBackups(other)
+      await expectTimeZoneEnvironment(
+        expect,
+        other,
+        losAngeles.packets.flatMap((packet) => packet.frames),
+        {
+          browserTimeZone: 'America/Los_Angeles',
+          projectTimeZone: 'Europe/Warsaw',
+        },
+      )
       expect(
         await expectBackupMoments(
           expect,
@@ -273,7 +292,7 @@ test.describe('backup moments and Period in the reader zone', () => {
       await gotoPage(expect, page, '/hilos/backup', PAGE_READY)
       await gotoPage(expect, other, '/hilos/backup', PAGE_READY)
       for (const [reader, log, zone] of [
-        [page, warsaw, 'Europe/Warsaw'],
+        [page, firstReader, 'Europe/Gibraltar'],
         [other, losAngeles, 'America/Los_Angeles'],
       ] as const) {
         expect(
@@ -284,7 +303,7 @@ test.describe('backup moments and Period in the reader zone', () => {
       expect(await fixture.read()).toBe(fixture.beforePublish)
 
       for (const [reader, windows, timeZone, visibleDay] of [
-        [page, warsawWindow, 'Europe/Warsaw', '2026-01-01'],
+        [page, firstWindow, 'Europe/Gibraltar', '2026-01-01'],
         [other, otherWindow, 'America/Los_Angeles', '2025-12-31'],
       ] as const) {
         await reader.getByTestId('hilos-table-filter-from').click()
@@ -321,11 +340,11 @@ test.describe('backup moments and Period in the reader zone', () => {
             await deleteBackup(page, `hilos-table-row-${sourceId}`)
           }
         } finally {
-          warsaw.stop()
+          firstReader.stop()
           losAngeles.stop()
           await otherContext.close()
           await test.info().attach('backup-reader-zone-transport', {
-            body: JSON.stringify({ warsaw, losAngeles }, null, 2),
+            body: JSON.stringify({ firstReader, losAngeles }, null, 2),
             contentType: 'application/json',
           })
         }

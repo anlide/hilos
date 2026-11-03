@@ -838,7 +838,7 @@ test(
       baseURL,
       ignoreHTTPSErrors: true,
       colorScheme: 'light',
-      timezoneId: 'Europe/Warsaw',
+      timezoneId: 'Africa/Nairobi',
     })
     const coldContext = await browser.newContext({
       baseURL,

@@ -29,6 +29,7 @@ export default defineConfig({
   ],
   use: {
     baseURL,
+    timezoneId: 'Pacific/Guadalcanal',
     actionTimeout: timeouts.action,
     navigationTimeout: timeouts.navigation,
     ignoreHTTPSErrors: true,

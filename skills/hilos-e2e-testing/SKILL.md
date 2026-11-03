@@ -29,6 +29,9 @@ use `$hilos-testing-cli`.
   accessibility and geometry exceptions.
 - Before writing or reviewing literals in e2e specs or shared helpers:
   `docs/agents/code-style/magic-values.md`, "Tests".
+- Before choosing or reviewing a browser time zone:
+  [Explicit browser time zones](../../docs/agents/frontend/testing-strategy.md#explicit-browser-time-zones)
+  — fixed literals, the authoring command and inherited context defaults.
 - The demo-local Playwright `test` entry, its adaptive overall test cap and
   extension log: `docs/agents/frontend/testing-strategy.md`, "The shared
   toolbox" and "Timeouts come from the host, not from the lanes". The individual
@@ -90,6 +93,9 @@ use `$hilos-testing-cli`.
    viewport, no check of what only a narrow screen draws. Only the theme
    feature's own specs choose dark, to prove the pick:
    `docs/agents/frontend/testing-strategy.md`, "Light theme, desktop width".
+   Check the explicit, fixed browser time zone too; use the demo's authoring
+   command for a new or replacement literal and preserve suitable saved roles:
+   [Explicit browser time zones](../../docs/agents/frontend/testing-strategy.md#explicit-browser-time-zones).
 5. Before driving code or a move/split/port, inspect both toolbox homes above
    and use the existing calls. A moved spec changes imports and product
    composition; it does not copy helpers. A demo's `tests/e2e/helpers/` keeps
@@ -174,6 +180,9 @@ use `$hilos-testing-cli`.
 - Run every test in the light theme at the desktop width: never narrow the
   viewport and never repeat or check a screen in the dark theme. Only the theme
   feature's own specs choose dark, to prove the pick.
+- Keep an explicit, fixed browser zone distinct from UTC and the project zone;
+  draw new literals with the authoring command, never during test runs. Follow
+  [Explicit browser time zones](../../docs/agents/frontend/testing-strategy.md#explicit-browser-time-zones).
 - A spec of a demo's own product or of the stand carries
   `// spec-owner: demo|stand — <why>`; a framework spec carries none.
 - Select actions by stable `data-id`; find the page h1 by role. Do not assert

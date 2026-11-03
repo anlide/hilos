@@ -70,6 +70,47 @@ describe('expectTimeZoneEnvironment', () => {
     ).resolves.toBeUndefined()
   })
 
+  it('refuses identical browser and project zones', async () => {
+    await expect(
+      expectTimeZoneEnvironment(
+        checks,
+        browser('Europe/Warsaw'),
+        read(welcome('Europe/Warsaw')),
+        {
+          browserTimeZone: 'Europe/Warsaw',
+          projectTimeZone: 'Europe/Warsaw',
+        },
+      ),
+    ).rejects.toThrow()
+  })
+
+  it('refuses browser and project aliases of the same canonical zone', async () => {
+    await expect(
+      expectTimeZoneEnvironment(
+        checks,
+        browser('America/New_York'),
+        read(welcome('US/Eastern')),
+        {
+          browserTimeZone: 'America/New_York',
+          projectTimeZone: 'US/Eastern',
+        },
+      ),
+    ).rejects.toThrow()
+  })
+
+  it('refuses UTC and its aliases beside a different project zone', async () => {
+    for (const browserTimeZone of ['UTC', 'Etc/UTC', 'Etc/GMT']) {
+      await expect(
+        expectTimeZoneEnvironment(
+          checks,
+          browser(browserTimeZone),
+          read(welcome('Europe/Warsaw')),
+          { browserTimeZone, projectTimeZone: 'Europe/Warsaw' },
+        ),
+      ).rejects.toThrow()
+    }
+  })
+
   it('refuses a welcome whose project zone is not the one the spec expects', async () => {
     const frames = read(welcome('UTC'), pageReply)
     await expect(

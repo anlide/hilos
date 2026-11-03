@@ -46,7 +46,7 @@ test('prepare an accepted public archive through real loss, publication and reso
     baseURL,
     ignoreHTTPSErrors: true,
     colorScheme: 'light',
-    timezoneId: 'Europe/Warsaw',
+    timezoneId: 'Europe/Saratov',
   })
   const guest = await context.newPage()
   const workers = await page.context().newPage()

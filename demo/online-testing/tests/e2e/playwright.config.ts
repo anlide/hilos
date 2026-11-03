@@ -34,6 +34,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: process.env.BASE_URL ?? 'https://localhost:8158',
+    timezoneId: 'Asia/Magadan',
     actionTimeout: timeouts.action,
     navigationTimeout: timeouts.navigation,
     // The test nginx generates a self-signed certificate on first start.

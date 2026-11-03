@@ -83,6 +83,7 @@
         "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm binance-btc-tracker-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build\"",
         "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm binance-btc-tracker-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
         "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm binance-btc-tracker-e2e-runner npm run check",
+        "test:e2e-time-zone": "docker compose -f docker/docker-compose.test.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint php binance-btc-tracker-daemon-test /hilos/framework/frontend/scripts/e2e-time-zone-env.php 'Demo\\BinanceBtcTracker\\Hilos' | docker compose -f docker/docker-compose.test.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint node binance-btc-tracker-e2e-runner /hilos/framework/frontend/scripts/e2e-time-zone.mjs",
         "test:e2e-up": [
             "@test:up",
             "@test:db-prepare",
@@ -121,6 +122,7 @@
         "test:cluster:status": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml status",
         "test:cluster:scenarios": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml scenarios",
         "test:cluster:e2e": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml e2e",
+        "test:cluster:e2e-time-zone": "docker compose -f docker/docker-compose.cluster.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint php binance-btc-tracker-cluster-m1 /hilos/framework/frontend/scripts/e2e-time-zone-env.php 'Demo\\BinanceBtcTracker\\Hilos' | docker compose -f docker/docker-compose.cluster.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint node binance-btc-tracker-cluster-e2e-runner /hilos/framework/frontend/scripts/e2e-time-zone.mjs",
         "test:cluster:restart": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml restart",
         "test:cluster:inspect": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml inspect",
         "test:cluster:logs": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml logs",

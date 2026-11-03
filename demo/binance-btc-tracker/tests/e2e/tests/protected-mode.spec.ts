@@ -19,6 +19,7 @@ import {
   expectMaintenanceMoment,
   expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
+  expectTimeZoneEnvironment,
   issueMaintenanceCode,
   maintenanceCircleOnline,
   maintenanceCircleRow,
@@ -123,15 +124,15 @@ test.afterEach(async ({ page }) => {
 })
 
 test.describe('maintenance moments in the reader zone', () => {
-  test.use({ timezoneId: 'Europe/Warsaw', locale: 'en-GB' })
+  test.use({ timezoneId: 'America/Detroit', locale: 'en-GB' })
 
   for (const manual of [true, false]) {
-    test(`shows the same real start in Warsaw and Los Angeles (manual=${manual})`, async ({
+    test(`shows the same real start in Detroit and Los Angeles (manual=${manual})`, async ({
       page,
       browser,
     }) => {
       test.slow() // Two real administrators pass the gate and await both self-reloads.
-      const warsaw = watchDeliveryFrames(page)
+      const firstReader = watchDeliveryFrames(page)
       const { baseURL, ignoreHTTPSErrors } = test.info().project.use
       const otherContext = await browser.newContext({
         baseURL,
@@ -148,6 +149,17 @@ test.describe('maintenance moments in the reader zone', () => {
         await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
         await grantAdminToSelf(expect, other)
         await gotoPage(expect, other, MAINTENANCE_PATH, PAGE_READY)
+        for (const [reader, log, browserTimeZone] of [
+          [page, firstReader, 'America/Detroit'],
+          [other, losAngeles, 'America/Los_Angeles'],
+        ] as const) {
+          await expectTimeZoneEnvironment(
+            expect,
+            reader,
+            log.packets.flatMap((packet) => packet.frames),
+            { browserTimeZone, projectTimeZone: 'Europe/Warsaw' },
+          )
+        }
         if (manual) {
           await turnOnMaintenance(page)
           await expectManualMaintenanceOn(expect, page)
@@ -166,8 +178,8 @@ test.describe('maintenance moments in the reader zone', () => {
         const start = await expectMaintenanceMoment(
           expect,
           page,
-          warsaw,
-          'Europe/Warsaw',
+          firstReader,
+          'America/Detroit',
           manual,
         )
         expect(
@@ -200,11 +212,11 @@ test.describe('maintenance moments in the reader zone', () => {
         try {
           await openProtectedModeIfAny()
           await test.info().attach(`maintenance-reader-zone-${manual}`, {
-            body: JSON.stringify({ warsaw, losAngeles }, null, 2),
+            body: JSON.stringify({ firstReader, losAngeles }, null, 2),
             contentType: 'application/json',
           })
         } finally {
-          warsaw.stop()
+          firstReader.stop()
           losAngeles.stop()
           await otherContext.close()
         }

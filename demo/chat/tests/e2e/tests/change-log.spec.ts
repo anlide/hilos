@@ -19,6 +19,7 @@ import {
   expectChangeLogReceiptOpen,
   expectChangeLogReceiptMoment,
   expectChangeLogTimes,
+  expectTimeZoneEnvironment,
   expectChangeLogValues,
   expectRegistrationFeedRow,
   expectRegistrationHistory,
@@ -292,7 +293,7 @@ test('its registration receipt shows person and identity creation as facts witho
 })
 
 test.describe('Change Log reader time zone', () => {
-  test.use({ timezoneId: 'UTC' })
+  test.use({ timezoneId: 'Indian/Kerguelen' })
 
   test('renders the delivered own zone and returns the same receipt and feed to Automatic', async ({
     page,
@@ -303,6 +304,10 @@ test.describe('Change Log reader time zone', () => {
     try {
       const userId = await signUpAdmin(expect, page, {
         entryId: 'message-signin',
+      })
+      await expectTimeZoneEnvironment(expect, page, socket.frames, {
+        browserTimeZone: 'Indian/Kerguelen',
+        projectTimeZone: 'UTC',
       })
       await gotoPage(
         expect,
@@ -344,7 +349,7 @@ test.describe('Change Log reader time zone', () => {
         page,
         receiptId,
         createdAt,
-        'UTC',
+        'Indian/Kerguelen',
       )
       expect(automaticTime).not.toBe(ownTime)
       expect(socket.sessions.at(-1)).toMatchObject({

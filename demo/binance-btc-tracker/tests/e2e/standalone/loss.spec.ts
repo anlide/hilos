@@ -33,7 +33,7 @@ import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 const expect = baseExpect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
 const STATUS_DISK_HEARTBEAT = new URL('heartbeat.json', STATUS_DISK)
 
-test.use({ colorScheme: 'light', timezoneId: 'Europe/Warsaw' })
+test.use({ colorScheme: 'light', timezoneId: 'Europe/Saratov' })
 
 test('full daemon stop keeps nginx Status readable, stale and cold, then recovers from real facts', async ({
   page,
@@ -53,7 +53,7 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     baseURL,
     ignoreHTTPSErrors: true,
     colorScheme: 'light',
-    timezoneId: 'Europe/Warsaw',
+    timezoneId: 'Europe/Saratov',
   })
   const guest = await context.newPage()
   // The owner's own view of source health, apart from both public readers.

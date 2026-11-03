@@ -25,6 +25,7 @@ export default defineConfig({
   ],
   use: {
     baseURL,
+    timezoneId: 'America/Tijuana',
     actionTimeout: timeouts.action,
     navigationTimeout: timeouts.navigation,
     ignoreHTTPSErrors: true,

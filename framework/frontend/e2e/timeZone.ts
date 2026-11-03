@@ -11,18 +11,19 @@ const UNAVAILABLE_ROW_TEXT = 'Unavailable in this browser'
  * Context options for a scenario that opens its own browser context in one
  * explicit time zone, besides the test's own page.
  *
- * A context made off the `browser` fixture inherits none of the project's `use`
- * options — not the stand's `baseURL`, not the tolerance for its self-signed
- * certificate, not the locale or viewport — so the caller hands them in from
- * `test.info().project.use` and this helper keeps every one of them. On top it
- * sets the explicit zone and the light theme, the only palette e2e runs in
+ * Playwright Test fills absent context options from the combined `use` options,
+ * including for `browser.newContext` and `browser.newPage`. Explicit keys win,
+ * even when their value is undefined. This helper keeps the options the caller
+ * hands in from `test.info().project.use` and sets the explicit zone and light
+ * theme, the only palette e2e runs in
  * (`docs/agents/frontend/testing-strategy.md`, "Light theme, desktop width").
+ * A browser launched outside Playwright Test has no such inherited defaults.
  *
  * The scenario calls `browser.newContext` itself, signs in there and closes
  * the context: two independently signed-in sessions are two people, so no
  * cookies or storage state travel from one context to the other.
  *
- * @param options The project's `use` options the new context would otherwise lose.
+ * @param options The project's `use` options to preserve in the explicit options.
  * @param timeZone The IANA zone the browser of that context reports.
  */
 export function timeZoneContextOptions(
@@ -43,7 +44,8 @@ export interface TimeZoneEnvironment {
 /**
  * Prove the two zones a time-zone scenario stands on: the browser reports the
  * one its context was given, and every welcome the daemon sent names the
- * project zone the spec expects.
+ * project zone the spec expects. The browser zone differs from the project
+ * zone and UTC, comparing canonical identities so aliases do not hide equality.
  *
  * Both expectations come from the spec, never from the evidence itself: the
  * project zone is read back from the original welcome and compared with what the
@@ -74,6 +76,14 @@ export async function expectTimeZoneEnvironment(
       deliveryObject(deliveryObject(frame.wire).data).projectTimeZone,
     ).toBe(environment.projectTimeZone)
   }
+  const browserTimeZone = new Intl.DateTimeFormat('en', {
+    timeZone: environment.browserTimeZone,
+  }).resolvedOptions().timeZone
+  const projectTimeZone = new Intl.DateTimeFormat('en', {
+    timeZone: environment.projectTimeZone,
+  }).resolvedOptions().timeZone
+  expect(browserTimeZone).not.toBe(projectTimeZone)
+  expect(browserTimeZone).not.toBe('UTC')
   expect(
     await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
   ).toBe(environment.browserTimeZone)

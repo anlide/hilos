@@ -11,6 +11,7 @@ import {
   expectProfileTimeZone,
   expectProfileTimeZoneCatalog,
   expectProfileTimeZoneSearch,
+  expectTimeZoneEnvironment,
   expectWelcomedSockets,
   gotoPage,
   isSessionCookie,
@@ -26,7 +27,7 @@ import {
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-test.use({ timezoneId: 'Europe/Warsaw', colorScheme: 'light' })
+test.use({ timezoneId: 'America/Kralendijk', colorScheme: 'light' })
 
 test('fans New York and Automatic choices out to independent sessions, keeps the receiving search and persists each choice', async ({
   browser,
@@ -40,9 +41,13 @@ test('fans New York and Automatic choices out to independent sessions, keeps the
   try {
     const person = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
+    await expectTimeZoneEnvironment(expect, page, frames, {
+      browserTimeZone: 'America/Kralendijk',
+      projectTimeZone: 'Europe/Warsaw',
+    })
     await test.step('The real profile reply delivers the catalog and the automatic browser zone', async () => {
       await expectProfileTimeZoneCatalog(expect, frames)
-      await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+      await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
     })
 
     await test.step('The picker searches the delivered catalog without asking for it again', async () => {
@@ -83,7 +88,7 @@ test('fans New York and Automatic choices out to independent sessions, keeps the
     const otherPerson = await createTestUser(expect, stranger)
     expect(otherPerson.userId).not.toBe(person.userId)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
-    await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+    await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
     await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo')
     await openProfileTimeZone(expect, stranger)
     await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
@@ -127,7 +132,7 @@ test('fans New York and Automatic choices out to independent sessions, keeps the
           expect,
           page,
           'America/New_York',
-          'Europe/Warsaw',
+          'America/Kralendijk',
         )
         await expectProfileTimeZone(
           expect,
@@ -151,14 +156,14 @@ test('fans New York and Automatic choices out to independent sessions, keeps the
         expect,
         page,
         'America/New_York',
-        'Europe/Warsaw',
+        'America/Kralendijk',
       )
     })
 
     await inPlace(() =>
       test.step('Automatic returns every window to its own browser zone', async () => {
         await chooseProfileTimeZone(expect, page, null)
-        await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+        await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
         await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo', false)
         await expect(
           second.getByTestId('profile-time-zone-modal'),
@@ -178,7 +183,7 @@ test('fans New York and Automatic choices out to independent sessions, keeps the
     await test.step('Automatic persists through a reload of each window', async () => {
       await page.reload()
       await expectPageReady(expect, page)
-      await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+      await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
       await second.reload()
       await expectPageReady(expect, second)
       await expectProfileTimeZone(expect, second, null, 'Asia/Tokyo')
@@ -201,6 +206,10 @@ test('reformats real session and tab milliseconds while retaining the device bro
   const socket = watchSocketFrames(sessionsPage, (frame) => frames.push(frame))
   try {
     await gotoPage(expect, sessionsPage, '/profile/sessions', PAGE_READY)
+    await expectTimeZoneEnvironment(expect, sessionsPage, frames, {
+      browserTimeZone: 'America/Kralendijk',
+      projectTimeZone: 'Europe/Warsaw',
+    })
     await expect.poll(() => profileSessionSnapshot(frames)).toBeDefined()
     const snapshot = profileSessionSnapshot(frames)!
     const self = deliveryObject(
@@ -212,7 +221,7 @@ test('reformats real session and tab milliseconds while retaining the device bro
       expect,
       sessionsPage,
       snapshot,
-      'Europe/Warsaw',
+      'America/Kralendijk',
       self.acceptKey as string,
       2,
     )
@@ -220,7 +229,12 @@ test('reformats real session and tab milliseconds while retaining the device bro
     const socketCount = socket.sockets()
     try {
       await chooseProfileTimeZone(expect, page, 'Asia/Tokyo')
-      await expectProfileTimeZone(expect, page, 'Asia/Tokyo', 'Europe/Warsaw')
+      await expectProfileTimeZone(
+        expect,
+        page,
+        'Asia/Tokyo',
+        'America/Kralendijk',
+      )
       await expectProfileSessionMoments(
         expect,
         sessionsPage,
@@ -228,15 +242,15 @@ test('reformats real session and tab milliseconds while retaining the device bro
         'Asia/Tokyo',
         self.acceptKey as string,
         2,
-        'Europe/Warsaw',
+        'America/Kralendijk',
       )
       await chooseProfileTimeZone(expect, page, null)
-      await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+      await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
       await expectProfileSessionMoments(
         expect,
         sessionsPage,
         snapshot,
-        'Europe/Warsaw',
+        'America/Kralendijk',
         self.acceptKey as string,
         2,
       )

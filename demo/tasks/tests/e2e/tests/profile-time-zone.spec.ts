@@ -10,6 +10,7 @@ import {
   expectProfileTimeZone,
   expectProfileTimeZoneCatalog,
   expectProfileTimeZoneSearch,
+  expectTimeZoneEnvironment,
   expectWelcomedSockets,
   gotoPage,
   isSessionCookie,
@@ -24,7 +25,7 @@ import {
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-test.use({ timezoneId: 'Europe/Warsaw', colorScheme: 'light' })
+test.use({ timezoneId: 'America/Paramaribo', colorScheme: 'light' })
 
 test('fans real Tokyo and Automatic choices out to independent sessions, keeps the receiving search and persists each choice', async ({
   browser,
@@ -42,9 +43,13 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
   try {
     const person = await createTestUser(expect, page)
     await gotoPage(expect, page, '/profile', PAGE_READY)
+    await expectTimeZoneEnvironment(expect, page, frames, {
+      browserTimeZone: 'America/Paramaribo',
+      projectTimeZone: 'Europe/Warsaw',
+    })
     await test.step('The real profile reply delivers the catalog and the automatic browser zone', async () => {
       await expectProfileTimeZoneCatalog(expect, frames)
-      await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+      await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
     })
 
     const secondContext = await browser.newContext(
@@ -81,7 +86,7 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
     const otherPerson = await createTestUser(expect, stranger)
     expect(otherPerson.userId).not.toBe(person.userId)
     await gotoPage(expect, stranger, '/profile', PAGE_READY)
-    await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+    await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
     await expectProfileTimeZone(expect, second, null, 'America/New_York')
     await openProfileTimeZone(expect, stranger)
     await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
@@ -142,7 +147,12 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
         await chooseProfileTimeZone(expect, page, 'Asia/Tokyo')
         await echoed(frames, 'Asia/Tokyo')
         await echoed(secondFrames, 'Asia/Tokyo')
-        await expectProfileTimeZone(expect, page, 'Asia/Tokyo', 'Europe/Warsaw')
+        await expectProfileTimeZone(
+          expect,
+          page,
+          'Asia/Tokyo',
+          'America/Paramaribo',
+        )
         await expectProfileTimeZone(
           expect,
           second,
@@ -162,7 +172,12 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
       // Persistence is read only after the live delivery was already observed.
       await page.reload()
       await expectPageReady(expect, page)
-      await expectProfileTimeZone(expect, page, 'Asia/Tokyo', 'Europe/Warsaw')
+      await expectProfileTimeZone(
+        expect,
+        page,
+        'Asia/Tokyo',
+        'America/Paramaribo',
+      )
     })
 
     await inPlace(() =>
@@ -170,7 +185,7 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
         await chooseProfileTimeZone(expect, page, null)
         await echoed(frames, null)
         await echoed(secondFrames, null)
-        await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+        await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
         await expectProfileTimeZone(
           expect,
           second,
@@ -201,7 +216,7 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
     await test.step('Automatic persists through a reload of each window', async () => {
       await page.reload()
       await expectPageReady(expect, page)
-      await expectProfileTimeZone(expect, page, null, 'Europe/Warsaw')
+      await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
       await second.reload()
       await expectPageReady(expect, second)
       await expectProfileTimeZone(expect, second, null, 'America/New_York')
