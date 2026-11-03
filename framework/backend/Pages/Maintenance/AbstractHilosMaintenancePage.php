@@ -13,6 +13,7 @@ use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -410,6 +411,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @param string $sender Sending agent identity (unused)
      * @param string $name Page-owned signal name
      * @throws AgentUnknownSignalException When the signal is not owned by this page
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When the action answer cannot be named
      * @throws InvalidFormatException When a successful outcome contains an empty code
      */
@@ -418,16 +420,28 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
         switch ($name) {
             case HilosSignalConstants::MAINTENANCE_ENABLE_DONE:
             case HilosSignalConstants::MAINTENANCE_DISABLE_DONE:
+                if (!$data->data instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+                }
+
                 $this->answerHandover($data->data);
 
                 break;
 
             case HilosSignalConstants::MAINTENANCE_PASS_DONE:
+                if (!$data->data instanceof ManualMaintenancePassDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ManualMaintenancePassDoneSignalData::class, $data->data);
+                }
+
                 $this->handlePassDone($data->data);
 
                 break;
 
             case HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE:
+                if (!$data->data instanceof MaintenanceRestoreControlDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, MaintenanceRestoreControlDoneSignalData::class, $data->data);
+                }
+
                 $this->handleRestoreControlDone($data->data);
 
                 break;

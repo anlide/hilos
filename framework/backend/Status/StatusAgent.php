@@ -415,6 +415,7 @@ final class StatusAgent extends AbstractHilosAgent
      * @param string $sender Collector or gatekeeper address, unused
      * @param string $name Owned signal name
      * @throws AgentUnknownSignalException When the signal is not owned by Status
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws HilosException When source access or answer delivery is refused
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -425,6 +426,10 @@ final class StatusAgent extends AbstractHilosAgent
                 return;
 
             case HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION:
+                if (!$data->data instanceof DaemonClusterPicturePortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonClusterPicturePortionSignalData::class, $data->data);
+                }
+
                 $this->applyPicturePortion($data->data, TimeHelper::nowMs());
                 return;
 
@@ -457,8 +462,28 @@ final class StatusAgent extends AbstractHilosAgent
                 return;
 
             case HilosSignalConstants::STATUS_CANCEL_PUBLICATION:
+                $cancelPublication = $data->data;
+                if (!$cancelPublication instanceof StatusCancelPublicationSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusCancelPublicationSignalData::class, $cancelPublication);
+                }
+
+                $this->answerIncidentWrite($cancelPublication);
+                return;
+
             case HilosSignalConstants::STATUS_PUBLISH_NOW:
+                $publishNow = $data->data;
+                if (!$publishNow instanceof StatusPublishNowSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusPublishNowSignalData::class, $publishNow);
+                }
+
+                $this->answerIncidentWrite($publishNow);
+                return;
+
             case HilosSignalConstants::STATUS_ADD_UPDATE:
+                if (!$data->data instanceof StatusAddUpdateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusAddUpdateSignalData::class, $data->data);
+                }
+
                 $this->answerIncidentWrite($data->data);
                 return;
 

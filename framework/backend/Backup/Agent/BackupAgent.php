@@ -1641,7 +1641,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not one this agent declares
-     * @throws InvalidAgentSignalPayloadException When a receipt's payload is not the one its name promises
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
@@ -1654,37 +1654,47 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     {
         switch ($name) {
             case HilosSignalConstants::BACKUP_AGENT_CREATE:
-                if ($data->data instanceof BackupCreateSignalData) {
-                    $this->handleCreateRequest($data->data);
+                if (!$data->data instanceof BackupCreateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupCreateSignalData::class, $data->data);
                 }
+
+                $this->handleCreateRequest($data->data);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_DELETE:
-                if ($data->data instanceof BackupDeleteSignalData) {
-                    $this->handleDeleteRequest($data->data);
+                if (!$data->data instanceof BackupDeleteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupDeleteSignalData::class, $data->data);
                 }
+
+                $this->handleDeleteRequest($data->data);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_SET_KEEP:
-                if ($data->data instanceof BackupSetKeepSignalData) {
-                    $this->handleSetKeepRequest($data->data);
+                if (!$data->data instanceof BackupSetKeepSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupSetKeepSignalData::class, $data->data);
                 }
+
+                $this->handleSetKeepRequest($data->data);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_RESTORE:
-                if ($data->data instanceof BackupRestoreSignalData) {
-                    $this->handleRestoreSignal($data->data);
+                if (!$data->data instanceof BackupRestoreSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupRestoreSignalData::class, $data->data);
                 }
+
+                $this->handleRestoreSignal($data->data);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_REOPEN:
-                if ($data->data instanceof BackupReopenSignalData) {
-                    $this->handleReopenRequest($data->data);
+                if (!$data->data instanceof BackupReopenSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupReopenSignalData::class, $data->data);
                 }
+
+                $this->handleReopenRequest($data->data);
 
                 return;
 

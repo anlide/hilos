@@ -73,14 +73,13 @@ the interface guarantees. Do not gate that call behind `instanceof BaseDTO`:
 `BaseDTO` only adds `toJson()`/`fromJson()`, so the check silently replaced the
 payload of any non-`BaseDTO` implementation with an empty array.
 
-When topology declares a DTO class, handlers may pass `$data->data` directly to
-private methods typed with that DTO. Do not add redundant `instanceof` checks
-for topology-covered signals.
-
 Routing-only entries — list-style signal name strings, type-wide page routes such
 as `FRAME_BINARY => []`, or agent signals that intentionally passthrough — keep
-generic inner payloads. Handlers that need typed data must either add the DTO to
-topology or validate manually until the contract is declared.
+generic inner payloads. Every known agent-signal case that consumes a concrete
+inner DTO follows the
+[inner payload narrowing rule](../code-style/signal-handlers.md#inner-payload-narrowing).
+Dispatch-time parsing does not replace that check, including when topology
+already declares the DTO.
 
 Topology mismatch after declaration is a contract error:
 `InvalidAgentSignalPayloadException` for agent and page-routed agent signals,
@@ -244,54 +243,13 @@ validation.
 
 ## Receiving agent-to-agent signal
 
-Named signal handlers must route with `switch ($name)`; see
-`docs/agents/code-style/signal-handlers.md` for the full handler shape.
-
-```php
-// Agent::AGENT_SIGNALS declares BotMessageSignalData::class
-public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void {
-    switch ($name) {
-        case ChatSignalConstants::BOT_MESSAGE:
-            $this->handleBotMessage($data->data);
-            return;
-
-        default:
-            throw new AgentUnknownSignalException($name);
-    }
-}
-
-private function handleBotMessage(BotMessageSignalData $message): void
-{
-    // topology already parsed and validated the inner payload
-}
-```
-
-For routing-only agent signals without a topology DTO, validate manually:
-
-```php
-public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void {
-    switch ($name) {
-        case ChatSignalConstants::MODERATE_BOT_REQUEST:
-            $moderationRequest = $data->data;
-            if (!$moderationRequest instanceof ModerationBotRequestSignalData) {
-                throw new InvalidAgentSignalPayloadException(
-                    $name,
-                    ModerationBotRequestSignalData::class,
-                    $moderationRequest,
-                );
-            }
-
-            $this->handleModerationRequest($moderationRequest);
-            return;
-
-        default:
-            throw new AgentUnknownSignalException($name);
-    }
-}
-```
+Agent and page `onSignalAgent()` handlers follow
+[Signal Handlers](../code-style/signal-handlers.md), which owns the `switch`
+shape, the inner payload guard and the complete example. The same rule applies
+to DTOs declared in topology.
 
 For page-routed agent signals, declare the inner DTO in `Page::SIGNALS` and
-type private handlers the same way. `PageSignalRouter::dispatchAgentSignal()`
+type private handlers with that DTO. `PageSignalRouter::dispatchAgentSignal()`
 parses through `HilosPageFactory::createPageSignalPayloadDTO()` before
 `onSignalAgent()`.
 
@@ -303,10 +261,6 @@ not called. Do not add a `case` for a page reply to the serving agent. Its
 neither the agent nor the page, and `WorkerManager` still logs that failure
 at `ERROR` in the agent's log.
 
-Known signal names with a topology DTO rely on dispatch-time parsing. For
-routing-only signals, validate the exact payload class manually. A mismatched inner
-payload is a contract error: throw `InvalidAgentSignalPayloadException`, do not
-log and return. Unknown agent signal names throw `AgentUnknownSignalException`.
 `WorkerManager` catches `AgentException` around agent and page signal dispatch
 and logs the failure once under the owning agent.
 

@@ -16,6 +16,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\HilosFeature;
@@ -129,6 +130,7 @@ final class AuthThrottleAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is neither of the two it answers
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When the verdict signal cannot be named or queued
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -137,26 +139,26 @@ final class AuthThrottleAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK:
-                if ($data->data instanceof ThrottleCheckSignalData) {
-                    $this->judge($data->data);
-
-                    return;
+                if (!$data->data instanceof ThrottleCheckSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ThrottleCheckSignalData::class, $data->data);
                 }
-                break;
+
+                $this->judge($data->data);
+
+                return;
 
             case HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED:
-                if ($data->data instanceof ThrottleSuccessSignalData) {
-                    $this->forgive($data->data);
-
-                    return;
+                if (!$data->data instanceof ThrottleSuccessSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ThrottleSuccessSignalData::class, $data->data);
                 }
-                break;
+
+                $this->forgive($data->data);
+
+                return;
 
             default:
                 throw new AgentUnknownSignalException($name);
         }
-
-        $this->logAgentWarning("{$name} arrived with a payload it does not carry: " . get_class($data->data));
     }
 
     /**

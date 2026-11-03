@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
@@ -87,12 +88,17 @@ abstract class AbstractHilosAppearancePage extends AbstractHilosPage
      * @param string $sender Sender as described by {@see SignalSource::describe()} (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this page declares
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When the action answer cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE:
+                if (!$data->data instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+                }
+
                 $this->answerHandover($data->data);
 
                 return;

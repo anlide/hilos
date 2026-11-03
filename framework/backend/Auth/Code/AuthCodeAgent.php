@@ -21,6 +21,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Hilos;
@@ -96,16 +97,25 @@ class AuthCodeAgent extends AbstractAgent
      * @param string $sender Sender description (unused)
      * @param string $name Routed signal name
      * @throws AgentUnknownSignalException When the name is not declared by this agent
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_CODE_SEND:
+                if (!$data->data instanceof AuthCodeSendSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthCodeSendSignalData::class, $data->data);
+                }
+
                 $this->adoptRequest($data->data);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_CODE_MINTED:
+                if (!$data->data instanceof AuthCodeMintedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthCodeMintedSignalData::class, $data->data);
+                }
+
                 $this->adoptMinted($data->data);
 
                 return;

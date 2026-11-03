@@ -155,9 +155,12 @@ for an empty name.
 ## Agent signals
 
 For `onSignalAgent()` in agents or pages, route by signal name with a `switch`.
-See `docs/agents/code-style/signal-handlers.md` for the general rule that also
-applies to `onSignalCron()` and other named signal handlers. Known signal names
-must validate the wrapped inner payload type:
+See [Signal Handlers](signal-handlers.md) for the general rule that also
+applies to `onSignalCron()` and other named signal handlers. For known names
+that consume a concrete inner DTO, follow its
+[inner payload narrowing rule](signal-handlers.md#inner-payload-narrowing).
+A DTO declared in `Agent::AGENT_SIGNALS` or `Page::SIGNALS` is no exception:
+its handler still checks the inner type before consuming it.
 
 - Throw `InvalidAgentSignalPayloadException` when the payload object does not
   match the signal contract.

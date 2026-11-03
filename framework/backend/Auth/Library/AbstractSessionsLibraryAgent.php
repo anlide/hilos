@@ -4260,11 +4260,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET:
+                if (!$data->data instanceof AccountAdminSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountAdminSetSignalData::class, $data->data);
+                }
+
                 $this->handleAdminSetRequest($data->data);
 
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET:
+                if (!$data->data instanceof AccountBlockSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountBlockSetSignalData::class, $data->data);
+                }
+
                 $this->handleBlockSetRequest($data->data);
 
                 return;
@@ -4401,6 +4409,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED:
+                if (!$data->data instanceof AuthRegistrationHoldExpiredSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationHoldExpiredSignalData::class, $data->data);
+                }
+
                 $this->rollBackRegistrationWaiters($data->data->sessionToken, $data->data->identifier);
 
                 return;

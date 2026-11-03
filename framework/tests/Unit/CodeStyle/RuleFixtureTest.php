@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\AgentSignalPayloadRule;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
@@ -67,6 +68,39 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:23 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:28 — $payload is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:38 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:46 — $payload is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:51 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:57 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:64 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:69 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:73 — $packet->data is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:88 — $payload is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:95 — $payload is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
                 'CODE-FQN Bad/BlockingResolutionSamples.php:30 — \dns_get_mx is written out in code; a global '
                     . 'function or constant takes the short name and no import '
                     . '(see docs/agents/code-style/qualified-names.md)',
@@ -1158,6 +1192,7 @@ final class RuleFixtureTest extends TestCase
     private function rules(): array
     {
         return [
+            new AgentSignalPayloadRule(),
             new CodeFqnRule($this->fixtureRoot()),
             new PhpDocFqnRule($this->fixtureRoot()),
             new CollectionObjectListRule('framework/backend'),

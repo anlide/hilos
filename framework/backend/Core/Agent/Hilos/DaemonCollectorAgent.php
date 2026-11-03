@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent\Hilos;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\DaemonSection\ClusterDaemonNodeSlot;
@@ -108,6 +109,7 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
      * @param string $sender Full sender address
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the signal is not this collector's
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When the answer cannot be routed
      * @throws RtCollectionNotFoundException When the cluster register is not mounted
      * @throws RtCollectionNotReadableException When this agent lacks reader interest
@@ -117,17 +119,21 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     {
         switch ($name) {
             case HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT:
-                if ($data->data instanceof DaemonNodePictureSignalData) {
-                    $this->applyNodePicture($data->data->picture);
+                if (!$data->data instanceof DaemonNodePictureSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonNodePictureSignalData::class, $data->data);
                 }
+
+                $this->applyNodePicture($data->data->picture);
 
                 return;
 
             case HilosSignalConstants::DAEMON_PICTURE_WATCH:
             case HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH:
-                if ($data->data instanceof DaemonPictureWatchSignalData) {
-                    $this->applyWatch($sender, $data->data->viewers, microtime(true), self::WATCH_REPLIES[$name]);
+                if (!$data->data instanceof DaemonPictureWatchSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonPictureWatchSignalData::class, $data->data);
                 }
+
+                $this->applyWatch($sender, $data->data->viewers, microtime(true), self::WATCH_REPLIES[$name]);
 
                 return;
 

@@ -13,6 +13,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -164,6 +165,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * @param string $sender Sending agent identity
      * @param string $name Routed signal name
      * @throws AgentUnknownSignalException When the parent refuses an unknown signal
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws HilosException When the parent handler fails
      * @throws InvalidArgumentException When the answer cannot be named or queued
      * @throws InvalidFormatException When a code outcome lacks its code or correlation
@@ -174,16 +176,28 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     {
         switch ($name) {
             case HilosSignalConstants::MAINTENANCE_AGENT_ENABLE:
+                if (!$data->data instanceof ManualMaintenanceEnableSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ManualMaintenanceEnableSignalData::class, $data->data);
+                }
+
                 $this->handleManualMaintenanceEnable($data->data);
 
                 break;
 
             case HilosSignalConstants::MAINTENANCE_AGENT_DISABLE:
+                if (!$data->data instanceof ManualMaintenanceDisableSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ManualMaintenanceDisableSignalData::class, $data->data);
+                }
+
                 $this->handleManualMaintenanceDisable($data->data);
 
                 break;
 
             case HilosSignalConstants::MAINTENANCE_AGENT_PASS:
+                if (!$data->data instanceof ManualMaintenancePassSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ManualMaintenancePassSignalData::class, $data->data);
+                }
+
                 $this->handleManualMaintenancePass($data->data);
 
                 break;

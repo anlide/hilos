@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\RootKind;
+use Hilos\Tests\CodeStyle\Rule\AgentSignalPayloadRule;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CliOptionsDeclaredRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
@@ -249,6 +250,7 @@ final class CodeStyleGuardTest extends TestCase
     private function rules(string $root, RootKind $kind): array
     {
         return [
+            new AgentSignalPayloadRule(),
             new CodeFqnRule($this->repositoryRoot() . '/' . $root),
             new PhpDocFqnRule($this->repositoryRoot() . '/' . $root),
             new CollectionObjectListRule($root),

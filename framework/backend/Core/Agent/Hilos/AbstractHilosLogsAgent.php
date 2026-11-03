@@ -8,6 +8,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
@@ -156,14 +157,17 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION:
-                if ($data->data instanceof ClusterLogIndexPortionSignalData) {
-                    ClusterLogIndexMirror::applyPortion($data->data);
+                if (!$data->data instanceof ClusterLogIndexPortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ClusterLogIndexPortionSignalData::class, $data->data);
                 }
+
+                ClusterLogIndexMirror::applyPortion($data->data);
 
                 return;
 

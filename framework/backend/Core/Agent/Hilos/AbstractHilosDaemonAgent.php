@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent\Hilos;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
@@ -75,6 +76,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
      * @param string $sender Full sender address, unused
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the signal is not this agent's
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When a table-window signal cannot be named
      * @throws TableRowKeyMissingException When a windowed Daemon table row has no key
      * @throws HilosException When a Daemon table picture or its window cannot be served
@@ -84,19 +86,21 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
     {
         switch ($name) {
             case HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION:
-                if ($data->data instanceof DaemonClusterPicturePortionSignalData) {
-                    $before = ClusterDaemonPictureMirror::picture();
-                    ClusterDaemonPictureMirror::applyPortion($data->data);
-                    AbstractHilosDaemonAgentsPage::onPictureChanged($before);
-                    AbstractHilosDaemonCronPage::onPictureChanged($before);
-                    AbstractHilosDaemonHttpServerPage::onPictureChanged($before);
-                    AbstractHilosDaemonWorkersPage::onPictureChanged($before);
-                    AbstractHilosDaemonNodeOverviewPage::onPictureChanged($before);
-                    AbstractHilosDaemonWebsocketsPage::onPictureChanged($before);
-                    AbstractHilosDaemonEnvMismatchPage::onPictureChanged($before);
-                    AbstractHilosDaemonPage::onPictureChanged($before);
-                    AbstractHilosDaemonPlacementPage::onPictureChanged($before);
+                if (!$data->data instanceof DaemonClusterPicturePortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonClusterPicturePortionSignalData::class, $data->data);
                 }
+
+                $before = ClusterDaemonPictureMirror::picture();
+                ClusterDaemonPictureMirror::applyPortion($data->data);
+                AbstractHilosDaemonAgentsPage::onPictureChanged($before);
+                AbstractHilosDaemonCronPage::onPictureChanged($before);
+                AbstractHilosDaemonHttpServerPage::onPictureChanged($before);
+                AbstractHilosDaemonWorkersPage::onPictureChanged($before);
+                AbstractHilosDaemonNodeOverviewPage::onPictureChanged($before);
+                AbstractHilosDaemonWebsocketsPage::onPictureChanged($before);
+                AbstractHilosDaemonEnvMismatchPage::onPictureChanged($before);
+                AbstractHilosDaemonPage::onPictureChanged($before);
+                AbstractHilosDaemonPlacementPage::onPictureChanged($before);
 
                 return;
 

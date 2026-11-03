@@ -8,6 +8,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
@@ -193,22 +194,27 @@ final class LogAggregatorAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When the answering frame cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_NODE_INDEX_REPORT:
-                if ($data->data instanceof NodeLogIndexSignalData) {
-                    $this->applyNodeIndex($data->data->toIndex());
+                if (!$data->data instanceof NodeLogIndexSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, NodeLogIndexSignalData::class, $data->data);
                 }
+
+                $this->applyNodeIndex($data->data->toIndex());
 
                 return;
 
             case HilosSignalConstants::LOGS_INDEX_WATCH:
-                if ($data->data instanceof LogsIndexWatchSignalData) {
-                    $this->applyWatch($sender, $data->data->viewers, microtime(true));
+                if (!$data->data instanceof LogsIndexWatchSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsIndexWatchSignalData::class, $data->data);
                 }
+
+                $this->applyWatch($sender, $data->data->viewers, microtime(true));
 
                 return;
 

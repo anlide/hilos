@@ -509,11 +509,19 @@ abstract class AbstractUserAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_USER_LAST_BROWSER_TIME_ZONE_WRITE:
+                if (!$data->data instanceof UserLastBrowserTimeZoneWriteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserLastBrowserTimeZoneWriteSignalData::class, $data->data);
+                }
+
                 $this->handleLastBrowserTimeZoneWrite($data->data, $name);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_IDENTITY_PROVIDER_NAME_WRITE:
+                if (!$data->data instanceof UserIdentityProviderNameWriteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserIdentityProviderNameWriteSignalData::class, $data->data);
+                }
+
                 $this->handleIdentityProviderNameWrite($data->data, $name);
 
                 return;

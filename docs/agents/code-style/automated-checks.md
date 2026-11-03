@@ -8,6 +8,7 @@ rule.
 
 | Rule id | Enforces | Canonical rule |
 |---|---|---|
+| `AGENT-SIGNAL-PAYLOAD` | In `onSignalAgent(AgentSignalData $anyName, ...)`, a whole inner payload or one simple local alias passed as a positional call argument needs a preceding `instanceof` of the same expression in that case. Grouped labels share a body; strings, comments, other functions and cases do not count. Production roots only. Limited token walk: no callee types, field-read checks, expected DTO or exception validation, or control-flow proof; the canonical rule lists the unsupported forms. | [signal-handlers.md](signal-handlers.md#inner-payload-narrowing) |
 | `INTEGRATION-TEST` | A concrete class opts into the rollback test lifecycle only with `#[Hilos\Testing\IntegrationTest]`, resolved through imports and aliases, and must extend `RollbackIntegrationTestCase` through its parent chain. A `BreaksOrmState` class or method attribute requires explicit class-level `IntegrationTest`; runtime reads a class attribute or the current test method's attribute. The guard checks lifecycle overrides, explicit test-local commits and scope entry, native PDO/mysqli bypasses, and known unsafe SQL reached through indexed test-local calls. Its call-graph and SQL extraction limits are described in the canonical rule. | [integration-tests.md](../testing/integration-tests.md) |
 | `TEST-ROLLBACK-SCOPE` | A literal member call to `Database::beginRollbackScopeForTest()` is allowed only in the shared framework rollback harness and technical suite roots. Declarations, strings, and comments are not calls; marked test bodies and resolved helpers are also checked by `INTEGRATION-TEST`. | [integration-tests.md](../testing/integration-tests.md) |
 | `COLLECTION-OBJECT-LIST` | Raw object lists in named method `@param`/`@return` tags under `Database/{Object,View}/Collection/` in `framework/backend` and `demo/*/backend`, all visibilities, static and abstract included. Only `fromArray` parameters and `toArray` returns are exempt (exact names, case-insensitive). One hit per violating tag, bound to a real parameter for `@param`. Reads raw list/array generics and array suffixes with direct object elements, nullable/union/intersection wrappers and local object-bounded templates; keys and scalar pseudo-types are not elements. Lexical only: no body inference, structured array shapes, inter-file aliases, class-level `@method` or other layers. Production roots only. | [internal-backend-api.md](internal-backend-api.md) |
@@ -331,7 +332,9 @@ file of the repository stays outside every root on purpose:
 The kind states a property of the code and not the name of the directory holding it.
 A production root is judged by every rule; a suite is judged by every single-file
 rule except the PHP rules marked *Production roots only* in the table above — the
-ones `RootKind::PRODUCTION_ONLY_RULES` lists. `TRUTH-SOURCE-CLAIM` is among them
+ones `RootKind::PRODUCTION_ONLY_RULES` lists. `AGENT-SIGNAL-PAYLOAD` is withheld
+because test handlers may deliberately break the payload protocol to arrange a
+refusal. `TRUTH-SOURCE-CLAIM` is among them
 because a suite legitimately lays a claim down in a
 call: an agent a test starts outside `WorkerManager` gets nothing from the
 declaration on its class, since the resolver runs on the worker's start path. A

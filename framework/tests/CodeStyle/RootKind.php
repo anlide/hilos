@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle;
 
+use Hilos\Tests\CodeStyle\Rule\AgentSignalPayloadRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
@@ -59,6 +60,7 @@ enum RootKind
      * @var array<int, string>
      */
     private const array PRODUCTION_ONLY_RULES = [
+        AgentSignalPayloadRule::ID,
         CollectionObjectListRule::ID,
         CollectionSqlReadRule::ID,
         CollectionItemNarrowingRule::ID,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\RootKind;
+use Hilos\Tests\CodeStyle\Rule\AgentSignalPayloadRule;
 use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
@@ -48,6 +49,7 @@ final class ScannedRootsTest extends TestCase
      * @var array<int, string>
      */
     private const array PRODUCTION_ONLY_RULE_IDS = [
+        AgentSignalPayloadRule::ID,
         CollectionObjectListRule::ID,
         CollectionSqlReadRule::ID,
         CollectionItemNarrowingRule::ID,

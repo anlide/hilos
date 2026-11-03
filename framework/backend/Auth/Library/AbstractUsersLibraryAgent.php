@@ -1116,7 +1116,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
-     * @throws InvalidAgentSignalPayloadException When a theme choice answer has the wrong payload
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws ValidationException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the failure frame cannot be named or queued
      * @throws FramePopOrderException When a resumed action leaves the execution frame stack imbalanced
@@ -1134,11 +1134,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_CODE_MINT:
+                if (!$data->data instanceof AuthCodeMintSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthCodeMintSignalData::class, $data->data);
+                }
+
                 $this->phoneCodeCommands()->mintForSend($data->data);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE:
+                if (!$data->data instanceof AuthRegistrationHoldReleaseSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationHoldReleaseSignalData::class, $data->data);
+                }
+
                 new RegistrationReservationService()->release($data->data->sessionToken);
 
                 return;
@@ -1147,6 +1155,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET:
+                if (!$data->data instanceof AccountDeletionSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountDeletionSetSignalData::class, $data->data);
+                }
+
                 $this->handleDeletionSetRequest($data->data);
 
                 return;

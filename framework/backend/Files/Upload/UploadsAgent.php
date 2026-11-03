@@ -289,6 +289,10 @@ final class UploadsAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE:
+                if (!$data->data instanceof UploadHoldSettleSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UploadHoldSettleSignalData::class, $data->data);
+                }
+
                 $this->settleHold($data->data);
 
                 return;
