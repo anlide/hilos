@@ -36,7 +36,7 @@ describe('HilosDaemonNodeShell', () => {
     expect(
       el('hilos-page-head-title')!.textContent?.replace(/\s+/g, ' ').trim(),
     ).toBe('Варшава <main>')
-    expect(node('id')?.textContent?.trim()).toBe('n1')
+    expect(el('hilos-page-head')!.textContent).toContain('n1')
     expect(document.querySelector('main')).toBeNull()
     expect(el('hilos-admin-children')).toBeNull()
     expect(node('line')).toBeNull()
@@ -702,7 +702,7 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.sendViewport).toHaveBeenCalledTimes(requests)
     expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
     expect(text('h1')).toEqual(['n1'])
-    expect(node('id')).toBeNull()
+    expect(el('hilos-page-head')!.textContent!.match(/n1/g)).toHaveLength(2)
     expect(h.sendAction).not.toHaveBeenCalled()
   })
   it('inherits the real AdminPage viewer provider in table operations and follows grants live', () => {

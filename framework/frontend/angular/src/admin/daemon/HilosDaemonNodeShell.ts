@@ -73,11 +73,9 @@ import {
         @if (current(); as current) {
           @let heading = current.heading;
           @if (heading.name !== null) {
-            <span
-              class="font-monospace text-body-secondary small"
-              data-id="hilos-daemon-node-id"
-              >{{ current.nodeId }}</span
-            >
+            <span class="font-monospace text-body-secondary small">{{
+              current.nodeId
+            }}</span>
           }
           @if (heading.clustered) {
             @if (heading.state !== null) {
