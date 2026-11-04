@@ -11,6 +11,7 @@ import {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
 } from '../../../src/subscription/bindPageScope.js'
+import { type TableSortOrder } from '../../../src/table/TableViewportController.js'
 import {
   createHilosModerationKind,
   createHilosModerationRules,
@@ -62,20 +63,32 @@ function setup(view?: { readonly openAdd: () => void }) {
   })
   const receive = (type: string, data: unknown) =>
     listeners.get('message')?.({ data: JSON.stringify({ type, data }) })
-  function window(rows = [wireRule()], totalCount = rows.length) {
+  function window(
+    rows = [wireRule()],
+    totalCount = rows.length,
+    options: {
+      readonly filter?: Readonly<Record<string, unknown>>
+      readonly sort?: TableSortOrder
+      readonly rowsBefore?: number
+    } = {},
+  ) {
     return {
-      filter: { kind: kind.get() },
+      filter: options.filter ?? { kind: kind.get() },
       rows,
-      sort: [{ field: 'id', direction: 'asc' }],
+      sort: options.sort ?? [{ field: 'id', direction: 'asc' }],
       totalCount,
       totalExact: true,
-      firstAnchor: rows.length ? { id: 1 } : null,
-      lastAnchor: rows.length ? { id: rows.length } : null,
+      firstAnchor: rows.length ? { id: rows[0].slots.rule.id } : null,
+      lastAnchor: rows.length ? { id: rows.at(-1)!.slots.rule.id } : null,
       limit: 25,
-      rowsBefore: 0,
+      rowsBefore: options.rowsBefore ?? 0,
     }
   }
-  function answer(rows = [wireRule()], totalCount = rows.length) {
+  function answer(
+    rows = [wireRule()],
+    totalCount = rows.length,
+    options: Parameters<typeof window>[2] = {},
+  ) {
     receive('page_response', {
       page: PAGE,
       payload: {
@@ -98,7 +111,7 @@ function setup(view?: { readonly openAdd: () => void }) {
             limit: 1,
             totalCount: 1,
           },
-          [TABLE]: window(rows, totalCount),
+          [TABLE]: window(rows, totalCount, options),
         },
       },
     })
@@ -109,11 +122,12 @@ function setup(view?: { readonly openAdd: () => void }) {
     rows = [wireRule()],
     requestId = String(viewports().at(-1)?.requestId),
     totalCount = rows.length,
+    options: Parameters<typeof window>[2] = {},
   ) {
     receive('table_window', {
       page: PAGE,
       tableKey: TABLE,
-      ...window(rows, totalCount),
+      ...window(rows, totalCount, options),
       requestId,
     })
   }
@@ -254,45 +268,191 @@ describe('moderation Rules', () => {
     },
   )
 
-  it('keeps the URL kind through search, sort, filter replacement, Reset, pagination and reconnect', () => {
+  it('keeps the URL kind through search, sort, filter replacement, Reset and pagination, then reconnects from N rules to zero without a late reply rollback', () => {
     const h = setup()
     h.start()
     h.answer([wireRule()], 70)
     const c = h.rules.controller
     c.setSearch('term')
-    h.reply()
+    h.reply([wireRule(1, 'first', 'term rule')], undefined, 70, {
+      filter: { kind: 'first', search: 'term' },
+    })
     c.setSort('rule')
-    h.reply()
+    h.reply([wireRule(1, 'first', 'term rule')], undefined, 70, {
+      filter: { kind: 'first', search: 'term' },
+      sort: [{ field: 'rule', direction: 'asc' }],
+    })
     expect(c.descriptor()).toMatchObject({
       filter: { kind: 'first', search: 'term' },
       sort: [{ field: 'rule', direction: 'asc' }],
     })
     c.setFilters({ kind: 'forged', search: 'kept' })
-    h.reply()
+    h.reply([wireRule(1, 'first', 'kept rule')], undefined, 70, {
+      filter: { kind: 'first', search: 'kept' },
+      sort: [{ field: 'rule', direction: 'asc' }],
+    })
     expect(h.viewports().at(-1)?.filter).toEqual({
       kind: 'first',
       search: 'kept',
     })
     c.resetFilters()
-    h.reply([wireRule()], undefined, 70)
+    h.reply([wireRule()], undefined, 70, {
+      sort: [{ field: 'rule', direction: 'asc' }],
+    })
     expect(c.descriptor()?.filter).toEqual({ kind: 'first' })
     c.nextPage()
-    h.reply([wireRule()], undefined, 70)
+    h.reply([wireRule()], undefined, 70, {
+      sort: [{ field: 'rule', direction: 'asc' }],
+      rowsBefore: 25,
+    })
     c.prevPage()
-    h.reply([wireRule()], undefined, 70)
+    h.reply([wireRule()], undefined, 70, {
+      sort: [{ field: 'rule', direction: 'asc' }],
+    })
+    c.setSearch('retained')
+    h.reply([wireRule(1, 'first', 'retained old rule')], undefined, 70, {
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'rule', direction: 'asc' }],
+    })
     c.setPage(2)
     expect(h.viewports().at(-1)).toMatchObject({
       pageIndex: 2,
-      filter: { kind: 'first' },
+      filter: { kind: 'first', search: 'retained' },
+      requestId: expect.any(String),
     })
     for (const frame of h.viewports())
       expect(frame.filter).toMatchObject({ kind: 'first' })
+    const oldRequestId = String(h.viewports().at(-1)?.requestId)
+    expect(c.acceptsWindowResponse(oldRequestId)).toBe(true)
+    expect(c.rows.get().map((view) => view.row)).toEqual([
+      { id: 1, kind: 'first', rule: 'retained old rule' },
+    ])
+    expect(c.frame.footer.get()).toMatchObject({
+      totalCount: 70,
+      totalExact: true,
+    })
+    expect(h.rules.current.get()).toBe(true)
+    expect(h.detail.row.get()).toMatchObject({
+      kind: 'first',
+      ownRuleCount: 70,
+    })
     const held = c.descriptor()
+    expect(held).toEqual({
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'rule', direction: 'asc' }],
+      limit: 25,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: 2,
+      rendered: ['rule', 'id', 'kind'],
+    })
+    const requests = h.viewports().length
     h.reopen()
     expect(
       h.sent.filter((frame) => frame.type === 'page_subscribe').at(-1),
-    ).toMatchObject({ page: PAGE, tableWindows: { [TABLE]: held } })
+    ).toMatchObject({
+      page: PAGE,
+      params: { kind: 'first' },
+      tableWindows: { [TABLE]: held },
+    })
     expect(held).not.toHaveProperty('requestId')
+    h.answer([], 0, {
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'rule', direction: 'asc' }],
+    })
+    expect(c.rows.get()).toEqual([])
+    expect(c.frame.footer.get()).toMatchObject({
+      totalCount: 0,
+      totalExact: true,
+    })
+    expect(h.rules.current.get()).toBe(true)
+    expect(h.detail.row.get()).toMatchObject({ kind: 'first', ownRuleCount: 0 })
+    expect(c.descriptor()).toEqual(held)
+
+    h.reply([wireRule(1, 'first', 'retained stale rule')], oldRequestId, 70, {
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'rule', direction: 'asc' }],
+      rowsBefore: 50,
+    })
+    expect(c.rows.get()).toEqual([])
+    expect(c.frame.footer.get()).toMatchObject({
+      totalCount: 0,
+      totalExact: true,
+    })
+    expect(h.rules.current.get()).toBe(true)
+    expect(h.detail.row.get()).toMatchObject({ kind: 'first', ownRuleCount: 0 })
+    expect(c.descriptor()).toEqual(held)
+    expect(h.viewports()).toHaveLength(requests)
+  })
+
+  it('replaces zero rules with a full reconnect answer while preserving search, sort and the window address', () => {
+    const h = setup()
+    h.start()
+    h.answer([])
+    const c = h.rules.controller
+    c.setSearch('retained')
+    h.reply([], undefined, 0, {
+      filter: { kind: 'first', search: 'retained' },
+    })
+    c.setSort('id')
+    h.reply([], undefined, 0, {
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'id', direction: 'desc' }],
+    })
+    c.setPage(0)
+    h.reply([], undefined, 0, {
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'id', direction: 'desc' }],
+    })
+    expect(c.rows.get()).toEqual([])
+    expect(c.frame.footer.get()).toMatchObject({
+      totalCount: 0,
+      totalExact: true,
+    })
+    expect(h.rules.current.get()).toBe(true)
+    expect(h.detail.row.get()).toMatchObject({ kind: 'first', ownRuleCount: 0 })
+    const held = c.descriptor()
+    expect(held).toEqual({
+      filter: { kind: 'first', search: 'retained' },
+      sort: [{ field: 'id', direction: 'desc' }],
+      limit: 25,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: 0,
+      rendered: ['rule', 'id', 'kind'],
+    })
+    const requests = h.viewports().length
+    h.reopen()
+    expect(
+      h.sent.filter((frame) => frame.type === 'page_subscribe').at(-1),
+    ).toMatchObject({
+      page: PAGE,
+      params: { kind: 'first' },
+      tableWindows: { [TABLE]: held },
+    })
+    h.answer(
+      [
+        wireRule(2, 'first', 'retained second rule'),
+        wireRule(1, 'first', 'retained first rule'),
+      ],
+      2,
+      {
+        filter: { kind: 'first', search: 'retained' },
+        sort: [{ field: 'id', direction: 'desc' }],
+      },
+    )
+    expect(c.rows.get().map((view) => view.row)).toEqual([
+      { id: 2, kind: 'first', rule: 'retained second rule' },
+      { id: 1, kind: 'first', rule: 'retained first rule' },
+    ])
+    expect(c.frame.footer.get()).toMatchObject({
+      totalCount: 2,
+      totalExact: true,
+    })
+    expect(h.rules.current.get()).toBe(true)
+    expect(h.detail.row.get()).toMatchObject({ kind: 'first', ownRuleCount: 2 })
+    expect(c.descriptor()).toEqual(held)
+    expect(h.viewports()).toHaveLength(requests)
   })
 
   it('resets provenance on kind/scope changes, ignores late tracked windows and refuses foreign row windows', () => {

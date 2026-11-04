@@ -6,9 +6,11 @@ import {
   cleanupFixtures,
   clickSubmit,
   clickUnavailableControl,
+  controlSocketReconnect,
   countSentFrames,
   createTestAdmin,
   deleteModerationRule,
+  deliveryObject,
   dismissToasts,
   editModerationRule,
   expectDataFreeDeparture,
@@ -19,11 +21,13 @@ import {
   expectModerationKindOverview,
   expectModerationOwnRules,
   expectModerationRemovalEcho,
+  expectModerationRuleShown,
   expectModerationRulesInForce,
   expectModerationRulesOpening,
   expectModerationSortReply,
   expectModerationUpdateEcho,
   expectPageReady,
+  expectWelcomedSockets,
   FRAMEWORK_MODERATION_KINDS,
   gotoPage,
   grantAdminToSelf,
@@ -36,10 +40,13 @@ import {
   typeInto,
   watchClientDocument,
   watchDeliveryFrames,
+  watchOpenedSockets,
   watchPageReplies,
   type ModerationKindDeclaration,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../../../../../framework/frontend/core/src/session/sessionScope.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   dictateModerationVerdict,
@@ -473,141 +480,365 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
   const initialRule = `Allow ordinary profile photos. Chat conflict ${marker}.`
   const otherRule = `Allow ordinary profile photos and drawings. Another tab saved this ${marker}.`
   const mineRule = `Allow ordinary profile photos. Edited here ${marker}.`
+  const recoveryRule = `Allow ordinary profile photos. Missed Add ${marker}.`
   reserveModerationRules(expect, page, cleanup, PHOTO, [
     initialRule,
     otherRule,
     mineRule,
+    recoveryRule,
   ])
   const updates = countSentFrames(page, 'hilos_moderation_rule_update')
   const deletes = countSentFrames(page, 'hilos_moderation_rule_delete')
-  await grantAdminToSelf(expect, page)
-  const own = watchDeliveryFrames(page)
-  cleanup.defer(() => own.stop())
-  await gotoPage(expect, page, RULES_PATH)
-  const id = await addModerationRule(expect, page, PHOTO, initialRule)
-  await expectModerationOwnRules(expect, page, [initialRule])
+  const reconnect = await controlSocketReconnect(page)
+  try {
+    await grantAdminToSelf(expect, page)
+    const own = watchDeliveryFrames(page)
+    cleanup.defer(() => own.stop())
+    const sockets = watchOpenedSockets(page)
+    const replies = watchPageReplies(page)
+    await gotoPage(expect, page, RULES_PATH)
+    const id = await addModerationRule(expect, page, PHOTO, initialRule)
+    await expectModerationOwnRules(expect, page, [initialRule])
 
-  const editor = await page.context().newPage()
-  cleanup.defer(() => editor.close())
-  const foreign = watchDeliveryFrames(editor)
-  cleanup.defer(() => foreign.stop())
-  const otherUpdates = countSentFrames(editor, 'hilos_moderation_rule_update')
-  await gotoPage(expect, editor, RULES_PATH)
-  await expectModerationOwnRules(expect, editor, [initialRule])
-  await expectModerationRulesOpening(expect, foreign, {
-    ...PHOTO,
-    ownRules: [initialRule],
-  })
-  const dialog = page.getByTestId('modal')
-  const ownBefore = own.sent.length
-  const foreignBefore = foreign.sent.length
-
-  await test.step('The second tab saves first; the first tab is shown the conflict and accepts its own text', async () => {
-    await dismissToasts(page)
-    const field = page.getByTestId('hilos-moderation-rule-edit-rule')
-    const save = page.getByTestId('hilos-moderation-rule-edit-submit')
-    await clickSubmit(
-      expect,
-      shownByTestId(page, `hilos-moderation-rule-edit-open-${id}`),
-    )
-    await expect(dialog).toHaveAccessibleName(`Edit rule · ${PHOTO.title}`)
-    await expect(field).toHaveValue(initialRule)
-    await typeInto(field, mineRule)
-    await expect(save).toBeEnabled()
-    expect(updates()).toBe(0)
-
-    await editModerationRule(expect, editor, PHOTO, id, otherRule)
-    expect(otherUpdates()).toBe(1)
-    await expect(page.getByTestId('conflict-choices')).toBeVisible()
-    await expect(
-      page.getByTestId('hilos-moderation-rule-edit-notice'),
-    ).toHaveText(`Rule changed elsewhere to "${otherRule}".`)
-    await expect(field).toHaveValue(mineRule)
-    await expect(save).toBeDisabled()
-    expect(updates()).toBe(0)
-    await expectModerationOwnRules(expect, page, [otherRule])
-    await expectModerationOwnRules(expect, editor, [otherRule])
-
-    await clickSubmit(expect, page.getByTestId('conflict-accept-mine'))
-    await expect(page.getByTestId('conflict-choices')).toHaveCount(0)
-    await expect(
-      page.getByTestId('hilos-moderation-rule-edit-notice'),
-    ).toHaveCount(0)
-    await expect(field).toHaveValue(mineRule)
-    await clickSubmit(expect, save)
-    // Closing follows this tab's correlated acknowledgement, before table checks.
-    await expect(dialog).toBeHidden()
-    expect(updates()).toBe(1)
-    expect(otherUpdates()).toBe(1)
-    await expectModerationOwnRules(expect, page, [mineRule])
-    await expectModerationOwnRules(expect, editor, [mineRule])
-  })
-
-  await test.step('Each tab sent one update with its expectedRule and got its action_success; no refetch, no reconnect', async () => {
-    for (const [log, after, expectedRule, savedRule] of [
-      [foreign, foreignBefore, initialRule, otherRule],
-      [own, ownBefore, otherRule, mineRule],
-    ] as const) {
-      await expectModerationUpdateEcho(expect, log, after, PHOTO, {
-        id,
-        rule: savedRule,
-        expectedRule,
-      })
-    }
-  })
-
-  await test.step('Delete in the first tab: the second holds the removal until Apply; row_removed is own only for the author', async () => {
-    await dismissToasts(page)
-    await dismissToasts(editor)
+    const editor = await page.context().newPage()
+    cleanup.defer(() => editor.close())
+    const foreign = watchDeliveryFrames(editor)
+    cleanup.defer(() => foreign.stop())
+    const otherUpdates = countSentFrames(editor, 'hilos_moderation_rule_update')
+    await gotoPage(expect, editor, RULES_PATH)
+    await expectModerationOwnRules(expect, editor, [initialRule])
+    await expectModerationRulesOpening(expect, foreign, {
+      ...PHOTO,
+      ownRules: [initialRule],
+    })
+    const dialog = page.getByTestId('modal')
     const ownBefore = own.sent.length
     const foreignBefore = foreign.sent.length
-    const openerId = `hilos-moderation-rule-delete-open-${id}`
-    const retired = [`hilos-moderation-rule-edit-open-${id}`, openerId]
-    await expect(shownByTestId(editor, openerId)).toBeVisible()
-    await clickSubmit(expect, shownByTestId(page, openerId))
-    await expect(dialog).toHaveAccessibleName('Delete rule')
-    await expect(
-      page.getByTestId('hilos-moderation-rule-delete-rule'),
-    ).toHaveText(mineRule)
-    await clickSubmit(
-      expect,
-      page.getByTestId('hilos-moderation-rule-delete-confirm'),
-    )
-    // The tracked acknowledgement closes the modal before we inspect the echo.
-    await expect(dialog).toBeHidden()
-    expect(deletes()).toBe(1)
-    await expectModerationDeleteEcho(expect, own, ownBefore, PHOTO, {
-      id,
-      expectedRule: mineRule,
+
+    await test.step('The second tab saves first; the first tab is shown the conflict and accepts its own text', async () => {
+      await dismissToasts(page)
+      const field = page.getByTestId('hilos-moderation-rule-edit-rule')
+      const save = page.getByTestId('hilos-moderation-rule-edit-submit')
+      await clickSubmit(
+        expect,
+        shownByTestId(page, `hilos-moderation-rule-edit-open-${id}`),
+      )
+      await expect(dialog).toHaveAccessibleName(`Edit rule · ${PHOTO.title}`)
+      await expect(field).toHaveValue(initialRule)
+      await typeInto(field, mineRule)
+      await expect(save).toBeEnabled()
+      expect(updates()).toBe(0)
+
+      await editModerationRule(expect, editor, PHOTO, id, otherRule)
+      expect(otherUpdates()).toBe(1)
+      await expect(page.getByTestId('conflict-choices')).toBeVisible()
+      await expect(
+        page.getByTestId('hilos-moderation-rule-edit-notice'),
+      ).toHaveText(`Rule changed elsewhere to "${otherRule}".`)
+      await expect(field).toHaveValue(mineRule)
+      await expect(save).toBeDisabled()
+      expect(updates()).toBe(0)
+      await expectModerationOwnRules(expect, page, [otherRule])
+      await expectModerationOwnRules(expect, editor, [otherRule])
+
+      await clickSubmit(expect, page.getByTestId('conflict-accept-mine'))
+      await expect(page.getByTestId('conflict-choices')).toHaveCount(0)
+      await expect(
+        page.getByTestId('hilos-moderation-rule-edit-notice'),
+      ).toHaveCount(0)
+      await expect(field).toHaveValue(mineRule)
+      await clickSubmit(expect, save)
+      // Closing follows this tab's correlated acknowledgement, before table checks.
+      await expect(dialog).toBeHidden()
+      expect(updates()).toBe(1)
+      expect(otherUpdates()).toBe(1)
+      await expectModerationOwnRules(expect, page, [mineRule])
+      await expectModerationOwnRules(expect, editor, [mineRule])
     })
-    await expectDataFreeDeparture(expect, page, String(id), 'Removed', retired)
-    await expectModerationBuiltInRulesReturned(expect, page, PHOTO)
 
-    await expect(
-      shownByTestId(editor, `hilos-table-pending-remove-${id}`),
-    ).toBeVisible()
-    await expect(editor.getByTestId(`${ROW_PREFIX}${id}`)).toContainText(
-      mineRule,
-    )
-    await clickSubmit(expect, editor.getByTestId('hilos-table-apply'))
-    await expect(editor.getByTestId('hilos-table-apply')).toHaveCount(0)
-    await expectDataFreeDeparture(
-      expect,
-      editor,
-      String(id),
-      'Removed',
-      retired,
-    )
-    await expectModerationBuiltInRulesReturned(expect, editor, PHOTO)
+    await test.step('Each tab sent one update with its expectedRule and got its action_success; no refetch, no reconnect', async () => {
+      for (const [log, after, expectedRule, savedRule] of [
+        [foreign, foreignBefore, initialRule, otherRule],
+        [own, ownBefore, otherRule, mineRule],
+      ] as const) {
+        await expectModerationUpdateEcho(expect, log, after, PHOTO, {
+          id,
+          rule: savedRule,
+          expectedRule,
+        })
+      }
+    })
 
-    // Neither the own echo nor Apply may borrow a later fetched window.
-    for (const [log, after, isOwn] of [
-      [own, ownBefore, true],
-      [foreign, foreignBefore, false],
-    ] as const) {
-      await expectModerationRemovalEcho(expect, log, after, id, isOwn)
-    }
-  })
+    await test.step('Delete in the first tab: the second holds the removal until Apply; row_removed is own only for the author', async () => {
+      await dismissToasts(page)
+      await dismissToasts(editor)
+      const ownBefore = own.sent.length
+      const foreignBefore = foreign.sent.length
+      const openerId = `hilos-moderation-rule-delete-open-${id}`
+      const retired = [`hilos-moderation-rule-edit-open-${id}`, openerId]
+      await expect(shownByTestId(editor, openerId)).toBeVisible()
+      await clickSubmit(expect, shownByTestId(page, openerId))
+      await expect(dialog).toHaveAccessibleName('Delete rule')
+      await expect(
+        page.getByTestId('hilos-moderation-rule-delete-rule'),
+      ).toHaveText(mineRule)
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-moderation-rule-delete-confirm'),
+      )
+      // The tracked acknowledgement closes the modal before we inspect the echo.
+      await expect(dialog).toBeHidden()
+      expect(deletes()).toBe(1)
+      await expectModerationDeleteEcho(expect, own, ownBefore, PHOTO, {
+        id,
+        expectedRule: mineRule,
+      })
+      await expectDataFreeDeparture(
+        expect,
+        page,
+        String(id),
+        'Removed',
+        retired,
+      )
+      await expectModerationBuiltInRulesReturned(expect, page, PHOTO)
+
+      await expect(
+        shownByTestId(editor, `hilos-table-pending-remove-${id}`),
+      ).toBeVisible()
+      await expect(editor.getByTestId(`${ROW_PREFIX}${id}`)).toContainText(
+        mineRule,
+      )
+      await clickSubmit(expect, editor.getByTestId('hilos-table-apply'))
+      await expect(editor.getByTestId('hilos-table-apply')).toHaveCount(0)
+      await expectDataFreeDeparture(
+        expect,
+        editor,
+        String(id),
+        'Removed',
+        retired,
+      )
+      await expectModerationBuiltInRulesReturned(expect, editor, PHOTO)
+
+      // Neither the own echo nor Apply may borrow a later fetched window.
+      for (const [log, after, isOwn] of [
+        [own, ownBefore, true],
+        [foreign, foreignBefore, false],
+      ] as const) {
+        await expectModerationRemovalEcho(expect, log, after, id, isOwn)
+      }
+    })
+
+    await test.step('Rules and Overview recover an Add missed while disconnected in their original documents', async () => {
+      const overview = await page.context().newPage()
+      cleanup.defer(() => overview.close())
+      const overviewReconnect = await controlSocketReconnect(overview)
+      try {
+        const overviewLog = watchDeliveryFrames(overview)
+        cleanup.defer(() => overviewLog.stop())
+        const overviewSockets = watchOpenedSockets(overview)
+        const overviewReplies = watchPageReplies(overview)
+        await gotoPage(expect, overview, OVERVIEW_PATH)
+        await expectModerationRulesInForce(expect, overview, 0)
+        const opening = overviewLog.packets
+          .flatMap(({ frames }) => frames)
+          .map(({ wire }) => deliveryObject(wire))
+          .find((wire) => wire.type === 'page_response')!
+        const openingWindows = deliveryObject(
+          deliveryObject(deliveryObject(opening.data).payload).windows,
+        )
+        expect(openingWindows.hilosModerationKinds).toMatchObject({
+          totalCount: 1,
+          totalExact: true,
+          rows: [{ slots: { kind: { kind: PHOTO.kind, ownRuleCount: 0 } } }],
+        })
+        const table = page.getByTestId('hilos-moderation-rules-table')
+        await expect(
+          table.locator(ROWS).locator('.hilos-table-text[id]'),
+        ).toHaveCount(0)
+        await expect(
+          page.getByTestId('hilos-moderation-rules-loading'),
+        ).toHaveCount(0)
+        await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+        const readers = [
+          {
+            page,
+            control: reconnect,
+            log: own,
+            sockets,
+            replies,
+            pageKey: HilosPages.MODERATION_KIND_RULES,
+          },
+          {
+            page: overview,
+            control: overviewReconnect,
+            log: overviewLog,
+            sockets: overviewSockets,
+            replies: overviewReplies,
+            pageKey: HilosPages.MODERATION_KIND,
+          },
+        ]
+        const documents = []
+        for (const reader of readers) {
+          await expect(reader.page.getByTestId('conn-state')).toHaveText(
+            'connected',
+          )
+          await expectWelcomedSockets(expect, reader.sockets, 1)
+          const document = await watchClientDocument(reader.page)
+          cleanup.defer(() => document.dispose())
+          documents.push(document)
+          await reader.control.drop()
+          await expect(reader.page.getByTestId('conn-state')).toHaveAttribute(
+            'title',
+            /^(connecting|reconnecting|disconnected)\b/,
+          )
+          await expect
+            .poll(() => reader.log.connections[0]!.closed)
+            .toBeDefined()
+        }
+        const beforeAdd = readers.map(({ log }) => ({
+          packets: log.packets.length,
+          sent: log.sent.length,
+        }))
+        const writerBefore = foreign.sent.length
+        const recoveryId = await addModerationRule(
+          expect,
+          editor,
+          PHOTO,
+          recoveryRule,
+        )
+        await expectModerationRuleShown(expect, editor, recoveryRule, true)
+        const add = foreign.sent
+          .slice(writerBefore)
+          .map(({ wire }) => deliveryObject(wire))
+          .find((wire) => wire.action === 'hilos_moderation_rule_add')!
+        expect(add).toMatchObject({
+          data: { kind: PHOTO.kind, rule: recoveryRule },
+        })
+        expect(
+          foreign.packets
+            .flatMap(({ frames }) => frames)
+            .map(({ wire }) => deliveryObject(wire))
+            .filter((wire) => wire.requestId === add.requestId),
+        ).toEqual([
+          expect.objectContaining({
+            type: 'action_success',
+            outcome: 'success',
+          }),
+        ])
+
+        // The acknowledged Add crossed no reader socket: their next full answers
+        // must supply it. This barrier is the writer's reply, not a quiet interval.
+        for (const [index, reader] of readers.entries()) {
+          expect(reader.log.packets).toHaveLength(beforeAdd[index]!.packets)
+          expect(reader.log.sent).toHaveLength(beforeAdd[index]!.sent)
+          expect(reader.sockets).toHaveLength(1)
+          expect(JSON.stringify(reader.log.packets)).not.toContain(recoveryRule)
+        }
+        await expectModerationRuleShown(expect, page, recoveryRule, false)
+        await expectModerationRulesInForce(expect, overview, 0)
+        await reconnect.release()
+        await overviewReconnect.release()
+
+        for (const reader of readers) {
+          // release only opens the route; wait for the real welcome and page reply.
+          await expectWelcomedSockets(expect, reader.sockets, 2)
+          await expect
+            .poll(() => reader.replies.replies)
+            .toContainEqual({
+              socket: 2,
+              type: 'page_response',
+              page: reader.pageKey,
+            })
+          const packets = reader.log.packets.filter(
+            ({ socket }) => socket === 2,
+          )
+          const frames = packets.flatMap(({ frames }) => frames)
+          expect(frames.filter(({ failure }) => failure !== undefined)).toEqual(
+            [],
+          )
+          const session = packets.find(({ frames }) =>
+            frames.some(
+              ({ wire }) =>
+                deliveryObject(wire).type === SIGNAL_HANDSHAKE_RESPONSE,
+            ),
+          )
+          expect(session).toBeDefined()
+          const subscriptions = reader.log.sent.filter(
+            ({ socket, wire }) =>
+              socket === 2 && deliveryObject(wire).type === 'page_subscribe',
+          )
+          expect(subscriptions.map(({ wire }) => wire)).toMatchObject([
+            { page: reader.pageKey, params: { kind: PHOTO.kind } },
+          ])
+          expect(session!.at).toBeLessThanOrEqual(subscriptions[0]!.at)
+          const answers = frames
+            .map(({ wire }) => deliveryObject(wire))
+            .filter((wire) => wire.type === 'page_response')
+            .map((wire) => deliveryObject(wire.data))
+          expect(answers).toHaveLength(1)
+          expect(answers[0]).toMatchObject({ page: reader.pageKey })
+          const windows = deliveryObject(
+            deliveryObject(answers[0]!.payload).windows,
+          )
+          expect(windows.hilosModerationKinds).toMatchObject({
+            totalCount: 1,
+            totalExact: true,
+            rows: [
+              {
+                rowKey: PHOTO.kind,
+                slots: { kind: { kind: PHOTO.kind, ownRuleCount: 1 } },
+              },
+            ],
+          })
+          if (reader.pageKey === HilosPages.MODERATION_KIND_RULES) {
+            expect(Object.keys(windows)).toEqual([
+              'hilosModerationKinds',
+              'hilosModerationRules',
+            ])
+            expect(windows.hilosModerationRules).toMatchObject({
+              totalCount: 1,
+              totalExact: true,
+              rows: [
+                {
+                  slots: {
+                    rule: {
+                      id: recoveryId,
+                      kind: PHOTO.kind,
+                      rule: recoveryRule,
+                    },
+                  },
+                },
+              ],
+            })
+          }
+          await expectPageReady(expect, reader.page)
+          await expect(reader.page.getByTestId('conn-state')).toHaveText(
+            'connected',
+          )
+        }
+        // Only own rows/counts are under test; built-in policy is a separate contract.
+        for (const rulesPage of [page, editor]) {
+          await expectModerationRuleShown(expect, rulesPage, recoveryRule, true)
+          const rulesTable = rulesPage.getByTestId(
+            'hilos-moderation-rules-table',
+          )
+          await expect(
+            rulesTable.locator(ROWS).locator('.hilos-table-text[id]'),
+          ).toHaveText([recoveryRule])
+          await expect(rulesTable.getByTestId('hilos-table-count')).toHaveText(
+            '1 – 1 of 1',
+          )
+        }
+        await expectModerationRulesInForce(expect, overview, 1)
+        for (const document of documents) await document.unchanged()
+      } finally {
+        await overviewReconnect.dispose()
+      }
+    })
+  } finally {
+    await reconnect.dispose()
+  }
 })
 
 test('lets an admin view-mode viewer read Moderation and draft rule forms without writing', async ({

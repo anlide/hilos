@@ -222,6 +222,12 @@ async function harness(
     answer,
     update,
     sent,
+    reopen() {
+      connection.close()
+      connection.connect()
+      listeners.get('open')?.({})
+      pages.releaseOnSession()
+    },
     reply(
       requestId: string,
       success = true,
@@ -808,6 +814,50 @@ describe('HilosModerationKindRulesPage', () => {
         }
       ).controller.pendingCount.get(),
     ).toBe(1)
+  })
+
+  it('shows fresh rules, metadata and count after reconnect in the same mounted page', async () => {
+    const { view, first, reopen, answer, sent } = await harness(
+      { ownRuleCount: 0 },
+      { empty: true, outlet: true },
+    )
+    const page = view.getComponent(HilosModerationKindRulesPage)
+    const instance = page.vm.$
+    const element = page.element
+    expect(page.get('h1').text()).toBe('Profile name')
+    expect(page.text()).toContain('No rules of your own yet')
+
+    reopen()
+    await nextTick()
+    const subscriptions = sent.filter(
+      (frame) => frame.type === 'page_subscribe',
+    )
+    expect(subscriptions).toHaveLength(2)
+    expect(subscriptions.at(-1)).toMatchObject({
+      page: PAGE,
+      params: { kind: first.kind },
+    })
+    answer({ ...first, title: 'Updated profile name', ownRuleCount: 2 }, [
+      'Reject misleading names.',
+      'Allow ordinary nicknames.',
+    ])
+    await nextTick()
+
+    expect(view.getComponent(HilosModerationKindRulesPage).vm.$).toBe(instance)
+    expect(page.element).toBe(element)
+    expect(element.isConnected).toBe(true)
+    expect(page.get('h1').text()).toBe('Updated profile name')
+    expect(page.get('[data-id="hilos-table-row-1"]').text()).toContain(
+      'Reject misleading names.',
+    )
+    expect(page.get('[data-id="hilos-table-row-2"]').text()).toContain(
+      'Allow ordinary nicknames.',
+    )
+    expect(page.get('[data-id="hilos-table-count"]').text()).toBe('1 – 2 of 2')
+    expect(page.text()).not.toContain('No rules of your own yet')
+    expect(
+      page.find('[data-id="hilos-moderation-rules-loading"]').exists(),
+    ).toBe(false)
   })
 
   it('uses loading until both own windows arrive and clears stale route rows and policy', async () => {
