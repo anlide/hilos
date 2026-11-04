@@ -174,7 +174,7 @@ test('Legal document links open real clauses from the keyboard and name the tabl
   )
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
-  await expect(heading).toHaveText('Terms')
+  await expect(heading).toHaveText('Terms of use')
   const links = page.getByRole('navigation', {
     name: 'Document pages',
     exact: true,
@@ -207,7 +207,7 @@ test('Legal document links open real clauses from the keyboard and name the tabl
     await expect(page).toHaveURL(`/hilos/legal/document/terms/${suffix}`)
     await expectPageReady(expect, page)
     await expect(heading).toHaveCount(1)
-    await expect(heading).toHaveText('Terms')
+    await expect(heading).toHaveText('Terms of use')
     await expect(link).toHaveAttribute('aria-current', 'page')
     await expect(
       links.getByRole('link').and(links.locator('[aria-current="page"]')),
@@ -215,7 +215,7 @@ test('Legal document links open real clauses from the keyboard and name the tabl
     await expect(page.getByRole('tablist')).toHaveCount(0)
     const headingId = await heading.getAttribute('id')
     expect(headingId).toBeTruthy()
-    const table = page.getByRole('table', { name: 'Terms', exact: true })
+    const table = page.getByRole('table', { name: 'Terms of use', exact: true })
     await expect(table).toHaveAttribute('aria-labelledby', headingId!)
     await expect(table).toContainText(content!)
     // The new page mounts a new link; resume ordinary Tab navigation from it.

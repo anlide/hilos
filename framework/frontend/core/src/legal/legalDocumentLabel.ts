@@ -2,7 +2,7 @@
 export function hilosLegalDocumentLabel(document: string): string {
   switch (document) {
     case 'terms':
-      return 'Terms'
+      return 'Terms of use'
     case 'privacy':
       return 'Privacy policy'
     default:

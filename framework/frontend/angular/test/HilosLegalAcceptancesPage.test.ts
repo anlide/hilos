@@ -362,7 +362,7 @@ describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
       'Preparing the export… Started at',
     )
     expect(w.find('legal-acceptances-export-filter')?.textContent?.trim()).toBe(
-      'Terms · current · “anna”',
+      'Terms of use · current · “anna”',
     )
     expect(w.button().disabled).toBe(true)
 

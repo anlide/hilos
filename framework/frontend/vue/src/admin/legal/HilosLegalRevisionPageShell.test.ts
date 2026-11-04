@@ -39,7 +39,7 @@ describe('Revision shell', () => {
         ).toBe('Revision of 2026-01-01 · Chat')
         const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
         expect(crumbs.text()).toBe(
-          'Hilos/Legal/Documents/Terms/Revisions/Revision of 2026-01-01',
+          'Hilos/Legal/Documents/Terms of use/Revisions/Revision of 2026-01-01',
         )
         expect(
           crumbs.findAll('a').map((node) => node.attributes('href')),
@@ -75,7 +75,7 @@ describe('Revision shell', () => {
         ).toEqual([label])
         expect(h.view.find('[role="tablist"]').exists()).toBe(false)
         expect(h.view.get('[data-id="legal-revision-metadata"]').text()).toBe(
-          'Terms · Published 2026-01-01 · Effective 2026-01-15 · Set 1',
+          'Terms of use · Published 2026-01-01 · Effective 2026-01-15 · Set 1',
         )
         expect(
           h.view.get('[data-id="legal-revision-significance"]').text(),

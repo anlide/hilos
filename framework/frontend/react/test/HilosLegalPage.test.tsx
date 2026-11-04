@@ -359,7 +359,7 @@ describe('React Legal Overview', () => {
       ).toContain('retired: gone — 14 people.')
       expect(
         h.get('table [data-check="newer_standard_set"]').textContent,
-      ).toContain('Terms: set 3 (substantial); the project uses set 1.')
+      ).toContain('Terms of use: set 3 (substantial); the project uses set 1.')
       const text = h.view.container.textContent
       expect(text).not.toContain('What this section does not do')
       expect(text).not.toContain('Why this is under Access & identity')

@@ -42,7 +42,7 @@ describe('React legal Document tabs with their real shared page head', () => {
         h.view
           .getAllByRole('heading', { level: 1 })
           .map((node) => node.textContent),
-      ).toEqual(['Terms'])
+      ).toEqual(['Terms of use'])
 
       const crumbs = h.view.getByRole('navigation', { name: 'Breadcrumb' })
       expect(
@@ -57,7 +57,7 @@ describe('React legal Document tabs with their real shared page head', () => {
       ])
       expect(
         within(crumbs.querySelector('[aria-current="page"]')!).getByText(
-          'Terms',
+          'Terms of use',
         ),
       ).not.toBeNull()
 
@@ -117,7 +117,7 @@ describe('React legal Document tabs with their real shared page head', () => {
     ({ page }) => {
       const h = harness(page)
       const identity = h.router.pageIdentity
-      expect(identity.get()?.pageHeadOwner?.label).toBe('Terms')
+      expect(identity.get()?.pageHeadOwner?.label).toBe('Terms of use')
       h.setPageData('legalDocument', {
         ...legalDocument,
         document: 'privacy',

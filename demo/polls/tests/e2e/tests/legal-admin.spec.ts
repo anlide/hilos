@@ -137,7 +137,9 @@ test('reads the legal catalog, deviations and revision comparison', async ({
   await expect(page).toHaveURL(documentPath)
   await expectPageReady(expect, page)
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Terms')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Terms of use',
+  )
   await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
   await expect(page.getByTestId('legal-document-sources')).toContainText(
     'Demo\\Polls\\Legal\\PollsLegalCatalog',
@@ -154,7 +156,9 @@ test('reads the legal catalog, deviations and revision comparison', async ({
       await expectPageReady(expect, page)
       await expect(link).toHaveAttribute('aria-current', 'page')
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Terms')
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        'Terms of use',
+      )
       await expect(page.getByTestId('legal-document-key')).toHaveText('terms')
       await expect.poll(() => tableRowKeys(page)).toEqual(tab.rows.terms)
       await expect(page.getByRole('table')).toContainText(tab.statement.terms)
@@ -205,7 +209,7 @@ test('reads the legal catalog, deviations and revision comparison', async ({
     )
     await expect(page).toHaveTitle('Revision of 2026-10-01 · Hilos Polls')
     await expect(page.getByTestId('legal-revision-metadata')).toHaveText(
-      'Terms · Published 2026-10-01 · Effective 2026-10-01 · Set 1',
+      'Terms of use · Published 2026-10-01 · Effective 2026-10-01 · Set 1',
     )
     await expect(page.getByTestId('legal-revision-significance')).toHaveText(
       'substantial',
@@ -412,7 +416,7 @@ test('offers complete acceptance filters and merges legal setting changes across
   await clickSubmit(expect, documentFilter.getByTestId('hilos-dropdown-toggle'))
   await expect(
     documentFilter.getByTestId('hilos-dropdown-option-0'),
-  ).toContainText('Terms')
+  ).toContainText('Terms of use')
   await expect(
     documentFilter.getByTestId('hilos-dropdown-option-1'),
   ).toContainText('Privacy policy')
@@ -558,7 +562,7 @@ test('exports the acceptance records the table shows, confirming once', async ({
   // The confirmation is still alive, so the second order leaves without a step.
   await clickSubmit(expect, page.getByTestId('legal-acceptances-export'))
   await expect(page.getByTestId('legal-acceptances-export-filter')).toHaveText(
-    'Terms',
+    'Terms of use',
   )
   await expect(page.getByTestId('legal-acceptances-export-ready')).toBeVisible()
   const terms = await exportedLinesOf(page, admin.userId)

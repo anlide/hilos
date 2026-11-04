@@ -563,7 +563,7 @@ describe('Legal Overview and assembled section', () => {
         'retired: gone — 14 people.',
       )
       expect(h.view.get('[data-check="newer_standard_set"]').text()).toContain(
-        'Terms: set 3 (substantial); the project uses set 1.',
+        'Terms of use: set 3 (substantial); the project uses set 1.',
       )
       expect(h.view.text()).not.toContain('What this section does not do')
       expect(h.view.text()).not.toContain('Why this is under Access & identity')
@@ -670,7 +670,9 @@ describe('Legal Overview and assembled section', () => {
         ).toContain('retired: gone — 14 people.')
         expect(
           h.view.get('[data-check="newer_standard_set"]').text(),
-        ).toContain('Terms: set 3 (substantial); the project uses set 1.')
+        ).toContain(
+          'Terms of use: set 3 (substantial); the project uses set 1.',
+        )
         expect(h.sendViewport).not.toHaveBeenCalled()
         expect(h.dispatch).not.toHaveBeenCalled()
       } finally {

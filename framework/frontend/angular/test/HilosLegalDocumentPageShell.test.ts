@@ -70,7 +70,7 @@ describe('HilosLegalDocumentPageShell', () => {
     expect(h.root.querySelector('[data-id="hilos-skeleton"]')).not.toBeNull()
     h.answer()
     expect(h.root.querySelectorAll('h1')).toHaveLength(1)
-    expect(text(h.root, 'h1')).toBe('Terms')
+    expect(text(h.root, 'h1')).toBe('Terms of use')
     expect(text(h.root, '[data-id="legal-document-key"]')).toBe('terms')
     expect(text(h.root, '[data-id="legal-document-set-version"]')).toBe('Set 1')
     expect(text(h.root, '[data-id="legal-document-revision"]')).toBe(
@@ -81,7 +81,7 @@ describe('HilosLegalDocumentPageShell', () => {
       [...crumbs.querySelectorAll('li')].map((node) =>
         node.textContent?.replace(/\//g, '').trim(),
       ),
-    ).toEqual(['Hilos', 'Legal', 'Documents', 'Terms'])
+    ).toEqual(['Hilos', 'Legal', 'Documents', 'Terms of use'])
     expect(crumbs.querySelector('[aria-current="page"] a')).toBeNull()
     expect(h.sendTableViewport).not.toHaveBeenCalled()
     expect(h.dispatch).not.toHaveBeenCalled()
@@ -186,7 +186,7 @@ describe('HilosLegalDocumentPageShell', () => {
       h.data('legalCatalogRefusal', null)
       expect(h.root.querySelector('[role="alert"]')).toBeNull()
       expect(h.root.querySelector('table')).not.toBeNull()
-      expect(text(h.root, 'h1')).toBe('Terms')
+      expect(text(h.root, 'h1')).toBe('Terms of use')
     }
     h.fixture.destroy()
   })

@@ -400,7 +400,7 @@ describe('the lines of the export', () => {
       }),
     ).toBe('All records')
     expect(hilosLegalAcceptancesExportFilterLine(preparing)).toBe(
-      'Terms · current · “anna”',
+      'Terms of use · current · “anna”',
     )
     expect(
       hilosLegalAcceptancesExportFilterLine({

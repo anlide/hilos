@@ -453,7 +453,7 @@ describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
     ).toContain('Preparing the export… Started at')
     expect(
       w.wrapper.get('[data-id="legal-acceptances-export-filter"]').text(),
-    ).toBe('Terms · current · “anna”')
+    ).toBe('Terms of use · current · “anna”')
     expect(w.button().element.disabled).toBe(true)
 
     await w.emit(ready)

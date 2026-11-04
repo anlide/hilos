@@ -161,9 +161,9 @@ them. No source under `admin/**` is exempt from the initial-graph proof.
 Restore progress and its formatters/clock have their common owner at
 `connection/restoreProgress.ts`, reexported by base, root, `admin/backup` and the
 former `hilosBackups` module. The root-facing `hilosLegalDocumentLabel` has its
-separate owner at `legal/legalDocumentLabel.ts`, shared by root/base/legal section
-and the former direct admin module. The distinct label inside `legalAgreements`
-retains its existing behavior. Each implementation has one `tsc` owner.
+single implementation at `legal/legalDocumentLabel.ts`, shared by root, base,
+the legal section, the former direct admin module, and the re-export from
+`legalAgreements`. Each implementation has one `tsc` owner.
 
 Controllers, models, table factories and page-only validators remain with their
 lazy admin sections. There is no blanket exemption for anything called

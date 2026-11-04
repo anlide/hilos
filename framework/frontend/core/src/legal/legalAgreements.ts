@@ -11,6 +11,7 @@ import {
   subscribeSignal,
   type ReadonlySignal,
 } from '../state/signal.js'
+import { hilosLegalDocumentLabel } from './legalDocumentLabel.js'
 
 export const PROFILE_LEGAL_AGREEMENTS_SECTION = 'legalAgreements'
 export const PROFILE_LEGAL_AGREEMENT_TEXTS_SECTION = 'legalAgreementTexts'
@@ -170,12 +171,7 @@ export function createHilosLegalAgreementsStore(context: HilosLegalContext) {
   }
 }
 
-/** The names of the two legal documents, shared by every view layer. */
-export function hilosLegalDocumentLabel(
-  document: HilosLegalDocumentKey,
-): string {
-  return document === 'terms' ? 'Terms of use' : 'Privacy policy'
-}
+export { hilosLegalDocumentLabel } from './legalDocumentLabel.js'
 
 /** Formats a calendar date without letting the reader's time zone move its day. */
 export function formatHilosLegalDate(date: string): string {

@@ -58,6 +58,8 @@ import * as accountDeletion from '../../src/profile/accountDeletion.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
 import * as profileRenameMemory from '../../src/profile/profileRenameMemory.js'
+import * as legalAgreements from '../../src/legal/legalAgreements.js'
+import * as legalDocumentLabel from '../../src/legal/legalDocumentLabel.js'
 import * as legalHistory from '../../src/legal/legalHistory.js'
 import * as licenseDependencies from '../../src/license/licenseDependencies.js'
 import * as profileHead from '../../src/profile/profileHead.js'
@@ -1354,8 +1356,24 @@ describe('core public entries', () => {
         ...daemonClockValues,
       ].sort(),
     )
-    expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms')
+    expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms of use')
+    expect(base.hilosLegalDocumentLabel('privacy')).toBe('Privacy policy')
     expect(base.hilosLegalDocumentLabel('project-key')).toBe('project-key')
+    expect(legalAgreements.hilosLegalDocumentLabel).toBe(
+      legalDocumentLabel.hilosLegalDocumentLabel,
+    )
+    expect(core.hilosLegalDocumentLabel).toBe(
+      legalDocumentLabel.hilosLegalDocumentLabel,
+    )
+    expect(base.hilosLegalDocumentLabel).toBe(
+      legalDocumentLabel.hilosLegalDocumentLabel,
+    )
+    expect(legal.hilosLegalDocumentLabel).toBe(
+      legalDocumentLabel.hilosLegalDocumentLabel,
+    )
+    expect(legalModel.hilosLegalDocumentLabel).toBe(
+      legalDocumentLabel.hilosLegalDocumentLabel,
+    )
     for (const name of timeZoneValues) {
       expect(base, name).toHaveProperty(name)
       expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(

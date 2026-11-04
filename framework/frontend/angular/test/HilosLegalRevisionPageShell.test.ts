@@ -90,7 +90,7 @@ describe('HilosLegalRevisionPageShell', () => {
         'Hilos',
         'Legal',
         'Documents',
-        'Terms',
+        'Terms of use',
         'Revisions',
         'Revision of 2026-01-01',
       ])
@@ -134,7 +134,7 @@ describe('HilosLegalRevisionPageShell', () => {
         '/hilos/legal/document/terms/revision/historical%2Frevision/text',
       )
       expect(text(h.root, '[data-id="legal-revision-metadata"]')).toBe(
-        'Terms · Published 2026-01-01 · Effective 2026-01-15 · Set 1',
+        'Terms of use · Published 2026-01-01 · Effective 2026-01-15 · Set 1',
       )
       expect(text(h.root, '[data-id="legal-revision-significance"]')).toBe(
         'editorial',
@@ -221,7 +221,9 @@ describe('HilosLegalRevisionPageShell', () => {
     expect(shell.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
       'Revision of 2026-01-01',
     )
-    expect(shell.router.pageIdentity.get()?.breadcrumb[3]?.label).toBe('Terms')
+    expect(shell.router.pageIdentity.get()?.breadcrumb[3]?.label).toBe(
+      'Terms of use',
+    )
     const replacement = legalRevisionBench(HilosPages.LEGAL_REVISION_TEXT)
     shell.fixture.componentRef.setInput('context', replacement.context)
     shell.fixture.detectChanges()

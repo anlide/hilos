@@ -56,7 +56,7 @@ describe('React Revision shell', () => {
         ['Hilos', '/hilos'],
         ['Legal', '/hilos/legal'],
         ['Documents', '/hilos/legal/documents'],
-        ['Terms', '/hilos/legal/document/terms'],
+        ['Terms of use', '/hilos/legal/document/terms'],
         ['Revisions', '/hilos/legal/document/terms/revisions'],
       ])
       const currentCrumbs = crumbs.querySelectorAll('[aria-current="page"]')
@@ -91,7 +91,9 @@ describe('React Revision shell', () => {
       expect(
         view.container.querySelector('[data-id="legal-revision-metadata"]')
           ?.textContent,
-      ).toBe('Terms · Published 2026-01-01 · Effective 2026-01-15 · Set 1')
+      ).toBe(
+        'Terms of use · Published 2026-01-01 · Effective 2026-01-15 · Set 1',
+      )
       expect(
         view.container.querySelector('[data-id="legal-revision-significance"]')
           ?.textContent,

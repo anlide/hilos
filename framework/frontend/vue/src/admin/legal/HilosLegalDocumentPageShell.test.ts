@@ -32,10 +32,10 @@ describe('Document shell and assembled pages', () => {
         expect(h.view.findAllComponents(HilosAdminPage)).toHaveLength(1)
         expect(h.view.findAllComponents(HilosPageHead)).toHaveLength(1)
         expect(h.view.findAll('h1').map((node) => node.text())).toEqual([
-          'Terms',
+          'Terms of use',
         ])
         const crumbs = h.view.get('[data-id="hilos-breadcrumb"]')
-        expect(crumbs.text()).toBe('Hilos/Legal/Documents/Terms')
+        expect(crumbs.text()).toBe('Hilos/Legal/Documents/Terms of use')
         expect(
           crumbs.findAll('a').map((node) => node.attributes('href')),
         ).toEqual(['/hilos', '/hilos/legal', '/hilos/legal/documents'])
@@ -90,7 +90,7 @@ describe('Document shell and assembled pages', () => {
     const h = documentHarness(HilosLegalDocumentPageShell)
     const identity = pageIdentity(h.scopes)
     try {
-      expect(identity.get()?.pageHeadOwner?.label).toBe('Terms')
+      expect(identity.get()?.pageHeadOwner?.label).toBe('Terms of use')
       h.scope.data.set('legalDocument', {
         ...legalDocument,
         document: 'privacy',

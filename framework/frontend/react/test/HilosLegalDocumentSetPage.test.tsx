@@ -28,7 +28,9 @@ describe('React legal Standard set page', () => {
     expect(h.liveWindows()).toEqual({ [h.tableKey]: 1 })
     expect(h.sendViewport).not.toHaveBeenCalled()
     expect(h.dispatch).not.toHaveBeenCalled()
-    expect(view.getByRole('heading', { level: 1 }).textContent).toBe('Terms')
+    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(
+      'Terms of use',
+    )
     expect(
       view.container.querySelector('[data-id="legal-set-metadata"]')
         ?.textContent,

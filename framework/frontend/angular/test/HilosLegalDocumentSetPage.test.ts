@@ -29,7 +29,7 @@ describe('HilosLegalDocumentSetPage', () => {
   it('renders its first window and metadata, then sends document-scoped search and order', () => {
     const h = harness()
     expect(h.root.querySelectorAll('h1')).toHaveLength(1)
-    expect(text(h.root, 'h1')).toBe('Terms')
+    expect(text(h.root, 'h1')).toBe('Terms of use')
     expect(text(h.root, '[data-id="legal-set-metadata"]')).toBe(
       'Set 1 from 2026-09-01 · substantial',
     )
