@@ -56,6 +56,7 @@ export function HilosDaemonWorkersPage({
   const rows = useSignal(workers.controller.rows)
   const emptyState = daemonProcessesEmptyState(heading, reported)
   const silentSince = formatDaemonNodeSilentSince(heading, Date.now())
+  const clustered = heading?.clustered === true
   useEffect(() => {
     workers.start()
     return () => workers.dispose()
@@ -66,21 +67,27 @@ export function HilosDaemonWorkersPage({
       showLogLinks={showLogLinks}
       page={HilosPages.DAEMON_WORKERS}
     >
-      <div className="position-relative">
-        <p className="small text-body-secondary invisible" aria-hidden="true">
-          This node has been silent since September 30, 2026, 11:59 PM. The
-          workers below are from its last report.
-        </p>
-        {silentSince !== null && rows.length > 0 && (
+      {clustered && (
+        <div className="hilos-stack mb-3 position-relative">
           <p
-            className="small text-body-secondary position-absolute top-0 start-0 w-100"
-            data-id="hilos-daemon-workers-silent"
+            className="small text-body-secondary invisible"
+            aria-hidden="true"
+            inert
           >
-            This node has been silent since {silentSince}. The workers below are
-            from its last report.
+            This node has been silent since September 30, 2026, 11:59 PM. The
+            workers below are from its last report.
           </p>
-        )}
-      </div>
+          {silentSince !== null && rows.length > 0 && (
+            <p
+              className="small text-body-secondary position-absolute top-0 start-0 w-100"
+              data-id="hilos-daemon-workers-silent"
+            >
+              This node has been silent since {silentSince}. The workers below
+              are from its last report.
+            </p>
+          )}
+        </div>
+      )}
       <HilosViewportTable
         controller={workers.controller}
         cells={{

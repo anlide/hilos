@@ -161,78 +161,122 @@ describe('HilosDaemonNodePage', () => {
     expect(h.registerTableWindow).not.toHaveBeenCalled()
   })
 
-  it('keeps known no-report, unknown sections, and known zeroes distinct', async () => {
-    const h = nodeHarness()
-    h.answer(
-      nodeOverview({
+  it.each([{ clustered: true }, { clustered: false }])(
+    'keeps known no-report, unknown sections, and known zeroes distinct (clustered: $clustered)',
+    async ({ clustered }) => {
+      const h = nodeHarness()
+      const heading = nodeHeading({ clustered, state: null, role: null })
+      const noReport = nodeOverview({
         workers: null,
         workerRestarts24h: null,
         uptimeMinutes: null,
         measurements: null,
         standing: null,
         environment: null,
-      }),
-      nodeHeading({ state: null, role: null }),
-    )
-    await nextTick()
-    expect(h.view.get(id('report-notice')).text()).toContain(
-      'has not reported yet',
-    )
-    for (const field of [
-      'cores',
-      'total-memory',
-      'monopolistic-count',
-      'uptime',
-      'environment-attention',
-      'environment-differences',
-    ]) {
-      expect(h.view.get(id(field)).text()).toBe('—')
-    }
-    const full = nodeOverview()
-    h.answer(
-      nodeOverview({
-        workers: [],
-        uptimeMinutes: 0,
-        workerRestarts24h: 0,
-        measurements: {
-          ...full.measurements!,
-          cores: 0,
-          daemonCores: 0,
-          masterCores: 0,
-          masterMemory: 0,
-          workersMemory: 0,
-          workersMeasured: 0,
-          memoryCeiling: 0,
-          machineLoad: 0,
-        },
-        standing: { sessions: 0, connections: 0 },
-        environment: {
-          missingRequired: 0,
-          fromExample: 0,
-          drifted: 0,
-          orphans: 0,
-        },
-        environmentComparison: {
-          answeringNodes: 2,
-          divergedKeys: 0,
-          sourcesDifferKeys: 0,
-        },
-      }),
-    )
-    await nextTick()
-    expect(h.view.get(id('cores')).text()).toBe('0')
-    expect(h.view.get(id('daemon-cores')).text()).toBe('0 cores')
-    expect(h.view.get(id('cpu-percent')).text()).toBe('— of available CPU')
-    expect(h.view.get(id('memory-percent')).text()).toBe('— of ceiling')
-    expect(h.view.get(id('total-memory')).text()).toBe('0 B')
-    expect(h.view.get(id('monopolistic-count')).text()).toBe('0')
-    expect(h.view.get(id('uptime')).text()).toBe('0 min')
-    expect(h.view.get(id('environment-attention')).text()).toBe('0')
-    expect(h.view.get(id('environment-differences')).text()).toBe('0')
-    expect(h.view.get(id('node-connections')).text()).toBe('0 connections')
-    expect(h.view.get(id('report-notice')).classes()).toContain('invisible')
-    expect(h.view.get(id('report-notice')).attributes('inert')).toBeDefined()
-  })
+      })
+      h.answer(noReport, heading)
+      await nextTick()
+      const hint = h.view
+        .findAll('dl')
+        .find((tile) => tile.find('dt').text() === 'Node cores')!
+        .get('span:not([aria-hidden])')
+      expect(hint.text()).toBe(
+        clustered ? '—' : 'This node has not reported yet.',
+      )
+      expect(hint.element.closest('[aria-hidden="true"], [inert]')).toBeNull()
+      expect(hint.element.parentElement?.title).toBe(hint.text())
+      if (clustered) {
+        expect(h.view.get(id('report-notice')).text()).toContain(
+          'has not reported yet',
+        )
+      } else {
+        expect(h.view.find(id('report-notice')).exists()).toBe(false)
+        expect(h.view.find(id('report-details')).exists()).toBe(false)
+      }
+      for (const field of [
+        'cores',
+        'total-memory',
+        'monopolistic-count',
+        'uptime',
+        'environment-attention',
+        'environment-differences',
+      ]) {
+        expect(h.view.get(id(field)).text()).toBe('—')
+      }
+      for (const section of [
+        { workers: [] },
+        { uptimeMinutes: 0 },
+        { workerRestarts24h: 0 },
+      ]) {
+        h.publish({ overview: { ...noReport, ...section } })
+        await nextTick()
+        expect(hint.text()).toBe('—')
+        expect(h.view.get(id('cores')).text()).toBe('—')
+        if (clustered) {
+          expect(
+            h.view.get(id('report-notice')).attributes('inert'),
+          ).toBeDefined()
+        }
+      }
+      const full = nodeOverview()
+      h.answer(
+        nodeOverview({
+          workers: [],
+          uptimeMinutes: 0,
+          workerRestarts24h: 0,
+          measurements: {
+            ...full.measurements!,
+            cores: 0,
+            daemonCores: 0,
+            masterCores: 0,
+            masterMemory: 0,
+            workersMemory: 0,
+            workersMeasured: 0,
+            memoryCeiling: 0,
+            machineLoad: 0,
+          },
+          standing: { sessions: 0, connections: 0 },
+          environment: {
+            missingRequired: 0,
+            fromExample: 0,
+            drifted: 0,
+            orphans: 0,
+          },
+          environmentComparison: {
+            answeringNodes: 2,
+            divergedKeys: 0,
+            sourcesDifferKeys: 0,
+          },
+        }),
+        heading,
+      )
+      await nextTick()
+      expect(h.view.get(id('cores')).text()).toBe('0')
+      expect(hint.text()).toBe('Container CPU quota')
+      expect(hint.element.closest('[aria-hidden="true"], [inert]')).toBeNull()
+      expect(hint.element.parentElement?.title).toBe(hint.text())
+      expect(h.view.get(id('daemon-cores')).text()).toBe('0 cores')
+      expect(h.view.get(id('cpu-percent')).text()).toBe('— of available CPU')
+      expect(h.view.get(id('memory-percent')).text()).toBe('— of ceiling')
+      expect(h.view.get(id('total-memory')).text()).toBe('0 B')
+      expect(h.view.get(id('monopolistic-count')).text()).toBe('0')
+      expect(h.view.get(id('uptime')).text()).toBe('0 min')
+      expect(h.view.get(id('environment-attention')).text()).toBe('0')
+      expect(h.view.get(id('environment-differences')).text()).toBe(
+        clustered ? '0' : '—',
+      )
+      expect(h.view.get(id('node-connections')).text()).toBe('0 connections')
+      if (clustered) {
+        expect(h.view.get(id('report-notice')).classes()).toContain('invisible')
+        expect(
+          h.view.get(id('report-notice')).attributes('inert'),
+        ).toBeDefined()
+      } else {
+        expect(h.view.find(id('report-notice')).exists()).toBe(false)
+        expect(h.view.find(id('report-details')).exists()).toBe(false)
+      }
+    },
+  )
 
   it('uses heading role for data-node browsers and retains an incomplete measurement as unknown', async () => {
     const h = nodeHarness()

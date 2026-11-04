@@ -56,30 +56,33 @@ import { HilosDaemonEnvSourceBadge } from './HilosDaemonEnvSourceBadge.js'
   ],
   template: `
     @let nodeSilent = this.nodeSilent();
+    @let clustered = this.clustered();
     @let summary = this.summary();
     @let keys = this.keys();
     @let keysFilter = this.keysFilter();
 
     <hilos-daemon-node-shell [context]="context()" [page]="page">
       <ng-template #pageBody>
-        <div class="hilos-stack mb-3">
-          <p
-            class="small text-body-secondary mb-0 invisible"
-            aria-hidden="true"
-          >
-            This node is silent. Only the node itself reads its environment, so
-            nothing is shown until it answers again.
-          </p>
-          @if (nodeSilent) {
+        @if (clustered) {
+          <div class="hilos-stack mb-3">
             <p
-              class="small text-body-secondary mb-0"
-              data-id="hilos-daemon-env-silent"
+              class="small text-body-secondary mb-0 invisible"
+              aria-hidden="true"
             >
               This node is silent. Only the node itself reads its environment,
               so nothing is shown until it answers again.
             </p>
-          }
-        </div>
+            @if (nodeSilent) {
+              <p
+                class="small text-body-secondary mb-0"
+                data-id="hilos-daemon-env-silent"
+              >
+                This node is silent. Only the node itself reads its environment,
+                so nothing is shown until it answers again.
+              </p>
+            }
+          </div>
+        }
 
         @if (!nodeSilent && summary !== null) {
           <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
@@ -408,6 +411,9 @@ export class HilosDaemonEnvPage {
     nodeSilent: false,
   })
   protected readonly nodeSilent = computed(() => this.environment().nodeSilent)
+  protected readonly clustered = computed(
+    () => this.environment().node?.clustered === true,
+  )
   protected readonly summary = computed(() => {
     const environment = this.environment().environment
     return environment ? daemonEnvSummary(environment.keys) : null

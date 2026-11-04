@@ -107,6 +107,7 @@ function Agents({
     (heading?.clustered === true ? ` --node=${nodeId}` : '')
   const emptyState = daemonProcessesEmptyState(heading, reported)
   const silentSince = formatDaemonNodeSilentSince(heading, Date.now())
+  const clustered = heading?.clustered === true
 
   useEffect(() => {
     agents.start()
@@ -149,21 +150,27 @@ function Agents({
 
   return (
     <>
-      <div className="hilos-stack">
-        <p className="small text-body-secondary invisible" aria-hidden="true">
-          This node has been silent since September 30, 2026, 11:59 PM. The
-          agents below are from its last report.
-        </p>
-        {silentSince !== null && rows.length > 0 && (
+      {clustered && (
+        <div className="hilos-stack mb-3">
           <p
-            className="small text-body-secondary"
-            data-id="hilos-daemon-agents-silent"
+            className="small text-body-secondary invisible"
+            aria-hidden="true"
+            inert
           >
-            This node has been silent since {silentSince}. The agents below are
-            from its last report.
+            This node has been silent since September 30, 2026, 11:59 PM. The
+            agents below are from its last report.
           </p>
-        )}
-      </div>
+          {silentSince !== null && rows.length > 0 && (
+            <p
+              className="small text-body-secondary"
+              data-id="hilos-daemon-agents-silent"
+            >
+              This node has been silent since {silentSince}. The agents below
+              are from its last report.
+            </p>
+          )}
+        </div>
+      )}
       <HilosViewportTable
         controller={agents.controller}
         cells={{

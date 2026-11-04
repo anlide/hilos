@@ -71,41 +71,69 @@ describe('HilosDaemonHttpServerPage', () => {
     }
   })
 
-  it('distinguishes missing metrics from known zeros and a retained silent report', () => {
-    const h = harness()
-    expect(h.el('hilos-daemon-http-address')?.textContent?.trim()).toBe('—')
-    expect(h.el('hilos-daemon-http-status')?.getAttribute('data-status')).toBe(
-      'waiting',
-    )
-    h.scope.data.set(DAEMON_NODE_DATA, {
-      clustered: true,
-      name: null,
-      role: null,
-      state: 'silent',
-      silentSince: 1700000000000,
-      clock: null,
-    })
-    h.detect()
-    expect(h.el('hilos-daemon-http-status')?.getAttribute('data-status')).toBe(
-      'silent',
-    )
-    h.scope.data.set(DAEMON_HTTP_DATA, {
-      ...summary,
-      requests: 0,
-      serverErrors: 0,
-      slow: 0,
-    })
-    h.detect()
-    expect(h.el('hilos-daemon-http-requests')?.textContent?.trim()).toBe('0')
-    expect(h.el('hilos-daemon-http-status')?.getAttribute('data-status')).toBe(
-      'last-report',
-    )
-    expect(h.el('hilos-daemon-http-status')?.textContent).toContain(
-      'last report',
-    )
-    h.fixture.destroy()
-    expect(h.listeners()).toBe(0)
-  })
+  it.each([true, false])(
+    'distinguishes missing metrics from known zeros and a retained silent report in clustered mode %s',
+    (clustered) => {
+      const h = harness()
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        clustered,
+        name: null,
+        role: null,
+        state: 'standby',
+        silentSince: null,
+        clock: null,
+      })
+      h.detect()
+      expect(h.el('hilos-daemon-http-address')?.textContent?.trim()).toBe('—')
+      if (!clustered) h.window('hilosDaemonHttpRoutes', [])
+      if (clustered) {
+        expect(
+          h.el('hilos-daemon-http-status')?.getAttribute('data-status'),
+        ).toBe('waiting')
+      } else {
+        expect(h.el('hilos-daemon-http-status')).toBeNull()
+        expect(h.root.querySelector('tbody')?.textContent).toContain(
+          'The node has not reported HTTP metrics yet',
+        )
+      }
+      h.scope.data.set(DAEMON_NODE_DATA, {
+        clustered,
+        name: null,
+        role: null,
+        state: 'silent',
+        silentSince: 1700000000000,
+        clock: null,
+      })
+      h.detect()
+      if (clustered) {
+        expect(
+          h.el('hilos-daemon-http-status')?.getAttribute('data-status'),
+        ).toBe('silent')
+      } else {
+        expect(h.el('hilos-daemon-http-status')).toBeNull()
+      }
+      h.scope.data.set(DAEMON_HTTP_DATA, {
+        ...summary,
+        requests: 0,
+        serverErrors: 0,
+        slow: 0,
+      })
+      h.detect()
+      expect(h.el('hilos-daemon-http-requests')?.textContent?.trim()).toBe('0')
+      if (clustered) {
+        expect(
+          h.el('hilos-daemon-http-status')?.getAttribute('data-status'),
+        ).toBe('last-report')
+        expect(h.el('hilos-daemon-http-status')?.textContent).toContain(
+          'last report',
+        )
+      } else {
+        expect(h.el('hilos-daemon-http-status')).toBeNull()
+      }
+      h.fixture.destroy()
+      expect(h.listeners()).toBe(0)
+    },
+  )
 
   it('draws the whole-page summary and the routes window with its declared table name', () => {
     const h = harness()

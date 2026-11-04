@@ -54,35 +54,37 @@ import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 
     <hilos-daemon-node-shell [context]="context()" [page]="page">
       <ng-template #pageBody>
-        <div class="hilos-stack mb-3">
-          <p
-            class="small text-body-secondary mb-0 invisible"
-            aria-hidden="true"
-          >
-            {{ waitingMessage }}
-          </p>
-          <p
-            class="small text-body-secondary mb-0 invisible"
-            aria-hidden="true"
-          >
-            {{ silentMessage }}
-          </p>
-          <p
-            class="small text-body-secondary mb-0 invisible"
-            aria-hidden="true"
-          >
-            {{ lastReportReserve }}
-          </p>
-          @if (status !== null) {
+        @if (heading()?.clustered === true) {
+          <div class="hilos-stack mb-3">
             <p
-              class="small text-body-secondary mb-0"
-              data-id="hilos-daemon-http-status"
-              [attr.data-status]="status"
+              class="small text-body-secondary mb-0 invisible"
+              aria-hidden="true"
             >
-              {{ statusMessage }}
+              {{ waitingMessage }}
             </p>
-          }
-        </div>
+            <p
+              class="small text-body-secondary mb-0 invisible"
+              aria-hidden="true"
+            >
+              {{ silentMessage }}
+            </p>
+            <p
+              class="small text-body-secondary mb-0 invisible"
+              aria-hidden="true"
+            >
+              {{ lastReportReserve }}
+            </p>
+            @if (status !== null) {
+              <p
+                class="small text-body-secondary mb-0"
+                data-id="hilos-daemon-http-status"
+                [attr.data-status]="status"
+              >
+                {{ statusMessage }}
+              </p>
+            }
+          </div>
+        }
         <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
           <div class="col">
             <div class="border rounded-3 p-3 h-100">

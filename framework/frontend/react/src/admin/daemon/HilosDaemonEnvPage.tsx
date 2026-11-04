@@ -91,22 +91,25 @@ export function HilosDaemonEnvPage({
       showLogLinks={showLogLinks}
       page={HilosPages.DAEMON_ENV}
     >
-      <div className="hilos-stack mb-3">
-        <p
-          className="small text-body-secondary mb-0 invisible"
-          aria-hidden="true"
-        >
-          {silentMessage}
-        </p>
-        {page.nodeSilent && (
+      {page.node?.clustered === true && (
+        <div className="hilos-stack mb-3">
           <p
-            className="small text-body-secondary mb-0"
-            data-id="hilos-daemon-env-silent"
+            className="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
+            inert
           >
             {silentMessage}
           </p>
-        )}
-      </div>
+          {page.nodeSilent && (
+            <p
+              className="small text-body-secondary mb-0"
+              data-id="hilos-daemon-env-silent"
+            >
+              {silentMessage}
+            </p>
+          )}
+        </div>
+      )}
       {summary !== null && (
         <div className="row row-cols-2 row-cols-md-4 g-2 mb-3">
           <div className="col">

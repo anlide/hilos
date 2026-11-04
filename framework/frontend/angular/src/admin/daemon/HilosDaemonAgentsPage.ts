@@ -67,21 +67,23 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
   template: `
     <hilos-daemon-node-shell [context]="context()" [page]="page">
       <ng-template #pageBody>
-        <div class="position-relative">
-          <p class="small text-body-secondary invisible" aria-hidden="true">
-            This node has been silent since September 30, 2026, 11:59 PM. The
-            agents below are from its last report.
-          </p>
-          @if (silentSince() !== null && rows().length > 0) {
-            <p
-              class="small text-body-secondary position-absolute top-0 start-0 w-100"
-              data-id="hilos-daemon-agents-silent"
-            >
-              This node has been silent since {{ silentSince() }}. The agents
-              below are from its last report.
+        @if (heading()?.clustered === true) {
+          <div class="position-relative">
+            <p class="small text-body-secondary invisible" aria-hidden="true">
+              This node has been silent since September 30, 2026, 11:59 PM. The
+              agents below are from its last report.
             </p>
-          }
-        </div>
+            @if (silentSince() !== null && rows().length > 0) {
+              <p
+                class="small text-body-secondary position-absolute top-0 start-0 w-100"
+                data-id="hilos-daemon-agents-silent"
+              >
+                This node has been silent since {{ silentSince() }}. The agents
+                below are from its last report.
+              </p>
+            }
+          </div>
+        }
         <hilos-viewport-table [controller]="agents().controller">
           <ng-template [hilosTableCell]="DAEMON_AGENT_ID_FIELD" let-row>
             <code class="fw-semibold">{{ row.agentId }}</code>

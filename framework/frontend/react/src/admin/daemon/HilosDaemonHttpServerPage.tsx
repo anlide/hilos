@@ -70,6 +70,7 @@ export function HilosDaemonHttpServerPage({
         : status === 'last-report'
           ? `This node has been silent since ${silentSince ?? '—'}. The values below are from its last report.`
           : ''
+  const clustered = heading?.clustered === true
   useEffect(() => {
     routes.start()
     return () => routes.dispose()
@@ -80,35 +81,40 @@ export function HilosDaemonHttpServerPage({
       showLogLinks={showLogLinks}
       page={HilosPages.DAEMON_HTTP_SERVER}
     >
-      <div className="hilos-stack mb-3">
-        <p
-          className="small text-body-secondary mb-0 invisible"
-          aria-hidden="true"
-        >
-          {waitingMessage}
-        </p>
-        <p
-          className="small text-body-secondary mb-0 invisible"
-          aria-hidden="true"
-        >
-          {silentMessage}
-        </p>
-        <p
-          className="small text-body-secondary mb-0 invisible"
-          aria-hidden="true"
-        >
-          {lastReportReserve}
-        </p>
-        {status !== null && (
+      {clustered && (
+        <div className="hilos-stack mb-3">
           <p
-            className="small text-body-secondary mb-0"
-            data-id="hilos-daemon-http-status"
-            data-status={status}
+            className="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
+            inert
           >
-            {statusMessage}
+            {waitingMessage}
           </p>
-        )}
-      </div>
+          <p
+            className="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
+            inert
+          >
+            {silentMessage}
+          </p>
+          <p
+            className="small text-body-secondary mb-0 invisible"
+            aria-hidden="true"
+            inert
+          >
+            {lastReportReserve}
+          </p>
+          {status !== null && (
+            <p
+              className="small text-body-secondary mb-0"
+              data-id="hilos-daemon-http-status"
+              data-status={status}
+            >
+              {statusMessage}
+            </p>
+          )}
+        </div>
+      )}
       <div className="row row-cols-2 row-cols-md-4 g-2 mb-3">
         <div className="col">
           <div className="border rounded-3 p-3 h-100">

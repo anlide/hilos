@@ -102,21 +102,33 @@ export function HilosDaemonNodePage({
   const mismatchPath = heading?.clustered
     ? router.resolvePath(HilosPages.DAEMON_ENV_MISMATCH, {})
     : undefined
-  const reported =
+  const reported = Boolean(
     node &&
     (node.workers !== null ||
       node.measurements !== null ||
       node.standing !== null ||
       node.environment !== null ||
       node.uptimeMinutes !== null ||
-      node.workerRestarts24h !== null)
+      node.workerRestarts24h !== null),
+  )
+  const waitingMessage = 'This node has not reported yet.'
+  const coresHint =
+    heading?.clustered === false && !reported
+      ? waitingMessage
+      : daemonCoresBoundHint(measurements?.coresBound)
+  const coresHints = [
+    waitingMessage,
+    daemonCoresBoundHint('quota'),
+    daemonCoresBoundHint('cpus'),
+    daemonCoresBoundHint(null),
+  ]
   const reportNotice =
     !node || !heading
       ? null
       : !reported
         ? heading.state === 'silent'
           ? 'Silent · this node has not reported yet.'
-          : 'This node has not reported yet.'
+          : waitingMessage
         : !node.online
           ? `Silent · values from the last report. Last arrival: ${silentSince ?? '—'}.`
           : null
@@ -128,37 +140,39 @@ export function HilosDaemonNodePage({
     >
       {node && heading ? (
         <div data-id="hilos-daemon-node-overview" data-node-id={node.nodeId}>
-          <div className="hilos-stack mb-3 small text-body-secondary">
-            <div
-              className="invisible d-flex align-items-center gap-2"
-              aria-hidden="true"
-              inert
-            >
-              <span className="flex-grow-1 text-truncate">&nbsp;</span>
-              <span className="btn btn-link btn-sm p-0 flex-shrink-0">
-                <i className="bi bi-info-circle" aria-hidden="true" />
-              </span>
-            </div>
-            <div
-              className={`d-flex align-items-center gap-2 ${reportNotice === null ? 'invisible' : ''}`}
-              aria-hidden={reportNotice === null ? true : undefined}
-              inert={reportNotice === null}
-              data-id="hilos-daemon-report-notice"
-            >
-              <span className="flex-grow-1 text-truncate">
-                {reportNotice ?? '\u00a0'}
-              </span>
-              <button
-                type="button"
-                className="btn btn-link btn-sm p-0 flex-shrink-0"
-                aria-label="Show report details"
-                data-id="hilos-daemon-report-details"
-                onClick={() => setNoticeOpen(true)}
+          {heading.clustered === true && (
+            <div className="hilos-stack mb-3 small text-body-secondary">
+              <div
+                className="invisible d-flex align-items-center gap-2"
+                aria-hidden="true"
+                inert
               >
-                <i className="bi bi-info-circle" aria-hidden="true" />
-              </button>
+                <span className="flex-grow-1 text-truncate">&nbsp;</span>
+                <span className="btn btn-link btn-sm p-0 flex-shrink-0">
+                  <i className="bi bi-info-circle" aria-hidden="true" />
+                </span>
+              </div>
+              <div
+                className={`d-flex align-items-center gap-2 ${reportNotice === null ? 'invisible' : ''}`}
+                aria-hidden={reportNotice === null ? true : undefined}
+                inert={reportNotice === null}
+                data-id="hilos-daemon-report-notice"
+              >
+                <span className="flex-grow-1 text-truncate">
+                  {reportNotice ?? '\u00a0'}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 flex-shrink-0"
+                  aria-label="Show report details"
+                  data-id="hilos-daemon-report-details"
+                  onClick={() => setNoticeOpen(true)}
+                >
+                  <i className="bi bi-info-circle" aria-hidden="true" />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           <h2 className="h6">Processor</h2>
           <div className="row row-cols-2 row-cols-md-4 g-2 mb-3">
             <div className="col">
@@ -169,8 +183,22 @@ export function HilosDaemonNodePage({
                 <dd className="fs-5 mb-1" data-id="hilos-daemon-cores">
                   {formatDaemonCores(measurements?.cores)}
                 </dd>
-                <dd className="small mb-0">
-                  {daemonCoresBoundHint(measurements?.coresBound)}
+                <dd
+                  className={`small mb-0 ${heading.clustered === false ? 'hilos-stack' : ''}`}
+                  title={coresHint}
+                >
+                  {heading.clustered === false &&
+                    coresHints.map((hint) => (
+                      <span
+                        key={hint}
+                        className="invisible"
+                        aria-hidden="true"
+                        inert
+                      >
+                        {hint}
+                      </span>
+                    ))}
+                  <span>{coresHint}</span>
                 </dd>
               </dl>
             </div>
@@ -488,7 +516,7 @@ export function HilosDaemonNodePage({
           <HilosSkeleton />
         </div>
       )}
-      {node && (
+      {node && heading?.clustered === true && (
         <HilosModal
           open={noticeOpen}
           onClose={() => setNoticeOpen(false)}

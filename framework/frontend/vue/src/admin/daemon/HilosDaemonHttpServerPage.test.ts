@@ -237,45 +237,85 @@ describe('HilosDaemonHttpServerPage', () => {
     h.view.unmount()
   })
 
-  it('distinguishes no report from known zeros and keeps a cold table loading', async () => {
-    const h = harness()
-    h.response(null, LIVE_HEADING, [])
-    await nextTick()
-    for (const name of ['address', 'requests', 'errors', 'slow']) {
-      expect(h.view.find(`[data-id="hilos-daemon-http-${name}"]`).text()).toBe(
-        '—',
+  it.each([{ clustered: true }, { clustered: false }])(
+    'distinguishes no report from known zeros and keeps a cold table loading (clustered: $clustered)',
+    async ({ clustered }) => {
+      const h = harness()
+      const heading = {
+        ...LIVE_HEADING,
+        clustered,
+        state: clustered ? LIVE_HEADING.state : null,
+      }
+      h.response(null, heading)
+      await nextTick()
+      expect(h.view.find('[data-id="hilos-table-loading"]').exists()).toBe(true)
+      expect(h.view.find('[data-id="hilos-table-empty"]').exists()).toBe(false)
+      h.response(null, heading, [])
+      await nextTick()
+      for (const name of ['address', 'requests', 'errors', 'slow']) {
+        expect(
+          h.view.find(`[data-id="hilos-daemon-http-${name}"]`).text(),
+        ).toBe('—')
+      }
+      const status = h.view.find('[data-id="hilos-daemon-http-status"]')
+      if (clustered) {
+        expect(status.attributes('data-status')).toBe('waiting')
+        expect(status.text()).toBe('The node has not reported HTTP metrics yet')
+      } else {
+        expect(status.exists()).toBe(false)
+      }
+      expect(h.view.find('[data-id="hilos-table-empty"]').text()).toContain(
+        'The node has not reported HTTP metrics yet',
       )
-    }
-    const status = h.view.find('[data-id="hilos-daemon-http-status"]')
-    expect(status.attributes('data-status')).toBe('waiting')
-    expect(status.text()).toBe('The node has not reported HTTP metrics yet')
-    expect(h.view.find('[data-id="hilos-table-empty"]').text()).toContain(
-      status.text(),
-    )
 
-    h.view.unmount()
-    const cold = harness()
-    cold.response(
-      summary({ requests: 0, serverErrors: 0, slow: 0, countingHours: 0 }),
-    )
-    await nextTick()
-    for (const name of ['requests', 'errors', 'slow']) {
+      const zeros = summary({
+        requests: 0,
+        serverErrors: 0,
+        slow: 0,
+        countingHours: 0,
+      })
+      h.response(zeros, heading, [route({ requests: 0 })])
+      await nextTick()
+      for (const name of ['requests', 'errors', 'slow']) {
+        expect(
+          h.view.find(`[data-id="hilos-daemon-http-${name}"]`).text(),
+        ).toBe('0')
+      }
+      expect(h.view.find('[data-id="hilos-daemon-http-address"]').text()).toBe(
+        '0.0.0.0:8080',
+      )
+      expect(h.view.find('[data-id="hilos-table-empty"]').exists()).toBe(false)
+      expect(h.view.find('[data-id="hilos-table-loading"]').exists()).toBe(
+        false,
+      )
+      expect(h.view.find('[data-id="hilos-daemon-http-status"]').exists()).toBe(
+        false,
+      )
+
+      h.view.unmount()
+      const cold = harness()
+      cold.response(zeros, heading)
+      await nextTick()
+      for (const name of ['requests', 'errors', 'slow']) {
+        expect(
+          cold.view.find(`[data-id="hilos-daemon-http-${name}"]`).text(),
+        ).toBe('0')
+      }
       expect(
-        cold.view.find(`[data-id="hilos-daemon-http-${name}"]`).text(),
-      ).toBe('0')
-    }
-    expect(cold.view.find('[data-id="hilos-daemon-http-period"]').text()).toBe(
-      'Since start, <1 h',
-    )
-    expect(cold.view.find('[data-id="hilos-table-loading"]').exists()).toBe(
-      true,
-    )
-    expect(cold.view.find('[data-id="hilos-table-empty"]').exists()).toBe(false)
-    expect(
-      cold.view.find('[data-id="hilos-daemon-http-status"]').exists(),
-    ).toBe(false)
-    cold.view.unmount()
-  })
+        cold.view.find('[data-id="hilos-daemon-http-period"]').text(),
+      ).toBe('Since start, <1 h')
+      expect(cold.view.find('[data-id="hilos-table-loading"]').exists()).toBe(
+        true,
+      )
+      expect(cold.view.find('[data-id="hilos-table-empty"]').exists()).toBe(
+        false,
+      )
+      expect(
+        cold.view.find('[data-id="hilos-daemon-http-status"]').exists(),
+      ).toBe(false)
+      cold.view.unmount()
+    },
+  )
 
   it('updates the complete page data, including address, reset counters and null', async () => {
     const h = harness()

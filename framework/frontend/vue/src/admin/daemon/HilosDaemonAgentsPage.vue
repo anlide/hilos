@@ -131,14 +131,14 @@ async function submitRestart(): Promise<void> {
 
 <template>
   <HilosDaemonNodeShell :context="context" :page="HilosPages.DAEMON_AGENTS">
-    <div class="position-relative">
-      <p class="small text-body-secondary invisible" aria-hidden="true">
+    <div v-if="heading?.clustered === true" class="hilos-stack">
+      <p class="small text-body-secondary invisible" aria-hidden="true" inert>
         This node has been silent since September 30, 2026, 11:59 PM. The agents
         below are from its last report.
       </p>
       <p
         v-if="silentSince !== null && rows.length > 0"
-        class="small text-body-secondary position-absolute top-0 start-0 w-100"
+        class="small text-body-secondary"
         data-id="hilos-daemon-agents-silent"
       >
         This node has been silent since {{ silentSince }}. The agents below are

@@ -59,21 +59,23 @@ import {
 
     <hilos-daemon-node-shell [context]="context()" [page]="page">
       <ng-template #pageBody>
-        <div class="hilos-stack">
-          <p class="small text-body-secondary invisible" aria-hidden="true">
-            This node has been silent since September 30, 2026, 11:59 PM. The
-            rules below are from its last report.
-          </p>
-          @if (silentSince !== null && rows.length > 0) {
-            <p
-              class="small text-body-secondary"
-              data-id="hilos-daemon-cron-silent"
-            >
-              This node has been silent since {{ silentSince }}. The rules below
-              are from its last report.
+        @if (clustered) {
+          <div class="hilos-stack">
+            <p class="small text-body-secondary invisible" aria-hidden="true">
+              This node has been silent since September 30, 2026, 11:59 PM. The
+              rules below are from its last report.
             </p>
-          }
-        </div>
+            @if (silentSince !== null && rows.length > 0) {
+              <p
+                class="small text-body-secondary"
+                data-id="hilos-daemon-cron-silent"
+              >
+                This node has been silent since {{ silentSince }}. The rules
+                below are from its last report.
+              </p>
+            }
+          </div>
+        }
         @if (holdsNotice) {
           <div class="hilos-stack">
             <div

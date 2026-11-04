@@ -111,77 +111,103 @@ describe('HilosDaemonNodePage', () => {
     expect(h.registerTableWindow).not.toHaveBeenCalled()
   })
 
-  it('distinguishes no report even with a declared role, null sections and known zeroes', () => {
-    const h = nodeHarness()
-    h.act(() =>
-      h.answer(
-        nodeOverview({
-          workers: null,
-          workerRestarts24h: null,
-          uptimeMinutes: null,
-          measurements: null,
-          standing: null,
-          environment: null,
-        }),
-        nodeHeading({ state: null, role: 'master' }),
-      ),
-    )
-    expect(text('report-notice')).toContain('has not reported yet')
-    for (const field of [
-      'cores',
-      'total-memory',
-      'monopolistic-count',
-      'uptime',
-      'environment-attention',
-      'environment-differences',
-    ])
-      expect(text(field)).toBe('—')
-    const full = nodeOverview()
-    h.act(() =>
-      h.answer(
-        nodeOverview({
-          workers: [],
-          uptimeMinutes: 0,
-          workerRestarts24h: 0,
-          measurements: {
-            ...full.measurements!,
-            cores: 0,
-            daemonCores: 0,
-            masterCores: 0,
-            masterMemory: 0,
-            workersMemory: 0,
-            workersMeasured: 0,
-            memoryCeiling: 0,
-            machineLoad: 0,
-          },
-          standing: { sessions: 0, connections: 0 },
-          environment: {
-            missingRequired: 0,
-            fromExample: 0,
-            drifted: 0,
-            orphans: 0,
-          },
-          environmentComparison: {
-            answeringNodes: 2,
-            divergedKeys: 0,
-            sourcesDifferKeys: 0,
-          },
-        }),
-      ),
-    )
-    expect(text('cores')).toBe('0')
-    expect(text('daemon-cores')).toBe('0 cores')
-    expect(text('cpu-percent')).toBe('— of available CPU')
-    expect(text('memory-percent')).toBe('— of ceiling')
-    expect(text('total-memory')).toBe('0 B')
-    expect(text('monopolistic-count')).toBe('0')
-    expect(text('uptime')).toBe('0 min')
-    expect(text('environment-attention')).toBe('0')
-    expect(text('environment-differences')).toBe('0')
-    expect(text('node-connections')).toBe('0 connections')
-    expect(el('report-notice')!.classList.contains('invisible')).toBe(true)
-    expect(el('report-notice')!.hasAttribute('inert')).toBe(true)
-  })
+  it.each([true, false])(
+    'distinguishes no report from a report with known zeroes in clustered mode %s',
+    (clustered) => {
+      const h = nodeHarness()
+      h.act(() =>
+        h.answer(
+          nodeOverview({
+            workers: null,
+            workerRestarts24h: null,
+            uptimeMinutes: null,
+            measurements: null,
+            standing: null,
+            environment: null,
+          }),
+          nodeHeading({ clustered, state: null, role: 'master' }),
+        ),
+      )
+      const coresHint = [...h.root.querySelectorAll('dl')]
+        .find(
+          (item) =>
+            item.querySelector('dt')?.textContent?.trim() === 'Node cores',
+        )
+        ?.querySelector('dd.small')
+      const visibleCoresHint = () =>
+        coresHint
+          ?.querySelector('span:not([aria-hidden="true"])')
+          ?.textContent?.trim() ?? coresHint?.textContent?.trim()
+      if (clustered) {
+        expect(text('report-notice')).toContain('has not reported yet')
+        expect(visibleCoresHint()).toBe('—')
+      } else {
+        expect(el('report-notice')).toBeNull()
+        expect(visibleCoresHint()).toBe('This node has not reported yet.')
+        expect(coresHint?.getAttribute('title')).toBe(visibleCoresHint())
+      }
+      for (const field of [
+        'cores',
+        'total-memory',
+        'monopolistic-count',
+        'uptime',
+        'environment-attention',
+        'environment-differences',
+      ])
+        expect(text(field)).toBe('—')
+      const full = nodeOverview()
+      h.act(() =>
+        h.answer(
+          nodeOverview({
+            workers: [],
+            uptimeMinutes: 0,
+            workerRestarts24h: 0,
+            measurements: {
+              ...full.measurements!,
+              cores: 0,
+              daemonCores: 0,
+              masterCores: 0,
+              masterMemory: 0,
+              workersMemory: 0,
+              workersMeasured: 0,
+              memoryCeiling: 0,
+              machineLoad: 0,
+            },
+            standing: { sessions: 0, connections: 0 },
+            environment: {
+              missingRequired: 0,
+              fromExample: 0,
+              drifted: 0,
+              orphans: 0,
+            },
+            environmentComparison: {
+              answeringNodes: 2,
+              divergedKeys: 0,
+              sourcesDifferKeys: 0,
+            },
+          }),
+          nodeHeading({ clustered }),
+        ),
+      )
+      expect(text('cores')).toBe('0')
+      expect(text('daemon-cores')).toBe('0 cores')
+      expect(text('cpu-percent')).toBe('— of available CPU')
+      expect(text('memory-percent')).toBe('— of ceiling')
+      expect(text('total-memory')).toBe('0 B')
+      expect(text('monopolistic-count')).toBe('0')
+      expect(text('uptime')).toBe('0 min')
+      expect(text('environment-attention')).toBe('0')
+      expect(text('environment-differences')).toBe(clustered ? '0' : '—')
+      expect(text('node-connections')).toBe('0 connections')
+      if (clustered) {
+        expect(el('report-notice')!.classList.contains('invisible')).toBe(true)
+        expect(el('report-notice')!.hasAttribute('inert')).toBe(true)
+      } else {
+        expect(el('report-notice')).toBeNull()
+        expect(visibleCoresHint()).toBe('Container CPU quota')
+      }
+    },
+  )
 
   it('uses heading role for browser standing and preserves an incomplete measurement as unknown', () => {
     const h = nodeHarness()

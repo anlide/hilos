@@ -221,39 +221,45 @@ describe('HilosDaemonHttpServerPage', () => {
     for (const icon of h.view.container.querySelectorAll('.row > .col i'))
       expect(icon.getAttribute('aria-hidden')).toBe('true')
   })
-  it('keeps unknown metrics as dashes and distinguishes waiting, silence and known zero', () => {
-    const h = harness()
-    h.response(null, null)
-    h.window([])
-    for (const name of ['address', 'requests', 'errors', 'slow'])
-      expect(h.find(`hilos-daemon-http-${name}`)?.textContent).toBe('—')
-    expect(
-      h.find('hilos-daemon-http-status')?.getAttribute('data-status'),
-    ).toBe('waiting')
-    expect(h.find('hilos-table-empty')?.textContent).toContain(
-      'The node has not reported HTTP metrics yet',
-    )
-    h.response(null, SILENT)
-    expect(
-      h.find('hilos-daemon-http-status')?.getAttribute('data-status'),
-    ).toBe('silent')
-    expect(h.find('hilos-table-empty')?.textContent).toContain(
-      'The node is silent and has not reported HTTP metrics',
-    )
-    h.view.unmount()
-    const cold = harness()
-    cold.response(
-      summary({ requests: 0, serverErrors: 0, slow: 0, countingHours: 0 }),
-    )
-    for (const name of ['requests', 'errors', 'slow'])
-      expect(cold.find(`hilos-daemon-http-${name}`)?.textContent).toBe('0')
-    expect(cold.find('hilos-daemon-http-period')?.textContent).toBe(
-      'Since start, <1 h',
-    )
-    expect(cold.find('hilos-table-loading')).not.toBeNull()
-    expect(cold.find('hilos-table-empty')).toBeNull()
-    expect(cold.find('hilos-daemon-http-status')).toBeNull()
-  })
+  it.each([true, false])(
+    'keeps unknown metrics as dashes and shows waiting and known zero (clustered: %s)',
+    (clustered) => {
+      const h = harness()
+      h.response(null, { ...LIVE, clustered })
+      h.window([])
+      for (const name of ['address', 'requests', 'errors', 'slow'])
+        expect(h.find(`hilos-daemon-http-${name}`)?.textContent).toBe('—')
+      expect(h.find('hilos-table-empty')?.textContent).toContain(
+        'The node has not reported HTTP metrics yet',
+      )
+      if (clustered) {
+        expect(
+          h.find('hilos-daemon-http-status')?.getAttribute('data-status'),
+        ).toBe('waiting')
+        h.response(null, SILENT)
+        expect(
+          h.find('hilos-daemon-http-status')?.getAttribute('data-status'),
+        ).toBe('silent')
+        expect(h.find('hilos-table-empty')?.textContent).toContain(
+          'The node is silent and has not reported HTTP metrics',
+        )
+      }
+      h.view.unmount()
+      const cold = harness()
+      cold.response(
+        summary({ requests: 0, serverErrors: 0, slow: 0, countingHours: 0 }),
+        { ...LIVE, clustered },
+      )
+      for (const name of ['requests', 'errors', 'slow'])
+        expect(cold.find(`hilos-daemon-http-${name}`)?.textContent).toBe('0')
+      expect(cold.find('hilos-daemon-http-period')?.textContent).toBe(
+        'Since start, <1 h',
+      )
+      expect(cold.find('hilos-table-loading')).not.toBeNull()
+      expect(cold.find('hilos-table-empty')).toBeNull()
+      if (clustered) expect(cold.find('hilos-daemon-http-status')).toBeNull()
+    },
+  )
   it('updates whole-page address, reset counters, period and null; reserves all status messages', () => {
     const h = harness()
     const twins = [

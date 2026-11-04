@@ -116,14 +116,26 @@ onUnmounted(() => {
   >
     <!-- The twins share the message's grid cell and reserve its tallest state.
     They carry no stable selector or accessible name. -->
-    <div class="hilos-stack mb-3">
-      <p class="small text-body-secondary mb-0 invisible" aria-hidden="true">
+    <div v-if="heading?.clustered === true" class="hilos-stack mb-3">
+      <p
+        class="small text-body-secondary mb-0 invisible"
+        aria-hidden="true"
+        inert
+      >
         {{ waitingMessage }}
       </p>
-      <p class="small text-body-secondary mb-0 invisible" aria-hidden="true">
+      <p
+        class="small text-body-secondary mb-0 invisible"
+        aria-hidden="true"
+        inert
+      >
         {{ silentMessage }}
       </p>
-      <p class="small text-body-secondary mb-0 invisible" aria-hidden="true">
+      <p
+        class="small text-body-secondary mb-0 invisible"
+        aria-hidden="true"
+        inert
+      >
         {{ lastReportReserve }}
       </p>
       <p

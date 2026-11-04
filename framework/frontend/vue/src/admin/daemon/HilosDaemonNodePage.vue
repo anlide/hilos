@@ -95,19 +95,34 @@ watch(
   // Release the opening even when clear and recovery precede the next render.
   { flush: 'sync' },
 )
+const reported = computed(
+  () =>
+    node.value !== undefined &&
+    (node.value.workers !== null ||
+      node.value.measurements !== null ||
+      node.value.standing !== null ||
+      node.value.environment !== null ||
+      node.value.uptimeMinutes !== null ||
+      node.value.workerRestarts24h !== null),
+)
+const waitingMessage = 'This node has not reported yet.'
+const coresHints = [
+  waitingMessage,
+  daemonCoresBoundHint('quota'),
+  daemonCoresBoundHint('cpus'),
+  daemonCoresBoundHint(null),
+]
+const coresHint = computed(() =>
+  heading.value?.clustered === false && !reported.value
+    ? waitingMessage
+    : daemonCoresBoundHint(measurements.value?.coresBound),
+)
 const reportNotice = computed(() => {
   if (!node.value || !heading.value) return null
-  const reported =
-    node.value.workers !== null ||
-    node.value.measurements !== null ||
-    node.value.standing !== null ||
-    node.value.environment !== null ||
-    node.value.uptimeMinutes !== null ||
-    node.value.workerRestarts24h !== null
-  if (!reported) {
+  if (!reported.value) {
     return heading.value.state === 'silent'
       ? 'Silent · this node has not reported yet.'
-      : 'This node has not reported yet.'
+      : waitingMessage
   }
   return !node.value.online
     ? `Silent · values from the last report. Last arrival: ${silentSince.value ?? '—'}.`
@@ -122,7 +137,10 @@ const reportNotice = computed(() => {
       data-id="hilos-daemon-node-overview"
       :data-node-id="node.nodeId"
     >
-      <div class="hilos-stack mb-3 small text-body-secondary">
+      <div
+        v-if="heading.clustered === true"
+        class="hilos-stack mb-3 small text-body-secondary"
+      >
         <div
           class="invisible d-flex align-items-center gap-2"
           aria-hidden="true"
@@ -165,9 +183,21 @@ const reportNotice = computed(() => {
             </dd>
             <dd
               class="small mb-0"
-              :title="daemonCoresBoundHint(measurements?.coresBound)"
+              :class="{ 'hilos-stack': !heading.clustered }"
+              :title="coresHint"
             >
-              {{ daemonCoresBoundHint(measurements?.coresBound) }}
+              <template v-if="!heading.clustered">
+                <span
+                  v-for="hint in coresHints"
+                  :key="hint"
+                  class="invisible"
+                  aria-hidden="true"
+                  inert
+                >
+                  {{ hint }}
+                </span>
+              </template>
+              <span>{{ coresHint }}</span>
             </dd>
           </dl>
         </div>
@@ -463,7 +493,7 @@ const reportNotice = computed(() => {
       <HilosSkeleton />
     </div>
     <HilosModal
-      v-if="node"
+      v-if="heading?.clustered === true"
       v-model="noticeOpen"
       title="Node report"
       initial-focus="dialog"

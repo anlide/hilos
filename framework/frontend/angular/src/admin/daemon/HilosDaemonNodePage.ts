@@ -68,38 +68,42 @@ import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
             data-id="hilos-daemon-node-overview"
             [attr.data-node-id]="current.nodeId"
           >
-            <div class="hilos-stack mb-3 small text-body-secondary">
-              <div
-                class="invisible d-flex align-items-center gap-2"
-                aria-hidden="true"
-                inert
-              >
-                <span class="flex-grow-1 text-truncate">&nbsp;</span>
-                <span class="btn btn-link btn-sm p-0 flex-shrink-0"
-                  ><i class="bi bi-info-circle" aria-hidden="true"></i
-                ></span>
-              </div>
-              <div
-                class="d-flex align-items-center gap-2"
-                [ngClass]="{ invisible: reportNotice() === null }"
-                [attr.aria-hidden]="reportNotice() === null ? true : undefined"
-                [attr.inert]="reportNotice() === null ? '' : null"
-                data-id="hilos-daemon-report-notice"
-              >
-                <span class="flex-grow-1 text-truncate">{{
-                  reportNotice() ?? ''
-                }}</span>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm p-0 flex-shrink-0"
-                  aria-label="Show report details"
-                  data-id="hilos-daemon-report-details"
-                  (click)="noticeOpen.set(true)"
+            @if (heading.clustered === true) {
+              <div class="hilos-stack mb-3 small text-body-secondary">
+                <div
+                  class="invisible d-flex align-items-center gap-2"
+                  aria-hidden="true"
+                  inert
                 >
-                  <i class="bi bi-info-circle" aria-hidden="true"></i>
-                </button>
+                  <span class="flex-grow-1 text-truncate">&nbsp;</span>
+                  <span class="btn btn-link btn-sm p-0 flex-shrink-0"
+                    ><i class="bi bi-info-circle" aria-hidden="true"></i
+                  ></span>
+                </div>
+                <div
+                  class="d-flex align-items-center gap-2"
+                  [ngClass]="{ invisible: reportNotice() === null }"
+                  [attr.aria-hidden]="
+                    reportNotice() === null ? true : undefined
+                  "
+                  [attr.inert]="reportNotice() === null ? '' : null"
+                  data-id="hilos-daemon-report-notice"
+                >
+                  <span class="flex-grow-1 text-truncate">{{
+                    reportNotice() ?? ''
+                  }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm p-0 flex-shrink-0"
+                    aria-label="Show report details"
+                    data-id="hilos-daemon-report-details"
+                    (click)="noticeOpen.set(true)"
+                  >
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                  </button>
+                </div>
               </div>
-            </div>
+            }
 
             <h2 class="h6">Processor</h2>
             <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
@@ -113,9 +117,17 @@ import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
                   </dd>
                   <dd
                     class="small mb-0"
-                    [title]="daemonCoresBoundHint(measurements()?.coresBound)"
+                    [ngClass]="{ 'hilos-stack': heading.clustered === false }"
+                    [title]="coresHint()"
                   >
-                    {{ daemonCoresBoundHint(measurements()?.coresBound) }}
+                    @if (heading.clustered === false) {
+                      @for (hint of coresHints; track hint) {
+                        <span class="invisible" aria-hidden="true" inert>{{
+                          hint
+                        }}</span>
+                      }
+                    }
+                    <span>{{ coresHint() }}</span>
                   </dd>
                 </dl>
               </div>
@@ -445,26 +457,28 @@ import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
               </button>
             </div>
           </div>
-          <hilos-modal
-            [(open)]="noticeOpen"
-            title="Node report"
-            initialFocus="dialog"
-          >
-            <hilos-long-text
-              kind="prose"
-              [text]="reportNotice() ?? ''"
-              dataId="hilos-daemon-report-full"
-            ></hilos-long-text>
-            <ng-template #modalActions let-requestClose="requestClose">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                (click)="requestClose()"
-              >
-                Close
-              </button>
-            </ng-template>
-          </hilos-modal>
+          @if (heading.clustered === true) {
+            <hilos-modal
+              [(open)]="noticeOpen"
+              title="Node report"
+              initialFocus="dialog"
+            >
+              <hilos-long-text
+                kind="prose"
+                [text]="reportNotice() ?? ''"
+                dataId="hilos-daemon-report-full"
+              ></hilos-long-text>
+              <ng-template #modalActions let-requestClose="requestClose">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  (click)="requestClose()"
+                >
+                  Close
+                </button>
+              </ng-template>
+            </hilos-modal>
+          }
         } @else {
           <div data-id="hilos-daemon-node-waiting">
             <p class="text-body-secondary">Waiting for the node picture…</p>
@@ -499,6 +513,30 @@ export class HilosDaemonNodePage {
   protected readonly measurements = computed(
     () => this.current()?.node.measurements,
   )
+  protected readonly reported = computed(() => {
+    const node = this.current()?.node
+    return Boolean(
+      node &&
+      (node.workers !== null ||
+        node.measurements !== null ||
+        node.standing !== null ||
+        node.environment !== null ||
+        node.uptimeMinutes !== null ||
+        node.workerRestarts24h !== null),
+    )
+  })
+  protected readonly waitingMessage = 'This node has not reported yet.'
+  protected readonly coresHints = [
+    this.waitingMessage,
+    daemonCoresBoundHint('quota'),
+    daemonCoresBoundHint('cpus'),
+    daemonCoresBoundHint(null),
+  ]
+  protected readonly coresHint = computed(() =>
+    this.current()?.heading.clustered === false && !this.reported()
+      ? this.waitingMessage
+      : daemonCoresBoundHint(this.measurements()?.coresBound),
+  )
   protected readonly cpuPercent = computed(() =>
     daemonPercentage(
       this.measurements()?.daemonCores,
@@ -532,14 +570,7 @@ export class HilosDaemonNodePage {
     const current = this.current()
     if (!current) return null
     const { node, heading } = current
-    const reported =
-      node.workers !== null ||
-      node.measurements !== null ||
-      node.standing !== null ||
-      node.environment !== null ||
-      node.uptimeMinutes !== null ||
-      node.workerRestarts24h !== null
-    return !reported
+    return !this.reported()
       ? heading.state === 'silent'
         ? 'Silent · this node has not reported yet.'
         : 'This node has not reported yet.'

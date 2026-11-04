@@ -55,6 +55,9 @@ const keys = shallowRef(
 
 const page = useSignal(readHilosDaemonEnvPage(props.context.scopes))
 const nodeSilent = computed(() => page.value.nodeSilent)
+const clustered = computed(() => page.value.node?.clustered === true)
+const silentMessage =
+  'This node is silent. Only the node itself reads its environment, so nothing is shown until it answers again.'
 const summary = computed(() =>
   page.value.environment ? daemonEnvSummary(page.value.environment.keys) : null,
 )
@@ -99,14 +102,18 @@ onUnmounted(() => {
 
 <template>
   <HilosDaemonNodeShell :context="context" :page="HilosPages.DAEMON_ENV">
-    <p
-      v-if="nodeSilent"
-      class="small text-body-secondary"
-      data-id="hilos-daemon-env-silent"
-    >
-      This node is silent. Only the node itself reads its environment, so
-      nothing is shown until it answers again.
-    </p>
+    <div v-if="clustered" class="hilos-stack">
+      <p class="small text-body-secondary invisible" aria-hidden="true" inert>
+        {{ silentMessage }}
+      </p>
+      <p
+        v-if="nodeSilent"
+        class="small text-body-secondary"
+        data-id="hilos-daemon-env-silent"
+      >
+        {{ silentMessage }}
+      </p>
+    </div>
 
     <div
       v-if="!nodeSilent && summary !== null"
