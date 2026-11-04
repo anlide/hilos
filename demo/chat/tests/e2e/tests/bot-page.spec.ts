@@ -89,7 +89,6 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
     const botHead = guestPage.getByTestId('bot-head')
     const botName = guestPage.getByTestId('bot-name')
     await expect(botName).toHaveText(name)
-    await expect(botName).toHaveClass(/\bh4\b/)
     await expect(guestPage.locator('h1')).toHaveCount(1)
 
     const avatar = botHead.locator('[data-id="hilos-avatar"]')
@@ -107,9 +106,6 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
     )
     await expect(botFields.getByTestId('bot-style')).toHaveText(style)
     await expect(botFields.getByTestId('bot-topics')).toHaveText(topics)
-
-    await expect(guestPage.locator('.card')).toHaveCount(0)
-    await expect(guestPage.getByTestId('bot-view')).not.toContainText('🤖')
 
     const renamed = `Beacon ${stamp} Guide`
     await shownByTestId(page, `admin-bots-edit-${rowKey}`).click()

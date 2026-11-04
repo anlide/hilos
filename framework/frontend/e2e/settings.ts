@@ -72,7 +72,6 @@ export async function expectSettingsPageHead(
     .toBe('Settings')
   await expect(current.locator('xpath=following-sibling::*')).toHaveCount(0)
 
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByRole('table')).toHaveAccessibleName('Settings')

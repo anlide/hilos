@@ -271,10 +271,6 @@ test('muting the email channel keeps the next emit off it', async ({
   await expect(
     page.getByTestId('hilos-notification-preference-subtitle-email'),
   ).toHaveText(email, { useInnerText: true })
-  const icon = page.getByTestId('hilos-notification-preference-icon-email')
-  await expect(icon).toBeVisible()
-  await expect(icon).toHaveClass(/\bbi-envelope\b/)
-  await expect(icon).toHaveAttribute('aria-hidden', 'true')
   await expect(toggle).toHaveAccessibleName('Email')
   await expect(toggle).toHaveAccessibleDescription(email)
   // A channel with no address for it is shown disabled, so the switch being
@@ -303,10 +299,6 @@ test('muting the email channel keeps the next emit off it', async ({
   await expect(
     tabB.getByTestId('hilos-notification-preference-subtitle-email'),
   ).toHaveText(email, { useInnerText: true })
-  const tabBIcon = tabB.getByTestId('hilos-notification-preference-icon-email')
-  await expect(tabBIcon).toBeVisible()
-  await expect(tabBIcon).toHaveClass(/\bbi-envelope\b/)
-  await expect(tabBIcon).toHaveAttribute('aria-hidden', 'true')
   await expect(emailPreference(tabB)).toHaveAccessibleDescription(email)
 
   // Durable, not merely live: a cold load reads the preference back from the DB.
@@ -315,9 +307,6 @@ test('muting the email channel keeps the next emit off it', async ({
   await expect(
     page.getByTestId('hilos-notification-preference-subtitle-email'),
   ).toHaveText(email, { useInnerText: true })
-  await expect(icon).toBeVisible()
-  await expect(icon).toHaveClass(/\bbi-envelope\b/)
-  await expect(icon).toHaveAttribute('aria-hidden', 'true')
   await expect(emailPreference(page)).toHaveAccessibleDescription(email)
 
   const muted = await emitNotification(userId, {

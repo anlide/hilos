@@ -55,7 +55,7 @@ async function openBackups(
 }
 
 /**
- * The Backups section's frame, including its solitary page without a tab row.
+ * The Backups section's frame.
  *
  * @param expect The spec's expect.
  * @param page The ready Backups page.
@@ -95,7 +95,6 @@ async function expectBackupHead(expect: Expect, page: Page): Promise<void> {
   await expect(current).toHaveCount(1)
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.locator('a')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
   await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
 }

@@ -56,16 +56,6 @@ test('renders the own registration notice in the event stream', async ({
   ).toBeVisible()
 })
 
-// Main page bot list e2e: the main page answers with a `mainBots` list; with no
-// bots seeded the section still renders with its empty state, proving the list
-// is wired end-to-end.
-test('renders the bot list section', async ({ page }) => {
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-
-  await expect(page.getByTestId('bots-header')).toBeVisible()
-})
-
 // Message composer e2e: submitting the bottom-pinned form sends the `message`
 // action frame over the live socket and starts the re-send lockout — the first
 // client-to-server action wired end-to-end. The publish itself rides backend

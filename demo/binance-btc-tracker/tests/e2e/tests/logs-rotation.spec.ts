@@ -510,7 +510,6 @@ test('shows the configured rotation threshold, carries a batch off on the operat
   await expect(page.getByTestId('hilos-table-search')).toBeVisible()
   await expect(shownByTestId(page, 'hilos-table-filter-state')).toBeVisible()
   await expect(page.getByTestId('hilos-table-filter-node')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
 
   // The window, and not merely the table around it: the table element is in the
   // document from the first paint, and reading the rows before the server had

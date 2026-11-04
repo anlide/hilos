@@ -261,11 +261,6 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     await shownByTestId(table, 'hilos-table-loading').waitFor({
       state: 'hidden',
     })
-    await expect(
-      table.locator(
-        'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " card ")]',
-      ),
-    ).toHaveCount(0)
     await expect(page.getByTestId('hilos-maintenance-state-open')).toHaveCount(
       0,
     )

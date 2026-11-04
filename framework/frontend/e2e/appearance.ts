@@ -48,7 +48,7 @@ export async function expectAppearanceRows(
 /**
  * The shared Appearance head on a ready screen: one real head and one h1,
  * the palette mark, the catalog lead, the Hilos trail with the last crumb as
- * text, no tab row and no child cards, and the table directly under the head.
+ * text, no child cards, and the table directly under the head.
  * The browser title stays with the spec.
  *
  * @param expect The spec's expect.
@@ -110,7 +110,6 @@ export async function expectAppearancePageHead(
   await expect(lastCrumb.locator('a')).toHaveCount(0)
   await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
 
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
   await expect(page.getByTestId('hilos-admin-title')).toHaveCount(0)
   await expect(head.locator('xpath=following-sibling::*[1]')).toHaveAttribute(

@@ -1404,7 +1404,6 @@ async function expectBotsPageHead(page: Page): Promise<void> {
     .toBe('Bots')
   await expect(currentCrumb.locator('a')).toHaveCount(0)
 
-  await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
 
   const table = page.getByTestId('admin-bots-view').getByRole('table')

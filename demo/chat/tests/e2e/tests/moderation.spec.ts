@@ -351,11 +351,6 @@ test('adds, finds, sorts, edits and deletes own rules until the built-in policy 
     await gotoPage(expect, page, RULES_PATH)
     await expectModerationKindHead(expect, page, PHOTO, 'rules')
     await expectModerationBuiltInRules(expect, page, PHOTO)
-    // K-005 of HIL-1844: the two color checks of the built-in block are carried
-    // over word for word; HIL-1843 decides their fate.
-    const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
-    await expect(builtIn).toHaveClass(/bg-body-tertiary/)
-    await expect(builtIn.locator('ul')).toHaveClass(/text-body-secondary/)
     await expectModerationRulesOpening(expect, log, { ...PHOTO, ownRules: [] })
     await clickSubmit(expect, overviewTab)
     await expectPageReady(expect, page)

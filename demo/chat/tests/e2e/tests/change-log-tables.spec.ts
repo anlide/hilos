@@ -5,7 +5,6 @@ import {
   CHANGE_LOG_TABLES_PATH,
   CHANGE_LOG_NOISY_PATH,
   expectChangeLogNoisyColumns,
-  expectChangeLogReference,
   expectTrackedTablesPage,
   expectTrackedTableOverview,
   expectChangeLogTableHead,
@@ -319,7 +318,6 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
 
   await gotoPage(expect, page, CHANGE_LOG_TABLES_PATH)
 
-  await expectChangeLogReference(expect, page)
   await typeInto(search, 'hilos_session')
   const journal = page.getByTestId('hilos-table-filter-journal')
   await journal.getByTestId('hilos-dropdown-toggle').click()

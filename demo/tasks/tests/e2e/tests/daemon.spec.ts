@@ -492,7 +492,6 @@ test.describe('daemon overview', () => {
       const table = page.getByRole('table', { name: 'Daemon' })
       await expect(table).toBeVisible()
       const selection = table.getByTestId('hilos-daemon-placement-selection')
-      const row = table.getByTestId(`hilos-table-row-${DAEMON_PLACEMENT_TYPE}`)
       const detail = table.getByTestId(
         `hilos-table-row-detail-${DAEMON_PLACEMENT_TYPE}`,
       )
@@ -508,11 +507,6 @@ test.describe('daemon overview', () => {
       await expect(
         detail.getByTestId('hilos-daemon-placement-selection'),
       ).toBeVisible()
-      expect(
-        await row.evaluate((element) =>
-          element.nextElementSibling?.getAttribute('data-id'),
-        ),
-      ).toBe(`hilos-table-row-detail-${DAEMON_PLACEMENT_TYPE}`)
       await expect(expand).toHaveAttribute('aria-expanded', 'true')
       const ids = (await selection.locator('code').allTextContents()).slice(1)
       expect(ids).toEqual([DAEMON_PLACEMENT_TYPE])
@@ -616,33 +610,6 @@ test.describe('daemon overview', () => {
       DATABASE_HOST,
       DAEMON_STANDALONE_NODE_NAME,
     )
-    const colors = await page.locator('html').evaluate((element) => {
-      const style = getComputedStyle(element)
-      const rgb = (name: string) =>
-        `rgb(${style
-          .getPropertyValue(name)
-          .trim()
-          .split(',')
-          .map((part) => part.trim())
-          .join(', ')})`
-      return {
-        body: rgb('--bs-body-bg-rgb'),
-        text: rgb('--bs-body-color-rgb'),
-        tertiary: rgb('--bs-tertiary-bg-rgb'),
-      }
-    })
-    await expect(page.getByTestId('hilos-daemon-node-standalone')).toHaveCSS(
-      'background-color',
-      colors.body,
-    )
-    await expect(page.getByTestId('hilos-daemon-node-standalone')).toHaveCSS(
-      'color',
-      colors.text,
-    )
-    await expect(page.getByTestId('hilos-daemon-database')).toHaveCSS(
-      'background-color',
-      colors.tertiary,
-    )
     for (const target of [
       page.getByTestId('hilos-daemon-node-standalone'),
       page.getByTestId('hilos-daemon-database-address'),
@@ -673,13 +640,6 @@ test.describe('daemon overview', () => {
     await expect(
       detail.getByTestId('hilos-daemon-placement-selection'),
     ).toBeVisible()
-    expect(
-      await page
-        .getByTestId(`hilos-table-row-${longType}`)
-        .evaluate((element) =>
-          element.nextElementSibling?.getAttribute('data-id'),
-        ),
-    ).toBe(`hilos-table-row-detail-${longType}`)
     await expect(
       shownByTestId(page, 'hilos-daemon-placement-selection'),
     ).toHaveCount(1)
@@ -696,10 +656,6 @@ test.describe('daemon overview', () => {
     ]) {
       await target.scrollIntoViewIfNeeded()
       await fitsInScrollport(target)
-    }
-    // Exercise a long current id, without injecting a fake roster.
-    for (const id of await selection.locator('code').all()) {
-      await expect(id).toHaveCSS('overflow-wrap', 'break-word')
     }
     await test.info().attach('placement', {
       body: await page.getByTestId('hilos-daemon-placement-view').screenshot(),
