@@ -78,6 +78,18 @@ a changed setting. Chat restart retains checks, stages and holds. Uploads owner
 restart keeps its existing cleanup semantics: the files and rows go, so an
 active chain loses its source and ends as `unavailable`.
 
+If a source disappears, is no longer `COMPLETE`, or no longer matches the
+original snapshot's upload identity before the deadline, `ChatAgent` keeps that
+snapshot unchanged, ends the attempt as `unavailable`, forgets its checks and
+releases the hold. A replacement does not refresh the snapshot, and the model
+need not be called.
+
+The existing [regression scenario](../../tests/e2e/tests/message-picture-moderation.spec.ts)
+uses a controlled accepted replacement for the submitted picture on the same
+client upload id and live socket while upload admission is held. It uses no
+timer override or new test-only command, and does not assert a live moderation
+check after replacement B completes.
+
 ## Approved
 
 1. Without files: after every check approves, write the `message_sent` event and then clear the outbound composer.

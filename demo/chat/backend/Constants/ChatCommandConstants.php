@@ -9,8 +9,8 @@ use Hilos\Users\AccountMergeCommandConstants;
 /**
  * ChatCommandConstants - what chat still names on the command channel.
  *
- * Names the project's test-only commands (the submission checkpoint, the end of the send pause, the bot's answer now) and
- * the family of rows this project moves when two accounts are merged, and deletes when one is erased (HIL-302). The row
+ * Names the project's test-only commands and the family of rows this project moves when two accounts are merged,
+ * and deletes when one is erased (HIL-302). The row
  * family goes back as a key inside {@see AccountMergeCommandConstants::FIELD_ROWS_MOVED}, where the framework counts its
  * own identities and the project counts whatever it keeps for a person.
  */

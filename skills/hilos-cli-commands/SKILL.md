@@ -24,12 +24,11 @@ canonical rule before writing or moving command code.
 
 1. Name the owner of the state the command touches — an agent, the master, the database
    the daemon holds connections to. That owner does the work; the command asks it to.
-2. Place the file by the owner you just named: a command over state the framework owns
-   lives in `framework/backend/Core/CLI/Commands/`, and only a command over something one
-   project alone has belongs to that project. Since HIL-729 no demo has one — chat's
-   fifteen were all of the first kind — so the project seam
-   (`CliManager::registerProjectCommands()`) survives as an empty override in
-   `ChatCliManager`, demonstrated rather than used.
+2. Place the file by the owner you just named: a test-only command over a feature owned
+   by one project belongs in that project and is registered through
+   `CliManager::registerProjectCommands()`. A command over framework-owned state stays in
+   `framework/backend/Core/CLI/Commands/`, even when one project is its only current
+   consumer.
 3. Write the command as a CLI half: parse the operator's arguments into a payload, send it
    with `CommandChannelClientTrait::sendCommand()`, render the reply. Declare
    `CommandExecution::daemon()`. Print the SUCCESS yourself, on stdout; hand a refusal to

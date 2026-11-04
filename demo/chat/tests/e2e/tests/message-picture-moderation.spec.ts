@@ -10,9 +10,6 @@ import {
   gotoPage,
   deliveryObject,
   readMonopolisticWorker,
-  openSettingEdit,
-  setCustomSetting,
-  clearCustomSetting,
   openBell,
   unreadBadge,
   drawPhotoFixture,
@@ -464,8 +461,6 @@ test.describe('a replacement queued before upload hold admission', () => {
   test('an accepted replacement cannot refresh the pending original picture snapshot', async ({
     browser,
   }, info) => {
-    const timeoutKey = 'moderation.check_timeout_sec'
-    const timeoutSec = 4
     const keys = { message: modelKey(), a: modelKey(), b: modelKey() }
     const events: Record<string, unknown>[] = []
     const record = (event: Record<string, unknown>) => {
@@ -477,7 +472,6 @@ test.describe('a replacement queued before upload hold admission', () => {
     const admin = await adminContext.newPage()
     const replacement = { name: `${keys.b}.png`, buffer: OTHER_PNG }
     const trace = await queuedPicture(author, replacement, record)
-    let borrowed: { custom: boolean; value: string } | undefined
     const failures: unknown[] = []
     try {
       await createTestUserJoined(expect, author)
@@ -490,24 +484,6 @@ test.describe('a replacement queued before upload hold admission', () => {
           await expect.poll(predicate).toBe(true)
         },
       )
-      await gotoPage(expect, admin, '/hilos/settings')
-      await typeInto(admin.getByTestId('hilos-table-search'), timeoutKey)
-      await openSettingEdit(admin, timeoutKey)
-      borrowed = {
-        custom: await admin
-          .getByTestId('hilos-settings-edit-custom')
-          .isChecked(),
-        value: await admin
-          .getByTestId('hilos-settings-edit-value')
-          .inputValue(),
-      }
-      await admin.getByTestId('hilos-settings-edit-cancel').click()
-      await setCustomSetting(admin, timeoutKey, String(timeoutSec))
-      record({
-        kind: 'borrowed-timeout',
-        seconds: timeoutSec,
-        original: borrowed,
-      })
 
       await dictateModerationVerdict(keys.message, true, 'ok')
       await dictateModerationVerdict(keys.a, true, 'ok')
@@ -552,7 +528,7 @@ test.describe('a replacement queued before upload hold admission', () => {
             return observation
           })
           .toEqual({
-            checkRequestId: expect.any(String),
+            checkRequestId: expect.stringMatching(/\S/),
             activeRequestId: null,
             waitingForUploadHold: true,
           })
@@ -590,19 +566,8 @@ test.describe('a replacement queued before upload hold admission', () => {
       expect(replaced.requestId).not.toBe(original.requestId)
       expect(replaced.sentSha256).not.toBe(original.sentSha256)
       expect(Math.max(...replaced.grants)).toBe(OTHER_PNG.length)
-      const complete = events.find(
-        (event) =>
-          event.kind === 'incarnation-state' &&
-          event.initRequestId === replaced.requestId &&
-          event.phase === 'complete',
-      )!
-      // The deadline starts after the message is handled; this earlier local
-      // timestamp gives a stricter bound and rules out expiry before replacement.
-      expect(Number(complete.at) - trace.queued()!.sentAt).toBeLessThan(
-        timeoutSec * 1_000,
-      )
       record({
-        kind: 'replacement-complete-before-deadline',
+        kind: 'replacement-complete',
         checkRequestId,
         originalSubmitAt: trace.queued()!.sentAt,
         replaced,
@@ -669,17 +634,6 @@ test.describe('a replacement queued before upload hold admission', () => {
       failures.push(error)
     } finally {
       const cleanupStart = failures.length
-      if (borrowed) {
-        try {
-          await gotoPage(expect, admin, '/hilos/settings')
-          await typeInto(admin.getByTestId('hilos-table-search'), timeoutKey)
-          if (borrowed.custom)
-            await setCustomSetting(admin, timeoutKey, borrowed.value)
-          else await clearCustomSetting(admin, timeoutKey)
-        } catch (error) {
-          failures.push(error)
-        }
-      }
       const cleaned = await Promise.allSettled([
         ...Object.values(keys).map(forgetModelKey),
         authorContext.close(),

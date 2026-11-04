@@ -105,11 +105,12 @@ It fails when a command departs from the rule without a stated reason. It cannot
 *missing* declaration, because `execution()` is a contract method: a command without one
 does not compile.
 
-A temporary exception names the ticket that ends it, and the project guard that watched
-chat's five local writes for `HIL-729` was deleted with them: a demo has no CLI of its own
-any more, so there is nothing project-side left to watch. An exception that outlives its
-plan silently is the one failure mode a written-down reason exists to prevent, so the
-naming rule stays for the next temporary one.
+The project guard that watched the temporary local writes for `HIL-729` was deleted with
+them; project commands remain covered by the framework guard through the shared command
+registry. A test-only command over a feature owned by one project belongs in that project.
+Commands over framework-owned state stay in the framework even when one project is their
+only current consumer. Temporary exceptions name the ticket that ends them, so an
+exception cannot outlive its plan silently.
 
 `TestOnlyNameContractTest` (framework) stands beside it and reads the same registry through
 `CliManager::commandClasses()`, for the other rule a command declares about itself: a

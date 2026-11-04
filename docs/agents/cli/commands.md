@@ -204,12 +204,9 @@ final class ProjectCliManager extends CliManager
 }
 ```
 
-**No demo uses this seam today, and that is the point of HIL-729:** the fifteen commands
-chat used to carry are the framework's, `test:setting-override:create` / `:delete` among
-them, and they live in `framework/backend/Core/CLI/Commands/` beside every other one. What
-is left in `demo/chat/backend/CLI/ChatCliManager.php` is the empty override, kept as the
-worked example of the shape — the other three demos name `CliManager` in their `cli.php`
-directly, which is what a project with no commands of its own does.
+Use this seam for a test-only command over a feature owned by one project. Commands over
+framework-owned state stay in `framework/backend/Core/CLI/Commands/`, even when one
+project is their only current consumer.
 
 ### Fixture account and session commands
 
