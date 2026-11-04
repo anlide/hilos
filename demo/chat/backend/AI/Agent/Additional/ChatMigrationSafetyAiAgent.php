@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Additional\AbstractMigrationSafetyAiAgent;
 final class ChatMigrationSafetyAiAgent extends AbstractMigrationSafetyAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

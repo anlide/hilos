@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\CodeQuality;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * FormatterLinterOrchestratorAiAgent - Framework formatter and linter orchestrator stub.
  */
-final class FormatterLinterOrchestratorAiAgent extends AbstractGuardianAiAgent
+final class FormatterLinterOrchestratorAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::FORMATTER_LINTER_ORCHESTRATOR;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::FORMATTER_LINTER_ORCHESTRATOR;
 
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

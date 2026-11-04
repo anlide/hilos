@@ -178,11 +178,10 @@ Legal already uses `/hilos/legal/document/{documentKey}`; do not list
 including `languageCode`, `countryCode` and `documentKey`, remain unchanged by
 this documentation; applying the ID preference requires checking the model.
 
-Two other legacy addresses need separate scope decisions: SIL still declares
+One other legacy address needs a separate scope decision: SIL still declares
 `/hilos/sil/users/{userId}` in code, although its page was removed from the
-approved mockup; this inventory promises no replacement page. Guardian still
-declares `/hilos/guardian/{agentId}`; its rename belongs to the separate
-Superfans work. Neither address is a naming example for new pages.
+approved mockup; this inventory promises no replacement page. It is not a
+naming example for new pages.
 
 ## The public Status route
 

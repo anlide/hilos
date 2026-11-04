@@ -57,8 +57,8 @@ export const HilosPages = {
   STATUS_SUBSCRIBERS: 'hilos_status_subscribers',
   STATUS_WORKS: 'hilos_status_works',
   STATUS_HISTORY: 'hilos_status_history',
-  GUARDIAN: 'hilos_guardian',
-  GUARDIAN_AGENT: 'hilos_guardian_agent',
+  SUPERFANS: 'hilos_superfans',
+  SUPERFAN: 'hilos_superfan',
   I18N: 'hilos_i18n',
   I18N_LANGUAGES: 'hilos_i18n_languages',
   I18N_COUNTRIES: 'hilos_i18n_countries',
@@ -246,9 +246,9 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.STATUS_WORKS]: { path: '/hilos/status/works', admin: true },
   [HilosPages.STATUS_HISTORY]: { path: '/hilos/status/history', admin: true },
-  [HilosPages.GUARDIAN]: { path: '/hilos/guardian', admin: true },
-  [HilosPages.GUARDIAN_AGENT]: {
-    path: '/hilos/guardian/{agentId}',
+  [HilosPages.SUPERFANS]: { path: '/hilos/superfans', admin: true },
+  [HilosPages.SUPERFAN]: {
+    path: '/hilos/superfan/{agentId}',
     admin: true,
   },
   [HilosPages.I18N]: { path: '/hilos/i18n', admin: true },

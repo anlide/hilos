@@ -6,22 +6,22 @@ namespace Demo\Chat\Runtime\View\Context;
 
 use Demo\Chat\Runtime\State\Collection\BotAgentStatuses as StateBotAgentStatuses;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
-use Demo\Chat\Runtime\State\Collection\GuardianAgentStatuses as StateGuardianAgentStatuses;
+use Demo\Chat\Runtime\State\Collection\SuperfanAgentStatuses as StateSuperfanAgentStatuses;
 use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Collection\BotAgentStatusesActions;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
-use Demo\Chat\Runtime\View\Actions\Collection\GuardianAgentStatusesActions;
+use Demo\Chat\Runtime\View\Actions\Collection\SuperfanAgentStatusesActions;
 use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
 use Demo\Chat\Runtime\View\Actions\Item\BotAgentStatusActions;
 use Demo\Chat\Runtime\View\Actions\Item\ChatContextActions;
 use Demo\Chat\Runtime\View\Actions\Item\ChatUserStateActions;
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
-use Demo\Chat\Runtime\View\Actions\Item\GuardianAgentStatusActions;
+use Demo\Chat\Runtime\View\Actions\Item\SuperfanAgentStatusActions;
 use Demo\Chat\Runtime\View\Collection\BotAgentStatuses;
 use Demo\Chat\Runtime\View\Collection\Connections;
-use Demo\Chat\Runtime\View\Collection\GuardianAgentStatuses;
+use Demo\Chat\Runtime\View\Collection\SuperfanAgentStatuses;
 use Demo\Chat\Runtime\View\Collection\UserStates;
 use Demo\Chat\Runtime\View\Item\ChatContext;
 use Demo\Chat\Runtime\View\Item\Connection;
@@ -37,7 +37,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *   - connections: Active WebSocket connections (acceptKey → userId mapping)
  *   - userStates: Per-user outbound moderation and submit rate-limit state
  *   - botAgentStatuses: Runtime lifecycle markers for bot agents
- *   - guardianAgentStatuses: Runtime UI statuses for Hilos guardian agents
+ *   - superfanAgentStatuses: Runtime UI statuses for Hilos superfan agents
  *
  * Usage:
  *   Hilos::$rt->connections[$acceptKey];
@@ -51,20 +51,20 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read ChatContext $chatContext Shared chat topic and summary singleton
  * @property-read UserStates $userStates Per-user chat runtime state
  * @property-read BotAgentStatuses $botAgentStatuses Bot agent lifecycle status collection
- * @property-read GuardianAgentStatuses $guardianAgentStatuses Guardian run status collection
+ * @property-read SuperfanAgentStatuses $superfanAgentStatuses Superfan run status collection
  */
 final class ChatRtContext extends RtContext
 {
     public const string connections = 'connections';
     public const string userStates = 'userStates';
     public const string botAgentStatuses = 'botAgentStatuses';
-    public const string guardianAgentStatuses = 'guardianAgentStatuses';
+    public const string superfanAgentStatuses = 'superfanAgentStatuses';
 
     public const string connection = 'connection';
     public const string chatUserState = 'chatUserState';
     public const string chatContext = 'chatContext';
     public const string botAgentStatus = 'botAgentStatus';
-    public const string guardianAgentStatus = 'guardianAgentStatus';
+    public const string superfanAgentStatus = 'superfanAgentStatus';
     public const string selfConnection = 'selfConnection';
 
     /**
@@ -79,7 +79,7 @@ final class ChatRtContext extends RtContext
         $this->_stateCollections[self::userStates] = StateUserStates::init();
         $this->_stateItems[self::chatContext] = StateChatContext::create();
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
-        $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
+        $this->_stateCollections[self::superfanAgentStatuses] = StateSuperfanAgentStatuses::init();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
             /** @var StateConnections $connections */
             $connections = $this->_stateCollections[self::connections];
@@ -106,10 +106,10 @@ final class ChatRtContext extends RtContext
             BotAgentStatusActions::class,
         );
         $this->setRepresent(
-            self::guardianAgentStatuses,
-            GuardianAgentStatuses::class,
-            GuardianAgentStatusesActions::class,
-            GuardianAgentStatusActions::class,
+            self::superfanAgentStatuses,
+            SuperfanAgentStatuses::class,
+            SuperfanAgentStatusesActions::class,
+            SuperfanAgentStatusActions::class,
         );
         $this->setRepresentItem(
             self::selfConnection,

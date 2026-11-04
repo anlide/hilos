@@ -12,7 +12,7 @@ use Hilos\AI\Agent\SeoWebIntegrity\AbstractFrontendRenderingAiAgent;
 final class ChatFrontendRenderingAiAgent extends AbstractFrontendRenderingAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

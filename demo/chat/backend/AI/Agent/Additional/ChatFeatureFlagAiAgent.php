@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Additional\AbstractFeatureFlagAiAgent;
 final class ChatFeatureFlagAiAgent extends AbstractFeatureFlagAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

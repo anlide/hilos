@@ -426,11 +426,11 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos i18n translate email page. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_TRANSLATE_EMAIL = 'subscription_page_hilos_i18n_translate_email';
 
-    /** Subscription signal for Hilos guardian page. */
-    public const string SUBSCRIPTION_PAGE_HILOS_GUARDIAN = 'subscription_page_hilos_guardian';
+    /** Subscription signal for Hilos superfans page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_SUPERFANS = 'subscription_page_hilos_superfans';
 
-    /** Subscription signal for Hilos guardian AI agent page. */
-    public const string SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT = 'subscription_page_hilos_guardian_agent';
+    /** Subscription signal for Hilos superfan page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_SUPERFAN = 'subscription_page_hilos_superfan';
 
     /** Subscription signal for Hilos analytics page. */
     public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS = 'subscription_page_hilos_analytics';

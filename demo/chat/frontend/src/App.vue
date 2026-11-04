@@ -67,7 +67,7 @@ const props = defineProps<{ authGate: AuthGate }>()
 // framework admin defaults (hilosAdminViews), then the demo's real admin pages
 // overriding the default for their key (and users/user, which the framework's
 // default map omits — they need a project context, so the demo mounts them
-// directly). Unbuilt framework pages, including guardian, are refused with
+// directly). Unbuilt framework pages, including superfans, are refused with
 // 404 by the router through HILOS_UNBUILT_PAGES.
 // Each descriptor is created once for this App instance; selecting a page
 // loads only its project wrapper and SDK section. The four prose pages stay

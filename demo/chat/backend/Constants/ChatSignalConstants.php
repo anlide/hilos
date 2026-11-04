@@ -65,11 +65,11 @@ final class ChatSignalConstants
     /** @var string Bot delete signal name */
     public const string BOT_DELETE = 'bot_delete';
 
-    /** @var string Guardian agent run start action name */
-    public const string GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start';
+    /** @var string Superfan agent run start action name */
+    public const string SUPERFAN_AGENT_RUN_START = 'superfan_agent_run_start';
 
-    /** @var string Guardian agent run stop action name */
-    public const string GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop';
+    /** @var string Superfan agent run stop action name */
+    public const string SUPERFAN_AGENT_RUN_STOP = 'superfan_agent_run_stop';
 
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */

@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\Testing;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * TestQualityAiAgent - Framework test quality agent stub.
  */
-final class TestQualityAiAgent extends AbstractGuardianAiAgent
+final class TestQualityAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::TEST_QUALITY;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::TEST_QUALITY;
 
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

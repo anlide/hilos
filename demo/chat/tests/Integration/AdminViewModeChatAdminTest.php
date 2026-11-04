@@ -5,21 +5,21 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
-use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
-use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
+use Demo\Chat\Browser\Table\SuperfanAgentStatusDetailBrowserTable;
+use Demo\Chat\Browser\Table\SuperfanAgentStatusesBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
-use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
-use Demo\Chat\Pages\Hilos\GuardianPage;
-use Demo\Chat\Runtime\State\Item\GuardianAgentStatus;
+use Demo\Chat\Pages\Hilos\Superfan\SuperfanPage;
+use Demo\Chat\Pages\Hilos\SuperfansPage;
+use Demo\Chat\Runtime\State\Item\SuperfanAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotTableRow;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Agent\Hilos\GuardianRunStatus;
+use Hilos\Core\Agent\Hilos\SuperfanRunStatus;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -43,7 +43,7 @@ use JsonException;
  * Integration coverage for chat admin surfaces under the admin view mode (HIL-1259).
  *
  * Verifies that on the chat demo's administrative pages (AdminBotsPage,
- * GuardianPage, GuardianAgentPage) non-personal fields and declarations are preserved for both
+ * SuperfansPage, SuperfanPage) non-personal fields and declarations are preserved for both
  * anonymous and signed-in non-admin viewers, and an admin receives those pages with no hidden
  * marks. A viewer's look at the people list lives with the framework users page.
  */
@@ -53,7 +53,7 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     private const string VISITOR_KEY = 'admin-view-mode-chat-visitor';
     private const string ADMIN_KEY = 'admin-view-mode-chat-admin';
     private const string TEST_AGENT = 'admin-view-mode-chat-admin-test';
-    private const string GUARDIAN_AGENT_ID = 'test-guardian-agent-id';
+    private const string SUPERFAN_AGENT_ID = 'test-superfan-agent-id';
 
     private int $botId;
 
@@ -70,8 +70,8 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
         RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
 
-        RtTruthSourceRegistry::register(ChatRtContext::guardianAgentStatuses, TruthSourceKeys::all(), self::TEST_AGENT);
-        Hilos::$rt->guardianAgentStatuses->actions->create(self::GUARDIAN_AGENT_ID, GuardianRunStatus::FAILED);
+        RtTruthSourceRegistry::register(ChatRtContext::superfanAgentStatuses, TruthSourceKeys::all(), self::TEST_AGENT);
+        Hilos::$rt->superfanAgentStatuses->actions->create(self::SUPERFAN_AGENT_ID, SuperfanRunStatus::FAILED);
 
         $bot = Hilos::$db->bots->actions->create(
             name: 'Helper Bot',
@@ -102,7 +102,7 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     {
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
         RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
-        Hilos::$rt->guardianAgentStatuses->actions->clear();
+        Hilos::$rt->superfanAgentStatuses->actions->clear();
         Hilos::initBrowser();
         Hilos::$rt->connections->actions->clear();
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT);
@@ -157,32 +157,32 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     }
 
     /**
-     * A viewer receives guardian agent statuses (both list and detail) with all fields shown.
+     * A viewer receives superfan agent statuses (both list and detail) with all fields shown.
      */
-    public function testAViewerSeesGuardianStatusesWithAllFieldsShown(): void
+    public function testAViewerSeesSuperfanStatusesWithAllFieldsShown(): void
     {
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $listFrames = $this->subscribe(GuardianPage::class, [], $acceptKey);
-            $listSlots = $this->declarativeRow($listFrames, GuardianAgentStatusesBrowserTable::TABLE)[PagePayload::slots];
-            $listGuardian = $listSlots[ChatRtContext::guardianAgentStatuses];
-            self::assertSame(self::GUARDIAN_AGENT_ID, $listGuardian[GuardianAgentStatus::agentId]);
-            self::assertSame(GuardianRunStatus::FAILED->value, $listGuardian[GuardianAgentStatus::status]);
-            self::assertFalse(HiddenValue::isMark($listGuardian[GuardianAgentStatus::agentId]));
-            self::assertFalse(HiddenValue::isMark($listGuardian[GuardianAgentStatus::status]));
-            self::assertFalse(HiddenValue::isMark($listGuardian[GuardianAgentStatus::updatedAt]));
+            $listFrames = $this->subscribe(SuperfansPage::class, [], $acceptKey);
+            $listSlots = $this->declarativeRow($listFrames, SuperfanAgentStatusesBrowserTable::TABLE)[PagePayload::slots];
+            $listSuperfan = $listSlots[ChatRtContext::superfanAgentStatuses];
+            self::assertSame(self::SUPERFAN_AGENT_ID, $listSuperfan[SuperfanAgentStatus::agentId]);
+            self::assertSame(SuperfanRunStatus::FAILED->value, $listSuperfan[SuperfanAgentStatus::status]);
+            self::assertFalse(HiddenValue::isMark($listSuperfan[SuperfanAgentStatus::agentId]));
+            self::assertFalse(HiddenValue::isMark($listSuperfan[SuperfanAgentStatus::status]));
+            self::assertFalse(HiddenValue::isMark($listSuperfan[SuperfanAgentStatus::updatedAt]));
 
             $detailFrames = $this->subscribe(
-                GuardianAgentPage::class,
-                [HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => self::GUARDIAN_AGENT_ID],
+                SuperfanPage::class,
+                [HilosPageRouteParams::HILOS_SUPERFAN_AGENT_ID => self::SUPERFAN_AGENT_ID],
                 $acceptKey,
             );
-            $detailSlots = $this->declarativeRow($detailFrames, GuardianAgentStatusDetailBrowserTable::TABLE)[PagePayload::slots];
-            $detailGuardian = $detailSlots[ChatRtContext::guardianAgentStatuses];
-            self::assertSame(self::GUARDIAN_AGENT_ID, $detailGuardian[GuardianAgentStatus::agentId]);
-            self::assertSame(GuardianRunStatus::FAILED->value, $detailGuardian[GuardianAgentStatus::status]);
-            self::assertFalse(HiddenValue::isMark($detailGuardian[GuardianAgentStatus::agentId]));
-            self::assertFalse(HiddenValue::isMark($detailGuardian[GuardianAgentStatus::status]));
-            self::assertFalse(HiddenValue::isMark($detailGuardian[GuardianAgentStatus::updatedAt]));
+            $detailSlots = $this->declarativeRow($detailFrames, SuperfanAgentStatusDetailBrowserTable::TABLE)[PagePayload::slots];
+            $detailSuperfan = $detailSlots[ChatRtContext::superfanAgentStatuses];
+            self::assertSame(self::SUPERFAN_AGENT_ID, $detailSuperfan[SuperfanAgentStatus::agentId]);
+            self::assertSame(SuperfanRunStatus::FAILED->value, $detailSuperfan[SuperfanAgentStatus::status]);
+            self::assertFalse(HiddenValue::isMark($detailSuperfan[SuperfanAgentStatus::agentId]));
+            self::assertFalse(HiddenValue::isMark($detailSuperfan[SuperfanAgentStatus::status]));
+            self::assertFalse(HiddenValue::isMark($detailSuperfan[SuperfanAgentStatus::updatedAt]));
         }
     }
 
@@ -197,10 +197,10 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
             ...$this->subscribe(AdminBotsPage::class, [], self::ADMIN_KEY, [
                 ChatTableContext::bots => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
-            ...$this->subscribe(GuardianPage::class, [], self::ADMIN_KEY),
+            ...$this->subscribe(SuperfansPage::class, [], self::ADMIN_KEY),
             ...$this->subscribe(
-                GuardianAgentPage::class,
-                [HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => self::GUARDIAN_AGENT_ID],
+                SuperfanPage::class,
+                [HilosPageRouteParams::HILOS_SUPERFAN_AGENT_ID => self::SUPERFAN_AGENT_ID],
                 self::ADMIN_KEY,
             ),
         ];

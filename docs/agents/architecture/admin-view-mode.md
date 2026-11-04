@@ -180,7 +180,7 @@ change the body of that question, not the mode around it.
   collects ERROR lines and a viewer is looking at exactly that page.
 - A refused action writes nothing — not to the database, not to RT: the page's
   refusal handler records no state. The case the rule is written from is the
-  Guardian page of the chat demo.
+  Superfan page of the chat demo.
 - Withheld diagnostic details — the exception's class and message — go to a connection
   that proves an admin on the page at the moment of the answer
   (`PageAccessGate::provesAdmin()`: an `ADMIN` page whose verdict for this
@@ -611,7 +611,7 @@ nobody is asked*).
   look at (HIL-1262). The chat demo's own admin has nothing to move: the Saves
   of its bot and prompt-piece dialogs and of a chat user's rename stand on
   `ConflictActions` and `LoadingButton`, the confirms of its two deletions are
-  `LoadingButton`s, its raw buttons only open those dialogs, and the Guardian's
+  `LoadingButton`s, its raw buttons only open those dialogs, and the Superfans
   pages have no view to hold a control (HIL-1270). Backup has nothing to move:
   the confirm buttons of its four dialogs — creating, deleting, restoring and
   reopening — are `LoadingButton`s, its keep toggle is a `HilosSwitch`,
@@ -651,7 +651,7 @@ own.
 
 The first sections born under this rule: Legal (HIL-941; its mode —
 HIL-1258 for what it shows, HIL-1269 for its controls), the Two-factor child
-page (HIL-1204; its mode — HIL-1267), and the Guardian moved into the
+page (HIL-1204; its mode — HIL-1267), and Superfans moved into the
 framework (HIL-345, after HIL-1270).
 
 ## Tests

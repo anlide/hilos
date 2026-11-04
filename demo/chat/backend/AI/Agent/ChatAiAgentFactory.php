@@ -25,7 +25,7 @@ use Demo\Chat\AI\Agent\SeoWebIntegrity\ChatLinkIntegrityAiAgent;
 use Demo\Chat\AI\Agent\SeoWebIntegrity\ChatSeoTechnicalAiAgent;
 use Hilos\AI\Agent\AiAgentFactory;
 use Hilos\AI\Agent\AiAgentInterface;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 use LogicException;
 
 /**
@@ -36,44 +36,44 @@ final class ChatAiAgentFactory extends AiAgentFactory
     /**
      * Create one AI agent for the chat project.
      *
-     * @param GuardianAiAgentId $agentId Guardian agent identifier
-     * @return AiAgentInterface Framework or chat guardian agent
+     * @param SuperfanAiAgentId $agentId Superfan agent identifier
+     * @return AiAgentInterface Framework or chat superfan agent
      * @throws LogicException When an internal invariant is violated
      */
-    public static function create(GuardianAiAgentId $agentId): AiAgentInterface
+    public static function create(SuperfanAiAgentId $agentId): AiAgentInterface
     {
         return match ($agentId) {
-            GuardianAiAgentId::FORMATTER_LINTER_ORCHESTRATOR,
-            GuardianAiAgentId::STATIC_ANALYSIS,
-            GuardianAiAgentId::PHPDOC_COMPLIANCE,
-            GuardianAiAgentId::TEST_RUNNER,
-            GuardianAiAgentId::TEST_COVERAGE,
-            GuardianAiAgentId::TEST_QUALITY,
-            GuardianAiAgentId::SAST,
-            GuardianAiAgentId::DEPENDENCY_VULNERABILITY,
-            GuardianAiAgentId::ARCHITECTURE_COMPLIANCE,
-            GuardianAiAgentId::FRAMEWORK_USAGE,
-            GuardianAiAgentId::CODE_ORGANIZATION => parent::create($agentId),
+            SuperfanAiAgentId::FORMATTER_LINTER_ORCHESTRATOR,
+            SuperfanAiAgentId::STATIC_ANALYSIS,
+            SuperfanAiAgentId::PHPDOC_COMPLIANCE,
+            SuperfanAiAgentId::TEST_RUNNER,
+            SuperfanAiAgentId::TEST_COVERAGE,
+            SuperfanAiAgentId::TEST_QUALITY,
+            SuperfanAiAgentId::SAST,
+            SuperfanAiAgentId::DEPENDENCY_VULNERABILITY,
+            SuperfanAiAgentId::ARCHITECTURE_COMPLIANCE,
+            SuperfanAiAgentId::FRAMEWORK_USAGE,
+            SuperfanAiAgentId::CODE_ORGANIZATION => parent::create($agentId),
 
-            GuardianAiAgentId::SECRETS_CONFIG_LEAK => new ChatSecretsConfigLeakAiAgent(),
-            GuardianAiAgentId::LOG_ANALYSIS => new ChatLogAnalysisAiAgent(),
-            GuardianAiAgentId::ANOMALY_DETECTION => new ChatAnomalyDetectionAiAgent(),
-            GuardianAiAgentId::DB_PERFORMANCE => new ChatDbPerformanceAiAgent(),
-            GuardianAiAgentId::MEMORY_CPU => new ChatMemoryCpuAiAgent(),
-            GuardianAiAgentId::API_LATENCY => new ChatApiLatencyAiAgent(),
-            GuardianAiAgentId::SEO_TECHNICAL => new ChatSeoTechnicalAiAgent(),
-            GuardianAiAgentId::FRONTEND_RENDERING => new ChatFrontendRenderingAiAgent(),
-            GuardianAiAgentId::LINK_INTEGRITY => new ChatLinkIntegrityAiAgent(),
-            GuardianAiAgentId::BUSINESS_LOGIC => new ChatBusinessLogicAiAgent(),
-            GuardianAiAgentId::PROMPT_AI_INTEGRATION => new ChatPromptAiIntegrationAiAgent(),
-            GuardianAiAgentId::DOCKER_INFRA => new ChatDockerInfraAiAgent(),
-            GuardianAiAgentId::CI_CD => new ChatCiCdAiAgent(),
-            GuardianAiAgentId::DATA_INTEGRITY => new ChatDataIntegrityAiAgent(),
-            GuardianAiAgentId::MIGRATION_SAFETY => new ChatMigrationSafetyAiAgent(),
-            GuardianAiAgentId::FEATURE_FLAG => new ChatFeatureFlagAiAgent(),
-            GuardianAiAgentId::OBSERVABILITY => new ChatObservabilityAiAgent(),
-            GuardianAiAgentId::DEAD_CODE => new ChatDeadCodeAiAgent(),
-            GuardianAiAgentId::COST => new ChatCostAiAgent(),
+            SuperfanAiAgentId::SECRETS_CONFIG_LEAK => new ChatSecretsConfigLeakAiAgent(),
+            SuperfanAiAgentId::LOG_ANALYSIS => new ChatLogAnalysisAiAgent(),
+            SuperfanAiAgentId::ANOMALY_DETECTION => new ChatAnomalyDetectionAiAgent(),
+            SuperfanAiAgentId::DB_PERFORMANCE => new ChatDbPerformanceAiAgent(),
+            SuperfanAiAgentId::MEMORY_CPU => new ChatMemoryCpuAiAgent(),
+            SuperfanAiAgentId::API_LATENCY => new ChatApiLatencyAiAgent(),
+            SuperfanAiAgentId::SEO_TECHNICAL => new ChatSeoTechnicalAiAgent(),
+            SuperfanAiAgentId::FRONTEND_RENDERING => new ChatFrontendRenderingAiAgent(),
+            SuperfanAiAgentId::LINK_INTEGRITY => new ChatLinkIntegrityAiAgent(),
+            SuperfanAiAgentId::BUSINESS_LOGIC => new ChatBusinessLogicAiAgent(),
+            SuperfanAiAgentId::PROMPT_AI_INTEGRATION => new ChatPromptAiIntegrationAiAgent(),
+            SuperfanAiAgentId::DOCKER_INFRA => new ChatDockerInfraAiAgent(),
+            SuperfanAiAgentId::CI_CD => new ChatCiCdAiAgent(),
+            SuperfanAiAgentId::DATA_INTEGRITY => new ChatDataIntegrityAiAgent(),
+            SuperfanAiAgentId::MIGRATION_SAFETY => new ChatMigrationSafetyAiAgent(),
+            SuperfanAiAgentId::FEATURE_FLAG => new ChatFeatureFlagAiAgent(),
+            SuperfanAiAgentId::OBSERVABILITY => new ChatObservabilityAiAgent(),
+            SuperfanAiAgentId::DEAD_CODE => new ChatDeadCodeAiAgent(),
+            SuperfanAiAgentId::COST => new ChatCostAiAgent(),
         };
     }
 }

@@ -204,16 +204,6 @@ an absent override, so the local address the env profile resolved stands, then
 A profile env resolved as external lends no address to the bot role if its
 settings switch it to local; the bot then falls back to `LLM_LOCAL_URL`.
 
-## Scope boundary — TS agent-host is out
-
-`framework/agent-host` (the `@anthropic-ai/claude-agent-sdk` +
-`@openai/agents` HTTP/WS service on :9309) is **dev-only tooling**: it mounts the
-repo read-only for code-guardian review and has zero call path from any PHP
-runtime. Per the subscription ruling the Agent SDK is legal only for
-development. It is mapped here solely to fix the boundary: **runtime LLM routing
-is the PHP `framework/backend/LLM` layer described above; the TS agent-host is
-not part of it and Phase-1 leaves do not touch it.**
-
 ## Non-goals of this ADR
 
 - **Token streaming.** Both providers hardcode `stream=false`; streaming is a

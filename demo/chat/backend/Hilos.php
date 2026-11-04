@@ -43,7 +43,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosDaemonAgent;
-use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosSuperfanAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Chat\Agents\Hilos\FilesLibraryAgent;
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
@@ -59,7 +59,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
-use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosSuperfanAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -83,8 +83,8 @@ use Demo\Chat\Browser\List\MainUsersBrowserList;
 use Demo\Chat\Browser\List\ProfileDevicesBrowserList;
 use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
 use Demo\Chat\Browser\List\UserProfileBrowserList;
-use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
-use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
+use Demo\Chat\Browser\Table\SuperfanAgentStatusDetailBrowserTable;
+use Demo\Chat\Browser\Table\SuperfanAgentStatusesBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Pages\PageCatalog;
 use Demo\Chat\Database\Settings\SettingsCatalog;
@@ -149,8 +149,8 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonNodePage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
-use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
-use Demo\Chat\Pages\Hilos\GuardianPage;
+use Demo\Chat\Pages\Hilos\Superfan\SuperfanPage;
+use Demo\Chat\Pages\Hilos\SuperfansPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\LanguageDetailPage;
@@ -442,8 +442,8 @@ final class Hilos extends HilosFacade
         LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
         CountryDetailPage::PAGE => CountryDetailPage::class,
         CountryNamesPage::PAGE => CountryNamesPage::class,
-        GuardianPage::PAGE => GuardianPage::class,
-        GuardianAgentPage::PAGE => GuardianAgentPage::class,
+        SuperfansPage::PAGE => SuperfansPage::class,
+        SuperfanPage::PAGE => SuperfanPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
         PeoplePage::PAGE => PeoplePage::class,
@@ -626,9 +626,9 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
         ],
-        DemoHilosGuardianAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => DemoHilosGuardianAgent::class,
-            AgentRegistryKey::DAEMON => DemoHilosGuardianAgentDaemon::class,
+        DemoHilosSuperfanAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosSuperfanAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosSuperfanAgentDaemon::class,
         ],
         DemoHilosAnalyticsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
@@ -819,8 +819,8 @@ final class Hilos extends HilosFacade
     public const array BROWSER_TABLES = [
         HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
         HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::class,
-        GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
-        GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
+        SuperfanAgentStatusesBrowserTable::TABLE => SuperfanAgentStatusesBrowserTable::class,
+        SuperfanAgentStatusDetailBrowserTable::TABLE => SuperfanAgentStatusDetailBrowserTable::class,
     ];
 
     public const array PAGE_LISTS = [
@@ -1086,13 +1086,13 @@ final class Hilos extends HilosFacade
         DaemonHttpServerPage::PAGE => [
             ChatTableContext::hilosDaemonHttpRoutes => [],
         ],
-        GuardianPage::PAGE => [
-            GuardianAgentStatusesBrowserTable::TABLE => [],
+        SuperfansPage::PAGE => [
+            SuperfanAgentStatusesBrowserTable::TABLE => [],
         ],
-        GuardianAgentPage::PAGE => [
-            GuardianAgentStatusDetailBrowserTable::TABLE => [
+        SuperfanPage::PAGE => [
+            SuperfanAgentStatusDetailBrowserTable::TABLE => [
                 BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => ChatBrowserRef::HILOS_GUARDIAN_AGENT_ID,
+                    HilosPageRouteParams::HILOS_SUPERFAN_AGENT_ID => ChatBrowserRef::HILOS_SUPERFAN_AGENT_ID,
                 ],
             ],
         ],

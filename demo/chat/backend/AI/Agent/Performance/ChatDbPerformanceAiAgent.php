@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Performance\AbstractDbPerformanceAiAgent;
 final class ChatDbPerformanceAiAgent extends AbstractDbPerformanceAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

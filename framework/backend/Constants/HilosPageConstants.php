@@ -117,11 +117,11 @@ final class HilosPageConstants
     /** @var string Hilos I18n — translate email */
     public const string HILOS_I18N_TRANSLATE_EMAIL = 'hilos_i18n_translate_email';
 
-    /** @var string Hilos guardian page (project validation robots) */
-    public const string HILOS_GUARDIAN = 'hilos_guardian';
+    /** @var string Hilos superfans page (project validation robots) */
+    public const string HILOS_SUPERFANS = 'hilos_superfans';
 
-    /** @var string Hilos guardian AI agent page */
-    public const string HILOS_GUARDIAN_AGENT = 'hilos_guardian_agent';
+    /** @var string Hilos superfan page */
+    public const string HILOS_SUPERFAN = 'hilos_superfan';
 
     /** @var string Hilos analytics page (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';

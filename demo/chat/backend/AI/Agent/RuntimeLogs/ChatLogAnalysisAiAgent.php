@@ -12,7 +12,7 @@ use Hilos\AI\Agent\RuntimeLogs\AbstractLogAnalysisAiAgent;
 final class ChatLogAnalysisAiAgent extends AbstractLogAnalysisAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

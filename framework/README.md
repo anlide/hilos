@@ -17,7 +17,6 @@ Profiles:
 | Profile | Stack |
 |---|---|
 | `ollama` / `ollama-gpu-nvidia` / `ollama-gpu-amd` | local Ollama (one service per device variant, shared data volume) |
-| `agent-host` | dev-only unified agent host (code guardian), port 9309 |
 | `preview` | in-tailnet preview lane: dnsmasq split-DNS + Caddy proxy |
 | `frontend` | Node CLI runner for the frontend SDK |
 | `test` | MySQL + CLI runner for framework PHPUnit |

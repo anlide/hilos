@@ -88,7 +88,7 @@ and assumes nothing about the host it runs on.
 - **The `control` profile needs the value; the other profiles do not.** The
   compose file passes `${HILOS_REPO:-}` and declares the bind in long form with
   `create_host_path: false` and a stand-in source, so the file keeps parsing
-  for every other profile (`preview`, `test`, `agent-host`, and the Ollama
+  for every other profile (`preview`, `test`, and the Ollama
   ones) with the variable unset, and docker never creates a directory on the
   host for it.
 - **`preview up` sets the root by itself.** The preview script exports

@@ -47,7 +47,7 @@ Each admin page `onSubscribe` sends the relevant `Table` data.
 | `HILOS_DASHBOARD` | `HILOS_INDEX` | `/hilos` |
 | `HILOS_SETTINGS` | `HILOS_INDEX` | `/hilos/settings` |
 | `HILOS_I18N` | `HILOS_INDEX` | `/hilos/i18n` |
-| `HILOS_GUARDIAN` | `HILOS_GUARDIAN` | `/hilos/guardian` |
+| `HILOS_SUPERFANS` | `HILOS_SUPERFANS` | `/hilos/superfans` |
 | `HILOS_ANALYTICS` | `HILOS_ANALYTICS` | `/hilos/analytics` |
 | `HILOS_LOGS` | `HILOS_LOGS` | `/hilos/logs` |
 | `HILOS_USER` | `HILOS_INDEX` | `/hilos/users/:id` |

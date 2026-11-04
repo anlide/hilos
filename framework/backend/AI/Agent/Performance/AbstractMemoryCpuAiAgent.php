@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\Performance;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * AbstractMemoryCpuAiAgent - Project extension point for memory and CPU checks.
  */
-abstract class AbstractMemoryCpuAiAgent extends AbstractGuardianAiAgent
+abstract class AbstractMemoryCpuAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::MEMORY_CPU;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::MEMORY_CPU;
 }

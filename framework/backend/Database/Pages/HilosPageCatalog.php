@@ -20,7 +20,7 @@ use Hilos\Constants\HilosPageConstants;
  *
  * Eight routed pages carry no entry on purpose: `hilos_about`, `hilos_terms`, `hilos_privacy`,
  * `hilos_terms_history`, `hilos_privacy_history` and `hilos_license` are public footer pages rather
- * than catalog sections, and `hilos_guardian` with `hilos_guardian_agent` are the mirror gap HIL-345 answers.
+ * than catalog sections, and `hilos_superfans` with `hilos_superfan` are the mirror gap HIL-345 answers.
  * A page without an entry is not an error - its subscription simply answers without identity.
  *
  * @see PageCatalogResolver
@@ -807,7 +807,7 @@ final class HilosPageCatalog
         ],
         [
             PageCatalogConstants::SECTION_TITLE => 'Intelligence',
-            PageCatalogConstants::SECTION_DESCRIPTION => 'AI tooling, watchdogs, and automation.',
+            PageCatalogConstants::SECTION_DESCRIPTION => 'AI tooling, superfans, and automation.',
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_MCP_SKILLS,
                 HilosPageConstants::HILOS_SIL,

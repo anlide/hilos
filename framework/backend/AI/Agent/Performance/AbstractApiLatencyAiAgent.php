@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\Performance;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * AbstractApiLatencyAiAgent - Project extension point for API latency checks.
  */
-abstract class AbstractApiLatencyAiAgent extends AbstractGuardianAiAgent
+abstract class AbstractApiLatencyAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::API_LATENCY;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::API_LATENCY;
 }

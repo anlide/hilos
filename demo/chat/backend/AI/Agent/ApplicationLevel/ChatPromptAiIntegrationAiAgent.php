@@ -12,7 +12,7 @@ use Hilos\AI\Agent\ApplicationLevel\AbstractPromptAiIntegrationAiAgent;
 final class ChatPromptAiIntegrationAiAgent extends AbstractPromptAiIntegrationAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Performance\AbstractApiLatencyAiAgent;
 final class ChatApiLatencyAiAgent extends AbstractApiLatencyAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

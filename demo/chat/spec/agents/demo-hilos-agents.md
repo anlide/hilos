@@ -12,11 +12,11 @@ Manages framework settings, i18n strings, and the main Hilos dashboard.
 Handles `HILOS_ANALYTICS` page.
 Displays analytics data collected by `Hilos::$ac` (AnalyticsCollector).
 
-## DemoHilosGuardianAgent (`AgentType::HILOS_GUARDIAN`)
+## DemoHilosSuperfanAgent (`AgentType::HILOS_SUPERFANS`)
 
-Handles `HILOS_GUARDIAN` page.
-The Guardian is an AI-powered code/runtime health inspector.
-Triggered via `GUARDIAN_AGENT_RUN_START` / `GUARDIAN_AGENT_RUN_STOP` actions.
+Handles `HILOS_SUPERFANS` page.
+Superfans is an AI-powered code/runtime health inspector.
+Triggered via `SUPERFAN_AGENT_RUN_START` / `SUPERFAN_AGENT_RUN_STOP` actions.
 Runs AI agents (`ChatAiAgentFactory`) against the project code and reports results.
 
 ## DemoHilosLogsAgent (`AgentType::HILOS_LOGS`)
@@ -41,11 +41,11 @@ Daemons: `backend/Core/Agent/Daemon/Hilos/Demo*AgentDaemon.php`
 All DemoHilos pages route through `ChatSignalRouter` config:
 ```php
 PageConstants::HILOS_DASHBOARD => ['agentType' => AgentType::HILOS_INDEX, ...]
-PageConstants::HILOS_GUARDIAN  => ['agentType' => AgentType::HILOS_GUARDIAN, ...]
+PageConstants::HILOS_SUPERFANS  => ['agentType' => AgentType::HILOS_SUPERFANS, ...]
 // etc.
 ```
 
-## AI agent system (Guardian)
+## AI agent system (Superfans)
 
 `backend/AI/Agent/` — AI self-inspection agents organized by category:
 - `Additional/` — cost, dead code, feature flags, migration safety, observability

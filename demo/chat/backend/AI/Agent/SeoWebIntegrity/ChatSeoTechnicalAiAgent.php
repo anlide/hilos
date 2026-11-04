@@ -12,7 +12,7 @@ use Hilos\AI\Agent\SeoWebIntegrity\AbstractSeoTechnicalAiAgent;
 final class ChatSeoTechnicalAiAgent extends AbstractSeoTechnicalAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

@@ -109,8 +109,6 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'communications_channel_set',
         'communications_channel_test',
         'communications_delivery_retry',
-        'guardian_agent_run_start',
-        'guardian_agent_run_stop',
         'hilos_daemon_agent_restart',
         'hilos_i18n_country_add',
         'hilos_i18n_country_delete',
@@ -185,6 +183,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'setting_preset_apply',
         'setting_reset',
         'setting_update',
+        'superfan_agent_run_start',
+        'superfan_agent_run_stop',
     ];
 
     private int $visitorId;

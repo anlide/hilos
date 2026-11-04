@@ -121,7 +121,7 @@ The list below describes what each project is for. Some of these catalogs are st
 hilos/
 ├── framework/                      # Core framework
 │   ├── backend/                    # PHP backend
-│   │   ├── AI/                     # AI agents (Guardian, moderation, etc.)
+│   │   ├── AI/                     # AI agents (Superfans, moderation, etc.)
 │   │   ├── API/                    # HTTP routing, async client
 │   │   ├── Bootstrap/              # Process bootstrap entrypoints
 │   │   ├── Constants/              # Constants

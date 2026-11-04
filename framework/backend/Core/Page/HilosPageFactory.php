@@ -26,7 +26,7 @@ use Throwable;
 class HilosPageFactory extends AbstractPageFactory
 {
     /**
-     * All Hilos admin page ids (dashboard, i18n subtree, guardian, etc.) as a
+     * All Hilos admin page ids (dashboard, i18n subtree, superfan, etc.) as a
      * lookup set keyed by page id, so membership checks stay O(1) and the list
      * is built once at class load instead of on every hasPage() call.
      *
@@ -61,8 +61,8 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP_ITEM => true,
         HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR => true,
         HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL => true,
-        HilosPageConstants::HILOS_GUARDIAN => true,
-        HilosPageConstants::HILOS_GUARDIAN_AGENT => true,
+        HilosPageConstants::HILOS_SUPERFANS => true,
+        HilosPageConstants::HILOS_SUPERFAN => true,
         HilosPageConstants::HILOS_ANALYTICS => true,
         HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS => true,
         HilosPageConstants::HILOS_ANALYTICS_PEOPLE => true,

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\RuntimeLogs;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * AbstractLogAnalysisAiAgent - Project extension point for log analysis checks.
  */
-abstract class AbstractLogAnalysisAiAgent extends AbstractGuardianAiAgent
+abstract class AbstractLogAnalysisAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::LOG_ANALYSIS;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::LOG_ANALYSIS;
 }

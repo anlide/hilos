@@ -30,7 +30,7 @@ final class HilosPageCatalogTest extends TestCase
      * sign-in, notification and security sections in HIL-493, then legal agreements and
      * their revision history in HIL-498 and the Legal admin section in HIL-941. Nine routed
      * keys carry no entry on purpose: four public footer pages, two public legal history
-     * pages, the public Dependencies page and the guardian pair. Each new admin page adds
+     * pages, the public Dependencies page and the superfans pair. Each new admin page adds
      * an entry, the logging modes of HIL-762 being the first.
      *
      * It is a deliberate-addition guard rather than a count worth knowing: a page that reaches the
@@ -322,7 +322,7 @@ final class HilosPageCatalogTest extends TestCase
             ],
             [
                 PageCatalogConstants::SECTION_TITLE => 'Intelligence',
-                PageCatalogConstants::SECTION_DESCRIPTION => 'AI tooling, watchdogs, and automation.',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'AI tooling, superfans, and automation.',
                 PageCatalogConstants::SECTION_ITEMS => [
                     HilosPageConstants::HILOS_MCP_SKILLS,
                     HilosPageConstants::HILOS_SIL,

@@ -16,7 +16,7 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 | [agents/bot-agent.md](spec/agents/bot-agent.md) | working with BotAgent: bot lifecycle, LLM messages, per-bot indexing |
 | [agents/moderator-agent.md](spec/agents/moderator-agent.md) | the retired project moderator and the shared framework moderation path |
 | [agents/context-analyzer-agent.md](spec/agents/context-analyzer-agent.md) | working with ChatContextAnalyzerAgent: chat summary, context for bots |
-| [agents/demo-hilos-agents.md](spec/agents/demo-hilos-agents.md) | working with /hilos/* pages: dashboard, settings, guardian, analytics, logs |
+| [agents/demo-hilos-agents.md](spec/agents/demo-hilos-agents.md) | working with /hilos/* pages: dashboard, settings, superfans, analytics, logs |
 
 ## Pages
 

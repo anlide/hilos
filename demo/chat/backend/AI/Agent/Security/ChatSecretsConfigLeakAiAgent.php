@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Security\AbstractSecretsConfigLeakAiAgent;
 final class ChatSecretsConfigLeakAiAgent extends AbstractSecretsConfigLeakAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

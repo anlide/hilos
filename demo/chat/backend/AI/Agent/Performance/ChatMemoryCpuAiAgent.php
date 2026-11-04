@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Performance\AbstractMemoryCpuAiAgent;
 final class ChatMemoryCpuAiAgent extends AbstractMemoryCpuAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

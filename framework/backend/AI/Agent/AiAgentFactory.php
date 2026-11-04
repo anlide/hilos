@@ -25,44 +25,44 @@ class AiAgentFactory
     /**
      * Create one AI agent by its identifier.
      *
-     * @param GuardianAiAgentId $agentId Identifier of the agent to build
+     * @param SuperfanAiAgentId $agentId Identifier of the agent to build
      * @return AiAgentInterface The framework-level agent for that identifier
      * @throws LogicException When the identifier names an agent only a project can implement
      */
-    public static function create(GuardianAiAgentId $agentId): AiAgentInterface
+    public static function create(SuperfanAiAgentId $agentId): AiAgentInterface
     {
         return match ($agentId) {
-            GuardianAiAgentId::FORMATTER_LINTER_ORCHESTRATOR => new FormatterLinterOrchestratorAiAgent(),
-            GuardianAiAgentId::STATIC_ANALYSIS => new StaticAnalysisAiAgent(),
-            GuardianAiAgentId::PHPDOC_COMPLIANCE => new PhpDocComplianceAiAgent(),
-            GuardianAiAgentId::TEST_RUNNER => new TestRunnerAiAgent(),
-            GuardianAiAgentId::TEST_COVERAGE => new TestCoverageAiAgent(),
-            GuardianAiAgentId::TEST_QUALITY => new TestQualityAiAgent(),
-            GuardianAiAgentId::SAST => new SastAiAgent(),
-            GuardianAiAgentId::DEPENDENCY_VULNERABILITY => new DependencyVulnerabilityAiAgent(),
-            GuardianAiAgentId::ARCHITECTURE_COMPLIANCE => new ArchitectureComplianceAiAgent(),
-            GuardianAiAgentId::FRAMEWORK_USAGE => new FrameworkUsageAiAgent(),
-            GuardianAiAgentId::CODE_ORGANIZATION => new CodeOrganizationAiAgent(),
+            SuperfanAiAgentId::FORMATTER_LINTER_ORCHESTRATOR => new FormatterLinterOrchestratorAiAgent(),
+            SuperfanAiAgentId::STATIC_ANALYSIS => new StaticAnalysisAiAgent(),
+            SuperfanAiAgentId::PHPDOC_COMPLIANCE => new PhpDocComplianceAiAgent(),
+            SuperfanAiAgentId::TEST_RUNNER => new TestRunnerAiAgent(),
+            SuperfanAiAgentId::TEST_COVERAGE => new TestCoverageAiAgent(),
+            SuperfanAiAgentId::TEST_QUALITY => new TestQualityAiAgent(),
+            SuperfanAiAgentId::SAST => new SastAiAgent(),
+            SuperfanAiAgentId::DEPENDENCY_VULNERABILITY => new DependencyVulnerabilityAiAgent(),
+            SuperfanAiAgentId::ARCHITECTURE_COMPLIANCE => new ArchitectureComplianceAiAgent(),
+            SuperfanAiAgentId::FRAMEWORK_USAGE => new FrameworkUsageAiAgent(),
+            SuperfanAiAgentId::CODE_ORGANIZATION => new CodeOrganizationAiAgent(),
 
-            GuardianAiAgentId::SECRETS_CONFIG_LEAK,
-            GuardianAiAgentId::LOG_ANALYSIS,
-            GuardianAiAgentId::ANOMALY_DETECTION,
-            GuardianAiAgentId::DB_PERFORMANCE,
-            GuardianAiAgentId::MEMORY_CPU,
-            GuardianAiAgentId::API_LATENCY,
-            GuardianAiAgentId::SEO_TECHNICAL,
-            GuardianAiAgentId::FRONTEND_RENDERING,
-            GuardianAiAgentId::LINK_INTEGRITY,
-            GuardianAiAgentId::BUSINESS_LOGIC,
-            GuardianAiAgentId::PROMPT_AI_INTEGRATION,
-            GuardianAiAgentId::DOCKER_INFRA,
-            GuardianAiAgentId::CI_CD,
-            GuardianAiAgentId::DATA_INTEGRITY,
-            GuardianAiAgentId::MIGRATION_SAFETY,
-            GuardianAiAgentId::FEATURE_FLAG,
-            GuardianAiAgentId::OBSERVABILITY,
-            GuardianAiAgentId::DEAD_CODE,
-            GuardianAiAgentId::COST => throw new LogicException(
+            SuperfanAiAgentId::SECRETS_CONFIG_LEAK,
+            SuperfanAiAgentId::LOG_ANALYSIS,
+            SuperfanAiAgentId::ANOMALY_DETECTION,
+            SuperfanAiAgentId::DB_PERFORMANCE,
+            SuperfanAiAgentId::MEMORY_CPU,
+            SuperfanAiAgentId::API_LATENCY,
+            SuperfanAiAgentId::SEO_TECHNICAL,
+            SuperfanAiAgentId::FRONTEND_RENDERING,
+            SuperfanAiAgentId::LINK_INTEGRITY,
+            SuperfanAiAgentId::BUSINESS_LOGIC,
+            SuperfanAiAgentId::PROMPT_AI_INTEGRATION,
+            SuperfanAiAgentId::DOCKER_INFRA,
+            SuperfanAiAgentId::CI_CD,
+            SuperfanAiAgentId::DATA_INTEGRITY,
+            SuperfanAiAgentId::MIGRATION_SAFETY,
+            SuperfanAiAgentId::FEATURE_FLAG,
+            SuperfanAiAgentId::OBSERVABILITY,
+            SuperfanAiAgentId::DEAD_CODE,
+            SuperfanAiAgentId::COST => throw new LogicException(
                 "AI agent '{$agentId->value}' requires a project-level concrete implementation.",
             ),
         };
@@ -78,7 +78,7 @@ class AiAgentFactory
     {
         $agents = [];
 
-        foreach (GuardianAiAgentId::cases() as $agentId) {
+        foreach (SuperfanAiAgentId::cases() as $agentId) {
             $agents[$agentId->value] = static::create($agentId);
         }
 

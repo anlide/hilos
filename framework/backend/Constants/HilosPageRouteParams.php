@@ -23,9 +23,9 @@ final class HilosPageRouteParams
     public const string HILOS_SIL_USER_HISTORY_USER_ID = self::HILOS_USER_USER_ID;
 
     /**
-     * Route param for {@see HilosPageConstants::HILOS_GUARDIAN_AGENT} (`/hilos/guardian/{agentId}`).
+     * Route param for {@see HilosPageConstants::HILOS_SUPERFAN} (`/hilos/superfan/{agentId}`).
      */
-    public const string HILOS_GUARDIAN_AGENT_AGENT_ID = AgentConstants::FIELD_AGENT_ID;
+    public const string HILOS_SUPERFAN_AGENT_ID = AgentConstants::FIELD_AGENT_ID;
 
     /** Route param for the Daemon section's node child pages. */
     public const string HILOS_DAEMON_NODE_ID = 'nodeId';

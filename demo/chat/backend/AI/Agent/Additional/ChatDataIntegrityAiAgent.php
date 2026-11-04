@@ -12,7 +12,7 @@ use Hilos\AI\Agent\Additional\AbstractDataIntegrityAiAgent;
 final class ChatDataIntegrityAiAgent extends AbstractDataIntegrityAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

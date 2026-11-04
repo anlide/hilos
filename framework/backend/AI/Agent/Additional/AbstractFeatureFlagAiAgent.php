@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\Additional;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * AbstractFeatureFlagAiAgent - Project extension point for feature flag checks.
  */
-abstract class AbstractFeatureFlagAiAgent extends AbstractGuardianAiAgent
+abstract class AbstractFeatureFlagAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::FEATURE_FLAG;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::FEATURE_FLAG;
 }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\SeoWebIntegrity;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * AbstractFrontendRenderingAiAgent - Project extension point for frontend rendering checks.
  */
-abstract class AbstractFrontendRenderingAiAgent extends AbstractGuardianAiAgent
+abstract class AbstractFrontendRenderingAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::FRONTEND_RENDERING;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::FRONTEND_RENDERING;
 }

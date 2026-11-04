@@ -35,8 +35,8 @@ final class AgentType
     /** @var string Hilos notifications library agent type (owns the rows and the bell's group) */
     public const string HILOS_NOTIFICATIONS_LIBRARY = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
 
-    /** @var string Hilos guardian agent type */
-    public const string HILOS_GUARDIAN = HilosAgentType::HILOS_GUARDIAN;
+    /** @var string Hilos superfans agent type */
+    public const string HILOS_SUPERFANS = HilosAgentType::HILOS_SUPERFANS;
 
     /** @var string Hilos analytics agent type */
     public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;

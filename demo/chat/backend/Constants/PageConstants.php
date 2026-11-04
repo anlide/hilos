@@ -43,11 +43,11 @@ final class PageConstants
     /** @var string Hilos internationalization page */
     public const string HILOS_I18N = HilosPageConstants::HILOS_I18N;
 
-    /** @var string Hilos guardian page */
-    public const string HILOS_GUARDIAN = HilosPageConstants::HILOS_GUARDIAN;
+    /** @var string Hilos superfans page */
+    public const string HILOS_SUPERFANS = HilosPageConstants::HILOS_SUPERFANS;
 
-    /** @var string Hilos guardian AI agent page */
-    public const string HILOS_GUARDIAN_AGENT = HilosPageConstants::HILOS_GUARDIAN_AGENT;
+    /** @var string Hilos superfan page */
+    public const string HILOS_SUPERFAN = HilosPageConstants::HILOS_SUPERFAN;
 
     /** @var string Hilos analytics page */
     public const string HILOS_ANALYTICS = HilosPageConstants::HILOS_ANALYTICS;

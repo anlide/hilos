@@ -89,8 +89,8 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatRtContext::botAgentStatuses,
     ];
 
-    public const array RT_GUARDIAN_AGENT_STATUSES = [
+    public const array RT_SUPERFAN_AGENT_STATUSES = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
-        BrowserSourceKey::KEY => ChatRtContext::guardianAgentStatuses,
+        BrowserSourceKey::KEY => ChatRtContext::superfanAgentStatuses,
     ];
 }

@@ -9,6 +9,6 @@ namespace Demo\Chat\Browser;
  */
 final class ChatBrowserTable
 {
-    public const string GUARDIAN_AGENT_STATUSES = 'guardianAgentStatuses';
-    public const string GUARDIAN_AGENT_STATUS_DETAIL = 'guardianAgentStatusDetail';
+    public const string SUPERFAN_AGENT_STATUSES = 'superfanAgentStatuses';
+    public const string SUPERFAN_AGENT_STATUS_DETAIL = 'superfanAgentStatusDetail';
 }

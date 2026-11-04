@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\AI\Agent\FrameworkArchitecture;
 
-use Hilos\AI\Agent\AbstractGuardianAiAgent;
-use Hilos\AI\Agent\GuardianAiAgentId;
+use Hilos\AI\Agent\AbstractSuperfanAiAgent;
+use Hilos\AI\Agent\SuperfanAiAgentId;
 
 /**
  * FrameworkUsageAiAgent - Framework usage validation agent stub.
  */
-final class FrameworkUsageAiAgent extends AbstractGuardianAiAgent
+final class FrameworkUsageAiAgent extends AbstractSuperfanAiAgent
 {
-    public const GuardianAiAgentId AI_AGENT_ID = GuardianAiAgentId::FRAMEWORK_USAGE;
+    public const SuperfanAiAgentId AI_AGENT_ID = SuperfanAiAgentId::FRAMEWORK_USAGE;
 
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

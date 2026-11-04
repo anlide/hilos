@@ -12,7 +12,7 @@ use Hilos\AI\Agent\SeoWebIntegrity\AbstractLinkIntegrityAiAgent;
 final class ChatLinkIntegrityAiAgent extends AbstractLinkIntegrityAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {

@@ -12,7 +12,7 @@ use Hilos\AI\Agent\DevOpsEnvironment\AbstractCiCdAiAgent;
 final class ChatCiCdAiAgent extends AbstractCiCdAiAgent
 {
     /**
-     * Run one lightweight guardian AI agent tick.
+     * Run one lightweight superfan AI agent tick.
      */
     public function onTick(): void
     {
