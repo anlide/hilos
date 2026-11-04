@@ -48,6 +48,10 @@ the budget or until would-block, EOF or error, then parses the gathered bytes
 once, before handling EOF/error. TLS may return only a record's worth of data
 (up to 16 KiB) per transport read; several reads can fill the same budget.
 
+A watched client continues consuming ready input after `stopReading()`,
+discarding each bounded portion without parsing it; later `read()` calls
+continue until would-block, EOF or a read failure.
+
 `EventLoop::tick()` uses `EventBase::LOOP_NONBLOCK`. Libevent can call a
 persistently readable socket's callback repeatedly before returning to the
 master's `dispatchSignals()`. The read budget therefore bounds neither all

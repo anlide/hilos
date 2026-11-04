@@ -82,6 +82,41 @@ final class ClientReadPortionTest extends TestCase
         $this->assertFalse($client->shouldClose());
     }
 
+    /** Stopped reads retain the portion budget and leave the tail for the next call. */
+    public function testStoppedShortTransportReadsDiscardOnlyOnePortion(): void
+    {
+        [$clientSocket] = $this->socketPair();
+        $lengths = [];
+        $chunks = [str_repeat('a', 16_384), str_repeat('b', 16_384), str_repeat('c', 32_768), 'tail', ''];
+        $transport = $this->createMock(SocketTransportInterface::class);
+        $transport->expects($this->exactly(5))->method('read')->willReturnCallback(
+            static function (int $length) use (&$lengths, &$chunks): string {
+                $lengths[] = $length;
+                return array_shift($chunks);
+            },
+        );
+        $transport->expects($this->once())->method('isEndOfStream')->willReturn(false);
+        $client = new ClientReadPortionTestClient($clientSocket, $transport);
+        $client->setReadBuffer('incomplete');
+        $client->stopReading();
+
+        $client->read();
+
+        $this->assertSame([65_536, 49_152, 32_768], $lengths);
+        $this->assertSame(['tail', ''], $chunks);
+        $this->assertSame([], $client->processed);
+        $this->assertSame('incomplete', $client->getReadBuffer());
+        $this->assertFalse($client->shouldClose());
+
+        $client->read();
+
+        $this->assertSame([65_536, 49_152, 32_768, 65_536, 65_532], $lengths);
+        $this->assertSame([], $chunks);
+        $this->assertSame([], $client->processed);
+        $this->assertSame('incomplete', $client->getReadBuffer());
+        $this->assertFalse($client->shouldClose());
+    }
+
     /** An empty TLS record ends this portion without closing a live stream. */
     public function testEmptyTransportReadWithoutEofLeavesConnectionOpen(): void
     {
@@ -178,6 +213,18 @@ final class ClientReadPortionTestClient extends AbstractClient
     public bool $closedDuringProcessing = false;
 
     public int $socketErrorDuringProcessing = 0;
+
+    /** @param string $bytes Protocol fragment already buffered before input stops */
+    public function setReadBuffer(string $bytes): void
+    {
+        $this->readBuffer = $bytes;
+    }
+
+    /** @return string Protocol fragment retained after stopped reads */
+    public function getReadBuffer(): string
+    {
+        return $this->readBuffer;
+    }
 
     /** This client has no periodic work. */
     public function onTick(): void

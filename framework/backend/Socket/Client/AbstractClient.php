@@ -53,7 +53,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     protected bool $closeWhenOutputDrained = false;
 
-    /** This connection takes no more input; what is queued for it is still written (HIL-1207). */
+    /** Discard bounded portions of input without parsing; queued output continues until EOF or a real read error. */
     private bool $readingStopped = false;
 
     /** @var SocketTransportInterface What carries the bytes: the bare socket, or a TLS session over it */
@@ -78,7 +78,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Collect up to readBufferSize bytes and parse them once, before reporting EOF or a read error.
+     * Collect up to readBufferSize bytes, parsing active input once or discarding stopped input.
+     * Stopped reads preserve readBuffer; EOF and real read errors still mark the connection for close.
      *
      * While a handshake still stands before the first application byte, a read only moves it on.
      *
@@ -90,11 +91,6 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     public function read(): void
     {
-        // A departing node reads nothing more from this connection, but keeps writing to it.
-        if ($this->readingStopped) {
-            return;
-        }
-
         // Skip if already marked for closing to prevent redundant processing
         if ($this->shouldClose) {
             return;
@@ -114,7 +110,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             $data .= $chunk;
         } while (strlen($data) < $this->readBufferSize);
 
-        if ($data !== '') {
+        if ($data !== '' && !$this->readingStopped) {
             $this->readBuffer .= $data;
             $this->processReadBuffer();
         }
@@ -239,9 +235,10 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Stop reading this connection while continuing to write to it.
+     * Stop delivering input to the protocol while continuing to write to the connection.
      *
-     * The peer may still send, but none of its input reaches a handler.
+     * Further reads discard bounded, non-blocking portions without changing readBuffer.
+     * EOF or a real read error marks the connection for close even with queued output.
      */
     public function stopReading(): void
     {

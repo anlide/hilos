@@ -6,15 +6,17 @@ namespace Hilos\Tests\Unit\Socket;
 
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\Exception\Base\ConnectionResetException;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Transport\PlainSocketTransport;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
 /** A departing node stops browser input but writes its last delivery (HIL-1207). */
 final class ClientCloseOnceWrittenTest extends TestCase
 {
-    /** @var list<Socket> Socket ends held by the test */
+    /** @var array<int, Socket> Socket ends held by the test */
     private array $peers = [];
 
     protected function tearDown(): void
@@ -56,17 +58,129 @@ final class ClientCloseOnceWrittenTest extends TestCase
         $this->assertSame([], $server->getClients());
     }
 
+    /** Stopped input is consumed without changing a previously buffered protocol fragment. */
     public function testStoppedReadingDoesNotProcessInput(): void
     {
         $client = $this->client();
         $peer = $this->peers[array_key_last($this->peers)];
-        $this->assertSame(7, socket_write($peer, 'ignored'));
 
-        $client->stopReading();
-        $client->read();
+        try {
+            $this->assertSame(7, socket_write($peer, 'ignored'));
+            $client->setReadBuffer('incomplete');
+            $client->stopReading();
+            $client->read();
 
-        $this->assertSame(0, $client->processedReads);
-        $client->close();
+            $this->assertSame(0, $client->processedReads);
+            $this->assertSame('incomplete', $client->getReadBuffer());
+            $this->assertFalse((new PlainSocketTransport($client->getSocket()))->read(1));
+            $this->assertContains(socket_last_error($client->getSocket()), [SOCKET_EAGAIN, SOCKET_EWOULDBLOCK]);
+            $this->assertFalse($client->shouldClose());
+        } finally {
+            $client->close();
+        }
+    }
+
+    /** Would-block preserves queued output until the ordinary write closes the client. */
+    public function testStoppedReadingWithoutInputStillWritesQueuedBytes(): void
+    {
+        $client = $this->client();
+        $peer = $this->peers[array_key_last($this->peers)];
+
+        try {
+            $client->queue('farewell');
+            $client->stopReading();
+            $client->closeOnceWritten();
+            $client->read();
+
+            $this->assertFalse($client->shouldClose());
+            $this->assertTrue($client->hasPendingWrite());
+            $this->assertSame(0, $client->processedReads);
+
+            $client->write();
+
+            $this->assertSame('farewell', socket_read($peer, 8));
+            $this->assertFalse($client->hasPendingWrite());
+            $this->assertTrue($client->shouldClose());
+        } finally {
+            $client->close();
+        }
+    }
+
+    /** EOF marks a stopped client for close even while output is still queued. */
+    public function testStoppedReadingClosesAtEofWithoutWaitingForQueuedBytes(): void
+    {
+        $client = $this->client();
+        $peer = $this->peers[array_key_last($this->peers)];
+
+        try {
+            $client->queue('farewell');
+            $client->stopReading();
+            $client->closeOnceWritten();
+            $this->closePeer($peer);
+
+            $client->read();
+
+            $this->assertTrue($client->shouldClose());
+            $this->assertTrue($client->hasPendingWrite());
+            $this->assertSame(0, $client->processedReads);
+        } finally {
+            $client->close();
+        }
+    }
+
+    /** Bytes before EOF are discarded without appending to or parsing the old fragment. */
+    public function testStoppedReadingDiscardsDataBeforeEofClosesTheClient(): void
+    {
+        $client = $this->client();
+        $peer = $this->peers[array_key_last($this->peers)];
+
+        try {
+            $this->assertSame(7, socket_write($peer, 'ignored'));
+            $client->setReadBuffer('incomplete');
+            $client->queue('farewell');
+            $client->stopReading();
+            $client->closeOnceWritten();
+            $this->closePeer($peer);
+
+            $client->read();
+
+            $this->assertTrue($client->shouldClose());
+            $this->assertTrue($client->hasPendingWrite());
+            $this->assertSame(0, $client->processedReads);
+            $this->assertSame('incomplete', $client->getReadBuffer());
+            $this->assertSame('', (new PlainSocketTransport($client->getSocket()))->read(1));
+        } finally {
+            $client->close();
+        }
+    }
+
+    /** A real reset after input keeps its exception and bypasses the output drain wait. */
+    public function testStoppedReadingDiscardsDataBeforeResetClosesTheClient(): void
+    {
+        $client = $this->client();
+        $peer = $this->peers[array_key_last($this->peers)];
+
+        try {
+            $this->assertSame(7, socket_write($peer, 'ignored'));
+            $this->assertSame(6, socket_write($client->getSocket(), 'unread'));
+            $client->setReadBuffer('incomplete');
+            $client->queue('farewell');
+            $client->stopReading();
+            $client->closeOnceWritten();
+            $this->closePeer($peer);
+
+            try {
+                $client->read();
+                $this->fail('The reset after discarded input must raise');
+            } catch (ConnectionResetException) {
+                $this->assertTrue($client->shouldClose());
+                $this->assertTrue($client->hasPendingWrite());
+                $this->assertSame(0, $client->processedReads);
+                $this->assertSame('incomplete', $client->getReadBuffer());
+            }
+        } finally {
+            $client->close();
+        }
     }
 
     /**
@@ -77,9 +191,16 @@ final class ClientCloseOnceWrittenTest extends TestCase
         $pair = [];
         $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
         $this->assertTrue(socket_set_nonblock($pair[0]));
-        $this->peers[] = $pair[1];
+        $this->peers[spl_object_id($pair[1])] = $pair[1];
 
         return new ClientCloseOnceWrittenTestClient($pair[0]);
+    }
+
+    /** @param Socket $peer Test-owned end to close before reading EOF or reset */
+    private function closePeer(Socket $peer): void
+    {
+        socket_close($peer);
+        unset($this->peers[spl_object_id($peer)]);
     }
 }
 
@@ -127,6 +248,18 @@ final class ClientCloseOnceWrittenTestClient extends AbstractClient
     public function queue(string $bytes): void
     {
         $this->writeBuffer .= $bytes;
+    }
+
+    /** @param string $bytes Protocol fragment already buffered before input stops */
+    public function setReadBuffer(string $bytes): void
+    {
+        $this->readBuffer = $bytes;
+    }
+
+    /** @return string Protocol fragment retained after stopped reads */
+    public function getReadBuffer(): string
+    {
+        return $this->readBuffer;
     }
 
     public function onTick(): void
