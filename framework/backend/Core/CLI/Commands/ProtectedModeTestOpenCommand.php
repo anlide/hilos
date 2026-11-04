@@ -33,13 +33,23 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 class ProtectedModeTestOpenCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
     /**
-     * Returns command name for CLI routing.
+     * @param string $commandName CLI and command-channel wire name
+     * @param string $leaveCommand Paired leave command named in help
+     */
+    public function __construct(
+        private readonly string $commandName = CliCommands::PROTECTED_MODE_TEST_OPEN,
+        private readonly string $leaveCommand = CliCommands::PROTECTED_MODE_TEST_LEAVE,
+    ) {
+    }
+
+    /**
+     * Returns the configured name for CLI and command-channel routing.
      *
-     * @return string Command name (test:protected-mode:open)
+     * @return string Carrier-specific command name
      */
     public function getName(): string
     {
-        return CliCommands::PROTECTED_MODE_TEST_OPEN;
+        return $this->commandName;
     }
 
     /**
@@ -59,7 +69,7 @@ class ProtectedModeTestOpenCommand extends AbstractCommandChannelTestCommand imp
      */
     public function getHelp(): string
     {
-        $leave = CliCommands::PROTECTED_MODE_TEST_LEAVE;
+        $leave = $this->leaveCommand;
 
         return <<<HELP
 Command: {$this->getName()}

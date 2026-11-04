@@ -30,9 +30,9 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
  * with a warning and replies to nobody, which would otherwise reach the caller as a mute
  * timeout.
  *
- * Test-only ({@see TestOnlyCommand} via {@see AbstractCommandChannelTestCommand}, and the
- * agent repeats the refusal on its side because the command socket authenticates nobody) and
- * database-free: this process only writes to a socket.
+ * Test-only ({@see TestOnlyCommand} via {@see AbstractCommandChannelTestCommand}); the command
+ * socket also gates the test-only name before routing it. This process is database-free and
+ * only writes to a socket.
  */
 class ProtectedModeTestEnterCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
@@ -47,13 +47,23 @@ class ProtectedModeTestEnterCommand extends AbstractCommandChannelTestCommand im
     private const string OPTION_SESSION_TOKEN = 'session-token';
 
     /**
-     * Returns command name for CLI routing.
+     * @param string $commandName CLI and command-channel wire name
+     * @param string $leaveCommand Paired leave command named in help
+     */
+    public function __construct(
+        private readonly string $commandName = CliCommands::PROTECTED_MODE_TEST_ENTER,
+        private readonly string $leaveCommand = CliCommands::PROTECTED_MODE_TEST_LEAVE,
+    ) {
+    }
+
+    /**
+     * Returns the configured name for CLI and command-channel routing.
      *
-     * @return string Command name (test:protected-mode:enter)
+     * @return string Carrier-specific command name
      */
     public function getName(): string
     {
-        return CliCommands::PROTECTED_MODE_TEST_ENTER;
+        return $this->commandName;
     }
 
     /**
@@ -73,7 +83,7 @@ class ProtectedModeTestEnterCommand extends AbstractCommandChannelTestCommand im
      */
     public function getHelp(): string
     {
-        $leave = CliCommands::PROTECTED_MODE_TEST_LEAVE;
+        $leave = $this->leaveCommand;
 
         return <<<HELP
 Command: {$this->getName()} <operation> [--accept-key=<k>] [--session-token=<t>]

@@ -59,6 +59,7 @@ final class ProtectedModeRuntime extends RtState
     public const string phase = 'phase';
     public const string entryMode = 'entryMode';
     public const string operation = 'operation';
+    public const string freezeId = 'freezeId';
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
     public const string initiatorSessionTokenHash = 'initiatorSessionTokenHash';
     public const string initiatorAgentType = 'initiatorAgentType';
@@ -96,6 +97,9 @@ final class ProtectedModeRuntime extends RtState
 
     /** Operation name the initiator is running, or null when inactive. */
     public ?string $operation = null;
+
+    /** Cluster barrier generation; null while inactive, standalone or restored from a legacy file. */
+    public ?string $freezeId = null;
 
     /** Accept key of the initiator connection, admitted in the verification window, or null. */
     public ?string $initiatorAcceptKey = null;
@@ -285,6 +289,7 @@ final class ProtectedModeRuntime extends RtState
                 : ($instance->phase === self::PHASE_INACTIVE ? null : self::ENTRY_MODE_FREEZE),
         );
         $instance->operation = self::optionalString($row, self::operation);
+        $instance->freezeId = self::optionalString($row, self::freezeId);
         $instance->initiatorAcceptKey = self::optionalString($row, self::initiatorAcceptKey);
         $instance->initiatorSessionTokenHash = self::optionalString($row, self::initiatorSessionTokenHash);
         $instance->initiatorAgentType = self::optionalString($row, self::initiatorAgentType);
@@ -351,6 +356,7 @@ final class ProtectedModeRuntime extends RtState
         $this->phase = self::patchString($diff, self::phase, $this->phase);
         $this->entryMode = self::validateEntryMode(self::patchOptionalString($diff, self::entryMode, $this->entryMode));
         $this->operation = self::patchOptionalString($diff, self::operation, $this->operation);
+        $this->freezeId = self::patchOptionalString($diff, self::freezeId, $this->freezeId);
         $this->initiatorAcceptKey = self::patchOptionalString($diff, self::initiatorAcceptKey, $this->initiatorAcceptKey);
         $this->initiatorSessionTokenHash = self::patchOptionalString($diff, self::initiatorSessionTokenHash, $this->initiatorSessionTokenHash);
         $this->initiatorAgentType = self::patchOptionalString($diff, self::initiatorAgentType, $this->initiatorAgentType);
@@ -584,6 +590,7 @@ final class ProtectedModeRuntime extends RtState
             self::phase => $this->phase,
             self::entryMode => $this->entryMode,
             self::operation => $this->operation,
+            self::freezeId => $this->freezeId,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
             self::initiatorSessionTokenHash => $this->initiatorSessionTokenHash,
             self::initiatorAgentType => $this->initiatorAgentType,

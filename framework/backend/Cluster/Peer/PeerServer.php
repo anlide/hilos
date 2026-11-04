@@ -55,6 +55,8 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
@@ -245,6 +247,18 @@ final class PeerServer extends AbstractTlsServer implements
 
     /** @var ?int Last inspected consensus term, used only to invalidate cached round authority */
     private ?int $protectedModeReportTerm = null;
+
+    /** @var array<string, PeerLink> Connection on which each outstanding slave snapshot was requested */
+    private array $protectedModeSyncLinks = [];
+
+    /** @var array<string, string> Request ids paired with the connection above */
+    private array $protectedModeSyncIds = [];
+
+    /** @var ?PeerLink Current leader connection that supplied the slave's latest snapshot */
+    private ?PeerLink $protectedModeSyncLeaderLink = null;
+
+    /** @var ?string Latest incoming request id, tied to the leader connection */
+    private ?string $protectedModeIncomingSyncId = null;
 
     /** @var ?ReHydrateBarrierSink Where node answers to a database re-hydrate announcement are credited */
     private ?ReHydrateBarrierSink $reHydrateBarrier = null;
@@ -475,6 +489,7 @@ final class PeerServer extends AbstractTlsServer implements
         $this->coordinator?->tick($now);
         // Placement failover and slave self-fence run off their grace timers on the same loop.
         $this->placement?->tick($now);
+        $this->protectedMode?->tickSlaveSync((int)$now);
         $this->tickProtectedModeNodeReports($now);
     }
 
@@ -868,6 +883,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link that just completed its handshake
      * @param NodeIdentity $remote Remote node identity learned from the handshake
      * @throws PeerTransportException When the placement snapshot metadata is invalid
+     * @throws EnvException When the leadership configuration is invalid
      */
     public function onHandshakeComplete(PeerLink $link, NodeIdentity $remote): void
     {
@@ -891,6 +907,9 @@ final class PeerServer extends AbstractTlsServer implements
         // Reconcile-on-rejoin: report the agents this node still hosts so a leader on the
         // other end can stop any that it has already re-placed elsewhere (a no-op otherwise).
         $this->placement?->onPeerHandshaked($remote->nodeId);
+        if ($remote->role === NodeRole::Slave) {
+            $this->protectedMode?->onSlaveConnected($remote->nodeId);
+        }
 
         // Tell the peer what this node reads, so it starts sending those frames here (HIL-717).
         // The announcement is a broadcast and reached only the nodes linked at the time it was
@@ -1026,6 +1045,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Candidate link
      * @param NodeIdentity $remote Certified remote identity
      * @throws PeerTransportException When this link lost its candidate slot
+     * @throws EnvException When leadership configuration is invalid
      */
     public function activateCandidate(PeerLink $link, NodeIdentity $remote): void
     {
@@ -1049,6 +1069,10 @@ final class PeerServer extends AbstractTlsServer implements
         $registry = $this->registry();
         if ($registry !== null && $this->onlineNodeById($registry, $remote->nodeId) === null) {
             $this->onHandshakeComplete($link, $remote);
+            return;
+        }
+        if ($remote->role === NodeRole::Slave) {
+            $this->protectedMode?->onSlaveConnected($remote->nodeId);
         }
     }
 
@@ -1429,6 +1453,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the request arrived on
      * @param PeerProtectedModeEnableDTO $frame Received protected-mode enable frame
+     * @throws PeerTransportException When the coordinator cannot build its cluster descriptor
      * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -1740,6 +1765,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the frame arrived on
      * @param PeerProtectedModeRefreezeDTO $frame Received protected-mode refreeze frame
+     * @throws PeerTransportException When the coordinator cannot build its cluster descriptor
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -1752,35 +1778,129 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Returns the online master node ids other than self — the followers the leader freezes.
+     * Selects the authenticated working peers of either role for a freeze or DB re-hydrate barrier.
      *
-     * Backs {@see ProtectedModeMesh}: the leader broadcasts quiesce to these and awaits a quiesced
-     * report from each. A registry hiccup collapses {@see onlineMasterIds()} to empty, so the leader
-     * simply sees no followers and activates on its own node alone.
+     * Membership alone does not establish a working route. The existing link inventory excludes
+     * candidates, replaced links and connections marked to close, and never includes self.
      *
-     * @return array<string> Online master node ids excluding the local node
+     * @return list<string> Linked master and slave node ids excluding the local node
      */
-    public function followerMasterNodeIds(): array
+    public function followerNodeIds(): array
     {
-        $followers = [];
-        foreach ($this->onlineMasterIds() as $nodeId) {
-            if ($nodeId !== $this->localIdentity->nodeId) {
-                $followers[] = $nodeId;
-            }
-        }
+        return $this->linkedNodeIds();
+    }
 
-        return $followers;
+    /** @return list<string> Working authenticated slaves only */
+    public function slaveNodeIds(): array
+    {
+        return array_values(array_filter($this->linkedNodeIds(),
+            fn(string $nodeId): bool => $this->activeLinkToNode($nodeId)?->remoteIdentity()?->role === NodeRole::Slave));
+    }
+
+    /**
+     * @param string $nodeId Slave destination
+     * @param PeerProtectedModeSyncDTO $snapshot State requested on this connection
+     * @throws EnvException When the leadership configuration is invalid
+     */
+    public function sendProtectedModeSync(string $nodeId, PeerProtectedModeSyncDTO $snapshot): void
+    {
+        $link = $this->activeLinkToNode($nodeId);
+        if ($this->leaderNodeId() !== $this->localIdentity->nodeId || $link?->remoteIdentity()?->role !== NodeRole::Slave) {
+            return;
+        }
+        $this->protectedModeSyncLinks[$nodeId] = $link;
+        $this->protectedModeSyncIds[$nodeId] = $snapshot->syncId;
+        $link->sendFrame($snapshot);
+    }
+
+    /**
+     * @param string $leaderNodeId Leader whose local effects are being continued
+     * @param string $syncId Pending request id
+     * @return bool Whether the original authenticated connection remains current
+     * @throws EnvException When the leadership configuration is invalid
+     */
+    public function isProtectedModeSyncCurrent(string $leaderNodeId, string $syncId): bool
+    {
+        $link = $this->activeLinkToNode($leaderNodeId);
+        return $this->localIdentity->role === NodeRole::Slave && $leaderNodeId === $this->leaderNodeId()
+            && $link !== null && $link === $this->protectedModeSyncLeaderLink && $syncId === $this->protectedModeIncomingSyncId;
+    }
+
+    /**
+     * @param string $leaderNodeId Leader whose request finished locally
+     * @param string $syncId Applied request id
+     * @param string $phase Applied phase
+     * @throws EnvException When the leadership configuration is invalid
+     * @throws PeerTransportException When the acknowledgement is invalid
+     */
+    public function sendProtectedModeSynced(string $leaderNodeId, string $syncId, string $phase): void
+    {
+        $link = $this->activeLinkToNode($leaderNodeId);
+        if ($this->localIdentity->role !== NodeRole::Slave || $leaderNodeId !== $this->leaderNodeId()
+            || $link === null || $link !== $this->protectedModeSyncLeaderLink || $syncId !== $this->protectedModeIncomingSyncId) {
+            return;
+        }
+        $link->sendFrame(new PeerProtectedModeSyncedDTO($syncId, $phase));
+    }
+
+    /**
+     * @param PeerLink $link Authenticated installed connection
+     * @param PeerProtectedModeSyncDTO $frame Leader snapshot
+     * @throws EnvException When the leadership or timeout configuration is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws PeerTransportException When an acknowledgement cannot be built
+     */
+    public function onProtectedModeSyncReceived(PeerLink $link, PeerProtectedModeSyncDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($this->localIdentity->role !== NodeRole::Slave || $from === null || $from !== $this->leaderNodeId()
+            || $link->remoteIdentity()?->role !== NodeRole::Master || $this->activeLinkToNode($from) !== $link) {
+            return;
+        }
+        $this->protectedModeSyncLeaderLink = $link;
+        $this->protectedModeIncomingSyncId = $frame->syncId;
+        $this->protectedMode?->onSync($from, $frame);
+    }
+
+    /**
+     * @param PeerLink $link Expected slave's installed connection
+     * @param PeerProtectedModeSyncedDTO $frame Snapshot acknowledgement
+     * @throws EnvException When leadership or initiator placement is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws PeerTransportException When the current snapshot cannot be built
+     */
+    public function onProtectedModeSyncedReceived(PeerLink $link, PeerProtectedModeSyncedDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($this->localIdentity->role !== NodeRole::Master || $from === null
+            || $this->leaderNodeId() !== $this->localIdentity->nodeId || $link->remoteIdentity()?->role !== NodeRole::Slave
+            || $this->activeLinkToNode($from) !== $link || ($this->protectedModeSyncLinks[$from] ?? null) !== $link
+            || ($this->protectedModeSyncIds[$from] ?? null) !== $frame->syncId) {
+            return;
+        }
+        $this->protectedMode?->onSynced($from, $frame);
     }
 
     /**
      * Returns the node id of the current cluster leader for an initiator to address its request.
+     *
+     * Masters use consensus; slaves use their placing leader only while its authenticated
+     * working link exists. Placement release and takeover invalidate or replace that leader.
      *
      * @return ?string Leader node id, or null when leadership is unknown or the cluster is absent
      * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function leaderNodeId(): ?string
     {
-        return Hilos::$cluster?->leadership()->leaderId();
+        if ($this->localIdentity->role === NodeRole::Master) {
+            return Hilos::$cluster?->leadership()->leaderId();
+        }
+
+        $leaderNodeId = $this->placement?->knownLeaderId();
+
+        return $leaderNodeId !== null && $this->hasActiveLinkToNode($leaderNodeId) ? $leaderNodeId : null;
     }
 
     /**
@@ -1807,7 +1927,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendEnable(string $leaderNodeId, ProtectedModeEnableSignalData $data): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeEnableDTO($data));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeEnableDTO($data));
     }
 
     /**
@@ -1819,27 +1939,29 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendDisable(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeDisableDTO($agentType, $agentIndex));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeDisableDTO($agentType, $agentIndex));
     }
 
     /**
-     * Broadcasts the freeze order to every follower master.
+     * Broadcasts the freeze order to every follower node.
      *
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     * @throws PeerTransportException When the descriptor has no barrier generation
      */
     public function broadcastQuiesce(ProtectedModeQuiesceData $data): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeQuiesceDTO($data));
+        $this->broadcastToAllPeers(new PeerProtectedModeQuiesceDTO($data));
     }
 
     /**
-     * Opens a direct verification window on every follower master without stopping agents.
+     * Opens a direct verification window on every follower node without stopping agents.
      *
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     * @throws PeerTransportException When the descriptor has no barrier generation
      */
     public function broadcastWindow(ProtectedModeQuiesceData $data): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeWindowDTO($data));
+        $this->broadcastToAllPeers(new PeerProtectedModeWindowDTO($data));
     }
 
     /**
@@ -1849,7 +1971,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendReady(string $nodeId): void
     {
-        $this->sendToMaster($nodeId, new PeerProtectedModeReadyDTO());
+        $this->sendToNode($nodeId, new PeerProtectedModeReadyDTO());
     }
 
     /**
@@ -1860,15 +1982,15 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendRefused(string $initiatorNodeId, string $reason): void
     {
-        $this->sendToMaster($initiatorNodeId, new PeerProtectedModeRefusedDTO($reason));
+        $this->sendToNode($initiatorNodeId, new PeerProtectedModeRefusedDTO($reason));
     }
 
     /**
-     * Broadcasts the database re-hydrate announcement to every other master.
+     * Broadcasts the database re-hydrate announcement to every other linked node.
      *
-     * Sent by the node whose agent replaced the database, which for the monopolistic agent that
-     * runs restores is the leader. Nothing addresses a leader here on purpose: every master holds
-     * the same database and each answers for itself, so the announcement needs no relay.
+     * Sent by the node whose agent replaced the database, whether master or slave. All nodes hold
+     * the same database and each answers for itself and its workers, so the announcement needs
+     * no relay through the leader.
      *
      * The number is this node's own and travels as an opaque token: the receivers do not order
      * themselves by it and never compare it with a number of their own, they only return it, so
@@ -1878,7 +2000,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function broadcastDbReHydrate(int $round): void
     {
-        $this->broadcastToMasters(new PeerDbReHydrateDTO($round));
+        $this->broadcastToAllPeers(new PeerDbReHydrateDTO($round));
     }
 
     /**
@@ -1891,18 +2013,18 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendDbReHydrated(string $announcerNodeId, int $round, bool $ok, array $problems): void
     {
-        $this->sendToMaster(
+        $this->sendToNode(
             $announcerNodeId,
             new PeerDbReHydratedDTO($this->localIdentity->nodeId, $round, $ok, $problems),
         );
     }
 
     /**
-     * Broadcasts the release order to every follower master.
+     * Broadcasts the release order to every follower node.
      */
     public function broadcastLift(): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeLiftDTO());
+        $this->broadcastToAllPeers(new PeerProtectedModeLiftDTO());
     }
 
     /**
@@ -1914,17 +2036,17 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendVerify(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeVerifyDTO($agentType, $agentIndex));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeVerifyDTO($agentType, $agentIndex));
     }
 
     /**
-     * Broadcasts the verification window to every follower master.
+     * Broadcasts the verification window to every follower node.
      * @param string $agentType Initiator agent type
      * @param ?int $agentIndex Initiator index, or null for a singleton
      */
     public function broadcastVerify(string $agentType, ?int $agentIndex): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeVerifyDTO($agentType, $agentIndex));
+        $this->broadcastToAllPeers(new PeerProtectedModeVerifyDTO($agentType, $agentIndex));
     }
 
     /**
@@ -1938,7 +2060,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendProgress(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeProgressDTO($agentType, $agentIndex));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeProgressDTO($agentType, $agentIndex));
     }
 
     /**
@@ -1951,11 +2073,11 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendPass(string $leaderNodeId, string $agentType, ?int $agentIndex, string $passHash): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModePassDTO($agentType, $agentIndex, $passHash));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModePassDTO($agentType, $agentIndex, $passHash));
     }
 
     /**
-     * Broadcasts one minted pass to every follower master.
+     * Broadcasts one minted pass to every follower node.
      *
      * @param string $agentType Initiator agent type
      * @param ?int $agentIndex Initiator index, or null for a singleton
@@ -1963,7 +2085,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function broadcastPass(string $agentType, ?int $agentIndex, string $passHash): void
     {
-        $this->broadcastToMasters(new PeerProtectedModePassDTO($agentType, $agentIndex, $passHash));
+        $this->broadcastToAllPeers(new PeerProtectedModePassDTO($agentType, $agentIndex, $passHash));
     }
 
     /**
@@ -1973,7 +2095,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendAdmit(string $leaderNodeId, string $passHash, string $sessionTokenHash): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeAdmitDTO($passHash, $sessionTokenHash));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeAdmitDTO($passHash, $sessionTokenHash));
     }
 
     /**
@@ -1982,7 +2104,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function broadcastAdmit(string $passHash, string $sessionTokenHash): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeAdmitDTO($passHash, $sessionTokenHash));
+        $this->broadcastToAllPeers(new PeerProtectedModeAdmitDTO($passHash, $sessionTokenHash));
     }
 
     /**
@@ -1995,11 +2117,11 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendCircle(string $leaderNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeCircleDTO($agentType, $agentIndex, $snapshot));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeCircleDTO($agentType, $agentIndex, $snapshot));
     }
 
     /**
-     * Broadcasts the photographed circle to every follower master.
+     * Broadcasts the photographed circle to every follower node.
      *
      * @param string $agentType Initiator agent type
      * @param ?int $agentIndex Initiator index, or null for a singleton
@@ -2007,7 +2129,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function broadcastCircle(string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeCircleDTO($agentType, $agentIndex, $snapshot));
+        $this->broadcastToAllPeers(new PeerProtectedModeCircleDTO($agentType, $agentIndex, $snapshot));
     }
 
     /**
@@ -2019,7 +2141,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendRefreeze(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeRefreezeDTO($agentType, $agentIndex));
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeRefreezeDTO($agentType, $agentIndex));
     }
 
     /**
@@ -2029,17 +2151,17 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendQuiesced(string $leaderNodeId): void
     {
-        $this->sendToMaster($leaderNodeId, new PeerProtectedModeQuiescedDTO());
+        $this->sendToNode($leaderNodeId, new PeerProtectedModeQuiescedDTO());
     }
 
     /**
-     * Tells every follower master that every node has stopped its roster, so each writes active.
+     * Tells every follower node that every node has stopped its roster, so each writes active.
      *
      * Sent at the end of every quiesce round, before the ready (HIL-1128).
      */
     public function broadcastSettled(): void
     {
-        $this->broadcastToMasters(new PeerProtectedModeSettledDTO());
+        $this->broadcastToAllPeers(new PeerProtectedModeSettledDTO());
     }
 
     /**
@@ -2712,8 +2834,8 @@ final class PeerServer extends AbstractTlsServer implements
      * Implements {@see RtClaimMesh}. Announced rather than addressed at the leader, and the
      * reason is a hard property of this cluster rather than a preference: consensus runs on the
      * master set alone, so a data-plane node keeps {@see PendingLeadership} for the life of its
-     * process and its {@see leaderNodeId()} is null forever. Addressed, the report would be
-     * dropped on exactly the nodes that host placed agents — every claim this guard exists to
+     * process and that consensus seam's leader id is null forever. Addressed through that seam,
+     * the report would be dropped on exactly the nodes that host placed agents — every claim this guard exists to
      * judge. Placement answers the same question the same way: a node hands its hosted set to
      * whoever links, and a peer that does not lead ignores it ({@see ClusterPlacement}).
      *

@@ -2576,8 +2576,9 @@ abstract class WorkerServer extends AbstractServer implements
 
         // A stop over an unfinished lift inherits what that lift had not asked for yet. Those agents
         // are on no roster - their start was never sent - so the snapshot below cannot see them, and
-        // without this line nothing would ever ask for them again.
-        $this->protectedModeStoppedAgents = $this->protectedModeResumeQueue ?? [];
+        // without this line nothing would ever ask for them again. A changed initiator can also
+        // require another stop before any lift; retain that earlier walk's remembered agents too.
+        $this->protectedModeStoppedAgents = [...$this->protectedModeStoppedAgents, ...($this->protectedModeResumeQueue ?? [])];
         $this->protectedModeResumeQueue = null;
 
         // An agent waiting for a worker to connect has no worker to be stopped on: it leaves the

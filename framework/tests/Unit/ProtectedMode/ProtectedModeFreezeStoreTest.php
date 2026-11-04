@@ -86,6 +86,65 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         parent::tearDown();
     }
 
+    public function testBootstrapPersistsOnlyLegacyIdentityAndRestartInheritsIt(): void
+    {
+        $executor = $this->executorOnAMountedNode();
+        $executor->enterActivating($this->freeze(), 'operator');
+        $executor->enterActive();
+        $executor->enterVerifying();
+        $view = Hilos::$rt->hilosProtectedModeRuntime;
+        $view->actions->issuePass('pass-hash');
+        $before = $view->toArray();
+        $executor->bootstrapFreezeId('locally-bootstrapped');
+        $after = $view->toArray();
+        unset($before[StateProtectedModeRuntime::freezeId], $after[StateProtectedModeRuntime::freezeId]);
+        $this->assertSame($before, $after);
+        $saved = new ProtectedModeFreezeStore()->load();
+        $this->assertSame('locally-bootstrapped', $saved->freezeId);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $saved->phase);
+        $this->mountNode();
+        Hilos::$rt->hilosProtectedModeRuntime->actions->restoreFromDisk($saved);
+        $executor->bootstrapFreezeId('must-not-replace-known');
+        $this->assertSame('locally-bootstrapped', Hilos::$rt->hilosProtectedModeRuntime->freezeId);
+        $this->assertSame('locally-bootstrapped', new ProtectedModeFreezeStore()->load()->freezeId);
+    }
+
+    public function testExecutorPersistsGenerationAcrossEveryOccupiedPhaseAndRestart(): void
+    {
+        $executor = $this->executorOnAMountedNode();
+        $executor->enterActivating($this->freeze()->withFreezeId('generation-a'), 'operator');
+        $this->assertSame('generation-a', new ProtectedModeFreezeStore()->load()?->freezeId);
+        $executor->enterActive();
+        $this->assertSame('generation-a', new ProtectedModeFreezeStore()->load()?->freezeId);
+        $executor->enterVerifying();
+        $this->assertSame('generation-a', new ProtectedModeFreezeStore()->load()?->freezeId);
+
+        $restored = new ProtectedModeFreezeStore()->load();
+        $this->assertNotNull($restored);
+        $this->mountNode();
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->restoreFromDisk($restored);
+        $this->assertSame('generation-a', Hilos::$rt?->hilosProtectedModeRuntime?->freezeId);
+
+        $executor->enterInactive();
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->freezeId);
+        $this->assertNull(new ProtectedModeFreezeStore()->load());
+    }
+
+    public function testLegacyVersionTwoFileRestoresAnUnknownGeneration(): void
+    {
+        $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
+        unset($row[StateProtectedModeRuntime::freezeId]);
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2, 'row' => $row]));
+
+        $restored = new ProtectedModeFreezeStore()->load();
+        $this->assertNotNull($restored);
+        $this->assertNull($restored->freezeId);
+        $this->mountNode();
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->restoreFromDisk($restored);
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->freezeId);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+    }
+
     public function testTheFreezeIsReadBackTheWayItWasLeft(): void
     {
         $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
@@ -324,7 +383,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     {
         $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
         $row[StateProtectedModeRuntime::preservedAgentTypes] = 'hilos_mail';
-        new ProtectedModeFreezeStore()->save($row);
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2, 'row' => $row]));
 
         $this->expectException(ProtectedModeFreezeUnreadableException::class);
         new ProtectedModeFreezeStore()->load();
@@ -441,6 +500,10 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertIsString($json);
         $this->assertSame(['version' => 2, 'row' => array_diff_key($row, [
             ...$snapshot->toArray(), StateProtectedModeRuntime::maintenanceNodes => null,
+            StateProtectedModeRuntime::diagnosticsNodeId => null,
+            StateProtectedModeRuntime::stoppedAgentCount => null,
+            StateProtectedModeRuntime::preservedAgentTypes => null,
+            StateProtectedModeRuntime::agentStartGateClosed => null,
         ])], json_decode($json, true));
         foreach (array_keys($snapshot->toArray()) as $key) {
             $this->assertStringNotContainsString($key, $json);

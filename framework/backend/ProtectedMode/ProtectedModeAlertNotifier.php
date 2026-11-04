@@ -11,6 +11,7 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\MailTransportConfig;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Mail\Template\MailTemplateRegistry;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
 use Hilos\Backup\RestoreNotifier;
@@ -19,7 +20,7 @@ use Hilos\Utils\Logger;
 use Throwable;
 
 /**
- * ProtectedModeAlertNotifier - mails an operator that a node is frozen and not coming back.
+ * Reports protected-mode watchdog and slave synchronization warnings without database access.
  *
  * Shaped after {@see RestoreNotifier}, with the one difference that decides everything else about
  * it: **there is no database anywhere in this path.** The alarm fires precisely when the database
@@ -30,12 +31,12 @@ use Throwable;
  * is about. SMTP settings are env-only ({@see MailTransportConfig}), so the whole path holds with
  * no database at all.
  *
- * Everything it is told is already rendered: the watchdog owns the clock and the wording of the
- * problem, and this class owns who hears about it. An empty address list is legal and is the
+ * The watchdog supplies its rendered problem; a slave warning supplies a reason whose template
+ * this notifier logs before queueing mail. An empty address list is legal and is the
  * ordinary case for a node that will never need a watchdog - it is said once in the log and
  * nothing is sent. Refusing to start over unconfigured mail was rejected for the same reason.
  *
- * Delivery failure never changes anything: the log line the watchdog wrote is the report that
+ * Delivery failure never changes anything: the warning's log line is the report that
  * cannot fail, and the reminder is driven by the phase and the clock rather than by whether the
  * previous mail landed.
  */
@@ -68,6 +69,25 @@ final class ProtectedModeAlertNotifier
     public function notifyCleared(array $params): void
     {
         $this->mailEveryone(MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED, $params, 'freeze-lifted notice');
+    }
+
+    /**
+     * Logs the slave warning before attempting the same raw, env-only mail path as the watchdog.
+     *
+     * @param array<string, mixed> $params Mail-template boundary params, keyed by the slave template's PARAM_* constants
+     */
+    public function notifySlaveAlert(array $params): void
+    {
+        try {
+            $content = new MailTemplateRegistry()->render(MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT, $params);
+        } catch (Throwable $e) {
+            Logger::logAgentError(self::LOG_AGENT_ID, 'The slave synchronization warning could not be rendered: ' . $e->getMessage());
+
+            return;
+        }
+
+        Logger::logAgentError(self::LOG_AGENT_ID, $content->subject . "\n" . $content->text);
+        $this->mailEveryone(MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT, $params, 'slave synchronization warning');
     }
 
     /**

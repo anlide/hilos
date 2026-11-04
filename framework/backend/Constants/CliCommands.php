@@ -474,6 +474,15 @@ final class CliCommands
      */
     public const string PROTECTED_MODE_TEST_OPEN = 'test:protected-mode:open';
 
+    /** @var string Enter a test freeze through the live backup agent */
+    public const string BACKUP_TEST_FREEZE_ENTER = 'test:backup:freeze-enter';
+
+    /** @var string End the backup agent's test freeze into the verification window */
+    public const string BACKUP_TEST_FREEZE_LEAVE = 'test:backup:freeze-leave';
+
+    /** @var string Lift a test freeze through its initiating backup agent */
+    public const string BACKUP_TEST_FREEZE_OPEN = 'test:backup:freeze-open';
+
     /**
      * Mint one pass into the verification window and print it, through the initiator (test-only).
      *

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Closure;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\HilosException;
 
 /**
@@ -24,6 +26,14 @@ use Hilos\HilosException;
  */
 interface DbSyncSink
 {
+    /**
+     * Reuses the numbered local daemon/worker barrier without announcing a new swap to peers.
+     * The continuation receives failures, expiry and supersession as well as success.
+     *
+     * @param Closure(ReHydrateVerdict): void $onComplete Local protected-mode continuation
+     */
+    public function catchUpProtectedModeDatabase(Closure $onComplete): void;
+
     /**
      * Applies one DB sync fact written on another node to the rows this node holds.
      *

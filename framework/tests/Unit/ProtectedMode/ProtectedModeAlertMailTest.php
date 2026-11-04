@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvInvalidValueException;
@@ -11,10 +12,12 @@ use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
+use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Mail\Template\MailTemplateRegistry;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
+use Hilos\Mail\Template\ProtectedModeSlaveAlertMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
 use Hilos\ProtectedMode\ProtectedModeAlertNotifier;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
@@ -297,6 +300,144 @@ final class ProtectedModeAlertMailTest extends TestCase
         $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
         self::assertSame(1, substr_count((string)file_get_contents($agentLog), 'The alert recipient list is unreadable'));
         self::assertSame([], $mailer->sent);
+    }
+
+    /** A late synchronization cannot prove what happened before the operation was authorized. */
+    public function testMissedBarrierNamesTheUnverifiedIntervalWithoutClaimingCorruption(): void
+    {
+        foreach ([StateProtectedModeRuntime::PHASE_ACTIVE, StateProtectedModeRuntime::PHASE_VERIFYING] as $phase) {
+            foreach (['Worker', null] as $name) {
+                $params = self::slaveParams(ProtectedModeSlaveAlertMailTemplate::REASON_MISSED_BARRIER, $phase);
+                $params[ProtectedModeSlaveAlertMailTemplate::PARAM_NODE_NAME] = $name;
+                $content = new MailTemplateRegistry()->render(MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT, $params);
+                $label = $name === null ? self::NODE : 'Worker (hilos-node-1)';
+
+                self::assertSame('protected-mode.slave-alert', MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT);
+                self::assertSame("Protected-mode warning for node {$label}: missed-barrier", $content->subject);
+                self::assertSame(
+                    "The node {$label} was not confirmed stopped before the operation was allowed to proceed.\n"
+                    . "Synchronization has now been requested. Current synchronization cannot establish whether\n"
+                    . "this node wrote during the earlier interval. Account for this unverified interval when\n"
+                    . "checking the operation result. This warning does not establish data corruption.\n\n"
+                    . "Operation: backup:restore\nPhase: {$phase}\nReason: missed-barrier",
+                    $content->text,
+                );
+                self::assertNull($content->html);
+            }
+        }
+    }
+
+    /** The request deadline remains meaningful even while the freeze is being lifted. */
+    public function testSyncOverdueNamesTheRequestedPhaseAndTimeoutIndependentlyOfInitiatorProgress(): void
+    {
+        foreach ([StateProtectedModeRuntime::PHASE_ACTIVE, StateProtectedModeRuntime::PHASE_INACTIVE] as $phase) {
+            $content = new MailTemplateRegistry()->render(
+                MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT,
+                self::slaveParams(ProtectedModeSlaveAlertMailTemplate::REASON_SYNC_OVERDUE, $phase),
+            );
+
+            self::assertSame('Protected-mode warning for node Worker (hilos-node-1): sync-overdue', $content->subject);
+            self::assertSame(
+                "The node Worker (hilos-node-1) has not acknowledged the requested protected-mode synchronization\n"
+                . "to phase {$phase} within 47 seconds. This warning concerns that request,\n"
+                . "independently of progress reported by the operation initiator.\n\n"
+                . "Operation: backup:restore\nPhase: {$phase}\nReason: sync-overdue",
+                $content->text,
+            );
+            self::assertNull($content->html);
+        }
+    }
+
+    /** Every raw mail attempt must find the warning already logged, with no database available. */
+    public function testSlaveAlertsQueueRawMailWithoutDatabaseAndLogBeforeEachAttempt(): void
+    {
+        putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name . '=ops@example.com, oncall@example.com');
+        $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
+        $messages = [];
+        $logsAtSend = [];
+        $mailer = $this->getMockBuilder(HilosMailer::class)->onlyMethods(['send'])->getMock();
+        $mailer->expects(self::exactly(4))->method('send')->willReturnCallback(
+            static function (EmailMessage|MailSendSignalData $message) use (&$messages, &$logsAtSend, $agentLog): void {
+                $messages[] = $message;
+                $logsAtSend[] = (string)file_get_contents($agentLog);
+            },
+        );
+        Hilos::$mail = $mailer;
+        $previousDatabase = Hilos::$db;
+        Hilos::$db = null;
+
+        try {
+            $notifier = new ProtectedModeAlertNotifier();
+            foreach ([ProtectedModeSlaveAlertMailTemplate::REASON_MISSED_BARRIER,
+                ProtectedModeSlaveAlertMailTemplate::REASON_SYNC_OVERDUE] as $reason) {
+                $params = self::slaveParams($reason);
+                $notifier->notifySlaveAlert($params);
+                foreach (['ops@example.com', 'oncall@example.com'] as $address) {
+                    $message = array_shift($messages);
+                    self::assertInstanceOf(MailSendSignalData::class, $message);
+                    self::assertSame($address, $message->to);
+                    self::assertSame(HilosMailer::shardKeyForAddress($address), $message->shardKey);
+                    self::assertSame(MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT, $message->templateKey);
+                    self::assertSame($params, $message->params);
+                    self::assertStringContainsString(
+                        new MailTemplateRegistry()->render(MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT, $params)->text,
+                        array_shift($logsAtSend),
+                    );
+                }
+            }
+            self::assertNull(Hilos::$db);
+        } finally {
+            Hilos::$db = $previousDatabase;
+        }
+    }
+
+    /** A missing or failing mail channel leaves the warning intact and does not stop the next recipient attempt. */
+    public function testSlaveWarningsRemainLoggedWithEmptyRecipientsOrARefusedQueue(): void
+    {
+        foreach ([ProtectedModeSlaveAlertMailTemplate::REASON_MISSED_BARRIER,
+            ProtectedModeSlaveAlertMailTemplate::REASON_SYNC_OVERDUE] as $reason) {
+            putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name . '=');
+            $mailer = new AlertRecordingMailer();
+            Hilos::$mail = $mailer;
+            $params = self::slaveParams($reason);
+
+            new ProtectedModeAlertNotifier()->notifySlaveAlert($params);
+
+            self::assertSame([], $mailer->sent);
+            $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
+            $log = (string)file_get_contents($agentLog);
+            self::assertStringContainsString('there is nobody to write to', $log);
+            self::assertStringContainsString("Reason: {$reason}", $log);
+
+            putenv(EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name . '=ops@example.com, oncall@example.com');
+            $mailer = $this->getMockBuilder(HilosMailer::class)->onlyMethods(['send'])->getMock();
+            $mailer->expects(self::exactly(2))->method('send')->willThrowException(new MailBusyException());
+            Hilos::$mail = $mailer;
+
+            new ProtectedModeAlertNotifier()->notifySlaveAlert($params);
+
+            $log = (string)file_get_contents($agentLog);
+            self::assertStringContainsString('could not be queued for ops@example.com', $log);
+            self::assertStringContainsString('could not be queued for oncall@example.com', $log);
+            self::assertSame(2, substr_count($log, "Reason: {$reason}"));
+        }
+    }
+
+    /**
+     * @param string $reason Slave warning reason
+     * @param string $phase Requested protected-mode phase
+     * @return array<string, mixed> The six approved slave template params
+     */
+    private static function slaveParams(string $reason, string $phase = StateProtectedModeRuntime::PHASE_ACTIVE): array
+    {
+        return [
+            ProtectedModeSlaveAlertMailTemplate::PARAM_NODE_ID => self::NODE,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_NODE_NAME => 'Worker',
+            ProtectedModeSlaveAlertMailTemplate::PARAM_OPERATION => CliCommands::BACKUP_RESTORE,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_PHASE => $phase,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_REASON => $reason,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_TIMEOUT_SECONDS => 47,
+        ];
     }
 
     /**

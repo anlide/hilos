@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Closure;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -1025,6 +1028,25 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
 
     /** @var ?string Session token hash passed to the most recent enterActivating call */
     public ?string $activatingSessionTokenHash = null;
+
+    public function bootstrapFreezeId(string $freezeId): void
+    {
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->bootstrapFreezeId($freezeId);
+    }
+
+    public function importSlaveSync(PeerProtectedModeSyncDTO $snapshot, string $phase): void
+    {
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->importSlaveSync($snapshot, $phase);
+    }
+
+    /**
+     * @param string $leaderNodeId Unused on standalone
+     * @param Closure $onComplete Unused on standalone
+     */
+    public function catchUpSlaveDatabase(string $leaderNodeId, Closure $onComplete): void
+    {
+        $this->calls[] = 'catchUpSlaveDatabase';
+    }
 
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,

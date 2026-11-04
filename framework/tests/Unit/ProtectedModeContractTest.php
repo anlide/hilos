@@ -35,6 +35,7 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, $runtime->phase);
         $this->assertNull($runtime->entryMode);
         $this->assertNull($runtime->operation);
+        $this->assertNull($runtime->freezeId);
         $this->assertNull($runtime->initiatorAcceptKey);
         $this->assertNull($runtime->initiatorAgentIndex);
         $this->assertNull($runtime->startedAt);
@@ -63,6 +64,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_FREEZE,
             ProtectedModeRuntime::operation => 'restore',
+            ProtectedModeRuntime::freezeId => 'freeze-round-9',
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-9',
             ProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-9',
             ProtectedModeRuntime::initiatorAgentType => 'backup',
@@ -104,6 +106,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
             ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
             ProtectedModeRuntime::operation => 'restore',
+            ProtectedModeRuntime::freezeId => 'window-9',
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-initiator',
             ProtectedModeRuntime::initiatorAgentType => 'backup',

@@ -44,6 +44,8 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
@@ -655,6 +657,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
             $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
             $frame instanceof PeerProtectedModeWindowDTO => $this->onProtectedModeWindow($frame),
+            $frame instanceof PeerProtectedModeSyncDTO => $this->onProtectedModeSync($frame),
+            $frame instanceof PeerProtectedModeSyncedDTO => $this->onProtectedModeSynced($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
             $frame instanceof PeerProtectedModeSettledDTO => $this->onProtectedModeSettled($frame),
             $frame instanceof PeerProtectedModeNodeReportDTO => $this->onProtectedModeNodeReport($frame),
@@ -1317,6 +1321,32 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode window');
         $this->server->onProtectedModeWindowReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerProtectedModeSyncDTO $frame Slave synchronization frame
+     * @throws PeerTransportException When authentication is incomplete or the frame is invalid
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     */
+    private function onProtectedModeSync(PeerProtectedModeSyncDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode sync');
+        $this->server->onProtectedModeSyncReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerProtectedModeSyncedDTO $frame Slave synchronization frame
+     * @throws PeerTransportException When authentication is incomplete or the frame is invalid
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     */
+    private function onProtectedModeSynced(PeerProtectedModeSyncedDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode synced');
+        $this->server->onProtectedModeSyncedReceived($this, $frame);
     }
 
     /**

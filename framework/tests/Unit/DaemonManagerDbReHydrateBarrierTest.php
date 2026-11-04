@@ -8,6 +8,9 @@ use Closure;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
@@ -24,16 +27,22 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DTO\ReHydrateVerdict;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\ReHydrateRound;
-use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Tests\Unit\Cluster\Peer\ProtectedModePeerFixture;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -58,6 +67,8 @@ use RuntimeException;
  */
 final class DaemonManagerDbReHydrateBarrierTest extends TestCase
 {
+    use ProtectedModePeerFixture;
+
     /** @var string Agent that announced the swap in these cases */
     private const string INITIATOR = 'hilos_backup';
 
@@ -67,15 +78,11 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     /** User action key the master's analytics collector holds from before the swap. */
     private const string CAPTURED_USER_ACTION_KEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
-    /** @var ?EnvAccessor Env accessor to restore after the test */
-    private ?EnvAccessor $previousEnv = null;
-
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
-        Hilos::$env = new EnvAccessor();
+        $this->mountProtectedModePeers();
         // Long enough that nothing expires unless a case asks for it by shortening the wait.
         putenv(EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT->name . '=3600');
     }
@@ -84,10 +91,192 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$ac = null;
-        Hilos::$env = $this->previousEnv;
         putenv(EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT->name);
 
+        $this->restoreProtectedModePeers();
         parent::tearDown();
+    }
+
+    /** @param NodeRole $role Role of the node announcing the database swap */
+    #[DataProvider('announcerRoles')]
+    public function testAnAnnouncerOfEitherRoleWaitsForEveryLinkedNodeAndItsOwnWorkers(NodeRole $role): void
+    {
+        $server = $this->protectedModePeerServer($role);
+        $master = $this->protectedModePeerLink($server, 'master', NodeRole::Master);
+        $slave = $this->protectedModePeerLink($server, 'slave', NodeRole::Slave);
+        $this->protectedModePeerFrames($master);
+        $this->protectedModePeerFrames($slave);
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->connectPeers($server);
+
+        $daemon->announce(self::INITIATOR);
+        $round = $daemon->currentRound();
+        foreach ([$master, $slave] as $pair) {
+            $frames = $this->protectedModePeerFrames($pair);
+            $this->assertCount(1, $frames);
+            $this->assertInstanceOf(PeerDbReHydrateDTO::class, $frames[0]);
+            $this->assertSame($round, $frames[0]->round);
+        }
+        $server->onDbReHydratedReceived($master[0], new PeerDbReHydratedDTO('master', $round, true, []));
+        $daemon->workerAnswers(1, ok: true);
+        $daemon->tickBarrier();
+        $this->assertSame([], $daemon->workerServer->verdicts, 'The slave has not re-read yet');
+
+        $server->onDbReHydratedReceived($slave[0], new PeerDbReHydratedDTO('slave', $round + 1, true, []));
+        $daemon->tickBarrier();
+        $this->assertSame([], $daemon->workerServer->verdicts, 'An answer to another round does not close this one');
+
+        $server->onDbReHydratedReceived($slave[0], new PeerDbReHydratedDTO('slave', $round, true, []));
+        $daemon->tickBarrier();
+        $this->assertTrue($daemon->singleVerdict()->complete);
+        $this->assertSame([], $daemon->singleVerdict()->problems);
+    }
+
+    /** @return iterable<string, array{NodeRole}> Local announcer roles */
+    public static function announcerRoles(): iterable
+    {
+        yield 'master' => [NodeRole::Master];
+        yield 'slave' => [NodeRole::Slave];
+    }
+
+    public function testSlaveExecutorWaitsForEveryLocalWorkerWithoutRebroadcastingOrReplyingToAnAgent(): void
+    {
+        $server = $this->protectedModePeerServer(NodeRole::Slave);
+        $leader = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
+        $this->protectedModePeerFrames($leader);
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1, 2);
+        $daemon->connectPeers($server);
+        Hilos::$cluster->registerDbSyncSink($daemon);
+        $verdicts = [];
+        new DaemonProtectedModeExecutor()->catchUpSlaveDatabase('leader', static function (ReHydrateVerdict $verdict) use (&$verdicts): void {
+            $verdicts[] = $verdict;
+        });
+        $round = $daemon->currentRound();
+        $this->assertSame([$round, $round], $daemon->workerServer->announcedRounds());
+        $daemon->workerAnswers(1, true);
+        $daemon->workerAnswers(2, true, round: $round - 1);
+        $daemon->tickBarrier();
+        $this->assertSame([], $verdicts);
+        $daemon->workerAnswers(2, true);
+        $daemon->tickBarrier();
+        $daemon->tickBarrier();
+        $this->assertCount(1, $verdicts);
+        $this->assertTrue($verdicts[0]->complete);
+        $this->assertSame([], $verdicts[0]->problems);
+        $this->assertSame([], $daemon->workerServer->verdicts);
+        $this->assertSame([], $this->protectedModePeerFrames($leader));
+    }
+
+    public function testLocalCatchUpCannotCompleteBeforeTheDaemonsOwnReadReturns(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $previous = Hilos::$db;
+        $db = $this->createMock(HilosDbContext::class);
+        $verdicts = [];
+        $db->expects($this->once())->method('reHydrateDbBackedCollections')->willReturnCallback(function () use ($daemon, &$verdicts): void {
+            $daemon->workerAnswers(1, true);
+            $daemon->tickBarrier();
+            $this->assertSame([], $verdicts, 'Workers cannot stand in for the daemon participant');
+        });
+        Hilos::$db = $db;
+        try {
+            $daemon->catchUpProtectedModeDatabase(static function (ReHydrateVerdict $verdict) use (&$verdicts): void {
+                $verdicts[] = $verdict;
+            });
+            $this->assertSame([], $verdicts);
+            $daemon->tickBarrier();
+            $this->assertCount(1, $verdicts);
+            $this->assertTrue($verdicts[0]->complete);
+        } finally {
+            Hilos::$db = $previous;
+        }
+    }
+
+    /** @param string $failure Source that must leave the local continuation unsuccessful */
+    #[DataProvider('localCatchUpFailures')]
+    public function testLocalCatchUpReportsFailureExpiryAndSupersessionWithoutCreditingLateSuccess(string $failure): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $previous = Hilos::$db;
+        if ($failure === 'daemon' || $failure === 'daemon-contract') {
+            $db = $this->createMock(HilosDbContext::class);
+            $db->expects($this->once())->method('reHydrateDbBackedCollections')->willThrowException(
+                $failure === 'daemon' ? new DatabaseException('read refused') : new HilosException('collection refused the read'),
+            );
+            Hilos::$db = $db;
+        }
+        $verdicts = [];
+        try {
+            $daemon->catchUpProtectedModeDatabase(static function (ReHydrateVerdict $verdict) use (&$verdicts): void {
+                $verdicts[] = $verdict;
+            });
+            $round = $daemon->currentRound();
+            if ($failure === 'supersession') {
+                $daemon->announce(self::INITIATOR);
+                $daemon->workerAnswers(1, true, round: $round);
+            } elseif ($failure === 'worker') {
+                $daemon->workerAnswers(1, false, 'read refused');
+            } elseif ($failure === 'daemon' || $failure === 'daemon-contract') {
+                $daemon->workerAnswers(1, true);
+            }
+            $daemon->tickBarrier($failure === 'timeout' ? PHP_FLOAT_MAX : null);
+            $this->assertCount(1, $verdicts);
+            $this->assertFalse($verdicts[0]->complete);
+            $this->assertNotEmpty($verdicts[0]->problems);
+            $daemon->workerAnswers(1, true, round: $round);
+            $daemon->tickBarrier();
+            $this->assertCount(1, $verdicts, 'A late success cannot change or redeliver the failed local result');
+            if ($failure === 'supersession') {
+                $this->assertSame([], $daemon->workerServer->verdicts, 'The newer ordinary round still waits for its own worker answer');
+                $daemon->workerAnswers(1, true);
+                $daemon->tickBarrier();
+                $this->assertTrue($daemon->singleVerdict()->complete);
+            } else {
+                $this->assertSame([], $daemon->workerServer->verdicts);
+            }
+        } finally {
+            Hilos::$db = $previous;
+        }
+    }
+
+    /** @return iterable<string, array{string}> Every non-success exit of the local barrier */
+    public static function localCatchUpFailures(): iterable
+    {
+        foreach (['daemon', 'daemon-contract', 'worker', 'timeout', 'supersession'] as $failure) {
+            yield $failure => [$failure];
+        }
+    }
+
+    public function testASlaveParticipantAggregatesItsWorkersAndAnswersTheSlaveAnnouncerWithoutRebroadcast(): void
+    {
+        $server = $this->protectedModePeerServer(NodeRole::Slave);
+        $master = $this->protectedModePeerLink($server, 'master', NodeRole::Master);
+        $announcer = $this->protectedModePeerLink($server, 'announcer', NodeRole::Slave);
+        $this->protectedModePeerFrames($master);
+        $this->protectedModePeerFrames($announcer);
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->connectPeers($server);
+
+        $server->onDbReHydrateReceived($announcer[0], new PeerDbReHydrateDTO(self::ANNOUNCER_ROUND));
+        $daemon->drainAnnouncements();
+        $daemon->tickBarrier();
+
+        $this->assertSame([null], $daemon->workerServer->announcedTo());
+        $this->assertSame([], $this->protectedModePeerFrames($master));
+        $this->assertSame([], $this->protectedModePeerFrames($announcer), 'The local worker still owes an answer');
+
+        $daemon->workerAnswers(1, ok: true);
+        $daemon->tickBarrier();
+
+        $this->assertSame([], $daemon->workerServer->verdicts);
+        $this->assertSame([], $this->protectedModePeerFrames($master));
+        $frames = $this->protectedModePeerFrames($announcer);
+        $this->assertCount(1, $frames);
+        $this->assertInstanceOf(PeerDbReHydratedDTO::class, $frames[0]);
+        $this->assertSame(self::ANNOUNCER_ROUND, $frames[0]->round);
+        $this->assertSame('node-a', $frames[0]->nodeId);
+        $this->assertTrue($frames[0]->ok);
+        $this->assertSame([], $frames[0]->problems);
     }
 
     public function testTheAnnouncementReachesEveryWorkerAndNamesTheAgentAwaitingTheVerdict(): void
@@ -416,6 +605,13 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
         $this->registerServer($this->workerServer);
     }
 
+    /** @param PeerServer $server Real mesh whose answers close this daemon's barrier */
+    public function connectPeers(PeerServer $server): void
+    {
+        $this->registerServer($server);
+        $server->registerReHydrateBarrier($this->agentManagerDaemon);
+    }
+
     /**
      * Adds a worker that has connected but has not registered its index yet.
      *
@@ -524,14 +720,12 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
         ));
     }
 
-    /**
-     * Runs the loop step that reports a settled barrier.
-     */
-    public function tickBarrier(): void
+    /** @param ?float $now Explicit observation time, or the loop's clock */
+    public function tickBarrier(?float $now = null): void
     {
         $tick = Closure::bind(
-            static function (DaemonManager $daemon): void {
-                $daemon->tickReHydrateRound();
+            static function (DaemonManager $daemon) use ($now): void {
+                $daemon->tickReHydrateRound($now);
             },
             null,
             DaemonManager::class,
@@ -550,6 +744,20 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
         }
 
         return $this->workerServer->verdicts[0];
+    }
+
+    /** Drains received mesh announcements through the same loop step as local announcements. */
+    public function drainAnnouncements(): void
+    {
+        $drain = Closure::bind(
+            static function (DaemonManager $daemon): void {
+                $daemon->dispatchSignals();
+            },
+            null,
+            DaemonManager::class,
+        );
+
+        $drain($this);
     }
 
     protected function createSignalRouter(): SignalRouter
@@ -579,15 +787,7 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
             signalData: new DbReHydrateSignalData($agentId, $replyToNodeId, $replyToRound),
         );
 
-        $drain = Closure::bind(
-            static function (DaemonManager $daemon): void {
-                $daemon->dispatchSignals();
-            },
-            null,
-            DaemonManager::class,
-        );
-
-        $drain($this);
+        $this->drainAnnouncements();
     }
 }
 

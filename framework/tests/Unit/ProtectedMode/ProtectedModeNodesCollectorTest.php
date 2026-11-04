@@ -77,6 +77,27 @@ final class ProtectedModeNodesCollectorTest extends TestCase
         ], null, null));
     }
 
+    public function testASlaveInTheSelectedRosterHasItsOwnPendingAndQuiescedVerdict(): void
+    {
+        $reports = [
+            'master' => new PeerProtectedModeNodeReportDTO('activating', 7, ['master', 'slave'], ['slave'], 'slave'),
+            'slave' => new PeerProtectedModeNodeReportDTO('activating', 7, null, null, null),
+        ];
+        $pending = ProtectedModeNodesCollector::project(['master', 'slave'], ['master', 'slave'], $reports, 'master', 7);
+        $this->assertSame([
+            ['nodeId' => 'master', 'nodeName' => null, 'phase' => 'activating', 'quiesced' => true,
+                'isLeader' => true, 'isInitiator' => false, 'reportState' => 'current'],
+            ['nodeId' => 'slave', 'nodeName' => null, 'phase' => 'activating', 'quiesced' => false,
+                'isLeader' => false, 'isInitiator' => true, 'reportState' => 'current'],
+        ], $pending);
+
+        $reports['master'] = new PeerProtectedModeNodeReportDTO('active', 7, ['master', 'slave'], [], 'slave');
+        $reports['slave'] = new PeerProtectedModeNodeReportDTO('active', 7, null, null, null);
+        $settled = ProtectedModeNodesCollector::project(['master', 'slave'], ['master', 'slave'], $reports, 'master', 7);
+        $this->assertSame([true, true], array_column($settled, 'quiesced'));
+        $this->assertSame(['active', 'active'], array_column($settled, 'phase'));
+    }
+
     public function testUnknownOrStaleLeaderAndAnIncompleteRosterGiveNoRoundVerdicts(): void
     {
         foreach ([

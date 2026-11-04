@@ -84,6 +84,9 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeClearedMailTemplate::class,
             ],
+            MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeSlaveAlertMailTemplate::class,
+            ],
             MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => EmailChangedMailTemplate::class,
             ],

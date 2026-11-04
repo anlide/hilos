@@ -4,11 +4,14 @@ Read this before starting a destructive operation, wiring a CLI command that
 triggers one, or touching any code that reads the protected-mode runtime row.
 
 Protected mode is the freeze a node enters while a destructive operation runs
-against it: pages stop being served, this node's agents are stopped, and the
-only connection left through is the one driving the operation. Its machinery is
-`framework/backend/ProtectedMode/`; the two entries are
-`StandaloneProtectedMode` (single node) and `ClusterProtectedMode` (leader plus
-followers).
+against it: ordinary page access is locked out and ordinary agents stop, while
+the recorded initiator, the mail pool and public Status publisher remain alive.
+The full freeze blocks browser connections; the verification window can admit
+the initiating browser, its verifier circle and holders of issued codes. Its
+machinery is `framework/backend/ProtectedMode/`:
+`StandaloneProtectedMode` handles a single node, and `ClusterProtectedMode`
+leads a round across linked peers. Here “follower” describes the peer relation,
+not the node's master or slave role.
 The same mode also supports an agent's direct request for the verification window:
 visitors are held outside while the agents keep running (*Manual Maintenance*).
 
@@ -62,7 +65,8 @@ Agent::requestProtectedModeEnable(operation, acceptKey, sessionHash, entryMode =
 
 The nested enable payload carries `entryMode`: `freeze` keeps the two-phase
 restore path, and `verification_window` enters `verifying` directly on a single
-node or on every master of a cluster. Old payloads without the key mean `freeze`.
+node or on the cluster leader and its linked peers of both roles. Old payloads
+without the key mean `freeze`.
 The worker envelope and route stay the same. The runtime row records `entryMode`
 while occupied and clears it on lift; an old version-one state file without it
 means `freeze` while occupied. See *Manual Maintenance* for the cluster round.
@@ -80,9 +84,9 @@ for it.
 ## Exactly One Entry, Including For Tests
 
 There is no second entry and none is to be added. The initiator identity
-recorded on entry is what authorizes the later release (a stray agent must not
-thaw the system mid-restore) and what the agent-start gate lets through, so a
-synthetic initiator would test a path production does not have.
+recorded on entry authorizes the later release and is let through the agent-start
+gate alongside the preserved mail and Status types, so a synthetic initiator
+would test a path production does not have.
 
 An initiator owns the open command (`protected-mode:open` or
 `test:protected-mode:open`) as one cluster-wide instance. Startup refuses that
@@ -98,7 +102,8 @@ past the agent. The precedent is the backup test commands, which ride
 
 ### The Test Tool That Obligation Produced
 
-Five test-only commands, and the split between them is the whole design:
+The existing index-agent test driver has five test-only commands, and the split
+between them is the whole design:
 
 | Command | Answered by | Why there |
 |---|---|---|
@@ -107,6 +112,26 @@ Five test-only commands, and the split between them is the whole design:
 | `test:protected-mode:open` | the initiator agent | the explicit lift, authorized by initiator identity exactly as in production |
 | `test:protected-mode:pass` | the initiator agent | mints one code into the driven window and prints it, so a test has something to type into the verifier's field (HIL-616) |
 | `test:protected-mode:close` | the initiator agent | the window's other exit, back into the full freeze: without it nothing ever drove the way out an operator takes when the verifiers found something wrong (HIL-704) |
+
+The same test driver is also carried by the singleton `BackupAgent` under its
+backup-owned command names. The existing index-agent commands remain available;
+these names let a cluster test use the real backup initiator identity without
+starting a restore:
+
+| Command | Payload | Effect |
+|---|---|---|
+| `test:backup:freeze-enter` | `{operation, acceptKey?, sessionToken?}` | Enters through `BackupAgent` and answers from its ready hook; an active backup or restore refuses entry. |
+| `test:backup:freeze-leave` | `{}` | Moves the driven freeze to the verification window. |
+| `test:backup:freeze-open` | `{}` | Opens the system through the recorded initiator. |
+
+The names are `CliCommands::BACKUP_TEST_FREEZE_ENTER`,
+`CliCommands::BACKUP_TEST_FREEZE_LEAVE` and
+`CliCommands::BACKUP_TEST_FREEZE_OPEN`.
+These commands use the shared agent-only protected-mode driver. The enter path
+does not start a restore, child process or SQL operation. Production-like or
+empty `APP_ENV` is refused by both the CLI test-only gate and the command-socket
+gate; the commands are declared on `BackupAgent`, whose open-command ownership
+remains subject to the singleton topology check.
 
 `ProtectedModeTestDriverTrait` carries the agent half of the drive trio — enter,
 leave and open; the mint and the close are answered by `ProtectedModeOperatorTrait`
@@ -117,12 +142,12 @@ polls get it by inheritance. The framework's cluster probe fleet
 (`FleetProbeAgent`) does not carry it: in a full demo the index agent declares the
 same commands, and a command declared by two agents refuses the start. On a
 multi-node stand the clustered entry path is driven by the index agent of
-binance-btc-tracker: scenario 23 of its cluster stand enters the freeze, opens
-the verification window and lifts it, and reads the row of every master at
-each step. Scenario 25 of the same stand proves what `active` says there: every
-master reads it once the freeze holds, and the close back from the window
-answers only once every master has stopped again what the entry stopped
-(HIL-1128). A follower's fail-closed refusal is not exercised on a live stand.
+binance-btc-tracker: scenario 23 enters the freeze, opens the verification
+window and lifts it, and reads every node's row at each step. Scenario 25 uses
+the BackupAgent on a slave and proves that ready waits for the selected nodes'
+ordinary agents to stop; the close answers only after those agents stop again
+(HIL-1128). The live carrier checks actual worker stop and resume on both slaves.
+A follower's fail-closed refusal is not exercised on a live stand.
 
 Two properties are worth keeping when this code is touched:
 
@@ -160,9 +185,9 @@ PHP. What the socket still does not do is authenticate its caller, which is why
 open `COMMAND_PORT`; that is an existing property of the channel, recorded here
 so it is not mistaken for something this gate closed.
 
-The snapshot never carries `initiatorAcceptKey`, and never a pass hash — only
-the count of outstanding passes. Both are the way through the lockdown, and the
-port that would publish them authenticates nobody.
+The `protected-mode:inspect` snapshot never carries `initiatorAcceptKey` or a
+pass hash — only the count of outstanding passes. Both are the way through the
+lockdown, and the port that would publish them authenticates nobody.
 
 ### The Operator Commands Are A Separate Family, On Purpose (HIL-481)
 
@@ -177,7 +202,8 @@ records.
 answered synchronously by the master rather than routed to an agent. A drive command
 whose reply was lost asks it once, with its own short deadline, and reads the fact from
 this node's snapshot instead of retrying the drive. It keeps answering mid-freeze,
-when every agent but the initiator is stopped. Its phase is only this node's view: on a
+when ordinary agents are stopped apart from the recorded initiator and the
+preserved mail and Status types. Its phase is only this node's view: on a
 cluster it must not be read as proof that every node has quiesced.
 
 They deliberately do **not** share names with the `test:` family. A command
@@ -287,6 +313,15 @@ Four properties generalize to whatever destructive operation comes next:
   always answers — on a verdict, on its deadline, or on being superseded by a
   newer announcement — and every step of the delivery that used to return in
   silence now names the agent it could not reach.
+- **The announcing node waits across roles.** `DaemonManager::openReHydrateRound()`
+  includes its local daemon and registered workers, then adds each linked,
+  authenticated peer from `PeerServer::followerNodeIds()` when the announcement
+  starts here. That peer set includes masters and slaves, not just consensus
+  members. `broadcastDbReHydrate()` sends the existing round to those peers;
+  each peer aggregates its own daemon and workers and addresses its correlated
+  acknowledgement to the announcer with `sendToNode()`. A received announcement
+  is answered, not rebroadcast. The existing signal and ack DTOs carry the round;
+  this path adds no new frame.
 - **Repair work never holds the freeze.** A snapshot that could not be taken or a
   session that could not be written is logged and the run proceeds. The people
   affected see a login screen; the alternative is a node left frozen over a
@@ -366,15 +401,17 @@ The two guards are the same check in different contexts — one-walk single-node
 entry against a leader round that commits followers — so they are written twice
 on purpose and are not merged into a shared helper.
 
-The roster is stopped over several master passes, one agent per pass, and a node
-reports itself frozen only at the END of that walk
+The roster is stopped over several passes of each node's daemon master process,
+one agent per pass, and a node reports itself frozen only at the END of that walk
 (`ProtectedModeSwitch::onRosterStopped()`, HIL-1012): on a single node it tells the
 initiator ready, on a follower it sends `quiesced` to the leader, and the leader
 counts itself among the nodes it waits for until its own roster has stopped. The
 lift is stepped the same way, and the frames it owes the browsers go out once the
 roster is back (`ProtectedModeExecutor::finishVerifying()` / `finishLift()`).
 
-**`active` on a row means every agent has stopped, on every path in (HIL-1128).**
+**`active` on a row means the ordinary roster has stopped on every selected node
+(HIL-1128).** The recorded initiator, `HILOS_MAIL` and `HILOS_STATUS` remain
+running; they are not members of the ordinary stop roster.
 Every way into the freeze — the first entry, a repeat entry from the verification
 window (HIL-1057) and the close back from it — writes `activating` first and
 `active` only at the end: a single node at the end of its own walk; in a cluster
@@ -394,6 +431,128 @@ walks gets the refusal an enable gets during the first entry. The close is
 answered by the row reaching `active`; a follower that never got the round — it
 missed the verify, or its leader died — leaves the close unanswered and the
 watchdog names the round overdue, which is the fail-closed half of the trade.
+
+### The Peer Set And Its Routing
+
+Here `follower` means a current authenticated working peer other than the
+leader, regardless of whether the peer's node role is master or slave.
+`PeerServer::followerNodeIds()` reads active linked peers rather than registry
+membership: it excludes self, candidates and links being replaced or closed. A
+full freeze waits for the leader's own stop walk and these linked peers; a direct
+window waits for these peers only. A peer unavailable when the roster is selected
+is not a participant in that round and cannot delay its ready. A newly connected
+slave is the exception while a full-freeze barrier is still open: its snapshot
+sync adds it to that barrier's pending roster and its own completed stop is
+required before the leader may close the barrier. A slave connected after the
+barrier closes, or during a direct window, gets a separate state sync; it does
+not reopen the round, elicit another ready or restart the operation. A newly
+connected or returning master gets no catch-up sync. The two late-master limits
+below remain in force.
+
+Protected-mode quiesce, window, settled, verify, lift, pass, admission, circle
+and database re-hydrate broadcasts use the all-peer path. Ready, refusal,
+quiesced and node-level re-hydrate acknowledgements are addressed with
+`PeerServer::sendToNode()`. This does not widen consensus: leader election,
+quorum, `onlineMasterIds()` and `broadcastToMasters()` remain master-only.
+
+The separate protected-mode state sync described below is slave-only. It is not
+a new master identity exchange or a replacement for the existing cluster round.
+
+Masters get the leader id from consensus. A slave has no consensus coordinator:
+its `PendingLeadership::leaderId()` remains null, and protected-mode routing
+uses its known placing leader only while that leader has an authenticated
+working link. If placement is unknown or the link is down, the slave has no
+leader to address.
+
+### Slave Snapshots, Synchronization, And Alerts
+
+After a slave's authenticated link becomes active, its current leader sends a
+full snapshot. A master that becomes leader also sends snapshots to its already
+linked slaves, including after adopting a freeze and assigning a local legacy
+generation. The new `peer_protected_mode_sync` and
+`peer_protected_mode_synced` frames use `PeerProtectedModeSyncDTO` and
+`PeerProtectedModeSyncedDTO`; `PeerProtocol` is version 26, so a peer on an
+incompatible version is refused by the ordinary handshake. These are peer
+frames only: browser signals, pages, routes and Status payloads do not change.
+
+The sync snapshot carries `syncId`, `phase`, `entryMode`, `payload`,
+`barrierClosed`, `passHashes`, `admittedSessionTokenHashes`,
+`circleNamedCount` and `circleSessionTokenHashes`. `inactive` has no mode or
+descriptor, `barrierClosed = false`, no rights and a zero circle count. An occupied
+snapshot has a nonempty generation in its descriptor; `verifying` carries the
+existing admission and circle hashes. These frames carry no accept key, raw
+session token, clear code or local clock. They do not photograph the circle a
+second time.
+
+Only a current leader may send a snapshot to a slave on its installed active
+authenticated link. A slave accepts it only from its current placing leader on
+that leader's installed active authenticated link. The leader accepts
+`synced` only from the expected slave on that exact current connection, when its
+`syncId` and phase match the current request and the leader's latest snapshot
+still matches that request. The leader must still be elected. These guards are
+stricter than the remembered-leader rule used by some established freeze
+frames. A sync acknowledgement cannot give an arbitrary node authority to lift
+the freeze, and a slave's `synced` never substitutes for a master's missing
+`quiesced` report.
+
+`barrierClosed` means a full-freeze barrier has completed and the protected
+operation may have run; it does not mean that a `ready` frame was sent, because
+a refreeze closes a new barrier without another ready. It is false for
+`activating` and true for a settled full freeze and its later verification
+window. For an adopted legacy `active` or full-freeze `verifying` row, it is a
+conservative signal to warn about a returning slave, not proof that the old
+barrier completed under the newly assigned local generation. In a direct
+verification window it means only that the window's peer confirmations
+finished; it never grounds a warning about database writes.
+
+Applying a snapshot is an idempotent sequence of local effects, and the
+acknowledgement follows those effects:
+
+- For a full freeze, the slave stops its ordinary agent roster before it writes
+  `active` or acknowledges that phase. A matching generation on `activating`
+  does not mean the stop finished and does not restart an existing stop walk.
+- On a full-freeze `verifying` target, the slave first catches its database up
+  through the existing DB re-hydrate path, imports the descriptor and existing
+  rights, then follows the ordinary resume and verification-window path before
+  acknowledging. A direct window imports its existing state and catches up
+  without stopping agents.
+- For an `inactive` target after a full freeze, the slave performs the existing
+  database catch-up, lift and resume before acknowledging. A direct window has
+  no stopped roster to resume.
+- If the leader changes its target while a local stop, database catch-up,
+  verification or lift is in progress, that effect is allowed to finish before
+  the latest snapshot advances. An acknowledgement for the old `syncId` or
+  phase cannot settle the newer request. Sync does not send another ready or
+  fabricate completion of a lost callback.
+
+If a returning slave has no matching local generation and the snapshot is for a
+closed full-freeze barrier, the leader logs and attempts a `missed-barrier`
+mail warning **before** the slave writes the new generation. It says the slave
+was not confirmed stopped before the operation was allowed to proceed and asks
+the operator to account for the unverified interval when checking the result;
+it does not claim corruption. A matching generation does not repeat the
+warning. Direct windows do not produce this warning.
+
+The leader tracks each pending slave request from its first request.
+`PeerServer::onTick()` advances the slave's local effects and checks the leader's
+requests even while its protected-mode row is `inactive`. This check runs
+alongside the watchdog rather than inside its phase verdicts. After the
+existing `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT` (30 seconds by default), it
+logs and attempts a `sync-overdue` warning even if the initiator has made
+progress or the cluster row is `active`, `verifying` or `inactive` after a
+missed lift. Reconnect replaces the request id and connection but preserves the
+first-request deadline and alert deduplication for the same generation; only
+the current acknowledgement for the requested phase clears it. A leader change
+starts new in-memory observations. Delivery and deduplication are not exactly
+once across a process failure.
+
+Both reasons use `protected-mode.slave-alert` with `nodeId`, `nodeName`,
+`operation`, `phase`, `reason` and `timeoutSeconds`, through the existing
+environment-only recipients and raw-mail path. `reason` is `missed-barrier` or
+`sync-overdue`. No database notification is created. The notifier logs the
+warning before attempting delivery and still logs when the recipient list is
+empty or queuing fails. These messages do not lift a freeze or retry the
+protected operation.
 
 ## A Freeze That Stops Moving Is Reported, Never Lifted (HIL-482)
 
@@ -422,7 +581,7 @@ a writer of freeze state or database data.
 |---|---|
 | `INITIATOR_LOST` | the initiator agent stopped; sticky, because the agent-start gate lets its type start again and a fresh instance would read as alive |
 | `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick — under a manual window only when `protected_mode.manual_maintenance.restart_is_normal` is off. Workers tell the master this key via `worker_protected_mode_settings`; until one reports it, the returned manual window gets neither a verdict nor a routine-restart line. The default is one warning line for the freeze, without mail |
-| `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`, or a direct `verification_window` on `verifying` past that threshold with follower masters still pending in the leader's roster; the alert names the nodes that never confirmed |
+| `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`, or a direct `verification_window` on `verifying` past that threshold with follower nodes still pending in the leader's roster; the alert names the nodes that never confirmed |
 | `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` — except in a manual-maintenance window (operation `manual_maintenance` entered as `verification_window`), where no operation is behind the door to mark progress |
 
 **The progress mark is written by the operation, not by the framework.** What
@@ -462,8 +621,11 @@ walk, and by the list of agents awaiting a worker. In the worker server these
 are `protectedModeRefusesStart()` and `stopAgentsForProtectedMode()`; the same
 preserved list feeds the published daemon picture. This permits public file
 publication only, never ordinary ORM writes or durable mail. The Status owner
-still obeys DB silence in every occupied freeze phase. The exact boundary is
-[Status under freeze](status-page.md#freeze-and-disconnection).
+still obeys DB silence in every occupied freeze phase. Each `StatusAgent` reads
+its local protected-mode phase through
+[`StatusSnapshot`](../../../framework/backend/Status/StatusSnapshot.php); the peer
+window uses that same source and adds no Status source or DTO. The exact boundary
+is [Status under freeze](status-page.md#freeze-and-disconnection).
 
 ### The Current Watchdog Projection On Maintenance
 
@@ -610,6 +772,42 @@ automatically, the human path out has to actually work.
   current leader when it sends a frame, and send the next `quiesced` to it.
   The successor already knows the operator: the session hash stands on every
   master's row and is restored with the freeze descriptor (HIL-1305).
+- **Barrier generation.** `freezeId` is carried by `ProtectedModeQuiesceData`,
+  the existing runtime row and the existing version-2 freeze file; it adds no
+  DB field, RT collection, second file or journal. A new entry in either mode
+  and every new full refreeze round assign a new id. Moving an established
+  freeze from `active` to `verifying`, restoring it from disk, and adopting a
+  row whose id is already known preserve that id. A version-2 file without the
+  key loads with `freezeId = null`, meaning the generation is unknown.
+- **Legacy adoption.** When a newly elected leader adopts an occupied row with
+  a valid operation and initiator but no id, it assigns a nonempty local
+  correlation id through the existing runtime item action and saves the
+  existing freeze file before sending a slave snapshot. The id assignment does
+  not change phase, entry mode, rights or timestamps, and it does not restart a
+  local roster walk. It does not enter `activating` or reopen a window to
+  normalize the row. An existing id is kept. Other masters' rows are not
+  rewritten, so adoption on a different old master with a null id may assign
+  another local id. That id is not proof of a
+  shared historical barrier, and legacy identity is not promised to remain
+  stable across elections of different old masters. A returning slave may
+  therefore receive another conservative `missed-barrier` warning after such
+  an election. Ordinary reconnects and restarts with the saved id retain their
+  deduplication.
+- **An adopted unfinished barrier stays unfinished.** Bootstrapping its id
+  does not prove a stop, produce `ready`, restart a lost roster walk, or invent
+  the leader's own completion. The successor keeps itself and outstanding
+  peers pending until their actual completion arrives; a slave's `synced` does
+  not stand in for a master's missing `quiesced`. If a required callback was
+  lost with the previous leader, the round can remain closed and overdue; no
+  automatic continuation is promised. From a full `verifying` phase,
+  `protected-mode:close` can start a real new stop barrier with a new id and
+  without opening visitors, but an `active` or `activating` master may refuse
+  its quiesce, so this does not repair mixed phases. For an unresolved mixed
+  legacy round, the operator's authorized `protected-mode:open` ends the mode
+  and opens the system; a normal new entry can follow. That visitor gap is
+  explicit and neither command runs automatically. A direct manual window
+  continues to use `maintenance:disable` / `maintenance:enable`; it cannot be
+  converted into a full freeze by refreeze.
 - **Initiator moves.** The leader checks the initiator agent type and index in
   disable, verify, progress, pass, circle, and refreeze frames, not the sending
   node. It locates the agent for `ready` through the same placement lookup used
@@ -646,15 +844,16 @@ behind it holds no admitted pass (`admittedSessionTokenHashes`, matched by
 the last three failing serves that connection the real application, and there is
 no fourth way in.
 
-**On a cluster every master's row says the same about a browser (HIL-1305).**
+**On a cluster every participating node's row says the same about a browser (HIL-1305).**
 The browser's own master decides its 101 welcome; the node holding its page
 agent decides the subscription, so their rows must agree. The operator session
-hash travels in `peer_protected_mode_quiesce` with the freeze descriptor. A code
-admission travels from the 101 master to the leader and then every master in
-`peer_protected_mode_admit`; each receiver checks that the verification window
-is open and the code was minted in it. The accept key stays on the node of its
-socket. If no leader is known, an admission remains on the 101 master and is
-logged.
+hash travels in `peer_protected_mode_quiesce` with the freeze descriptor, and a
+returning slave imports that descriptor and the existing rights through its
+protected-mode snapshot. A code admission travels from the 101 node to the
+leader and then every linked peer in `peer_protected_mode_admit`; each receiver
+checks that the verification window is open and the code was minted in it. The
+accept key stays on the node of its socket. If no leader is known, an admission
+remains on the 101 node and is logged.
 
 **The third door opens on a photograph rather than on a presentation
 (HIL-643).** The other two are earned at the door — the initiator by having
@@ -708,18 +907,17 @@ and sends the result under the initiator's name on the `PROTECTED_MODE_CIRCLE`
 frame — the twin of `PROTECTED_MODE_PASS`, whole rather than one entry at a time,
 because there is exactly one moment when the list is knowable. No agent sends the
 circle itself. Only hashes and a count travel; no address of anybody named
-reaches the master. In a cluster the photograph is fanned to every master the
+reaches the master. In a cluster the photograph is fanned to every linked peer the
 way a code is: the initiator's node sends it to the leader on the
 `peer_protected_mode_circle` frame, and the leader writes its own row and sends
-it on to every follower master. A member's tab connects to whichever node the
+it on to every follower node. A member's tab connects to whichever node the
 balancer hands it, and each node decides admission against its own copy of the
 row. A follower initiator writes its own row before it sends, so with no leader
 known that row still holds it and the rest of the cluster lets the circle in by
-code alone. An initiator on a slave has no freeze row to write — the freeze
-frames reach masters only — and sends the photograph to the leader all the same:
-the leader authorizes it by the agent type and index carried in the frame, as it
-does every frame of the window, and that authorization is all either half
-checks: neither reads the phase.
+code alone. An initiator on a slave has the same local freeze row and sends its
+photograph to the leader over the placement-aware peer link. The leader checks
+the agent type and index carried in the frame, as it does for every frame of
+the window; neither half uses the phase as authorization.
 
 Whatever the operation, the photograph is taken for the initiator of the
 mode, on its ready path; a restore is today's only destructive
@@ -746,8 +944,9 @@ and taken out there too, and empty means nobody was named.
 
 **Both presented doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
 first phase with anything behind them.** Under `PHASE_ACTIVATING` and
-`PHASE_ACTIVE` the executor has stopped every agent but the one driving the
-operation, so no page subscription is answered — admitting a browser there would
+`PHASE_ACTIVE` the executor has stopped ordinary agents apart from the recorded
+initiator and the preserved mail and Status types, so no page subscription is
+answered — admitting a browser there would
 hand it a dead application rather than the maintenance surface, where the restore
 panel is the one screen still being fed. So the freeze holds every browser, the
 initiator's own included, and the window is where they come back. The phase is
@@ -1213,32 +1412,34 @@ Enable, disable and code issuance are disabled for a view-mode viewer,
 including their confirmation openers, in each of the three SDKs. There is no
 extra project wiring: the index agent already serves this page and owns manual entry.
 
-In a cluster all masters close, and the three CLI commands work from any node,
-including a slave. The index agent asks through its own master and the leader
-drives the round. The leader enters its own direct window and sends
-`peer_protected_mode_window` with the existing `ProtectedModeQuiesceData` to the
-follower masters. Each follower enters `verifying` and answers `quiesced`,
-including on a repeat window frame. The leader and followers read `entryMode`
-from their own `runtimeView()` row; the descriptor carries no entry mode.
+In a cluster the three maintenance commands work from any node, including a
+slave. The initiator's node routes its request to the elected leader. The leader
+enters its own direct window and sends `peer_protected_mode_window` with the
+existing `ProtectedModeQuiesceData` to every linked peer, master or slave. Each
+peer enters `verifying` and answers `quiesced` immediately, including on an
+accepted repeat window frame. Each node reads `entryMode` from its own
+`runtimeView()` row; the descriptor carries no entry mode.
 
-The round waits only for follower masters: no agent roster stops, no agent-start
-gate closes, and no `active` or `peer_protected_mode_settled` follows. Ready goes
-to the initiator only after every follower has answered. A pending follower past
-the quiesce timeout raises `QUIESCE_OVERDUE` even though the leader already reads
-`verifying`; the watchdog names the pending nodes and never opens the system.
+The round waits only for linked follower nodes: it does not stop an agent
+roster, close an agent-start gate, or write `active` or
+`peer_protected_mode_settled`. Ready goes to the initiator only after every
+selected peer has answered. A pending peer past the quiesce timeout raises
+`QUIESCE_OVERDUE` even though the leader already reads `verifying`; the watchdog
+names the pending nodes and never opens the system.
 
 The worker photographs the circle on ready. The leader accepts that photograph
-once and distributes it to the follower masters, including an empty photograph;
-each master finishes its window once. Repeat enable answers ready without
-starting a new round, replacing the circle or stopping agents. A freeze or
-refreeze cannot turn the direct window into a full freeze. Pass hashes reach
-every master. Disable sends the ordinary lift to the followers and calls
+once and distributes it to every linked peer, including an empty photograph;
+each peer finishes its window once. Repeat enable answers ready without starting
+a new round, replacing the circle or stopping agents. A freeze or refreeze cannot
+turn the direct window into a full freeze. Pass and admission frames reach the
+linked peers too. Disable sends the ordinary lift to them and calls
 `enterInactive()` plus `finishLift()` on both sides, with no `deactivating`
-phase or roster walk. Every master clears its passes and removes its state file.
+phase or roster walk. Each participating node clears its passes and removes its
+state file.
 
 A successor leader adopts a direct `verifying` row as an established window,
 without a new ready or circle photograph; the recorded initiator may still mint
-and disable. A restarted master restores its own state file before opening its
+and disable. A restarted node restores its own freeze file before opening its
 entrance. The ordinary restart rules above clear codes and admission, and the
 direct window's photograph is already spent, so a repeat enable cannot take a
 new one.
@@ -1246,8 +1447,9 @@ new one.
 Two late-master limits apply to every freeze, including manual maintenance
 (owner decision, 2026-10-16): a master joining during a window without a freeze
 file stays open; a master returning with an old freeze file after disable stays
-closed until that file is removed manually. There is no catch-up synchronization
-for either case.
+closed until that file is removed manually. These remain separate constraints.
+Late-master catch-up and a master identity-only sync are not implemented. A
+slave's separate snapshot sync does not change either late-master rule.
 
 ## The Restore Ladder On Maintenance (HIL-1679)
 
@@ -1300,8 +1502,8 @@ has left that count. Agents still only in the stop queue are running, so they
 are not in it.
 
 `preservedAgentTypes` is the one list both the start gate and the stop walk
-already pass. Today that list is the mail agent. The initiator is spared
-because the row names it, and the list does not contain it.
+already pass. Today it contains `HILOS_MAIL` and `HILOS_STATUS`. The initiator is
+spared because the row names it, and the list does not contain it.
 
 `agentStartGateClosed` is the same phase verdict the inspect snapshot reports
 once the row is mounted: closed unless the phase is `inactive` or `verifying`.
@@ -1366,7 +1568,7 @@ and closing the replaced draining link does not remove the report associated
 with its successor. These snapshots use no database or file access, blocking
 I/O, new agent, or second membership register. The
 [PeerProtocol](../../../framework/backend/Cluster/Peer/PeerProtocol.php)
-channel is version 23 and requires a matching version at handshake; the report
+channel is version 26 and requires a matching version at handshake; the report
 does not provide compatibility with older peers. The existing cluster
 registry supplies membership, including offline and slave nodes; a rejected
 foreign handshake does not add a row.
@@ -1390,13 +1592,16 @@ The [cluster protected-mode coordinator](../../../framework/backend/ProtectedMod
 keeps `quiesceNodeIds()` as the full selected roster separately from pending
 nodes, through its
 [ProtectedModeQuiesceRoster](../../../framework/backend/ProtectedMode/ProtectedModeQuiesceRoster.php)
-interface; reset returns it to `null`. A full freeze selects self and follower
-masters. A direct verification window selects follower masters without the
-leader itself. Adopting an
-established freeze does not begin another collection, so its roster is empty.
-The projection therefore does not turn an empty pending set without a full
-roster into a positive acknowledgement for all nodes. It reads the actual
-roster already held by the master; slave-freeze behavior remains HIL-1818.
+interface; reset returns it to `null`. A full freeze selects self and the
+leader's linked follower peers of both roles. A slave that connects while a
+full-freeze barrier is still open is added to the actual roster and pending
+set; a slave synced after closure is not added as a historical participant. A
+direct verification window selects its linked peers without the leader itself.
+Adopting an established freeze does not begin another collection, so its roster
+is empty. The projection
+therefore does not turn an empty pending set without a full roster into a
+positive acknowledgement for all nodes. It reads the actual round roster held
+by the leader; disconnected nodes are outside that online selection.
 
 ### Local Runtime And Browser Delivery
 
@@ -1512,8 +1717,12 @@ Refuse loudly and before any trace of entry, as above.
   mount (`ProtectedModeRuntimeMountTest`), the master-side snapshot
   (`ProtectedModeSnapshotTest`), the agent driver
   (`ProtectedModeTestDriverTest`), the four verdicts and the alarm's repetition
-  (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`), the freeze left
-  on disk (`ProtectedModeFreezeStoreTest`), the analytics collector told to
+  (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`), the slave-sync
+  state machine, legacy adoption, stop/resume and database catch-up ordering,
+  moving targets and deadlines (`ClusterProtectedModeTest`), sync
+  frame validation and current connection guards (`ProtectedModePeerFrameTest`),
+  the projection of the selected slave roster (`ProtectedModeNodesCollectorTest`) and
+  the freeze left on disk (`ProtectedModeFreezeStoreTest`), the analytics collector told to
   forget by the round answer and not by the peer-link re-read
   (`WorkerManagerDbReHydrateAckTest`, `DaemonManagerDbReHydrateBarrierTest`),
   silent under the freeze with its stops handed over after it
@@ -1567,12 +1776,29 @@ Refuse loudly and before any trace of entry, as above.
   `protected-mode.spec.ts` empties the circle on Circle and runs the manual window
   from Overview, and `admin-view-mode.spec.ts` walks Circle and Words under the
   viewer strip.
-- `demo/binance-btc-tracker` cluster scenarios 23 and 25 — drive the freeze and
-  verification window through the live peer mesh and repeated quiesce rounds.
-- `demo/binance-btc-tracker` cluster scenario 38 — enables manual maintenance on
-  one follower master, mints a pass from a slave and disables on another follower
-  master. Every master reads `verifying` with no stopped agents and an open
-  agent-start gate, then one pass, then `inactive` with no passes.
+- `demo/binance-btc-tracker` cluster scenarios 23 and 25 use `ALL_NODES` for the
+  live freeze rounds. Scenario 23 checks the single verifier circle on every
+  node. Scenario 25 places the `BackupAgent` initiator on a slave, checks ready
+  after all selected nodes stop ordinary agents, resumes them for the window,
+  and verifies the production `protected-mode:close` stops them again before
+  lift. It observes actual worker stop and resume across both slaves while
+  preserving the initiator, mail pool and Status publisher. It is a freeze-driver
+  scenario, not a restore. This is the live cluster carrier for the all-role
+  cycle; it does not establish the same live proof on ecommerce-shop or
+  online-testing.
+- `demo/binance-btc-tracker` cluster scenario 38 uses `ALL_NODES` for direct
+  maintenance: it enables from a follower master, mints a pass from a slave and
+  disables from another follower master. It verifies `verifying` with no
+  stopped agents and an open start gate, one pass on every node, then `inactive`
+  with no passes. The test places Status on a slave, advances publication with
+  `test:status:heartbeat:now`, and reads `/status-data/status.json` through the
+  shared HTTP entry (`entry_json()` in `framework/docker/cluster/control.py`):
+  component states become `maintenance` under the window and return to their
+  baseline after lift (Operational on the healthy carrier).
+  Legacy adoption, missed-barrier detection, slave reconnect catch-up, timeout
+  and deduplication behavior have profile unit coverage. This slice adds no
+  real restore on a cluster stand and no new live scenario for leader failure
+  or peer link loss.
 - `demo/binance-btc-tracker` cluster/live `protected-mode.spec.ts` — keeps its
   existing assertions and parked F-016 cases; circle setup and cleanup use the
   Circle address and return to Overview before manual or document marks. Scenario

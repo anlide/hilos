@@ -59,6 +59,51 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         parent::tearDown();
     }
 
+    public function testGenerationFlowsThroughActionsSyncDiffsAndLift(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        Hilos::$sr = $recorder = new WatchdogViewChangeRecorder();
+        $view->actions->enterActivating($this->freeze()->withFreezeId('generation-a'), self::INITIATOR_KEY);
+        $this->assertSame('generation-a', $view->freezeId);
+        $this->assertSame('generation-a', $recorder->changes[0]->row[StateProtectedModeRuntime::freezeId]);
+
+        $replica = StateProtectedModeRuntime::fromRow($state->toArray());
+        $replica->applyDiff([StateProtectedModeRuntime::progressAt => 123]);
+        $this->assertSame('generation-a', $replica->freezeId);
+        $replica->applyDiff([StateProtectedModeRuntime::freezeId => 'generation-b']);
+        $this->assertSame('generation-b', new ProtectedModeRuntime($replica)->freezeId);
+        $replica->applyDiff([StateProtectedModeRuntime::freezeId => null]);
+        $this->assertNull($replica->freezeId);
+
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+        $this->assertSame('generation-a', $view->freezeId);
+        $view->actions->enterDeactivating();
+        $this->assertSame('generation-a', $view->freezeId);
+        $view->actions->enterInactive();
+        $this->assertNull($view->freezeId);
+        $this->assertNull($recorder->changes[array_key_last($recorder->changes)]->row[StateProtectedModeRuntime::freezeId]);
+    }
+
+    public function testDirectWindowAndDiskRestoreRetainGenerationUntilLift(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $this->assertNull($view->freezeId);
+        $view->actions->enterVerificationWindow($this->freeze()->withFreezeId('window-a'), self::INITIATOR_KEY);
+        $this->assertSame('window-a', $view->freezeId);
+
+        $restored = $this->viewWithActions(StateProtectedModeRuntime::create());
+        $restored->actions->restoreFromDisk(StateProtectedModeRuntime::fromRow($state->toArray()));
+        $this->assertSame('window-a', $restored->freezeId);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $restored->phase);
+        $restored->actions->enterInactive();
+        $this->assertNull($restored->freezeId);
+    }
+
     public function testAnInactiveFreezeLocksNobodyOut(): void
     {
         $state = StateProtectedModeRuntime::create();

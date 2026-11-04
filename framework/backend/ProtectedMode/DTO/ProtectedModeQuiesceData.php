@@ -38,6 +38,9 @@ final class ProtectedModeQuiesceData extends BaseDTO
     /** Payload key: the operator session hash shared by every master. */
     public const string initiatorSessionTokenHash = 'initiatorSessionTokenHash';
 
+    /** Payload key: the cluster barrier generation, or null for standalone and legacy freezes. */
+    public const string freezeId = 'freezeId';
+
     /**
      * @param string $operation Operation the freeze protects
      * @param string $initiatorAgentType Agent type left running during the freeze
@@ -47,6 +50,7 @@ final class ProtectedModeQuiesceData extends BaseDTO
      *                                 descriptor to a peer and only reuses it as the freeze
      *                                 argument of {@see ProtectedModeExecutor::enterActivating()}
      * @param ?string $initiatorSessionTokenHash Operator session hash, or null without a browser
+     * @param ?string $freezeId Barrier generation, or null for standalone and legacy freezes
      */
     public function __construct(
         public readonly string $operation,
@@ -54,6 +58,7 @@ final class ProtectedModeQuiesceData extends BaseDTO
         public readonly ?int $initiatorAgentIndex,
         public readonly ?string $initiatorNodeId,
         public readonly ?string $initiatorSessionTokenHash,
+        public readonly ?string $freezeId = null,
     ) {
     }
 
@@ -68,6 +73,7 @@ final class ProtectedModeQuiesceData extends BaseDTO
             self::initiatorAgentIndex => $this->initiatorAgentIndex,
             self::initiatorNodeId => $this->initiatorNodeId,
             self::initiatorSessionTokenHash => $this->initiatorSessionTokenHash,
+            self::freezeId => $this->freezeId,
         ];
     }
 
@@ -84,6 +90,7 @@ final class ProtectedModeQuiesceData extends BaseDTO
             initiatorAgentIndex: self::optionalInt($data, self::initiatorAgentIndex),
             initiatorNodeId: self::optionalString($data, self::initiatorNodeId),
             initiatorSessionTokenHash: self::optionalString($data, self::initiatorSessionTokenHash),
+            freezeId: self::optionalString($data, self::freezeId),
         );
     }
 
@@ -99,6 +106,23 @@ final class ProtectedModeQuiesceData extends BaseDTO
             $this->initiatorAgentIndex,
             $this->initiatorNodeId,
             $initiatorSessionTokenHash,
+            $this->freezeId,
+        );
+    }
+
+    /**
+     * @param ?string $freezeId Barrier generation for this descriptor
+     * @return static Freeze descriptor carrying the generation
+     */
+    public function withFreezeId(?string $freezeId): static
+    {
+        return new static(
+            $this->operation,
+            $this->initiatorAgentType,
+            $this->initiatorAgentIndex,
+            $this->initiatorNodeId,
+            $this->initiatorSessionTokenHash,
+            $freezeId,
         );
     }
 }

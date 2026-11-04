@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Environment\Exception\EnvException;
@@ -20,16 +23,43 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
  * tells them the freeze has settled once every node has quiesced, and signals ready to the
  * initiator; a follower reports quiesced back to the leader. The circle
  * photographed at the freeze rides the same way a pass does - the initiator's node to the leader,
- * the leader to every follower master. The concrete port is wired at daemon start by the
+ * the leader to every follower node. The concrete port is wired at daemon start by the
  * leader-orchestration slice.
  */
 interface ProtectedModeMesh
 {
+    /** @return list<string> Authenticated active slaves, excluding self */
+    public function slaveNodeIds(): array;
+
     /**
-     * @return array<string> Online master node ids other than self — the followers the leader
-     *                       broadcasts quiesce to and awaits a quiesced report from
+     * @param string $nodeId Slave to synchronize
+     * @param PeerProtectedModeSyncDTO $snapshot Requested complete state
+     * @throws EnvException When the leadership configuration is invalid
      */
-    public function followerMasterNodeIds(): array;
+    public function sendProtectedModeSync(string $nodeId, PeerProtectedModeSyncDTO $snapshot): void;
+
+    /**
+     * @param string $leaderNodeId Leader whose callback is being continued
+     * @param string $syncId Pending request correlation
+     * @return bool Whether the request still belongs to the installed authenticated leader connection
+     * @throws EnvException When the leadership configuration is invalid
+     */
+    public function isProtectedModeSyncCurrent(string $leaderNodeId, string $syncId): bool;
+
+    /**
+     * @param string $leaderNodeId Current leader that requested the snapshot
+     * @param string $syncId Applied request correlation
+     * @param string $phase Applied target phase
+     * @throws PeerTransportException When the acknowledgement is malformed
+     * @throws EnvException When the leadership configuration is invalid
+     */
+    public function sendProtectedModeSynced(string $leaderNodeId, string $syncId, string $phase): void;
+
+    /**
+     * @return list<string> Authenticated working master and slave peers excluding self,
+     *                      whose quiesced reports the leader awaits
+     */
+    public function followerNodeIds(): array;
 
     /**
      * @return ?string Node id of the current leader an initiator addresses its request to, or null
@@ -66,16 +96,18 @@ interface ProtectedModeMesh
     public function sendDisable(string $leaderNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
-     * Broadcasts the freeze order to every follower master.
+     * Broadcasts the freeze order to every follower node.
      *
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     * @throws PeerTransportException When the descriptor has no barrier generation
      */
     public function broadcastQuiesce(ProtectedModeQuiesceData $data): void;
 
     /**
-     * Opens a direct verification window on every follower master without stopping agents.
+     * Opens a direct verification window on every follower node without stopping agents.
      *
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     * @throws PeerTransportException When the descriptor has no barrier generation
      */
     public function broadcastWindow(ProtectedModeQuiesceData $data): void;
 
@@ -95,7 +127,7 @@ interface ProtectedModeMesh
     public function sendRefused(string $initiatorNodeId, string $reason): void;
 
     /**
-     * Broadcasts the release order to every follower master.
+     * Broadcasts the release order to every follower node.
      */
     public function broadcastLift(): void;
 
@@ -107,7 +139,7 @@ interface ProtectedModeMesh
     public function sendQuiesced(string $leaderNodeId): void;
 
     /**
-     * Tells every follower master that every node has stopped its roster, so each writes active.
+     * Tells every follower node that every node has stopped its roster, so each writes active.
      *
      * Sent at the end of every quiesce round, before the ready (HIL-1128).
      */
@@ -123,7 +155,7 @@ interface ProtectedModeMesh
     public function sendVerify(string $leaderNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
-     * Broadcasts the verification window to every follower master.
+     * Broadcasts the verification window to every follower node.
      *
      * The phase has to reach every node, because a verifier may land on any of them and each node
      * decides admission against its own copy of the row.
@@ -155,7 +187,7 @@ interface ProtectedModeMesh
     public function sendPass(string $leaderNodeId, string $agentType, ?int $agentIndex, string $passHash): void;
 
     /**
-     * Broadcasts one minted pass to every follower master.
+     * Broadcasts one minted pass to every follower node.
      *
      * @param string $agentType Initiator agent type
      * @param ?int $agentIndex Initiator index, or null for a singleton
@@ -173,7 +205,7 @@ interface ProtectedModeMesh
     public function sendAdmit(string $leaderNodeId, string $passHash, string $sessionTokenHash): void;
 
     /**
-     * Broadcasts a code admission from the leader to every follower master (HIL-1305).
+     * Broadcasts a code admission from the leader to every follower node (HIL-1305).
      *
      * @param string $passHash Hash of the presented pass
      * @param string $sessionTokenHash Hash of the verifier session
@@ -191,9 +223,9 @@ interface ProtectedModeMesh
     public function sendCircle(string $leaderNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void;
 
     /**
-     * Broadcasts the photographed circle to every follower master.
+     * Broadcasts the photographed circle to every follower node.
      *
-     * Every master, for the reason {@see broadcastVerify()} names: a member of the circle may land
+     * Every node, for the reason {@see broadcastVerify()} names: a member of the circle may land
      * on any of them, and each decides admission against its own copy of the row.
      *
      * @param string $agentType Initiator agent type

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Closure;
+use Hilos\Database\DTO\ReHydrateVerdict;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FileDeleteException;
@@ -12,6 +15,7 @@ use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
+use Hilos\ProtectedMode\Exception\ProtectedModeException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -65,6 +69,67 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     public function __construct(
         private readonly ProtectedModeFreezeStore $store = new ProtectedModeFreezeStore(),
     ) {
+    }
+
+    /**
+     * Persists only the local legacy identity, without replaying a phase transition.
+     *
+     * @param string $freezeId Locally generated generation
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws ProtectedModeException When the legacy identity cannot be persisted
+     */
+    public function bootstrapFreezeId(string $freezeId): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+        if ($view->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return;
+        }
+        $view->actions->bootstrapFreezeId($freezeId);
+        // Retry persistence even for an already assigned id: a previous publication attempt may
+        // have failed. Nothing can publish a snapshot until this save has completed.
+        try {
+            $this->store->save($view->toArray());
+        } catch (EnvException|FileMoveException|FileWriteException|JsonException $exception) {
+            throw new ProtectedModeException('Protected mode: the legacy generation could not be persisted', previous: $exception);
+        }
+    }
+
+    /**
+     * Imports descriptor and rights without starting or replacing a roster walk.
+     *
+     * @param PeerProtectedModeSyncDTO $snapshot Leader snapshot
+     * @param string $phase Phase earned by the current local effects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function importSlaveSync(PeerProtectedModeSyncDTO $snapshot, string $phase): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+        $view->actions->importSlaveSync($snapshot, $phase);
+        $this->persistFreeze($view);
+    }
+
+    /**
+     * Waits for the existing numbered daemon/worker re-hydrate barrier.
+     *
+     * @param string $leaderNodeId Leader whose snapshot is being applied
+     * @param Closure(ReHydrateVerdict): void $onComplete Result of the local barrier
+     */
+    public function catchUpSlaveDatabase(string $leaderNodeId, Closure $onComplete): void
+    {
+        $sink = Hilos::$cluster?->dbSyncSink();
+        if ($sink === null) {
+            $onComplete(new ReHydrateVerdict(null, null, false, ['Protected-mode database catch-up has no local DB sink']));
+            return;
+        }
+        $sink->catchUpProtectedModeDatabase($onComplete);
     }
 
     /**

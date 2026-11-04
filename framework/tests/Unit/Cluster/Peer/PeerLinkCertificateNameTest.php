@@ -205,7 +205,7 @@ final class PeerLinkCertificateNameTest extends TestCase
             [$near, $far] = $this->makeSocketPair();
             $link = $this->link($near, dialer: $dialer, transport: new NamedPeerTestTransport($near, self::REMOTE_NODE));
             $type = $dialer ? PeerWelcomeDTO::class : PeerHelloDTO::class;
-            $this->deliver($far, new $type(24, self::REMOTE_NODE, 'Remote node', NodeRole::Master, [], PeerTestMarkers::onWire()));
+            $this->deliver($far, new $type(25, self::REMOTE_NODE, 'Remote node', NodeRole::Master, [], PeerTestMarkers::onWire()));
             $link->read();
 
             $this->assertTrue($link->shouldClose());
@@ -213,7 +213,7 @@ final class PeerLinkCertificateNameTest extends TestCase
             $this->assertNull($link->remoteIdentity());
             $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
         }
-        $this->assertSame(2, substr_count($this->log(), 'Incompatible peer protocol version 24, expected 25'));
+        $this->assertSame(2, substr_count($this->log(), 'Incompatible peer protocol version 25, expected 26'));
     }
 
     public function testAHelloNamingTheCertifiedNodeCompletesTheHandshake(): void

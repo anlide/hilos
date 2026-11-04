@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -17,16 +20,24 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Database\DTO\ReHydrateVerdict;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\ProtectedModeExecutor;
+use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Server\AwaitingWorkerAgent;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use ReflectionProperty;
 
@@ -60,6 +71,111 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         Hilos::$rt = null;
 
         parent::tearDown();
+    }
+
+    /**
+     * @param string $targetPhase Whether the new barrier is still collecting or already closed
+     * @param ?int $nextIndex Different index of the old type, or null for a different type
+     */
+    #[DataProvider('changedSlaveInitiators')]
+    public function testSlaveStopsThePreviousInitiatorAndResumesTheUnionOfBothActualWalks(string $targetPhase, ?int $nextIndex): void
+    {
+        $previousCluster = Hilos::$cluster;
+        $previousRouter = Hilos::$sr;
+        $previousEnv = Hilos::$env;
+        Hilos::$sr = null;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $manager = new FreezeGateTestAgentManagerDaemon();
+        $server = $this->buildServer(FreezeGateTestRosterWorkerServer::class, $manager);
+        $worker = new FreezeGateTestRosterWorkerClient();
+        $server->addWorker($worker);
+        foreach ([[self::INITIATOR_TYPE, '1'], [self::OTHER_TYPE, null],
+            [HilosAgentType::HILOS_MAIL, null], [HilosAgentType::HILOS_STATUS, null]] as [$type, $index]) {
+            $manager->createAndAddAgent($type, $index, 1, false)->setWorkerClient($worker);
+        }
+        $mesh = $this->createStub(ProtectedModeMesh::class);
+        $mesh->method('leaderNodeId')->willReturn('leader');
+        $mesh->method('isProtectedModeSyncCurrent')->willReturn(true);
+        $synced = [];
+        $mesh->method('sendProtectedModeSynced')->willReturnCallback(
+            static function (string $leader, string $id, string $phase) use (&$synced): void { $synced[] = [$id, $phase]; },
+        );
+        $executor = $this->createMock(ProtectedModeExecutor::class);
+        $executor->method('enterActivating')->willReturnCallback(static function (ProtectedModeQuiesceData $freeze) use ($server): void {
+            Hilos::$rt->hilosProtectedModeRuntime->actions->enterActivating($freeze, null);
+            $server->stopAgentsForProtectedMode($freeze->initiatorAgentType,
+                $freeze->initiatorAgentIndex === null ? null : (string)$freeze->initiatorAgentIndex);
+        });
+        $executor->method('importSlaveSync')->willReturnCallback(static function (PeerProtectedModeSyncDTO $frame, string $phase): void {
+            Hilos::$rt->hilosProtectedModeRuntime->actions->importSlaveSync($frame, $phase);
+        });
+        $executor->method('catchUpSlaveDatabase')->willReturnCallback(static function (string $leader, Closure $done): void {
+            $done(new ReHydrateVerdict(null, null, true, []));
+        });
+        $executor->method('enterVerifying')->willReturnCallback(static function () use ($server): void {
+            Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerifying();
+            $server->resumeAgentsForProtectedMode();
+        });
+        $coordinator = new ClusterProtectedMode('local', $mesh, $executor);
+        Hilos::$cluster->registerProtectedMode($coordinator);
+        try {
+            $first = new ProtectedModeQuiesceData('restore', self::INITIATOR_TYPE, 1, 'local', null, 'first');
+            $coordinator->onSync('leader', new PeerProtectedModeSyncDTO('first', StateProtectedModeRuntime::PHASE_ACTIVATING,
+                StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $first, false, [], [], 0, []));
+            $this->assertSame([], $synced);
+            $this->passes($server, 1);
+            $this->assertSame([self::OTHER_TYPE], $worker->stopped);
+            $this->assertSame([['first', StateProtectedModeRuntime::PHASE_ACTIVATING]], $synced);
+            $coordinator->onSync('leader', new PeerProtectedModeSyncDTO('settled', StateProtectedModeRuntime::PHASE_ACTIVE,
+                StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $first, true, [], [], 0, []));
+
+            $next = new ProtectedModeQuiesceData('restore', $nextIndex === null ? self::PER_NODE_TYPE : self::INITIATOR_TYPE,
+                $nextIndex, 'local', null, 'second');
+            $synced = [];
+            $coordinator->onSync('leader', new PeerProtectedModeSyncDTO('next', $targetPhase,
+                StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $next, $targetPhase === StateProtectedModeRuntime::PHASE_ACTIVE, [], [], 0, []));
+            $coordinator->onSync('leader', new PeerProtectedModeSyncDTO('repeat', $targetPhase,
+                StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $next, $targetPhase === StateProtectedModeRuntime::PHASE_ACTIVE, [], [], 0, []));
+            $this->assertSame([], $synced);
+            $this->assertTrue($manager->hasAgent(self::INITIATOR_TYPE . ':1'), 'The old exception still runs until the next real stop step');
+            $this->passes($server, 1);
+            $this->assertSame([self::OTHER_TYPE, self::INITIATOR_TYPE . ':1'], $worker->stopped);
+            $this->assertFalse($manager->hasAgent(self::INITIATOR_TYPE . ':1'));
+            $this->assertSame([self::OTHER_TYPE, self::INITIATOR_TYPE . ':1'], $server->getProtectedModeStoppedAgents());
+            $this->assertSame([['repeat', $targetPhase]], $synced);
+            $this->assertTrue($manager->hasAgent(HilosAgentType::HILOS_MAIL));
+            $this->assertTrue($manager->hasAgent(HilosAgentType::HILOS_STATUS));
+
+            $coordinator->onSync('leader', new PeerProtectedModeSyncDTO('bootstrap', $targetPhase,
+                StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $next->withFreezeId('normalized'),
+                $targetPhase === StateProtectedModeRuntime::PHASE_ACTIVE, [], [], 0, []));
+            $this->passes($server, 1);
+            $this->assertSame([self::OTHER_TYPE, self::INITIATOR_TYPE . ':1'], $worker->stopped, 'Identity-only changes do not restart the walk');
+            $synced = [];
+            $coordinator->onSync('leader', new PeerProtectedModeSyncDTO('window', StateProtectedModeRuntime::PHASE_VERIFYING,
+                StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $next->withFreezeId('normalized'), true, [], [], 0, []));
+            $this->assertSame([], $synced);
+            $this->passes($server, 2);
+            $this->assertSame([self::OTHER_TYPE, self::INITIATOR_TYPE . ':1'], $worker->started);
+            $this->assertSame([['window', StateProtectedModeRuntime::PHASE_VERIFYING]], $synced);
+        } finally {
+            Hilos::$cluster = $previousCluster;
+            Hilos::$sr = $previousRouter;
+            Hilos::$env = $previousEnv;
+            RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
+        }
+    }
+
+    /** @return iterable<string, array{string, ?int}> Changes of either part of the excluded identity */
+    public static function changedSlaveInitiators(): iterable
+    {
+        foreach ([StateProtectedModeRuntime::PHASE_ACTIVATING, StateProtectedModeRuntime::PHASE_ACTIVE] as $phase) {
+            yield $phase . '-type' => [$phase, null];
+            yield $phase . '-index' => [$phase, 2];
+        }
     }
 
     public function testAFrozenNodeRefusesAStartFromAnyoneButTheInitiator(): void
@@ -643,6 +759,55 @@ final class FreezeGateTestLiftRecordingWorkerServer extends FreezeGateTestWorker
     protected function onProtectedModeLifted(): void
     {
         $this->liftHookCalls++;
+    }
+}
+
+/** Actual stop/resume walks with one recording local worker connection. */
+final class FreezeGateTestRosterWorkerServer extends FreezeGateTestWorkerServer
+{
+    /** @param WorkerClient $worker Local worker receiving the real roster's requests */
+    public function addWorker(WorkerClient $worker): void
+    {
+        $this->clients[] = $worker;
+    }
+
+    /** The test exercises only the replayed roster, without application bootstrap. */
+    protected function onProtectedModeLifted(): void
+    {
+    }
+}
+
+/** Records worker requests while the production server removes and replays actual agent records. */
+final class FreezeGateTestRosterWorkerClient extends WorkerClient
+{
+    /** @var list<string> Agent ids the server stopped */
+    public array $stopped = [];
+
+    /** @var list<string> Agent ids the server resumed */
+    public array $started = [];
+
+    public function __construct()
+    {
+        $this->setWorkerIndex(1);
+    }
+
+    /**
+     * @param string $agentType Type whose worker is asked to stop it
+     * @param ?string $agentIndex Instance index, or null for a singleton
+     */
+    public function sendAgentStop(string $agentType, ?string $agentIndex = null): void
+    {
+        $this->stopped[] = $agentIndex === null ? $agentType : $agentType . ':' . $agentIndex;
+    }
+
+    /**
+     * @param string $agentType Type the worker is asked to resume
+     * @param ?string $agentIndex Instance index, or null for a singleton
+     * @param list<string> $liveAcceptKeys Unused browser roster
+     */
+    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
+    {
+        $this->started[] = $agentIndex === null ? $agentType : $agentType . ':' . $agentIndex;
     }
 }
 

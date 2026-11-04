@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
+use Hilos\Constants\EnvConstants;
+use Hilos\Database\DTO\ReHydrateVerdict;
+use Hilos\Mail\Template\ProtectedModeSlaveAlertMailTemplate;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Environment\Exception\EnvException;
@@ -16,12 +25,14 @@ use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\ProtectedMode\Exception\ProtectedModeException;
 use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * The two-phase cluster freeze orchestration — the leader side and the follower side in one flat
@@ -77,6 +88,19 @@ final class ClusterProtectedMode implements
     ProtectedModeLeadership,
     ProtectedModeQuiesceRoster
 {
+    /** Bytes of collision-resistant identity; a generation grants no access and carries no secret. */
+    private const int FREEZE_ID_BYTES = 16;
+
+    private const string SYNC_FRAME = 'frame';
+
+    private const string SYNC_GENERATION = 'freezeId';
+
+    private const string SYNC_FIRST_REQUESTED_AT = 'firstRequestedAt';
+
+    private const string SYNC_ALERTED = 'alerted';
+
+    private const string SYNC_OPERATION = 'operation';
+
     /** @var string Id of the node this coordinator runs on, for log context */
     private string $selfNodeId;
 
@@ -126,6 +150,45 @@ final class ClusterProtectedMode implements
     /** @var ?int Initiator agent index that requested enable from this node, cleared on verdict */
     private ?int $pendingInitiatorAgentIndex = null;
 
+    /** @var array<string, array{frame: PeerProtectedModeSyncDTO, freezeId: ?string, firstRequestedAt: int, alerted: bool, operation: ?string}> */
+    private array $slaveSyncRequests = [];
+
+    /** @var ?PeerProtectedModeSyncDTO Latest slave target; effects already in flight finish before it */
+    private ?PeerProtectedModeSyncDTO $slaveSyncTarget = null;
+
+    /** @var ?string Elected leader that supplied the pending slave target */
+    private ?string $slaveSyncLeaderId = null;
+
+    /** @var ?PeerProtectedModeSyncDTO Snapshot whose local numbered DB barrier was requested */
+    private ?PeerProtectedModeSyncDTO $slaveDatabaseTarget = null;
+
+    /** @var bool The local DB round still owes its result, including failure or supersession */
+    private bool $slaveDatabasePending = false;
+
+    /** @var bool Every selected local process confirmed the target's database catch-up */
+    private bool $slaveDatabaseComplete = false;
+
+    /** @var ?string Generation observed by this coordinator across pending snapshot replacements */
+    private ?string $slaveWarningGeneration = null;
+
+    /** @var bool The observed generation already had its missed-barrier log and mail attempt */
+    private bool $slaveMissedBarrierAlerted = false;
+
+    /** @var bool A requested lift still owes its browser announcement after resume */
+    private bool $finishLiftOwed = false;
+
+    /** @var bool A requested window still owes its personal announcements after resume */
+    private bool $finishVerifyingOwed = false;
+
+    /** @var bool A real local stop callback is still outstanding */
+    private bool $rosterStopping = false;
+
+    /** @var bool A real local resume callback is still outstanding */
+    private bool $rosterResuming = false;
+
+    /** @var bool This process has observed completion of the current stop */
+    private bool $rosterStopped = false;
+
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
      * @param ProtectedModeMesh $mesh Outbound peer port for the freeze frames
@@ -155,11 +218,117 @@ final class ClusterProtectedMode implements
      * round overdue and the operator ends the freeze by the ladder. The deadline it is measured
      * against starts at this promotion, because {@see ProtectedModeWatchdog} counts every threshold
      * from the moment it first saw the freeze, never from the clocks on the row.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EnvException When leadership configuration is invalid
+     * @throws PeerTransportException When the local snapshot is invalid
+     * @throws ProtectedModeException When the legacy identity cannot be persisted
      */
     public function onBecameLeader(): void
     {
         $this->isLeader = true;
+        $this->slaveSyncTarget = null;
+        $this->slaveSyncLeaderId = null;
+        $this->slaveSyncRequests = [];
+        $this->resetLeaderState();
         $this->adoptStandingFreeze();
+        foreach ($this->mesh->slaveNodeIds() as $nodeId) {
+            $this->onSlaveConnected($nodeId);
+        }
+    }
+
+    /**
+     * @param string $nodeId Authenticated active slave that connected
+     * @throws EnvException When the leadership configuration is invalid
+     * @throws PeerTransportException When the local snapshot is invalid
+     */
+    public function onSlaveConnected(string $nodeId): void
+    {
+        if (!$this->isLeader || !in_array($nodeId, $this->mesh->slaveNodeIds(), true)) {
+            return;
+        }
+        $this->requestSlaveSync($nodeId, time());
+    }
+
+    /**
+     * The transport has checked the slave role and exact installed authenticated connection.
+     * Rechecking the elected leader also protects delayed local callbacks after a promotion.
+     *
+     * @param string $fromNodeId Current elected leader
+     * @param PeerProtectedModeSyncDTO $frame Latest target snapshot
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws PeerTransportException When the acknowledgement is invalid
+     */
+    public function onSync(string $fromNodeId, PeerProtectedModeSyncDTO $frame): void
+    {
+        if ($this->isLeader || $fromNodeId !== $this->mesh->leaderNodeId() || $this->runtimeView() === null) {
+            return;
+        }
+        $this->slaveSyncTarget = $frame;
+        $this->slaveSyncLeaderId = $fromNodeId;
+        $this->advanceSlaveSync();
+    }
+
+    /**
+     * @param string $fromNodeId Slave on the requesting authenticated active connection
+     * @param PeerProtectedModeSyncedDTO $frame Applied request and phase
+     * @throws EnvException When leadership or initiator placement is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws PeerTransportException When the local snapshot is invalid
+     */
+    public function onSynced(string $fromNodeId, PeerProtectedModeSyncedDTO $frame): void
+    {
+        $request = $this->slaveSyncRequests[$fromNodeId] ?? null;
+        if (!$this->isLeader || $this->mesh->leaderNodeId() !== $this->selfNodeId
+            || $request === null || !in_array($fromNodeId, $this->mesh->slaveNodeIds(), true)) {
+            return;
+        }
+        $expected = $request[self::SYNC_FRAME];
+        $current = $this->slaveSnapshot($expected->syncId);
+        if ($frame->syncId !== $expected->syncId || $frame->phase !== $expected->phase
+            || $current?->toArray() !== $expected->toArray()) {
+            return;
+        }
+        unset($this->slaveSyncRequests[$fromNodeId]);
+        // A synced slave never substitutes for a master's lost quiesced report.
+        if ($expected->payload?->freezeId === $this->activeFreeze?->freezeId) {
+            unset($this->pendingNodes[$fromNodeId]);
+            $this->activateWhenAllQuiesced();
+        }
+    }
+
+    /**
+     * Runs even on inactive: a lost lift remains a separate outstanding request.
+     *
+     * @param int $now Local observation time in seconds
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws PeerTransportException When a snapshot or acknowledgement is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     */
+    public function tickSlaveSync(int $now): void
+    {
+        if (!$this->isLeader) {
+            $this->advanceSlaveSync();
+            return;
+        }
+        foreach ($this->slaveSyncRequests as $nodeId => $request) {
+            $expected = $request[self::SYNC_FRAME];
+            $current = $this->slaveSnapshot($expected->syncId);
+            if ($current !== null && $current->toArray() !== $expected->toArray()) {
+                $this->requestSlaveSync($nodeId, $now);
+                $request = $this->slaveSyncRequests[$nodeId];
+            }
+            if (!$request[self::SYNC_ALERTED] && $now - $request[self::SYNC_FIRST_REQUESTED_AT] >= $this->slaveSyncTimeoutSeconds()) {
+                $this->slaveSyncRequests[$nodeId][self::SYNC_ALERTED] = true;
+                $this->notifySlaveWarning($nodeId, $request[self::SYNC_FRAME],
+                    ProtectedModeSlaveAlertMailTemplate::REASON_SYNC_OVERDUE, $request[self::SYNC_OPERATION]);
+            }
+        }
     }
 
     /**
@@ -197,6 +366,7 @@ final class ClusterProtectedMode implements
     public function onLostLeadership(): void
     {
         $this->isLeader = false;
+        $this->slaveSyncRequests = [];
         $this->resetLeaderState();
     }
 
@@ -213,6 +383,7 @@ final class ClusterProtectedMode implements
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
@@ -376,10 +547,10 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Entry point on the initiator's own node: routes the photographed circle to every master.
+     * Entry point on the initiator's own node: routes the photographed circle to every node.
      *
      * The photograph is fanned the way a pass is - this node to the leader, the leader to every
-     * follower master - and for the reason the pass is: a member's tab connects to whichever node
+     * follower node - and for the reason the pass is: a member's tab connects to whichever node
      * the balancer hands it, and each node decides admission against its own copy of the row. The
      * leader takes the photograph through the same door a frame from another node does
      * ({@see onCircle()}). A follower writes its own row first and then sends, so the node the
@@ -387,10 +558,9 @@ final class ClusterProtectedMode implements
      * with no leader known that row is all there is, and the rest of the cluster lets the circle in
      * by code alone.
      *
-     * A node holding no freeze of its own still sends: that is a slave, which no freeze frame reaches
-     * at all - they go to masters only - so there is no row of its own to write, while the leader
-     * authorizes the photograph by the agent identity it carries, exactly as it authorizes every
-     * other frame of the window. With no leader known as well, the photograph is dropped.
+     * A node holding no local freeze still forwards the photograph. The leader authorizes it by
+     * the agent identity it carries, as it authorizes every other frame of the window. With no
+     * leader known as well, the photograph is dropped.
      *
      * The phase is deliberately not checked, unlike the pass - a follower reaches `active` only on
      * its leader's settled frame ({@see onSettled()}, HIL-1128), and gating on `active` would make
@@ -438,6 +608,7 @@ final class ClusterProtectedMode implements
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {
@@ -461,6 +632,7 @@ final class ClusterProtectedMode implements
      * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void
     {
@@ -520,6 +692,9 @@ final class ClusterProtectedMode implements
             return;
         }
 
+        if (isset($this->slaveSyncRequests[$fromNodeId])) {
+            return;
+        }
         unset($this->pendingNodes[$fromNodeId]);
         $this->activateWhenAllQuiesced();
     }
@@ -542,6 +717,9 @@ final class ClusterProtectedMode implements
             $this->executor->enterDeactivating();
         }
         $this->mesh->broadcastLift();
+        $this->rosterStopping = false;
+        $this->rosterResuming = !$directWindow;
+        $this->finishLiftOwed = !$directWindow;
         $this->executor->enterInactive();
         if ($directWindow) {
             $this->executor->finishLift();
@@ -575,6 +753,9 @@ final class ClusterProtectedMode implements
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if ($this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
             Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
                 . " — node '{$this->selfNodeId}' holds a direct verification window");
@@ -585,6 +766,9 @@ final class ClusterProtectedMode implements
             $acceptedLeader = $this->obeysLeader($fromNodeId);
             if ($acceptedLeader) {
                 $this->followLeader($fromNodeId);
+            }
+            if ($acceptedLeader && $this->runtimeView()?->freezeId === $data->freezeId && $data->freezeId !== null) {
+                return;
             }
             if (!$acceptedLeader || !$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
                 Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
@@ -608,6 +792,11 @@ final class ClusterProtectedMode implements
         // The descriptor carries the operator's session hash to this master, where its next tab
         // may connect (HIL-1305). The accept key remains on the node of its socket. The quiesced
         // report waits for this roster to stop and leaves from onRosterStopped().
+        $this->rosterStopping = true;
+        $this->rosterResuming = false;
+        $this->rosterStopped = false;
+        $this->finishLiftOwed = false;
+        $this->finishVerifyingOwed = false;
         $this->executor->enterActivating($data, null);
     }
 
@@ -623,6 +812,9 @@ final class ClusterProtectedMode implements
      */
     public function onWindow(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if ($this->underFreeze()) {
             if (
                 $this->obeysLeader($fromNodeId)
@@ -630,6 +822,9 @@ final class ClusterProtectedMode implements
                 && $this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)
                 && $this->runtimeView()?->initiatorAgentType === $data->initiatorAgentType
                 && $this->runtimeView()?->initiatorAgentIndex === $data->initiatorAgentIndex
+                && $this->runtimeView()?->operation === $data->operation
+                && $data->freezeId !== null
+                && $this->runtimeView()?->freezeId === $data->freezeId
             ) {
                 $this->followLeader($fromNodeId);
                 $this->mesh->sendQuiesced($fromNodeId);
@@ -672,9 +867,16 @@ final class ClusterProtectedMode implements
      * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the slave acknowledgement is invalid
      */
     public function onRosterStopped(): void
     {
+        $this->rosterStopping = false;
+        $this->rosterStopped = true;
+        if ($this->slaveSyncTarget !== null) {
+            $this->advanceSlaveSync();
+            return;
+        }
         if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVATING)) {
             return;
         }
@@ -694,13 +896,26 @@ final class ClusterProtectedMode implements
      * Finishes whichever lift brought the roster back, told apart by the phase already on the row.
      *
      * The same on the leader and on a follower: each node tells its own browsers.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EnvException When leadership configuration is invalid
+     * @throws PeerTransportException When the slave acknowledgement is invalid
      */
     public function onRosterResumed(): void
     {
+        $this->rosterResuming = false;
+        $this->rosterStopped = false;
+        if ($this->slaveSyncTarget !== null) {
+            $this->advanceSlaveSync();
+            return;
+        }
         $phase = $this->runtimeView()?->phase;
         if ($phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
+            $this->finishVerifyingOwed = false;
             $this->executor->finishVerifying();
         } elseif ($phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->finishLiftOwed = false;
             $this->executor->finishLift();
         }
     }
@@ -774,6 +989,9 @@ final class ClusterProtectedMode implements
      */
     public function onLift(string $fromNodeId): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         $this->pendingInitiatorAgentType = null;
         $this->pendingInitiatorAgentIndex = null;
 
@@ -790,6 +1008,9 @@ final class ClusterProtectedMode implements
         $this->followLeader($fromNodeId);
 
         $directWindow = $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+        $this->rosterStopping = false;
+        $this->rosterResuming = !$directWindow;
+        $this->finishLiftOwed = !$directWindow;
         $this->executor->enterInactive();
         if ($directWindow) {
             $this->executor->finishLift();
@@ -812,6 +1033,9 @@ final class ClusterProtectedMode implements
      */
     public function onSettled(string $fromNodeId): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if (!$this->obeysLeader($fromNodeId)) {
             Logger::warning("Protected mode: dropping settled from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen by it");
             return;
@@ -835,6 +1059,9 @@ final class ClusterProtectedMode implements
      */
     public function onVerify(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if ($this->obeysLeader($fromNodeId)) {
             $this->followLeader($fromNodeId);
             // Follower half: the leader has already decided, so what is left to refuse is a repeat
@@ -844,6 +1071,9 @@ final class ClusterProtectedMode implements
                 return;
             }
 
+            $this->rosterStopping = false;
+            $this->rosterResuming = true;
+            $this->finishVerifyingOwed = true;
             $this->executor->enterVerifying();
             return;
         }
@@ -856,6 +1086,9 @@ final class ClusterProtectedMode implements
             return;
         }
 
+        $this->rosterStopping = false;
+        $this->rosterResuming = true;
+        $this->finishVerifyingOwed = true;
         $this->executor->enterVerifying();
         $this->mesh->broadcastVerify($this->activeFreeze->initiatorAgentType, $this->activeFreeze->initiatorAgentIndex);
     }
@@ -902,6 +1135,9 @@ final class ClusterProtectedMode implements
      */
     public function onPass(string $fromNodeId, string $agentType, ?int $agentIndex, string $passHash): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if ($this->obeysLeader($fromNodeId)) {
             $this->followLeader($fromNodeId);
             if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
@@ -935,6 +1171,9 @@ final class ClusterProtectedMode implements
      */
     public function onAdmit(string $fromNodeId, string $passHash, string $sessionTokenHash): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if ($this->obeysLeader($fromNodeId)) {
             $this->followLeader($fromNodeId);
             if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
@@ -983,14 +1222,14 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Records the photographed circle on this node's row, and on the leader fans it to every master.
+     * Records the photographed circle on this node's row, and on the leader fans it to every node.
      *
      * The phase is checked on neither half. A follower reaches `active` only on its leader's settled
      * frame, as {@see requestCircle()} says, and the leader has nothing a phase would add: the
      * photograph is taken at ready, the one moment it is both final and true, and
      * {@see leadsFreezeFor()} has already said that the freeze it belongs to is the one being led here.
      * A direct window accepts only its first photograph on the leader, including an empty one;
-     * each master finishes verifying after applying that photograph.
+     * each node finishes verifying after applying that photograph.
      *
      * @param string $fromNodeId Node id the frame came from
      * @param string $agentType Initiator agent type
@@ -1002,6 +1241,9 @@ final class ClusterProtectedMode implements
      */
     public function onCircle(string $fromNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
+        if ($this->slaveSyncTarget !== null) {
+            return;
+        }
         if ($this->obeysLeader($fromNodeId)) {
             $this->followLeader($fromNodeId);
             $this->runtimeView()?->actions->admitCircle($snapshot);
@@ -1045,6 +1287,7 @@ final class ClusterProtectedMode implements
      * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function onRefreeze(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
@@ -1072,21 +1315,24 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Opens the direct window locally and waits only for follower masters, without a roster walk.
+     * Opens the direct window locally and waits only for follower nodes, without a roster walk.
      *
      * @param ProtectedModeQuiesceData $freeze Window this round is entering
      * @param ?string $initiatorAcceptKey Initiating connection, or null for a remote initiator
      * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     private function enterWindowRound(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
     {
-        $this->pendingNodes = array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        $this->pendingNodes = array_fill_keys($this->mesh->followerNodeIds(), true);
         $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->active = false;
         $this->directCircleReceived = false;
 
+        $freeze = $freeze->withFreezeId(RandomHelper::hex(self::FREEZE_ID_BYTES));
+        $this->activeFreeze = $freeze;
         $this->executor->enterVerificationWindow($freeze, $initiatorAcceptKey);
         $this->mesh->broadcastWindow($freeze);
         $this->activateWhenAllQuiesced();
@@ -1106,15 +1352,24 @@ final class ClusterProtectedMode implements
      *                                    freezes itself; null when the initiator sits on another node
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     private function enterRound(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
     ): void {
-        $this->pendingNodes = array_fill_keys([...$this->mesh->followerMasterNodeIds(), $this->selfNodeId], true);
+        $this->pendingNodes = array_fill_keys([...$this->mesh->followerNodeIds(), $this->selfNodeId], true);
         $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->active = false;
 
+        // Every new destructive round has its own identity, even when the window stayed closed.
+        $freeze = $freeze->withFreezeId(RandomHelper::hex(self::FREEZE_ID_BYTES));
+        $this->activeFreeze = $freeze;
+        $this->rosterStopping = true;
+        $this->rosterResuming = false;
+        $this->rosterStopped = false;
+        $this->finishLiftOwed = false;
+        $this->finishVerifyingOwed = false;
         $this->executor->enterActivating($freeze, $initiatorAcceptKey);
         $this->mesh->broadcastQuiesce($freeze);
     }
@@ -1216,6 +1471,258 @@ final class ClusterProtectedMode implements
         }
 
         $this->mesh->sendRefused($fromNodeId, $reason);
+    }
+
+    /**
+     * @param string $nodeId Slave whose target changed or connection returned
+     * @param int $now First observation time for a new generation
+     * @throws PeerTransportException When the local snapshot is invalid
+     * @throws EnvException When leadership configuration is invalid
+     */
+    private function requestSlaveSync(string $nodeId, int $now): void
+    {
+        $frame = $this->slaveSnapshot(RandomHelper::hex(self::FREEZE_ID_BYTES));
+        if ($frame === null) {
+            return;
+        }
+        $previous = $this->slaveSyncRequests[$nodeId] ?? null;
+        // A lift belongs to the generation it ends. Reconnect and a phase update do not buy time.
+        $generation = $frame->payload?->freezeId ?? ($previous[self::SYNC_GENERATION] ?? null);
+        $sameGeneration = $previous !== null && $previous[self::SYNC_GENERATION] === $generation;
+        $this->slaveSyncRequests[$nodeId] = [
+            self::SYNC_FRAME => $frame,
+            self::SYNC_GENERATION => $generation,
+            self::SYNC_FIRST_REQUESTED_AT => $sameGeneration ? $previous[self::SYNC_FIRST_REQUESTED_AT] : $now,
+            self::SYNC_ALERTED => $sameGeneration && $previous[self::SYNC_ALERTED],
+            self::SYNC_OPERATION => $frame->payload?->operation ?? ($previous[self::SYNC_OPERATION] ?? null),
+        ];
+        if ($this->activeFreeze !== null && !$this->active
+            && $frame->entryMode === StateProtectedModeRuntime::ENTRY_MODE_FREEZE) {
+            $this->pendingNodes[$nodeId] = true;
+            if ($this->quiesceNodes !== null && !in_array($nodeId, $this->quiesceNodes, true)) {
+                $this->quiesceNodes[] = $nodeId;
+            }
+        }
+        $this->mesh->sendProtectedModeSync($nodeId, $frame);
+    }
+
+    /**
+     * @param string $syncId Correlation to attach to the current local values
+     * @return ?PeerProtectedModeSyncDTO Snapshot, or null for an unleadable occupied row
+     * @throws PeerTransportException When the local snapshot is invalid
+     */
+    private function slaveSnapshot(string $syncId): ?PeerProtectedModeSyncDTO
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return null;
+        }
+        if ($view->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return new PeerProtectedModeSyncDTO($syncId, $view->phase, null, null, false, [], [], 0, []);
+        }
+        if ($this->activeFreeze === null || $view->freezeId === null) {
+            return null;
+        }
+        return new PeerProtectedModeSyncDTO(
+            $syncId,
+            $view->phase,
+            $view->entryMode,
+            $this->activeFreeze,
+            $this->active,
+            $view->passHashes,
+            $view->admittedSessionTokenHashes,
+            $view->circleNamedCount,
+            $view->circleSessionTokenHashes,
+        );
+    }
+
+    /**
+     * Serializes local effects. Neither a newer target nor an ordinary verify/lift overtakes a walk.
+     * A restored activating row without a completion remains unfinished; no callback is invented.
+     *
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws PeerTransportException When the acknowledgement is invalid
+     */
+    private function advanceSlaveSync(): void
+    {
+        $frame = $this->slaveSyncTarget;
+        $leader = $this->slaveSyncLeaderId;
+        $view = $this->runtimeView();
+        if ($frame === null || $leader === null || $view === null || $this->isLeader
+            || $leader !== $this->mesh->leaderNodeId() || !$this->mesh->isProtectedModeSyncCurrent($leader, $frame->syncId)
+            || $this->rosterStopping || $this->rosterResuming || $this->slaveDatabasePending) {
+            return;
+        }
+        if ($view->phase === StateProtectedModeRuntime::PHASE_ACTIVATING && !$this->rosterStopped
+            && $frame->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return;
+        }
+        $generation = $frame->payload?->freezeId;
+        if ($generation !== null && $generation !== $this->slaveWarningGeneration) {
+            $this->slaveWarningGeneration = $generation;
+            $this->slaveMissedBarrierAlerted = false;
+        }
+        if ($frame->entryMode === StateProtectedModeRuntime::ENTRY_MODE_FREEZE && $frame->barrierClosed
+            && $view->freezeId !== $generation && !$this->slaveMissedBarrierAlerted) {
+            // Before any action persists the new id: agreeing now says nothing about the past gap.
+            $this->notifySlaveWarning($this->selfNodeId, $frame, ProtectedModeSlaveAlertMailTemplate::REASON_MISSED_BARRIER);
+            $this->slaveMissedBarrierAlerted = true;
+        }
+        if ($frame->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            if ($view->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+                if ($this->slaveDatabaseTarget !== $frame) {
+                    $this->startSlaveDatabaseCatchUp($leader, $frame);
+                }
+                if (!$this->slaveDatabaseComplete) {
+                    return;
+                }
+                $direct = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+                $this->rosterResuming = !$direct;
+                $this->finishLiftOwed = true;
+                $this->finishVerifyingOwed = false;
+                $this->executor->enterInactive();
+                if (!$direct) {
+                    return;
+                }
+            }
+            if ($this->finishLiftOwed) {
+                $this->finishLiftOwed = false;
+                $this->executor->finishLift();
+            }
+            $this->acknowledgeSlaveSync($leader, $frame);
+            return;
+        }
+        $fullFreeze = $frame->entryMode === StateProtectedModeRuntime::ENTRY_MODE_FREEZE;
+        $stopped = ($this->rosterStopped || $view->phase === StateProtectedModeRuntime::PHASE_ACTIVE)
+            && $view->initiatorAgentType === $frame->payload?->initiatorAgentType
+            && $view->initiatorAgentIndex === $frame->payload?->initiatorAgentIndex;
+        $sameWindow = $view->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+            && $view->freezeId === $frame->payload?->freezeId;
+        if ($fullFreeze && !$stopped && !($frame->phase === StateProtectedModeRuntime::PHASE_VERIFYING && $sameWindow)) {
+            $this->rosterStopping = true;
+            $this->rosterResuming = false;
+            $this->rosterStopped = false;
+            $this->finishLiftOwed = false;
+            $this->finishVerifyingOwed = false;
+            $this->executor->enterActivating($frame->payload, null);
+            return;
+        }
+        if ($frame->phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
+            if ($this->slaveDatabaseTarget !== $frame) {
+                $this->startSlaveDatabaseCatchUp($leader, $frame);
+            }
+            if (!$this->slaveDatabaseComplete) {
+                return;
+            }
+            if ($stopped) {
+                // Import the actual rights before any returning agent can answer a verifier.
+                $this->executor->importSlaveSync($frame, StateProtectedModeRuntime::PHASE_ACTIVE);
+                $this->rosterResuming = true;
+                $this->finishVerifyingOwed = true;
+                $this->executor->enterVerifying();
+                return;
+            }
+            $windowChanged = !$sameWindow || $view->entryMode !== $frame->entryMode
+                || $view->initiatorSessionTokenHash !== $frame->payload?->initiatorSessionTokenHash
+                || $view->passHashes !== $frame->passHashes
+                || $view->admittedSessionTokenHashes !== $frame->admittedSessionTokenHashes
+                || $view->circleNamedCount !== $frame->circleNamedCount
+                || $view->circleSessionTokenHashes !== $frame->circleSessionTokenHashes;
+            $this->executor->importSlaveSync($frame, $frame->phase);
+            if ($windowChanged || $this->finishVerifyingOwed) {
+                $this->finishVerifyingOwed = false;
+                $this->executor->finishVerifying();
+            }
+        } else {
+            // Active is written only after a completed local stop, never on descriptor equality.
+            $this->executor->importSlaveSync($frame, $frame->phase);
+        }
+        $this->acknowledgeSlaveSync($leader, $frame);
+    }
+
+    /**
+     * Keeps the numbered round's result private to the snapshot that requested it. The next tick
+     * rechecks the leader and exact connection before it applies any phase, rights or resume.
+     *
+     * @param string $leader Leader whose snapshot requested catch-up
+     * @param PeerProtectedModeSyncDTO $frame Snapshot awaiting every selected local process
+     */
+    private function startSlaveDatabaseCatchUp(string $leader, PeerProtectedModeSyncDTO $frame): void
+    {
+        $this->slaveDatabaseTarget = $frame;
+        $this->slaveDatabasePending = true;
+        $this->slaveDatabaseComplete = false;
+        $this->executor->catchUpSlaveDatabase($leader, function (ReHydrateVerdict $verdict) use ($leader, $frame): void {
+            if ($this->slaveDatabaseTarget !== $frame || !$this->slaveDatabasePending) {
+                return;
+            }
+            $this->slaveDatabasePending = false;
+            if (!$verdict->complete || $this->isLeader || $this->slaveSyncTarget !== $frame || $this->slaveSyncLeaderId !== $leader) {
+                return;
+            }
+            try {
+                $this->slaveDatabaseComplete = $leader === $this->mesh->leaderNodeId()
+                    && $this->mesh->isProtectedModeSyncCurrent($leader, $frame->syncId);
+            } catch (EnvException $exception) {
+                Logger::error('Protected mode: database catch-up cannot confirm its current leader: ' . $exception->getMessage());
+            }
+        });
+    }
+
+    /**
+     * @param string $leader Current authenticated leader
+     * @param PeerProtectedModeSyncDTO $frame Snapshot fully applied by local effects
+     * @throws EnvException When leadership configuration is invalid
+     * @throws PeerTransportException When the acknowledgement is invalid
+     */
+    private function acknowledgeSlaveSync(string $leader, PeerProtectedModeSyncDTO $frame): void
+    {
+        $this->mesh->sendProtectedModeSynced($leader, $frame->syncId, $frame->phase);
+        $this->slaveSyncTarget = null;
+        $this->slaveSyncLeaderId = null;
+        $this->freezingLeaderId = $frame->phase === StateProtectedModeRuntime::PHASE_INACTIVE ? null : $leader;
+        if ($frame->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->slaveWarningGeneration = null;
+            $this->slaveMissedBarrierAlerted = false;
+        }
+    }
+
+    /**
+     * @return int Existing quiesce deadline in seconds
+     * @throws EnvException When the configured timeout is invalid
+     */
+    private function slaveSyncTimeoutSeconds(): int
+    {
+        return Hilos::$env[EnvConstants::HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT]->int();
+    }
+
+    /**
+     * @param string $nodeId Slave concerned by the warning
+     * @param PeerProtectedModeSyncDTO $frame Requested phase and operation
+     * @param string $reason Missed barrier or overdue synchronization
+     * @param ?string $operation Operation retained across its unacknowledged lift
+     * @throws EnvException When the timeout configuration is invalid
+     */
+    private function notifySlaveWarning(string $nodeId, PeerProtectedModeSyncDTO $frame, string $reason, ?string $operation = null): void
+    {
+        try {
+            $nodeName = array_find(Hilos::$cluster?->registry()->snapshot() ?? [],
+                static fn(ClusterNode $node): bool => $node->nodeId === $nodeId)?->name;
+        } catch (ClusterConfigurationException|ClusterDisabledException $exception) {
+            // Optional display metadata must not suppress the warning about this stable node id.
+            Logger::warning('Protected mode: the slave warning cannot resolve a node name: ' . $exception->getMessage());
+            $nodeName = null;
+        }
+        new ProtectedModeAlertNotifier()->notifySlaveAlert([
+            ProtectedModeSlaveAlertMailTemplate::PARAM_NODE_ID => $nodeId,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_NODE_NAME => $nodeName,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_OPERATION => $operation ?? $frame->payload?->operation ?? 'No protected operation',
+            ProtectedModeSlaveAlertMailTemplate::PARAM_PHASE => $frame->phase,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_REASON => $reason,
+            ProtectedModeSlaveAlertMailTemplate::PARAM_TIMEOUT_SECONDS => $this->slaveSyncTimeoutSeconds(),
+        ]);
     }
 
     /**
@@ -1409,6 +1916,10 @@ final class ClusterProtectedMode implements
      * lift from the same leader clears it ({@see onLift()}), and a leader does not send itself one -
      * and the next freeze that ordered this node to quiesce would be refused as "already frozen",
      * leaving it serving clients through somebody else's restore.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws ProtectedModeException When the legacy identity cannot be persisted
      */
     private function adoptStandingFreeze(): void
     {
@@ -1419,7 +1930,7 @@ final class ClusterProtectedMode implements
 
         $operation = $view->operation;
         $initiatorAgentType = $view->initiatorAgentType;
-        if ($operation === null || $initiatorAgentType === null) {
+        if ($operation === null || trim($operation) === '' || $initiatorAgentType === null || trim($initiatorAgentType) === '') {
             Logger::error(
                 "Protected mode: node '{$this->selfNodeId}' became leader under a freeze on phase "
                 . "'{$view->phase}' that names no operation or initiator, and cannot lead it"
@@ -1427,12 +1938,14 @@ final class ClusterProtectedMode implements
             return;
         }
 
+        $this->executor->bootstrapFreezeId($view->freezeId ?? RandomHelper::hex(self::FREEZE_ID_BYTES));
         $this->activeFreeze = new ProtectedModeQuiesceData(
             $operation,
             $initiatorAgentType,
             $view->initiatorAgentIndex,
             $view->initiatorNodeId,
             $view->initiatorSessionTokenHash,
+            $view->freezeId,
         );
         // A row past activating means the round closed under the previous leader: the freeze is
         // established and the initiator has been told so. Re-collecting there would hand out a
@@ -1443,7 +1956,8 @@ final class ClusterProtectedMode implements
         $this->readyOwed = !$this->active;
         $this->pendingNodes = $this->active
             ? []
-            : array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+            : array_fill_keys([...$this->mesh->followerNodeIds(), $this->selfNodeId], true);
+        // No local completion is inferred or stop restarted for an unfinished adopted round.
         // Adoption preserves its existing selection: an established freeze starts no new round.
         $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->directCircleReceived = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;

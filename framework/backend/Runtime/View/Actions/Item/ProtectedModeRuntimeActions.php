@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
@@ -71,6 +72,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->phase = $row->phase;
         $this->state->entryMode = $row->entryMode;
         $this->state->operation = $row->operation;
+        $this->state->freezeId = $row->freezeId;
         $this->state->initiatorAcceptKey = null;
         $this->state->initiatorSessionTokenHash = $row->isManualMaintenanceWindow()
             ? null
@@ -98,6 +100,62 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->watchdogAlertIntervalSeconds = null;
         $this->state->watchdogAlertEmails = null;
         $this->state->watchdogManualRestartIsNormal = null;
+        $this->sync();
+    }
+
+    /**
+     * Assigns only a legacy generation; phase, rights, clocks and roster diagnostics stay intact.
+     *
+     * @param string $freezeId Locally generated nonempty correlation
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function bootstrapFreezeId(string $freezeId): void
+    {
+        $this->ensureCanWrite();
+        if ($this->state->phase === StateProtectedModeRuntime::PHASE_INACTIVE || $this->state->freezeId !== null) {
+            return;
+        }
+        $this->state->freezeId = $freezeId;
+        $this->sync();
+    }
+
+    /**
+     * Imports the leader's descriptor and existing rights at the phase local effects have earned.
+     * The caller keeps a full freeze closed until stop/catch-up has finished.
+     *
+     * @param PeerProtectedModeSyncDTO $snapshot Validated occupied snapshot
+     * @param string $phase Locally safe phase
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function importSlaveSync(PeerProtectedModeSyncDTO $snapshot, string $phase): void
+    {
+        $this->ensureCanWrite();
+        $freeze = $snapshot->payload;
+        if ($freeze === null) {
+            return;
+        }
+        $changedGeneration = $this->state->freezeId !== $freeze->freezeId;
+        $this->state->phase = $phase;
+        $this->state->entryMode = $snapshot->entryMode;
+        $this->state->operation = $freeze->operation;
+        $this->state->freezeId = $freeze->freezeId;
+        $this->state->initiatorAcceptKey = null;
+        $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
+        $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
+        $this->state->initiatorAgentType = $freeze->initiatorAgentType;
+        $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
+        $this->state->initiatorNodeId = $freeze->initiatorNodeId;
+        if ($changedGeneration) {
+            $this->state->startedAt = time();
+            $this->state->activatedAt = null;
+            $this->state->progressAt = null;
+        }
+        $this->state->passHashes = $snapshot->passHashes;
+        $this->state->admittedSessionTokenHashes = $snapshot->admittedSessionTokenHashes;
+        $this->state->circleNamedCount = $snapshot->circleNamedCount;
+        $this->state->circleSessionTokenHashes = $snapshot->circleSessionTokenHashes;
         $this->sync();
     }
 
@@ -215,6 +273,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->phase = StateProtectedModeRuntime::PHASE_ACTIVATING;
         $this->state->entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE;
         $this->state->operation = $freeze->operation;
+        $this->state->freezeId = $freeze->freezeId;
         $this->state->initiatorAcceptKey = $initiatorAcceptKey;
         $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
         $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
@@ -251,6 +310,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
         $this->state->entryMode = StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
         $this->state->operation = $freeze->operation;
+        $this->state->freezeId = $freeze->freezeId;
         $this->state->initiatorAcceptKey = $initiatorAcceptKey;
         $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
         $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
@@ -452,6 +512,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->phase = StateProtectedModeRuntime::PHASE_INACTIVE;
         $this->state->entryMode = null;
         $this->state->operation = null;
+        $this->state->freezeId = null;
         $this->state->initiatorAcceptKey = null;
         $this->state->initiatorSessionTokenHash = null;
         $this->state->enteredFromBrowser = false;

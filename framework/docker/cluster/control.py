@@ -301,6 +301,10 @@ def ensure_open_for_tests(stand, timeout):
                        else "test:protected-mode:open")
         elif owner == "hilos_backup" and operation == "restore":
             command = "protected-mode:open"
+        elif owner == "hilos_backup" and operation == "cluster-settle":
+            # Scenario 25 uses the backup test driver without starting a restore. Keep its
+            # saved freeze on that test-only ladder, separate from the production opener.
+            command = "test:backup:freeze-open"
         else:
             refuse(node_id, f"unknown protected-mode owner/operation: {owner!r}")
         return initiator, command
@@ -366,6 +370,21 @@ def entry_upgrade(stand, master=None):
     node = next((node_id for node_id in stand.masters
                  if upstream and upstream.startswith(stand.member(node_id).ip + ":")), "-")
     return Outcome(0, f"{status} {node}\n", "")
+
+
+def entry_json(stand, path):
+    """Read public JSON over the shared TLS entry from the stand's CLI container."""
+    if stand.entry is None:
+        raise StandRefused(f"{stand.project} has no browser entry (x-hilos-cluster.entry)")
+    answer = _run(["docker", "exec", stand.cli_container, "curl", "--http1.1", "-k", "-f", "-sS",
+                   "--max-time", "5", f"https://{stand.entry.ip}{path}"])
+    if answer.code != 0:
+        return Outcome(answer.code, "", answer.err or f"entry JSON request failed: {path}")
+    try:
+        json.loads(answer.out)
+    except json.JSONDecodeError:
+        return Outcome(1, "", f"entry gave malformed JSON at {path}: {answer.out!r}")
+    return answer
 
 
 # Read the 101 and its first, unmasked WebSocket text frame inside the stand's CLI container.

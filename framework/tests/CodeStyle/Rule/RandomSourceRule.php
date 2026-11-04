@@ -72,6 +72,7 @@ final class RandomSourceRule implements CodeStyleRule
         'Database/DatabaseMarker.php',
         'Fs/ClusterDirectoryMarker.php',
         'Fs/FsTmpDirectory.php',
+        'ProtectedMode/ClusterProtectedMode.php',
         'Agents/BotAgent.php',
         'Database/Actions/Collection/GuestsActions.php',
         'Database/Actions/Collection/UsersActions.php',

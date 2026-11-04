@@ -25,6 +25,7 @@ use Hilos\HilosException;
  * @property-read string $phase Current lifecycle phase of the protected mode
  * @property-read ?string $entryMode How the mode was entered; null when inactive
  * @property-read ?string $operation Operation the initiator is running; null when inactive
+ * @property-read ?string $freezeId Cluster barrier generation; null for inactive, standalone or legacy freezes
  * @property-read ?string $initiatorAcceptKey Accept key admitted in the verification window; null when none
  * @property-read ?string $initiatorSessionTokenHash Hash of the initiator browser's session token; null when none
  * @property-read ?string $initiatorAgentType Agent type of the initiator agent; null when inactive
@@ -75,6 +76,7 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::phase => $this->_state->phase,
             StateProtectedModeRuntime::entryMode => $this->_state->entryMode,
             StateProtectedModeRuntime::operation => $this->_state->operation,
+            StateProtectedModeRuntime::freezeId => $this->_state->freezeId,
             StateProtectedModeRuntime::initiatorAcceptKey => $this->_state->initiatorAcceptKey,
             StateProtectedModeRuntime::initiatorSessionTokenHash => $this->_state->initiatorSessionTokenHash,
             StateProtectedModeRuntime::initiatorAgentType => $this->_state->initiatorAgentType,

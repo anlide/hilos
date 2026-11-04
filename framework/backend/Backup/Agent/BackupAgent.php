@@ -71,6 +71,7 @@ use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
+use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
@@ -162,6 +163,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
 {
     use DirectoryWatchTrait;
     use ProtectedModeOperatorTrait;
+    use ProtectedModeTestDriverTrait {
+        onProtectedModeReady as private onProtectedModeTestReady;
+        onProtectedModeRefused as private onProtectedModeTestRefused;
+    }
 
     /**
      * The three runtime records the backup section is read from: the index of what is on disk,
@@ -234,6 +239,9 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         CliCommands::PROTECTED_MODE_PASS,
         CliCommands::PROTECTED_MODE_OPEN,
         CliCommands::PROTECTED_MODE_CLOSE,
+        CliCommands::BACKUP_TEST_FREEZE_ENTER,
+        CliCommands::BACKUP_TEST_FREEZE_LEAVE,
+        CliCommands::BACKUP_TEST_FREEZE_OPEN,
     ];
 
     /** Protected-mode operation name a restore freeze is requested under. */
@@ -644,6 +652,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
 
         $this->tickProtectedModeOperator();
+        $this->tickProtectedModeTestDriver();
         $this->releaseProtectedModeIfDue();
         if ($this->directoryRescanDue()) {
             $this->refreshHistory();
@@ -656,6 +665,20 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     protected function cronRules(): array
     {
         return array_map(static fn (BackupCronJob $job): CronRule => $job->rule, $this->agentSchedule);
+    }
+
+    /**
+     * @param string $command Default driver command name
+     * @return string Backup-owned freeze command name
+     */
+    protected function protectedModeTestCommandName(string $command): string
+    {
+        return match ($command) {
+            CliCommands::PROTECTED_MODE_TEST_ENTER => CliCommands::BACKUP_TEST_FREEZE_ENTER,
+            CliCommands::PROTECTED_MODE_TEST_LEAVE => CliCommands::BACKUP_TEST_FREEZE_LEAVE,
+            CliCommands::PROTECTED_MODE_TEST_OPEN => CliCommands::BACKUP_TEST_FREEZE_OPEN,
+            default => $command,
+        };
     }
 
     /**
@@ -789,6 +812,21 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if ($this->isProtectedModeTestCommand($data->command)) {
+            if (
+                $data->command === CliCommands::BACKUP_TEST_FREEZE_ENTER
+                && ($this->childProcess !== null || $this->restoreEngaged())
+            ) {
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Backup subsystem busy'));
+
+                return;
+            }
+
+            $this->handleProtectedModeTestCommand($data);
+
+            return;
+        }
+
         if ($this->isProtectedModeOperatorCommand($data->command)) {
             $this->handleProtectedModeOperatorCommand($data);
 
@@ -1953,9 +1991,9 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * Spawns the restore child once the cluster freeze is ready (HIL-274).
      *
      * Reached over the daemon->worker ready relay after {@see handleRestoreRequest()} asked
-     * for the freeze. A ready signal with no restore pending is ignored (this agent only
-     * requests protected mode for restores today), as is a duplicate ready while the child
-     * already runs. Spawn failure finishes the run as failed, which also lifts the freeze -
+     * for the freeze. With no restore pending, ready is offered to the test driver. A duplicate
+     * ready while the child already runs is ignored. Spawn failure finishes the run as failed,
+     * which also lifts the freeze -
      * the node must never stay frozen for a child that never lived.
      *
      * This is also where the live sessions are photographed (HIL-479): the node is frozen, so
@@ -1970,6 +2008,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      */
     public function onProtectedModeReady(): void
     {
+        if ($this->pendingRestoreId === null) {
+            $this->onProtectedModeTestReady();
+
+            return;
+        }
+
         $id = $this->pendingRestoreId;
         $scope = $this->pendingRestoreScope;
         $decision = $this->pendingRestoreDecision;
@@ -2040,7 +2084,14 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     public function onProtectedModeRefused(string $reason): void
     {
         if ($this->pendingRestoreId === null) {
-            $this->logAgentWarning("Protected mode refused ('{$reason}') but no restore is pending");
+            if ($this->protectedModeTestCorrelationId === null) {
+                $this->logAgentWarning("Protected mode refused ('{$reason}') but no restore is pending");
+
+                return;
+            }
+
+            $this->onProtectedModeTestRefused($reason);
+
             return;
         }
 

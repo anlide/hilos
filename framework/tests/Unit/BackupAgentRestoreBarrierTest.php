@@ -12,17 +12,28 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Process;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\DTO\DbReHydrateOutcome;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RestoreRuntime;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -55,10 +66,18 @@ final class BackupAgentRestoreBarrierTest extends TestCase
     /** @var string Backup id restored in these cases */
     private const string BACKUP_ID = '2026-08-13_10-30-00';
 
+    private ?EnvAccessor $previousEnv = null;
+
+    private ?ClusterContext $previousCluster = null;
+
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->previousEnv = Hilos::$env;
+        $this->previousCluster = Hilos::$cluster;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new BackupAgentRestoreBarrierTestRtContext();
         Hilos::$rt->mountFeatureItem(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::create());
@@ -75,8 +94,101 @@ final class BackupAgentRestoreBarrierTest extends TestCase
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
         Hilos::$rt = null;
         Hilos::$sr = null;
+        Hilos::$env = $this->previousEnv;
+        Hilos::$cluster = $this->previousCluster;
 
         parent::tearDown();
+    }
+
+    public function testTheBackupDriverCompletesWithoutEngagingRestoreAndAnswersRelaysOnce(): void
+    {
+        $agent = new BackupAgent();
+        $before = $this->restoreInternals($agent);
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent->onSignalCommand(new CommandRequestDTO('enter', CliCommands::BACKUP_TEST_FREEZE_ENTER, [
+            ProtectedModeCommandConstants::FIELD_OPERATION => 'test-freeze',
+        ]), '', '');
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_ENABLE], $this->queuedSignalTypes());
+
+        $agent->onProtectedModeReady();
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $this->driveReply()->payload[ProtectedModeCommandConstants::FIELD_PHASE]);
+        $agent->onProtectedModeReady();
+        $agent->onProtectedModeRefused('late refusal');
+        $this->assertSame([], $this->queuedSignalTypes());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE);
+        $agent->onSignalCommand(new CommandRequestDTO('leave', CliCommands::BACKUP_TEST_FREEZE_LEAVE, []), '', '');
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_VERIFY], $this->queuedSignalTypes());
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent->onTick();
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            $this->driveReply()->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+
+        $agent->onSignalCommand(new CommandRequestDTO('open', CliCommands::BACKUP_TEST_FREEZE_OPEN, []), '', '');
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_DISABLE], $this->queuedSignalTypes());
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent->onTick();
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_INACTIVE,
+            $this->driveReply()->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+
+        $agent->onSignalCommand(new CommandRequestDTO('refused', CliCommands::BACKUP_TEST_FREEZE_ENTER, [
+            ProtectedModeCommandConstants::FIELD_OPERATION => 'test-freeze',
+        ]), '', '');
+        $this->assertSame([SignalTypeConstants::PROTECTED_MODE_ENABLE], $this->queuedSignalTypes());
+        $agent->onProtectedModeRefused('barrier refused');
+        $this->assertSame('barrier refused', $this->driveReply(CommandConstants::STATUS_ERROR)->payload[CommandConstants::FIELD_MESSAGE]);
+        $agent->onProtectedModeRefused('duplicate refusal');
+        $agent->onProtectedModeReady();
+        $agent->onTick();
+
+        $this->assertSame([], $this->queuedSignalTypes());
+        $this->assertSame($before, $this->restoreInternals($agent));
+        $this->assertFalse($this->restoreRow()->running);
+    }
+
+    public function testBusyBackupAndRestoreRefuseTheDriverAndRealReadyStillReachesRestore(): void
+    {
+        $agent = new BackupAgent();
+        $setChild = Closure::bind(
+            static function (BackupAgent $agent, Process $child): void {
+                $agent->childProcess = $child;
+                $agent->runKind = BackupRunKind::CREATE;
+            },
+            null,
+            BackupAgent::class,
+        );
+        $setChild($agent, $this->createMock(Process::class));
+        $restore = $this->admittedRestore();
+        $this->queuedSignalTypes();
+        foreach ([$agent, $restore] as $busyAgent) {
+            $before = $this->restoreInternals($busyAgent);
+            $busyAgent->onSignalCommand(new CommandRequestDTO('busy', CliCommands::BACKUP_TEST_FREEZE_ENTER, [
+                ProtectedModeCommandConstants::FIELD_OPERATION => 'test-freeze',
+            ]), '', '');
+            $this->assertSame(
+                'Backup subsystem busy',
+                $this->driveReply(CommandConstants::STATUS_ERROR)->payload[CommandConstants::FIELD_MESSAGE],
+            );
+            $this->assertSame($before, $this->restoreInternals($busyAgent));
+        }
+
+        // Stop the real-ready path before it can construct a Process. Reaching this read and
+        // entering rehydration distinguish restore dispatch from a swallowed test-driver ready.
+        $environment = $this->createMock(EnvAccessor::class);
+        $environment->expects($this->once())->method('offsetGet')->with(EnvConstants::BACKUP_CLI_ENTRY)
+            ->willThrowException(new EnvException('unit refusal before child construction'));
+        Hilos::$env = $environment;
+        $restore->onProtectedModeReady();
+
+        $this->assertSame(RestorePhase::REHYDRATING->value, $this->restoreRow()->phase);
+        $this->assertFalse($this->restoreRow()->databaseTouched);
+        $this->assertContains(SignalTypeConstants::DB_REHYDRATE, $this->queuedSignalTypes());
+        $restore->onProtectedModeReady();
+        $this->assertSame([], $this->queuedSignalTypes());
     }
 
     public function testASucceededChildAnnouncesTheSwapInsteadOfFinishingTheRun(): void
@@ -439,6 +551,65 @@ final class BackupAgentRestoreBarrierTest extends TestCase
         }
 
         return $types;
+    }
+
+    /**
+     * @param string $phase Freeze phase to expose to the driver
+     */
+    private function freeze(string $phase): void
+    {
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
+            StateProtectedModeRuntime::phase => $phase,
+            StateProtectedModeRuntime::operation => 'test-freeze',
+            StateProtectedModeRuntime::initiatorAgentType => BackupAgent::AGENT_TYPE,
+            StateProtectedModeRuntime::initiatorAgentIndex => null,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
+        ]));
+    }
+
+    /**
+     * @param string $status Expected command verdict
+     * @return CommandReplyDTO The only queued signal, a reply rather than restore work
+     */
+    private function driveReply(string $status = CommandConstants::STATUS_OK): CommandReplyDTO
+    {
+        $reply = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertSame($status, $reply->status);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        return $reply;
+    }
+
+    /**
+     * @param BackupAgent $agent Agent whose restore and child slots must stay unchanged
+     * @return list<mixed> Restore admission, session carry and child state
+     */
+    private function restoreInternals(BackupAgent $agent): array
+    {
+        return Closure::bind(
+            static fn (BackupAgent $agent): array => [
+                $agent->pendingRestoreId,
+                $agent->pendingRestoreScope,
+                $agent->pendingRestoreDecision,
+                $agent->pendingRestoreMigrationIndex,
+                $agent->pendingRestoreInitiator,
+                $agent->pendingRestoreInitiatorSessionTokenHash,
+                $agent->pendingRestoreInitiatorIdentities,
+                $agent->pendingRestoreTimeout,
+                $agent->pendingRestoreSince,
+                $agent->pendingCarryover,
+                $agent->childProcess,
+                $agent->currentBackupId,
+                $agent->runKind,
+            ],
+            null,
+            BackupAgent::class,
+        )($agent);
     }
 
     /**

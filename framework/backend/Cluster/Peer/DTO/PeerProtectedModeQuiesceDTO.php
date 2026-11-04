@@ -33,10 +33,14 @@ final class PeerProtectedModeQuiesceDTO extends PeerDTO
 
     /**
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function __construct(
         public readonly ProtectedModeQuiesceData $data,
     ) {
+        if ($data->freezeId === null || trim($data->freezeId) === '') {
+            throw new PeerTransportException('Peer protected-mode quiesce descriptor requires a nonempty freezeId');
+        }
     }
 
     /**

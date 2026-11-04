@@ -87,6 +87,9 @@ final class MailTemplateCatalogConstants
     /** Template key: the freeze an alert was raised about has been lifted (HIL-482). */
     public const string PROTECTED_MODE_CLEARED = 'protected-mode.cleared';
 
+    /** Template key: a slave missed the barrier or has not acknowledged a synchronization request. */
+    public const string PROTECTED_MODE_SLAVE_ALERT = 'protected-mode.slave-alert';
+
     /**
      * Template key: the account email moved from one address to another (HIL-299).
      *

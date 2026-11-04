@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\ProtectedMode\Exception\ProtectedModeException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+
 /**
  * The leadership hooks of protected mode: a node taking up or dropping the leader-side role.
  *
@@ -17,6 +23,12 @@ interface ProtectedModeLeadership
 {
     /**
      * Marks this node the leader; it now owns the freeze orchestration.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EnvException When leadership configuration is invalid
+     * @throws PeerTransportException When the local snapshot is invalid
+     * @throws ProtectedModeException When the legacy identity cannot be persisted
      */
     public function onBecameLeader(): void;
 

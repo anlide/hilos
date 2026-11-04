@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -36,6 +37,7 @@ interface ProtectedModeSwitch
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void;
 
@@ -140,6 +142,7 @@ interface ProtectedModeSwitch
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void;
 
@@ -158,6 +161,7 @@ interface ProtectedModeSwitch
      * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws PeerTransportException When the slave acknowledgement is invalid
      */
     public function onRosterStopped(): void;
 
@@ -170,6 +174,11 @@ interface ProtectedModeSwitch
      * {@see ProtectedModeExecutor::finishLift()} for the second. "Back" means every remembered agent
      * has been asked for, not that every worker has reported it: the lift never waited for those
      * reports, and waiting for them here would be a second wait of the kind this step removes.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EnvException When leadership configuration is invalid
+     * @throws PeerTransportException When the slave acknowledgement is invalid
      */
     public function onRosterResumed(): void;
 }

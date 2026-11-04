@@ -305,6 +305,18 @@ class CliManager
         $this->commands[CliCommands::PROTECTED_MODE_TEST_ENTER] = new ProtectedModeTestEnterCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_LEAVE] = new ProtectedModeTestLeaveCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_OPEN] = new ProtectedModeTestOpenCommand();
+        $this->commands[CliCommands::BACKUP_TEST_FREEZE_ENTER] = new ProtectedModeTestEnterCommand(
+            CliCommands::BACKUP_TEST_FREEZE_ENTER,
+            CliCommands::BACKUP_TEST_FREEZE_LEAVE,
+        );
+        $this->commands[CliCommands::BACKUP_TEST_FREEZE_LEAVE] = new ProtectedModeTestLeaveCommand(
+            CliCommands::BACKUP_TEST_FREEZE_LEAVE,
+            CliCommands::BACKUP_TEST_FREEZE_OPEN,
+        );
+        $this->commands[CliCommands::BACKUP_TEST_FREEZE_OPEN] = new ProtectedModeTestOpenCommand(
+            CliCommands::BACKUP_TEST_FREEZE_OPEN,
+            CliCommands::BACKUP_TEST_FREEZE_LEAVE,
+        );
         $this->commands[CliCommands::PROTECTED_MODE_TEST_PASS] = new ProtectedModeTestPassCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_CLOSE] = new ProtectedModeTestCloseCommand();
         $this->commands[CliCommands::PROTECTED_MODE_INSPECT] = new ProtectedModeInspectCommand();

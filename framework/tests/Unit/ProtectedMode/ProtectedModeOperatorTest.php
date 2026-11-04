@@ -21,6 +21,11 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlDoneSignalData;
 use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
+use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\ProtectedModeMesh;
+use Hilos\ProtectedMode\ProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -270,6 +275,67 @@ final class ProtectedModeOperatorTest extends TestCase
             StateProtectedModeRuntime::PHASE_INACTIVE,
             $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
         );
+    }
+
+    public function testProductionCloseUsesANewClusterBarrierAndWaitsForLocalAndRemoteStops(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, ['old-pass']);
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->bootstrapFreezeId('previous-generation');
+        $mesh = $this->createMock(ProtectedModeMesh::class);
+        $mesh->method('followerNodeIds')->willReturn(['remote']);
+        $mesh->method('slaveNodeIds')->willReturn([]);
+        $mesh->expects($this->once())->method('broadcastQuiesce')->with($this->callback(
+            static fn(ProtectedModeQuiesceData $data): bool => $data->freezeId !== null && $data->freezeId !== 'previous-generation',
+        ));
+        $mesh->expects($this->never())->method('broadcastLift');
+        $executor = $this->createMock(ProtectedModeExecutor::class);
+        $executor->expects($this->once())->method('enterActivating')->willReturnCallback(
+            static function (ProtectedModeQuiesceData $data, ?string $acceptKey): void {
+                Hilos::$rt->hilosProtectedModeRuntime->actions->enterActivating($data, $acceptKey);
+            },
+        );
+        $executor->expects($this->once())->method('enterActive')->willReturnCallback(
+            static function (): void { Hilos::$rt->hilosProtectedModeRuntime->actions->enterActive(); },
+        );
+        $executor->expects($this->never())->method('enterInactive');
+        $executor->expects($this->never())->method('notifyInitiatorReady');
+        $coordinator = new ClusterProtectedMode('local', $mesh, $executor);
+        $coordinator->onBecameLeader();
+        $this->replies();
+        $agent = new OperatorTestAgent();
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_CLOSE));
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertInstanceOf(ProtectedModeRefreezeSignalData::class, $signal->data);
+        $coordinator->requestRefreeze($signal->data);
+        $this->assertNotSame('previous-generation', Hilos::$rt->hilosProtectedModeRuntime->freezeId);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+        $this->assertSame([], Hilos::$rt->hilosProtectedModeRuntime->passHashes);
+        $coordinator->onQuiesced('remote');
+        $agent->onTick();
+        $this->assertSame([], $this->replies());
+        $coordinator->onRosterStopped();
+        $agent->onTick();
+        $this->assertSame(CommandConstants::STATUS_OK, $this->singleReply()->status);
+    }
+
+    public function testDirectWindowRefusesTheTestCloseWhileItsRecordedOperatorCanExplicitlyOpen(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerificationWindow(
+            new ProtectedModeQuiesceData('restore', self::INITIATOR_TYPE, null, 'local', null, 'direct-generation'), null,
+        );
+        $agent = new OperatorTestAgent();
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_CLOSE));
+        $this->assertRefused($this->singleReply(), 'a direct verification window cannot be refrozen');
+        $this->assertSame('direct-generation', Hilos::$rt->hilosProtectedModeRuntime->freezeId);
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_OPEN));
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextExitRequest());
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterInactive();
+        $agent->onTick();
+        $this->assertSame(CommandConstants::STATUS_OK, $this->singleReply()->status);
     }
 
     public function testCloseReturnsToTheFullFreezeAndAnswersOnActive(): void

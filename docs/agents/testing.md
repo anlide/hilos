@@ -758,8 +758,10 @@ it is separate from the ordinary lifecycle that preserves them.
 Before fleet/browser readiness, test startup inspects every master's protected
 mode and opens a recognized saved operation through its recorded initiator:
 `maintenance:disable` for `manual_maintenance` owned by `hilos_index`,
-`test:protected-mode:open` for that owner's test freeze, and
-`protected-mode:open` for `restore` owned by `hilos_backup`. It waits for all
+`test:protected-mode:open` for that owner's test freeze,
+`protected-mode:open` for `restore` owned by `hilos_backup`, and
+`test:backup:freeze-open` for `cluster-settle` owned by `hilos_backup` (the
+scenario 25 test driver). It waits for all
 masters to become inactive within one bounded deadline. An unknown identity,
 malformed store/reply, refused command or timeout fails startup. No freeze file
 is deleted to make the test pass. For ordinary operation, use

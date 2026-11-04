@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Closure;
 use Generator;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
@@ -410,6 +411,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var AgentManagerDaemon Agent manager daemon instance */
     protected AgentManagerDaemon $agentManagerDaemon;
+
+    /** @var ?Closure(ReHydrateVerdict): void Continuation owned only by the current local catch-up round */
+    private ?Closure $reHydrateContinuation = null;
 
     /** @var ?float Shutdown start time (null if not shutting down) */
     private ?float $shutdownStartTime = null;
@@ -3466,7 +3470,11 @@ abstract class DaemonManager extends BaseManager implements
                 // later phase of the loop, so nothing can slip in between the two calls below.
                 $reHydrateRound = 0;
                 if ($signal->signalType->getType() === SignalTypeConstants::DB_REHYDRATE) {
-                    $reHydrateRound = $this->openReHydrateRound($workerServer, $peerServer, $signal);
+                    $reHydrateRound = $this->openReHydrateRound(
+                        $workerServer,
+                        $peerServer,
+                        self::syncSignalData($signal->data, DbReHydrateSignalData::class),
+                    );
                 }
                 // The router's local publication does not confirm its subject is reachable;
                 // that row stays stale until the peer handshake (HIL-876).
@@ -4400,6 +4408,23 @@ abstract class DaemonManager extends BaseManager implements
                 . " {$e->getMessage()}",
             );
         }
+    }
+
+    /**
+     * Uses the existing re-hydrate path, with its verdict kept local to the slave sync.
+     *
+     * @param Closure(ReHydrateVerdict): void $onComplete Completion, failure, expiry or supersession
+     */
+    public function catchUpProtectedModeDatabase(Closure $onComplete): void
+    {
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            $onComplete(new ReHydrateVerdict(null, null, false, ['Protected-mode database catch-up has no worker server']));
+            return;
+        }
+        $round = $this->openReHydrateRound($workerServer, null, new DbReHydrateSignalData(null), $onComplete);
+        $this->writeFrameToWorkers($workerServer, new WorkerDbReHydrateMessageDTO(null, $round));
+        $this->applyReHydrateContained();
     }
 
     /**
@@ -5979,7 +6004,7 @@ abstract class DaemonManager extends BaseManager implements
                 true,
                 null,
             );
-        } catch (DatabaseException | LogicException $e) {
+        } catch (HilosException | LogicException $e) {
             Logger::error('DB re-hydrate apply could not re-read the database', ['error' => $e->getMessage()]);
             $this->agentManagerDaemon->ackReHydrateParticipant(
                 $round,
@@ -5998,8 +6023,8 @@ abstract class DaemonManager extends BaseManager implements
      * yet is left out on purpose: it has no index to answer under, and by the time it finishes
      * registering it is opening the database that is already in place.
      *
-     * In a cluster the roster also carries the other masters, and the announcement is passed on to
-     * them: the nodes share one database, so a restore run here leaves them answering out of caches
+     * In a cluster the roster also carries the linked masters and slaves, which receive the same
+     * announcement: the nodes share one database, so a restore here leaves them answering out of caches
      * of a database that no longer exists. Only the node where the swap was announced passes it on -
      * an announcement that arrived over the mesh is answered, never re-broadcast, or the mesh would
      * echo it back and forth forever.
@@ -6015,13 +6040,16 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param WorkerServer $workerServer Worker server holding this node's worker links
      * @param ?PeerServer $peerServer Peer server holding this node's mesh links, or null outside a cluster
-     * @param SignalDTO $signal Re-hydrate announcement naming whoever awaits the verdict
+     * @param DbReHydrateSignalData $announcement Re-hydrate announcement naming whoever awaits the verdict
+     * @param ?Closure(ReHydrateVerdict): void $onComplete Local catch-up continuation instead of an agent or peer address
      * @return int Number the round just opened answers under
      */
-    private function openReHydrateRound(WorkerServer $workerServer, ?PeerServer $peerServer, SignalDTO $signal): int
-    {
-        $announcement = self::syncSignalData($signal->data, DbReHydrateSignalData::class);
-
+    private function openReHydrateRound(
+        WorkerServer $workerServer,
+        ?PeerServer $peerServer,
+        DbReHydrateSignalData $announcement,
+        ?Closure $onComplete = null,
+    ): int {
         $participants = [ReHydrateRound::daemonParticipant()];
         foreach ($workerServer->getClients() as $client) {
             if ($client instanceof WorkerClient && $client->isRegistered()) {
@@ -6031,7 +6059,7 @@ abstract class DaemonManager extends BaseManager implements
 
         $announcedHere = $announcement->replyToNodeId === null;
         if ($announcedHere && $peerServer !== null) {
-            foreach ($peerServer->followerMasterNodeIds() as $nodeId) {
+            foreach ($peerServer->followerNodeIds() as $nodeId) {
                 $participants[] = ReHydrateRound::nodeParticipant($nodeId);
             }
         }
@@ -6041,6 +6069,8 @@ abstract class DaemonManager extends BaseManager implements
         // is read before it goes, because that is the only place it is still legible.
         $abandonedRound = $this->agentManagerDaemon->currentReHydrateRound();
         $superseded = $this->agentManagerDaemon->supersedeReHydrateRound();
+        $supersededContinuation = $this->reHydrateContinuation;
+        $this->reHydrateContinuation = $onComplete;
 
         $round = $this->agentManagerDaemon->openReHydrateRound(
             $announcement->agentId,
@@ -6062,7 +6092,7 @@ abstract class DaemonManager extends BaseManager implements
                     'refused' => $superseded->agentId ?? $superseded->replyToNodeId,
                 ],
             );
-            $this->deliverReHydrateVerdict($superseded);
+            $this->deliverReHydrateVerdict($superseded, $supersededContinuation);
         }
 
         if ($announcedHere) {
@@ -6077,15 +6107,19 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Driven from the main loop rather than from a timer of its own: the deadline only has to be
      * noticed within one iteration, and a barrier that outlives the daemon has nobody to report to.
+     *
+     * @param ?float $now Observation time on the microtime scale, or null for this loop's clock
      */
-    private function tickReHydrateRound(): void
+    private function tickReHydrateRound(?float $now = null): void
     {
-        $verdict = $this->agentManagerDaemon->pollReHydrateVerdict(microtime(true));
+        $verdict = $this->agentManagerDaemon->pollReHydrateVerdict($now ?? microtime(true));
         if ($verdict === null) {
             return;
         }
 
-        $this->deliverReHydrateVerdict($verdict);
+        $continuation = $this->reHydrateContinuation;
+        $this->reHydrateContinuation = null;
+        $this->deliverReHydrateVerdict($verdict, $continuation);
     }
 
     /**
@@ -6098,14 +6132,19 @@ abstract class DaemonManager extends BaseManager implements
      * has nothing else left to end its wait.
      *
      * @param ReHydrateVerdict $verdict Settled verdict and the one address waiting for it
+     * @param ?Closure(ReHydrateVerdict): void $onComplete Local catch-up continuation, or null for ordinary delivery
      */
-    private function deliverReHydrateVerdict(ReHydrateVerdict $verdict): void
+    private function deliverReHydrateVerdict(ReHydrateVerdict $verdict, ?Closure $onComplete = null): void
     {
         if (!$verdict->complete) {
             Logger::error(
                 'DB re-hydrate barrier did not close',
                 ['problems' => implode('; ', $verdict->problems)],
             );
+        }
+        if ($onComplete !== null) {
+            $onComplete($verdict);
+            return;
         }
 
         // Both halves of the mesh address or neither: a verdict that names the node but not the

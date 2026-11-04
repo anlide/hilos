@@ -70,13 +70,13 @@ Plus scenarios beyond that matrix:
                                one applies, the rest wait (HIL-1228)
  22 other database refused    a node reading another database marker is admitted by nobody
                                (HIL-1206)
- 23 verifier circle on every   the circle photographed at a freeze is on every master's row
-    master                     through the window and gone once the system opens (HIL-1125)
+ 23 verifier circle on every   the circle photographed at a freeze is on every node's row
+    node                       through the window and gone once the system opens (HIL-1125)
  24 cut-off leader stops its   a leader carrying work and cut off fences it before the majority
     work                       starts any of it again (HIL-1217)
- 25 freeze settles on every    every master reads active once the freeze holds, and the close
-    master                     back from the window answers only once every master has stopped
-                               again what the entry stopped (HIL-1128)
+ 25 freeze settles on every    a slave BackupAgent receives ready once all nodes freeze; the close
+    node                       back from the window stops ordinary workers on both slaves
+                               again before the final lift resumes them (HIL-1128, HIL-1818)
  26 database is one cluster    every member of a clustered database is in one synced primary
                                cluster, reads wait for the cluster's writes, and the application
                                is connected to each (HIL-1230)
@@ -94,7 +94,7 @@ Plus scenarios beyond that matrix:
     slots                      no more than the slots they declare, and the next is refused for
                                want of a slot on every slave (HIL-447)
  38 manual maintenance from    enable and disable on different follower masters, mint on a slave:
-    any node                   every master holds the window without stopping agents (HIL-1367)
+    any node                   every node holds the window; public Status shows Maintenance over HTTP
  39 person agents across nodes a person's row and child set survive idle, a wake on another node
                                and the death of that node, through real commands (HIL-1412)
  40 journal triggers installed  concurrent startup creates the filed triggers once; an ordinary
@@ -4085,8 +4085,8 @@ SETTLE_OPERATION = "cluster-settle"
 def protected_mode(node):
     """One node's protected-mode:inspect reply as a dict, or None when it did not answer.
 
-    Answered by the node's master itself rather than by an agent, so it can be asked of every
-    master: under the freeze every agent but the initiator is stopped.
+    Answered by the daemon itself on masters and slaves while ordinary agents are stopped.
+    The initiator, mail pool and public Status publisher remain running under a full freeze.
     """
     out = client_out(node, "protected-mode:inspect")
     if out is None:
@@ -4102,11 +4102,10 @@ def protected_mode(node):
 
 
 def wait_protected_mode(predicate, desc, nodes=None):
-    """Poll protected-mode:inspect on every master until predicate(reply) holds for each of them.
+    """Poll each selected node's own protected-mode row until predicate(reply) holds on all.
 
-    The masters only, because the freeze frames reach masters only: a slave holds no freeze row
-    and stays inactive through the whole freeze. Raises ScenarioTimeout, so a pure convergence
-    timeout stays retryable, naming the nodes whose reply was still wrong.
+    Existing master-only callers keep that default; all-role scenarios explicitly use ALL_NODES.
+    Raises ScenarioTimeout, naming the nodes whose reply was still wrong.
     """
     nodes = MASTERS if nodes is None else nodes
     deadline = time.time() + CONVERGE_TIMEOUT
@@ -4121,73 +4120,130 @@ def wait_protected_mode(predicate, desc, nodes=None):
                                         "stoppedAgents", "agentStartGateClosed")})
              for n, r in replies.items() if r is None or not predicate(r)}
     raise ScenarioTimeout(f"timed out after {CONVERGE_TIMEOUT:.0f}s waiting for: {desc}\n"
-                          f"masters still not there: {wrong}")
+                          f"nodes still not there: {wrong}")
+
+
+def started_slave_placement(views, agent_type):
+    """Require one acknowledged policy placement of this singleton on a real slave."""
+    rows = [row for row in leader_placements(views)
+            if row.get("agentId", "").split(":", 1)[0] == agent_type]
+    assert len(rows) == 1 and rows[0].get("state") == "started" and rows[0].get("nodeId") in SLAVES, \
+        f"expected one started {agent_type} on a slave: {rows}"
+    row = rows[0]
+    assert any(agent == row["agentId"] for agent, _ in AGENT_STARTED_ON_WORKER.findall(node_log(row["nodeId"]))), \
+        f"no actual worker acknowledged {row}"
+    print(f"    slave placement: {row}", flush=True)
+    return row
+
+
+def wait_worker_agent_reports(expected, marks, event):
+    """Wait for actual worker acknowledgements, rather than the master's queued stop/resume list."""
+    pattern = re.compile(rf"Agent '([^']+)' {event} on worker #(\d+)")
+    deadline = time.time() + CONVERGE_TIMEOUT
+    missing = expected
+    while time.time() < deadline:
+        reports = {node: {agent for agent, _ in pattern.findall(node_log_since(node, marks[node]))}
+                   for node in expected}
+        missing = {node: sorted(agents - reports[node]) for node, agents in expected.items()
+                   if agents - reports[node]}
+        if not missing:
+            print(f"    workers {event}: { {node: sorted(agents) for node, agents in expected.items()} }", flush=True)
+            return
+        time.sleep(POLL_INTERVAL)
+    raise ScenarioTimeout(f"timed out waiting for worker agents {event}: {missing}")
+
+
+def wait_public_status_states(expected=None):
+    """Wait for the public HTTP projection of a state change, without waiting a heartbeat period."""
+    deadline = time.time() + CONVERGE_TIMEOUT
+    states = {}
+    while time.time() < deadline:
+        answer = control.entry_json(STAND, "/status-data/status.json")
+        assert answer.code == 0, f"public Status HTTP failed: {answer.err}"
+        snapshot = json.loads(answer.out)
+        components = snapshot.get("components", [])
+        states = {row["componentKey"]: row["state"] for row in components}
+        assert components and len(states) == len(components), f"invalid public Status components: {snapshot}"
+        if (states == expected if expected is not None
+                else all(state not in ("unknown", "maintenance") for state in states.values())):
+            print(f"    public HTTP /status-data/status.json: {states}", flush=True)
+            return states
+        time.sleep(POLL_INTERVAL)
+    raise ScenarioTimeout(f"timed out waiting for public Status states {expected}: {states}")
 
 
 def scenario_38_manual_maintenance_from_any_node():
-    """Manual maintenance closes every master while its agents keep running (HIL-1367).
+    """Manual maintenance reaches every node and its slave-hosted public Status (HIL-1818).
 
     Three command entrances exercise the live command channel and peer mesh: enable from a
     follower master, mint from a slave, disable from the other follower master. Each step reads
-    every master's own protected-mode row. No browser is driven here.
+    every node's own row. Public component states are read through the real TLS HTTP entry.
     """
     views = wait_converge(ALL_NODES)
     leader = leaders(views)[0]
     followers = [node for node in MASTERS if node != leader]
     enable_node, disable_node = followers[:2]
     pass_node = SLAVES[0]
+    status = started_slave_placement(views, "hilos_status")
+    assert client(status["nodeId"], "test:status:heartbeat:now"), "Status could not publish its baseline"
+    baseline = wait_public_status_states()
 
     try:
         assert client(enable_node, "maintenance:enable"), \
             f"maintenance:enable from follower {enable_node} refused or never answered"
         opened = wait_protected_mode(lambda r: r.get("phase") == "verifying",
-                                     "every master in the manual maintenance window")
+                                     "every node in the manual maintenance window", nodes=ALL_NODES)
         for node, reply in opened.items():
             assert reply.get("stoppedAgents") == [], f"{node} stopped agents under manual maintenance: {reply}"
             assert reply.get("agentStartGateClosed") is False, f"{node} closed its agent-start gate: {reply}"
 
+        assert client(status["nodeId"], "test:status:heartbeat:now"), "Status did not publish under the peer window"
+        wait_public_status_states({key: "maintenance" for key in baseline})
+
         assert client(pass_node, "maintenance:pass"), \
             f"maintenance:pass from slave {pass_node} refused or never answered"
         wait_protected_mode(lambda r: r.get("phase") == "verifying" and r.get("passCount") == 1,
-                            "every master holding one manual maintenance pass")
+                            "every node holding one manual maintenance pass", nodes=ALL_NODES)
 
         current = wait_converge(ALL_NODES)
         assert disable_node not in leaders(current), f"{disable_node} became leader before maintenance:disable"
         assert client(disable_node, "maintenance:disable"), \
             f"maintenance:disable from other follower {disable_node} refused or never answered"
         wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("passCount") == 0,
-                            "every master open again, all manual maintenance passes cleared")
+                            "every node open again, all manual maintenance passes cleared", nodes=ALL_NODES)
+        assert client(status["nodeId"], "test:status:heartbeat:now"), "Status did not publish after the lift"
+        wait_public_status_states(baseline)
     finally:
-        replies = {node: protected_mode(node) for node in MASTERS}
+        replies = {node: protected_mode(node) for node in ALL_NODES}
         if any(reply is None or reply.get("phase") != "inactive" for reply in replies.values()):
             assert client(enable_node, "maintenance:disable"), "could not clean up the manual maintenance window"
             wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("passCount") == 0,
-                                "manual maintenance cleaned up on every master")
+                                "manual maintenance cleaned up on every node", nodes=ALL_NODES)
 
     return (f"enabled from follower {enable_node}, minted from slave {pass_node}, disabled from follower {disable_node}; "
-            f"all {in_words(len(MASTERS))} masters verified without stopped agents or a closed start gate, "
-            "held one pass and cleared it on lift")
+            f"all {in_words(len(ALL_NODES))} nodes verified without stopped agents or a closed start gate, "
+            f"held one pass and cleared it on lift; public Status from {status['nodeId']} showed Maintenance "
+            "and restored its baseline over HTTP")
 
 
 def scenario_23_verifier_circle_on_every_master():
-    """The verifier circle photographed at a freeze lands on every master's row (HIL-1125).
+    """The verifier circle photographed at a freeze lands on every node's row (HIL-1125).
 
     A member of the circle is let into the verification window by the session its tab already
     carries, and a tab connects to whichever node the balancer hands it - so each node decides
     that admission against its own copy of the freeze row, and the photograph has to be on all of
     them. One address is named to the circle, the stand is frozen through the test drive of the
-    index agent, and every master is asked for its circle: one named, nobody online. The window
-    opens and every master still holds it; the system opens and every master has dropped it.
+    index agent, and every node is asked for its circle: one named, nobody online. The window
+    opens and every node still holds it; the system opens and every node has dropped it.
 
     Headless, so what is proved is the photograph on the rows, not a browser walking in: a
     signed-in tab let in through a node that does not host the initiator is checked by
-    demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts. Slaves
-    are not asked: the freeze frames reach masters only.
+    demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts. Slaves carry the
+    same single photograph as masters.
 
     The drive commands go to the leader because that is where the index agent runs and the
     scenario initiator is the leader. A command answered by an agent on another node now
-    returns to its asking node (HIL-1232). A follower or a slave initiating is covered by the
-    unit tests of ClusterProtectedMode.
+    returns to its asking node (HIL-1232). Scenario 25 drives the real BackupAgent initiator on a slave.
 
     Leadership must not move while the freeze holds. The right to the freeze is the agent's, and
     the followers accept a lift from a new leader (HIL-1297), but these assertions describe one
@@ -4208,16 +4264,16 @@ def scenario_23_verifier_circle_on_every_master():
         assert entered is not None, f"the index agent on {leader} refused or never answered the enter"
 
         frozen = wait_protected_mode(lambda r: r.get("circleSize") == 1 and r.get("circleAdmitted") == 0,
-                                     "every master holding a circle of one named, nobody online")
+                                     "every node holding a circle of one named, nobody online", nodes=ALL_NODES)
         initiator = frozen[leader].get("initiatorNodeId")
 
         assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not open the window"
         wait_protected_mode(lambda r: r.get("phase") == "verifying" and r.get("circleSize") == 1,
-                            "every master in the verification window, the circle still held")
+                            "every node in the verification window, the circle still held", nodes=ALL_NODES)
 
         assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not open the system"
         wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("circleSize") == 0,
-                            "every master open again, the circle dropped")
+                            "every node open again, the circle dropped", nodes=ALL_NODES)
     finally:
         now = inspect_all(MASTERS)
         moved = [n for n in leaders(now) if n != leader or now[n].get("term") != term]
@@ -4225,71 +4281,86 @@ def scenario_23_verifier_circle_on_every_master():
             print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
                   f"(term {now[moved[0]].get('term')}) under the freeze; "
                   "these assertions describe one leadership term (P-459)")
-        replies = {n: protected_mode(n) for n in MASTERS}
+        replies = {n: protected_mode(n) for n in ALL_NODES}
         if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
             client(leader, "test:protected-mode:open")
         db_sql(f"DELETE FROM hilos_verifier_circle WHERE identifier = '{CIRCLE_ADDRESS}'")
         wait_converge(ALL_NODES)
 
-    return (f"frozen from {initiator}; the circle was on all {in_words(len(MASTERS))} masters "
+    return (f"frozen from {initiator}; the circle was on all {in_words(len(ALL_NODES))} nodes "
             f"through the window and gone from each once the system opened")
 
 
 def scenario_25_freeze_settles_on_every_master():
-    """Active on a master's freeze row means every agent of the cluster has stopped (HIL-1128).
+    """A slave initiator receives ready after every node stops its ordinary agents (HIL-1818).
 
-    The leader writes active once every node of the quiesce round has reported its roster stopped,
-    and tells every follower so; a follower writes active on that word and on nothing else. The
-    close back from the verification window runs the same round. So once the stand is frozen every
-    master reads active with its agent-start gate shut - before HIL-1128 a follower stood on
-    activating for the whole freeze - and the close answers only once every master has stopped
-    again everything the entry had stopped: before HIL-1128 the close wrote active first and
-    answered while the walks were still under way. Read at the moment the close answers, with no
-    wait, because the answer is what is on trial.
-
-    Headless, and on the masters only: the freeze frames reach masters only, and a slave holds no
-    freeze row. A close asked for on a follower is covered by the unit tests of ClusterProtectedMode.
-
-    The drive commands go to the leader because that is where the index agent runs and the
-    scenario initiator is the leader. A command answered by an agent on another node now
-    returns to its asking node (HIL-1232). A follower or a slave initiating is covered by the
-    unit tests of ClusterProtectedMode.
-
-    Leadership must not move while the freeze holds. The right to the freeze is the agent's, and
-    the followers accept a lift from a new leader (HIL-1297), but these assertions describe one
-    leadership term and explicitly refuse a re-election. Cross-node command replies return
-    to the asking node (HIL-1232). A stand raised a moment ago can re-elect
-    on its own - its links flap once as late seed dials land (P-459) - which is why this runs last
-    in the matrix rather than first. When it happens anyway, the failure says so instead of leaving
-    only a timeout to read.
+    Drive BackupAgent through its test commands, without a restore. The ready reply crosses
+    agent, worker, leader and both slaves. The initiator, mail pool and Status stay running;
+    ordinary agents report real stops on workers, resume for verification, stop again for the
+    production close, then resume on lift. Inspect the close's roster as soon as it answers.
     """
     views = wait_converge(ALL_NODES)
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the ordinary fleet started before the freeze")
+    views = spread_fleet_over(SLAVES, views)
     leader = leaders(views)[0]
     term = views[leader].get("term")
+    backup = started_slave_placement(views, "hilos_backup")
+    started_slave_placement(views, "hilos_status")
+    ordinary = {node: hosted_by(views, node) for node in SLAVES}
+    assert all(ordinary.values()), f"both slaves must host ordinary workers before entry: {ordinary}"
+    marks = {node: node_log_mark(node) for node in ALL_NODES}
+    # Mirrors WorkerServer::PROTECTED_MODE_PRESERVED_AGENT_TYPES, beside the named initiator.
+    preserved_types = {"hilos_backup", "hilos_mail", "hilos_status"}
     try:
-        entered = client_out(leader, "test:protected-mode:enter", SETTLE_OPERATION)
-        assert entered is not None, f"the index agent on {leader} refused or never answered the enter"
-
+        entered = control.client(STAND, leader, "test:backup:freeze-enter", SETTLE_OPERATION)
+        assert entered.code == 0 and "(phase: active)" in entered.out, \
+            f"the slave BackupAgent did not answer from its ready hook: {entered}"
+        print(f"    BackupAgent ready on {backup['nodeId']}, reply to {leader}: {entered.out.strip()}", flush=True)
         frozen = wait_protected_mode(lambda r: r.get("phase") == "active" and r.get("agentStartGateClosed") is True,
-                                     "every master active, its start gate closed")
+                                     "every node active, its start gate closed", nodes=ALL_NODES)
+        stopped = {node: set(reply["stoppedAgents"]) for node, reply in frozen.items()}
+        for node, reply in frozen.items():
+            assert reply.get("initiatorNodeId") == backup["nodeId"] \
+                and reply.get("initiatorAgentType") == "hilos_backup", f"wrong slave initiator on {node}: {reply}"
+            assert not any(agent.split(":", 1)[0] in preserved_types for agent in stopped[node]), \
+                f"{node} stopped a preserved agent: {reply}"
+        for node, agents in ordinary.items():
+            assert agents <= stopped[node], f"{node} did not stop its ordinary fleet: {agents - stopped[node]}"
+        wait_worker_agent_reports(stopped, marks, "stopped")
 
-        assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not open the window"
-        wait_protected_mode(lambda r: r.get("phase") == "verifying", "every master in the verification window")
+        resume_marks = {node: node_log_mark(node) for node in ALL_NODES}
+        left = client_out(leader, "test:backup:freeze-leave")
+        assert left is not None and "(phase: verifying)" in left, f"BackupAgent did not open the window: {left!r}"
+        wait_protected_mode(lambda r: r.get("phase") == "verifying" and r.get("agentStartGateClosed") is False,
+                            "every node in the verification window", nodes=ALL_NODES)
+        wait_worker_agent_reports(stopped, resume_marks, "started")
 
-        closed = client_out(leader, "test:protected-mode:close")
-        assert closed is not None, f"the index agent on {leader} refused or never answered the close"
-        for node in MASTERS:
+        close_marks = {node: node_log_mark(node) for node in ALL_NODES}
+        closed = client_out(leader, "protected-mode:close")
+        assert closed is not None and "(phase: active)" in closed, f"BackupAgent did not close the window: {closed!r}"
+        for node in ALL_NODES:
             reply = protected_mode(node)
             assert reply is not None, f"{node} did not answer protected-mode:inspect once the close answered"
             assert reply.get("agentStartGateClosed") is True and reply.get("phase") in ("activating", "active"), \
                 f"{node} stood on {reply.get('phase')!r} with its start gate open once the close answered"
-            running = set(frozen[node].get("stoppedAgents") or []) - set(reply.get("stoppedAgents") or [])
+            running = stopped[node] - set(reply.get("stoppedAgents") or [])
             assert not running, (f"the close answered while {node} had not stopped {sorted(running)} again, "
                                  f"which the entry had stopped")
-        wait_protected_mode(lambda r: r.get("phase") == "active", "every master active again after the close")
+        refrozen = wait_protected_mode(lambda r: r.get("phase") == "active",
+                                       "every node active again after the close", nodes=ALL_NODES)
+        stopped_again = {node: set(reply["stoppedAgents"]) for node, reply in refrozen.items()}
+        wait_worker_agent_reports(stopped_again, close_marks, "stopped")
 
-        assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not open the system"
-        wait_protected_mode(lambda r: r.get("phase") == "inactive", "every master open again")
+        lift_marks = {node: node_log_mark(node) for node in ALL_NODES}
+        opened = client_out(leader, "test:backup:freeze-open")
+        assert opened is not None and "(phase: inactive)" in opened, f"BackupAgent did not lift the freeze: {opened!r}"
+        wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("stoppedAgents") == []
+                            and r.get("agentStartGateClosed") is False, "every node open again", nodes=ALL_NODES)
+        wait_worker_agent_reports(stopped_again, lift_marks, "started")
+        for node in ALL_NODES:
+            events = re.findall(r"Agent '([^']+)' stopped on worker #\d+", node_log_since(node, marks[node]))
+            assert not any(agent.split(":", 1)[0] in preserved_types for agent in events), \
+                f"{node} stopped a preserved agent during the cycle: {events}"
     finally:
         now = inspect_all(MASTERS)
         moved = [n for n in leaders(now) if n != leader or now[n].get("term") != term]
@@ -4297,13 +4368,14 @@ def scenario_25_freeze_settles_on_every_master():
             print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
                   f"(term {now[moved[0]].get('term')}) under the freeze; "
                   "these assertions describe one leadership term (P-459)")
-        replies = {n: protected_mode(n) for n in MASTERS}
+        replies = {n: protected_mode(n) for n in ALL_NODES}
         if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
-            client(leader, "test:protected-mode:open")
+            assert client(leader, "test:backup:freeze-open"), "BackupAgent could not clean up the freeze"
         wait_converge(ALL_NODES)
 
-    return (f"frozen and closed back from {leader}; all {in_words(len(MASTERS))} masters read active, "
-            f"and the close answered only once each had stopped again what the entry stopped")
+    return (f"BackupAgent on slave {backup['nodeId']} received ready; all {in_words(len(ALL_NODES))} nodes "
+            "froze with closed start gates; actual workers on both slaves stopped, resumed, stopped on "
+            "production close and returned on lift, preserving the initiator, mail and Status")
 
 
 def scenario_33_every_master_takes_browsers():
@@ -5595,16 +5667,16 @@ SCENARIOS = [
     # waits for the leader to start the owner again.
     Scenario("46 browser liveness across masters", scenario_46_browser_liveness_across_masters,
              Need(masters=3, entry=True)),
-    # Last, both of them, because the freeze stops the agents of every master: a lift that fails
+    # Last, both of them, because the freeze stops ordinary agents on every node: a lift that fails
     # here must not leave its neighbours in the matrix running against a frozen stand.
-    Scenario("23 verifier circle on every master", scenario_23_verifier_circle_on_every_master, Need(masters=2)),
-    Scenario("25 freeze settles on every master", scenario_25_freeze_settles_on_every_master, Need(masters=2)),
+    Scenario("23 verifier circle on every node", scenario_23_verifier_circle_on_every_master, Need(masters=2)),
+    Scenario("25 freeze settles on every node", scenario_25_freeze_settles_on_every_master, Need(masters=2, slaves=2)),
     Scenario("33 every master takes browsers", scenario_33_every_master_takes_browsers,
              Need(masters=2, slaves=1, entry=True)),
     Scenario("34 a tab is the same on every master under protected mode", scenario_34_a_tab_is_the_same_on_every_master,
              Need(masters=3, slaves=1, entry=True)),
     Scenario("38 manual maintenance from any node", scenario_38_manual_maintenance_from_any_node,
-             Need(masters=3, slaves=1)),
+             Need(masters=3, slaves=1, entry=True)),
     # Last of all: each replica took the writes of every preceding scenario. This only reads,
     # so a freeze 23 or 25 may leave behind does not touch it.
     Scenario("31 replica keeps up with the primary", scenario_31_replica_keeps_up_with_the_primary,

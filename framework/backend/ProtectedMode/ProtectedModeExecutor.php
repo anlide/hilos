@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Closure;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\Exception\ProtectedModeException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -21,6 +25,34 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  */
 interface ProtectedModeExecutor
 {
+    /**
+     * Persists only the local legacy identity, without replaying a phase transition.
+     *
+     * @param string $freezeId Locally generated generation
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws ProtectedModeException When the legacy identity cannot be persisted
+     */
+    public function bootstrapFreezeId(string $freezeId): void;
+
+    /**
+     * Imports descriptor and rights without starting or replacing a roster walk.
+     *
+     * @param PeerProtectedModeSyncDTO $snapshot Leader snapshot
+     * @param string $phase Phase earned by the current local effects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function importSlaveSync(PeerProtectedModeSyncDTO $snapshot, string $phase): void;
+
+    /**
+     * Waits for the numbered local daemon/worker DB barrier before any resumed agent start.
+     *
+     * @param string $leaderNodeId Leader whose snapshot is being applied
+     * @param Closure(ReHydrateVerdict): void $onComplete Result of every selected local process
+     */
+    public function catchUpSlaveDatabase(string $leaderNodeId, Closure $onComplete): void;
+
     /**
      * Freezes this node: writes phase activating locally and asks for the node's own agents to be
      * stopped, leaving the initiator agent named in the descriptor running. The roster stops over

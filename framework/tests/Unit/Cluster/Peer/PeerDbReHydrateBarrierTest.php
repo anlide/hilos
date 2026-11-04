@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
@@ -115,6 +116,26 @@ final class PeerDbReHydrateBarrierTest extends TestCase
         $this->assertSame([[self::ROUND, 'node-b', true, null]], $barrier->acks);
     }
 
+    public function testAnAggregateAnswerIsAddressedBackToASlaveAnnouncer(): void
+    {
+        $server = $this->makeServer();
+        $slave = $this->handshakedLink($server, 'slave', NodeRole::Slave);
+        $far = $this->sockets[array_key_last($this->sockets)];
+        $slave->write();
+        socket_read($far, 65536);
+
+        $server->sendDbReHydrated('slave', self::ROUND, false, ['worker #1: read failed: missing table']);
+        $slave->write();
+
+        $wire = socket_read($far, 65536);
+        $this->assertIsString($wire);
+        $answer = PeerDbReHydratedDTO::fromJson(trim($wire));
+        $this->assertSame('node-a', $answer->nodeId);
+        $this->assertSame(self::ROUND, $answer->round);
+        $this->assertFalse($answer->ok);
+        $this->assertSame(['worker #1: read failed: missing table'], $answer->problems);
+    }
+
     public function testANodeCannotAnswerForAnotherNode(): void
     {
         // The slot it would clear belongs to a node that may still be reading its collections,
@@ -219,13 +240,15 @@ final class PeerDbReHydrateBarrierTest extends TestCase
      *
      * @param PeerServer $server Server the link belongs to
      * @param string $nodeId Node id the remote end identifies itself as
+     * @param NodeRole $role Remote node role
      * @return PeerLink Handshaked link
      */
-    private function handshakedLink(PeerServer $server, string $nodeId): PeerLink
+    private function handshakedLink(PeerServer $server, string $nodeId, NodeRole $role = NodeRole::Master): PeerLink
     {
         $pair = [];
         $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
         socket_set_nonblock($pair[0]);
+        socket_set_nonblock($pair[1]);
         $this->sockets = [...$this->sockets, $pair[0], $pair[1]];
 
         $link = new PeerLink(
@@ -235,11 +258,14 @@ final class PeerDbReHydrateBarrierTest extends TestCase
             dialer: true,
             transport: new NamedPeerTestTransport($pair[0], $nodeId),
         );
+        Closure::bind(static function () use ($server, $link): void {
+            $server->clients[] = $link;
+        }, null, PeerServer::class)();
         socket_write($pair[1], new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $nodeId,
             'Node ' . $nodeId,
-            NodeRole::Master,
+            $role,
             [],
             PeerTestMarkers::onWire(),
         )->toJson() . "\n");

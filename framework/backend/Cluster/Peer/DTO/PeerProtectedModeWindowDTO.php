@@ -24,10 +24,14 @@ final class PeerProtectedModeWindowDTO extends PeerDTO
 
     /**
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the window protects
+     * @throws PeerTransportException When the cluster descriptor has no barrier generation
      */
     public function __construct(
         public readonly ProtectedModeQuiesceData $data,
     ) {
+        if ($data->freezeId === null || trim($data->freezeId) === '') {
+            throw new PeerTransportException('Peer protected-mode window descriptor requires a nonempty freezeId');
+        }
     }
 
     /**

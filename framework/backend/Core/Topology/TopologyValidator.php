@@ -3178,7 +3178,12 @@ final class TopologyValidator
      */
     private function validateProtectedModeInitiators(array $agents, array $commandAgentRoutes, array &$errors): void
     {
-        foreach ([CliCommands::PROTECTED_MODE_OPEN, CliCommands::PROTECTED_MODE_TEST_OPEN, CliCommands::MAINTENANCE_DISABLE] as $command) {
+        foreach ([
+            CliCommands::PROTECTED_MODE_OPEN,
+            CliCommands::PROTECTED_MODE_TEST_OPEN,
+            CliCommands::BACKUP_TEST_FREEZE_OPEN,
+            CliCommands::MAINTENANCE_DISABLE,
+        ] as $command) {
             $agentType = $commandAgentRoutes[$command] ?? null;
             if ($agentType === null) {
                 continue;

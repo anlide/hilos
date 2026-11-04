@@ -328,6 +328,65 @@ final class ProtectedModeTestDriverTest extends TestCase
         $this->assertRefused($this->singleReply(), 'not mounted');
     }
 
+    public function testAliasesDriveTheSameThreePhasesAndAnswerEachCommandOnlyOnce(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+        $agent = new AliasDriverTestAgent();
+        $this->assertTrue($agent->ownsCommand(CliCommands::BACKUP_TEST_FREEZE_ENTER));
+        $this->assertTrue($agent->ownsCommand(CliCommands::BACKUP_TEST_FREEZE_LEAVE));
+        $this->assertTrue($agent->ownsCommand(CliCommands::BACKUP_TEST_FREEZE_OPEN));
+        $this->assertFalse($agent->ownsCommand(CliCommands::PROTECTED_MODE_TEST_ENTER));
+
+        $agent->handle($this->request(CliCommands::BACKUP_TEST_FREEZE_ENTER, ['operation' => 'test-freeze']));
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_ENABLE, $this->nextProtectedModeRequest());
+        $this->assertSame([], $this->replies());
+        $agent->onProtectedModeReady();
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $this->singleReply()->payload[ProtectedModeCommandConstants::FIELD_PHASE]);
+        $agent->onProtectedModeReady();
+        $agent->onProtectedModeRefused('late refusal');
+        $this->assertSame([], $this->replies());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+        $agent->handle($this->request(CliCommands::BACKUP_TEST_FREEZE_LEAVE));
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_VERIFY, $this->nextProtectedModeRequest());
+        $agent->onProtectedModeReady();
+        $this->assertSame([], $this->replies());
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+        $agent->onTick();
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            $this->singleReply()->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+        $agent->onTick();
+        $this->assertSame([], $this->replies());
+
+        $agent->handle($this->request(CliCommands::BACKUP_TEST_FREEZE_OPEN));
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextProtectedModeRequest());
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+        $agent->onTick();
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_INACTIVE,
+            $this->singleReply()->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+        $agent->onTick();
+        $this->assertSame([], $this->replies());
+    }
+
+    public function testAliasRefusalDisarmsTheEnterAndCannotAnswerAgain(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+        $agent = new AliasDriverTestAgent();
+        $agent->handle($this->request(CliCommands::BACKUP_TEST_FREEZE_ENTER, ['operation' => 'test-freeze']));
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_ENABLE, $this->nextProtectedModeRequest());
+
+        $agent->onProtectedModeRefused('barrier refused');
+        $this->assertRefused($this->singleReply(), 'barrier refused');
+        $agent->onProtectedModeRefused('duplicate refusal');
+        $agent->onProtectedModeReady();
+        $agent->onTick();
+        $this->assertSame([], $this->replies());
+    }
+
     /**
      * Mounts the freeze row in the phase and initiator identity the case needs.
      *
@@ -429,7 +488,7 @@ final class ProtectedModeTestDriverTest extends TestCase
 /**
  * A minimal initiator agent carrying the driver, with the wait window reachable from a test.
  */
-final class DriverTestAgent extends AbstractAgent
+class DriverTestAgent extends AbstractAgent
 {
     use ProtectedModeTestDriverTrait;
 
@@ -452,6 +511,15 @@ final class DriverTestAgent extends AbstractAgent
         $this->handleProtectedModeTestCommand($data);
     }
 
+    /**
+     * @param string $command Candidate wire name
+     * @return bool Whether the configured driver owns the command
+     */
+    public function ownsCommand(string $command): bool
+    {
+        return $this->isProtectedModeTestCommand($command);
+    }
+
     public function onTick(): void
     {
         $this->tickProtectedModeTestDriver();
@@ -471,6 +539,23 @@ final class DriverTestAgent extends AbstractAgent
 
     public function onStop(): void
     {
+    }
+}
+
+final class AliasDriverTestAgent extends DriverTestAgent
+{
+    /**
+     * @param string $command Default driver command name
+     * @return string Backup alias for that driver step
+     */
+    protected function protectedModeTestCommandName(string $command): string
+    {
+        return match ($command) {
+            CliCommands::PROTECTED_MODE_TEST_ENTER => CliCommands::BACKUP_TEST_FREEZE_ENTER,
+            CliCommands::PROTECTED_MODE_TEST_LEAVE => CliCommands::BACKUP_TEST_FREEZE_LEAVE,
+            CliCommands::PROTECTED_MODE_TEST_OPEN => CliCommands::BACKUP_TEST_FREEZE_OPEN,
+            default => $command,
+        };
     }
 }
 

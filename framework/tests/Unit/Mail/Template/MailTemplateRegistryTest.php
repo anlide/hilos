@@ -125,6 +125,7 @@ final class MailTemplateRegistryTest extends TestCase
                 MailTemplateCatalogConstants::STATUS_WORK_COMPLETED,
                 MailTemplateCatalogConstants::PROTECTED_MODE_STUCK,
                 MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
+                MailTemplateCatalogConstants::PROTECTED_MODE_SLAVE_ALERT,
                 MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
             ],
             array_keys($catalog),

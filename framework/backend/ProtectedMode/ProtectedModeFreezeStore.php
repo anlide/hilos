@@ -81,6 +81,10 @@ final class ProtectedModeFreezeStore
     public function save(array $row): void
     {
         unset(
+            $row[ProtectedModeRuntime::diagnosticsNodeId],
+            $row[ProtectedModeRuntime::stoppedAgentCount],
+            $row[ProtectedModeRuntime::preservedAgentTypes],
+            $row[ProtectedModeRuntime::agentStartGateClosed],
             $row[ProtectedModeRuntime::maintenanceNodes],
             $row[ProtectedModeRuntime::watchdogVerdict],
             $row[ProtectedModeRuntime::watchdogPendingNodeIds],

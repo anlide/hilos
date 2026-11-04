@@ -40,9 +40,9 @@ use Throwable;
  *
  * A trait rather than a method set on {@see AbstractAgent}, because putting the commands there
  * would hand a test-drive of the freeze to every agent of every project - the same reasoning
- * that made {@see CommandChannelClientTrait} a trait. Its one carrier is the Hilos index agent;
- * the cluster probe fleet does not carry it, since a command declared by two agents of one
- * project refuses the start (HIL-1211).
+ * that made {@see CommandChannelClientTrait} a trait. The Hilos index agent uses the default
+ * names; the backup agent maps them to its own freeze commands. Each wire name still belongs
+ * to exactly one agent type per project (HIL-1211).
  *
  * **The reply is a verdict, not an acknowledgement.** Every command answers once the mode has
  * really moved: enter from {@see onProtectedModeReady()}, leave when this node's row reads
@@ -55,12 +55,9 @@ use Throwable;
  * least informative thing a test can be told. A repeat enable is the core's to answer since
  * HIL-909: with ready, or with a refusal that names its reason.
  *
- * **There is deliberately no production-environment refusal here.** The CLI half of this pair
- * refuses on a production-like env ({@see TestOnlyCommand}), but the command socket
- * authenticates nobody and e2e reaches it directly over TCP - Playwright has no PHP to run the
- * CLI with. That ungated socket path is an existing property of the command channel, shared
- * with `setAdmin` and `test:connection:drop`, and it is recorded here so the next reader does
- * not take its absence for an oversight and "fix" the e2e out of existence.
+ * The CLI refuses a production-like environment through {@see TestOnlyCommand}; the command
+ * socket applies the same refusal to every `test:` name before routing it. The agent does not
+ * repeat that gate, including when a test reaches the command socket directly over TCP.
  *
  * **How long it waits for the mode, and why that number is not declared here.** This agent's
  * window is {@see CommandChannelWindows::AGENT_WAIT_SECONDS}, the same one
@@ -91,9 +88,18 @@ trait ProtectedModeTestDriverTrait
      */
     protected function isProtectedModeTestCommand(string $command): bool
     {
-        return $command === CliCommands::PROTECTED_MODE_TEST_ENTER
-            || $command === CliCommands::PROTECTED_MODE_TEST_LEAVE
-            || $command === CliCommands::PROTECTED_MODE_TEST_OPEN;
+        return $command === $this->protectedModeTestCommandName(CliCommands::PROTECTED_MODE_TEST_ENTER)
+            || $command === $this->protectedModeTestCommandName(CliCommands::PROTECTED_MODE_TEST_LEAVE)
+            || $command === $this->protectedModeTestCommandName(CliCommands::PROTECTED_MODE_TEST_OPEN);
+    }
+
+    /**
+     * @param string $command Default driver command name
+     * @return string Wire name owned by this carrier
+     */
+    protected function protectedModeTestCommandName(string $command): string
+    {
+        return $command;
     }
 
     /**
@@ -121,13 +127,13 @@ trait ProtectedModeTestDriverTrait
             return;
         }
 
-        if ($data->command === CliCommands::PROTECTED_MODE_TEST_ENTER) {
+        if ($data->command === $this->protectedModeTestCommandName(CliCommands::PROTECTED_MODE_TEST_ENTER)) {
             $this->enterProtectedModeForTest($data, $freeze);
 
             return;
         }
 
-        if ($data->command === CliCommands::PROTECTED_MODE_TEST_LEAVE) {
+        if ($data->command === $this->protectedModeTestCommandName(CliCommands::PROTECTED_MODE_TEST_LEAVE)) {
             $this->leaveProtectedModeForTest($data, $freeze);
 
             return;

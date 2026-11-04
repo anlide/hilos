@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Database;
 
 use Hilos\Database\ReHydrateRound;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -27,6 +28,36 @@ final class ReHydrateRoundTest extends TestCase
 
     /** Round number used wherever the case is not about telling two rounds apart. */
     private const int ROUND = 1;
+
+    /** @param string $silent Local participant whose missing acknowledgement must hold the barrier */
+    #[DataProvider('silentLocalParticipants')]
+    public function testNeitherLocalParticipantCanBeAssumedSuccessful(string $silent): void
+    {
+        $round = new ReHydrateRound();
+        $participants = [ReHydrateRound::daemonParticipant(), ReHydrateRound::workerParticipant(1)];
+        $round->start(self::ROUND, $participants, deadline: 100.0);
+        foreach ($participants as $participant) {
+            if ($participant !== $silent) {
+                $round->ack(self::ROUND, $participant, true, null);
+            }
+        }
+        $round->expire(99.0);
+        $this->assertFalse($round->isSettled());
+        $this->assertFalse($round->isComplete());
+        $round->expire(100.0);
+        $this->assertTrue($round->isSettled());
+        $this->assertFalse($round->isComplete());
+        $this->assertSame([$silent . ': timeout'], $round->problems());
+        $round->ack(self::ROUND, $silent, true, null);
+        $this->assertFalse($round->isComplete(), 'An acknowledgement after expiry cannot repair the failed round');
+    }
+
+    /** @return iterable<string, array{string}> Each selected local process */
+    public static function silentLocalParticipants(): iterable
+    {
+        yield 'daemon' => [ReHydrateRound::daemonParticipant()];
+        yield 'worker' => [ReHydrateRound::workerParticipant(1)];
+    }
 
     public function testTheBarrierClosesWhenEveryParticipantConfirms(): void
     {

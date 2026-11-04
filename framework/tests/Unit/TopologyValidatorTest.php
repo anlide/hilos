@@ -962,6 +962,28 @@ final class TopologyValidatorTest extends TestCase
         TopologyProtectedModeIndexedInitiatorHilos::validateTopology();
     }
 
+    public function testBackupFreezeOpenOwnerCannotHaveNodeScope(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'AGENTS[backup_freeze_open_agent] owns ' . CliCommands::BACKUP_TEST_FREEZE_OPEN
+            . ', so it initiates protected mode, and cannot set scope ' . AgentScope::NODE->name,
+        );
+
+        TopologyBackupFreezeNodeInitiatorHilos::validateTopology();
+    }
+
+    public function testBackupFreezeOpenOwnerCannotBeIndexed(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'AGENTS[backup_freeze_open_agent] owns ' . CliCommands::BACKUP_TEST_FREEZE_OPEN
+            . ', so it initiates protected mode, and cannot be ' . AgentRegistryKey::INDEXED,
+        );
+
+        TopologyBackupFreezeIndexedInitiatorHilos::validateTopology();
+    }
+
     public function testProtectedModeOpenOwnerAsClusterSingletonPasses(): void
     {
         TopologyProtectedModeClusterInitiatorHilos::validateTopology();
@@ -3101,6 +3123,18 @@ final class TopologyProtectedModeTestOpenAgentDaemon extends TopologyTestAgentDa
     public const string AGENT_TYPE = TopologyProtectedModeTestOpenAgent::AGENT_TYPE;
 }
 
+final class TopologyBackupFreezeOpenAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'backup_freeze_open_agent';
+
+    public const array AGENT_COMMANDS = [CliCommands::BACKUP_TEST_FREEZE_OPEN];
+}
+
+final class TopologyBackupFreezeOpenAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = TopologyBackupFreezeOpenAgent::AGENT_TYPE;
+}
+
 final class TopologyMaintenanceDisableAgent extends TopologyTestAgent
 {
     public const string AGENT_TYPE = 'maintenance_disable_agent';
@@ -3154,6 +3188,28 @@ final class TopologyProtectedModeClusterInitiatorHilos extends TopologyProtected
         TopologyProtectedModeOpenAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyProtectedModeOpenAgent::class,
             AgentRegistryKey::DAEMON => TopologyProtectedModeOpenAgentDaemon::class,
+        ],
+    ];
+}
+
+final class TopologyBackupFreezeNodeInitiatorHilos extends TopologyProtectedModeInitiatorHilos
+{
+    public const array AGENTS = [
+        TopologyBackupFreezeOpenAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyBackupFreezeOpenAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBackupFreezeOpenAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
+}
+
+final class TopologyBackupFreezeIndexedInitiatorHilos extends TopologyProtectedModeInitiatorHilos
+{
+    public const array AGENTS = [
+        TopologyBackupFreezeOpenAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyBackupFreezeOpenAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBackupFreezeOpenAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
         ],
     ];
 }

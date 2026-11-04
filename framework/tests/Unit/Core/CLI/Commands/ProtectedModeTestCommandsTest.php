@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Core\CLI\Commands;
 
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
+use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeCloseCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeInspectCommand;
@@ -21,6 +24,9 @@ use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -69,6 +75,59 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertSame(CliCommands::PROTECTED_MODE_PASS, new ProtectedModePassCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_OPEN, new ProtectedModeOpenCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_CLOSE, new ProtectedModeCloseCommand()->getName());
+    }
+
+    public function testBackupAliasesReuseTheCommandsWithTheirOwnNamesPayloadsAndHelp(): void
+    {
+        $enter = new BackupFreezeEnterCommandProbe(CliCommands::BACKUP_TEST_FREEZE_ENTER, CliCommands::BACKUP_TEST_FREEZE_LEAVE);
+        $leave = new BackupFreezeLeaveCommandProbe(CliCommands::BACKUP_TEST_FREEZE_LEAVE, CliCommands::BACKUP_TEST_FREEZE_OPEN);
+        $open = new BackupFreezeOpenCommandProbe(CliCommands::BACKUP_TEST_FREEZE_OPEN, CliCommands::BACKUP_TEST_FREEZE_LEAVE);
+        $manager = new CliManager([]);
+        $this->expectOutputRegex('/Protected mode entered.*Operation ended.*Protected mode opened/s');
+
+        foreach ([
+            [$enter, 'test:backup:freeze-enter', CliCommands::BACKUP_TEST_FREEZE_LEAVE, ProtectedModeTestEnterCommand::class],
+            [$leave, 'test:backup:freeze-leave', CliCommands::BACKUP_TEST_FREEZE_OPEN, ProtectedModeTestLeaveCommand::class],
+            [$open, 'test:backup:freeze-open', CliCommands::BACKUP_TEST_FREEZE_LEAVE, ProtectedModeTestOpenCommand::class],
+        ] as [$command, $wireName, $pairedName, $commandClass]) {
+            self::assertSame($wireName, $command->getName());
+            self::assertSame($commandClass, $manager->commandClasses()[$wireName]);
+            self::assertFalse($manager->requiresDatabase($wireName));
+            self::assertContains($wireName, BackupAgent::AGENT_COMMANDS);
+            self::assertStringContainsString($wireName, $command->getHelp());
+            self::assertStringContainsString($pairedName, $command->getHelp());
+            self::assertStringNotContainsString('test:protected-mode:', $command->getHelp());
+            self::assertSame(ExitCode::SUCCESS, $command->execute(
+                $command === $enter ? ['accept-key' => 'browser-key', 'session-token' => 'browser-session'] : [],
+                $command === $enter ? ['test-freeze'] : [],
+            ));
+            self::assertSame($wireName, $command->sentCommand);
+            self::assertSame($command === $enter ? [
+                ProtectedModeCommandConstants::FIELD_OPERATION => 'test-freeze',
+                CommandConstants::FIELD_ACCEPT_KEY => 'browser-key',
+                ProtectedModeCommandConstants::FIELD_SESSION_TOKEN => 'browser-session',
+            ] : [], $command->sentPayload);
+        }
+    }
+
+    public function testBackupAliasesKeepTheCliAndSocketTestOnlyRefusal(): void
+    {
+        putenv('APP_ENV=production');
+        Hilos::$env = new EnvAccessor();
+
+        foreach ([
+            new ProtectedModeTestEnterCommand(CliCommands::BACKUP_TEST_FREEZE_ENTER, CliCommands::BACKUP_TEST_FREEZE_LEAVE),
+            new ProtectedModeTestLeaveCommand(CliCommands::BACKUP_TEST_FREEZE_LEAVE, CliCommands::BACKUP_TEST_FREEZE_OPEN),
+            new ProtectedModeTestOpenCommand(CliCommands::BACKUP_TEST_FREEZE_OPEN, CliCommands::BACKUP_TEST_FREEZE_LEAVE),
+        ] as $command) {
+            self::assertTrue(TestOnlyCommandRegistry::isTestOnly($command->getName()));
+            try {
+                $command->execute([], ['test-freeze']);
+                self::fail("{$command->getName()} must refuse on production.");
+            } catch (TestOnlyCommandOnProductionException $e) {
+                self::assertStringContainsString($command->getName(), $e->getMessage());
+            }
+        }
     }
 
     public function testEveryCommandIsRegisteredAndNeedsNoDatabase(): void
@@ -192,4 +251,41 @@ final class ProtectedModeTestCommandsTest extends TestCase
             }
         }
     }
+}
+
+trait BackupFreezeCommandProbeTrait
+{
+    public ?string $sentCommand = null;
+
+    /** @var ?array<string, mixed> Last payload sent */
+    public ?array $sentPayload = null;
+
+    /**
+     * @param string $command Wire name to capture
+     * @param array<string, mixed> $payload Payload to capture
+     * @param ?float $waitSeconds Unused wait budget
+     * @return CommandChannelResult Successful canned reply without opening a socket
+     */
+    protected function sendCommand(string $command, array $payload, ?float $waitSeconds = null): CommandChannelResult
+    {
+        $this->sentCommand = $command;
+        $this->sentPayload = $payload;
+
+        return CommandChannelResult::replied(CommandReplyDTO::ok('alias-test', []), '127.0.0.1:8094');
+    }
+}
+
+final class BackupFreezeEnterCommandProbe extends ProtectedModeTestEnterCommand
+{
+    use BackupFreezeCommandProbeTrait;
+}
+
+final class BackupFreezeLeaveCommandProbe extends ProtectedModeTestLeaveCommand
+{
+    use BackupFreezeCommandProbeTrait;
+}
+
+final class BackupFreezeOpenCommandProbe extends ProtectedModeTestOpenCommand
+{
+    use BackupFreezeCommandProbeTrait;
 }
