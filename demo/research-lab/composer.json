@@ -1,6 +1,6 @@
 {
-    "name": "anlide/hilos-demo-simple-rock-paper-scissors",
-    "description": "Simple rock-paper-scissors game demo project for Hilos v2 framework",
+    "name": "anlide/hilos-demo-research-lab",
+    "description": "Research lab demo project for Hilos v2 framework",
     "type": "project",
     "license": "MIT",
     "authors": [
@@ -24,7 +24,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Demo\\SimpleRockPaperScissors\\": "backend/"
+            "Demo\\ResearchLab\\": "backend/"
         }
     }
 }

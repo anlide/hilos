@@ -1,6 +1,6 @@
 {
-    "name": "anlide/hilos-demo-project-management-platform",
-    "description": "Project management platform demo project for Hilos v2 framework",
+    "name": "anlide/hilos-demo-small-airport",
+    "description": "Small airport demo project for Hilos v2 framework",
     "type": "project",
     "license": "MIT",
     "authors": [
@@ -24,7 +24,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Demo\\ProjectManagementPlatform\\": "backend/"
+            "Demo\\SmallAirport\\": "backend/"
         }
     }
 }

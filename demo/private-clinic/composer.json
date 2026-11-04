@@ -1,6 +1,6 @@
 {
-    "name": "anlide/hilos-demo-simple-booking-system",
-    "description": "Simple booking system demo project for Hilos v2 framework",
+    "name": "anlide/hilos-demo-private-clinic",
+    "description": "Private clinic demo project for Hilos v2 framework",
     "type": "project",
     "license": "MIT",
     "authors": [
@@ -24,7 +24,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Demo\\SimpleBookingSystem\\": "backend/"
+            "Demo\\PrivateClinic\\": "backend/"
         }
     }
 }

@@ -94,38 +94,26 @@ composer run install-deps
 
 ### Example Projects
 
-#### By complexity level (1/5 — beginner, 5/5 — advanced)
+The list below describes what each project is for. Some of these catalogs are still scaffolds.
 
-**1/5 — Introduction to basics**
-- [simple-visitor-counter](demo/simple-visitor-counter/README.md) — Real-time active visitor counter
-- [simple-rock-paper-scissors](demo/simple-rock-paper-scissors/README.md) — Rock-paper-scissors for multiple players
-
-**2/5 — Beginner level**
-- [hilos-website](demo/hilos-website/README.md) — Static site with dynamic content
-- [simple-booking-system](demo/simple-booking-system/README.md) — Resource booking (rooms, equipment)
-- [simple-event-calendar](demo/simple-event-calendar/README.md) — Event calendar with synchronization
-- [polls](demo/polls/README.md) — Polls with real-time results display
-- [tasks](demo/tasks/README.md) — Task list with cross-user synchronization
-
-**3/5 — Intermediate level**
-- [dkp-system](demo/dkp-system/README.md) — DKP system for guild in online game
-- [file-gallery-manager](demo/file-gallery-manager/README.md) — File gallery, upload, image processing
-- [online-testing](demo/online-testing/README.md) — Online testing system
-- [personal-homepage](demo/personal-homepage/README.md) — Personal page with i18n and AI
-- [chat](demo/chat/README.md) — Chat with WebSocket, AI moderation
-
-**4/5 — Advanced**
-- [ai-bots-battle](demo/ai-bots-battle/README.md) — Turn-based battle of two AI bots
-- [binance-btc-tracker](demo/binance-btc-tracker/README.md) — BTC tracking with Binance API and indicators
-- [mail-monitor](demo/mail-monitor/README.md) — Mail server monitoring (Postfix/Dovecot)
-- [solar-system-model](demo/solar-system-model/README.md) — 3D Solar System model with admin panel
-- [traivan-map-analyzer](demo/traivan-map-analyzer/README.md) — Traivan map.sql analysis, multi-threaded processing
-
-**5/5 — High complexity**
-- [ecommerce-shop](demo/ecommerce-shop/README.md) — Full-featured e-commerce shop
-- [pmd](demo/pmd/README.md) — MySQL web interface (PhpMyAdmin-like) with WebSocket
-- [project-management-platform](demo/project-management-platform/README.md) — Project management platform (Jira-like)
-- [roblox-game-server](demo/roblox-game-server/README.md) — Roblox game server, PvP arena
+- [binance-btc-tracker](demo/binance-btc-tracker/README.md) — BTC market data, charts, signals and paper trading
+- [chat](demo/chat/README.md) — real-time conversations
+- [dkp-system](demo/dkp-system/README.md) — guild DKP points and loot distribution for MMO players
+- [ecommerce-shop](demo/ecommerce-shop/README.md) — demo storefront, cart and orders
+- [file-gallery-manager](demo/file-gallery-manager/README.md) — photo galleries and authors
+- [hilos-website](demo/hilos-website/README.md) — the official Hilos site with documentation and examples
+- [mail-monitor](demo/mail-monitor/README.md) — mail server monitoring
+- [online-testing](demo/online-testing/README.md) — online tests and results
+- [personal-homepage](demo/personal-homepage/README.md) — a personal site with published content pages
+- [pmd](demo/pmd/README.md) — a MySQL web administration interface
+- [polls](demo/polls/README.md) — polls, responses and results
+- [private-clinic](demo/private-clinic/README.md) — a clinic site, doctor appointments, insurance and video visits
+- [research-lab](demo/research-lab/README.md) — samples, protocols, experiments and AI-assisted pattern discovery
+- [roblox-game-server](demo/roblox-game-server/README.md) — ratings, leagues and cross-server events for Roblox games
+- [small-airport](demo/small-airport/README.md) — flights, gates, ground services and a public arrivals/departures board
+- [solar-system-model](demo/solar-system-model/README.md) — a real-scale 3D model of the Solar System
+- [tasks](demo/tasks/README.md) — proposals, tasks and triage between them
+- [traivan-map-analyzer](demo/traivan-map-analyzer/README.md) — Traivan map analysis
 
 ## 📁 Project Structure
 
