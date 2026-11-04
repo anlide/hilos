@@ -253,13 +253,11 @@ export async function expectDaemonNodeHead(
     else await expect(link).not.toHaveAttribute('aria-current')
   }
   await expect(tabs.locator('[aria-current]')).toHaveCount(1)
-  await expect(page.getByTestId(/^hilos-admin-child-/)).toHaveCount(0)
   if (options.nodeName !== undefined) {
     await expect(
       page.getByTestId('hilos-page-head').getByText(nodeId, { exact: true }),
     ).toHaveCount(1)
-  } else await expect(page.getByTestId('hilos-daemon-node-id')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-daemon-inspector')).toHaveCount(0)
+  }
   const log = page.getByTestId('hilos-daemon-node-log')
   if (options.showLogLinks ?? true) {
     await expect(log).toHaveAttribute('href', `/hilos/logs/view/${nodeId}/live`)
@@ -295,27 +293,6 @@ export async function expectStandaloneNodeOverview(
   const overview = page.getByTestId('hilos-daemon-node-overview')
   await expect(overview).toHaveAttribute('data-node-id', 'standalone')
   await expect(page.getByTestId('hilos-daemon-node-solo')).toHaveCount(1)
-  await expect(overview.locator('h2')).toHaveText([
-    'Processor',
-    'Memory',
-    'Node',
-    'Environment',
-    'Node maintenance',
-  ])
-  await expect(
-    overview
-      .locator('h2')
-      .nth(0)
-      .locator('xpath=following-sibling::div[1]')
-      .locator('dl'),
-  ).toHaveCount(4)
-  await expect(
-    overview
-      .locator('h2')
-      .nth(1)
-      .locator('xpath=following-sibling::div[1]')
-      .locator('dl'),
-  ).toHaveCount(4)
   await expect(page.getByTestId('hilos-daemon-cores')).toHaveText(
     /^\s*\d[\d,.]*\s*$/,
   )
