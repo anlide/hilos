@@ -32,7 +32,7 @@ private checkout lives, and none of them is a leak.
 - **A container's own path.** `/var/run/docker.sock`, `/srv/preview`,
   `/data/caddy/pki/authorities/local`, `/etc/caddy/conf.d/*.caddyfile`: the
   path exists inside the image and is the same on every host.
-- **A parameterized path.** `${HILOS_REPO}`, `$repo/demo/$1/.env`,
+- **A parameterized value or path.** `${HILOS_PREVIEW_BIND}`, `$repo/demo/$1/.env`,
   `${HILOS_STAND_SUFFIX:-}`: the text names a variable, and the value stays
   with the host that sets it.
 - **A relative path of this repository.** `scripts/log-streams.php`,
@@ -70,37 +70,16 @@ private checkout lives, and none of them is a leak.
 
 ## Preview Configuration
 
-The preview lane (`framework/docker/preview`, the `preview` and `control`
-profiles of `framework/docker/docker-compose.yml`, `framework/docker/caddy/Caddyfile`)
-is public and reusable: it learns the checkout it serves from the environment
-and assumes nothing about the host it runs on.
+The preview lane (`framework/docker/preview`, the `preview` profile of
+`framework/docker/docker-compose.yml`, `framework/docker/caddy/Caddyfile`)
+is public and reusable: it assumes nothing about the host it runs on.
 
-- **`HILOS_REPO` is the absolute root of the checkout the lane drives.** The
-  control service (`framework/docker/control/server.py`) reads it with no
-  default and refuses to start — before it binds its HTTP port — when the value
-  is empty, relative, or names no Hilos checkout (either `framework/docker/docker-compose.yml`
-  or `framework/docker/preview` is missing under it).
-- **The root is bind-mounted at the same path inside the container as on the
-  host.** The control service hands `docker compose` paths under `HILOS_REPO`,
-  and the host's docker daemon resolves them; a mount at another path would
-  hand it paths that exist nowhere. Set `HILOS_REPO=<absolute root of your checkout>`;
-  it has no placeholder value a service may fall back to.
-- **The `control` profile needs the value; the other profiles do not.** The
-  compose file passes `${HILOS_REPO:-}` and declares the bind in long form with
-  `create_host_path: false` and a stand-in source, so the file keeps parsing
-  for every other profile (`preview`, `test`, and the Ollama
-  ones) with the variable unset, and docker never creates a directory on the
-  host for it.
-- **`preview up` sets the root by itself.** The preview script exports
-  `HILOS_REPO` as the root of the checkout it was started from, so the lane is
-  always this checkout's; nothing in the tree names a particular host's
-  directory.
 - **The names stay shared.** `home.hilos`, `chat.hilos`, `tasks.hilos`,
   `polls.hilos` and their `ws.`, `pma.` and `status.` subdomains are the lane's
   on every host; the CA root is served as `/root.crt` on `ca.hilos` and carries
   no host's name. Do not add a catalog of real machines, hosts or addresses to
   this repository to make the lane "complete": a host that runs the lane sets
-  `HILOS_PREVIEW_BIND` (and `HILOS_REPO` for control) in its own environment,
+  `HILOS_PREVIEW_BIND` in its own environment,
   and host-local site blocks live in a directory of the host's own, which it
   names with `HILOS_CADDY_EXTRA` in its `framework/docker/.env`; the compose
   file mounts that directory as Caddy's `conf.d`. The in-repo

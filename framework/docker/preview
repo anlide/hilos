@@ -23,10 +23,6 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
-# The lane is this checkout's: docker-compose.yml names the checkout root the
-# control service drives through HILOS_REPO, and the compose calls below carry
-# the root this script was started from, so no other value can stand for it.
-export HILOS_REPO="$repo"
 
 ALL_DEMOS=(chat tasks polls)
 

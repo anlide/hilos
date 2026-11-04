@@ -5,69 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hilos preview lane</title>
   <link rel="stylesheet" href="/assets/bootstrap.min.css">
-  <style>
-    .dot { display:inline-block; width:.55rem; height:.55rem; border-radius:50%; margin-right:.4rem; }
-    .dot.up { background:#22c55e; } .dot.down { background:#6b7280; }
-    .st { display:inline-block; width:.7rem; height:.7rem; border-radius:50%; margin-right:.5rem; flex:0 0 auto; }
-    .st.up { background:#22c55e; border:1px solid #22c55e; }
-    .st.down { background:transparent; border:1px solid #6b7280; }
-    .st.partial { background:linear-gradient(90deg,#22c55e 50%,transparent 50%); border:1px solid #22c55e; }
-    .accordion-button { font-size:.95rem; }
-    #sys-body table td { padding:.3rem .6rem; }
-  </style>
 </head>
 <body>
   <div class="container py-4" style="max-width: 48rem;">
     <h1 class="h3 mb-1">Hilos preview lane</h1>
     <p class="text-secondary">Demos running on the preview host in the tailnet. Reachable only from devices on the Tailscale mesh.</p>
 
-    <div class="card mb-4">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="h5 mb-0">System</h2>
-          <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-success" data-act="/api/preview/up">Preview up</button>
-            <button class="btn btn-outline-danger" data-act="/api/preview/down" data-confirm="Take the whole preview lane down?">Preview down</button>
-            <button id="refresh" class="btn btn-outline-secondary" type="button">Refresh</button>
-          </div>
-        </div>
-        <div id="act-note" class="small text-secondary mb-2"></div>
-        <div id="sys-body"><p class="text-secondary mb-0">Loading status…</p></div>
-      </div>
-    </div>
-
     <div class="row row-cols-1 row-cols-sm-3 g-3 mb-4">
       <div class="col"><div class="card h-100"><div class="card-body">
         <h3 class="h5 card-title mb-1">Chat</h3>
         <p class="card-text text-secondary small mb-3">Real-time chat demo (Vue SDK).</p>
         <a class="btn btn-primary btn-sm mb-2 d-block" href="https://chat.hilos">Open chat</a>
-        <div class="btn-group btn-group-sm w-100 mb-2">
-          <button class="btn btn-outline-success" data-act="/api/demo/chat/start">Start</button>
-          <button class="btn btn-outline-secondary" data-act="/api/demo/chat/restart">Restart</button>
-          <button class="btn btn-outline-danger" data-act="/api/demo/chat/stop" data-confirm="Stop the chat demo?">Stop</button>
-        </div>
         <div class="small"><a href="https://pma.chat.hilos">phpMyAdmin</a> · <a href="https://status.chat.hilos/status">status</a></div>
       </div></div></div>
       <div class="col"><div class="card h-100"><div class="card-body">
         <h3 class="h5 card-title mb-1">Tasks</h3>
         <p class="card-text text-secondary small mb-3">Collaborative task list demo (React SDK).</p>
         <a class="btn btn-primary btn-sm mb-2 d-block" href="https://tasks.hilos">Open tasks</a>
-        <div class="btn-group btn-group-sm w-100 mb-2">
-          <button class="btn btn-outline-success" data-act="/api/demo/tasks/start">Start</button>
-          <button class="btn btn-outline-secondary" data-act="/api/demo/tasks/restart">Restart</button>
-          <button class="btn btn-outline-danger" data-act="/api/demo/tasks/stop" data-confirm="Stop the tasks demo?">Stop</button>
-        </div>
         <div class="small"><a href="https://pma.tasks.hilos">phpMyAdmin</a> · <a href="https://status.tasks.hilos/status">status</a></div>
       </div></div></div>
       <div class="col"><div class="card h-100"><div class="card-body">
         <h3 class="h5 card-title mb-1">Polls</h3>
         <p class="card-text text-secondary small mb-3">Live polls demo (Angular SDK).</p>
         <a class="btn btn-primary btn-sm mb-2 d-block" href="https://polls.hilos">Open polls</a>
-        <div class="btn-group btn-group-sm w-100 mb-2">
-          <button class="btn btn-outline-success" data-act="/api/demo/polls/start">Start</button>
-          <button class="btn btn-outline-secondary" data-act="/api/demo/polls/restart">Restart</button>
-          <button class="btn btn-outline-danger" data-act="/api/demo/polls/stop" data-confirm="Stop the polls demo?">Stop</button>
-        </div>
         <div class="small"><a href="https://pma.polls.hilos">phpMyAdmin</a> · <a href="https://status.polls.hilos/status">status</a></div>
       </div></div></div>
     </div>
@@ -78,149 +38,5 @@
       The <code>*.hilos</code> names resolve through the tailnet split-DNS rule.
     </div>
   </div>
-
-  <script src="/assets/bootstrap.bundle.min.js"></script>
-  <script>
-    const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const fmtMem = m => m == null ? "—" : (m / 1024).toFixed(1) + " GiB";
-    // Our stacks are all hilos-*; anything else (a container someone else raises)
-    // is grouped under "other".
-    const projLabel = p => p && p.startsWith("hilos") ? p : "other";
-    const slug = s => s.replace(/[^a-z0-9]+/gi, "-");
-    // Parse a docker-stats mem field ("213.6MiB" / "1.5GiB" / "980KiB") to MiB.
-    function memMiB(s) {
-      const m = /([\d.]+)\s*([KMGT]?i?B)/i.exec(s || "");
-      if (!m) return 0;
-      const f = { B: 1 / 1048576, KIB: 1 / 1024, MIB: 1, GIB: 1024, TIB: 1048576 };
-      return parseFloat(m[1]) * (f[m[2].toUpperCase()] || 1);
-    }
-    const fmtMiB = v => v >= 1024 ? (v / 1024).toFixed(2) + " GiB" : Math.round(v) + " MiB";
-    const cpuPct = s => parseFloat(s) || 0;
-
-    let first = true;
-    let prevStatus = {};
-    let busy = false;
-    const openKeys = () => new Set(
-      [...document.querySelectorAll("#projAcc .accordion-collapse.show")].map(e => e.dataset.proj));
-
-    async function load() {
-      const body = document.getElementById("sys-body");
-      const open = first ? null : openKeys();  // null => open every group on first render
-      try {
-        const r = await fetch("/api/status", { cache: "no-store" });
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        body.innerHTML = render(await r.json(), open);
-        first = false;
-      } catch (e) {
-        body.innerHTML = '<p class="text-danger mb-0">Control API unreachable (' + esc(e.message) + ").</p>";
-      }
-    }
-
-    function render(d, open) {
-      const h = d.host || {}, o = d.ollama || {}, cs = d.containers || [];
-      let out = "";
-      const la = d.last_action;
-      if (la && la.path) {
-        out += '<div class="small mb-2 ' + (la.running ? "text-info" : la.ok ? "text-success" : "text-danger") + '">'
-             + (la.running ? "▸ running " : la.ok ? "✓ " : "✗ ") + esc(la.path)
-             + (la.tail ? " — " + esc(la.tail) : "") + "</div>";
-      }
-      if (h.total_mib) {
-        const pct = Math.round(100 * h.used_mib / h.total_mib);
-        out += '<div class="d-flex justify-content-between small text-secondary">'
-             + "<span>Host RAM</span><span>" + fmtMem(h.used_mib) + " / " + fmtMem(h.total_mib)
-             + " · " + fmtMem(h.available_mib) + ' free</span></div>'
-             + '<div class="progress mb-3" style="height:.5rem;"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
-      }
-      out += '<div class="mb-3"><span class="badge ' + (o.up ? "text-bg-success" : "text-bg-secondary") + '">Ollama '
-           + (o.up ? "up" : "down") + "</span> "
-           + (o.models && o.models.length
-                ? o.models.map(m => '<span class="badge text-bg-dark border">' + esc(m) + "</span>").join(" ")
-                : '<span class="text-secondary small">no models</span>')
-           + "</div>";
-      out += '<div class="btn-group btn-group-sm mb-3">'
-           + '<button class="btn btn-outline-success" data-act="/api/ollama/start">Start</button>'
-           + '<button class="btn btn-outline-danger" data-act="/api/ollama/stop" data-confirm="Stop Ollama?">Stop</button>'
-           + '<button class="btn btn-outline-secondary" data-act="/api/ollama/pull/0.5b">Pull 0.5b</button>'
-           + '<button class="btn btn-outline-secondary" data-act="/api/ollama/pull/3b">Pull 3b</button>'
-           + '<button class="btn btn-outline-secondary" data-act="/api/ollama/unload">Unload</button>'
-           + "</div>";
-
-      const groups = {};
-      for (const c of cs) { const g = projLabel(c.project); (groups[g] = groups[g] || []).push(c); }
-      const names = Object.keys(groups).sort((a, b) =>
-        a === "other" ? 1 : b === "other" ? -1 : a.localeCompare(b));
-
-      const nextStatus = {};
-      out += '<div class="accordion" id="projAcc">';
-      for (const g of names) {
-        const id = "p-" + slug(g);
-        const items = groups[g];
-        const running = items.filter(c => c.state === "running").length;
-        const status = running === items.length ? "up" : running === 0 ? "down" : "partial";
-        nextStatus[g] = status;
-        // Collapsed by default when uniform (all up / all down), expanded when
-        // partial. Re-apply that default on first render and whenever the status
-        // changes; otherwise keep whatever the user toggled.
-        const isOpen = (open === null || prevStatus[g] !== status)
-          ? status === "partial"
-          : open.has(g);
-        const ramSum = items.reduce((a, c) => a + memMiB((c.mem || "").split(" / ")[0]), 0);
-        const cpuSum = items.reduce((a, c) => a + cpuPct(c.cpu), 0);
-        out += '<div class="accordion-item">'
-             + '<h3 class="accordion-header"><button class="accordion-button py-2' + (isOpen ? "" : " collapsed")
-             + '" type="button" data-bs-toggle="collapse" data-bs-target="#' + id + '">'
-             + '<span class="st ' + status + '"></span><span class="me-auto">' + esc(g) + "</span>"
-             + '<span class="badge text-bg-secondary ms-2">' + running + "/" + items.length + "</span>"
-             + '<span class="text-secondary small ms-3 text-nowrap">' + fmtMiB(ramSum) + " · " + cpuSum.toFixed(1) + "%</span>"
-             + "</button></h3>"
-             + '<div id="' + id + '" data-proj="' + esc(g) + '" class="accordion-collapse collapse' + (isOpen ? " show" : "")
-             + '"><div class="accordion-body p-0"><table class="table table-sm mb-0 align-middle"><tbody>';
-        for (const c of items) {
-          const mem = (c.mem || "").split(" / ")[0];
-          out += '<tr><td><span class="dot ' + (c.state === "running" ? "up" : "down") + '"></span>' + esc(c.name) + "</td>"
-               + '<td class="text-end text-nowrap">' + esc(mem) + "</td>"
-               + '<td class="text-end text-nowrap">' + esc(c.cpu || "") + "</td></tr>";
-        }
-        out += "</tbody></table></div></div></div>";
-      }
-      out += "</div>";
-      prevStatus = nextStatus;
-      return out;
-    }
-
-    // Run a whitelisted control action, then refresh. One at a time.
-    async function act(path, confirmMsg) {
-      if (busy) return;
-      if (confirmMsg && !confirm(confirmMsg)) return;
-      busy = true;
-      const note = document.getElementById("act-note");
-      note.className = "small text-info mb-2";
-      note.textContent = "▸ " + path + " started — watch status below";
-      try {
-        const r = await fetch(path, { method: "POST" });
-        if (r.status !== 202 && !r.ok) {
-          const d = await r.json().catch(() => ({}));
-          throw new Error(d.error || ("HTTP " + r.status));
-        }
-      } catch (e) {
-        note.className = "small text-danger mb-2";
-        note.textContent = "✗ " + path + " — " + e.message;
-      } finally {
-        busy = false;
-        setTimeout(load, 800);
-      }
-    }
-
-    document.addEventListener("click", ev => {
-      const b = ev.target.closest("[data-act]");
-      if (!b) return;
-      ev.preventDefault();
-      act(b.dataset.act, b.dataset.confirm);
-    });
-    document.getElementById("refresh").addEventListener("click", load);
-    load();
-    setInterval(load, 5000);
-  </script>
 </body>
 </html>

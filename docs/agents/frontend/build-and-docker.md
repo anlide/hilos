@@ -77,9 +77,7 @@ requested address".
 
 Only two surfaces face outward on purpose and keep no knob: prod `nginx`
 (`docker-compose.prod.yml`), which is the public front door, and the preview
-lane's Caddy (`framework/docker`, host-network), which fronts `*.hilos`. The
-`hilos-preview-control` service stays hardcoded on `127.0.0.1` so Caddy is its
-sole entry.
+lane's Caddy (`framework/docker`, host-network), which fronts `*.hilos`.
 
 Ollama is the one carve-out: its consumer is the chat daemon in **another**
 compose project, reached across the docker bridge rather than over loopback, so

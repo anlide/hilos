@@ -90,7 +90,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 |---|---|
 | [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions; also what a setting is — a value that takes effect without restart through normal DB sync or a settings collection reread — and so whether a new knob is a setting or an environment value |
 | [framework-first.md](docs/agents/framework-first.md) | about to write SQL of your own or read the database past `Hilos::$db`; about to give a class a static property, an instance field, or a local array to hold state — before either, find the mechanism the framework already has and name why you chose as you did |
-| [public-repository-hygiene.md](docs/agents/public-repository-hygiene.md) | writing any text into the tracked tree — a rule file, a comment, a fixture, a README, a commit message — from a task, plan, note or tool output that named a machine, a directory on a host, or private tooling: what stays out, the public shapes that keep the meaning, and how the preview lane learns its checkout root from `HILOS_REPO` |
+| [public-repository-hygiene.md](docs/agents/public-repository-hygiene.md) | writing any text into the tracked tree — a rule file, a comment, a fixture, a README, a commit message — from a task, plan, note or tool output that named a machine, a directory on a host, or private tooling: what stays out, the public shapes that keep the meaning |
 
 ## Feature Development
 
