@@ -18,32 +18,44 @@ import type {
   HilosDaemonNodeHeading,
   HilosDaemonNodeOverviewData,
 } from '../core/src/admin/daemon/index.js'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 
 /**
  * Daemon section checks all three kits must meet alike. Tests, their order and
  * navigation stay in each demo's spec.
  */
-export const DAEMON_ROOT_PATH = '/hilos/daemon'
-export const DAEMON_PLACEMENT_PATH = '/hilos/daemon/placement'
-export const DAEMON_WORKERS_PATH = '/hilos/daemon/standalone/workers'
-export const DAEMON_WORKERS_CHILD = 'hilos-page-tab-hilos_daemon_workers'
-export const DAEMON_NODE_PATH = '/hilos/daemon/standalone'
+export const DAEMON_ROOT_PATH = resolveHilosPath(HilosPages.DAEMON)
+export const DAEMON_PLACEMENT_PATH = resolveHilosPath(
+  HilosPages.DAEMON_PLACEMENT,
+)
+export const DAEMON_WORKERS_PATH = resolveHilosPath(HilosPages.DAEMON_WORKERS, {
+  nodeId: 'standalone',
+})
+export const DAEMON_WORKERS_CHILD = `hilos-page-tab-${HilosPages.DAEMON_WORKERS}`
+export const DAEMON_NODE_PATH = resolveHilosPath(HilosPages.DAEMON_NODE, {
+  nodeId: 'standalone',
+})
 export const DAEMON_STANDALONE_NODE_NAME = 'Main node'
-export const DAEMON_NODE_TABS = [
-  { key: 'hilos_daemon_node', path: '', label: 'Overview' },
-  { key: 'hilos_daemon_workers', path: '/workers', label: 'Workers' },
-  { key: 'hilos_daemon_agents', path: '/agents', label: 'Agents' },
-  { key: 'hilos_daemon_cron', path: '/cron', label: 'Cron' },
-  { key: 'hilos_daemon_websockets', path: '/websockets', label: 'WebSockets' },
-  { key: 'hilos_daemon_http_server', path: '/http', label: 'HTTP' },
-  { key: 'hilos_daemon_env', path: '/env', label: 'Environment' },
-  {
-    key: 'hilos_daemon_env_orphans',
-    path: '/env/orphans',
-    label: 'Env orphans',
-  },
-] as const
-export const DAEMON_ROOT_CRUMB = 'hilos-breadcrumb-hilos_daemon'
+export const DAEMON_NODE_TABS = (
+  [
+    { key: HilosPages.DAEMON_NODE, label: 'Overview' },
+    { key: HilosPages.DAEMON_WORKERS, label: 'Workers' },
+    { key: HilosPages.DAEMON_AGENTS, label: 'Agents' },
+    { key: HilosPages.DAEMON_CRON, label: 'Cron' },
+    { key: HilosPages.DAEMON_WEBSOCKETS, label: 'WebSockets' },
+    { key: HilosPages.DAEMON_HTTP_SERVER, label: 'HTTP' },
+    { key: HilosPages.DAEMON_ENV, label: 'Environment' },
+    { key: HilosPages.DAEMON_ENV_ORPHANS, label: 'Env orphans' },
+  ] as const
+).map((row) => ({
+  key: row.key,
+  path: resolveHilosPath(row.key, { nodeId: 'standalone' }).slice(
+    DAEMON_NODE_PATH.length,
+  ),
+  label: row.label,
+}))
+export const DAEMON_ROOT_CRUMB = `hilos-breadcrumb-${HilosPages.DAEMON}`
 export const DAEMON_PLACEMENT_TYPE = 'hilos_daemon_node'
 export const DAEMON_PLACEMENT_LONG_TYPE = 'hilos_notifications_library'
 export const DAEMON_PLACEMENT_CELL = `hilos-daemon-placement-cell-${DAEMON_PLACEMENT_TYPE}-standalone`

@@ -10,6 +10,9 @@ import { z } from 'zod'
 /** No page class registered by the project serves the requested key. */
 export const PAGE_ERROR_NOT_SERVED = 'not_served'
 
+/** The requested resource does not exist. */
+export const PAGE_ERROR_NOT_FOUND = 'not_found'
+
 /**
  * The page-subscription error payload (PHP `PageSubscriptionErrorSignalData`):
  * the page the error is for — so a late one for a page already left is dropped,

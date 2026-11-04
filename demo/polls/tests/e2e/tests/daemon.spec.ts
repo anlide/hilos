@@ -1,6 +1,9 @@
 import { expect, test } from '../test.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { PAGE_ERROR_NOT_FOUND } from '../../../../../framework/frontend/core/src/protocol/pageError.js'
+import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
 import {
   DAEMON_ROOT_PATH,
   DAEMON_PLACEMENT_PATH,
@@ -642,7 +645,7 @@ test.describe('daemon node pages', () => {
       await setAdminViewMode(viewer)
       if (!viewer) await grantAdminToSelf(expect, page)
       const cold = await context.newPage()
-      const held = await holdPageReply(cold, 'hilos_daemon_node')
+      const held = await holdPageReply(cold, HilosPages.DAEMON_NODE)
       const reports = watchDaemonNodeFrames(cold)
       const refusals = watchPageErrorFrames(cold)
       const subscribes = countSentFrames(cold, '"type":"page_subscribe"')
@@ -691,15 +694,15 @@ test.describe('daemon node pages', () => {
             nodeName: DAEMON_STANDALONE_NODE_NAME,
           })
           if (
-            tab.key !== 'hilos_daemon_env' &&
-            tab.key !== 'hilos_daemon_websockets'
+            tab.key !== HilosPages.DAEMON_ENV &&
+            tab.key !== HilosPages.DAEMON_WEBSOCKETS
           )
             await expectDaemonNodeTableName(
               expect,
               cold,
               DAEMON_STANDALONE_NODE_NAME,
             )
-          if (tab.key === 'hilos_daemon_agents') {
+          if (tab.key === HilosPages.DAEMON_AGENTS) {
             const restart = shownByTestId(
               cold,
               `hilos-daemon-agent-restart-${DAEMON_PLACEMENT_TYPE}`,
@@ -707,7 +710,9 @@ test.describe('daemon node pages', () => {
             if (viewer) await expect(restart).toBeDisabled()
             else await expect(restart).toBeEnabled()
           }
-          await cold.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+          await cold
+            .getByTestId(`hilos-page-tab-${HilosPages.DAEMON_NODE}`)
+            .click()
           await expectStandaloneNodeOverview(expect, cold, {
             nodeName: DAEMON_STANDALONE_NODE_NAME,
           })
@@ -716,7 +721,7 @@ test.describe('daemon node pages', () => {
         await expectDaemonNodeHead(
           expect,
           cold,
-          'hilos_daemon_env',
+          HilosPages.DAEMON_ENV,
           'standalone',
           {
             nodeName: DAEMON_STANDALONE_NODE_NAME,
@@ -730,7 +735,7 @@ test.describe('daemon node pages', () => {
         await expectDaemonNodeHead(
           expect,
           cold,
-          'hilos_daemon_env',
+          HilosPages.DAEMON_ENV,
           'standalone',
           {
             nodeName: DAEMON_STANDALONE_NODE_NAME,
@@ -741,20 +746,29 @@ test.describe('daemon node pages', () => {
           nodeName: DAEMON_STANDALONE_NODE_NAME,
         })
         await cold.getByTestId('hilos-daemon-node-log').click()
-        await expectDaemonPage(expect, cold, 'hilos_logs_view')
-        await expect(cold).toHaveURL('/hilos/logs/view/standalone/live')
+        await expectDaemonPage(expect, cold, HilosPages.LOGS_VIEW)
+        await expect(cold).toHaveURL(
+          resolveHilosPath(HilosPages.LOGS_VIEW, {
+            nodeId: 'standalone',
+            source: 'live',
+          }),
+        )
         await expect(cold.getByTestId('hilos-log-source')).toHaveValue('live')
         await cold.goBack()
         await expectStandaloneNodeOverview(expect, cold, {
           nodeName: DAEMON_STANDALONE_NODE_NAME,
         })
-        await gotoPage(expect, cold, '/hilos/daemon/unknown-node')
+        await gotoPage(
+          expect,
+          cold,
+          resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId: 'unknown-node' }),
+        )
         await expect
           .poll(() => refusals.at(-1)?.data)
           .toMatchObject({
-            page: 'hilos_daemon_node',
+            page: HilosPages.DAEMON_NODE,
             httpCode: 404,
-            errorCode: 'not_found',
+            errorCode: PAGE_ERROR_NOT_FOUND,
           })
         await expect(cold.getByTestId('page-error')).toHaveAttribute(
           'data-error-code',

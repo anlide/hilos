@@ -1,6 +1,7 @@
 // Code readiness and the server's verdict meet here; importing a component
 // never grants permission to mount it. Cache lifetime is one outlet instance.
 
+import { PAGE_ERROR_NOT_FOUND } from '../protocol/pageError.js'
 import {
   computedSignal,
   createSignal,
@@ -15,9 +16,6 @@ import { type LazyPageView, type PageView } from './pageView.js'
 
 /** HTTP status of a resource the server no longer finds. */
 const RESOURCE_NOT_FOUND_STATUS = 404
-
-/** The server's code for that missing resource; not a route or unbuilt miss. */
-const RESOURCE_NOT_FOUND_CODE = 'not_found'
 
 /** The routed outlet's shared code, data, and refusal state. */
 export interface PageViewState<T> {
@@ -116,7 +114,7 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
     return (
       serverError !== null &&
       serverError.httpCode === RESOURCE_NOT_FOUND_STATUS &&
-      serverError.errorCode === RESOURCE_NOT_FOUND_CODE &&
+      serverError.errorCode === PAGE_ERROR_NOT_FOUND &&
       (serverError.transitionMessage !== undefined ||
         snapshot.get().retainedOnError) &&
       retention !== null &&
