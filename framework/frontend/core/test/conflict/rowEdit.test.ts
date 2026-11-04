@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   keepMineRowEdit,
+  mergeRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
   type RowEditBaseline,
 } from '../../src/conflict/rowEdit.js'
+import { mergeTextLines } from '../../src/conflict/textLineMerge.js'
 
 /** The one-field shape the three framework windows edit. */
 interface Override {
@@ -314,5 +316,140 @@ describe('takeTheirsRowEdit', () => {
       dirty: false,
       notice: { kind: 'updated', fields: ['overrideValue'] },
     })
+  })
+})
+
+describe('mergeRowEdit', () => {
+  it('merges one conflict explicitly and refuses gone or non-conflicting edits', () => {
+    const baseline = openRowEdit({ note: 'first\nsecond' })
+    const draft = { note: 'mine\nsecond' }
+    const live = { note: 'first\ntheirs' }
+    const state = resolveRowEdit(live, baseline, draft)
+    expect(state.conflict).toBe(true)
+    expect(state.settle).toBeNull()
+    const step = mergeRowEdit(state, baseline, { note: mergeTextLines })
+    expect(step).toEqual({
+      baseline: { values: live, refreshed: [] },
+      take: { note: 'mine\ntheirs' },
+    })
+    expect(
+      resolveRowEdit(live, step!.baseline, { ...draft, ...step!.take }),
+    ).toMatchObject({ conflict: false, dirty: true, settle: null })
+    expect(
+      mergeRowEdit(resolveRowEdit(undefined, baseline, draft), baseline, {
+        note: mergeTextLines,
+      }),
+    ).toBeNull()
+    expect(
+      mergeRowEdit(resolveRowEdit(baseline.values, baseline, draft), baseline, {
+        note: mergeTextLines,
+      }),
+    ).toBeNull()
+  })
+
+  it('merges two conflicts together and clears both refreshed marks', () => {
+    const baseline: RowEditBaseline<Pair> = {
+      values: { name: 'first\nsecond', note: 'hello\nworld' },
+      refreshed: ['name', 'note'],
+    }
+    const live = { name: 'first\ntheirs', note: 'hello\neveryone' }
+    const state = resolveRowEdit(live, baseline, {
+      name: 'mine\nsecond',
+      note: 'welcome\nworld',
+    })
+    expect(
+      mergeRowEdit(state, baseline, {
+        name: mergeTextLines,
+        note: mergeTextLines,
+      }),
+    ).toEqual({
+      baseline: { values: live, refreshed: [] },
+      take: { name: 'mine\ntheirs', note: 'welcome\neveryone' },
+    })
+  })
+
+  it('refuses the whole step when one text merges and the other overlaps', () => {
+    const baseline = openRowEdit({ name: 'first\nsecond', note: 'original' })
+    const state = resolveRowEdit(
+      { name: 'first\ntheirs', note: 'theirs' },
+      baseline,
+      { name: 'mine\nsecond', note: 'mine' },
+    )
+    expect(
+      mergeRowEdit(state, baseline, {
+        name: mergeTextLines,
+        note: mergeTextLines,
+      }),
+    ).toBeNull()
+  })
+
+  it('requires a strategy for every conflicting field, including typed fields', () => {
+    const baseline = openRowEdit({ note: 'first\nsecond', count: 1 })
+    const state = resolveRowEdit(
+      { note: 'first\ntheirs', count: 2 },
+      baseline,
+      { note: 'mine\nsecond', count: 3 },
+    )
+    expect(mergeRowEdit(state, baseline, { note: mergeTextLines })).toBeNull()
+    expect(mergeRowEdit(state, baseline, {})).toBeNull()
+  })
+
+  it('leaves all inputs untouched when a later strategy refuses', () => {
+    const baseline: RowEditBaseline<Pair> = Object.freeze({
+      values: Object.freeze({ name: 'first\nsecond', note: 'original' }),
+      refreshed: Object.freeze(['name', 'note'] as const),
+    })
+    const live = Object.freeze({ name: 'first\ntheirs', note: 'theirs' })
+    const draft = Object.freeze({ name: 'mine\nsecond', note: 'mine' })
+    const state = resolveRowEdit(live, baseline, draft)
+    Object.freeze(state.fields.name)
+    Object.freeze(state.fields.note)
+    Object.freeze(state.fields)
+    Object.freeze(state)
+    const before = structuredClone({ baseline, live, draft, state })
+    expect(
+      mergeRowEdit(state, baseline, {
+        name: mergeTextLines,
+        note: mergeTextLines,
+      }),
+    ).toBeNull()
+    expect({ baseline, live, draft, state }).toEqual(before)
+  })
+
+  it('advances only conflicting snapshots and leaves other fields and steps alone', () => {
+    const baseline: RowEditBaseline<{
+      note: string
+      automatic: string
+      own: string
+      untouched: string
+    }> = {
+      values: {
+        note: 'first\nsecond',
+        automatic: 'old',
+        own: 'old',
+        untouched: 'kept',
+      },
+      refreshed: ['note', 'untouched'],
+    }
+    const state = resolveRowEdit(
+      { ...baseline.values, note: 'first\ntheirs', automatic: 'new' },
+      baseline,
+      { ...baseline.values, note: 'mine\nsecond', own: 'draft' },
+    )
+    const before = structuredClone({ baseline, state })
+    expect(mergeRowEdit(state, baseline, { note: mergeTextLines })).toEqual({
+      baseline: {
+        values: {
+          note: 'first\ntheirs',
+          automatic: 'old',
+          own: 'old',
+          untouched: 'kept',
+        },
+        refreshed: ['untouched'],
+      },
+      take: { note: 'mine\ntheirs' },
+    })
+    expect({ baseline, state }).toEqual(before)
+    expect(state.settle?.take).toEqual({ automatic: 'new' })
   })
 })

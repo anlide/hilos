@@ -1054,98 +1054,245 @@ test('an open edit follows the other tab field by field, and a delete dialog rea
   await openBots(tabB)
   await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 
-  // A opens the edit and touches nothing; B changes ONLY Style (not in any table
-  // column — reads test): it lands in A's form, the notice names Style, and
-  // Save stays locked.
-  await shownByTestId(page, `admin-bots-edit-${key}`).click()
-  await expect(page.getByTestId('admin-bots-description')).toBeVisible()
-  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
-  await editBotStyle(tabB, key, `style elsewhere ${stamp}`)
-  await expect(page.getByTestId('admin-bots-style')).toHaveValue(
-    `style elsewhere ${stamp}`,
-  )
-  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
-    'Updated just now: Style',
-  )
-  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
-  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  await test.step('untouched fields follow live changes without replacing the draft', async () => {
+    // A opens the edit and touches nothing; B changes ONLY Style (not in any table
+    // column — reads test): it lands in A's form, the notice names Style, and
+    // Save stays locked.
+    await shownByTestId(page, `admin-bots-edit-${key}`).click()
+    await expect(page.getByTestId('admin-bots-description')).toBeVisible()
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+    await editBotStyle(tabB, key, `style elsewhere ${stamp}`)
+    await expect(page.getByTestId('admin-bots-style')).toHaveValue(
+      `style elsewhere ${stamp}`,
+    )
+    await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+      'Updated just now: Style',
+    )
+    await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
 
-  // B changes the description: it lands in A's form too, and the notice names
-  // both fields in form order.
-  await editBotDescription(tabB, key, `elsewhere one ${stamp}`)
-  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
-    `elsewhere one ${stamp}`,
-  )
-  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
-    'Updated just now: Description, Style',
-  )
-  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
-  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+    // B changes the description: it lands in A's form too, and the notice names
+    // both fields in form order.
+    await editBotDescription(tabB, key, `elsewhere one ${stamp}`)
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      `elsewhere one ${stamp}`,
+    )
+    await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+      'Updated just now: Description, Style',
+    )
+    await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
 
-  // A changes the style; B changes the description again: A left that field
-  // alone, so it takes the new value silently, and the style stays A's.
-  await typeInto(page.getByTestId('admin-bots-style'), `style of A ${stamp}`)
-  await expect(page.getByTestId('admin-bots-save')).toBeEnabled()
-  await editBotDescription(tabB, key, `elsewhere two ${stamp}`)
-  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
-    `elsewhere two ${stamp}`,
-  )
-  await expect(page.getByTestId('admin-bots-style')).toHaveValue(
-    `style of A ${stamp}`,
-  )
-  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+    // A changes the style; B changes the description again: A left that field
+    // alone, so it takes the new value silently, and the style stays A's.
+    await typeInto(page.getByTestId('admin-bots-style'), `style of A ${stamp}`)
+    await expect(page.getByTestId('admin-bots-save')).toBeEnabled()
+    await editBotDescription(tabB, key, `elsewhere two ${stamp}`)
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      `elsewhere two ${stamp}`,
+    )
+    await expect(page.getByTestId('admin-bots-style')).toHaveValue(
+      `style of A ${stamp}`,
+    )
+    await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  })
 
-  // A changes the description too; B changes it a third time: a conflict on
-  // that field, Save locked, no Merge.
-  await typeInto(
-    page.getByTestId('admin-bots-description'),
-    `description of A ${stamp}`,
-  )
-  await editBotDescription(tabB, key, `elsewhere three ${stamp}`)
-  await expect(page.getByTestId('conflict-badge')).toBeVisible()
-  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
-    `Description changed elsewhere to "elsewhere three ${stamp}".`,
-  )
-  await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
-  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  await test.step('a single-line conflict blocks Merge and Take theirs preserves other edits', async () => {
+    // A changes the description too; B changes it a third time: a conflict on
+    // that field, Save locked, no Merge.
+    await typeInto(
+      page.getByTestId('admin-bots-description'),
+      `description of A ${stamp}`,
+    )
+    await editBotDescription(tabB, key, `elsewhere three ${stamp}`)
+    await expect(page.getByTestId('conflict-badge')).toBeVisible()
+    await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+      `Description changed elsewhere to "elsewhere three ${stamp}".`,
+    )
+    await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
 
-  // Take theirs puts B's description into the form; the style is still A's, so
-  // Save opens and sends both. B then sees A's style beside its own description.
-  await page.getByTestId('conflict-accept-theirs').click()
-  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
-    `elsewhere three ${stamp}`,
-  )
-  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
-  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
-  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
-  await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
-  await expect(tabB.getByTestId('admin-bots-style')).toHaveValue(
-    `style of A ${stamp}`,
-  )
-  await expect(tabB.getByTestId('admin-bots-description')).toHaveValue(
-    `elsewhere three ${stamp}`,
-  )
-  await expect(tabB.getByTestId('admin-bots-save')).toBeDisabled()
-  await tabB.getByTestId('modal-close').click()
-  await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+    // Take theirs puts B's description into the form; the style is still A's, so
+    // Save opens and sends both. B then sees A's style beside its own description.
+    await page.getByTestId('conflict-accept-theirs').click()
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      `elsewhere three ${stamp}`,
+    )
+    await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+    await clickSubmit(expect, page.getByTestId('admin-bots-save'))
+    await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+    await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
+    await expect(tabB.getByTestId('admin-bots-style')).toHaveValue(
+      `style of A ${stamp}`,
+    )
+    await expect(tabB.getByTestId('admin-bots-description')).toHaveValue(
+      `elsewhere three ${stamp}`,
+    )
+    await expect(tabB.getByTestId('admin-bots-save')).toBeDisabled()
+    await tabB.getByTestId('modal-close').click()
+    await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+  })
 
-  // The delete dialog reads the live row: B renames the bot and A's dialog
-  // shows the new name; B deletes it and A's button reads Deleted, locked, with
-  // the reason on the message line. Cancel is all that is left to press.
-  await shownByTestId(page, `admin-bots-delete-${key}`).click()
-  await expect(page.getByTestId('admin-bots-delete-confirm')).toBeEnabled()
-  await renameBot(tabB, key, renamed)
-  await expect(page.getByTestId('modal')).toContainText(renamed)
-  await deleteBot(tabB, key)
-  await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveText(
-    'Deleted',
-  )
-  await expect(page.getByTestId('admin-bots-delete-confirm')).toBeDisabled()
-  await expect(page.getByTestId('admin-bots-delete-notice')).toContainText(
-    'Deleted elsewhere.',
-  )
-  await page.getByTestId('modal-close').click()
-  await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
+  const baselineDescription = 'About base\nShared detail\nEnd base'
+  const baselinePersonality = 'Calm base\nShared trait\nBrief base'
+  const draftDescription = 'About A\nShared detail\nEnd base'
+  const draftPersonality = 'Calm A\nShared trait\nBrief base'
+  const incomingDescription = 'About base\nShared detail\nEnd B'
+  const incomingPersonality = 'Calm base\nShared trait\nBrief B'
+  const mergedDescription = 'About A\nShared detail\nEnd B'
+  const mergedPersonality = 'Calm A\nShared trait\nBrief B'
+
+  await test.step('multiline texts establish a live baseline in both tabs', async () => {
+    await shownByTestId(page, `admin-bots-edit-${key}`).click()
+    await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
+    await typeInto(
+      tabB.getByTestId('admin-bots-description'),
+      baselineDescription,
+    )
+    await typeInto(
+      tabB.getByTestId('admin-bots-personality'),
+      baselinePersonality,
+    )
+    await clickSubmit(expect, tabB.getByTestId('admin-bots-save'))
+    await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      baselineDescription,
+    )
+    await expect(page.getByTestId('admin-bots-personality')).toHaveValue(
+      baselinePersonality,
+    )
+    await expect(page.getByTestId('admin-bots-active')).not.toBeChecked()
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  })
+
+  await test.step('Merge combines both texts and leaves the draft open', async () => {
+    await typeInto(page.getByTestId('admin-bots-description'), draftDescription)
+    await typeInto(page.getByTestId('admin-bots-personality'), draftPersonality)
+    await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
+    await typeInto(
+      tabB.getByTestId('admin-bots-description'),
+      incomingDescription,
+    )
+    await typeInto(
+      tabB.getByTestId('admin-bots-personality'),
+      incomingPersonality,
+    )
+    await clickSubmit(expect, tabB.getByTestId('admin-bots-save'))
+    await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+    await expect(page.getByTestId('conflict-badge')).toBeVisible()
+    await expect(page.getByTestId('conflict-merge')).toBeEnabled()
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+
+    await page.getByTestId('conflict-merge').click()
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      mergedDescription,
+    )
+    await expect(page.getByTestId('admin-bots-personality')).toHaveValue(
+      mergedPersonality,
+    )
+    await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('admin-bots-save')).toBeEnabled()
+    // Merge only changes the draft; the other tab still reads its saved text.
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      incomingDescription,
+    )
+  })
+
+  await test.step('Save persists both merged texts for the other tab', async () => {
+    await clickSubmit(expect, page.getByTestId('admin-bots-save'))
+    await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      mergedDescription,
+    )
+    await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
+    await expect(tabB.getByTestId('admin-bots-description')).toHaveValue(
+      mergedDescription,
+    )
+    await expect(tabB.getByTestId('admin-bots-personality')).toHaveValue(
+      mergedPersonality,
+    )
+    await expect(tabB.getByTestId('admin-bots-save')).toBeDisabled()
+    await tabB.getByTestId('modal-close').click()
+    await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+  })
+
+  await test.step('an overlapping personality blocks the whole mixed merge', async () => {
+    const mixedDraftDescription = 'About A again\nShared detail\nEnd B'
+    const mixedDraftPersonality = 'Calm A\nTrait of A\nBrief B'
+    const mixedIncomingDescription = 'About A\nShared detail\nEnd B again'
+    const mixedIncomingPersonality = 'Calm A\nTrait of B\nBrief B'
+
+    await shownByTestId(page, `admin-bots-edit-${key}`).click()
+    await typeInto(
+      page.getByTestId('admin-bots-description'),
+      mixedDraftDescription,
+    )
+    await typeInto(
+      page.getByTestId('admin-bots-personality'),
+      mixedDraftPersonality,
+    )
+    await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
+    await typeInto(
+      tabB.getByTestId('admin-bots-description'),
+      mixedIncomingDescription,
+    )
+    await typeInto(
+      tabB.getByTestId('admin-bots-personality'),
+      mixedIncomingPersonality,
+    )
+    await clickSubmit(expect, tabB.getByTestId('admin-bots-save'))
+    await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+    await expect(page.getByTestId('conflict-badge')).toBeVisible()
+    await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+      'Description changed elsewhere',
+    )
+    await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+      'Personality changed elsewhere',
+    )
+    await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+    await page.getByTestId('admin-bots-style').press('Enter')
+    await expect(page.getByTestId('conflict-badge')).toBeVisible()
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      mixedDraftDescription,
+    )
+    await expect(page.getByTestId('admin-bots-personality')).toHaveValue(
+      mixedDraftPersonality,
+    )
+
+    await page.getByTestId('conflict-accept-theirs').click()
+    await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+    await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+      mixedIncomingDescription,
+    )
+    await expect(page.getByTestId('admin-bots-personality')).toHaveValue(
+      mixedIncomingPersonality,
+    )
+    await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+    await page.getByTestId('modal-close').click()
+    await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+  })
+
+  await test.step('the delete dialog follows a rename and a foreign deletion', async () => {
+    // The delete dialog reads the live row: B renames the bot and A's dialog
+    // shows the new name; B deletes it and A's button reads Deleted, locked, with
+    // the reason on the message line. Cancel is all that is left to press.
+    await shownByTestId(page, `admin-bots-delete-${key}`).click()
+    await expect(page.getByTestId('admin-bots-delete-confirm')).toBeEnabled()
+    await renameBot(tabB, key, renamed)
+    await expect(page.getByTestId('modal')).toContainText(renamed)
+    await deleteBot(tabB, key)
+    await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveText(
+      'Deleted',
+    )
+    await expect(page.getByTestId('admin-bots-delete-confirm')).toBeDisabled()
+    await expect(page.getByTestId('admin-bots-delete-notice')).toContainText(
+      'Deleted elsewhere.',
+    )
+    await page.getByTestId('modal-close').click()
+    await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
+  })
   await tabB.close()
 })
 

@@ -48,6 +48,7 @@ import * as localDateTime from '../../src/timeZone/localDateTime.js'
 import * as users from '../../src/admin/users/index.js'
 import * as userSessions from '../../src/admin/users/hilosUserSessions.js'
 import * as base from '../../src/base/index.js'
+import * as textLineMerge from '../../src/conflict/textLineMerge.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
@@ -238,6 +239,10 @@ const profileRenameMemoryValues = [
 const profileRenameMemoryTypes = ['HilosProfileRenameMemory']
 /** Detached edit data is shared by root and base, owned by the row session. */
 const rowEditTypes = ['HilosRowEditCheckpoint']
+/** Pure line merging has one implementation and field-typed strategies. */
+const textLineMergeValues = ['mergeTextLines']
+const textLineMergeTypes = ['TextLineMergeResult']
+const rowEditMergeTypes = ['RowEditMergeResult', 'RowEditMergers']
 /** Security page readers belong only to their lazy section. */
 const securityOverviewValues = [
   'SECURITY_OVERVIEW_DATA',
@@ -867,6 +872,7 @@ const expectedValues = [
   ...profileHeadValues,
   ...profileNameStateValues,
   ...profileRenameMemoryValues,
+  ...textLineMergeValues,
   ...tableTextValues,
   ...tableViewValues,
   ...tableViewPreferenceValues,
@@ -1405,6 +1411,8 @@ describe('core public entries', () => {
       expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
     }
     for (const api of [core, base]) {
+      expect(api.mergeTextLines).toBe(textLineMerge.mergeTextLines)
+      expect(api).not.toHaveProperty('mergeRowEdit')
       expect(api.accountDeletionGraceDays).toBe(
         accountDeletion.accountDeletionGraceDays,
       )
@@ -1645,6 +1653,8 @@ describe('core public entries', () => {
         ...profileNameStateTypes,
         ...profileRenameMemoryTypes,
         ...rowEditTypes,
+        ...textLineMergeTypes,
+        ...rowEditMergeTypes,
         ...tableTextTypes,
         ...tableViewTypes,
         ...tableRowMessageTypes,
@@ -1678,6 +1688,9 @@ describe('core public entries', () => {
       'HilosProfileRenameState',
       'HilosProfileRenameFlowOptions',
       ...rowEditTypes,
+      ...textLineMergeValues,
+      ...textLineMergeTypes,
+      ...rowEditMergeTypes,
       ...tableTextTypes,
       ...tableTextValues,
       ...tableViewTypes,
@@ -1715,6 +1728,35 @@ describe('core public entries', () => {
     for (const name of rowEditTypes) {
       expect(root.get(name), name).toBe(rowEditExports.get(name))
     }
+    for (const [entry, names] of [
+      [
+        'conflict/textLineMerge.ts',
+        [...textLineMergeValues, ...textLineMergeTypes],
+      ],
+      ['conflict/rowEdit.ts', rowEditMergeTypes],
+    ] as const) {
+      const owner = exportsOf(entry)
+      for (const name of names) {
+        expect(root.get(name), name).toBe(owner.get(name))
+      }
+    }
+    expectTypeOf<base.TextLineMergeResult>().toEqualTypeOf<
+      base.RowEditMergeResult<string>
+    >()
+    expectTypeOf<
+      base.RowEditMergers<{ text: string; count: number }>
+    >().toEqualTypeOf<{
+      readonly text?: (
+        baseline: string,
+        draft: string,
+        incoming: string,
+      ) => base.RowEditMergeResult<string>
+      readonly count?: (
+        baseline: number,
+        draft: number,
+        incoming: number,
+      ) => base.RowEditMergeResult<number>
+    }>()
     for (const name of ['formatTimeZoneChoiceMoment', 'formatSnapshotMoment']) {
       expect(momentExports.has(name), name).toBe(true)
       expect(root.has(name), name).toBe(false)

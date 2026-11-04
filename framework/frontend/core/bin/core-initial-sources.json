@@ -27,6 +27,7 @@
   "src/browser/browserValues.ts",
   "src/conflict/rowEdit.ts",
   "src/conflict/rowEditSession.ts",
+  "src/conflict/textLineMerge.ts",
   "src/conflict/threeWayMerge.ts",
   "src/connection/ActionErrorStore.ts",
   "src/connection/HilosConnection.ts",

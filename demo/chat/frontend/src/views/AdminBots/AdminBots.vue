@@ -30,6 +30,8 @@ import {
   createHilosRowEdit,
   createSignal,
   hilosTableRowEditSource,
+  mergeTextLines,
+  type RowEditMergeResult,
 } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
@@ -119,6 +121,19 @@ function inputOf(form: BotForm): BotInput {
   }
 }
 
+/** Merge optional bot text using the form's existing empty-value normalization. */
+function mergeOptionalText(
+  baseline: string | null,
+  draft: string | null,
+  incoming: string | null,
+): RowEditMergeResult<string | null> {
+  const result = mergeTextLines(baseline ?? '', draft ?? '', incoming ?? '')
+
+  return result.merged
+    ? { merged: true, value: result.value.trim() || null }
+    : result
+}
+
 /** The form as the edit dialog opens it on a row. */
 function formOf(row: BotRow): BotForm {
   return {
@@ -144,6 +159,10 @@ const editor = createHilosRowEdit<BotRow, BotInput, BotForm>(
     fields: editFields,
     form: formOf,
     draft: inputOf,
+    merge: {
+      description: mergeOptionalText,
+      personality: mergeOptionalText,
+    },
     // A value taken from the other side lands in its field the way the form
     // opened with it.
     take: (form, taken) => ({
@@ -201,6 +220,7 @@ const fTopics = field('topics')
 const fPersonality = field('personality')
 const fActive = field('active')
 const live = useSignal(editor.state)
+const mergeable = useSignal(editor.mergeable)
 const saveAvailable = useSignal(editor.saveAvailable)
 const saveLabel = useSignal(editor.saveLabel)
 const formNoticeText = useSignal(editor.noticeText)
@@ -451,7 +471,7 @@ async function submitDelete(): Promise<void> {
               id="admin-bots-description"
               v-model="fDescription"
               class="form-control"
-              rows="2"
+              rows="5"
               data-id="admin-bots-description"
             ></textarea>
           </div>
@@ -483,7 +503,7 @@ async function submitDelete(): Promise<void> {
               id="admin-bots-personality"
               v-model="fPersonality"
               class="form-control"
-              rows="2"
+              rows="5"
               data-id="admin-bots-personality"
             ></textarea>
           </div>
@@ -509,11 +529,13 @@ async function submitDelete(): Promise<void> {
         <template #actions="{ requestClose }">
           <ConflictActions
             :conflict="formConflict"
+            :mergeable="mergeable"
             :disable-save="saveDisabled"
             :save-label="saveLabel"
             @save="submitForm"
             @accept-mine="acceptMine"
             @accept-theirs="acceptTheirs"
+            @merge="editor.merge()"
           >
             <template #cancel-button>
               <button

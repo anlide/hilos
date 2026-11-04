@@ -1,7 +1,7 @@
 // Covers the row-edit session (HIL-1279): opening and the refusal on a missing
 // row, the key check of the table source, the step landing in the form with a
-// hidden value left out, Keep mine / Take theirs, the verdict "fit to save" a
-// save in flight leaves standing and the verdict "can save" it takes down
+// hidden value left out, Keep mine / Take theirs / Merge, the verdict "fit to
+// save" a save in flight leaves standing and the verdict "can save" it takes down
 // (HIL-1766), the one door of the send — unchanged closes, blocked sends
 // nothing, success closes, failure stays, a late outcome moves nothing — the
 // close that lets the row go and forgets, and the save that waits for the live
@@ -9,6 +9,8 @@
 // its first occupation marks matching visible fields updated once, and keeps
 // the same save guards, merge steps and opening-scoped outcomes.
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { type RowEditMergers } from '../../src/conflict/rowEdit.js'
+import { mergeTextLines } from '../../src/conflict/textLineMerge.js'
 import {
   createHilosRowEdit,
   hilosRowEditIdle,
@@ -46,6 +48,7 @@ interface Form {
 /** A window over a signal row, with a form richer than its fields. */
 function signalHarness(
   initial: Row | null = { id: 1, name: 'Ann', note: null },
+  merge?: RowEditMergers<Fields>,
 ) {
   const live = createSignal<Row | undefined>(initial ?? undefined)
   const edit = createHilosRowEdit<Row, Fields, Form>(
@@ -53,6 +56,7 @@ function signalHarness(
     {
       initial: { hidden: false, name: '', note: '' },
       fields: (row) => ({ name: row.name, note: row.note }),
+      merge,
       form: (row) =>
         isHiddenValue(row.name)
           ? { hidden: true, name: '', note: '' }
@@ -322,6 +326,210 @@ describe('row-edit session: the live row', () => {
     expect(edit.state.get().conflict).toBe(false)
     expect(edit.noticeText.get()).toBe(HILOS_ROW_EDIT_COPY.updated)
     expect(edit.canSave.get()).toBe(false)
+  })
+})
+
+describe('row-edit session: explicit merge', () => {
+  const mergeNote: NonNullable<RowEditMergers<Fields>['note']> = (
+    baseline,
+    draft,
+    incoming,
+  ) => {
+    const result = mergeTextLines(baseline ?? '', draft ?? '', incoming ?? '')
+
+    return result.merged
+      ? { merged: true, value: result.value || null }
+      : result
+  }
+  const initial: Row = { id: 1, name: 'Ann', note: 'first\nsecond' }
+
+  it('has no implicit strategy for text conflicts', () => {
+    const { edit, live } = signalHarness(initial)
+    edit.open()
+    edit.patchForm({ note: 'mine\nsecond' })
+    live.set({ ...initial, note: 'first\ntheirs' })
+    const before = edit.checkpoint()
+    expect(edit.state.get().conflict).toBe(true)
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.checkpoint()).toEqual(before)
+    expect(edit.opened.get()).toBe(true)
+    edit.dispose()
+  })
+
+  it('derives availability from the current form and live fields without changing them', () => {
+    const { edit, live } = signalHarness(initial, { note: mergeNote })
+    edit.open()
+    edit.patchForm({ note: 'mine\nsecond' })
+    expect(edit.mergeable.get()).toBe(false)
+    live.set({ ...initial, note: 'first\ntheirs' })
+    const before = edit.checkpoint()
+    expect(edit.mergeable.get()).toBe(true)
+    expect(edit.checkpoint()).toEqual(before)
+    edit.patchForm({ note: 'first\nmine' })
+    expect(edit.mergeable.get()).toBe(false)
+    edit.patchForm({ note: 'new draft\nsecond' })
+    expect(edit.mergeable.get()).toBe(true)
+    live.set({ ...initial, note: 'other draft\nsecond' })
+    expect(edit.mergeable.get()).toBe(false)
+    live.set({ ...initial, note: 'first\nlatest' })
+    expect(edit.mergeable.get()).toBe(true)
+    edit.patchForm({ name: 'Bob' })
+    live.set({ ...initial, name: 'Carl', note: 'first\nlatest' })
+    expect(edit.mergeable.get()).toBe(false)
+    edit.patchForm({ name: 'Carl' })
+    expect(edit.mergeable.get()).toBe(true)
+    edit.merge()
+    expect(edit.form.get().note).toBe('new draft\nlatest')
+    edit.dispose()
+  })
+
+  it('merges locally without saving or closing and preserves automatic field acceptance', () => {
+    const { edit, live } = signalHarness(initial, { note: mergeNote })
+    edit.open()
+    edit.patchForm({ note: 'mine\nsecond' })
+    live.set({ ...initial, name: 'Anna', note: 'first\ntheirs' })
+    expect(edit.mergeable.get()).toBe(true)
+    expect(edit.canSave.get()).toBe(false)
+    edit.merge()
+    expect(edit.form.get()).toEqual({
+      hidden: false,
+      name: 'Anna',
+      note: 'mine\ntheirs',
+    })
+    expect(edit.checkpoint()?.baseline).toEqual({
+      values: { name: 'Anna', note: 'first\ntheirs' },
+      refreshed: ['name'],
+    })
+    expect(edit.state.get()).toMatchObject({ conflict: false, dirty: true })
+    expect(edit.mergeable.get()).toBe(false)
+    expect(edit.canSave.get()).toBe(true)
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.saving.get()).toBe(false)
+    expect(live.get()).toEqual({
+      ...initial,
+      name: 'Anna',
+      note: 'first\ntheirs',
+    })
+    edit.dispose()
+  })
+
+  it('uses nullable form projections and keeps a merged hidden value out of visible fields', () => {
+    const { edit, live } = signalHarness(initial, {
+      name: () => ({ merged: true, value: HIDDEN_VALUE }),
+      note: () => ({ merged: true, value: null }),
+    })
+    edit.open()
+    edit.patchForm({ name: 'Bob', note: 'mine' })
+    live.set({ ...initial, name: 'Carl', note: 'theirs' })
+    expect(edit.mergeable.get()).toBe(true)
+    edit.merge()
+    expect(edit.form.get()).toEqual({ hidden: false, name: 'Bob', note: '' })
+    expect(edit.state.get().fields.note.value).toBeNull()
+    expect(edit.state.get().conflict).toBe(false)
+    expect(edit.checkpoint()?.baseline.values).toEqual({
+      name: 'Carl',
+      note: 'theirs',
+    })
+    edit.dispose()
+  })
+
+  it('compares a later foreign edit against the advanced snapshot', () => {
+    const { edit, live } = signalHarness(initial, { note: mergeNote })
+    edit.open()
+    edit.patchForm({ note: 'mine\nsecond' })
+    live.set({ ...initial, note: 'first\ntheirs' })
+    edit.merge()
+    live.set({ ...initial, note: 'first\nlater' })
+    expect(edit.state.get().conflict).toBe(true)
+    expect(edit.mergeable.get()).toBe(true)
+    edit.merge()
+    expect(edit.form.get().note).toBe('mine\nlater')
+    expect(edit.checkpoint()?.baseline.values.note).toBe('first\nlater')
+    expect(edit.canSave.get()).toBe(true)
+    edit.dispose()
+  })
+
+  it('rechecks a previously safe set and refuses without a partial form or snapshot', () => {
+    const { edit, live } = signalHarness(initial, {
+      name: () => ({ merged: true, value: 'joined' }),
+      note: mergeNote,
+    })
+    edit.open()
+    edit.patchForm({ name: 'Bob', note: 'mine\nsecond' })
+    live.set({ ...initial, name: 'Carl', note: 'first\ntheirs' })
+    expect(edit.mergeable.get()).toBe(true)
+    live.set({ ...initial, name: 'Carl', note: 'overlap\nsecond' })
+    const before = edit.checkpoint()
+    edit.merge()
+    expect(edit.checkpoint()).toEqual(before)
+    expect(edit.form.get()).toEqual({
+      hidden: false,
+      name: 'Bob',
+      note: 'mine\nsecond',
+    })
+    expect(edit.mergeable.get()).toBe(false)
+    expect(edit.state.get().conflict).toBe(true)
+    edit.dispose()
+  })
+
+  it('does nothing while closed, gone, saving or without conflicts', async () => {
+    const { edit, live } = signalHarness(initial, { note: mergeNote })
+    const closed = edit.form.get()
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.form.get()).toBe(closed)
+    edit.open()
+    edit.patchForm({ note: 'mine\nsecond' })
+    const clean = edit.checkpoint()
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.checkpoint()).toEqual(clean)
+
+    let release: (saved: boolean) => void = () => undefined
+    const pending = edit.save(
+      () => new Promise<boolean>((resolve) => (release = resolve)),
+    )
+    live.set({ ...initial, note: 'first\ntheirs' })
+    const saving = edit.checkpoint()
+    expect(edit.state.get().conflict).toBe(true)
+    expect(edit.saving.get()).toBe(true)
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.checkpoint()).toEqual(saving)
+    release(false)
+    await pending
+    expect(edit.mergeable.get()).toBe(true)
+
+    live.set(undefined)
+    const gone = edit.checkpoint()
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.checkpoint()).toEqual(gone)
+    edit.close()
+    const afterClose = edit.form.get()
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.form.get()).toBe(afterClose)
+    edit.dispose()
+  })
+
+  it('sends the merged projected draft only through a separate Save', async () => {
+    const { edit, live } = signalHarness(initial, { note: mergeNote })
+    const send = vi.fn(() => Promise.resolve(true))
+    edit.open()
+    edit.patchForm({ note: 'mine\nsecond' })
+    live.set({ ...initial, note: 'first\ntheirs' })
+    edit.merge()
+    expect(send).not.toHaveBeenCalled()
+    expect(edit.opened.get()).toBe(true)
+    await edit.save(send)
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      { name: 'Ann', note: 'mine\ntheirs' },
+      initial,
+    )
+    expect(edit.opened.get()).toBe(false)
+    edit.dispose()
   })
 })
 

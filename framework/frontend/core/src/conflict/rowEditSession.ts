@@ -4,14 +4,14 @@
 // holds everything a window built on it used to assemble by hand, in every
 // view layer and every project: the snapshot taken on open, the live row read
 // from the table's focus with its key checked, the step applied as it comes,
-// Keep mine / Take theirs, the one line of notice, the verdict "fit to save"
-// the Save button's look reads and the verdict "can save" the form's submit
-// reads, and one door for the send with "nothing changed — close". A
+// Keep mine / Take theirs / Merge, the one line of notice, the verdict "fit to
+// save" the Save button's look reads and the verdict "can save" the form's
+// submit reads, and one door for the send with "nothing changed — close". A
 // window's own part — how its row projects onto fields and onto its form, its
 // words, its check of the input, what the form forgets on close — comes in as
 // options. A framework window wraps this once in a factory beside its module
 // (hilosSettingEdit.ts and its kin); a project window takes createHilosRowEdit
-// directly. Nobody assembles a window from the four merge functions any more
+// directly. Nobody assembles a window from the pure merge functions any more
 // — the linter refuses it.
 //
 // Core signals only (state/signal.ts): the three view layers mirror them
@@ -30,10 +30,12 @@ import {
 import { type TableViewportController } from '../table/TableViewportController.js'
 import {
   keepMineRowEdit,
+  mergeRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
   type RowEditBaseline,
+  type RowEditMergers,
   type RowEditState,
   type RowEditStep,
 } from './rowEdit.js'
@@ -169,6 +171,12 @@ export interface HilosRowEditProjection<R, T extends object, F = T> {
    */
   fields(row: R): T
   /**
+   * Explicit merge strategies, absent by default. Merge is available only
+   * when every current conflict has a strategy and yields a safe result.
+   * Strategies are pure: checking availability never changes the edit.
+   */
+  readonly merge?: RowEditMergers<T>
+  /**
    * Whether the known place still has no record; false by default. This reads
    * the live carrier row, independently of the draft or opening values. An
    * unchanged valid form may save while the place is empty. On its first
@@ -192,11 +200,11 @@ export interface HilosRowEditProjection<R, T extends object, F = T> {
    */
   draft?(form: F, row: R): T
   /**
-   * The form with the values a step took from the other side laid into it. A
+   * The form with a step's accepted or merged values laid into it. A
    * hidden value never reaches here: it moves the snapshot and nothing else.
    *
    * @param form The form as it stands.
-   * @param taken The fields taken, with their live values.
+   * @param taken The accepted fields, with their live or explicitly merged values.
    * @param row The row the window opened on.
    * @param live The live row, or undefined when it is gone.
    */
@@ -267,6 +275,12 @@ export interface HilosRowEdit<R, T extends object, F = T> {
   readonly noticeText: ReadonlySignal<string>
   /** True while a save is in flight. */
   readonly saving: ReadonlySignal<boolean>
+  /**
+   * Whether every current conflict can merge safely. False while closed,
+   * gone, saving, without conflicts, or without a strategy for any conflict.
+   * Reading this signal never changes the form or the snapshot.
+   */
+  readonly mergeable: ReadonlySignal<boolean>
   /**
    * Whether the form is fit to save, whatever is in flight: the window is
    * open, the row is still there, no conflict stands, the input passes the
@@ -349,6 +363,13 @@ export interface HilosRowEdit<R, T extends object, F = T> {
   keepMine(): void
   /** Take theirs: the live value lands in the form and the snapshot. */
   takeTheirs(): void
+  /**
+   * Recompute and apply a safe merge of every current conflict in one step.
+   * Advances their snapshot to incoming and lays the merged values into the
+   * form through its projection. Never sends or closes; a separate Save sends
+   * the merged draft. Does nothing when {@link HilosRowEdit.mergeable} is false.
+   */
+  merge(): void
   /**
    * Save by the reply of an action: nothing leaves while the window is closed,
    * the row is gone, a conflict stands, a save is in flight or the input fails
@@ -544,6 +565,17 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       settle: { ...step, baseline: { ...step.baseline, refreshed } },
     }
   })
+  const mergeable = computedSignal(() => {
+    const snapshot = baseline.get()
+
+    return (
+      opened.get() &&
+      !saving.get() &&
+      snapshot !== null &&
+      options.merge !== undefined &&
+      mergeRowEdit(state.get(), snapshot, options.merge) !== null
+    )
+  })
   const noticeText = computedSignal(() => {
     const verdict = state.get()
     switch (verdict.notice?.kind) {
@@ -667,6 +699,7 @@ export function createHilosRowEdit<R, T extends object, F = T>(
     state,
     noticeText,
     saving,
+    mergeable,
     saveAvailable,
     canSave,
     saveLabel,
@@ -820,6 +853,29 @@ export function createHilosRowEdit<R, T extends object, F = T>(
         return
       }
       apply(takeTheirsRowEdit(state.get(), snapshot))
+    },
+    merge() {
+      const snapshot = baseline.get()
+      if (
+        replacing ||
+        !opened.get() ||
+        saving.get() ||
+        snapshot === null ||
+        options.merge === undefined
+      ) {
+        return
+      }
+      const step = mergeRowEdit(state.get(), snapshot, options.merge)
+      if (step === null) {
+        return
+      }
+      replacing = true
+      try {
+        apply(step)
+      } finally {
+        replacing = false
+        settle()
+      }
     },
     async save(send) {
       const pass = passSave()

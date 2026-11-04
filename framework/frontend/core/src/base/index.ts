@@ -1246,6 +1246,10 @@ export {
   type ThreeWayMergeStatus,
 } from '../conflict/threeWayMerge.js'
 export {
+  mergeTextLines,
+  type TextLineMergeResult,
+} from '../conflict/textLineMerge.js'
+export {
   openRowEdit,
   resolveRowEdit,
   keepMineRowEdit,
@@ -1256,6 +1260,8 @@ export {
   type RowEditNoticeKind,
   type RowEditState,
   type RowEditStep,
+  type RowEditMergeResult,
+  type RowEditMergers,
 } from '../conflict/rowEdit.js'
 export {
   createHilosRowEdit,

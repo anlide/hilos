@@ -5,7 +5,7 @@
 // side, and the verdict over every field at once: what the form takes
 // silently, whether a conflict stands, whether Save has anything to send, and
 // which one message the modal shows. Pure data in, pure data out — no Vue, no
-// DOM. A window never calls these four functions itself: it takes the session,
+// DOM. A window never calls these functions itself: it takes the session,
 // which drives them once for every view layer and every project (the linter
 // refuses their value import outside the core). A field is a primitive —
 // string, number, boolean, null — compared with Object.is; a form richer than
@@ -16,6 +16,19 @@ import { threeWayMerge, type ThreeWayMergeResult } from './threeWayMerge.js'
 
 /** Which one message the edit modal shows, highest precedence first. */
 export type RowEditNoticeKind = 'deleted' | 'conflict' | 'updated'
+
+/** A complete safe merge, or a refusal that leaves the choice with the person. */
+export type RowEditMergeResult<V> =
+  { readonly merged: true; readonly value: V } | { readonly merged: false }
+
+/** Optional three-way merge strategies, each typed to its own edited field. */
+export type RowEditMergers<T> = {
+  readonly [K in keyof T]?: (
+    baseline: T[K],
+    draft: T[K],
+    incoming: T[K],
+  ) => RowEditMergeResult<T[K]>
+}
 
 /**
  * The snapshot an edit compares against: the saved values the person last saw,
@@ -247,6 +260,50 @@ export function takeTheirsRowEdit<T extends object>(
       values = { ...values, [key]: state.fields[key].incoming }
       refreshed = withField(refreshed, key)
     }
+  }
+
+  return { baseline: { values, refreshed }, take }
+}
+
+/**
+ * Merge every conflicting field explicitly, or refuse the whole choice.
+ * Strategies never change the automatic field classification. Only the
+ * conflicting fields move: their snapshots advance to incoming, their merged
+ * values go into the form, and their refreshed marks clear.
+ *
+ * @param state The current verdict the choice answers.
+ * @param baseline The snapshot the verdict was made against.
+ * @param mergers The opt-in strategy for each field that may conflict.
+ * @returns The complete step, or null when any conflict cannot merge safely,
+ * the row is gone, or there are no conflicts.
+ */
+export function mergeRowEdit<T extends object>(
+  state: RowEditState<T>,
+  baseline: RowEditBaseline<T>,
+  mergers: RowEditMergers<T>,
+): RowEditStep<T> | null {
+  if (state.gone || !state.conflict) {
+    return null
+  }
+  const take: Partial<T> = {}
+  let values = baseline.values
+  let refreshed = baseline.refreshed
+  for (const key of fieldsOf(baseline.values)) {
+    const field = state.fields[key]
+    if (!field.conflict) {
+      continue
+    }
+    const merge = mergers[key]
+    if (merge === undefined) {
+      return null
+    }
+    const result = merge(baseline.values[key], field.value, field.incoming)
+    if (!result.merged) {
+      return null
+    }
+    take[key] = result.value
+    values = { ...values, [key]: field.incoming }
+    refreshed = withoutField(refreshed, key)
   }
 
   return { baseline: { values, refreshed }, take }

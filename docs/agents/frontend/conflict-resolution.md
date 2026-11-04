@@ -117,7 +117,7 @@ what the form showed on open:
 | Only the user changed | Keep the draft. |
 | Only incoming changed | Take incoming automatically, with an update notice and no choice. |
 | Both changed to the same value | Keep the matching value, mark it updated, and ask for no choice. |
-| Both changed the same field to different values | Mark the conflict, explain "Changed elsewhere", and offer **Keep mine / Take theirs**. |
+| Both changed the same field to different values | Mark the conflict, explain "Changed elsewhere", and offer **Keep mine / Take theirs**, plus explicit **Merge** when all conflicts can merge safely (below). |
 | The user and incoming changed different fields | Merge those fields automatically. |
 
 An untouched prefill is unchanged and does not conflict with incoming. An
@@ -131,9 +131,11 @@ field or prefill.
 ### Surfacing conflicts
 
 When a field conflicts, the user must know it exists and that it needs a choice:
-present both values (theirs and the incoming) and let the user pick. The merge is
+present both values (the draft and incoming) and let the user pick. The merge is
 per field, so non-conflicting fields stay merged while the user resolves the one
-that conflicts.
+that conflicts. `threeWayMerge` and `resolveRowEdit` keep this automatic field
+classification; splicing text inside a conflicting field requires the explicit
+Merge choice below.
 
 ### The row-edit session
 
@@ -152,7 +154,7 @@ framework window takes its own factory beside its module —
 `createHilosUserRenameEdit`, `createHilosLegalSettingEdit` — holding what is
 the window's own and the same in every view layer; a project window takes
 `createHilosRowEdit` directly (the chat's bot window). Nobody assembles a
-window from the four merge functions: the linter refuses their value import in
+window from the pure merge functions: the linter refuses their value import in
 the view layers and the demos (`import type` stays allowed), so the next rule
 of an edit window is written once, not once per window.
 
@@ -187,9 +189,9 @@ of an edit window is written once, not once per window.
   `dispose()`: a field only the other side changed lands in the form without a
   choice and the snapshot moves. Matching draft and incoming also move it. The
   snapshot starts with the shown values, then holds the latest saved values
-  accepted automatically or through **Keep mine** / **Take theirs**, so a second
-  change compares against that, not against what the modal opened with. The
-  window supplies projections; the view does not assemble its own merge.
+  accepted automatically or through **Keep mine** / **Take theirs** / **Merge**,
+  so a second change compares against that, not against what the modal opened
+  with. The window supplies projections; the view does not assemble its own merge.
   The optional `creating(live)` projection, false by default, reports whether
   the known place still has no record independently of those field values.
   On the first occupation, the session marks visible fields whose merged
@@ -246,11 +248,78 @@ Angular's
 [`HilosSettingsPage`](../../../framework/frontend/angular/src/admin/settings/HilosSettingsPage.ts)
 mirrors `editor.saving` into `editSaving` for the modal and footer Cancel.
 
-- **Merge** is offered only on a surface where splicing two values makes sense
-  (`mergeable`); a typed value — a setting, a channel field, a name — has no
-  Merge, only Keep mine and Take theirs.
-- The worked examples are `createHilosSettingEdit` and the three settings
-  pages, `framework/frontend/{vue,react,angular}/src/admin/settings/HilosSettingsPage.*`.
+### Explicit Merge before Save
+
+**Merge is opt-in per field.** A window supplies
+`readonly merge?: RowEditMergers<T>` in its `HilosRowEditProjection` options.
+The map names only fields where combining two edits makes sense; each optional
+strategy takes that field's current baseline, draft and incoming and returns a
+complete value or a refusal:
+
+```ts
+type RowEditMergeResult<V> =
+  | { readonly merged: true; readonly value: V }
+  | { readonly merged: false }
+
+type RowEditMergers<T> = {
+  readonly [K in keyof T]?: (
+    baseline: T[K],
+    draft: T[K],
+    incoming: T[K],
+  ) => RowEditMergeResult<T[K]>
+}
+```
+
+Do not infer a strategy from `typeof value === 'string'` or enable it for every
+field at once. Typed values — settings, channel fields, names — keep **Keep
+mine / Take theirs**, even when their representation is a string.
+
+The session exposes `readonly mergeable: ReadonlySignal<boolean>` and
+`merge(): void`. The options' `merge` is the strategy map; the session's
+`merge()` applies a choice. Offer one common Merge action only when **every
+current conflicting field** has a strategy that returns a safe result. A missing strategy, an
+overlap the strategy refuses, or a mixed conflict with an unmergeable typed
+field hides Merge for the whole edit. There is no partial application.
+`mergeable` is false while closed, gone, saving, or without a conflict.
+
+Strategies must be pure: reading `mergeable` changes neither the baseline nor
+the form. On click, `merge()` recomputes from the fresh baseline, draft and
+incoming rather than applying a cached preview. If any current conflict
+refuses, it writes nothing. On success, it applies all merged fields in one
+step through the ordinary `take` / `draft` projections, advances each resolved
+field's baseline to its current **incoming**, and clears its `refreshed` mark.
+Other fields keep their ordinary settle behavior. A later external change
+compares against this advanced snapshot. Hidden values move the snapshot and
+never enter the form.
+
+Merge sends no action and does not close the modal. The resolved conflicts
+disappear, and the ordinary `canSave` verdict still governs both Save and
+Enter. A separate Save sends the merged draft; its successful reply closes
+the window through the existing save path.
+
+For plain text, the core exports
+[`mergeTextLines`](../../../framework/frontend/core/src/conflict/textLineMerge.ts)
+with signature `mergeTextLines(baseline: string, draft: string, incoming: string):
+TextLineMergeResult`, where `TextLineMergeResult = RowEditMergeResult<string>`.
+It compares complete lines against their common baseline. Independent changes
+to different lines combine; different changes to one original line, competing
+insertions at one position, deletion against an edit of the same lines, and
+ambiguous overlapping ranges refuse the whole result. Identical changes apply
+once. The helper preserves blank lines, LF / CRLF separators and the presence
+or absence of a final newline; it performs no global trim.
+
+The working Merge example is the Vue chat's
+[`AdminBots.vue`](../../../demo/chat/frontend/src/views/AdminBots/AdminBots.vue)
+edit window. Only `description` and `personality` opt into line merging; a
+conflict in `name`, `style`, `topics` or `active` leaves only Keep mine / Take
+theirs. Its nullable adapter compares `null` as empty text, then applies the
+form's existing trim-and-null normalization to the successful result.
+`inputOf` and the `sendBotUpdate` payload keep their existing format. The view
+mirrors `editor.mergeable` through `useSignal`, passes it to `ConflictActions`
+and calls `editor.merge()` on Merge. Add shares the form but creates a new
+entity with no baseline, so it offers no conflict Merge. The settings factories
+and Vue / React / Angular settings pages above remain examples of typed fields
+without Merge.
 
 ### Checkpoints and own-save rebase
 
