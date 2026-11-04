@@ -700,6 +700,8 @@ export class HilosI18nLocaleWindow {
 
   protected readonly step = signal<'form' | 'switchOn' | 'switchOff'>('form')
   protected readonly unsavedAtStep = signal(false)
+  private readonly ownSwitching = signal(false)
+  private openingToken = Symbol()
   private readonly openedName = signal('')
   private readonly viewSnapshot = signal<HilosI18nLocaleRow | null>(null)
 
@@ -784,12 +786,14 @@ export class HilosI18nLocaleWindow {
       ? this.addLockedOn()
       : this.mode() === 'edit' &&
         !this.busy() &&
+        !this.ownSwitching() &&
         this.liveRow()?.enabled === true,
   )
   private readonly switchedOff = computed(
     () =>
       this.mode() === 'view' &&
       !this.busy() &&
+      !this.ownSwitching() &&
       this.liveRow()?.enabled === false,
   )
   protected readonly frozen = computed(
@@ -810,6 +814,7 @@ export class HilosI18nLocaleWindow {
     (): { kind: RowEditNoticeKind | null; text: string } => {
       const elsewhere = this.copy.elsewhere
       const mode = this.mode()
+      if (mode === null) return { kind: null, text: '' }
       if (mode === 'add') {
         return this.addGone()
           ? { kind: 'deleted', text: elsewhere.deleted }
@@ -912,8 +917,10 @@ export class HilosI18nLocaleWindow {
   }
 
   private begin(opening: HilosI18nLocaleWindowOpening | null): void {
+    this.openingToken = Symbol()
     this.step.set('form')
     this.unsavedAtStep.set(false)
+    this.ownSwitching.set(false)
     if (opening === null) return
     const { controller, editor, creator } = this.session()
     const card = this.card()
@@ -982,6 +989,7 @@ export class HilosI18nLocaleWindow {
     if (
       this.lookOnly.locked() ||
       this.busy() ||
+      this.ownSwitching() ||
       this.unsavedAtStep() ||
       this.lockedOn() ||
       this.editState().gone ||
@@ -989,13 +997,20 @@ export class HilosI18nLocaleWindow {
     )
       return
     const { switcher } = this.session()
-    if (
-      (await this.switchAction.run(
-        switcher.switchOn(row.languageId, row.countryId, row.localeId!),
-      )) &&
-      !this.destroyRef.destroyed
-    ) {
-      this.closeWindow()
+    const opening = this.openingToken
+    this.ownSwitching.set(true)
+    try {
+      if (
+        (await this.switchAction.run(
+          switcher.switchOn(row.languageId, row.countryId, row.localeId!),
+        )) &&
+        !this.destroyRef.destroyed &&
+        this.openingToken === opening
+      ) {
+        this.closeWindow()
+      }
+    } finally {
+      if (this.openingToken === opening) this.ownSwitching.set(false)
     }
   }
 
@@ -1004,19 +1019,31 @@ export class HilosI18nLocaleWindow {
     if (
       this.lookOnly.locked() ||
       this.busy() ||
+      this.ownSwitching() ||
       this.offVerdict().disabled ||
       this.card() === null ||
       live === undefined
     )
       return
     const { offSwitcher } = this.session()
-    if (
-      (await this.offAction.run(
-        offSwitcher.switchOff(live.languageId, live.countryId, live.localeId!),
-      )) &&
-      !this.destroyRef.destroyed
-    ) {
-      this.closeWindow()
+    const opening = this.openingToken
+    this.ownSwitching.set(true)
+    try {
+      if (
+        (await this.offAction.run(
+          offSwitcher.switchOff(
+            live.languageId,
+            live.countryId,
+            live.localeId!,
+          ),
+        )) &&
+        !this.destroyRef.destroyed &&
+        this.openingToken === opening
+      ) {
+        this.closeWindow()
+      }
+    } finally {
+      if (this.openingToken === opening) this.ownSwitching.set(false)
     }
   }
 

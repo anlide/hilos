@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { flushSync } from 'react-dom'
 import { act, fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -27,7 +28,8 @@ import {
 
 function setup(row = localeRow, viewer = false, initialCard = languageCard) {
   const h = harness(),
-    focus = focusSource<HilosI18nLocaleRow>(row)
+    focus = focusSource<HilosI18nLocaleRow>(row),
+    closed = vi.fn()
   let updateCard: (card: HilosI18nLanguageCard | null) => void = () => {},
     updateViewer: (viewer: boolean) => void = () => {},
     updateOpen: (opened: boolean) => void = () => {}
@@ -47,7 +49,10 @@ function setup(row = localeRow, viewer = false, initialCard = languageCard) {
           card={card}
           templates={templates}
           opened={open ? opening : null}
-          onClose={() => setOpen(false)}
+          onClose={() => {
+            closed()
+            setOpen(false)
+          }}
         />
       </HilosAdminViewModeContext.Provider>
     )
@@ -57,6 +62,7 @@ function setup(row = localeRow, viewer = false, initialCard = languageCard) {
     ...h,
     ...focus,
     view,
+    closed,
     card: (card: HilosI18nLanguageCard | null) => act(() => updateCard(card)),
     viewer: (viewer: boolean) => act(() => updateViewer(viewer)),
     reopen: () => {
@@ -461,28 +467,80 @@ describe('React locale confirmations', () => {
       }
       const h = setup(row)
       click(`i18n-locale-switch-${direction}`)
-      click(`i18n-locale-switch-${direction}-confirm`)
-      click(`i18n-locale-switch-${direction}-confirm`)
-      expect(h.calls).toHaveLength(1)
-      expect(h.calls[0]).toMatchObject({
-        action: `hilos_i18n_locale_switch_${direction}`,
-        payload: {
-          languageId: 19,
-          countryId: country === null ? null : 101,
-          localeId: country === null ? 19000 : 19101,
-        },
+      // React's act/batching and the real portal teardown decide which DOM
+      // transitions commit; keep this lifecycle check local to the adapter.
+      const notices: string[] = []
+      const recordNotices = (records: MutationRecord[]) => {
+        notices.push(el('i18n-locale-notice')?.textContent ?? '')
+        for (const record of records)
+          notices.push(
+            record.oldValue ?? '',
+            ...Array.from(record.addedNodes, (node) => node.textContent ?? ''),
+            ...Array.from(
+              record.removedNodes,
+              (node) => node.textContent ?? '',
+            ),
+          )
+      }
+      const observer = new MutationObserver(recordNotices)
+      observer.observe(el('i18n-locale-notice-slot'), {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        characterDataOldValue: true,
       })
-      act(() => h.focused.set({ ...row, enabled: direction === 'on' }))
-      expect(el('i18n-locale-notice-slot').textContent).not.toContain(
-        'elsewhere',
-      )
-      busyClose()
-      expect(
-        el<HTMLButtonElement>(`i18n-locale-switch-${direction}-back`).disabled,
-      ).toBe(true)
-      await settle(() => h.succeed())
-      expect(el('i18n-locale-window')).toBeNull()
-      expect(h.focused.get()).toBeUndefined()
+      try {
+        click(`i18n-locale-switch-${direction}-confirm`)
+        click(`i18n-locale-switch-${direction}-confirm`)
+        expect(h.calls).toHaveLength(1)
+        expect(h.calls[0]).toMatchObject({
+          action: `hilos_i18n_locale_switch_${direction}`,
+          payload: {
+            languageId: 19,
+            countryId: country === null ? null : 101,
+            localeId: country === null ? 19000 : 19101,
+          },
+        })
+        act(() => h.focused.set({ ...row, enabled: direction === 'on' }))
+        expect(el('i18n-locale-notice-slot').textContent).not.toContain(
+          'elsewhere',
+        )
+        busyClose()
+        expect(
+          el<HTMLButtonElement>(`i18n-locale-switch-${direction}-back`)
+            .disabled,
+        ).toBe(true)
+        await act(async () => {
+          h.succeed()
+          await Promise.resolve()
+          // A live-store delivery can commit after run clears busy and before
+          // confirm resumes. Flush that delivery inside act so its batching
+          // cannot hide the real component's intermediate DOM.
+          flushSync(() =>
+            h.focused.set({ ...row, enabled: direction === 'on' }),
+          )
+          expect(el('i18n-locale-window')).not.toBeNull()
+          expect(
+            el(`i18n-locale-switch-${direction}-confirm`).getAttribute(
+              'aria-busy',
+            ),
+          ).toBeNull()
+          click(`i18n-locale-switch-${direction}-confirm`)
+          busyClose()
+          expect(h.calls).toHaveLength(1)
+          expect(h.closed).not.toHaveBeenCalled()
+        })
+        recordNotices(observer.takeRecords())
+        expect(el('i18n-locale-window')).toBeNull()
+        expect(h.focused.get()).toBeUndefined()
+        expect(h.closed).toHaveBeenCalledTimes(1)
+        expect(h.releaseFocus).toHaveBeenCalledTimes(direction === 'on' ? 2 : 1)
+        expect(notices.some((notice) => notice.includes('elsewhere'))).toBe(
+          false,
+        )
+      } finally {
+        observer.disconnect()
+      }
     },
   )
   it('explains the protected countryless default and refuses confirmation', () => {
@@ -532,18 +590,130 @@ describe('React locale confirmations', () => {
         'Server refused switch',
       )
       expect(el(`i18n-locale-switch-${direction}-body`)).not.toBeNull()
+      expect(h.closed).not.toHaveBeenCalled()
+      click(`i18n-locale-switch-${direction}-confirm`)
+      expect(h.calls).toHaveLength(2)
+      await settle(() => h.refuse(1, 'Server refused retry'))
+      expect(el('i18n-locale-error').textContent).toContain(
+        'Server refused retry',
+      )
       click(`i18n-locale-switch-${direction}-back`)
+      expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+        formats.date,
+      )
       click(`i18n-locale-switch-${direction}`)
       expect(el('i18n-locale-error').textContent).not.toContain(
-        'Server refused switch',
+        'Server refused',
       )
       click(`i18n-locale-switch-${direction}-confirm`)
-      await settle(() => h.refuse(1))
+      expect(h.calls).toHaveLength(3)
+      await settle(() => h.refuse(2))
       h.reopen()
       expect(el(`i18n-locale-switch-${direction}-body`)).toBeNull()
       expect(el('i18n-locale-error').textContent).not.toContain(
         'Server refused',
       )
+    },
+  )
+  it.each([
+    ['on', 'pending'],
+    ['on', 'refused'],
+    ['off', 'pending'],
+    ['off', 'refused'],
+  ] as const)(
+    'shows external switch-%s after its own refusal (change while %s)',
+    async (direction, timing) => {
+      const row = { ...localeRow, enabled: direction === 'off' }
+      const h = setup(row)
+      click(`i18n-locale-switch-${direction}`)
+      click(`i18n-locale-switch-${direction}-confirm`)
+      if (timing === 'pending') {
+        act(() => h.focused.set({ ...row, enabled: direction === 'on' }))
+        expect(el('i18n-locale-notice-slot').textContent).not.toContain(
+          'elsewhere',
+        )
+      }
+      await act(async () => {
+        h.refuse(0, 'Server refused switch')
+        await Promise.resolve()
+        if (timing === 'pending') {
+          // Commit the refusal before confirm's finally releases its guard;
+          // releasing it must itself render the current external verdict.
+          flushSync(() =>
+            h.focused.set({ ...row, enabled: direction === 'on' }),
+          )
+          expect(el('i18n-locale-notice-slot').textContent).not.toContain(
+            'elsewhere',
+          )
+        }
+      })
+      if (timing === 'refused')
+        act(() => h.focused.set({ ...row, enabled: direction === 'on' }))
+      expect(h.closed).not.toHaveBeenCalled()
+      expect(el('i18n-locale-error').textContent).toContain(
+        'Server refused switch',
+      )
+      expect(el('i18n-locale-notice').textContent).toContain(
+        direction === 'on'
+          ? 'Switched on elsewhere just now.'
+          : 'Switched off elsewhere just now.',
+      )
+      expect(
+        el<HTMLButtonElement>(`i18n-locale-switch-${direction}-confirm`)
+          .disabled,
+      ).toBe(true)
+      click(`i18n-locale-switch-${direction}-confirm`)
+      expect(h.calls).toHaveLength(1)
+      click(`i18n-locale-switch-${direction}-back`)
+      expect(el<HTMLSelectElement>('i18n-locale-field-date').value).toBe(
+        formats.date,
+      )
+      expect(el<HTMLSelectElement>('i18n-locale-field-date').disabled).toBe(
+        true,
+      )
+    },
+  )
+  it.each([
+    ['on', 'success'],
+    ['on', 'refusal'],
+    ['off', 'success'],
+    ['off', 'refusal'],
+  ] as const)(
+    'keeps a reopened switch-%s window live after the previous %s',
+    async (direction, outcome) => {
+      const row = { ...localeRow, enabled: direction === 'off' }
+      const h = setup(row)
+      click(`i18n-locale-switch-${direction}`)
+      click(`i18n-locale-switch-${direction}-confirm`)
+      h.reopen()
+      act(() => h.focused.set({ ...row, enabled: direction === 'on' }))
+      const notice =
+        direction === 'on'
+          ? 'Switched on elsewhere just now.'
+          : 'Switched off elsewhere just now.'
+      expect(el('i18n-locale-notice').textContent).toContain(notice)
+      await settle(() => {
+        if (outcome === 'success') h.succeed()
+        else h.refuse(0, 'Old request refused')
+      })
+      expect(h.closed).not.toHaveBeenCalled()
+      expect(h.focused.get()?.localeId).toBe(row.localeId)
+      expect(el(`i18n-locale-switch-${direction}-body`)).toBeNull()
+      expect(el('i18n-locale-error').textContent).not.toContain(
+        'Old request refused',
+      )
+      expect(el('i18n-locale-notice').textContent).toContain(notice)
+      expect(
+        el<HTMLButtonElement>(`i18n-locale-switch-${direction}`).disabled,
+      ).toBe(true)
+      act(() => h.focused.set(row))
+      click(`i18n-locale-switch-${direction}`)
+      click(`i18n-locale-switch-${direction}-confirm`)
+      expect(h.calls).toHaveLength(2)
+      await settle(() => h.succeed(1))
+      expect(h.closed).toHaveBeenCalledTimes(1)
+      expect(el('i18n-locale-window')).toBeNull()
+      expect(h.focused.get()).toBeUndefined()
     },
   )
   it.each(['row', 'formats', 'locale', 'card'] as const)(

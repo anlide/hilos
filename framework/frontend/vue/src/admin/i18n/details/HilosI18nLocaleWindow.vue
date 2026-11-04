@@ -74,6 +74,7 @@ const switchAction = useTrackedAction()
 const offAction = useTrackedAction()
 const body = ref<HTMLElement>()
 const step = ref<'form' | 'switchOn' | 'switchOff'>('form')
+const ownSwitching = ref(false)
 const unsavedAtStep = ref(false)
 const openedName = ref('')
 const viewSnapshot = ref<HilosI18nLocaleRow | null>(null)
@@ -143,11 +144,17 @@ const offVerdict = computed(() =>
 const lockedOn = computed(() =>
   mode.value === 'add'
     ? addLockedOn.value
-    : mode.value === 'edit' && !busy.value && liveRow.value?.enabled === true,
+    : mode.value === 'edit' &&
+      !busy.value &&
+      !ownSwitching.value &&
+      liveRow.value?.enabled === true,
 )
 const switchedOff = computed(
   () =>
-    mode.value === 'view' && !busy.value && liveRow.value?.enabled === false,
+    mode.value === 'view' &&
+    !busy.value &&
+    !ownSwitching.value &&
+    liveRow.value?.enabled === false,
 )
 const noticeKind = computed(() => {
   if (mode.value === 'add') return addNoticeKind.value
@@ -204,6 +211,7 @@ onUnmounted(() => {
   editor.dispose()
   creator.dispose()
   props.controller.releaseFocus()
+  ownSwitching.value = false
 })
 watch(
   () => props.opened,
@@ -214,6 +222,7 @@ watch(
       editor.close()
       creator.close()
       props.controller.releaseFocus()
+      ownSwitching.value = false
       return
     }
     openedName.value = props.card?.nativeName ?? ''
@@ -227,6 +236,7 @@ watch(
       viewSnapshot.value = props.controller.focusRow(opening.rowKey)
       if (viewSnapshot.value === null) emit('close')
     }
+    ownSwitching.value = false
   },
   { immediate: true },
 )
@@ -272,40 +282,63 @@ function back(): void {
 }
 
 async function confirmSwitchOff(): Promise<void> {
-  if (busy.value || offVerdict.value.disabled || !props.card || !liveRow.value)
-    return
   if (
-    await offAction.run(
-      offSwitcher.switchOff(
-        row.value!.languageId,
-        row.value!.countryId,
-        row.value!.localeId!,
-      ),
-    )
-  ) {
-    closeWindow()
+    busy.value ||
+    ownSwitching.value ||
+    offVerdict.value.disabled ||
+    !props.card ||
+    !liveRow.value
+  )
+    return
+  const opening = props.opened
+  try {
+    ownSwitching.value = true
+    if (
+      (await offAction.run(
+        offSwitcher.switchOff(
+          row.value!.languageId,
+          row.value!.countryId,
+          row.value!.localeId!,
+        ),
+      )) &&
+      props.opened === opening &&
+      ownSwitching.value
+    ) {
+      closeWindow()
+    }
+  } finally {
+    if (props.opened === opening) ownSwitching.value = false
   }
 }
 
 async function confirm(): Promise<void> {
   if (
     busy.value ||
+    ownSwitching.value ||
     unsavedAtStep.value ||
     lockedOn.value ||
     editState.value.gone ||
     !row.value
   )
     return
-  if (
-    await switchAction.run(
-      switcher.switchOn(
-        row.value.languageId,
-        row.value.countryId,
-        row.value.localeId!,
-      ),
-    )
-  ) {
-    closeWindow()
+  const opening = props.opened
+  try {
+    ownSwitching.value = true
+    if (
+      (await switchAction.run(
+        switcher.switchOn(
+          row.value.languageId,
+          row.value.countryId,
+          row.value.localeId!,
+        ),
+      )) &&
+      props.opened === opening &&
+      ownSwitching.value
+    ) {
+      closeWindow()
+    }
+  } finally {
+    if (props.opened === opening) ownSwitching.value = false
   }
 }
 

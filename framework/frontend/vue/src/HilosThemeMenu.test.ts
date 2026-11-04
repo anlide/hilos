@@ -229,6 +229,7 @@ afterEach(() => {
   while (attached.length > 0) {
     attached.pop()?.unmount()
   }
+  document.body.innerHTML = ''
   releaseSession?.()
   releaseSession = undefined
   restoreCatalog()
@@ -269,6 +270,17 @@ function optionButtons(wrapper: VueWrapper): HTMLButtonElement[] {
     .find('[data-id="nav-theme-menu"]')
     .findAll('[role="menuitemradio"]')
     .map((item) => item.element as HTMLButtonElement)
+}
+
+/**
+ * Move focus off the toggle when it turns disabled; the DOM emulation keeps
+ * focus there, and its blur() refuses a disabled button.
+ */
+function dropFocus(): void {
+  const elsewhere = document.createElement('button')
+  elsewhere.textContent = 'Elsewhere'
+  document.body.append(elsewhere)
+  elsewhere.focus()
 }
 
 describe('HilosThemeMenu', () => {
@@ -708,7 +720,7 @@ describe('HilosThemeMenu', () => {
       expect(toggle.attributes('aria-expanded')).toBe('false')
 
       // DOM emulation may keep focus on a disabled button; Chromium drops it.
-      ;(toggle.element as HTMLButtonElement).blur()
+      dropFocus()
       expect(document.activeElement).not.toBe(toggle.element)
       const focus = vi.spyOn(toggle.element as HTMLButtonElement, 'focus')
       server.reply('success')
@@ -777,7 +789,7 @@ describe('HilosThemeMenu', () => {
       await vi.advanceTimersByTimeAsync(1)
       expect(wrapper.find('[data-id="nav-theme-loading"]').exists()).toBe(true)
       expect(toggle.attributes('aria-busy')).toBe('true')
-      ;(toggle.element as HTMLButtonElement).blur()
+      dropFocus()
       expect(document.activeElement).not.toBe(toggle.element)
       await wrapper.get('[data-id="nav-theme-option-system"]').trigger('click')
       expect(server.sendAction).toHaveBeenCalledOnce()
@@ -802,7 +814,7 @@ describe('HilosThemeMenu', () => {
       expect(hilosToasts.toasts.get()).toMatchObject([
         { message: messages[outcome], severity: 'error' },
       ])
-      ;(toggle.element as HTMLButtonElement).blur()
+      dropFocus()
       const focus = vi.spyOn(toggle.element as HTMLButtonElement, 'focus')
       server.state('connected')
       server.reply('success', '1')
@@ -847,7 +859,7 @@ describe('HilosThemeMenu', () => {
       const toggle = wrapper.get('[data-id="nav-theme"]')
       await wrapper.get('[data-id="nav-theme"]').trigger('click')
       await wrapper.get('[data-id="nav-theme-option-dark"]').trigger('click')
-      ;(toggle.element as HTMLButtonElement).blur()
+      dropFocus()
       const focus = vi.spyOn(toggle.element as HTMLButtonElement, 'focus')
       if (change === 'off')
         server.settings({ switchingEnabled: false, defaultTheme: 'light' })
@@ -876,7 +888,7 @@ describe('HilosThemeMenu', () => {
       const toggle = wrapper.get('[data-id="nav-theme"]')
       await toggle.trigger('click')
       await wrapper.get('[data-id="nav-theme-option-dark"]').trigger('click')
-      ;(toggle.element as HTMLButtonElement).blur()
+      dropFocus()
       const focus = vi.spyOn(toggle.element as HTMLButtonElement, 'focus')
       attached.pop()?.unmount()
 

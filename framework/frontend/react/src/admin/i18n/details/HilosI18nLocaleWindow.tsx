@@ -125,6 +125,7 @@ function LocaleWindow({
   const [mode, setMode] = useState(opened.mode),
     [step, setStep] = useState<'form' | 'switchOn' | 'switchOff'>('form'),
     [unsavedAtStep, setUnsavedAtStep] = useState(false),
+    [ownSwitching, setOwnSwitching] = useState(false),
     [viewSnapshot, setViewSnapshot] = useState<HilosI18nLocaleRow | null>(null)
   const mounted = useRef(false),
     sending = useRef(false),
@@ -193,8 +194,9 @@ function LocaleWindow({
   const lockedOn =
     mode === 'add'
       ? addLockedOn
-      : mode === 'edit' && !busy && liveRow?.enabled === true
-  const switchedOff = mode === 'view' && !busy && liveRow?.enabled === false
+      : mode === 'edit' && !busy && !ownSwitching && liveRow?.enabled === true
+  const switchedOff =
+    mode === 'view' && !busy && !ownSwitching && liveRow?.enabled === false
   const noticeKind =
     mode === 'add'
       ? addGone
@@ -293,6 +295,7 @@ function LocaleWindow({
     )
       return
     sending.current = true
+    setOwnSwitching(true)
     try {
       if (
         (await switchAction.run(
@@ -302,13 +305,17 @@ function LocaleWindow({
       )
         onClose()
     } finally {
-      sending.current = false
+      if (mounted.current) {
+        sending.current = false
+        setOwnSwitching(false)
+      }
     }
   }
   async function confirmOff(): Promise<void> {
     if (locked || sending.current || busy || offVerdict.disabled || !liveRow)
       return
     sending.current = true
+    setOwnSwitching(true)
     try {
       if (
         (await offAction.run(
@@ -322,7 +329,10 @@ function LocaleWindow({
       )
         onClose()
     } finally {
-      sending.current = false
+      if (mounted.current) {
+        sending.current = false
+        setOwnSwitching(false)
+      }
     }
   }
   const catalog = row?.catalogFormats != null
