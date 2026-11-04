@@ -1686,9 +1686,10 @@ abstract class BrowserContext
      * about the old row does not find the page still bound to it. Another connection of the
      * same account is not that author.
      *
-     * A page that already owes a whole delivery is not redrawn with the deletion sentence.
-     * Its link is dropped for the same reason. Every connection this pass touched is skipped
-     * for the rest of the flush, including one whose port could not serve the page.
+     * A page that already owes a whole delivery drops its old link before one full attempt.
+     * That attempt may report the current domain refusal without the deletion sentence; only
+     * Answered pays the debt. The author takes no such attempt, even with debt. Every touched
+     * connection is skipped for the rest of the flush, including an unserved one.
      *
      * @return list<ContainedFailure> Subscriptions whose refusal failed, in the order they failed
      */
@@ -1718,10 +1719,14 @@ abstract class BrowserContext
 
             $this->skippedForDeletedResource[$subscriber] = true;
             $page = (string) $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
-            if ($this->deletionAuthoredBy($matched, $subscriber) || Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
-                // The link is what a later old fact would match. The page debt, when one
-                // stands, stays: a partial delta does not pay it, and a later full answer can.
+            if ($this->deletionAuthoredBy($matched, $subscriber)) {
                 Hilos::$sr->clearPageResource($subscriber);
+
+                continue;
+            }
+            if (Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
+                Hilos::$sr->clearPageResource($subscriber);
+                $contained = [...$contained, ...$this->resendWholePage($page, $subscriber, reportRefusal: true)];
 
                 continue;
             }
@@ -2398,17 +2403,19 @@ abstract class BrowserContext
      * page's own sections were out of reach from here - and the frames the page sends ahead of
      * its answer, wiped with the rest, never came back. The worker does that part
      * ({@see PageResender}). Only Answered clears the debt. Refused, Failed and Unserved keep
-     * it, without repeating the first error or log line. An unserved page or a thrown failure
-     * without an existing debt is reported once and starts that debt.
+     * it. Ordinary probes repeat neither the first error nor its log line; a deletion attempt
+     * may report the current domain refusal. An unserved page or a thrown failure without an
+     * existing debt is reported once and starts that debt.
      *
      * Contained the same way the row build above is, and for the same reason: this runs in the
      * second loop, where nothing stands between a throw and the worker's exit.
      *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Subscriber accept key
-     * @return list<ContainedFailure> A first thrown failure to log; empty for answers and silent debt probes
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
+     * @return list<ContainedFailure> A first thrown failure to log; empty for answers and debt probes
      */
-    private function resendWholePage(string $page, string $acceptKey): array
+    private function resendWholePage(string $page, string $acceptKey, bool $reportRefusal = false): array
     {
         $current = Hilos::$sr?->pageSubscription($acceptKey);
         if ($current !== null && $current->page === $page) {
@@ -2419,7 +2426,7 @@ abstract class BrowserContext
         $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
 
         try {
-            $outcome = $this->pageResender?->resendPage($page, $acceptKey, is_array($params) ? $params : [])
+            $outcome = $this->pageResender?->resendPage($page, $acceptKey, is_array($params) ? $params : [], $reportRefusal)
                 ?? PageResendOutcome::Unserved;
         } catch (Throwable $failure) {
             if ($owed) {

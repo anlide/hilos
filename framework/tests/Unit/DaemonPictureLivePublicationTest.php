@@ -1139,7 +1139,14 @@ final class LivePublicationTestResender implements PageResender
     public PageResendOutcome $outcome = PageResendOutcome::Answered;
     public bool $rebind = false;
 
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    /**
+     * @param string $page Page owed whole
+     * @param string $acceptKey Recipient connection
+     * @param array<string, mixed> $params Current subscription parameters
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
+     * @return PageResendOutcome The scripted or delegated answer
+     */
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
         ++$this->attempts;
         if ($this->rebind) {

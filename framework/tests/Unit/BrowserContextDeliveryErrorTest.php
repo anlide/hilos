@@ -563,10 +563,11 @@ final class DeliveryErrorRecordingResender implements PageResender
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
      * @param array<string, mixed> $params Route params of the subscription
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome The outcome the fixture was built with
      * @throws InvalidArgumentException When a queued frame cannot be named
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
         $this->calls[] = [$page, $acceptKey, $params];
         $frame = match ($this->outcome) {

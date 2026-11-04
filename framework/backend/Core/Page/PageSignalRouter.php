@@ -283,16 +283,18 @@ class PageSignalRouter
      * subscription mirror is already holding. Unlike the re-decision it skips nothing: a PUBLIC
      * page answers the same thing it answered before, but the client no longer has that answer.
      * And it does not park: the connection was answered once already, so who sent it is known.
-     * An existing debt makes a failed probe silent: its first refusal or failure was already reported.
+     * An existing debt makes an ordinary failed probe silent. A deletion attempt may report its
+     * current domain refusal, without repeating internal failures or the original diagnostic.
      *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
      * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome What went out to the connection
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
         $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
         $outcome = $this->runPageSubscribeFrame(
@@ -301,6 +303,7 @@ class PageSignalRouter
             $page,
             recordVisit: false,
             reportFailure: !$owed,
+            reportRefusal: $reportRefusal,
         );
 
         // The answer pays the debt before after-response hooks run. A hook throwing after it
@@ -413,7 +416,10 @@ class PageSignalRouter
      * Judges and dispatches one page subscribe frame, parked or not.
      *
      * A complete answer pays the page debt. Primary failures are reported and set it; a debt
-     * probe keeps it without repeating the error frame or log line.
+     * probe keeps it without repeating the error frame or log line. A deletion attempt may
+     * report a current domain refusal, but never repeats an internal failure or its diagnostic.
+     * Once its complete answer pays the debt, an after-response domain failure preserves that
+     * answer and its resource binding.
      *
      * An answer that is not the page releases what the page holds for the connection
      * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
@@ -423,6 +429,7 @@ class PageSignalRouter
      * @param string $name Signal name (page name fallback)
      * @param bool $recordVisit Whether an accepted answer records a new page visit
      * @param bool $reportFailure Whether a refusal or failure must be reported to the connection and log
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome Whether the whole page was answered, refused, failed, or unserved
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
@@ -432,6 +439,7 @@ class PageSignalRouter
         string $name,
         bool $recordVisit = true,
         bool $reportFailure = true,
+        bool $reportRefusal = false,
     ): PageResendOutcome {
         $page = $data->page ?? $name;
         try {
@@ -502,8 +510,11 @@ class PageSignalRouter
 
                 return PageResendOutcome::Failed;
             } catch (PageSubscriptionException $e) {
+                if (!$reportFailure && $reportRefusal && Hilos::$sr?->hasPageDeliveryFailure($data->acceptKey) === false) {
+                    return PageResendOutcome::Answered;
+                }
                 $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-                if (!$reportFailure) {
+                if (!$reportFailure && !$reportRefusal) {
                     return PageResendOutcome::Refused;
                 }
                 // The subscription registration is intentionally KEPT alive, not torn down.
@@ -518,7 +529,9 @@ class PageSignalRouter
                 // paths must re-check the guard on every fan-out (not rely on the
                 // subscription being absent): a guard-failed subscription receives nothing
                 // WHILE the guard fails, yet resumes the instant it passes.
-                Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+                if ($reportFailure) {
+                    Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+                }
                 $this->sendSubscriptionError(
                     $pageInstance->getAgent()->getAgentSignalSource(),
                     $page,

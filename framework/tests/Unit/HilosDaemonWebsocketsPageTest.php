@@ -675,11 +675,12 @@ final class WebsocketsTestResender implements PageResender
      * @param string $page Page owed whole
      * @param string $acceptKey Subscribed connection
      * @param array<string, mixed> $params Retained subscription address
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome Real subscribe verdict and delivery outcome
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
-        return $this->router->resendPage($page, $acceptKey, $params);
+        return $this->router->resendPage($page, $acceptKey, $params, $reportRefusal);
     }
 
     /**

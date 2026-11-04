@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Closure;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -81,6 +82,7 @@ use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Throwable;
 
 /**
  * Tests the worker's half of the re-send after a failed delivery (HIL-1236), including first-answer debt (HIL-1351).
@@ -573,8 +575,157 @@ final class WorkerManagerResendPageTest extends TestCase
         $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
     }
 
-    /** A throwing after-response hook cannot turn an already queued full recovery into another debt. */
-    public function testAfterResponseFailureDoesNotUndoAnAnsweredProbe(): void
+    /** @return iterable<string, array{class-string<PageSubscriptionException>, bool}> Domain verdicts and per-attempt permission */
+    public static function debtRefusals(): iterable
+    {
+        foreach ([
+            PageResourceNotFoundException::class,
+            PageUnauthorizedException::class,
+            PageForbiddenException::class,
+            PageServiceUnavailableException::class,
+        ] as $refusalClass) {
+            yield $refusalClass . '/ordinary' => [$refusalClass, false];
+            yield $refusalClass . '/deletion' => [$refusalClass, true];
+        }
+    }
+
+    /**
+     * The worker forwards deletion permission under the serving frame without rebooking the subscription.
+     *
+     * @param class-string<PageSubscriptionException> $refusalClass Current guard verdict
+     * @param bool $reportRefusal Whether this attempt comes from deletion of the page's resource
+     */
+    #[DataProvider('debtRefusals')]
+    public function testADeletionAttemptMayReportTheCurrentDomainVerdictOfAnExistingDebt(
+        string $refusalClass,
+        bool $reportRefusal,
+    ): void {
+        $manager = $this->managerWithTable();
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $page->failureCode = HttpConstants::HTTP_INTERNAL_ERROR;
+        $this->handle($manager, ResendWorkerTestManager::FIRST, SignalTypeConstants::PAGE_SUBSCRIBE);
+        $this->assertError(HttpConstants::HTTP_INTERNAL_ERROR);
+        $page->failureCode = null;
+        $refusal = new $refusalClass();
+        if ($refusal instanceof PageUnauthorizedException) {
+            Hilos::$browser->identity = ConnectionIdentity::resolved(null);
+        } else {
+            Hilos::$browser->guardRefusal = $refusal;
+        }
+        $subscription = Hilos::$sr->pageSubscription('ak-1');
+        $logged = file_get_contents($this->logFile);
+        $manager->signals->marks = [];
+
+        $outcome = $reportRefusal
+            ? $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', [], reportRefusal: true)
+            : $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', []);
+
+        $this->assertSame(PageResendOutcome::Refused, $outcome);
+        if ($reportRefusal) {
+            $this->assertSubscriptionError($refusal->httpCode, $refusal->errorCode, null);
+            $this->assertSame(['release', SignalConstants::SUBSCRIPTION_PAGE_ERROR], $manager->signals->marks);
+        } else {
+            $this->assertSame([], $this->drainQueue());
+            $this->assertSame(['release'], $manager->signals->marks);
+        }
+        $this->assertSame(1, $page->subscribeCount, 'The upper verdict must precede the page hooks');
+        $this->assertSame(2, $page->unsubscribeCount);
+        $this->assertSame(
+            [ResendWorkerTestAgent::AGENT_TYPE . ':' . ResendWorkerTestManager::FIRST, 'ak-1'],
+            $page->releaseFrame,
+        );
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::SECOND)->unsubscribeCount);
+        $this->assertSame($subscription, Hilos::$sr->pageSubscription('ak-1'));
+        $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame($logged, file_get_contents($this->logFile));
+
+        // Permission belongs to that invocation. The next ordinary probe stays silent.
+        $this->assertSame(PageResendOutcome::Refused, $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', []));
+        $this->assertSame([], $this->drainQueue());
+        $this->assertSame($logged, file_get_contents($this->logFile));
+        Hilos::$browser->identity = ConnectionIdentity::resolved(5);
+        Hilos::$browser->guardRefusal = null;
+        $this->flushFacts(SourceChange::KIND_DB);
+        $this->wholeAnswer();
+        $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+    }
+
+    /** @return iterable<string, array{bool}> Both internal-error paths before an answer */
+    public static function internalDebtFailures(): iterable
+    {
+        yield 'unexpected throw' => [false];
+        yield 'internal subscription error' => [true];
+    }
+
+    /**
+     * Deletion permission never repeats an internal failure and later recovery still answers whole.
+     *
+     * @param bool $internalException Whether the build raises PageInternalErrorException rather than an unexpected throw
+     */
+    #[DataProvider('internalDebtFailures')]
+    public function testADeletionAttemptKeepsInternalFailuresSilentUntilAWholeAnswer(bool $internalException): void
+    {
+        $manager = $this->managerWithTable();
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $page->failureCode = HttpConstants::HTTP_INTERNAL_ERROR;
+        $this->handle($manager, ResendWorkerTestManager::FIRST, SignalTypeConstants::PAGE_SUBSCRIBE);
+        $this->assertError(HttpConstants::HTTP_INTERNAL_ERROR);
+        $logged = file_get_contents($this->logFile);
+        $page->internalFailure = $internalException;
+        if ($internalException) {
+            $page->failureCode = null;
+        }
+        $subscription = Hilos::$sr->pageSubscription('ak-1');
+        $manager->signals->marks = [];
+
+        $this->assertSame(
+            PageResendOutcome::Failed,
+            $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', [], reportRefusal: true),
+        );
+
+        $this->assertSame([], $this->drainQueue());
+        $this->assertSame(['release'], $manager->signals->marks);
+        $this->assertSame(2, $page->subscribeCount);
+        $this->assertSame(
+            [ResendWorkerTestAgent::AGENT_TYPE . ':' . ResendWorkerTestManager::FIRST, 'ak-1'],
+            $page->lastFrame,
+        );
+        $this->assertSame($subscription, Hilos::$sr->pageSubscription('ak-1'));
+        $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame($logged, file_get_contents($this->logFile));
+        $page->internalFailure = false;
+        $page->failureCode = null;
+        $this->flushFacts(SourceChange::KIND_RT);
+        $payload = $this->wholeAnswer();
+        $this->assertSame(['a', 'b'], array_column($payload->windows[ResendWorkerTestTable::TABLE]['rows'], PagePayload::rowKey));
+        $this->assertSame(3, $page->subscribeCount);
+        $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame($logged, file_get_contents($this->logFile));
+    }
+
+    /** @return iterable<string, array{class-string<LogicException|PageSubscriptionException>, bool}> Failures after a full answer */
+    public static function afterResponseFailures(): iterable
+    {
+        foreach ([
+            LogicException::class,
+            PageResourceNotFoundException::class,
+            PageUnauthorizedException::class,
+            PageForbiddenException::class,
+            PageServiceUnavailableException::class,
+        ] as $failureClass) {
+            yield $failureClass . '/ordinary' => [$failureClass, false];
+            yield $failureClass . '/deletion' => [$failureClass, true];
+        }
+    }
+
+    /**
+     * A throwing after-response hook cannot turn an already queued full recovery into another debt.
+     *
+     * @param class-string<LogicException|PageSubscriptionException> $failureClass Failure raised after the complete answer
+     * @param bool $reportRefusal Whether the successful attempt was prompted by a resource deletion
+     */
+    #[DataProvider('afterResponseFailures')]
+    public function testAfterResponseFailureDoesNotUndoAnAnsweredProbe(string $failureClass, bool $reportRefusal): void
     {
         $manager = $this->managerWithTable();
         $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
@@ -582,11 +733,17 @@ final class WorkerManagerResendPageTest extends TestCase
         $this->handle($manager, ResendWorkerTestManager::FIRST, SignalTypeConstants::PAGE_SUBSCRIBE);
         $this->assertError(500);
         $logged = file_get_contents($this->logFile);
+        $subscription = Hilos::$sr->pageSubscription('ak-1');
         $page->failureCode = null;
-        $page->failAfterResponse = true;
-        $this->assertSame(PageResendOutcome::Answered, $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', []));
+        $page->afterResponseFailure = new $failureClass('Fixture after-response hook failed');
+        $outcome = $reportRefusal
+            ? $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', [], reportRefusal: true)
+            : $manager->resendPage(ResendWorkerTestPage::PAGE, 'ak-1', []);
+
+        $this->assertSame(PageResendOutcome::Answered, $outcome);
         $this->wholeAnswer();
         $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame($subscription, Hilos::$sr->pageSubscription('ak-1'));
         $this->assertSame($logged, file_get_contents($this->logFile));
         $this->flushFacts(SourceChange::KIND_RT, twoRows: false);
         $this->assertSame([SignalTypeConstants::TABLE_VIEWPORT_DELTA, SignalTypeConstants::TABLE_PROGRESS], $this->drainQueue());
@@ -992,7 +1149,9 @@ final class ResendWorkerTestPage extends AbstractPage
 
     public ?int $failureCode = null;
 
-    public bool $failAfterResponse = false;
+    public bool $internalFailure = false;
+
+    public ?Throwable $afterResponseFailure = null;
 
     /** @var list<bool> Debt at each entry, distinguishing real subscribes from probes */
     public array $debtsAtEntry = [];
@@ -1063,6 +1222,9 @@ final class ResendWorkerTestPage extends AbstractPage
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
+        if ($this->internalFailure) {
+            throw new PageInternalErrorException('Fixture declaration failed');
+        }
         if ($this->failureCode === 500) {
             throw new LogicException('Fixture payload failed');
         }
@@ -1084,8 +1246,8 @@ final class ResendWorkerTestPage extends AbstractPage
      */
     protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
-        if ($this->failAfterResponse) {
-            throw new LogicException('Fixture after-response hook failed');
+        if ($this->afterResponseFailure !== null) {
+            throw $this->afterResponseFailure;
         }
     }
 }

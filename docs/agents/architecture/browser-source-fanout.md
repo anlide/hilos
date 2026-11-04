@@ -57,12 +57,15 @@ delete or clear removed
 `flushToSignalRouter()` matches deletions to open pages before it groups the
 buffer (`refuseDeletedPageResources()`). Grouping can fold a delete into a
 later create of the same id and hide it, so the refusal reads the raw facts
-first. The pass is another look at this buffer. It leaves the snapshot, the
-debt and the full answer below as they stand.
+first. When a raw DB `Delete` or `Clear` matches a bound page resource, this
+pass also triggers one full-page attempt in the same flush for a subscription
+that already owes a whole delivery, unless that connection authored the delete.
+The resource match is independent of the page's declared browser-table source
+list.
 
-The walk is the subscription mirror and each connection's page resource. A
-DB `Delete` matches the resource's collection and primary id (`sourceId`).
-A DB `Clear` matches the collection. The business code and the display name
+The walk is the subscription mirror and each connection's page resource. A raw
+DB `Delete` matches the resource's collection and primary id (`sourceId`); a
+raw DB `Clear` matches the collection. The business code and the display name
 are not the id this pass compares. An RT fact matches nothing. A page with
 no resource link is not affected: it never answered, the row was already
 refused, or the connection has left.
@@ -72,23 +75,37 @@ the change's `origin` and whose `originRequestId` is non-empty. That
 connection is not sent a live 404, and the action acknowledgement already
 queued for it stays. `clearPageResource` drops its link, so a later fact
 about the old row does not find the page still bound to it. Another
-connection of the same account is not that author.
+connection of the same account is not that author. The author takes no
+immediate full-page attempt, even when it already owes a whole delivery.
 
-A page that already owes a whole delivery is not sent the deletion line.
-The flush drops its link for the same reason and leaves the debt. Dropping
-the link means a later delete of that row does not skip the connection on
-every following flush. After this flush the full-page debt is still
-standing. A partial delta does not pay it. A later complete `page_response`
-can, as [What A Debt Is Paid With](#what-a-debt-is-paid-with) defines. A
-connection that is sent the refusal is told `subscription_page_error`.
-Whether that owes the page whole stays the rule in
-[What Is Owed](#what-is-owed). This flush does not pay it with a partial
-delta.
+An owed page whose connection did not author the delete gets one immediate
+full-page attempt when this pass matches its resource. Before the attempt, the
+flush drops the old resource link. When the resource remains missing, the
+normal page verdict returns the same 404 as a reload, without the
+`transitionMessage` `It was deleted just now.` If a row with that primary id
+now exists, the full attempt can answer with the current page. When the current
+page verdict refuses, the attempt sends the ordinary `subscription_page_error`,
+but that is not a complete answer and does not pay the debt. Only `Answered`
+pays it; `Refused`, `Failed`, `Unserved`, and a throw leave it standing. The
+deletion-specific permission to report a domain refusal belongs to this attempt
+only. Later ordinary probes remain silent about refusals and internal failures.
+Internal failures in this deletion attempt remain silent too; they do not repeat
+an error frame or diagnostic.
 
-Every connection the pass touched is skipped until the flush ends, including
-one whose port could not serve the page. For the rest of the flush they
-receive no browser delta, window, mutation, facet count, staleness move or
-debt probe. The skip is `skippedForDeletedResource`,
+A page without existing debt keeps the existing `refuseOneDeletedPage()` path
+and its deletion refusal. Whether that first refusal sets page debt remains the
+rule in [What Is Owed](#what-is-owed).
+
+Dropping the link means a later delete of that row does not skip the
+connection on every following flush. A partial delta does not pay the debt.
+A later complete `page_response` can, as
+[What A Debt Is Paid With](#what-a-debt-is-paid-with) defines.
+
+Every connection the pass touched is skipped for the rest of the flush,
+including one whose port could not serve the page. This does not suppress the
+one immediate attempt above. After it, the connection receives no browser
+delta, window, mutation, facet count, staleness move or second debt probe. The
+skip is `skippedForDeletedResource`,
 memory of this one flush on this worker. Nothing else reads it, so it stays
 on the browser context rather than in a runtime collection, and the
 `finally` of `flushToSignalRouter()` drops it with the buffer. It is a
@@ -174,9 +191,13 @@ It is not a re-subscribe: nothing is booked, and an empty report of windows
 hands each table the window the mirror is holding. The worker writes the
 serving agent into its mirror on a subscribe and on a re-decision of rights.
 Only a complete `page_response` (`Answered`) pays the debt. An unsuccessful
-probe of an existing debt (`Refused`, `Failed`, `Unserved`, or a throw) keeps it
-without another error frame or log line; the first failure is still reported.
-The debt's lifetime, eligible facts, and silent probes are defined in
+probe of an existing debt (`Refused`, `Failed`, `Unserved`, or a throw) keeps it.
+Ordinary probes repeat neither the first error frame nor its log line. The
+one attempt triggered by a matching raw DB resource deletion may report its
+current domain refusal as `subscription_page_error`, without a
+`transitionMessage`; that refusal is not an `Answered` result. This permission
+is invocation-scoped and does not carry into later probes. The debt's lifetime,
+eligible facts, and silent probes are defined in
 [Coming Back Without A Reload](#coming-back-without-a-reload), especially
 [One Try](#one-try).
 
@@ -350,7 +371,12 @@ drops these frames; that is a defense, not the rule's enforcement.
    it asked for, once the page guards allow it. A source fact tries the whole
    page even when the failed first answer left it without any viewport. For a
    picture table, this fact is a portion published by `publishTableMutations`;
-   the flush tries its owed window.
+   the flush tries its owed window. A raw DB `Delete` or `Clear` that matches
+   the page's bound resource is another eligible fact for an owed page whose
+   connection did not author the delete,
+   regardless of the page's declared browser-table sources; the pre-grouping
+   pass tries it once in that flush (see
+   [A deleted row, before grouping](#a-deleted-row-before-grouping)).
 2. The database came back: the worker's first successful query after it lost its
    database connection tries all that worker's debts — windows and pages — once
    each, in the next flush. The fact stays inside the worker that saw it; it is
@@ -367,9 +393,14 @@ No timer, no probe, no repeat button: a fact, not a clock (HIL-943 Design).
 
 ### One Try
 
-A fact tries a debt once. A try that succeeds sends the whole window or page
-and pays the debt; a try that fails sends nothing, not even a refusal, and
-the debt waits for the next fact.
+A fact tries a debt once. A successful try sends the whole window or page and
+pays the debt. A failed window try sends nothing, not even a refusal. Ordinary
+page-debt probes repeat neither an error frame nor its diagnostic. The one page
+attempt prompted by a matching raw DB resource deletion may send the current
+domain refusal as an ordinary `subscription_page_error`, without the deletion
+`transitionMessage`; that refusal leaves the debt standing. The permission is
+for that call only, so the debt waits for the next eligible fact and its
+ordinary probe stays silent.
 
 A try that fails again writes no new log line: the line was written when the
 debt was set. Set aside a window that could

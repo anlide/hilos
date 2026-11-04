@@ -29,14 +29,18 @@ interface PageResender
     /**
      * Answers one subscription again, whole, with the frame a subscribe answers it with.
      *
+     * reportRefusal permits the single deletion attempt to report its current domain verdict.
+     * It does not permit repeating internal failures of an existing debt.
+     *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
      * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome What went out to the connection
      * @throws InvalidArgumentException When a frame of the answer cannot be named
      * @throws FramePopOrderException When answering leaves the execution stack imbalanced
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome;
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome;
 
     /**
      * Refuses one live subscription because the row it was about has just been deleted.

@@ -710,9 +710,10 @@ final class SummaryAudienceTestResender implements PageResender
      * @param string $page Page owed whole
      * @param string $acceptKey Recipient
      * @param array<string, mixed> $params Current immutable record's params
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome A complete real page answer or a failed probe
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
         $this->attempts++;
         if (!$this->answer) {

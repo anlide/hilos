@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -26,8 +27,13 @@ use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\Exception\PageServiceUnavailableException;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageErrorMessages;
 use Hilos\Core\Page\PageResendOutcome;
@@ -62,6 +68,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -83,6 +90,8 @@ final class BrowserContextPageResourceTest extends TestCase
 
     private PageSignalRouter $router;
 
+    private PageResourcePageFactory $pages;
+
     protected function setUp(): void
     {
         $this->previousRt = Hilos::$rt;
@@ -95,10 +104,8 @@ final class BrowserContextPageResourceTest extends TestCase
         Hilos::$rt = $runtime;
         Hilos::$table = new PageResourceTableContext();
         Hilos::$table->configure();
-        $this->router = new PageSignalRouter(
-            new PageResourcePageFactory(new PageResourceAgent()),
-            new ActionRouteConfig(),
-        );
+        $this->pages = new PageResourcePageFactory(new PageResourceAgent());
+        $this->router = new PageSignalRouter($this->pages, new ActionRouteConfig());
         $this->context = new PageResourceBrowser();
         $this->context->bindPageResender(new PageResourceRouterPort($this->router));
         Hilos::$browser = $this->context;
@@ -233,34 +240,216 @@ final class BrowserContextPageResourceTest extends TestCase
         $this->assertDeletion($signals['ak-same-user'] ?? [], PageResourceBrowser::OVERVIEW);
     }
 
-    public function testAnAlreadyOwedPageIsNotRedrawnAndTheNextFactAnswersItWhole(): void
+    /** @return iterable<string, array{bool, bool}> Delete and clear, with and without a viewport */
+    public static function resourceDeletions(): iterable
     {
+        yield 'delete/no window' => [false, false];
+        yield 'delete/window' => [false, true];
+        yield 'clear/no window' => [true, false];
+        yield 'clear/window' => [true, true];
+    }
+
+    /**
+     * The resource is eligible even though countries are absent from the page's declared sources.
+     *
+     * @param bool $clear Whether the fact clears the whole resource collection
+     * @param bool $window Whether the subscriber already holds a viewport
+     */
+    #[DataProvider('resourceDeletions')]
+    public function testADeletionImmediatelyJudgesAnOwedPageThroughItsSubscribe(bool $clear, bool $window): void
+    {
+        $this->openCard('ak-overview', PageResourceBrowser::OVERVIEW, PageResourceBrowser::COUNTRY_ID, window: $window);
+        $page = $this->fixturePage();
+        $this->context->failDelivery = true;
+        $this->context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Grace']));
+        $this->assertCount(1, $this->context->flushToSignalRouter());
+        $this->context->failDelivery = false;
+        $this->assertDeliveryFailure($this->signalsByAcceptKey()['ak-overview'] ?? [], PageResourceBrowser::OVERVIEW);
+        $this->assertNotNull(Hilos::$sr?->pageResource('ak-overview'));
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
+        $page->resourceExists = false;
+        $logged = file_get_contents($this->logFile);
+        $this->context->record($clear
+            ? SourceChange::dbCleared(PageResourceBrowser::COUNTRIES)
+            : SourceChange::dbDeleted(PageResourceBrowser::COUNTRIES, PageResourceBrowser::COUNTRY_ID));
+        $this->context->record(SourceChange::dbDeleted(PageResourceBrowser::COUNTRIES, PageResourceBrowser::COUNTRY_ID));
+        $this->context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Grace']));
+        $this->context->recordSourceStaleness(PageResourceBrowser::NOTES, ['1']);
+        $this->context->recordDatabaseBack();
+
+        $this->assertSame([], $this->context->flushToSignalRouter());
+
+        $signals = $this->signalsByAcceptKey()['ak-overview'] ?? [];
+        $this->assertCount(1, $signals);
+        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->namesOf($signals));
+        $this->assertInstanceOf(WebSocketSignalData::class, $signals[0]->data);
+        $error = $signals[0]->data->data;
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        $this->assertSame(PageResourceBrowser::OVERVIEW, $error->page);
+        $this->assertSame(404, $error->httpCode);
+        $this->assertSame('not_found', $error->errorCode);
+        $text = PageErrorMessages::forStatus(HttpConstants::HTTP_NOT_FOUND);
+        $this->assertSame($text->title, $error->title);
+        $this->assertSame($text->message, $error->message);
+        $this->assertArrayNotHasKey(PageSubscriptionErrorSignalData::transitionMessage, $error->toArray());
+        $this->assertNull(Hilos::$sr?->pageResource('ak-overview'));
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
+        $this->assertSame(1, $page->resourceAttempts);
+        $this->assertSame($logged, file_get_contents($this->logFile));
+
+        $this->context->flushToSignalRouter();
+        $this->assertSame([], $this->signalsByAcceptKey());
+        $this->assertSame(1, $page->resourceAttempts);
+    }
+
+    /** @return iterable<string, array{?class-string<PageSubscriptionException>}> Outcomes of the recreated page's after-response hook */
+    public static function recreatedResourceAfterResponseFailures(): iterable
+    {
+        yield 'no failure' => [null];
+        yield 'not found' => [PageResourceNotFoundException::class];
+        yield 'unauthorized' => [PageUnauthorizedException::class];
+        yield 'forbidden' => [PageForbiddenException::class];
+        yield 'unavailable' => [PageServiceUnavailableException::class];
+    }
+
+    /** @param ?class-string<PageSubscriptionException> $failureClass Domain exception after the recreated page answers, or null */
+    #[DataProvider('recreatedResourceAfterResponseFailures')]
+    public function testARecreatedPrimaryKeyAnswersTheDebtWholeInTheDeletionFlush(?string $failureClass): void
+    {
+        $context = new PageResourceGroupingBrowser();
+        $port = new PageResourceScriptedPort(new PageResourceRouterPort($this->router));
+        $context->bindPageResender($port);
+        Hilos::$browser = $context;
+        $this->openCard('ak-overview', PageResourceBrowser::OVERVIEW, PageResourceBrowser::COUNTRY_ID, window: true);
+        $oldResource = Hilos::$sr?->pageResource('ak-overview');
+        Hilos::$sr?->markPageDeliveryFailure('ak-overview');
+        $this->fixturePage()->ownLabel = 'Recreated country';
+        $this->fixturePage()->afterResponseFailure = $failureClass !== null ? new $failureClass() : null;
+        $context->record(SourceChange::dbDeleted(PageResourceBrowser::COUNTRIES, PageResourceBrowser::COUNTRY_ID));
+        $context->record(SourceChange::dbCreated(
+            PageResourceBrowser::COUNTRIES,
+            PageResourceBrowser::COUNTRY_ID,
+            ['id' => PageResourceBrowser::COUNTRY_ID, 'code' => 'se'],
+        ));
+        $context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Grace']));
+        $context->recordSourceStaleness(PageResourceBrowser::NOTES, ['1']);
+        $context->recordDatabaseBack();
+
+        $this->assertSame([], $context->flushToSignalRouter());
+
+        $this->assertSame([TableMutationType::Update, TableMutationType::Update], $context->groupedMutations);
+        $this->assertSame([[PageResourceBrowser::OVERVIEW, 'ak-overview', true]], $port->attempts);
+        $this->assertSame([null], $port->resourcesAtAttempt);
+        $this->assertWholeCard($this->signalsByAcceptKey()['ak-overview'] ?? [], 'Recreated country');
+        $this->assertSame(PageResourceBrowser::COUNTRY_ID, Hilos::$sr?->pageResource('ak-overview')?->idString);
+        $this->assertNotSame($oldResource, Hilos::$sr?->pageResource('ak-overview'));
+        $this->assertFalse(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
+        $context->flushToSignalRouter();
+        $this->assertCount(1, $port->attempts);
+        $this->assertSame([], $this->signalsByAcceptKey());
+    }
+
+    /** @return iterable<string, array{?PageResendOutcome, bool, bool}> Unsuccessful deletion attempts */
+    public static function unsuccessfulDeletionAttempts(): iterable
+    {
+        yield 'failed builder' => [null, false, true];
+        yield 'failed port' => [PageResendOutcome::Failed, false, false];
+        yield 'unserved' => [PageResendOutcome::Unserved, false, false];
+        yield 'throw' => [null, true, false];
+    }
+
+    /**
+     * A failed attempt removes the old link, keeps the debt and lets the next ordinary fact try it.
+     *
+     * @param ?PageResendOutcome $outcome Result scripted at the port, or null for the real router
+     * @param bool $throws Whether the port throws before entering the router
+     * @param bool $failBuild Whether the real page builder fails
+     */
+    #[DataProvider('unsuccessfulDeletionAttempts')]
+    public function testAnUnsuccessfulDeletionAttemptWaitsSilentlyForTheNextFact(
+        ?PageResendOutcome $outcome,
+        bool $throws,
+        bool $failBuild,
+    ): void {
+        $port = new PageResourceScriptedPort(new PageResourceRouterPort($this->router));
+        $port->resendOutcome = $outcome;
+        $port->throwOnResend = $throws;
+        $this->context->bindPageResender($port);
         $this->openCard('ak-overview', PageResourceBrowser::OVERVIEW, PageResourceBrowser::COUNTRY_ID, window: true);
         Hilos::$sr?->markPageDeliveryFailure('ak-overview');
+        $this->fixturePage()->failBuild = $failBuild;
+        $logged = file_get_contents($this->logFile);
+        $this->context->record(SourceChange::dbDeleted(PageResourceBrowser::COUNTRIES, PageResourceBrowser::COUNTRY_ID));
+        $this->context->record(SourceChange::dbDeleted(PageResourceBrowser::COUNTRIES, PageResourceBrowser::COUNTRY_ID));
+        $this->context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Grace']));
+        $this->context->recordSourceStaleness(PageResourceBrowser::NOTES, ['1']);
+        $this->context->recordDatabaseBack();
+
+        $this->assertSame([], $this->context->flushToSignalRouter());
+
+        $this->assertSame([], $this->signalsByAcceptKey());
+        $this->assertSame([[PageResourceBrowser::OVERVIEW, 'ak-overview', true]], $port->attempts);
+        $this->assertSame([null], $port->resourcesAtAttempt);
+        $this->assertNull(Hilos::$sr?->pageResource('ak-overview'));
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
+        $this->assertSame($logged, file_get_contents($this->logFile));
+        $this->context->flushToSignalRouter();
+        $this->assertCount(1, $port->attempts);
+        $this->assertSame([], $this->signalsByAcceptKey());
+
+        $port->resendOutcome = null;
+        $port->throwOnResend = false;
+        $this->fixturePage()->failBuild = false;
+        $this->context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Lin']));
+        $this->assertSame([], $this->context->flushToSignalRouter());
+
+        $this->assertSame([
+            [PageResourceBrowser::OVERVIEW, 'ak-overview', true],
+            [PageResourceBrowser::OVERVIEW, 'ak-overview', false],
+        ], $port->attempts);
+        $this->assertWholeCard($this->signalsByAcceptKey()['ak-overview'] ?? [], PageResourceBrowser::OVERVIEW);
+        $this->assertFalse(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
+        $this->assertSame(PageResourceBrowser::COUNTRY_ID, Hilos::$sr?->pageResource('ak-overview')?->idString);
+        $this->assertSame($logged, file_get_contents($this->logFile));
+    }
+
+    public function testTheAuthorWithDebtKeepsItsAckWhileAnotherConnectionOfTheSamePersonTries(): void
+    {
+        $port = new PageResourceScriptedPort(new PageResourceRouterPort($this->router));
+        $this->context->bindPageResender($port);
+        foreach (['ak-initiator', 'ak-same-user'] as $acceptKey) {
+            $this->openCard($acceptKey, PageResourceBrowser::OVERVIEW, PageResourceBrowser::COUNTRY_ID, window: true);
+            Hilos::$sr?->markPageDeliveryFailure($acceptKey);
+        }
+        $this->queueAck('ak-initiator');
+        $this->fixturePage()->resourceExists = false;
         $this->context->record(SourceChange::dbDeleted(
             PageResourceBrowser::COUNTRIES,
             PageResourceBrowser::COUNTRY_ID,
+            [],
+            'ak-initiator',
+            self::REQUEST_ID,
         ));
         $this->context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Grace']));
         $this->context->recordDatabaseBack();
 
-        $this->context->flushToSignalRouter();
+        $this->assertSame([], $this->context->flushToSignalRouter());
 
-        $this->assertSame([], $this->signalsByAcceptKey()['ak-overview'] ?? []);
-        $this->assertNull(Hilos::$sr?->pageResource('ak-overview'));
-        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
-
-        $this->context->record(SourceChange::rtUpdated(PageResourceBrowser::NOTES, '1', ['name' => 'Lin']));
-        $this->context->flushToSignalRouter();
-
-        $again = $this->signalsByAcceptKey()['ak-overview'] ?? [];
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $this->namesOf($again)[0] ?? null);
-        $this->assertNotContains(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $this->namesOf($again));
-        $frame = $again[0]->data;
-        $this->assertInstanceOf(WebSocketSignalData::class, $frame);
-        $this->assertInstanceOf(PageResponseSignalData::class, $frame->data);
-        $this->assertSame(PageResourceBrowser::OVERVIEW, $frame->data->payload->data['own'] ?? null);
-        $this->assertFalse(Hilos::$sr?->hasPageDeliveryFailure('ak-overview'));
+        $signals = $this->signalsByAcceptKey();
+        $this->assertSame([[PageResourceBrowser::OVERVIEW, 'ak-same-user', true]], $port->attempts);
+        $this->assertSame([SignalConstants::ACTION_SUCCESS], $this->namesOf($signals['ak-initiator'] ?? []));
+        $ack = $signals['ak-initiator'][0]->data->data;
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $ack);
+        $this->assertSame(self::REQUEST_ID, $ack->requestId);
+        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->namesOf($signals['ak-same-user'] ?? []));
+        $error = $signals['ak-same-user'][0]->data->data;
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        $this->assertSame(404, $error->httpCode);
+        $this->assertNull($error->transitionMessage);
+        foreach (['ak-initiator', 'ak-same-user'] as $acceptKey) {
+            $this->assertNull(Hilos::$sr?->pageResource($acceptKey));
+            $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure($acceptKey));
+        }
     }
 
     public function testARecreatedRowWithTheSameCodeDoesNotReceiveTheOldDelete(): void
@@ -356,6 +545,31 @@ final class BrowserContextPageResourceTest extends TestCase
     }
 
     /**
+     * @param list<SignalDTO> $signals Frames sent to the card's subscriber
+     * @param string $ownLabel Current value the page's own part must carry
+     */
+    private function assertWholeCard(array $signals, string $ownLabel): void
+    {
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE, SignalTypeConstants::TABLE_FACET_COUNTS], $this->namesOf($signals));
+        $this->assertInstanceOf(WebSocketSignalData::class, $signals[0]->data);
+        $response = $signals[0]->data->data;
+        $this->assertInstanceOf(PageResponseSignalData::class, $response);
+        $this->assertSame(PageResourceBrowser::OVERVIEW, $response->pageKey);
+        $this->assertSame($ownLabel, $response->payload->data['own'] ?? null);
+        $this->assertArrayHasKey(PageResourceBrowser::WINDOW, $response->payload->windows);
+        $this->assertArrayHasKey(PageResourceBrowser::NOTE_TABLE, $response->payload->tables);
+    }
+
+    /** @return PageResourceFixturePage The card whose ordinary subscribe the tests exercise */
+    private function fixturePage(): PageResourceFixturePage
+    {
+        $page = $this->pages->getPage(PageResourceBrowser::OVERVIEW);
+        $this->assertInstanceOf(PageResourceFixturePage::class, $page);
+
+        return $page;
+    }
+
+    /**
      * @param string $acceptKey Connection to subscribe
      * @param string $page Page key
      * @param string $countryId Primary id the page is about
@@ -365,7 +579,7 @@ final class BrowserContextPageResourceTest extends TestCase
     {
         Hilos::$sr?->subscribeToPage(
             $page,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, $page, ['code' => 'se']),
+            new WebSocketPageSubscribeSignalDTO($acceptKey, $page, ['code' => 'se', 'id' => $countryId]),
         );
         Hilos::$sr?->bindPageResource($acceptKey, PageResource::db(PageResourceBrowser::COUNTRIES, $countryId));
         if ($window) {
@@ -534,6 +748,8 @@ class PageResourceBrowser extends BrowserContext
         'ak-ok' => 4,
     ];
 
+    public bool $failDelivery = false;
+
     /**
      * @param string $acceptKey Connection whose user is being read
      * @return ?int User id the fixture settled, or null for a guest
@@ -559,6 +775,9 @@ class PageResourceBrowser extends BrowserContext
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
+        if ($this->failDelivery) {
+            throw new LogicException('page resource delivery failed');
+        }
         if (!in_array($page, [self::OVERVIEW, self::NAMES, self::LIST, self::WATCH], true)) {
             return null;
         }
@@ -725,12 +944,13 @@ final class PageResourceRouterPort implements PageResender
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
      * @param array<string, mixed> $params Route params of the subscription
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome What the router answered
      * @throws InvalidArgumentException When a frame of the answer cannot be named
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
-        return $this->router->resendPage($page, $acceptKey, $params);
+        return $this->router->resendPage($page, $acceptKey, $params, $reportRefusal);
     }
 
     /**
@@ -750,6 +970,16 @@ final class PageResourceRouterPort implements PageResender
  */
 final class PageResourceScriptedPort implements PageResender
 {
+    /** @var list<array{string, string, bool}> Full attempts with their refusal permission */
+    public array $attempts = [];
+
+    /** @var list<?PageResource> Resource binding at the entrance of each attempt */
+    public array $resourcesAtAttempt = [];
+
+    public ?PageResendOutcome $resendOutcome = null;
+
+    public bool $throwOnResend = false;
+
     /**
      * @param PageResender $inner Port that refuses every other connection
      * @param string $throwFor Accept key whose refusal throws
@@ -757,8 +987,8 @@ final class PageResourceScriptedPort implements PageResender
      */
     public function __construct(
         private readonly PageResender $inner,
-        private readonly string $throwFor,
-        private readonly string $unservedFor,
+        private readonly string $throwFor = '',
+        private readonly string $unservedFor = '',
     ) {
     }
 
@@ -766,12 +996,22 @@ final class PageResourceScriptedPort implements PageResender
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
      * @param array<string, mixed> $params Route params of the subscription
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome What the inner port answered
      * @throws InvalidArgumentException When a frame of the answer cannot be named
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
-        return $this->inner->resendPage($page, $acceptKey, $params);
+        $this->attempts[] = [$page, $acceptKey, $reportRefusal];
+        $this->resourcesAtAttempt[] = Hilos::$sr?->pageResource($acceptKey);
+        if ($this->throwOnResend) {
+            throw new LogicException('page resource resend failed');
+        }
+        if ($this->resendOutcome !== null) {
+            return $this->resendOutcome;
+        }
+
+        return $this->inner->resendPage($page, $acceptKey, $params, $reportRefusal);
     }
 
     /**
@@ -801,6 +1041,34 @@ class PageResourceFixturePage extends AbstractPage
 {
     public const string PAGE = PageResourceBrowser::OVERVIEW;
 
+    public bool $resourceExists = true;
+
+    public bool $failBuild = false;
+
+    public ?PageSubscriptionException $afterResponseFailure = null;
+
+    public ?string $ownLabel = null;
+
+    public int $resourceAttempts = 0;
+
+    /**
+     * @param string $acceptKey Subscribing connection
+     * @param PageRouteParams $params Route parameters identifying the row
+     * @return ?PageResource Current card resource, or null for a list or watch
+     */
+    protected function resolvePageResource(string $acceptKey, PageRouteParams $params): ?PageResource
+    {
+        $this->resourceAttempts++;
+        if (!$this->resourceExists) {
+            throw new PageResourceNotFoundException();
+        }
+        if (static::PAGE === PageResourceBrowser::LIST || static::PAGE === PageResourceBrowser::WATCH) {
+            return null;
+        }
+
+        return PageResource::db(PageResourceBrowser::COUNTRIES, $params->getString('id') ?? PageResourceBrowser::COUNTRY_ID);
+    }
+
     /**
      * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params from the page subscription
@@ -808,7 +1076,22 @@ class PageResourceFixturePage extends AbstractPage
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
-        return new PagePayload(data: ['own' => static::PAGE]);
+        if ($this->failBuild) {
+            throw new LogicException('page resource payload failed');
+        }
+
+        return new PagePayload(data: ['own' => $this->ownLabel ?? static::PAGE]);
+    }
+
+    /**
+     * @param string $acceptKey Subscribing connection (unused)
+     * @param PageRouteParams $params Route parameters (unused)
+     */
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        if ($this->afterResponseFailure !== null) {
+            throw $this->afterResponseFailure;
+        }
     }
 }
 

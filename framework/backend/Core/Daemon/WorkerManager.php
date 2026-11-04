@@ -877,11 +877,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
      * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
+     * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome What went out to the connection; Unserved when no agent of this worker serves it
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      * @throws FramePopOrderException When the page leaves the execution stack imbalanced
      */
-    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
         $subscription = Hilos::$sr?->pageSubscription($acceptKey);
         if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
@@ -897,7 +898,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
         try {
             return ExecutionContext::run(
                 new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
-                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->resendPage($page, $acceptKey, $params),
+                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->resendPage(
+                    $page,
+                    $acceptKey,
+                    $params,
+                    $reportRefusal,
+                ),
             );
         } catch (PageSignalRouterNotFoundException) {
             return PageResendOutcome::Unserved;
