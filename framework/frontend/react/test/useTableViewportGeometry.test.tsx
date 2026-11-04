@@ -717,7 +717,14 @@ describe('React table geometry commit boundary', () => {
     expect(first[0]).toBe(119)
     expect(
       geometry.recordPixels('a', target.rows.get()[0]!.occurrence, 'card'),
-    ).toBe(268.75)
+    ).toBe(242.75)
+    expect(
+      view.container
+        .querySelector<HTMLElement>(
+          '.card-projection [data-record="a"] .hilos-table-record-space',
+        )
+        ?.style.getPropertyValue('--hilos-table-record-px'),
+    ).toBe('242.75')
     expect(geometry.trackWidths).toEqual([200, 200])
     expect(view.container.textContent).not.toContain('Private detail')
     expect(view.container.textContent).not.toContain('Work payload')
@@ -778,7 +785,7 @@ describe('React table geometry commit boundary', () => {
       expect(owner.record('a', 'tiles')?.retained).toBe(464.25)
       expect(owner.record('a', 'card')?.retained).toBe(268.75)
       const occurrence = target.rows.get()[0]!.occurrence
-      expect(geometry.recordPixels('a', occurrence, 'tiles')).toBe(464.25)
+      expect(geometry.recordPixels('a', occurrence, 'tiles')).toBe(430.25)
       const tile = view.container.querySelector<HTMLElement>(
         '.tiles-projection [data-record="a"]',
       )!
@@ -786,7 +793,7 @@ describe('React table geometry commit boundary', () => {
         tile
           .querySelector<HTMLElement>('.hilos-table-record-space')
           ?.style.getPropertyValue('--hilos-table-record-px'),
-      ).toBe('464.25')
+      ).toBe('430.25')
       expect(tile.textContent).toBe('Removed')
       expect(
         tile.querySelector('[data-part="detail"], [data-part="work"]'),
@@ -1199,7 +1206,7 @@ describe('React table geometry layout lifetime', () => {
     const target = controller(['a'])
     const source = instrument(target)
     let geometry!: Geometry
-    render(
+    const view = render(
       <Harness
         target={target}
         facade={source.facade}
@@ -1217,9 +1224,19 @@ describe('React table geometry layout lifetime', () => {
     layout.tilesHidden = false
     events.resizes[0]!.fire()
     events.flush()
-    // The Sass fallback with the tile's chrome and its column gutter, once.
+    // The fallback allocation includes the tile shell and column gutter once.
     expect(owner.record('a', 'tiles')?.retained).toBe(82)
     expect(geometry.reasonFloors.tiles).toBe(20)
+    const occurrence = target.rows.get()[0]!.occurrence
+    const tile = view.container.querySelector<HTMLElement>(
+      '.tiles-projection [data-record="a"]',
+    )!
+    expect(geometry.recordPixels('a', occurrence, 'tiles')).toBe(48)
+    expect(
+      tile
+        .querySelector<HTMLElement>('.hilos-table-record-space')
+        ?.style.getPropertyValue('--hilos-table-record-px'),
+    ).toBe('48')
     expect(owner.record('a', 'card')?.retained).toBe(268.75)
     layout.font = 32
     layout.fallback = 96
@@ -1230,11 +1247,23 @@ describe('React table geometry layout lifetime', () => {
     events.resizes[0]!.fire()
     events.flush()
     expect(owner.record('a', 'tiles')?.retained).toBe(134)
+    expect(geometry.recordPixels('a', occurrence, 'tiles')).toBe(100)
+    expect(
+      tile
+        .querySelector<HTMLElement>('.hilos-table-record-space')
+        ?.style.getPropertyValue('--hilos-table-record-px'),
+    ).toBe('100')
     expect(owner.record('a', 'card')?.retained).toBe(268.75)
     layout.tileReason = 20
     events.resizes[0]!.fire()
     events.flush()
     expect(owner.record('a', 'tiles')?.retained).toBe(134)
+    expect(geometry.recordPixels('a', occurrence, 'tiles')).toBe(100)
+    expect(
+      tile
+        .querySelector<HTMLElement>('.hilos-table-record-space')
+        ?.style.getPropertyValue('--hilos-table-record-px'),
+    ).toBe('100')
   })
 
   it('invalidates the tile layout from its column width and count while the root keeps its width and every allocation', () => {

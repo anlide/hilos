@@ -712,39 +712,6 @@ body.modal-open .toast-container > * {
   }
 }
 
-// WHY: observer-time subtraction of rem chrome lets a font change inflate a
-// departed card for one frame. Bootstrap cannot subtract a measured allocation.
-// WHAT: the card's retained total minus this template's py-2, mb-2 and borders,
-// in the current layout. The reason's natural height remains the readable floor.
-.card
-  > .card-body
-  > .hilos-table-record-space[style*='--hilos-table-record-px'] {
-  min-height: max(
-    0px,
-    calc(
-      var(--hilos-table-record-px) * 1px - 1.5rem - 2 *
-        var(--bs-card-border-width)
-    )
-  );
-}
-
-// WHY: tiles keep their Bootstrap column and g-3 gutter after departure; the
-// ordinary card's mb-2 subtraction would consume the wrong separation. Bootstrap
-// cannot subtract a measured allocation from the current shell.
-// WHAT: retain the full image-and-body footprint, removing py-2, card borders and
-// the surviving column's vertical gutter exactly once, in the current layout.
-.hilos-table-tile
-  > .card-body
-  > .hilos-table-record-space[style*='--hilos-table-record-px'] {
-  min-height: max(
-    0px,
-    calc(
-      var(--hilos-table-record-px) * 1px - 1rem - 2 *
-        var(--bs-card-border-width) - var(--bs-gutter-y)
-    )
-  );
-}
-
 // WHY: progress payloads disappear before Apply, while their place must survive;
 // no Bootstrap utility can express a measured fractional block size.
 // WHAT: a data-free work reserve in a pending live row or card.

@@ -436,10 +436,10 @@ describe('Angular table geometry (numeric DOM seam)', () => {
       ).toBe(148.25)
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-      ).toBe(218.5)
+      ).toBe(192.5)
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'tiles'),
-      ).toBe(326.25)
+      ).toBe(293.25)
       expect(f.root.textContent).not.toMatch(
         /live values|work payload|detail values/,
       )
@@ -458,7 +458,7 @@ describe('Angular table geometry (numeric DOM seam)', () => {
     ).toBe(148.25)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(238.75)
+    ).toBe(230.75)
   })
 
   it('reads the whole batch before its first mutation', () => {
@@ -556,24 +556,24 @@ describe('Angular table geometry (numeric DOM seam)', () => {
     f.commit()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(74)
+    ).toBe(48)
     f.fallbackHeight.value = 96
     f.zoom.value = 1.5
     f.commit()
     f.commit()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(74)
+    ).toBe(48)
     f.boxes.set('card-reason', rect(0, 260.25))
     f.commit()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(286.25)
+    ).toBe(260.25)
     f.boxes.set('card-reason', rect(0, 18))
     f.commit()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(286.25)
+    ).toBe(260.25)
   })
 
   it('allows live shrink and only grows departed geometry for its reason', () => {
@@ -950,7 +950,7 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
       f.depart()
       f.commit()
       const occurrence = f.owner.record('a')!.occurrence
-      expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(316.5)
+      expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(283.5)
     },
   )
 
@@ -965,18 +965,18 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
     // The first commit signs the newly visible grid; the next one measures it.
     f.commit()
     f.commit()
-    // The 3rem fallback plus py-2, the card borders and the column gutter once.
-    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(81)
+    // The published body height is the 3rem fallback; its shell stays in layout.
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(48)
     expect(f.root.querySelector('img')).toBeNull()
     f.fallbackHeight.value = 96
     f.commit()
-    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(81)
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(48)
     f.boxes.set('tiles-reason', rect(0, 260.25))
     f.commit()
-    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(293.25)
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(260.25)
     f.boxes.set('tiles-reason', rect(0, 20))
     f.commit()
-    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(293.25)
+    expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(260.25)
   })
 
   it.each(['tile width', 'columns', 'gutter', 'tile font'] as const)(

@@ -623,10 +623,8 @@ export function useTableViewportGeometry(
     const state = registration?.record(rowKey, projection)
     const metrics = shells.get(key(occurrence, projection))
     if (!metrics || state?.retained == null) return undefined
-    // Card padding and its outside gap are rem-based. Sass subtracts their
-    // current values from the total in the same layout, before an observer
-    // could compensate a font change in a later frame.
-    if (projection !== 'wide') return state.retained
+    // The placeholder sizes only its inner block; shell chrome and gap are
+    // subtracted once from the retained extent.
     return Math.max(0, state.retained - metrics.chrome - metrics.gap)
   }
 

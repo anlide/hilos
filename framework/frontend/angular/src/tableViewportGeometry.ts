@@ -698,10 +698,8 @@ export function createTableViewportGeometry(
       state.record.occurrence !== occurrence
     )
       return undefined
-    // Card and tile padding and their outside gaps are rem-based. Sass
-    // subtracts their current values from the total in the same layout, before
-    // an observer could compensate a font change in a later frame.
-    if (projection !== 'wide') return state.retained
+    // The placeholder sizes only its inner block; shell chrome and gap are
+    // subtracted once from the retained extent.
     return Math.max(0, state.retained - metrics.chrome - metrics.gap)
   }
 

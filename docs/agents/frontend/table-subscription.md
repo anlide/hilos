@@ -1233,12 +1233,12 @@ React [`hilos-styles.scss`](../../../framework/frontend/react/src/hilos-styles.s
 files and Angular's
 [`hilos-styles.scss`](../../../framework/frontend/angular/src/hilos-styles.scss),
 while validated fractional measurements pass through numeric CSS custom
-properties. For Tiles, the Vue, React, and Angular Sass rules for
-`.hilos-table-tile` subtract the current card-body padding, borders, and
-surviving grid gutter from the retained number exactly once; none reuses the
-card rule's `mb-2` subtraction. The generic fallback keeps the same shell and
-gutter. Bootstrap supplies the grid, 4:3 ratio frame, and spacing; only measured
-numeric values travel through `--hilos-*` properties.
+properties. Each adapter subtracts the measured card-body chrome and outside
+gap from the retained extent before publishing the inner record-space height.
+The shared Sass rule applies that height without a second subtraction;
+Bootstrap keeps the shell and gutter around it. The generic `3rem` fallback
+occupies only the inner block. Bootstrap supplies the grid, 4:3 ratio frame, and
+spacing; only measured numeric values travel through `--hilos-*` properties.
 
 The Vue and React layout signatures read the tile's actual width and the number
 of grid columns from DOM boxes, along with font, zoom, and spacing. Angular's

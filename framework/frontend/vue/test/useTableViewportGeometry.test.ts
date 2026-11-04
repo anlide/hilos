@@ -499,13 +499,13 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
       expect(f.registration.record('a', 'tiles')?.retained).toBe(464.75)
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'tiles'),
-      ).toBe(464.75)
+      ).toBe(430.25)
       await nextTick()
       expect(
         f.wrapper
           .get('[data-tile-allocation]')
           .attributes('data-tile-allocation'),
-      ).toBe('464.75')
+      ).toBe('430.25')
       expect(f.wrapper.get('[data-box="tiles-main"]').text()).toBe('Removed')
       expect(f.wrapper.find('[data-box="tiles-image"]').exists()).toBe(false)
       f.tilesVisible.value = false
@@ -817,7 +817,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
       ).toBe(118.5)
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-      ).toBe(218.5)
+      ).toBe(192.5)
       await nextTick()
       expect(
         f.wrapper.get('[data-allocation]').attributes('data-allocation'),
@@ -826,7 +826,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
         f.wrapper
           .get('[data-card-allocation]')
           .attributes('data-card-allocation'),
-      ).toBe('218.5')
+      ).toBe('192.5')
     },
   )
 
@@ -842,7 +842,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     ).toBe(148.25)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(238.75)
+    ).toBe(230.75)
     await nextTick()
     expect(
       f.wrapper.get('[data-allocation]').attributes('data-allocation'),
@@ -851,7 +851,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
       f.wrapper
         .get('[data-card-allocation]')
         .attributes('data-card-allocation'),
-    ).toBe('238.75')
+    ).toBe('230.75')
   })
 
   it.each([1.25, 1.5])(
@@ -886,7 +886,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
       ).toBe(124.25)
       expect(
         f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-      ).toBe(218.5)
+      ).toBe(210.5)
     },
   )
 
@@ -921,7 +921,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     ).toBe(150.5)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(286.25)
+    ).toBe(260.25)
     f.zoom.value = 1.5
     f.boxes.set('wide-reason', rect(0, 22))
     f.boxes.set('wide-shell', rect(0, 23))
@@ -933,7 +933,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     ).toBe(150.5)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(286.25)
+    ).toBe(260.25)
   })
 
   it('allocates hidden projection fallback only on first display under zoom and never rescales its history', async () => {
@@ -948,17 +948,17 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     f.zoom.value = 1.5
     f.redraw.value++
     await nextTick()
-    // 48px Sass body + 16.5px padding + 1.5px border + 8px outer margin.
+    // The 48px Sass fallback excludes 18px chrome and the 8px outer gap.
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(74)
+    ).toBe(48)
     f.zoom.value = 1.25
     f.fallbackHeight.value = 96
     f.redraw.value++
     await nextTick()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(74)
+    ).toBe(48)
   })
 
   it('invalidates tracks when effective zoom changes with the same local container width, retaining departed extents', async () => {
@@ -984,7 +984,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     ).toBe(118.5)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(218.5)
+    ).toBe(210.5)
   })
 
   it('captures all old connected parts before the first destructive mutation, independently by projection', async () => {
@@ -999,7 +999,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     ).toBe(148.25)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(218.5)
+    ).toBe(210.5)
     await nextTick()
     expect(
       f.wrapper.get('[data-allocation]').attributes('data-allocation'),
@@ -1137,7 +1137,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     f.depart()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(218.5)
+    ).toBe(210.5)
     await nextTick()
   })
 
@@ -1159,7 +1159,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     await nextTick()
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(56)
+    ).toBe(48)
   })
 
   it('allows live shrink, but keeps departed historical allocation and only grows it for the reason', async () => {
@@ -1234,7 +1234,7 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     ).toBe(118.5)
     expect(
       f.adapter.recordPixels('a', f.owner.record('a')!.occurrence, 'card'),
-    ).toBe(218.5)
+    ).toBe(210.5)
   })
 
   it('detaches the previous controller registration without disposing its owner', async () => {

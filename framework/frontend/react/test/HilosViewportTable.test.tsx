@@ -4725,7 +4725,7 @@ describe('HilosViewportTable connected geometry', () => {
     }
     expect(captures).toHaveBeenCalledTimes(1)
     expect(pixels(container, 'wide')).toBe('258.25')
-    expect(pixels(container, 'card')).toBe('508.75')
+    expect(pixels(container, 'card')).toBe('482.75')
     expect(registrations[0].record('a', 'wide')?.retained).toBe(259.25)
     expect(container.textContent).not.toContain('Private')
     expect(
@@ -4742,7 +4742,7 @@ describe('HilosViewportTable connected geometry', () => {
     fireEvent(window, new Event('resize'))
     dom.flush()
     expect(pixels(container, 'wide')).toBe('258.25')
-    expect(pixels(container, 'card')).toBe('508.75')
+    expect(pixels(container, 'card')).toBe('482.75')
   })
 
   it.each(['search', 'root', 'outside'] as const)(
@@ -4948,15 +4948,15 @@ describe('HilosViewportTable connected geometry', () => {
     picture.mockClear()
     act(() => depart(controller))
     expect(captures).toHaveBeenCalledTimes(1)
-    // The whole picture and body, plus the surviving column gutter once.
+    // The placeholder fills the retained picture and body inside the tile shell.
     expect(
       tile()
         .querySelector<HTMLElement>('.hilos-table-record-space')
         ?.style.getPropertyValue('--hilos-table-record-px'),
-    ).toBe('426.5')
+    ).toBe('392.5')
     expect(
       dom.firstPlaceholders.find((read) => read.projection === 'tiles')?.pixels,
-    ).toBe('426.5')
+    ).toBe('392.5')
     expect(tile().parentElement?.classList.contains('col')).toBe(true)
     expect(tile().textContent).not.toContain('Private')
     expect(
@@ -4974,7 +4974,7 @@ describe('HilosViewportTable connected geometry', () => {
       tile()
         .querySelector<HTMLElement>('.hilos-table-record-space')
         ?.style.getPropertyValue('--hilos-table-record-px'),
-    ).toBe('426.5')
+    ).toBe('392.5')
   })
 
   it('captures every connected record before a destructive batch and sizes the first replacement in both projections', () => {
@@ -5016,13 +5016,13 @@ describe('HilosViewportTable connected geometry', () => {
     expect(captures).toHaveBeenCalledTimes(1)
     expect(registrations[0]?.record('a', 'wide')?.retained).toBe(120)
     expect(pixels(container, 'wide')).toBe('119')
-    expect(pixels(container, 'card')).toBe('268.75')
+    expect(pixels(container, 'card')).toBe('242.75')
     expect(
       dom.firstPlaceholders.find((read) => read.projection === 'wide')?.pixels,
     ).toBe('119')
     expect(
       dom.firstPlaceholders.find((read) => read.projection === 'card')?.pixels,
-    ).toBe('268.75')
+    ).toBe('242.75')
     expect(
       container.querySelectorAll('[data-id="hilos-table-placeholder"]'),
     ).toHaveLength(4)
@@ -5089,7 +5089,7 @@ describe('HilosViewportTable connected geometry', () => {
     act(() => work(controller, true))
     act(() => controller.apply())
     expect(pixels(container, 'wide')).toBe('119')
-    expect(pixels(container, 'card')).toBe('268.75')
+    expect(pixels(container, 'card')).toBe('242.75')
     expect(
       container.querySelectorAll('.hilos-table-work-reserve'),
     ).toHaveLength(0)
@@ -5218,23 +5218,23 @@ describe('HilosViewportTable connected geometry', () => {
     dom.layout.cardHidden = false
     dom.resizes[0]!.fire()
     dom.flush()
-    expect(pixels(container, 'card')).toBe('74')
+    expect(pixels(container, 'card')).toBe('48')
     dom.layout.font = 24
     dom.layout.fallback = 72
     dom.resizes[0]!.fire()
     dom.flush()
-    expect(pixels(container, 'card')).toBe('74')
+    expect(pixels(container, 'card')).toBe('48')
     dom.layout.reason = 100
     dom.resizes[0]!.fire()
     dom.flush()
-    expect(pixels(container, 'card')).toBe('126')
+    expect(pixels(container, 'card')).toBe('100')
     expect(pixels(container, 'wide')).toBe('100')
     dom.layout.font = 12
     dom.layout.reason = 10
     dom.layout.fallback = 36
     dom.resizes[0]!.fire()
     dom.flush()
-    expect(pixels(container, 'card')).toBe('126')
+    expect(pixels(container, 'card')).toBe('100')
     expect(pixels(container, 'wide')).toBe('100')
   })
 
@@ -5253,7 +5253,7 @@ describe('HilosViewportTable connected geometry', () => {
     dom.layout.cardHidden = false
     dom.resizes[0]!.fire()
     dom.flush()
-    expect(pixels(container, 'card')).toBe('74')
+    expect(pixels(container, 'card')).toBe('48')
     expect(pixels(container, 'wide')).toBe('40.25')
   })
 

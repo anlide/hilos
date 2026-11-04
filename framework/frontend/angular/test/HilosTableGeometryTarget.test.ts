@@ -228,8 +228,8 @@ describe('HilosTableGeometryTarget', () => {
     const table = host.querySelector('table')!
     geometry.commit(host, table, [])
     const occurrence = owner.record('a')!.occurrence
-    const retained = () => geometry.recordPixels('a', occurrence, 'tiles')
-    expect(retained()).toBeUndefined()
+    const pixels = () => geometry.recordPixels('a', occurrence, 'tiles')
+    expect(pixels()).toBeUndefined()
     owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['a'] }, () => {
       owner.depart('a', 'deleted')
       fixture.componentInstance.live.set(false)
@@ -238,8 +238,8 @@ describe('HilosTableGeometryTarget', () => {
     expect(host.querySelector('img')).toBeNull()
     expect(host.textContent).not.toMatch(/detail values|work payload/)
     geometry.commit(host, table, [])
-    // The full card plus the column gutter once, never the image added again.
-    expect(retained()).toBe(316.5)
+    // Only inner body space is published; shell and gutter remain in layout.
+    expect(pixels()).toBe(300.5)
     fixture.destroy()
   })
 })

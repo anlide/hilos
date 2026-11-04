@@ -746,10 +746,8 @@ function createMount(
       state.retained == null
     )
       return undefined
-    // Card and tile padding and their outside gap are rem-based. Sass subtracts
-    // their current values from the total in the same layout, before an observer
-    // could compensate a font change in a later frame.
-    if (projection !== 'wide') return state.retained
+    // Retained geometry is the complete footprint; the placeholder fills the
+    // measured record area inside the current shell and outside gap.
     return Math.max(0, state.retained - metrics.chrome - metrics.gap)
   }
 

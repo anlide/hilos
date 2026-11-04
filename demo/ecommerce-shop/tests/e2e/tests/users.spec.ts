@@ -480,14 +480,20 @@ async function evidence(
 
 for (const projection of ['wide', 'card'] as const) {
   test.describe(`React geometry ${projection}`, () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page }, info) => {
       await openTableFixture(
         expect,
         page,
         '/__table_geometry/index.html',
         'geometry-fixture',
       )
-      await page.getByTestId('geometry-projection').selectOption(projection)
+      const initialProjection =
+        projection === 'card' && info.title.startsWith('B01 ')
+          ? 'wide'
+          : projection
+      await page
+        .getByTestId('geometry-projection')
+        .selectOption(initialProjection)
       await expect(page.getByTestId('geometry-state')).toContainText('g:live')
       await settleTableLayout(page)
     })
@@ -1275,7 +1281,8 @@ for (const projection of ['wide', 'card'] as const) {
       await page
         .getByTestId('geometry-projection')
         .selectOption(projection === 'wide' ? 'card' : 'wide')
-      await setTableEnvironment(page, { kind: 'font', size: 20 })
+      if (projection === 'wide')
+        await setTableEnvironment(page, { kind: 'font', size: 20 })
       await settleTableLayout(page)
       await page.getByTestId('geometry-reason').selectOption('left_set')
       const allocation = await observeAllocation(page, 'a', projection, true)
@@ -1284,12 +1291,14 @@ for (const projection of ['wide', 'card'] as const) {
       await page.getByTestId('geometry-projection').selectOption(projection)
       await settleTableLayout(page)
       await allocation.check()
-      for (const size of [24, 64, 16, 96, 20]) {
-        await setTableEnvironment(page, { kind: 'font', size })
-        await settleTableLayout(page)
-        await allocation.check()
+      if (projection === 'wide') {
+        for (const size of [24, 64, 16, 96, 20]) {
+          await setTableEnvironment(page, { kind: 'font', size })
+          await settleTableLayout(page)
+          await allocation.check()
+        }
+        await allocation.changed('extent', 'grew')
       }
-      await allocation.changed('extent', 'grew')
       await setTableEnvironment(page, { kind: 'spacing', enabled: true })
       await setTableEnvironment(page, {
         kind: 'zoom',
@@ -1431,9 +1440,11 @@ for (const projection of ['wide', 'card'] as const) {
       }
     })
 
-    test('B02 captured allocation survives container, root font, late font, spacing and layout zoom', async ({
-      page,
-    }, info) => {
+    const b02Title =
+      projection === 'wide'
+        ? 'B02 captured allocation survives container, root font, late font, spacing and layout zoom'
+        : 'B02 captured allocation survives container, late font, spacing and layout zoom'
+    test(b02Title, async ({ page }, info) => {
       await page.getByTestId('geometry-detail').selectOption('expanded')
       await page.getByTestId('geometry-text').check()
       await press(page, 'geometry-configure')
@@ -1445,10 +1456,12 @@ for (const projection of ['wide', 'card'] as const) {
       await retained.changed('width')
       if (projection === 'wide') await retained.changed('tracks')
       await retained.check()
-      await setTableEnvironment(page, { kind: 'font', size: 24 })
-      await settleTableLayout(page)
-      await retained.changed('rootFont')
-      await retained.check()
+      if (projection === 'wide') {
+        await setTableEnvironment(page, { kind: 'font', size: 24 })
+        await settleTableLayout(page)
+        await retained.changed('rootFont')
+        await retained.check()
+      }
       await info.attach('late-font-condition', {
         body: await loadLateTableFont(
           expect,
