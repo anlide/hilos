@@ -31,6 +31,9 @@ use Hilos\Fs\Exception\FileWriteException;
  */
 final class FsPath
 {
+    private const int FILE_TYPE_MASK = 0170000;
+    private const int REGULAR_FILE_TYPE = 0100000;
+
     /**
      * @param string $path Absolute file path
      * @return string File contents
@@ -221,11 +224,12 @@ final class FsPath
     /**
      * Hold a blocking advisory lock for the callback, then close its private handle to release it.
      * The lock file is created if absent, never truncated, and retained so all callers lock the same inode.
+     * An existing file may be opened read-only for locking; only creation requires a writable parent.
      * The callback receives no handle; its return value and exceptions pass through.
      *
      * @template T
      *
-     * @param string $lockPath Absolute lock file path, in an existing writable directory
+     * @param string $lockPath Absolute lock file path, in an existing directory
      * @param bool $exclusive True for an exclusive lock, false for a shared lock
      * @param callable(): T $callback Work performed while the lock is held
      * @return T Whatever the callback returned
@@ -234,13 +238,26 @@ final class FsPath
      */
     public static function withLock(string $lockPath, bool $exclusive, callable $callback): mixed
     {
-        // warning-suppressed: false becomes FileWriteException on the next line
+        // warning-suppressed: failed write-open falls back to a read-only descriptor
         $handle = @fopen($lockPath, 'c');
+        $readOnly = $handle === false;
+        if ($readOnly) {
+            // warning-suppressed: false becomes FileWriteException below
+            $handle = @fopen($lockPath, 'rb');
+        }
         if ($handle === false) {
             throw new FileWriteException("Cannot open lock file: {$lockPath}");
         }
 
         try {
+            if ($readOnly) {
+                // warning-suppressed: failed descriptor inspection becomes FileWriteException below
+                $stat = @fstat($handle);
+                if ($stat === false || ($stat['mode'] & self::FILE_TYPE_MASK) !== self::REGULAR_FILE_TYPE) {
+                    throw new FileWriteException("Cannot open lock file: {$lockPath}");
+                }
+            }
+
             // warning-suppressed: false becomes FileWriteException on the next line
             if (!@flock($handle, $exclusive ? LOCK_EX : LOCK_SH)) {
                 throw new FileWriteException("Cannot lock file: {$lockPath}");
