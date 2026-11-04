@@ -407,12 +407,24 @@ export async function expectAnalyticsSessionReturn(
   await expect(
     page.getByTestId('hilos-breadcrumb').getByRole('link'),
   ).toHaveText(['Hilos', 'Analytics', 'Browser sessions'])
-  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
-    'Hilos',
-    'Analytics',
-    'Browser sessions',
-    `Browser session #${sessionId}`,
-  ])
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.locator('li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual([
+      'Hilos',
+      'Analytics',
+      'Browser sessions',
+      `Browser session #${sessionId}`,
+    ])
   await expect(
     page.getByTestId('hilos-breadcrumb-hilos_analytics_browser_sessions'),
   ).toHaveAttribute('href', ANALYTICS_SESSION_LIST_PATH)

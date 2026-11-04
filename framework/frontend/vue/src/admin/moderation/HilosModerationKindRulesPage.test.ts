@@ -262,7 +262,9 @@ describe('HilosModerationKindRulesPage', () => {
       'Profile name',
     ])
     const crumbs = view.get('[data-id="hilos-breadcrumb"]')
-    expect(crumbs.get('li:last-child').text()).toBe('Profile name')
+    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+      'Profile name',
+    )
     expect(crumbs.text()).not.toContain('Rules')
     const tabs = view.get('[aria-label="Kind pages"]')
     expect(
@@ -315,7 +317,9 @@ describe('HilosModerationKindRulesPage', () => {
     update({ ...first, title: 'New title', owner: 'project' })
     await nextTick()
     expect(view.get('h1').text()).toBe('New title')
-    expect(crumbs.get('li:last-child').text()).toBe('New title')
+    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+      'New title',
+    )
     expect(navigation.currentTitle.get()).toBe('New title · Chat')
     expect(view.get('[data-id="hilos-moderation-kind-owner"]').text()).toBe(
       'Project',

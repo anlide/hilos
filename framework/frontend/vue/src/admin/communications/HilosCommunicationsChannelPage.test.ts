@@ -219,11 +219,9 @@ describe('HilosCommunicationsChannelPage Overview', () => {
       'bi-envelope-paper',
     )
     const crumbs = view.get('nav[aria-label="Breadcrumb"]')
-    expect(crumbs.findAll('li').map((item) => item.text())).toEqual([
-      'Hilos',
-      'Communications',
-      'SMS',
-    ])
+    expect(
+      crumbs.findAll('li').map((item) => item.text().replace('/', '').trim()),
+    ).toEqual(['Hilos', 'Communications', 'SMS'])
     expect(crumbs.get('[aria-current="page"]').find('a').exists()).toBe(false)
     const row = view.get('nav[aria-label="Channel pages"]')
     expect(
@@ -297,7 +295,11 @@ describe('HilosCommunicationsChannelPage Overview', () => {
     await nextTick()
     expect(view.get('h1').text()).toBe('Text messages')
     expect(
-      view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      view
+        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Text messages')
     expect(h.navigation.currentTitle.get()).toBe('Text messages · Demo')
     expect(view.get('[data-id="channel-head-enabled"]').text()).toBe('Disabled')

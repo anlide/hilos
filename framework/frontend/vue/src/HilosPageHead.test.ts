@@ -307,7 +307,7 @@ describe('HilosPageHead', () => {
     const current = crumbs.findAll('[aria-current="page"]')
     expect(current).toHaveLength(1)
     expect(current[0].element.tagName).toBe('LI')
-    expect(current[0].text()).toBe('United States')
+    expect(current[0].text().replace('/', '').trim()).toBe('United States')
   })
 
   it('keeps an intermediate crumb without an address as text', () => {
@@ -322,8 +322,8 @@ describe('HilosPageHead', () => {
       },
     })
 
-    const items = head.findAll('.breadcrumb-item')
-    expect(items.map((item) => item.text())).toEqual([
+    const items = head.findAll('[data-id="hilos-breadcrumb"] li')
+    expect(items.map((item) => item.text().replace('/', '').trim())).toEqual([
       'Hilos',
       'People',
       'Demo section',

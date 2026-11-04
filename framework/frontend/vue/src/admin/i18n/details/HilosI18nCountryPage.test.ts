@@ -365,7 +365,11 @@ describe('HilosI18nCountryPage', () => {
         },
       })
       const crumb = () =>
-        h.view.get('[data-id="hilos-breadcrumb"] li:last-child').text()
+        h.view
+          .get('[data-id="hilos-breadcrumb"] li:last-child')
+          .text()
+          .replace('/', '')
+          .trim()
       expect(crumb()).toBe(expected)
       expect(h.view.findAll('h1')).toHaveLength(1)
       expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(

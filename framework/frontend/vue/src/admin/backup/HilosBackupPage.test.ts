@@ -396,7 +396,9 @@ describe('HilosBackupPage section presentation', () => {
     const crumbs = wrapper.get('nav[aria-label="Breadcrumb"]')
     expect(crumbs.get('a').text()).toBe('Hilos')
     expect(crumbs.get('a').attributes('href')).toBe('/hilos')
-    expect(crumbs.get('[aria-current="page"]').text()).toBe('Backups')
+    expect(
+      crumbs.get('[aria-current="page"]').text().replace('/', '').trim(),
+    ).toBe('Backups')
     expect(crumbs.findAll('a')).toHaveLength(1)
     expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(

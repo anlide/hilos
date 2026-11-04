@@ -324,7 +324,7 @@ describe('HilosCommunicationsDeliveriesPage shared head', () => {
       view
         .get('nav[aria-label="Breadcrumb"]')
         .findAll('li')
-        .map((crumb) => crumb.text()),
+        .map((crumb) => crumb.text().replace('/', '').trim()),
     ).toEqual(['Hilos', 'Communications', 'Email'])
     const row = view.get('nav[aria-label="Channel pages"]')
     expect(
@@ -383,7 +383,11 @@ describe('HilosCommunicationsDeliveriesPage shared head', () => {
     await nextTick()
     expect(view.get('h1').text()).toBe('Outgoing mail')
     expect(
-      view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      view
+        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Outgoing mail')
     expect(view.find('[data-id="channel-head-enabled"]').exists()).toBe(false)
     expect(view.get('[data-id="channel-head-configured"]').text()).toBe(

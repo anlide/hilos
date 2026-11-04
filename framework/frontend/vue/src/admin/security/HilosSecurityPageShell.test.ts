@@ -126,10 +126,11 @@ describe('HilosSecurityPageShell', () => {
           ?.getAttribute('aria-hidden'),
       ).toBe('true')
       const crumbs = view.get('nav[aria-label="Breadcrumb"]')
-      expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
-        'Hilos',
-        'Security Center',
-      ])
+      expect(
+        crumbs
+          .findAll('li')
+          .map((crumb) => crumb.text().replace('/', '').trim()),
+      ).toEqual(['Hilos', 'Security Center'])
       expect(crumbs.get('a').attributes('href')).toBe('/hilos')
       const row = view.get('nav[aria-label="Security Center pages"]')
       expect(row.findAll('a').map((link) => link.text())).toEqual(

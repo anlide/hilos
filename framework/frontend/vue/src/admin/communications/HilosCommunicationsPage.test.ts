@@ -265,7 +265,7 @@ describe('HilosCommunicationsPage', () => {
       wrapper
         .get('nav[aria-label="Breadcrumb"]')
         .findAll('li')
-        .map((crumb) => crumb.text()),
+        .map((crumb) => crumb.text().replace('/', '').trim()),
     ).toEqual(['Hilos', 'Communications'])
     expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(

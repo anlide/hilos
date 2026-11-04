@@ -557,12 +557,11 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
         'GitHub',
       ])
       const crumbs = t.view.get('nav[aria-label="Breadcrumb"]')
-      expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
-        'Hilos',
-        'Security Center',
-        'OAuth providers',
-        'GitHub',
-      ])
+      expect(
+        crumbs
+          .findAll('li')
+          .map((crumb) => crumb.text().replace('/', '').trim()),
+      ).toEqual(['Hilos', 'Security Center', 'OAuth providers', 'GitHub'])
       expect(
         crumbs.findAll('a').map((link) => link.attributes('href')),
       ).toEqual(['/hilos', '/hilos/security', '/hilos/security/oauth'])
@@ -646,7 +645,11 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
       ).toContain(icon)
       expect(t.view.get('[data-id="oauth-provider-head-key"]').text()).toBe(key)
       expect(
-        t.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+        t.view
+          .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+          .text()
+          .replace('/', '')
+          .trim(),
       ).toBe(label)
     },
   )
@@ -670,7 +673,11 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
     expect(t.view.get('h1').text()).toBe('GitHub enterprise')
     expect(document.title).toBe('GitHub enterprise · Chat')
     expect(
-      t.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      t.view
+        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('GitHub enterprise')
     expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
       '2 missing',

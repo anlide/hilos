@@ -374,7 +374,7 @@ describe('HilosPageHead', () => {
       },
     })
 
-    const items = findAll(head, '.breadcrumb-item')
+    const items = findAll(head, '[data-id="hilos-breadcrumb"] li')
     expect(items.map((item) => item.textContent)).toEqual([
       'Hilos',
       '/People',

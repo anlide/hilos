@@ -425,7 +425,7 @@ describe('HilosSettingsPage', () => {
     expect(items[0]!.text()).toBe('Hilos')
     expect(items[0]!.get('a').attributes('href')).toBe('/hilos')
     expect(items[0]!.attributes('aria-current')).toBeUndefined()
-    expect(items[1]!.text()).toBe('Settings')
+    expect(items[1]!.text().replace('/', '').trim()).toBe('Settings')
     expect(items[1]!.attributes('aria-current')).toBe('page')
     expect(items[1]!.find('a').exists()).toBe(false)
     expect(wrapper.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)

@@ -494,7 +494,7 @@ describe('Legal Overview and assembled section', () => {
           h.view.get('[data-id="hilos-page-head-block"]').text(),
         ).toContain('What the project declares, and who accepted it.')
         expect(h.view.get('[data-id="hilos-breadcrumb"]').text()).toBe(
-          'HilosLegal',
+          'Hilos/Legal',
         )
         expect(
           h.view.get('[data-id="hilos-breadcrumb-hilos"]').attributes('href'),

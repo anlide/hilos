@@ -154,15 +154,16 @@ function expectHead(wrapper: VueWrapper, currentPage: string, paths = PATHS) {
   const crumbs = wrapper.get('[data-id="hilos-breadcrumb"]')
   expect(crumbs.element.tagName).toBe('NAV')
   expect(crumbs.attributes('aria-label')).toBe('Breadcrumb')
-  expect(crumbs.findAll('ol > li').map((crumb) => crumb.text())).toEqual([
-    'Hilos',
-    'Logs',
-  ])
+  expect(
+    crumbs
+      .findAll('ol > li')
+      .map((crumb) => crumb.text().replace('/', '').trim()),
+  ).toEqual(['Hilos', 'Logs'])
   expect(
     crumbs.get('[data-id="hilos-breadcrumb-hilos"]').attributes('href'),
   ).toBe('/hilos')
   const last = crumbs.get('[aria-current="page"]')
-  expect(last.text()).toBe('Logs')
+  expect(last.text().replace('/', '').trim()).toBe('Logs')
   expect(last.find('a').exists()).toBe(false)
   const tabs = wrapper.get('[data-id="hilos-page-tabs"]')
   expect(tabs.element.tagName).toBe('NAV')

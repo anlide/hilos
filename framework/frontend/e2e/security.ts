@@ -284,10 +284,19 @@ export async function expectSecuritySectionHead(
   await expect(
     page.getByTestId('hilos-page-head-block').locator('p'),
   ).toHaveText(SECURITY_LEAD)
-  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
-    'Hilos',
-    'Security Center',
-  ])
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.locator('li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Security Center'])
 }
 
 /** The root shows the whole snapshot without mounting any of its child tables. */
@@ -477,12 +486,19 @@ export async function expectSecurityProviderHead(
     head.configured ? 'Configured' : `${head.missingFields} missing`,
   )
   await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-breadcrumb').locator('li')).toHaveText([
-    'Hilos',
-    'Security Center',
-    'OAuth providers',
-    head.label,
-  ])
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.locator('li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Security Center', 'OAuth providers', head.label])
   await expect(
     page.getByTestId('hilos-breadcrumb-hilos_security_oauth'),
   ).toHaveAttribute('href', `${SECURITY_PATH}/oauth`)

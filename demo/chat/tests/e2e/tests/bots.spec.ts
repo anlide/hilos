@@ -1245,7 +1245,16 @@ async function expectBotsPageHead(page: Page): Promise<void> {
   await expect(rootCrumb).toHaveText('Hilos')
   const currentCrumb = breadcrumbs.locator('[aria-current="page"]')
   await expect(currentCrumb).toHaveCount(1)
-  await expect(currentCrumb).toHaveText('Bots')
+  await expect
+    .poll(() =>
+      currentCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe('Bots')
   await expect(currentCrumb.locator('a')).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-page-tabs')).toHaveCount(0)

@@ -36,7 +36,18 @@ export async function expectLogsPageHead(
   const crumbs = head.getByTestId('hilos-breadcrumb')
   await expect(crumbs).toHaveRole('navigation')
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
-  await expect(crumbs.locator('ol > li')).toHaveText(['Hilos', 'Logs'])
+  await expect
+    .poll(() =>
+      crumbs.locator('ol > li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Logs'])
   await expect(page.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
     'href',
     '/hilos',
@@ -44,7 +55,16 @@ export async function expectLogsPageHead(
   const last = crumbs.locator('[aria-current]')
   await expect(last).toHaveCount(1)
   await expect(last).toHaveAttribute('aria-current', 'page')
-  await expect(last).toHaveText('Logs')
+  await expect
+    .poll(() =>
+      last.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe('Logs')
   await expect(last.locator('a')).toHaveCount(0)
 
   const path = new URL(page.url()).pathname

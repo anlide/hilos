@@ -208,12 +208,18 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   const breadcrumb = head.getByTestId('hilos-breadcrumb')
   await expect(breadcrumb).toHaveRole('navigation')
   await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
-  await expect(breadcrumb.locator('li')).toHaveText([
-    'Hilos',
-    'Analytics',
-    'People',
-    label,
-  ])
+  await expect
+    .poll(() =>
+      breadcrumb.locator('li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Analytics', 'People', label])
   const current = breadcrumb.locator('li').last()
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.getByRole('link')).toHaveCount(0)

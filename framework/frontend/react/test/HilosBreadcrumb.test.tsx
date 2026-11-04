@@ -44,16 +44,11 @@ describe('HilosBreadcrumb', () => {
     )
 
     expect(container.querySelectorAll('a')).toHaveLength(1)
-    expect(container.querySelectorAll('.breadcrumb-item')).toHaveLength(3)
-    expect(container.querySelectorAll('.breadcrumb-item')[1].textContent).toBe(
-      '/Section',
-    )
+    const items = container.querySelectorAll('ol > li')
+    expect(items).toHaveLength(3)
+    expect(items[1].textContent).toBe('/Section')
     expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
-    expect(
-      container
-        .querySelectorAll('.breadcrumb-item')[2]
-        .getAttribute('aria-current'),
-    ).toBe('page')
+    expect(items[2].getAttribute('aria-current')).toBe('page')
   })
 
   it('marks the last crumb alone, whatever path the router stands at', () => {
@@ -103,7 +98,13 @@ describe('HilosBreadcrumb', () => {
       />,
     )
 
-    const items = [...container.querySelectorAll('.breadcrumb-item')]
+    const items = [...container.querySelectorAll('ol > li')]
+    expect(items).toHaveLength(3)
+    expect(container.querySelector('.breadcrumb-item')).toBeNull()
+    for (const item of items) {
+      expect(item.classList.contains('breadcrumb-item')).toBe(false)
+    }
+
     expect(items[0].querySelector('span')).toBeNull()
     for (const item of items.slice(1)) {
       const slashes = item.querySelectorAll(':scope > span')
@@ -111,22 +112,11 @@ describe('HilosBreadcrumb', () => {
       expect(item.firstElementChild).toBe(slashes[0])
       expect(slashes[0].textContent).toBe('/')
       expect(slashes[0].getAttribute('aria-hidden')).toBe('true')
-      expect([...slashes[0].classList]).toEqual([
-        'float-start',
-        'pe-2',
-        'text-body-secondary',
-      ])
     }
     // The slashes stay out of the links' names.
     expect(screen.getByRole('link', { name: 'Dashboard' }).textContent).toBe(
       'Dashboard',
     )
-    // The scoped class switches the stock ::before separator off.
-    expect(
-      container
-        .querySelector('[data-id="hilos-breadcrumb"]')
-        ?.classList.contains('hilos-breadcrumb'),
-    ).toBe(true)
   })
 
   it('names the navigation by the label it is given', () => {
@@ -147,14 +137,13 @@ describe('HilosBreadcrumb', () => {
     ).toBe('breadcrumb')
   })
 
-  it('adds the classes it is given beside its own', () => {
+  it('passes caller classes to the navigation element', () => {
     const { container } = render(
       <HilosBreadcrumb crumbs={TRAIL} className="text-break" />,
     )
 
-    expect([
-      ...(container.querySelector('[data-id="hilos-breadcrumb"]')?.classList ??
-        []),
-    ]).toEqual(['hilos-breadcrumb', 'text-break'])
+    const nav = container.querySelector('[data-id="hilos-breadcrumb"]')
+    expect(nav?.className).toBe('text-break')
+    expect(nav?.classList.contains('hilos-breadcrumb')).toBe(false)
   })
 })

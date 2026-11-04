@@ -35,7 +35,7 @@ describe('Document shell and assembled pages', () => {
           'Terms',
         ])
         const crumbs = h.view.get('[data-id="hilos-breadcrumb"]')
-        expect(crumbs.text()).toBe('HilosLegalDocumentsTerms')
+        expect(crumbs.text()).toBe('Hilos/Legal/Documents/Terms')
         expect(
           crumbs.findAll('a').map((node) => node.attributes('href')),
         ).toEqual(['/hilos', '/hilos/legal', '/hilos/legal/documents'])

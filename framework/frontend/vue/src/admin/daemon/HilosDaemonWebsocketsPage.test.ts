@@ -48,11 +48,9 @@ describe('HilosDaemonWebsocketsPage', () => {
       label: nodeId,
     })
     const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
-    expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
-      'Hilos',
-      'Daemon',
-      nodeId,
-    ])
+    expect(
+      crumbs.findAll('li').map((crumb) => crumb.text().replace('/', '').trim()),
+    ).toEqual(['Hilos', 'Daemon', nodeId])
     expect(crumbs.get('[aria-current="page"]').element.tagName).toBe('LI')
     const nav = h.view.get('nav[aria-label="Node pages"]')
     expect(nav.findAll('a').map((link) => link.text())).toEqual([

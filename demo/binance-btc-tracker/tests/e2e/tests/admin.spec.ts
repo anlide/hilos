@@ -137,7 +137,16 @@ test('cold-loads a parametrized admin page through the framework shell', async (
   const currentBreadcrumb = page
     .getByTestId('hilos-breadcrumb')
     .locator('[aria-current="page"]')
-  await expect(currentBreadcrumb).toHaveText('Email')
+  await expect
+    .poll(() =>
+      currentBreadcrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe('Email')
   await expect(currentBreadcrumb.locator('a')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-page-tab-hilos_communications_channel'),

@@ -400,12 +400,18 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   const breadcrumb = head.getByTestId('hilos-breadcrumb')
   await expect(breadcrumb).toHaveRole('navigation')
   await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
-  await expect(breadcrumb.locator('li')).toHaveText([
-    'Hilos',
-    'Analytics',
-    'People',
-    label,
-  ])
+  await expect
+    .poll(() =>
+      breadcrumb.locator('li').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Analytics', 'People', label])
   const current = breadcrumb.locator('li').last()
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.getByRole('link')).toHaveCount(0)
@@ -425,11 +431,19 @@ test('Security has one section heading, six named links and keyboard navigation 
   await expect(
     breadcrumb.getByTestId('hilos-breadcrumb-hilos'),
   ).toHaveAccessibleName('Hilos')
-  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveCount(1)
-  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
-    'Security Center',
-  )
-  await expect(breadcrumb.locator('[aria-current="page"] a')).toHaveCount(0)
+  const currentCrumb = breadcrumb.locator('[aria-current="page"]')
+  await expect(currentCrumb).toHaveCount(1)
+  await expect
+    .poll(() =>
+      currentCrumb.evaluate((crumb) => {
+        const words = crumb.cloneNode(true) as Element
+        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+          hidden.remove()
+        return words.textContent?.trim()
+      }),
+    )
+    .toBe('Security Center')
+  await expect(currentCrumb.locator('a')).toHaveCount(0)
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
     'Two-factor',
     'Operations that ask for confirmation',
@@ -518,11 +532,19 @@ test('OAuth provider has one named entity head and table, decorative icons and k
       await expect(link).toHaveAccessibleName(label!)
       await expect(link).toHaveAttribute('href', path!)
     }
-    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveCount(1)
-    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
-      provider.label,
-    )
-    await expect(breadcrumb.locator('[aria-current="page"] a')).toHaveCount(0)
+    const currentCrumb = breadcrumb.locator('[aria-current="page"]')
+    await expect(currentCrumb).toHaveCount(1)
+    await expect
+      .poll(() =>
+        currentCrumb.evaluate((crumb) => {
+          const words = crumb.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      )
+      .toBe(provider.label)
+    await expect(currentCrumb.locator('a')).toHaveCount(0)
     expect(
       await page
         .getByTestId('hilos-page-head')

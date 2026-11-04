@@ -121,9 +121,19 @@ export async function expectStatusHead(
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText('Status')
   await expect(page.getByTestId('hilos-page-head')).toContainText(STATUS_LEAD)
-  await expect(
-    page.getByTestId('hilos-breadcrumb').getByRole('listitem'),
-  ).toHaveText(['Hilos', 'Status'])
+  const crumbs = page.getByTestId('hilos-breadcrumb')
+  await expect
+    .poll(() =>
+      crumbs.getByRole('listitem').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Status'])
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Status pages')
   await expect(tabs.getByRole('link')).toHaveCount(5)

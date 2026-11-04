@@ -75,7 +75,18 @@ async function expectBackupHead(expect: Expect, page: Page): Promise<void> {
   )
   const crumbs = head.getByTestId('hilos-breadcrumb')
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
-  await expect(crumbs.getByRole('listitem')).toHaveText(['Hilos', 'Backups'])
+  await expect
+    .poll(() =>
+      crumbs.getByRole('listitem').evaluateAll((items) =>
+        items.map((item) => {
+          const words = item.cloneNode(true) as Element
+          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
+            hidden.remove()
+          return words.textContent?.trim()
+        }),
+      ),
+    )
+    .toEqual(['Hilos', 'Backups'])
   await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
     'href',
     '/hilos',

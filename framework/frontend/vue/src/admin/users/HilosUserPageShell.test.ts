@@ -290,11 +290,9 @@ describe('HilosUserPageShell', () => {
     expect(view.findAll('h1')).toHaveLength(1)
     expect(view.get('h1').text()).toBe('Alice')
     const crumbs = view.findAll('[data-id="hilos-breadcrumb"] li')
-    expect(crumbs.map((crumb) => crumb.text())).toEqual([
-      'Hilos',
-      'Users',
-      'Alice',
-    ])
+    expect(crumbs.map((crumb) => crumb.text().replace('/', '').trim())).toEqual(
+      ['Hilos', 'Users', 'Alice'],
+    )
     expect(crumbs[0].get('a').attributes('href')).toBe('/hilos')
     expect(crumbs[1].get('a').attributes('href')).toBe('/hilos/users')
     expect(crumbs[2].find('a').exists()).toBe(false)
@@ -319,9 +317,13 @@ describe('HilosUserPageShell', () => {
       )
     await nextTick()
     expect(view.get('h1').text()).toBe('Alice renamed')
-    expect(view.get('[data-id="hilos-breadcrumb"] li:last-child').text()).toBe(
-      'Alice renamed',
-    )
+    expect(
+      view
+        .get('[data-id="hilos-breadcrumb"] li:last-child')
+        .text()
+        .replace('/', '')
+        .trim(),
+    ).toBe('Alice renamed')
     expect(t.navigation.currentTitle.get()).toBe('Alice renamed · Test app')
     expect(analytics.attributes('href')).toBe('/hilos/analytics/people/1')
   })
@@ -342,9 +344,13 @@ describe('HilosUserPageShell', () => {
     })
     const view = t.mount()
     expect(view.get('h1').text()).toBe('Hidden')
-    expect(view.get('[data-id="hilos-breadcrumb"] li:last-child').text()).toBe(
-      'Hidden',
-    )
+    expect(
+      view
+        .get('[data-id="hilos-breadcrumb"] li:last-child')
+        .text()
+        .replace('/', '')
+        .trim(),
+    ).toBe('Hidden')
     expect(t.navigation.currentTitle.get()).toBe('Hidden · Test app')
     expect(view.text()).not.toContain('Private session name')
     expect(view.find('[data-id="hilos-avatar-photo"]').exists()).toBe(false)
@@ -678,7 +684,7 @@ describe('user shell with the router and served test pages', () => {
     expect(
       view
         .findAll('[data-id="hilos-breadcrumb"] li')
-        .map((crumb) => crumb.text()),
+        .map((crumb) => crumb.text().replace('/', '').trim()),
     ).toEqual(['Hilos', 'Users', 'Alice on Access'])
     expect(
       view.get('nav[aria-label="User pages"] [aria-current="page"]').text(),

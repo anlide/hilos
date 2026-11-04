@@ -284,12 +284,11 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
 
     expectHead(h, 'Browser session #57')
     const breadcrumb = h.view.find('[data-id="hilos-breadcrumb"]')
-    expect(breadcrumb.findAll('li').map((crumb) => crumb.text())).toEqual([
-      'Hilos',
-      'Analytics',
-      'Browser sessions',
-      'Browser session #57',
-    ])
+    expect(
+      breadcrumb
+        .findAll('li')
+        .map((crumb) => crumb.text().replace('/', '').trim()),
+    ).toEqual(['Hilos', 'Analytics', 'Browser sessions', 'Browser session #57'])
     expect(
       breadcrumb.findAll('a').map((link) => link.attributes('href')),
     ).toEqual([
@@ -297,9 +296,9 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       '/hilos/analytics',
       '/hilos/analytics/browser-sessions',
     ])
-    expect(breadcrumb.find('[aria-current="page"]').text()).toBe(
-      'Browser session #57',
-    )
+    expect(
+      breadcrumb.find('[aria-current="page"]').text().replace('/', '').trim(),
+    ).toBe('Browser session #57')
     expect(breadcrumb.find('[aria-current="page"] a').exists()).toBe(false)
     expect(h.scopes.page()!.data.signal('pageBreadcrumb').get()).toEqual(
       BREADCRUMB,
@@ -416,7 +415,11 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     await nextTick()
     expectHead(h, 'Browser session #57')
     expect(
-      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Browser session #57')
     h.header({ _hidden: true }, 'Browser session')
     h.coldWindow()
@@ -430,7 +433,11 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     await nextTick()
     expectHead(h, 'Browser session')
     expect(
-      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Browser session')
     expect(h.router.pageIdentity.get()?.breadcrumb.at(-1)?.label).toBe(
       'Browser session',
@@ -575,7 +582,11 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     )
     expect(h.view.find('[data-record="9"]').exists()).toBe(false)
     expect(
-      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Browser session #58')
     expect(h.view.text()).not.toContain('Old scope label')
 
@@ -604,19 +615,31 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     await nextTick()
     expectHead(h, 'Permitted label')
     expect(
-      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Permitted label')
     h.scopes.page()!.data.set('pageLabel', 'Updated permitted label')
     await nextTick()
     expectHead(h, 'Updated permitted label')
     expect(
-      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Updated permitted label')
     h.scopes.page()!.data.set('pageLabel', '')
     await nextTick()
     expectHead(h, '')
     expect(
-      h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('')
   })
 
@@ -637,7 +660,9 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       expect(
         h.view
           .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-          .text(),
+          .text()
+          .replace('/', '')
+          .trim(),
       ).toBe('Browser session')
     },
   )
@@ -653,12 +678,16 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
     expect(
       first.view
         .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text(),
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Browser session #57')
     expect(
       second.view
         .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text(),
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Browser session #58')
   })
 
@@ -678,7 +707,12 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
       'Browser session',
     )
     expect(
-      h.view.findAll('[data-id="hilos-breadcrumb"] li').at(-1)?.text(),
+      h.view
+        .findAll('[data-id="hilos-breadcrumb"] li')
+        .at(-1)
+        ?.text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Browser session')
     h.scopes.dropPage()
     await nextTick()

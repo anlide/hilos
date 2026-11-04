@@ -44,11 +44,9 @@ describe('HilosDaemonNodeShell', () => {
     )
     expect(h.view.get(id('visual')).attributes('aria-hidden')).toBe('true')
     const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
-    expect(crumbs.findAll('li').map((crumb) => crumb.text())).toEqual([
-      'Hilos',
-      'Daemon',
-      'Главный узел 🌍',
-    ])
+    expect(
+      crumbs.findAll('li').map((crumb) => crumb.text().replace('/', '').trim()),
+    ).toEqual(['Hilos', 'Daemon', 'Главный узел 🌍'])
     expect(crumbs.findAll('a').map((link) => link.attributes('href'))).toEqual([
       '/hilos',
       '/hilos/daemon',
@@ -95,7 +93,11 @@ describe('HilosDaemonNodeShell', () => {
       expect(h.view.get('h1').text()).toBe('Узел <🌍>')
       expect(h.view.get('[data-id="hilos-page-head"]').text()).toContain(nodeId)
       expect(
-        h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+        h.view
+          .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+          .text()
+          .replace('/', '')
+          .trim(),
       ).toBe('Узел <🌍>')
       expect(h.view.text()).not.toContain('hilos_daemon_')
       expect(h.send).not.toHaveBeenCalled()
@@ -534,7 +536,11 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
     expect(h.view.get('h1').text()).toBe('Renamed worker node')
     expect(
-      h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Renamed worker node')
     expect(
       h.view.get('nav[aria-label="Node pages"] [aria-current="page"]').text(),
@@ -543,7 +549,11 @@ describe('HilosDaemonNodeShell', () => {
     await nextTick()
     expect(h.view.get('h1').text()).toBe('n1')
     expect(
-      h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').text(),
+      h.view
+        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('n1')
     expect(
       h.view.get('[data-id="hilos-page-head"]').text().match(/n1/g),

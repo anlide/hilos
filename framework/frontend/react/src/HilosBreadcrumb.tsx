@@ -7,10 +7,10 @@
 // the chain has to stay whole, and a link to nowhere is worse than no link. The
 // last crumb alone is current; no link takes that mark from its own path match.
 // The navigation's accessible name is the caller's translatable label,
-// 'breadcrumb' when it gives none. The slash between two crumbs is a decorative
-// span the screen reader skips, standing where Bootstrap's ::before would, which
-// the hilos-breadcrumb rule switches off. Bootstrap classes only
-// (styling-rules.md).
+// 'breadcrumb' when it gives none. The items carry no breadcrumb-item class,
+// whose ::before slash a screen reader may speak: utilities draw the same look,
+// and the slash between two crumbs is a span the screen reader skips. Bootstrap
+// classes only (styling-rules.md).
 import type { HilosCrumb } from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
@@ -41,23 +41,21 @@ export function HilosBreadcrumb({
   const lastIndex = crumbs.length - 1
 
   return (
-    <nav
-      aria-label={label}
-      className={
-        className === undefined
-          ? 'hilos-breadcrumb'
-          : `hilos-breadcrumb ${className}`
-      }
-      data-id="hilos-breadcrumb"
-    >
+    <nav aria-label={label} className={className} data-id="hilos-breadcrumb">
       <ol className="breadcrumb small mb-2">
         {crumbs.map((crumb, index) => (
           <li
             key={crumb.page}
             className={
-              index < lastIndex ? 'breadcrumb-item' : 'breadcrumb-item active'
+              index > 0
+                ? index === lastIndex
+                  ? 'ps-2 text-body-secondary'
+                  : 'ps-2'
+                : index === lastIndex
+                  ? 'text-body-secondary'
+                  : undefined
             }
-            aria-current={index < lastIndex ? undefined : 'page'}
+            aria-current={index === lastIndex ? 'page' : undefined}
           >
             {index > 0 ? (
               <span

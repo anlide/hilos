@@ -206,7 +206,11 @@ describe('HilosI18nLanguageNamesPage', () => {
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('Live name')
     expect(
-      wrapper.get('[data-id="hilos-breadcrumb"] [aria-current="page"]').text(),
+      wrapper
+        .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Live name')
     expect(wrapper.get('[data-id="language-head-direction"]').text()).toBe(
       'Right to left',

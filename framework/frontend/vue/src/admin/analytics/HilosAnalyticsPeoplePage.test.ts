@@ -256,7 +256,9 @@ describe('HilosAnalyticsPeoplePage', () => {
       expect(h.view.text()).toContain(LEAD)
       const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
       expect(crumbs.get('a').attributes('href')).toBe('/hilos')
-      expect(crumbs.get('[aria-current="page"]').text()).toBe('Analytics')
+      expect(
+        crumbs.get('[aria-current="page"]').text().replace('/', '').trim(),
+      ).toBe('Analytics')
       const tabs = h.view.get('nav[aria-label="Analytics pages"]')
       expect(tabs.findAll('a').map((link) => link.text())).toEqual([
         'Overview',

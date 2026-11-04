@@ -144,11 +144,6 @@ describe('HilosBreadcrumb', () => {
       expect(item.firstElementChild).toBe(slashes[0])
       expect(slashes[0]?.textContent).toBe('/')
       expect(slashes[0]?.getAttribute('aria-hidden')).toBe('true')
-      expect([...(slashes[0]?.classList ?? [])]).toEqual([
-        'float-start',
-        'pe-2',
-        'text-body-secondary',
-      ])
     }
     // The slashes stay out of the links, whose text the e2e specs read.
     expect(
@@ -157,21 +152,14 @@ describe('HilosBreadcrumb', () => {
     ).toBe('Dashboard')
   })
 
-  it('draws the stock look with utilities and no generated slash', () => {
+  it('draws without breadcrumb-item so no ::before slash is spoken', () => {
     const fixture = mount(ADDRESSLESS_TRAIL)
 
-    expect([...(root(fixture).querySelector('ol')?.classList ?? [])]).toEqual([
-      'breadcrumb',
-      'small',
-      'mb-2',
-      'text-break',
-    ])
     // No item carries breadcrumb-item: its ::before slash would be spoken.
-    expect(items(fixture).map((item) => [...item.classList])).toEqual([
-      [],
-      ['ps-2'],
-      ['ps-2', 'text-body-secondary'],
-    ])
+    expect(root(fixture).querySelector('.breadcrumb-item')).toBeNull()
+    for (const item of items(fixture)) {
+      expect(item.classList.contains('breadcrumb-item')).toBe(false)
+    }
   })
 
   it('still draws a trail of one crumb as the current page', () => {

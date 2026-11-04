@@ -563,7 +563,7 @@ describe('HilosUserPage Overview', () => {
     expect(
       wrapper
         .findAll('[data-id="hilos-breadcrumb"] li')
-        .map((crumb) => crumb.text()),
+        .map((crumb) => crumb.text().replace('/', '').trim()),
     ).toEqual(['Hilos', 'Users', 'Alice'])
     expect(
       wrapper.get('[data-id="hilos-breadcrumb"] a').attributes('href'),

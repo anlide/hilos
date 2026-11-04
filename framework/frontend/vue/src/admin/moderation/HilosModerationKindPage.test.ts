@@ -186,7 +186,9 @@ describe('HilosModerationKindPage', () => {
       ['Hilos', '/hilos'],
       ['Moderation', '/hilos/moderation'],
     ])
-    expect(crumbs.get('li:last-child').text()).toBe('Profile name')
+    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+      'Profile name',
+    )
     expect(crumbs.get('li:last-child').find('a').exists()).toBe(false)
     expect(
       view
@@ -208,7 +210,9 @@ describe('HilosModerationKindPage', () => {
     update({ ...first, title: 'Updated title' })
     await nextTick()
     expect(view.get('h1').text()).toBe('Updated title')
-    expect(crumbs.get('li:last-child').text()).toBe('Updated title')
+    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+      'Updated title',
+    )
     expect(navigation.currentTitle.get()).toBe('Updated title · Chat')
     view.unmount()
     expect(navigation.pageIdentity.get()?.pageHeadOwner?.label).toBe('Kind')

@@ -352,7 +352,9 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(
       s.wrapper
         .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text(),
+        .text()
+        .replace('/', '')
+        .trim(),
     ).toBe('Live name')
     expect(s.wrapper.get('[data-id="language-head-direction"]').text()).toBe(
       'Right to left',
