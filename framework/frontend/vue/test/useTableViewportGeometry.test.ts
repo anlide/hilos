@@ -16,6 +16,7 @@ const cssZoom = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   'currentCSSZoom',
 )
+const documentFonts = Object.getOwnPropertyDescriptor(document, 'fonts')
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   vi.restoreAllMocks()
@@ -23,6 +24,8 @@ afterEach(() => {
   if (cssZoom)
     Object.defineProperty(HTMLElement.prototype, 'currentCSSZoom', cssZoom)
   else Reflect.deleteProperty(HTMLElement.prototype, 'currentCSSZoom')
+  if (documentFonts) Object.defineProperty(document, 'fonts', documentFonts)
+  else Reflect.deleteProperty(document, 'fonts')
   document.body.replaceChildren()
 })
 
@@ -35,6 +38,7 @@ function fixture(
     cardChrome?: boolean
     separateBorders?: boolean
     keyedRoot?: boolean
+    wideContainerWidth?: number
   } = {},
 ) {
   const owner = new TableViewportGeometry()
@@ -51,12 +55,24 @@ function fixture(
   const tilesVisible = shallowRef(options.tilesVisible ?? false)
   const zoom = shallowRef(options.zoom ?? 1)
   const fallbackHeight = shallowRef(48)
+  const columnKeys = shallowRef<readonly string[]>(['name', 'state'])
+  const fontSize = shallowRef('16px')
+  const rootFontSize = shallowRef('16px')
+  const tileFontSize = shallowRef('14px')
+  const tileGutter = shallowRef('16.5px')
+  const tileZoom = shallowRef(1)
   Object.defineProperty(HTMLElement.prototype, 'currentCSSZoom', {
     configurable: true,
-    get: () => zoom.value,
+    get(this: HTMLElement) {
+      return (
+        zoom.value *
+        (this.dataset.box?.startsWith('tiles') ? tileZoom.value : 1)
+      )
+    },
   })
   const boxes = new Map<string, DOMRect>([
     ['root', rect(0, 600, 500)],
+    ['wide-container', rect(0, 300, options.wideContainerWidth ?? 500)],
     ['table', rect(0, 300, 200.75)],
     ['header-name', rect(0, 20, 125.25)],
     ['header-state', rect(0, 20, 75.5, 125.25)],
@@ -91,11 +107,12 @@ function fixture(
       )
         return rect(0, 0, 0)
       const local = boxes.get(id) ?? rect(0, 0, 0)
+      const effectiveZoom = this.currentCSSZoom
       return new DOMRect(
-        local.x * zoom.value,
-        local.y * zoom.value,
-        local.width * zoom.value,
-        local.height * zoom.value,
+        local.x * effectiveZoom,
+        local.y * effectiveZoom,
+        local.width * effectiveZoom,
+        local.height * effectiveZoom,
       )
     },
   )
@@ -104,6 +121,11 @@ function fixture(
     const id = (element as HTMLElement).dataset.box
     return new Proxy(computedStyle(element), {
       get(target, property) {
+        if (property === 'fontSize') {
+          if (element === document.documentElement) return rootFontSize.value
+          if (id === 'root') return fontSize.value
+          if (id === 'tiles-probe') return tileFontSize.value
+        }
         if (
           property === 'height' &&
           element.classList.contains('hilos-table-fallback')
@@ -139,7 +161,8 @@ function fixture(
           (property === 'paddingTop' || property === 'paddingBottom')
         )
           return '8.25px'
-        if (property === 'marginTop' && id === 'tiles-column') return '16.5px'
+        if (property === 'marginTop' && id === 'tiles-column')
+          return tileGutter.value
         if (property === 'marginBottom' && id === 'tiles-detail') return '4px'
         if (property === 'marginTop' && id === 'tiles-work') return '6px'
         return Reflect.get(target, property)
@@ -185,7 +208,7 @@ function fixture(
           () => current.value,
           root,
           table,
-          () => ['name', 'state'],
+          () => columnKeys.value,
         )
         const bind =
           (
@@ -233,75 +256,77 @@ function fixture(
               }),
               h('div', { class: 'hilos-table-fallback' }),
             ]),
-            h('table', { ref: table, 'data-box': 'table' }, [
-              h('thead', [
-                h('tr', [
-                  h('th', { 'data-box': 'header-name' }),
-                  h('th', { 'data-box': 'header-state' }),
+            h('div', { 'data-box': 'wide-container' }, [
+              h('table', { ref: table, 'data-box': 'table' }, [
+                h('thead', [
+                  h('tr', [
+                    h('th', { 'data-box': 'header-name' }),
+                    h('th', { 'data-box': 'header-state' }),
+                  ]),
                 ]),
-              ]),
-              h('tbody', [
-                h(
-                  'tr',
-                  {
-                    ref: (node: unknown) =>
-                      adapter.bind(
-                        'b',
-                        owner.record('b')!.occurrence,
-                        'wide',
-                        'main',
-                        node,
-                      ),
-                    'data-box': 'wide-main',
-                  },
-                  [h('td', 'Remaining record')],
-                ),
-                h(
-                  'tr',
-                  { ref: bind('wide', 'main'), 'data-box': 'wide-main' },
-                  [
-                    h(
-                      'td',
-                      departed.value
-                        ? [
-                            h(
-                              'div',
-                              {
-                                class: 'hilos-table-record-space',
-                                'data-allocation': adapter.recordPixels(
-                                  'a',
-                                  owner.record('a')!.occurrence,
-                                  'wide',
-                                ),
-                              },
+                h('tbody', [
+                  h(
+                    'tr',
+                    {
+                      ref: (node: unknown) =>
+                        adapter.bind(
+                          'b',
+                          owner.record('b')!.occurrence,
+                          'wide',
+                          'main',
+                          node,
+                        ),
+                      'data-box': 'wide-main',
+                    },
+                    [h('td', 'Remaining record')],
+                  ),
+                  h(
+                    'tr',
+                    { ref: bind('wide', 'main'), 'data-box': 'wide-main' },
+                    [
+                      h(
+                        'td',
+                        departed.value
+                          ? [
                               h(
-                                'span',
-                                { 'data-box': 'wide-reason' },
-                                'Removed',
+                                'div',
+                                {
+                                  class: 'hilos-table-record-space',
+                                  'data-allocation': adapter.recordPixels(
+                                    'a',
+                                    owner.record('a')!.occurrence,
+                                    'wide',
+                                  ),
+                                },
+                                h(
+                                  'span',
+                                  { 'data-box': 'wide-reason' },
+                                  'Removed',
+                                ),
                               ),
-                            ),
-                          ]
-                        : 'live wide values',
-                    ),
-                  ],
-                ),
-                !departed.value && working.value
-                  ? h(
-                      'tr',
-                      { ref: bind('wide', 'work'), 'data-box': 'wide-work' },
-                      [h('td', 'work payload')],
-                    )
-                  : null,
-                !departed.value && expanded.value
-                  ? h(
-                      'tr',
-                      {
-                        ref: bind('wide', 'detail'),
-                        'data-box': 'wide-detail',
-                      },
-                      [h('td', 'detail values')],
-                    )
-                  : null,
+                            ]
+                          : 'live wide values',
+                      ),
+                    ],
+                  ),
+                  !departed.value && working.value
+                    ? h(
+                        'tr',
+                        { ref: bind('wide', 'work'), 'data-box': 'wide-work' },
+                        [h('td', 'work payload')],
+                      )
+                    : null,
+                  !departed.value && expanded.value
+                    ? h(
+                        'tr',
+                        {
+                          ref: bind('wide', 'detail'),
+                          'data-box': 'wide-detail',
+                        },
+                        [h('td', 'detail values')],
+                      )
+                    : null,
+                ]),
               ]),
             ]),
             h(
@@ -449,6 +474,12 @@ function fixture(
     tilesVisible,
     zoom,
     fallbackHeight,
+    columnKeys,
+    fontSize,
+    rootFontSize,
+    tileFontSize,
+    tileGutter,
+    tileZoom,
     observed,
     disconnect,
     cancel,
@@ -541,20 +572,141 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
     expect(f.registration.record('a', 'tiles')?.retained).toBe(334.75)
   })
 
-  it('invalidates tile layout from actual column width/count without changing the root width or retained allocation', async () => {
-    const f = fixture({ tilesVisible: true })
-    await nextTick()
-    f.depart()
-    await nextTick()
-    const previous = f.registration.layout('tiles')
-    f.boxes.set('tiles-probe', rect(300, 50, 250))
-    f.boxes.set('tiles-column', rect(300, 427, 288.6666666667))
-    f.resize()
-    f.frame()
-    expect(f.registration.layout('tiles')).not.toBe(previous)
-    await nextTick()
-    expect(f.registration.record('a', 'tiles')?.retained).toBe(427)
-  })
+  it.each(['frame', 'post-commit'] as const)(
+    'invalidates only tiles for width/count, gutter, font and zoom changes through %s',
+    async (entry) => {
+      const f = fixture({ tilesVisible: true })
+      await nextTick()
+      f.depart()
+      await nextTick()
+      const wide = f.registration.layout('wide')
+      const card = f.registration.layout('card')
+      const tracks = f.adapter.tracks.value
+      const widths = f.adapter.trackWidths.value
+      const wideTicket = f.registration.measurement('b', 'wide')
+      for (const change of ['width/count', 'gutter', 'font', 'zoom']) {
+        const previous = f.registration.layout('tiles')
+        if (change === 'width/count') {
+          f.boxes.set('tiles-probe', rect(300, 50, 250))
+          f.boxes.set('tiles-column', rect(300, 427, 288.6666666667))
+        } else if (change === 'gutter') f.tileGutter.value = '20px'
+        else if (change === 'font') f.tileFontSize.value = '18px'
+        else f.tileZoom.value = 1.25
+        if (entry === 'frame') {
+          f.resize()
+          f.frame()
+        } else f.redraw.value++
+        await nextTick()
+        expect(f.registration.layout('tiles')).not.toBe(previous)
+        expect(f.registration.layout('wide')).toBe(wide)
+        expect(f.registration.layout('card')).toBe(card)
+        expect(f.registration.measurement('b', 'wide')).toBe(wideTicket)
+        expect(f.adapter.tracks.value).toBe(tracks)
+        expect(f.adapter.trackWidths.value).toBe(widths)
+        expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+        expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+        expect(f.registration.record('a', 'tiles')?.retained).toBe(427)
+      }
+    },
+  )
+
+  it.each(['frame', 'post-commit'] as const)(
+    'keeps wide/card layouts, tracks and departures through a hidden-visible-hidden tile cycle via %s',
+    async (entry) => {
+      const f = fixture({ wideContainerWidth: 460 })
+      await nextTick()
+      f.depart()
+      await nextTick()
+      const wide = f.registration.layout('wide')
+      const card = f.registration.layout('card')
+      const tracks = f.adapter.tracks.value
+      const widths = f.adapter.trackWidths.value
+      const wideTicket = f.registration.measurement('b', 'wide')
+      for (const visible of [true, false]) {
+        const tiles = f.registration.layout('tiles')
+        f.tilesVisible.value = visible
+        f.wideVisible.value = !visible
+        f.cardVisible.value = !visible
+        if (entry === 'frame') {
+          f.resize()
+          f.frame()
+        } else f.redraw.value++
+        await nextTick()
+        expect(f.registration.layout('tiles')).not.toBe(tiles)
+        expect(f.registration.layout('wide')).toBe(wide)
+        expect(f.registration.layout('card')).toBe(card)
+        expect(f.registration.measurement('b', 'wide')).toBe(wideTicket)
+        expect(f.adapter.tracks.value).toBe(tracks)
+        expect(f.adapter.trackWidths.value).toBe(widths)
+        expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+        expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+        expect(f.registration.record('a', 'tiles')?.retained).toBe(82.5)
+      }
+    },
+  )
+
+  it.each([
+    'wide-container',
+    'root',
+    'font',
+    'root-font',
+    'font-completion',
+    'column-keys',
+  ])(
+    'releases tracks and relatches after commit for a real %s change',
+    async (change) => {
+      const fonts = new EventTarget()
+      if (change === 'font-completion')
+        Object.defineProperty(document, 'fonts', {
+          configurable: true,
+          value: Object.assign(fonts, { ready: Promise.resolve() }),
+        })
+      const f = fixture({ tilesVisible: true })
+      await nextTick()
+      f.depart()
+      await nextTick()
+      const wide = f.registration.layout('wide')
+      const card = f.registration.layout('card')
+      const tiles = f.registration.layout('tiles')
+      if (change === 'wide-container')
+        f.boxes.set('wide-container', rect(0, 300, 375))
+      else if (change === 'root') f.boxes.set('root', rect(0, 600, 375))
+      else if (change === 'font') f.fontSize.value = '18px'
+      else if (change === 'root-font') f.rootFontSize.value = '20px'
+      else if (change === 'column-keys')
+        f.columnKeys.value = ['name', 'renamed']
+      f.boxes.set('header-name', rect(0, 20, 100.25))
+      f.boxes.set('header-state', rect(0, 20, 75.5, 100.25))
+      f.boxes.set('table', rect(0, 300, 175.75))
+      if (change === 'font-completion') {
+        fonts.dispatchEvent(new Event('loadingdone'))
+        expect(f.adapter.tracks.value).toBeNull()
+        await nextTick()
+      }
+      f.resize()
+      f.frame()
+      if (change === 'column-keys') {
+        // The column watcher runs before Vue commits the changed structure.
+        await nextTick()
+      } else if (change !== 'font-completion')
+        expect(f.adapter.tracks.value).toBeNull()
+      expect(f.registration.layout('wide')).not.toBe(wide)
+      expect(f.registration.layout('card')).not.toBe(card)
+      if (change === 'wide-container')
+        expect(f.registration.layout('tiles')).toBe(tiles)
+      else expect(f.registration.layout('tiles')).not.toBe(tiles)
+      await nextTick()
+      expect(f.adapter.tracks.value).toEqual({
+        columnKeys:
+          change === 'column-keys' ? ['name', 'renamed'] : ['name', 'state'],
+        widths: [100.25, 75.5],
+        tableWidth: 175.75,
+      })
+      expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+      expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+      expect(f.registration.record('a', 'tiles')?.retained).toBe(427)
+    },
+  )
 
   it('keeps tile exact readers local to the window, occurrence, registration and mount', async () => {
     const f = fixture({ tilesVisible: true })

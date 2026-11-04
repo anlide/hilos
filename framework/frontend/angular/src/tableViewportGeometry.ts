@@ -112,8 +112,8 @@ function verticalChrome(element: HTMLElement): number {
  * `.card.hilos-table-tile` bound as the `tiles` main, the direct child of its
  * grid `.col`, its image and `.card-body` inside, work and detail inside that
  * body; a departed tile keeps that card in its column, holding only
- * `.card-body > .hilos-table-record-space > span`. An image `load` inside a
- * `.hilos-table-tile` is observed here; a view switch calls `layoutChanged()`.
+ * `.card-body > .hilos-table-record-space > span`. A view switch calls
+ * `tilesLayoutChanged()`; actual box changes use the existing ResizeObserver.
  */
 export function createTableViewportGeometry(
   controller: TableViewportGeometryView,
@@ -124,7 +124,6 @@ export function createTableViewportGeometry(
   const trackWidths = signal<readonly number[]>([])
   const reasonFloors = signal({ wide: 0, card: 0, tiles: 0 })
   let root: HTMLElement | null = null
-  let loadRoot: HTMLElement | null = null
   let table: HTMLTableElement | null = null
   let columnKeys: readonly string[] = []
   let awaitingAutoLayout = false
@@ -137,8 +136,10 @@ export function createTableViewportGeometry(
   let frame: number | null = null
   let mounted = false
   let stopped = false
-  let signature = ''
+  let wideSignature = ''
+  let tilesSignature = ''
   let wideContainerWidth = 0
+  let wideZoom: number | null = null
   let calibratedLayout: object | null = null
   let corrections = 0
   let focused: HTMLElement | null = null
@@ -436,13 +437,17 @@ export function createTableViewportGeometry(
     revision.update((value) => value + 1)
   }
 
-  function layoutSignature(): string {
+  function layoutSignatures(): { wide: string; tiles: string } | null {
     const node = root
-    if (!node) return ''
+    if (!node) return null
     const width = box(node)?.width ?? 0
-    if (width <= 0) return ''
+    if (width <= 0) return null
     const wideWidth = box(table?.parentElement)?.width ?? 0
     if (wideWidth > 0) wideContainerWidth = wideWidth
+    // currentCSSZoom returns 1 without a rendered box, even under a zoomed
+    // root. Keep the last usable wide zoom until the table renders again.
+    if (table && visibleBox(table)) wideZoom = layoutZoom(table)
+    const zoom = layoutZoom(node)
     const style = getComputedStyle(node)
     // Tiles read their used tile width and column count from the probe's own
     // grid boxes, never from a breakpoint query; a hidden grid reads as zero.
@@ -450,20 +455,13 @@ export function createTableViewportGeometry(
     const column = tile?.parentElement
     const columnBox = box(column)
     const gridBox = box(column?.parentElement)
+    const tileStyle = tile ? getComputedStyle(tile) : null
     const columnStyle = column ? getComputedStyle(column) : null
-    return [
+    const shared = [
       width,
-      wideContainerWidth || width,
-      box(tile)?.width ?? 0,
-      columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
-      columnStyle?.paddingLeft,
-      columnStyle?.paddingRight,
-      columnStyle?.marginTop,
       // Zoom can change wrapping or used border widths even when a fixed
       // container keeps the same local width. Release its old track latch.
-      layoutZoom(node),
-      table ? layoutZoom(table) : 1,
-      tile ? layoutZoom(tile) : 1,
+      zoom,
       style.fontFamily,
       style.fontSize,
       style.lineHeight,
@@ -472,46 +470,78 @@ export function createTableViewportGeometry(
       style.letterSpacing,
       style.wordSpacing,
       getComputedStyle(node.ownerDocument.documentElement).fontSize,
-      ...[table, table?.parentElement, tile].flatMap((element) => {
-        if (!element) return []
-        const font = getComputedStyle(element)
-        return [
-          font.fontFamily,
-          font.fontSize,
-          font.lineHeight,
-          font.fontWeight,
-          font.fontStyle,
-          font.letterSpacing,
-          font.wordSpacing,
-        ]
-      }),
     ].join('|')
+    return {
+      wide: [
+        shared,
+        wideContainerWidth || width,
+        wideZoom ?? zoom,
+        ...[table, table?.parentElement].flatMap((element) => {
+          if (!element) return []
+          const font = getComputedStyle(element)
+          return [
+            font.fontFamily,
+            font.fontSize,
+            font.lineHeight,
+            font.fontWeight,
+            font.fontStyle,
+            font.letterSpacing,
+            font.wordSpacing,
+          ]
+        }),
+      ].join('|'),
+      tiles: [
+        shared,
+        box(tile)?.width ?? 0,
+        columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
+        tile ? layoutZoom(tile) : 1,
+        tileStyle?.fontFamily,
+        tileStyle?.fontSize,
+        tileStyle?.lineHeight,
+        tileStyle?.fontWeight,
+        tileStyle?.fontStyle,
+        tileStyle?.letterSpacing,
+        tileStyle?.wordSpacing,
+        columnStyle?.paddingLeft,
+        columnStyle?.paddingRight,
+        columnStyle?.marginTop,
+      ].join('|'),
+    }
   }
 
-  function invalidate(): void {
+  function invalidateWide(): void {
     awaitingAutoLayout = true
     registration?.invalidateLayout('wide')
     registration?.invalidateLayout('card')
-    registration?.invalidateLayout('tiles')
     calibratedLayout = null
+  }
+
+  function invalidate(): void {
+    invalidateWide()
+    registration?.invalidateLayout('tiles')
   }
 
   function schedule(): void {
     if (!mounted || stopped || frame !== null) return
     frame = requestAnimationFrame(() => {
       frame = null
-      if (stopped || !mounted || checkLayout() || awaitingAutoLayout) return
       measure()
     })
   }
 
   function checkLayout(): boolean {
-    const next = layoutSignature()
-    if (next === '') return false
-    const changed = signature !== '' && signature !== next
-    signature = next
-    if (changed) invalidate()
-    return changed
+    const next = layoutSignatures()
+    // An unavailable box cannot invalidate layout or prevent focus binding.
+    if (!next) return true
+    const wideChanged = wideSignature !== '' && wideSignature !== next.wide
+    const tilesChanged = tilesSignature !== '' && tilesSignature !== next.tiles
+    wideSignature = next.wide
+    tilesSignature = next.tiles
+    if (wideChanged) invalidateWide()
+    if (tilesChanged) registration?.invalidateLayout('tiles')
+    // A wide change must publish auto layout before measurement. Tile-only
+    // changes keep the fixed tracks, calibration and pending wide commit.
+    return !wideChanged
   }
 
   function measure(): void {
@@ -520,6 +550,7 @@ export function createTableViewportGeometry(
     bindFocusFallback()
     if (root) observer?.observe(root)
     if (table?.parentElement) observer?.observe(table.parentElement)
+    if (!checkLayout() || awaitingAutoLayout) return
     const floors = { wide: 0, card: 0, tiles: 0 }
     for (const projection of ['wide', 'card', 'tiles'] as const) {
       floors[projection] =
@@ -749,7 +780,6 @@ export function createTableViewportGeometry(
     void root?.ownerDocument.fonts?.ready.then(() => {
       if (!stopped) layoutChanged()
     })
-    signature = layoutSignature()
   }
 
   /** Reconcile current targets only after a real Angular commit. */
@@ -759,20 +789,23 @@ export function createTableViewportGeometry(
     keys: readonly string[],
   ): void {
     if (stopped) return
+    if (root !== node || table !== wide) {
+      wideContainerWidth = 0
+      wideZoom = null
+    }
     root = node
     table = wide
     if (!mounted) {
       mount()
       revision.update((value) => value + 1)
     }
-    listenLoads(node)
     if (columnKeys.length && columnKeys.join('\0') !== keys.join('\0')) {
       columnKeys = [...keys]
       invalidate()
       return
     }
     columnKeys = [...keys]
-    if (checkLayout()) return
+    if (!checkLayout()) return
     // The invalidation publication must reach the template before auto layout
     // is sampled. A still-fixed DOM is never a new layout's measurement.
     if (awaitingAutoLayout && wide.classList.contains('hilos-table-fixed'))
@@ -781,10 +814,7 @@ export function createTableViewportGeometry(
     measure()
   }
 
-  /**
-   * Internal: a view switch, a font completion or a tile image changed the
-   * used layout. The next Angular commit measures it under fresh layout tickets.
-   */
+  /** Internal: columns or fonts require fresh layout tickets for all projections. */
   function layoutChanged(): void {
     if (!stopped) {
       invalidate()
@@ -792,21 +822,12 @@ export function createTableViewportGeometry(
     }
   }
 
-  // Image load does not bubble; capture it on the committed root, tiles only,
-  // so a wide row's picture keeps its latched column tracks.
-  function tileLoaded(event: Event): void {
-    const tile =
-      event.target instanceof Element
-        ? event.target.closest('.hilos-table-tile')
-        : null
-    if (tile && root?.contains(tile)) layoutChanged()
-  }
-
-  function listenLoads(node: HTMLElement | null): void {
-    if (loadRoot === node) return
-    loadRoot?.removeEventListener('load', tileLoaded, true)
-    loadRoot = node
-    loadRoot?.addEventListener('load', tileLoaded, true)
+  /** Internal: remeasure the committed Tiles branch without releasing wide tracks. */
+  function tilesLayoutChanged(): void {
+    if (!stopped) {
+      registration?.invalidateLayout('tiles')
+      schedule()
+    }
   }
 
   function dispose(): void {
@@ -822,7 +843,6 @@ export function createTableViewportGeometry(
     root?.ownerDocument.removeEventListener('visibilitychange', schedule)
     root?.ownerDocument.defaultView?.removeEventListener('resize', schedule)
     root?.ownerDocument.fonts?.removeEventListener('loadingdone', layoutChanged)
-    listenLoads(null)
     unsubscribe()
     registration?.dispose()
     registration = null
@@ -836,6 +856,8 @@ export function createTableViewportGeometry(
     bindings.clear()
     shells.clear()
     focused = null
+    wideContainerWidth = 0
+    wideZoom = null
     root = null
     table = null
   }
@@ -849,6 +871,7 @@ export function createTableViewportGeometry(
     recordPixels,
     workPixels,
     layoutChanged,
+    tilesLayoutChanged,
     commit,
     dispose,
   }

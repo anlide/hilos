@@ -16,6 +16,7 @@ import {
   shownByTestId,
   watchHeight,
   watchTableGeometry,
+  watchTableColumnTracks,
   watchTableHandoff,
   watchTableFirstLive,
   watchTableAllocation,
@@ -25,6 +26,8 @@ import {
   watchTableNativeLifecycle,
   expectTableNativeLifecycle,
   expectTableTilePictures,
+  reloadTableTilePicture,
+  setTableTileColumns,
   expectTableTileDeparture,
   watchTableGeometryCallbacks,
   watchTableModalFocus,
@@ -1600,6 +1603,80 @@ test.describe('Tiles: public SDK at desktop width with synthetic ingress', () =>
     await press(page, 'geometry-own')
     await tileGone(page, 'a')
     await evidence(own, page, info, 'tiles-reused-own-allocation')
+  })
+
+  test('T07 wide tracks survive hidden picture load and tile-only view changes', async ({
+    page,
+  }, info) => {
+    await settleTableLayout(page)
+    await info.attach('wide-wrapping-condition', {
+      body: await expectTableWrappingStress(
+        expect,
+        page,
+        'geometry-name-b',
+        'geometry-name-a',
+        'geometry-text-d',
+      ),
+      contentType: 'application/json',
+    })
+    const wide = await watchTableColumnTracks(expect, page, {
+      bodyId: 'geometry-body',
+      rowKeys: ['a', 'c', ...SURVIVORS, 'g'],
+    })
+    observations.set(page, [...(observations.get(page) ?? []), wide])
+    const allocation = await observeAllocation(page, 'b', 'wide')
+    const state = page.getByTestId('geometry-state')
+
+    await page.getByTestId('geometry-target').selectOption('b')
+    await press(page, 'geometry-remove')
+    await expect(state).toContainText('b:remove')
+    await wide.check()
+    await press(page, 'hilos-table-apply')
+    await retired(page, 'b')
+    // Keep another foreign removal pending beside the applied placeholder.
+    await page.getByTestId('geometry-target').selectOption('a')
+    await press(page, 'geometry-remove')
+    await expect(state).toContainText('a:remove')
+    const identities = (await state.getAttribute('data-identities'))!
+    const requests = (await state.getAttribute('data-requests'))!
+    await expect(page.getByTestId('hilos-table-tiles')).toBeHidden()
+    await info.attach('hidden-native-picture-load', {
+      body: await reloadTableTilePicture(page, 'c'),
+      contentType: 'application/json',
+    })
+    await settleTableLayout(page)
+    await wide.check()
+
+    await tiles(page)
+    await tileGone(page, 'b')
+    await expect(state).toContainText('a:remove')
+    await info.attach('isolated-tile-grid-change', {
+      body: await setTableTileColumns(expect, page, 2),
+      contentType: 'application/json',
+    })
+    await press(page, 'hilos-table-view-table')
+    await expect(state).toHaveAttribute('data-view', 'table')
+    await settleTableLayout(page)
+    await retired(page, 'b')
+    await expect(state).toContainText('a:remove')
+    await expect(state).toHaveAttribute('data-identities', identities)
+    await expect(state).toHaveAttribute('data-requests', requests)
+    await expect(shownByTestId(page, 'hilos-table-apply')).toBeEnabled()
+    await evidence(wide, page, info, 'wide-tracks-across-tiles')
+
+    // Close the invariant observation before the ordinary new window releases it.
+    await press(page, 'geometry-window')
+    await expect(state).toHaveAttribute('data-body', 'loading')
+    await press(page, 'geometry-deliver')
+    await expect(state).toContainText('b:live')
+    await expect(state).toContainText('a:live')
+    await expect(shownByTestId(page, 'geometry-name-b')).toHaveText('Fresh b')
+    await expect(shownByTestId(page, 'hilos-table-placeholder')).toHaveCount(0)
+    await expect(state).not.toHaveAttribute('data-identities', identities)
+    await settleTableLayout(page)
+    await allocation.changed('tracks')
+    await allocation.changed('liveHeight', 'shrank')
+    await evidence(allocation, page, info, 'wide-fresh-window-release')
   })
 
   for (const outcome of [

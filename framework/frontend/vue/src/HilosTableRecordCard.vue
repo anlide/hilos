@@ -26,6 +26,7 @@ const props = defineProps<{
   view: TableViewportRow<R>
   card: HilosTableCard
   imageColumn?: HilosTableColumn | null
+  /** All non-detail row columns, including the title, badge and image. */
   columns: readonly HilosTableColumn[]
   detailFields: readonly HilosTableColumn[]
   detailId: string

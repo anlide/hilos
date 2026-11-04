@@ -34,6 +34,7 @@ function fixture(
     cardVisible?: boolean
     wideVisible?: boolean
     tilesVisible?: boolean
+    wideContainerWidth?: number
     zoom?: number
     cardChrome?: boolean
     separateBorders?: boolean
@@ -49,10 +50,14 @@ function fixture(
   const fallbackHeight = { value: 48 }
   Object.defineProperty(HTMLElement.prototype, 'currentCSSZoom', {
     configurable: true,
-    get: () => zoom.value,
+    get(this: HTMLElement) {
+      // A hidden table has no layout object, while its root stays zoomed.
+      return this.dataset.box === 'table' && !wideVisible.value ? 1 : zoom.value
+    },
   })
   const boxes = new Map<string, DOMRect>([
     ['root', rect(0, 600, 500)],
+    ['wide-container', rect(0, 300, options.wideContainerWidth ?? 500)],
     ['table', rect(0, 300, 200.75)],
     ['header-name', rect(0, 20, 125.25)],
     ['header-state', rect(0, 20, 75.5, 125.25)],
@@ -88,19 +93,26 @@ function fixture(
       )
         return rect(0, 0, 0)
       const local = boxes.get(id) ?? rect(0, 0, 0)
+      const effectiveZoom = this.currentCSSZoom
       return new DOMRect(
-        local.x * zoom.value,
-        local.y * zoom.value,
-        local.width * zoom.value,
-        local.height * zoom.value,
+        local.x * effectiveZoom,
+        local.y * effectiveZoom,
+        local.width * effectiveZoom,
+        local.height * effectiveZoom,
       )
     },
   )
+  const styleOverrides = new Map<string, Readonly<Record<string, string>>>()
   const computedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
     const id = (element as HTMLElement).dataset.box
     return new Proxy(computedStyle(element), {
       get(target, property) {
+        const override =
+          typeof property === 'string'
+            ? styleOverrides.get(id ?? '')?.[property]
+            : undefined
+        if (override !== undefined) return override
         if (
           property === 'height' &&
           element.classList.contains('hilos-table-fallback')
@@ -191,7 +203,7 @@ function fixture(
   root.tabIndex = -1
   root.innerHTML = `
     <input data-id="hilos-table-search" data-box="search">
-    <div><table data-box="table"><thead><tr>
+    <div data-box="wide-container"><table data-box="table"><thead><tr>
       <th data-box="header-name">Name</th><th data-box="header-state">State</th>
     </tr></thead><tbody></tbody></table></div>
     <div class="hilos-table-room-wide">
@@ -314,9 +326,9 @@ function fixture(
       node('tiles-work', 'div', tileBody, 'work payload'),
     )
   }
-  function commit(): void {
+  function commit(keys: readonly string[] = ['name', 'state']): void {
     table.classList.toggle('hilos-table-fixed', adapter.tracks() !== null)
-    adapter.commit(root, table, ['name', 'state'])
+    adapter.commit(root, table, keys)
   }
   function replace(): void {
     for (const projection of ['wide', 'card', 'tiles'] as const) {
@@ -365,6 +377,7 @@ function fixture(
     targets,
     releases,
     boxes,
+    styleOverrides,
     zoom,
     fallbackHeight,
     wideVisible,
@@ -794,9 +807,15 @@ describe('Angular table geometry (numeric DOM seam)', () => {
     const remove = vi.spyOn(fonts, 'removeEventListener')
     const f = fixture()
     const revision = f.adapter.revision()
+    const projections = ['wide', 'card', 'tiles'] as const
+    const layouts = projections.map((projection) =>
+      f.registration.layout(projection),
+    )
     fonts.dispatchEvent(new Event('loadingdone'))
     expect(f.adapter.tracks()).toBeNull()
     expect(f.adapter.revision()).toBeGreaterThan(revision)
+    for (const [index, projection] of projections.entries())
+      expect(f.registration.layout(projection)).not.toBe(layouts[index])
     f.commit()
     f.adapter.dispose()
     const stopped = f.adapter.revision()
@@ -962,8 +981,7 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
     const occurrence = f.owner.record('a')!.occurrence
     expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBeUndefined()
     f.tilesVisible.value = true
-    // The first commit signs the newly visible grid; the next one measures it.
-    f.commit()
+    // A tile-only signature change can measure in this committed layout.
     f.commit()
     // The published body height is the 3rem fallback; its shell stays in layout.
     expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(48)
@@ -979,7 +997,13 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
     expect(f.adapter.recordPixels('a', occurrence, 'tiles')).toBe(260.25)
   })
 
-  it.each(['tile width', 'columns', 'gutter', 'tile font'] as const)(
+  it.each([
+    'tile width',
+    'columns',
+    'gutter',
+    'tile font',
+    'tile zoom',
+  ] as const)(
     'releases the tile layout on a %s change read from the DOM grid',
     (kind) => {
       const f = fixture()
@@ -987,6 +1011,15 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
       if (kind === 'tile width') f.boxes.set('tiles-probe', rect(0, 120, 150))
       // Three columns in the same grid width: no viewport query is involved.
       if (kind === 'columns') f.boxes.set('tiles-column', rect(0, 120, 130.5))
+      if (kind === 'tile zoom')
+        Object.defineProperty(
+          f.root.querySelector('[data-box="tiles-probe"]')!,
+          'currentCSSZoom',
+          {
+            configurable: true,
+            value: 1.5,
+          },
+        )
       const original = vi
         .mocked(window.getComputedStyle)
         .getMockImplementation()!
@@ -1014,7 +1047,7 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
       f.resize()
       f.frame()
       expect(f.registration.layout('tiles')).not.toBe(layout)
-      expect(f.registration.record('a', 'tiles')?.live).toBeNull()
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
       f.commit()
       expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
       const measured = f.registration.layout('tiles')
@@ -1024,49 +1057,260 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
     },
   )
 
-  it('measures tiles after a view switch while hidden wide and card keep their numbers', () => {
-    const f = fixture()
-    f.commit()
-    expect(f.table.classList.contains('hilos-table-fixed')).toBe(true)
-    // A departed wide row keeps its allocation through the whole Tiles visit.
-    const row = document.createElement('tr')
-    row.dataset.box = 'wide-b'
-    f.table.tBodies[0]!.append(row)
-    f.boxes.set('wide-b', rect(160, 88.75))
-    f.adapter.bind('b', f.owner.record('b')!.occurrence, 'wide', 'main', row)
-    f.commit()
-    f.owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['b'] }, () =>
-      f.owner.depart('b', 'deleted'),
-    )
-    expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
-    f.wideVisible.value = false
-    f.cardVisible.value = false
-    f.adapter.layoutChanged()
-    expect(f.adapter.tracks()).toBeNull()
-    f.commit()
-    expect(f.table.classList.contains('hilos-table-fixed')).toBe(false)
-    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
-    expect(f.registration.record('a', 'wide')?.live).toBeNull()
-    expect(f.registration.record('a', 'card')?.live).toBeNull()
-    expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
-    // Zero wide rectangles neither re-sign the layout nor block later frames.
-    const layout = f.registration.layout('tiles')
-    f.commit()
-    expect(f.registration.layout('tiles')).toBe(layout)
-    f.boxes.set('tiles-main', rect(600, 320.5, 180))
-    f.resize()
-    f.frame()
-    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(336.5)
-    expect(f.adapter.tracks()).toBeNull()
-    f.depart()
-    expect(f.registration.record('a', 'tiles')?.retained).toBe(336.5)
-    expect(f.registration.record('a', 'wide')?.retained).toBeNull()
-    expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
-  })
+  it.each(['columns', 'gutter'] as const)(
+    'keeps wide/card tickets and calibrated widths when only tile %s change at the same root width',
+    (kind) => {
+      const f = fixture()
+      f.commit()
+      // Exhaust the bounded fractional corrections. A tile-only change must
+      // preserve this calibration as well as the owner's fixed-width latch.
+      f.boxes.set('header-name', rect(0, 20, 125.75))
+      f.boxes.set('header-state', rect(0, 20, 75, 125.75))
+      for (let pass = 0; pass < 4; pass++) f.commit()
+      const widths = f.adapter.trackWidths()
+      expect(widths).toEqual([123.25, 77.5])
+      const tracks = f.adapter.tracks()
+      const wideLayout = f.registration.layout('wide')
+      const cardLayout = f.registration.layout('card')
+      const tilesLayout = f.registration.layout('tiles')
+      const wide = f.registration.record('a', 'wide')?.live
+      const card = f.registration.record('a', 'card')?.live
+      if (kind === 'columns') f.boxes.set('tiles-column', rect(0, 120, 130.5))
+      else f.styleOverrides.set('tiles-column', { paddingLeft: '24px' })
+      f.boxes.set('tiles-main', rect(600, 340.5, 180))
+      // Both post-render commit and the observer frame use the same checker.
+      if (kind === 'columns') f.commit()
+      else {
+        f.resize()
+        f.frame()
+      }
+      expect(f.registration.layout('tiles')).not.toBe(tilesLayout)
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(356.5)
+      expect(f.registration.layout('wide')).toBe(wideLayout)
+      expect(f.registration.layout('card')).toBe(cardLayout)
+      expect(f.registration.record('a', 'wide')?.live).toBe(wide)
+      expect(f.registration.record('a', 'card')?.live).toBe(card)
+      expect(f.adapter.tracks()).toBe(tracks)
+      expect(f.adapter.trackWidths()).toBe(widths)
+      expect(f.table.classList.contains('hilos-table-fixed')).toBe(true)
+      f.depart()
+      expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+      expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+      expect(f.registration.record('a', 'tiles')?.retained).toBe(356.5)
+    },
+  )
 
-  it('invalidates on a tile image load only, and forgets the root on dispose', () => {
+  it.each([
+    'wide container',
+    'root',
+    'root zoom',
+    'table zoom',
+    'table font',
+    'column keys',
+  ] as const)(
+    'releases wide/card for a real %s change and waits for the auto-layout commit',
+    (kind) => {
+      const f = fixture()
+      f.commit()
+      const wideLayout = f.registration.layout('wide')
+      const cardLayout = f.registration.layout('card')
+      const tilesLayout = f.registration.layout('tiles')
+      const keys =
+        kind === 'column keys' ? ['name', 'status'] : ['name', 'state']
+      if (kind === 'wide container')
+        f.boxes.set('wide-container', rect(0, 300, 450))
+      if (kind === 'root') f.boxes.set('root', rect(0, 600, 450))
+      if (kind === 'root zoom') f.zoom.value = 1.25
+      if (kind === 'table zoom')
+        Object.defineProperty(f.table, 'currentCSSZoom', {
+          configurable: true,
+          value: 1.25,
+        })
+      if (kind === 'table font')
+        f.styleOverrides.set('table', { fontSize: '18px' })
+      f.commit(keys)
+      expect(f.adapter.tracks()).toBeNull()
+      expect(f.registration.layout('wide')).not.toBe(wideLayout)
+      expect(f.registration.layout('card')).not.toBe(cardLayout)
+      expect(f.registration.record('a', 'wide')?.live).toBeNull()
+      expect(f.registration.record('a', 'card')?.live).toBeNull()
+      if (kind === 'root' || kind === 'root zoom' || kind === 'column keys')
+        expect(f.registration.layout('tiles')).not.toBe(tilesLayout)
+      else expect(f.registration.layout('tiles')).toBe(tilesLayout)
+      // A tile invalidation while wide waits cannot finish its auto-layout cycle.
+      f.adapter.tilesLayoutChanged()
+      f.frame()
+      f.adapter.commit(f.root, f.table, keys)
+      expect(f.adapter.tracks()).toBeNull()
+      expect(f.registration.record('a', 'wide')?.live).toBeNull()
+      f.boxes.set('header-name', rect(0, 20, 100.25))
+      f.boxes.set('header-state', rect(0, 20, 75.5, 100.25))
+      f.boxes.set('table', rect(0, 300, 175.75))
+      f.commit(keys)
+      expect(f.adapter.tracks()?.columnKeys).toEqual(keys)
+      expect(f.adapter.tracks()?.widths).toEqual([100.25, 75.5])
+      expect(f.registration.record('a', 'wide')?.live?.total).toBe(119.5)
+      expect(f.registration.record('a', 'card')?.live?.total).toBe(218.5)
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
+    },
+  )
+
+  it.each([1, 1.25])(
+    'keeps wide/card geometry and calibration through view switches at zoom %s',
+    (zoom) => {
+      const f = fixture({ wideContainerWidth: 480, zoom })
+      f.commit()
+      expect(f.table.classList.contains('hilos-table-fixed')).toBe(true)
+      f.boxes.set('header-name', rect(0, 20, 125.75))
+      f.boxes.set('header-state', rect(0, 20, 75, 125.75))
+      for (let pass = 0; pass < 4; pass++) f.commit()
+      expect(f.adapter.trackWidths()).toEqual([123.25, 77.5])
+      const tracks = f.adapter.tracks()
+      const widths = f.adapter.trackWidths()
+      const wideLayout = f.registration.layout('wide')
+      const cardLayout = f.registration.layout('card')
+      const wideTicket = f.registration.measurement('a', 'wide')
+      const cardTicket = f.registration.measurement('a', 'card')
+      const wide = f.registration.record('a', 'wide')?.live
+      const card = f.registration.record('a', 'card')?.live
+      // A departed wide row keeps its allocation through the whole Tiles visit.
+      const row = document.createElement('tr')
+      row.dataset.box = 'wide-b'
+      f.table.tBodies[0]!.append(row)
+      f.boxes.set('wide-b', rect(160, 88.75))
+      f.adapter.bind('b', f.owner.record('b')!.occurrence, 'wide', 'main', row)
+      f.commit()
+      f.owner.withPresentationUpdate({ kind: 'rows', rowKeys: ['b'] }, () =>
+        f.owner.depart('b', 'deleted'),
+      )
+      expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+      f.wideVisible.value = false
+      f.cardVisible.value = false
+      expect(f.root.currentCSSZoom).toBe(zoom)
+      expect(f.table.currentCSSZoom).toBe(1)
+      f.adapter.tilesLayoutChanged()
+      expect(f.adapter.tracks()).toBe(tracks)
+      f.commit()
+      expect(f.table.classList.contains('hilos-table-fixed')).toBe(true)
+      expect(f.adapter.trackWidths()).toBe(widths)
+      expect(f.registration.layout('wide')).toBe(wideLayout)
+      expect(f.registration.layout('card')).toBe(cardLayout)
+      expect(f.registration.measurement('a', 'wide')).toBe(wideTicket)
+      expect(f.registration.measurement('a', 'card')).toBe(cardTicket)
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
+      expect(f.registration.record('a', 'wide')?.live).toBe(wide)
+      expect(f.registration.record('a', 'card')?.live).toBe(card)
+      expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+      // Zero wide rectangles neither re-sign the layout nor block later frames.
+      const layout = f.registration.layout('tiles')
+      f.commit()
+      expect(f.registration.layout('tiles')).toBe(layout)
+      f.boxes.set('tiles-main', rect(600, 320.5, 180))
+      f.resize()
+      f.frame()
+      expect(f.registration.record('a', 'tiles')?.live?.total).toBe(336.5)
+      expect(f.adapter.tracks()).toBe(tracks)
+      // Return with a live row: restarting calibration would change these widths.
+      f.wideVisible.value = true
+      f.cardVisible.value = true
+      f.tilesVisible.value = false
+      f.adapter.tilesLayoutChanged()
+      f.commit()
+      expect(f.table.currentCSSZoom).toBe(zoom)
+      expect(f.adapter.tracks()).toBe(tracks)
+      expect(f.adapter.trackWidths()).toBe(widths)
+      expect(f.registration.measurement('a', 'wide')).toBe(wideTicket)
+      expect(f.registration.measurement('a', 'card')).toBe(cardTicket)
+      f.wideVisible.value = false
+      f.cardVisible.value = false
+      f.tilesVisible.value = true
+      f.adapter.tilesLayoutChanged()
+      f.commit()
+      f.depart()
+      expect(f.registration.record('a', 'tiles')?.retained).toBe(336.5)
+      expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+      expect(f.registration.record('a', 'card')?.retained).toBe(218.5)
+      expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+      f.wideVisible.value = true
+      f.cardVisible.value = true
+      f.tilesVisible.value = false
+      f.adapter.tilesLayoutChanged()
+      f.commit()
+      expect(f.adapter.tracks()).toBe(tracks)
+      expect(f.adapter.trackWidths()).toBe(widths)
+      expect(f.registration.layout('wide')).toBe(wideLayout)
+      expect(f.registration.layout('card')).toBe(cardLayout)
+      expect(f.registration.record('a', 'wide')?.retained).toBe(119.5)
+      expect(f.registration.record('b', 'wide')?.retained).toBe(88.75)
+    },
+  )
+
+  it.each([
+    'initial mount',
+    'table replacement',
+    'controller replacement',
+  ] as const)(
+    'starts a hidden wide projection with its own environment after %s',
+    (lifecycle) => {
+      const f = fixture({
+        wideVisible: lifecycle !== 'initial mount',
+        zoom: lifecycle === 'initial mount' ? 1.25 : 1.5,
+      })
+      let adapter = f.adapter
+      let registration = f.registration
+      let table = f.table
+      f.wideVisible.value = false
+      f.zoom.value = 1.25
+      if (lifecycle === 'table replacement') {
+        table = f.table.cloneNode(true) as HTMLTableElement
+        f.table.replaceWith(table)
+      }
+      if (lifecycle === 'controller replacement') {
+        adapter.dispose()
+        adapter = createTableViewportGeometry({
+          register: (capture) => {
+            registration = f.owner.view.register(capture)
+            return registration
+          },
+        })
+        cleanups.push(adapter.dispose)
+      }
+      for (const projection of ['wide', 'card', 'tiles'] as const)
+        for (const part of ['main', 'work', 'detail'] as const)
+          adapter.bind(
+            'a',
+            f.owner.record('a')!.occurrence,
+            projection,
+            part,
+            f.root.querySelector(`[data-box="${projection}-${part}"]`)!,
+          )
+      function commit(): void {
+        table.classList.toggle('hilos-table-fixed', adapter.tracks() !== null)
+        adapter.commit(f.root, table, ['name', 'state'])
+      }
+      commit()
+      commit()
+      const layout = registration.layout('wide')
+      expect(table.currentCSSZoom).toBe(1)
+      expect(adapter.tracks()).toBeNull()
+      expect(registration.record('a', 'wide')?.live).toBeNull()
+      f.wideVisible.value = true
+      commit()
+      expect(table.currentCSSZoom).toBe(1.25)
+      expect(registration.layout('wide')).toBe(layout)
+      expect(adapter.tracks()?.widths).toEqual([125.25, 75.5])
+      expect(registration.record('a', 'wide')?.live?.total).toBe(119.5)
+    },
+  )
+
+  it('ignores image load and measures actual tile resize, with late callbacks inert on dispose', () => {
     const f = fixture()
     const layout = f.registration.layout('tiles')
+    const wideLayout = f.registration.layout('wide')
+    const cardLayout = f.registration.layout('card')
+    const wide = f.registration.record('a', 'wide')?.live
+    const card = f.registration.record('a', 'card')?.live
+    const tiles = f.registration.record('a', 'tiles')?.live
     const tracks = f.adapter.tracks()
     const avatar = document.createElement('img')
     f.targets.get('wide-main')!.append(avatar)
@@ -1074,18 +1318,31 @@ describe('Angular tile geometry (numeric DOM seam)', () => {
     expect(f.registration.layout('tiles')).toBe(layout)
     expect(f.adapter.tracks()).toBe(tracks)
     const picture = f.targets.get('tiles-main')!.querySelector('img')!
-    // Load does not bubble: the adapter captures it on its committed root.
     picture.dispatchEvent(new Event('load'))
-    expect(f.registration.layout('tiles')).not.toBe(layout)
-    expect(f.registration.record('a', 'tiles')?.live).toBeNull()
+    expect(f.registration.layout('tiles')).toBe(layout)
+    expect(f.registration.layout('wide')).toBe(wideLayout)
+    expect(f.registration.layout('card')).toBe(cardLayout)
+    expect(f.registration.record('a', 'tiles')?.live).toBe(tiles)
+    expect(f.registration.record('a', 'wide')?.live).toBe(wide)
+    expect(f.registration.record('a', 'card')?.live).toBe(card)
+    expect(f.adapter.tracks()).toBe(tracks)
+    expect(f.queued()).toBeUndefined()
     f.commit()
     expect(f.registration.record('a', 'tiles')?.live?.total).toBe(316.5)
-    const remove = vi.spyOn(f.root, 'removeEventListener')
+    f.boxes.set('tiles-main', rect(600, 340.5, 180))
+    f.resize()
+    f.frame()
+    expect(f.registration.record('a', 'tiles')?.live?.total).toBe(356.5)
+    expect(f.registration.layout('tiles')).toBe(layout)
+    expect(f.adapter.tracks()).toBe(tracks)
+    f.resize()
+    const late = f.queued()!
     f.adapter.dispose()
-    expect(remove).toHaveBeenCalledWith('load', expect.any(Function), true)
     const read = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
     read.mockClear()
     picture.dispatchEvent(new Event('load'))
+    f.adapter.tilesLayoutChanged()
+    late(0)
     f.frame()
     expect(read).not.toHaveBeenCalled()
   })

@@ -272,16 +272,19 @@ export function HilosViewportTable<R>({
     columnKeys,
     (record) => controller.isTextRecordCurrent(record),
   )
-  // A change of columns or of the view shown is a new layout to measure, once it is
-  // committed.
+  // Columns change every projection; a view switch only changes the tile grid.
   const previousLayout = useRef({ columns: frameColumns, view: tableView })
   useLayoutEffect(() => {
     const previous = previousLayout.current
-    if (previous.columns !== frameColumns || previous.view !== tableView) {
-      previousLayout.current = { columns: frameColumns, view: tableView }
-      geometry.layoutChanged()
-    }
-  }, [frameColumns, tableView, geometry.layoutChanged])
+    previousLayout.current = { columns: frameColumns, view: tableView }
+    if (previous.columns !== frameColumns) geometry.layoutChanged()
+    else if (previous.view !== tableView) geometry.tilesLayoutChanged()
+  }, [
+    frameColumns,
+    tableView,
+    geometry.layoutChanged,
+    geometry.tilesLayoutChanged,
+  ])
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
@@ -1435,13 +1438,11 @@ export function HilosViewportTable<R>({
           declared its views, and shown at every width while Tiles is the view, with
           both branches above hidden. A tile is the card of its record under a
           picture; the grid is a list named as the table is, and every column of it
-          is one item, a record that left included. A picture that finishes loading
-          changes the height of its tile, so it is a new layout to measure. */}
+          is one item, a record that left included. */}
       {tileCard !== null ? (
         <div
           className={`position-relative${tableView === 'tiles' ? '' : ' d-none'}`}
           data-id="hilos-table-tiles"
-          onLoadCapture={geometry.layoutChanged}
         >
           {/* A framework-only twin in a Bootstrap column of the same grid, so it
               is as wide as a real tile and wraps the departure words as one

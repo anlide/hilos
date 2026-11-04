@@ -356,11 +356,16 @@ such as an operation falling back to the default stub in the maintenance words
 table — declares the `rowMessage: (row: R) => HilosTableRowMessage | null` option
 in `TableViewportControllerOptions`. The controller evaluates it reactively for each
 live row and exposes the reactive `rowMessage` property on `TableViewportRow`
-(`null` by default, and always `null` for placeholders and departed rows). View
-layers project cells through `hilosTableRowMessageCells(columns, view.rowMessage)`,
-which preserves ordinary cells before `fromColumn` and merges trailing columns into
-a single cell with `colspan` across the tail in a wide table, or renders a single
-italic line in a card view without misleading `<dt>` labels, carrying
+(`null` by default, and always `null` for placeholders and departed rows). Across
+Vue, React, and Angular, the message boundary is `rowColumns`: frame columns without
+detail columns, as in the wide row. A card or tile keeps only rendered ordinary
+fields in `layout.fields` that precede the message tail, in layout order, then draws
+the phrase; the phrase remains even when no ordinary body field survives. The
+title, badge, picture, and detail keep their own projections. View layers calculate
+row message cells through
+`hilosTableRowMessageCells(rowColumns, view.rowMessage)`, which preserves ordinary
+cells before `fromColumn` and merges the tail into one cell with `colspan`; card
+views render one italic line without misleading `<dt>` labels, carrying
 `data-id="hilos-table-row-message"`.
 
 Three things follow from the declaration and are read off the controller's
@@ -704,11 +709,12 @@ A tile is the card of its record under a picture. The narrow card and the tile
 are drawn by one record shell and one card body that differ only in their
 projection (`card` or `tiles`): the same fields, marks, selection box, controls,
 details, expanded text, row work, and pending marks, taken from `frame.card` for
-a card and `frame.tileCard` for a tile. A row message is placed over the columns
-of the whole row, as the table row places it, and the layout only decides which
-of its own fields stay as labelled lines before the phrase — so a message may
-start at the picture's column, or at the column a tile is titled by while the
-card is not. The picture is the ordinary cell content of `imageColumn`, in a
+a card and `frame.tileCard` for a tile. The row message follows the shared
+`rowColumns` boundary: a tile message may start at the picture's column, even
+though that column is not in the tile body. The layout keeps its rendered ordinary
+fields that precede the tail as labelled lines, in layout order, and the phrase
+still appears when none remain. The picture is the ordinary cell content of
+`imageColumn`, in a
 Bootstrap `ratio ratio-4x3` frame that has the same size with or without a
 picture; the page owns the `img`, its source, alternative text, and load error.
 When the page gives that column no
@@ -745,8 +751,12 @@ the internal `HilosViewportTableRecord` directive, so the template compiler
 checks every binding inside it. The template is stamped for a responsive card
 with `frame.card` and for a tile with `frame.tileCard`; the page's cell, detail,
 and row-work templates receive in a card or a tile the same context they receive
-in a table row. The Tiles branch, `hilos-table-tiles`, is drawn only when the
-declaration has `views`. Its grid uses Bootstrap's `row row-cols-2 row-cols-md-3
+in a table row. Angular applies the same `rowColumns` boundary and layout order:
+`recordCells()` keeps rendered ordinary fields from `layout.fields` before the
+message tail, then draws the phrase even when no ordinary body field remains. The
+title, badge, picture, and detail keep their own projections. The Tiles branch,
+`hilos-table-tiles`, is drawn only when the declaration has `views`. Its grid uses
+Bootstrap's `row row-cols-2 row-cols-md-3
 row-cols-xl-4 g-3` and has `role="list"`, named by the table's own name; each
 grid `.col` is a `role="listitem"`, so a departed tile keeps its place in the
 list through the column it stands in. The skeleton and the worded states stand
@@ -1205,18 +1215,22 @@ hooks own their native DOM refs and observers and release them with the mount.
 The Vue and React hooks observe the tile image/body, work, and detail parts.
 Angular uses a per-controller internal adapter; its synchronous capture still
 runs through the controller's existing `geometry`/`withPresentationUpdate`
-boundary before destructive publication. `HilosViewportTable` commits the rendered root, table,
-and column-track keys from `afterRenderEffect`, while `ResizeObserver` refreshes
-the live cache after publication. When the selected view changed since the last
-commit, that same effect first tells the adapter that its layout changed, so
-the commit measures the DOM the switch rendered. An image `load` does not
-bubble: the adapter catches it in the capture phase on the committed root, for
-images inside a `.hilos-table-tile` only, so a wide row's picture keeps its
-latched column tracks. Adapter disposal releases its geometry
-registration, observers, listeners, and focus fallback when the controller is
-replaced or the table is unmounted.
-A hidden or zero-size projection supplies no measurement and does not reveal
-departed content. Inert measurement holders contain no row data, IDs, or
+boundary before destructive publication. `HilosViewportTable` commits the rendered
+root, table, and column-track keys from `afterRenderEffect`, while `ResizeObserver`
+refreshes the live cache after publication. A view switch invalidates only Tiles;
+Vue and React schedule that invalidation from the selected view, and Angular does
+it in the after-render commit before measuring the committed branch. This leaves
+wide tracks, calibration, and the pending wide ticket in place. A wide/card change
+keeps the existing handoff: publish without fixed tracks, measure the new auto
+layout, then commit its tracks. No projection is invalidated by image load: Vue
+and React have no image-load handler, and Angular installs no capture listener.
+Image content stays in the 4:3 frame; `ResizeObserver` still notices real box-size
+changes. Adapter disposal releases its geometry registration, observers,
+listeners, and focus fallback when the controller is replaced or the table is
+unmounted.
+A hidden or zero-size projection supplies no measurement, does not reveal
+departed content, and cannot overwrite a positive allocation. Inert measurement
+holders contain no row data, IDs, or
 focusable controls. DOM focus return is separate from the server's `focusRow()`
 hold. `captureTableFocusReturnTarget()` in
 [`tableFocusReturn.ts`](../../../framework/frontend/core/src/dom/tableFocusReturn.ts)
@@ -1240,19 +1254,20 @@ Bootstrap keeps the shell and gutter around it. The generic `3rem` fallback
 occupies only the inner block. Bootstrap supplies the grid, 4:3 ratio frame, and
 spacing; only measured numeric values travel through `--hilos-*` properties.
 
-The Vue and React layout signatures read the tile's actual width and the number
-of grid columns from DOM boxes, along with font, zoom, and spacing. Angular's
-reads them from the boxes of its inert probe's own grid, and a hidden grid reads
-as zero. None infers columns from a breakpoint query. A view or width change,
-font completion, and image load invalidate and measure the current layout after
-the framework commits it. React reports a view change from a layout effect and a
-picture's `load` from the Tiles grid. In Angular, a view change and the `load`
-of a tile's picture, heard on the committed root, call `layoutChanged()` of
-[`tableViewportGeometry.ts`](../../../framework/frontend/angular/src/tableViewportGeometry.ts),
-and the next Angular commit measures under fresh layout tickets. Each observer
-ticket and record reader remains tied to its controller mount,
-window/occurrence, and projection; callbacks held by a replaced controller or
-old record cannot publish a measurement into the new presentation.
+Each adapter compares two independent signatures: one for wide/card and one for
+Tiles. Shared root width, zoom, and typography contribute to both. The wide/card
+signature tracks its wide layout environment. The tile's measured width, grid
+column count, tile-specific font and zoom, and grid gutters contribute only to
+Tiles.
+The probes read actual boxes rather than inferring columns from breakpoints, and a
+hidden grid reads as zero. A signature change invalidates its associated
+projection or projection pair. Column-key changes and completion of a relevant
+shared-font load retain the existing full invalidation across projections. Resize,
+mutation, scheduled measurement, and each framework's committed measurement apply
+the same split.
+Observer tickets and record readers stay tied to their controller mount,
+window/occurrence, and projection; callbacks held by a replaced controller or old
+record cannot publish a measurement into the new presentation.
 
 Search, filter, order, page, Show, and refresh invalidate the prior window
 appearance. Replacement snapshots, reconnects, refusals, and resets replace its

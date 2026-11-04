@@ -1208,12 +1208,10 @@ class HilosViewportTableRecord {
               that says so to a screen reader (Flow F10). A merged tail
               message replaces tail fields with a single phrase
               (mockups/admin/maintenance). -->
-              @if (recordFields(layout).length > 0) {
+              @let cells = recordCells(layout, view.rowMessage);
+              @if (cells.length > 0) {
                 <dl class="row mb-2 small g-0">
-                  @for (
-                    cell of recordCells(layout, view.rowMessage);
-                    track cell.key
-                  ) {
+                  @for (cell of cells; track cell.key) {
                     @if (cell.text !== null) {
                       <dd
                         class="col-12 mb-0 text-body-secondary fst-italic"
@@ -1582,22 +1580,32 @@ export class HilosViewportTable<R> {
     return this.recordFieldsOf()(layout).byKey.get(key)
   }
 
-  // The cells of a record: ordinary fields with labels, or a merged tail message
-  // spanning the remaining fields of its layout without false labels
-  // (mockups/admin/maintenance).
+  // Place the message over the whole row's columns, including the title, badge
+  // and picture. The layout keeps only its own ordinary fields before the tail,
+  // in its own order, and the phrase follows without false labels.
   protected recordCells(
     layout: HilosTableCard,
     message: HilosTableRowMessage | null | undefined,
   ): readonly HilosTableRowMessageCell[] {
-    const fields = this.recordFields(layout)
-    if (fields.length === 0) {
-      return []
+    const cells = hilosTableRowMessageCells(this.rowColumns(), message)
+    const fields = this.recordFields(layout).map((field) => ({
+      key: field.column.key,
+      span: 1,
+      text: null,
+    }))
+    const messageCell = cells.find((cell) => cell.text !== null)
+    if (messageCell === undefined) {
+      return fields
     }
 
-    return hilosTableRowMessageCells(
-      fields.map((field) => field.column),
-      message,
+    const ordinaryKeys = new Set(
+      cells.filter((cell) => cell.text === null).map((cell) => cell.key),
     )
+
+    return [
+      ...fields.filter((field) => ordinaryKeys.has(field.key)),
+      messageCell,
+    ]
   }
   // The optional selection column is present only when the page declared bulk
   // operations (Flow F14).
@@ -1791,7 +1799,7 @@ export class HilosViewportTable<R> {
       if (adapter && root && table)
         untracked(() => {
           if (measured?.adapter === adapter && measured.view !== view)
-            adapter.layoutChanged()
+            adapter.tilesLayoutChanged()
           measured = { adapter, view }
           adapter.commit(root, table, keys)
         })

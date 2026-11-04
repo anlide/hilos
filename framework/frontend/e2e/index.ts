@@ -32,11 +32,14 @@ export {
   watchTop,
   watchTopWithin,
   watchTableGeometry,
+  watchTableColumnTracks,
   watchTableHandoff,
   watchTableFirstLive,
   expectTableWrappingStress,
   expectTableRecordWrappingStress,
   settleTableLayout,
+  reloadTableTilePicture,
+  setTableTileColumns,
   expectTableTilePictures,
   tableTextRegion,
   expectTableTextTrack,
@@ -49,6 +52,7 @@ export {
   type TableGeometryPlan,
   type TableGeometryProjection,
   type TableGeometryWatch,
+  type TableColumnTrackPlan,
   Watched,
 } from './geometry.js'
 export {

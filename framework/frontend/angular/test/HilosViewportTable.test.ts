@@ -35,6 +35,7 @@ import type {
   PageRouteMatch,
   TableViewportDescriptor,
 } from '@hilos/core'
+import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
 
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
@@ -4263,6 +4264,9 @@ describe('HilosViewportTable wired geometry', () => {
       f.fixture.detectChanges()
       TestBed.tick()
     }
+    const wide = registration.layout('wide')
+    const card = registration.layout('card')
+    const tracks = registration.tracks()
     const opened = registration.layout('tiles')
     redraw()
     expect(registration.layout('tiles')).toBe(opened)
@@ -4272,6 +4276,9 @@ describe('HilosViewportTable wired geometry', () => {
     const switched = registration.layout('tiles')
     expect(switched).not.toBe(opened)
     expect(registration.record('a', 'tiles')?.live).not.toBeNull()
+    expect(registration.layout('wide')).toBe(wide)
+    expect(registration.layout('card')).toBe(card)
+    expect(registration.tracks()).toBe(tracks)
     redraw()
     expect(registration.layout('tiles')).toBe(switched)
     expect(f.captures).not.toHaveBeenCalled()
@@ -4668,6 +4675,42 @@ function tilesFrame(tableKey = 'files', views = true): HilosTableFrame {
   }
 }
 
+/** A page whose message may start at a title, badge, picture or body field. */
+@Component({
+  imports: [HilosTableCell, HilosTableDetail, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="title" let-row>
+        <span data-id="value-title">{{ row.title }}</span>
+      </ng-template>
+      <ng-template hilosTableCell="kept" let-row>
+        <span data-id="value-kept">{{ row.kept }}</span>
+      </ng-template>
+      <ng-template hilosTableCell="badge" let-row>
+        <span data-id="value-badge">{{ row.badge }}</span>
+      </ng-template>
+      <ng-template hilosTableCell="picture" let-row>
+        <img [src]="row.picture" alt="Item photo" />
+      </ng-template>
+      <ng-template hilosTableCell="tail" let-row>
+        {{ row.tail }}
+      </ng-template>
+      <ng-template hilosTableCell="trailing" let-row>
+        {{ row.trailing }}
+      </ng-template>
+      <ng-template hilosTableCell="actions">
+        <button type="button" data-id="open-item">Open item</button>
+      </ng-template>
+      <ng-template hilosTableDetail="details" let-row>
+        {{ row.details }}
+      </ng-template>
+    </hilos-viewport-table>
+  `,
+})
+class RowMessageViewsHost {
+  controller!: TableViewportController<unknown>
+}
+
 /** A page filling every place of a record, the picture among them while `picture` holds. */
 @Component({
   imports: [HilosTableCell, HilosTableDetail, HilosViewportTable],
@@ -4787,6 +4830,192 @@ describe('HilosViewportTable drawing Tiles', () => {
     query(fixture, `[data-id="hilos-table-view-${view}"]`)!.click()
     redraw(fixture)
   }
+
+  it.each([
+    {
+      scenario: 'detail after the message boundary',
+      fromColumn: 'tail',
+      titleOnly: false,
+      colspan: '2',
+      wideKeys: ['title', 'kept', 'badge'],
+      wideImage: true,
+      cardLabels: ['Kept', 'Picture'],
+      tileLabels: ['Kept'],
+      cardImage: true,
+    },
+    {
+      scenario: 'title with no ordinary body fields',
+      fromColumn: 'title',
+      titleOnly: true,
+      colspan: '3',
+      wideKeys: [],
+      wideImage: false,
+      cardLabels: [],
+      tileLabels: [],
+      cardImage: false,
+    },
+    {
+      scenario: 'badge as the message boundary',
+      fromColumn: 'badge',
+      titleOnly: false,
+      colspan: '4',
+      wideKeys: ['title', 'kept'],
+      wideImage: false,
+      cardLabels: ['Kept'],
+      tileLabels: ['Kept'],
+      cardImage: false,
+    },
+    {
+      scenario: 'image as the message boundary',
+      fromColumn: 'picture',
+      titleOnly: false,
+      colspan: '3',
+      wideKeys: ['title', 'kept', 'badge'],
+      wideImage: false,
+      cardLabels: ['Kept'],
+      tileLabels: ['Kept'],
+      cardImage: false,
+    },
+  ])(
+    'projects a row message in wide, card and tiles with $scenario',
+    (testCase) => {
+      const columns: HilosTableColumn[] = [
+        { key: HILOS_TABLE_ACTIONS_KEY, label: 'Actions' },
+        { key: 'title', label: 'Title', card: 'title' },
+        ...(testCase.titleOnly ? [] : [{ key: 'kept', label: 'Kept' }]),
+        { key: 'badge', label: 'Status', card: 'badge' },
+        {
+          key: 'picture',
+          label: 'Picture',
+          card: testCase.titleOnly ? 'hidden' : 'field',
+        },
+        ...(testCase.titleOnly
+          ? []
+          : [
+              { key: 'tail', label: 'Tail' },
+              { key: 'trailing', label: 'Trailing' },
+            ]),
+        { key: 'details', label: 'Details', detail: true },
+      ]
+      const values = {
+        title: 'Item title',
+        kept: 'Kept body value',
+        badge: 'Ready',
+        picture: '/item.png',
+        tail: 'Replaced tail value',
+        trailing: 'Replaced trailing value',
+        details: 'Expanded detail value',
+      }
+      const controller = new TableViewportController<unknown>({
+        resolve: (row) => row.slots,
+        sendViewport: () => {},
+        rowMessage: () => ({
+          fromColumn: testCase.fromColumn,
+          text: 'No own entry — uses default',
+        }),
+        frame: {
+          title: 'Pictures',
+          columns,
+          views: {
+            tableKey: 'row-message',
+            order: ['table', 'tiles'],
+            imageColumn: 'picture',
+          },
+        },
+      })
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: values }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      const fixture = TestBed.createComponent(RowMessageViewsHost)
+      fixture.componentInstance.controller = controller
+      try {
+        redraw(fixture)
+        const wide = query(fixture, '[data-id="hilos-table-row-a"]')!
+        const card = cardOf(fixture, 'a')
+        const recordTile = tile(fixture, 'a')
+        for (const record of [wide, card, recordTile]) {
+          const messages = record.querySelectorAll(
+            '[data-id="hilos-table-row-message"]',
+          )
+          expect(messages).toHaveLength(1)
+          expect(messages[0]!.textContent?.trim()).toBe(
+            'No own entry — uses default',
+          )
+          expect(record.textContent).not.toContain('Replaced tail value')
+          expect(record.textContent).not.toContain('Replaced trailing value')
+          expect(
+            record.querySelector('[data-id="open-item"]')?.textContent,
+          ).toBe('Open item')
+        }
+        expect(
+          wide
+            .querySelector('[data-id="hilos-table-row-message"]')
+            ?.getAttribute('colspan'),
+        ).toBe(testCase.colspan)
+        for (const key of ['title', 'kept', 'badge'] as const) {
+          const value = wide.querySelector(`[data-id="value-${key}"]`)
+          expect(value !== null).toBe(testCase.wideKeys.includes(key))
+          if (value !== null) expect(value.textContent).toBe(values[key])
+        }
+        expect(wide.querySelector('img') !== null).toBe(testCase.wideImage)
+        expect(card.querySelector('img') !== null).toBe(testCase.cardImage)
+        expect(recordTile.querySelector('img')?.getAttribute('src')).toBe(
+          '/item.png',
+        )
+        expect(
+          [...card.querySelectorAll('dt')].map((label) =>
+            label.textContent?.trim(),
+          ),
+        ).toEqual(testCase.cardLabels)
+        expect(
+          [...recordTile.querySelectorAll('dt')].map((label) =>
+            label.textContent?.trim(),
+          ),
+        ).toEqual(testCase.tileLabels)
+        for (const record of [card, recordTile]) {
+          expect(
+            record.querySelector('[data-id="value-title"]')?.textContent,
+          ).toBe('Item title')
+          expect(
+            record.querySelector('[data-id="value-badge"]')?.textContent,
+          ).toBe('Ready')
+          const kept = record.querySelector('[data-id="value-kept"]')
+          expect(kept !== null).toBe(!testCase.titleOnly)
+          if (!testCase.titleOnly) {
+            expect(kept?.textContent).toBe('Kept body value')
+          }
+          const fields = record.querySelector('dl')!
+          expect(fields.lastElementChild).toBe(
+            record.querySelector('[data-id="hilos-table-row-message"]'),
+          )
+        }
+
+        wide
+          .querySelector<HTMLElement>('[data-id="hilos-table-expand-a"]')!
+          .click()
+        redraw(fixture)
+        for (const branch of [query(fixture, 'table')!, card, recordTile]) {
+          const detail = branch.querySelector(
+            '[data-id="hilos-table-row-detail-a"]',
+          )!
+          expect(detail.querySelector('dt')?.textContent?.trim()).toBe(
+            'Details',
+          )
+          expect(detail.querySelector('dd')?.textContent?.trim()).toBe(
+            'Expanded detail value',
+          )
+        }
+      } finally {
+        fixture.destroy()
+        controller.dispose()
+      }
+    },
+  )
 
   it('draws no Tiles branch, no tile and no storage access for a table without views', () => {
     const read = vi.spyOn(Storage.prototype, 'getItem')

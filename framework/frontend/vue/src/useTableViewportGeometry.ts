@@ -103,7 +103,8 @@ export function useTableViewportGeometry(
   let frame: number | null = null
   let mounted = false
   let stopped = false
-  let signature = ''
+  let wideSignature = ''
+  let tilesSignature = ''
   let wideContainerWidth = 0
   let calibratedLayout: object | null = null
   let corrections = 0
@@ -383,11 +384,11 @@ export function useTableViewportGeometry(
     revision.value++
   }
 
-  function layoutSignature(): string {
+  function layoutSignatures(): { wide: string; tiles: string } | null {
     const node = root.value
-    if (!node) return ''
+    if (!node) return null
     const width = box(node)?.width ?? 0
-    if (width <= 0) return ''
+    if (width <= 0) return null
     const wideWidth = box(table.value?.parentElement)?.width ?? 0
     if (wideWidth > 0) wideContainerWidth = wideWidth
     const style = getComputedStyle(node)
@@ -399,17 +400,8 @@ export function useTableViewportGeometry(
     const gridBox = box(grid)
     const tileStyle = tile ? getComputedStyle(tile) : null
     const columnStyle = column ? getComputedStyle(column) : null
-    return [
+    const shared = [
       width,
-      tileBox?.width ?? 0,
-      columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
-      tile ? layoutZoom(tile) : 1,
-      tileStyle?.fontSize,
-      tileStyle?.lineHeight,
-      columnStyle?.paddingLeft,
-      columnStyle?.paddingRight,
-      columnStyle?.marginTop,
-      wideContainerWidth || width,
       // Zoom can change wrapping or used border widths even when a fixed
       // container keeps the same local width. Release its old track latch.
       layoutZoom(node),
@@ -422,13 +414,50 @@ export function useTableViewportGeometry(
       style.wordSpacing,
       getComputedStyle(node.ownerDocument.documentElement).fontSize,
     ].join('|')
+    return {
+      wide: [shared, wideContainerWidth || width].join('|'),
+      tiles: [
+        shared,
+        tileBox?.width ?? 0,
+        columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
+        tile ? layoutZoom(tile) : 1,
+        tileStyle?.fontFamily,
+        tileStyle?.fontSize,
+        tileStyle?.lineHeight,
+        tileStyle?.fontWeight,
+        tileStyle?.fontStyle,
+        tileStyle?.letterSpacing,
+        tileStyle?.wordSpacing,
+        columnStyle?.paddingLeft,
+        columnStyle?.paddingRight,
+        columnStyle?.marginTop,
+      ].join('|'),
+    }
+  }
+
+  function invalidateWide(): void {
+    registration?.invalidateLayout('wide')
+    registration?.invalidateLayout('card')
+    calibratedLayout = null
   }
 
   function invalidate(): void {
-    registration?.invalidateLayout('wide')
-    registration?.invalidateLayout('card')
+    invalidateWide()
     registration?.invalidateLayout('tiles')
-    calibratedLayout = null
+  }
+
+  function checkLayout(): boolean {
+    const next = layoutSignatures()
+    if (!next) return false
+    const wideChanged = wideSignature !== '' && wideSignature !== next.wide
+    const tilesChanged = tilesSignature !== '' && tilesSignature !== next.tiles
+    wideSignature = next.wide
+    tilesSignature = next.tiles
+    if (wideChanged) invalidateWide()
+    if (tilesChanged) registration?.invalidateLayout('tiles')
+    // Publish the released fixed widths before sampling the new auto layout.
+    // Tile-only changes leave the wide layout and its calibration in place.
+    return !wideChanged
   }
 
   function schedule(): void {
@@ -451,16 +480,6 @@ export function useTableViewportGeometry(
         schedule()
         return
       }
-      const next = layoutSignature()
-      if (next === '') return
-      const changed = signature !== '' && signature !== next
-      signature = next
-      if (changed) {
-        // Let Vue remove the old fixed colgroup widths before measuring the
-        // new auto layout. Reading the still-fixed DOM would relatch old tracks.
-        invalidate()
-        return
-      }
       measure()
     })
   }
@@ -468,12 +487,10 @@ export function useTableViewportGeometry(
   function measure(): void {
     const owner = registration
     if (!owner || !mounted || stopped || !root.value?.isConnected) return
-    // After controller replacement, Vue can sample before the scheduled frame.
-    // Sign that layout before latching tracks so the frame detects any change.
-    if (signature === '') signature = layoutSignature()
     bindFocusFallback()
     if (root.value) observer?.observe(root.value)
     if (table.value?.parentElement) observer?.observe(table.value.parentElement)
+    if (!checkLayout()) return
     const floors = { wide: 0, card: 0, tiles: 0 }
     for (const projection of ['wide', 'card', 'tiles'] as const) {
       floors[projection] =
@@ -671,7 +688,8 @@ export function useTableViewportGeometry(
       tracks.value = null
       trackWidths.value = []
       focused = null
-      signature = ''
+      wideSignature = ''
+      tilesSignature = ''
       wideContainerWidth = 0
       registration = next.register(capture)
       unsubscribe = subscribeSignal(registration.revision, publish)
@@ -717,7 +735,6 @@ export function useTableViewportGeometry(
     void document.fonts?.ready.then(() => {
       if (!stopped) fontsChanged()
     })
-    signature = layoutSignature()
     measure()
   })
   function fontsChanged(): void {
@@ -755,6 +772,10 @@ export function useTableViewportGeometry(
     workPixels,
     layoutChanged: () => {
       invalidate()
+      schedule()
+    },
+    tilesLayoutChanged: () => {
+      registration?.invalidateLayout('tiles')
       schedule()
     },
   }

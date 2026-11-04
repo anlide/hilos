@@ -1075,6 +1075,179 @@ export async function watchTableGeometry(
   }
 }
 
+interface TableColumnTrackBounds {
+  readonly tracks: readonly number[]
+  readonly records: Readonly<Record<string, readonly number[]>>
+}
+
+interface TableColumnTrackFrame {
+  readonly time: number
+  readonly bounds: TableColumnTrackBounds | null
+  readonly error?: string
+}
+
+/** Wide tracks and live rows that must survive an intervening hidden view. */
+export type TableColumnTrackPlan = Pick<TableGeometryPlan, 'bodyId' | 'rowKeys'>
+
+/**
+ * Keep the original used wide tracks and live row/cell boundaries across views.
+ * Hidden frames carry no geometry and never replace the visible baseline.
+ * Mutation samples include the first DOM commit after the wide view returns.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the wide table before its view changes.
+ * @param plan The body and surviving live rows selected by the scenario.
+ * @returns A continuous observation with the usual check/stop/evidence lifetime.
+ */
+export async function watchTableColumnTracks(
+  expect: Expect,
+  page: Page,
+  plan: TableColumnTrackPlan,
+): Promise<TableGeometryWatch> {
+  expect(plan.rowKeys.length, 'watch at least one live row').toBeGreaterThan(0)
+  const observation = await page
+    .getByTestId(plan.bodyId)
+    .evaluateHandle((root, plan) => {
+      const frames: TableColumnTrackFrame[] = []
+      let stopped = false
+      let frame = 0
+      function read(): TableColumnTrackBounds | null {
+        const table = root.querySelector('table')
+        if (!table) throw new Error('Missing wide table')
+        const box = table.getBoundingClientRect()
+        if (
+          !table.checkVisibility({ visibilityProperty: true }) ||
+          box.width === 0 ||
+          box.height === 0
+        )
+          return null
+        const origin = root.getBoundingClientRect()
+        const zoom = root.currentCSSZoom
+        if (!Number.isFinite(zoom) || zoom <= 0)
+          throw new Error('a visible table requires native effective zoom')
+        function edges(node: Element): number[] {
+          const box = node.getBoundingClientRect()
+          return [
+            (box.left - origin.left) / zoom,
+            (box.right - origin.left) / zoom,
+          ]
+        }
+        const records: Record<string, readonly number[]> = {}
+        for (const key of plan.rowKeys) {
+          const row = table.querySelector(`[data-id="hilos-table-row-${key}"]`)
+          if (
+            !row?.checkVisibility({ visibilityProperty: true }) ||
+            row.querySelector('[data-id="hilos-table-placeholder"]')
+          )
+            throw new Error(`Missing live wide row ${key}`)
+          const box = row.getBoundingClientRect()
+          records[key] = [
+            (box.top - origin.top) / zoom,
+            (box.bottom - origin.top) / zoom,
+            ...edges(row),
+            ...[...row.children].flatMap(edges),
+          ]
+        }
+        const tracks = [...table.querySelectorAll('thead tr > th')].flatMap(
+          edges,
+        )
+        if (tracks.length === 0) throw new Error('Missing used wide tracks')
+        return { tracks, records }
+      }
+      function sample() {
+        if (stopped) return
+        try {
+          frames.push({ time: performance.now(), bounds: read() })
+        } catch (error) {
+          frames.push({
+            time: performance.now(),
+            bounds: null,
+            error: String(error),
+          })
+        }
+      }
+      function tick() {
+        sample()
+        if (!stopped) frame = requestAnimationFrame(tick)
+      }
+      const mutations = new MutationObserver(sample)
+      mutations.observe(root, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      })
+      sample()
+      frame = requestAnimationFrame(tick)
+      return {
+        frames,
+        sample,
+        stop() {
+          if (stopped) return
+          sample()
+          stopped = true
+          cancelAnimationFrame(frame)
+          mutations.disconnect()
+        },
+      }
+    }, plan)
+  const frames = () =>
+    observation.evaluate((watch) => {
+      watch.sample()
+      return watch.frames
+    })
+  return {
+    async check() {
+      const all = await frames()
+      const baseline = all[0]?.bounds
+      expect(baseline, 'a visible initial wide layout is required').toBeTruthy()
+      const failures: unknown[] = []
+      for (const current of all) {
+        if (current.error) failures.push(current)
+        if (!current.bounds) continue
+        for (const [path, before, after] of [
+          ['tracks', baseline!.tracks, current.bounds.tracks],
+          ...plan.rowKeys.map(
+            (key) =>
+              [
+                `records.${key}`,
+                baseline!.records[key]!,
+                current.bounds!.records[key]!,
+              ] as const,
+          ),
+        ] as const) {
+          if (
+            before.length !== after.length ||
+            before.some(
+              (value, index) => Math.abs(value - after[index]!) > SLACK_PX,
+            )
+          )
+            failures.push({ path, before, after, time: current.time })
+        }
+      }
+      expect(
+        failures,
+        'original wide tracks and live boundaries on every visible frame within 1 CSS px',
+      ).toEqual([])
+    },
+    async stop() {
+      await observation.evaluate((watch) => watch.stop())
+    },
+    async evidence() {
+      return JSON.stringify(
+        {
+          plan,
+          slack: SLACK_PX,
+          timeOrigin: await page.evaluate(() => performance.timeOrigin),
+          frames: await frames(),
+        },
+        null,
+        2,
+      )
+    },
+  }
+}
+
 /**
  * Wait for initial fonts and observer-driven layout, never for a departure to
  * recover. Transition observations must already be armed before its trigger.
@@ -1090,6 +1263,138 @@ export async function settleTableLayout(page: Page): Promise<void> {
       ),
     )
   })
+}
+
+/**
+ * Reload a fixture's self-contained SVG in the native Tiles image element.
+ * Wait for its real load and decode even while the Tiles branch is hidden.
+ *
+ * @param page The page containing the mounted Tiles branch.
+ * @param rowKey A live tile with a self-contained SVG picture.
+ * @returns Opaque evidence of the native load/decode and intrinsic dimensions.
+ */
+export async function reloadTableTilePicture(
+  page: Page,
+  rowKey: string,
+): Promise<string> {
+  const result = await page
+    .getByTestId(`hilos-table-tile-image-${rowKey}`)
+    .locator('img')
+    .evaluate(async (image: HTMLImageElement) => {
+      const prefix = 'data:image/svg+xml,'
+      const previous = image.getAttribute('src') ?? ''
+      if (!previous.startsWith(prefix))
+        throw new Error('A self-contained fixture SVG is required')
+      const svg = decodeURIComponent(previous.slice(prefix.length))
+      const source = `${prefix}${encodeURIComponent(
+        svg.replace('</svg>', '<!-- reload --></svg>'),
+      )}`
+      let loaded = false
+      await new Promise<void>((resolve, reject) => {
+        function load() {
+          image.removeEventListener('error', error)
+          loaded = true
+          resolve()
+        }
+        function error() {
+          image.removeEventListener('load', load)
+          reject(new Error('Native fixture picture reload failed'))
+        }
+        image.addEventListener('load', load, { once: true })
+        image.addEventListener('error', error, { once: true })
+        image.src = source
+      })
+      await image.decode()
+      if (
+        !image.complete ||
+        image.naturalWidth <= 0 ||
+        image.naturalHeight <= 0
+      )
+        throw new Error('The reloaded picture has no decoded dimensions')
+      return {
+        loaded,
+        decoded: true,
+        hidden: !image.checkVisibility({ visibilityProperty: true }),
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      }
+    })
+  return JSON.stringify(result, null, 2)
+}
+
+/**
+ * Change only the Tiles grid's columns and prove its used geometry changed.
+ * The root, branch and grid keep their horizontal bounds; classes are a stimulus.
+ *
+ * @param expect The spec's expect.
+ * @param page The page showing the Tiles view.
+ * @param columns The requested number of Bootstrap grid columns, from 1 to 6.
+ * @returns Opaque before/after evidence of the used grid and unchanged containers.
+ */
+export async function setTableTileColumns(
+  expect: Expect,
+  page: Page,
+  columns: number,
+): Promise<string> {
+  expect(Number.isInteger(columns)).toBe(true)
+  expect(columns).toBeGreaterThanOrEqual(1)
+  expect(columns).toBeLessThanOrEqual(6)
+  const tiles = page.getByTestId('hilos-table-tiles')
+  async function read() {
+    return tiles.evaluate((branch) => {
+      if (!branch.checkVisibility({ visibilityProperty: true }))
+        throw new Error('The Tiles grid must be visible')
+      const root = branch.closest('[data-id="hilos-viewport-table"]')!
+      const grid = branch.querySelector('[role="list"]')!
+      const slots = [...grid.children].map((node) =>
+        node.getBoundingClientRect(),
+      )
+      if (slots.length === 0) throw new Error('The Tiles grid needs live slots')
+      const zoom = branch.currentCSSZoom
+      if (!Number.isFinite(zoom) || zoom <= 0)
+        throw new Error('a visible grid requires native effective zoom')
+      const origin = root.getBoundingClientRect()
+      return {
+        containers: [root, branch, grid].flatMap((node) => {
+          const box = node.getBoundingClientRect()
+          return [(box.left - origin.left) / zoom, box.width / zoom]
+        }),
+        tileWidth: slots[0]!.width / zoom,
+        columns: slots.filter(
+          (box) => Math.abs(box.top - slots[0]!.top) / zoom <= 1,
+        ).length,
+      }
+    })
+  }
+  const before = await read()
+  expect(before.tileWidth).toBeGreaterThan(0)
+  expect(
+    before.columns,
+    'the column count stimulus must change the grid',
+  ).not.toBe(columns)
+  await tiles.evaluate((branch, columns) => {
+    // Include the inert probe's grid: Angular reads its actual column width.
+    for (const grid of branch.querySelectorAll('.row')) {
+      if (!grid.querySelector(':scope > .col')) continue
+      for (const name of [...grid.classList])
+        if (/^row-cols(?:-\w+)?-\d+$/.test(name)) grid.classList.remove(name)
+      grid.classList.add(`row-cols-${columns}`)
+    }
+  }, columns)
+  await settleTableLayout(page)
+  const after = await read()
+  const diagnostic = JSON.stringify({ before, after }, null, 2)
+  expect(after.columns, diagnostic).toBe(columns)
+  expect(
+    Math.abs(after.tileWidth - before.tileWidth),
+    diagnostic,
+  ).toBeGreaterThan(SLACK_PX)
+  for (const [index, value] of before.containers.entries())
+    expect(
+      Math.abs(after.containers[index]! - value),
+      diagnostic,
+    ).toBeLessThanOrEqual(SLACK_PX)
+  return diagnostic
 }
 
 /** Check decoded pictures and the used, equal 4:3 picture/empty-image frames. */

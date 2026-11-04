@@ -3417,7 +3417,7 @@ describe('HilosViewportTable Tiles mount', () => {
     f.controller.dispose()
   })
 
-  it('asks for a new layout when a picture loads inside the tiles', () => {
+  it('keeps layouts on image load and invalidates only tiles on view changes', () => {
     const f = fixture()
     rows(f.controller)
     const invalidate = vi.fn()
@@ -3431,7 +3431,7 @@ describe('HilosViewportTable Tiles mount', () => {
             invalidateLayout: (
               projection: Parameters<typeof owner.invalidateLayout>[0],
             ) => {
-              if (projection === 'wide') invalidate()
+              invalidate(projection)
               owner.invalidateLayout(projection)
             },
           }
@@ -3444,13 +3444,15 @@ describe('HilosViewportTable Tiles mount', () => {
     invalidate.mockClear()
 
     fireEvent.load(tileOf(container, 'a').querySelector('img')!)
-    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(invalidate).not.toHaveBeenCalled()
     fireEvent.load(
       container.querySelector('[data-id="hilos-table-card-a"] img')!,
     )
-    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(invalidate).not.toHaveBeenCalled()
     choose(container, 'tiles')
-    expect(invalidate).toHaveBeenCalledTimes(2)
+    expect(invalidate.mock.calls).toEqual([['tiles']])
+    choose(container, 'table')
+    expect(invalidate.mock.calls).toEqual([['tiles'], ['tiles']])
     f.controller.dispose()
   })
 

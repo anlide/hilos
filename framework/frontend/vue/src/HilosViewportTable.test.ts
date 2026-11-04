@@ -6,6 +6,7 @@ import {
   createSignal,
   eraseBrowserValues,
   HIDDEN_VALUE,
+  HILOS_TABLE_ACTIONS_KEY,
   registerFocusReturnFallback,
   TABLE_VIEW_BROWSER_VALUE,
   TABLE_VIEW_STORAGE_KEY,
@@ -18,7 +19,9 @@ import type {
   HilosTableFrame,
   HilosTableProgress,
   HilosTableRowMessage,
+  TableGeometryRegistration,
   TableViewportDescriptor,
+  TableViewportGeometryView,
 } from '@hilos/core/base'
 
 import HilosModal from './HilosModal.vue'
@@ -4761,6 +4764,188 @@ describe('HilosViewportTable Tiles mount', () => {
     )
   }
 
+  it.each([
+    {
+      scenario: 'detail after the message boundary',
+      fromColumn: 'tail',
+      titleOnly: false,
+      colspan: '2',
+      wideKeys: ['title', 'kept', 'badge'],
+      wideImage: true,
+      cardLabels: ['Kept', 'Picture'],
+      tileLabels: ['Kept'],
+      cardImage: true,
+    },
+    {
+      scenario: 'title with no ordinary body fields',
+      fromColumn: 'title',
+      titleOnly: true,
+      colspan: '3',
+      wideKeys: [],
+      wideImage: false,
+      cardLabels: [],
+      tileLabels: [],
+      cardImage: false,
+    },
+    {
+      scenario: 'badge as the message boundary',
+      fromColumn: 'badge',
+      titleOnly: false,
+      colspan: '4',
+      wideKeys: ['title', 'kept'],
+      wideImage: false,
+      cardLabels: ['Kept'],
+      tileLabels: ['Kept'],
+      cardImage: false,
+    },
+    {
+      scenario: 'image as the message boundary',
+      fromColumn: 'picture',
+      titleOnly: false,
+      colspan: '3',
+      wideKeys: ['title', 'kept', 'badge'],
+      wideImage: false,
+      cardLabels: ['Kept'],
+      tileLabels: ['Kept'],
+      cardImage: false,
+    },
+  ])(
+    'projects a row message in wide, card and tiles with $scenario',
+    async (testCase) => {
+      const columns: HilosTableColumn[] = [
+        { key: HILOS_TABLE_ACTIONS_KEY, label: 'Actions' },
+        { key: 'title', label: 'Title', card: 'title' },
+        ...(testCase.titleOnly ? [] : [{ key: 'kept', label: 'Kept' }]),
+        { key: 'badge', label: 'Status', card: 'badge' },
+        {
+          key: 'picture',
+          label: 'Picture',
+          card: testCase.titleOnly ? 'hidden' : 'field',
+        },
+        ...(testCase.titleOnly
+          ? []
+          : [
+              { key: 'tail', label: 'Tail' },
+              { key: 'trailing', label: 'Trailing' },
+            ]),
+        { key: 'details', label: 'Details', detail: true },
+      ]
+      const values = {
+        title: 'Item title',
+        kept: 'Kept body value',
+        badge: 'Ready',
+        picture: '/item.png',
+        tail: 'Replaced tail value',
+        trailing: 'Replaced trailing value',
+        details: 'Expanded detail value',
+      }
+      const controller = new TableViewportController<unknown>({
+        resolve: (row) => row.slots,
+        sendViewport: () => {},
+        rowMessage: () => ({
+          fromColumn: testCase.fromColumn,
+          text: 'No own entry — uses default',
+        }),
+        frame: {
+          title: 'Pictures',
+          columns,
+          views: {
+            tableKey: 'row-message',
+            order: ['table', 'tiles'],
+            imageColumn: 'picture',
+          },
+        },
+      })
+      controller.ingestWindow(
+        [{ rowKey: 'a', slots: values }],
+        1,
+        true,
+        null,
+        null,
+        10,
+      )
+      const wrapper = mount(HilosViewportTable, {
+        props: { controller },
+        slots: {
+          ...Object.fromEntries(
+            ['title', 'kept', 'badge', 'tail', 'trailing'].map((key) => [
+              `cell-${key}`,
+              ({ row }: { row: unknown }) =>
+                h(
+                  'span',
+                  { 'data-id': `value-${key}` },
+                  String((row as Record<string, unknown>)[key]),
+                ),
+            ]),
+          ),
+          'cell-picture': ({ row }: { row: unknown }) =>
+            h('img', {
+              src: String((row as Record<string, unknown>).picture),
+              alt: 'Item photo',
+            }),
+          [`cell-${HILOS_TABLE_ACTIONS_KEY}`]: () =>
+            h('button', { 'data-id': 'open-item' }, 'Open item'),
+          'detail-details': ({ row }: { row: unknown }) =>
+            h('span', String((row as Record<string, unknown>).details)),
+        },
+      })
+      try {
+        const wide = wrapper.get('[data-id="hilos-table-row-a"]')
+        const card = wrapper.get('[data-id="hilos-table-card-a"]')
+        const tile = wrapper.get('[data-id="hilos-table-tile-a"]')
+        for (const record of [wide, card, tile]) {
+          const messages = record.findAll('[data-id="hilos-table-row-message"]')
+          expect(messages).toHaveLength(1)
+          expect(messages[0]!.text()).toBe('No own entry — uses default')
+          expect(record.text()).not.toContain('Replaced tail value')
+          expect(record.text()).not.toContain('Replaced trailing value')
+          expect(record.get('[data-id="open-item"]').text()).toBe('Open item')
+        }
+        expect(
+          wide.get('[data-id="hilos-table-row-message"]').attributes('colspan'),
+        ).toBe(testCase.colspan)
+        for (const key of ['title', 'kept', 'badge'] as const) {
+          const value = wide.find(`[data-id="value-${key}"]`)
+          expect(value.exists()).toBe(testCase.wideKeys.includes(key))
+          if (value.exists()) expect(value.text()).toBe(values[key])
+        }
+        expect(wide.find('img').exists()).toBe(testCase.wideImage)
+        expect(card.find('img').exists()).toBe(testCase.cardImage)
+        expect(tile.get('img').attributes('src')).toBe('/item.png')
+        expect(card.findAll('dt').map((label) => label.text())).toEqual(
+          testCase.cardLabels,
+        )
+        expect(tile.findAll('dt').map((label) => label.text())).toEqual(
+          testCase.tileLabels,
+        )
+        for (const record of [card, tile]) {
+          expect(record.get('[data-id="value-title"]').text()).toBe(
+            'Item title',
+          )
+          expect(record.get('[data-id="value-badge"]').text()).toBe('Ready')
+          expect(record.find('[data-id="value-kept"]').exists()).toBe(
+            !testCase.titleOnly,
+          )
+          if (!testCase.titleOnly) {
+            expect(record.get('[data-id="value-kept"]').text()).toBe(
+              'Kept body value',
+            )
+          }
+        }
+
+        await wide.get('[data-id="hilos-table-expand-a"]').trigger('click')
+        for (const branch of [wrapper.get('table'), card, tile]) {
+          const detail = branch.get('[data-id="hilos-table-row-detail-a"]')
+          expect(detail.get('dt').text()).toBe('Details')
+          expect(detail.get('dd').text()).toBe('Expanded detail value')
+        }
+      } finally {
+        wrapper.unmount()
+        controller.dispose()
+      }
+    },
+  )
+
   it('renders one ordered window and one Bar/Live/Footer while switching only Bootstrap visibility', async () => {
     const f = fixture()
     rows(f.controller)
@@ -4827,6 +5012,141 @@ describe('HilosViewportTable Tiles mount', () => {
     )
     wrapper.unmount()
     f.controller.dispose()
+  })
+
+  it('ignores native image loads, preserves wide tracks on view switches and releases them for changed columns', async () => {
+    const columns = createSignal<readonly HilosTableColumn[]>([
+      { key: 'name', label: 'Name' },
+      { key: 'picture', label: 'Picture' },
+    ])
+    const f = fixture('pictures', { columns: () => columns.get() })
+    rows(f.controller)
+    const geometry = f.controller.geometry
+    let registration!: TableGeometryRegistration
+    const view: TableViewportGeometryView = {
+      register(capture) {
+        registration = geometry.register(capture)
+        return registration
+      },
+    }
+    Object.defineProperty(f.controller, 'geometry', { value: view })
+    const frames = new Map<number, FrameRequestCallback>()
+    let ticket = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++ticket, callback)
+      return ticket
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+    let watchAutoLayout = false
+    let sampledAutoLayout = false
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        const tiles = f.controller.frame.view.get() === 'tiles'
+        if (
+          (this.closest('[data-id="hilos-table-tiles"]') && !tiles) ||
+          (this.closest('.table-responsive') && tiles) ||
+          this.closest('[data-id="hilos-table-cards"]')
+        )
+          return new DOMRect()
+        if (this instanceof HTMLTableElement) {
+          if (
+            watchAutoLayout &&
+            [...this.querySelectorAll('col')].every(
+              (col) =>
+                col.style.getPropertyValue('--hilos-table-track-px') === '',
+            )
+          )
+            sampledAutoLayout = true
+          return new DOMRect(0, 0, 300, 200)
+        }
+        if (this instanceof HTMLTableCellElement && this.tagName === 'TH')
+          return new DOMRect(this.cellIndex * 100, 0, 100, 20)
+        return new DOMRect(0, 0, 500, 100)
+      },
+    )
+    async function flushGeometry() {
+      await nextTick()
+      const callbacks = [...frames.values()]
+      frames.clear()
+      callbacks.forEach((callback) => callback(0))
+      await nextTick()
+    }
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller: f.controller },
+      attachTo: document.body,
+      slots: {
+        'cell-name': ({ row }: { row: unknown }) => (row as Row).name,
+        'cell-picture': () => h('img', { src: '/record.png', alt: 'Record' }),
+      },
+    })
+    try {
+      await flushGeometry()
+      const tracks = registration.tracks()
+      expect(tracks?.widths).toEqual([100, 100, 100])
+      f.controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+      })
+      f.controller.apply()
+      await flushGeometry()
+      const wide = registration.layout('wide')
+      const card = registration.layout('card')
+      const wideTicket = registration.measurement('b', 'wide')
+      const retained = registration.record('a', 'wide')?.retained
+      expect(retained).toBe(100)
+      const colWidths = () =>
+        wrapper
+          .findAll('colgroup col')
+          .map((col) =>
+            (col.element as HTMLElement).style.getPropertyValue(
+              '--hilos-table-track-px',
+            ),
+          )
+      const widths = colWidths()
+      for (const [index, selected] of (
+        ['table', 'tiles', 'table'] as const
+      ).entries()) {
+        const previous = registration.layout('tiles')
+        f.controller.setView(selected)
+        await flushGeometry()
+        if (index === 0) expect(registration.layout('tiles')).toBe(previous)
+        else expect(registration.layout('tiles')).not.toBe(previous)
+        expect(registration.layout('wide')).toBe(wide)
+        expect(registration.layout('card')).toBe(card)
+        expect(registration.measurement('b', 'wide')).toBe(wideTicket)
+        expect(registration.tracks()).toBe(tracks)
+        expect(registration.record('a', 'wide')?.retained).toBe(retained)
+        expect(colWidths()).toEqual(widths)
+        const tiles = registration.layout('tiles')
+        wrapper
+          .get('[data-id="hilos-table-tile-b"] img')
+          .element.dispatchEvent(new Event('load', { bubbles: false }))
+        await flushGeometry()
+        expect(registration.layout('tiles')).toBe(tiles)
+        expect(registration.layout('wide')).toBe(wide)
+        expect(registration.layout('card')).toBe(card)
+        expect(registration.tracks()).toBe(tracks)
+        expect(colWidths()).toEqual(widths)
+      }
+      const tiles = registration.layout('tiles')
+      watchAutoLayout = true
+      columns.set([
+        { key: 'name', label: 'Renamed' },
+        { key: 'picture', label: 'Picture' },
+      ])
+      await flushGeometry()
+      expect(registration.layout('wide')).not.toBe(wide)
+      expect(registration.layout('card')).not.toBe(card)
+      expect(registration.layout('tiles')).not.toBe(tiles)
+      expect(sampledAutoLayout).toBe(true)
+      expect(registration.tracks()).not.toBe(tracks)
+      expect(registration.tracks()?.widths).toEqual([100, 100, 100])
+      expect(registration.record('a', 'wide')?.retained).toBe(retained)
+    } finally {
+      wrapper.unmount()
+      f.controller.dispose()
+    }
   })
 
   it.each([

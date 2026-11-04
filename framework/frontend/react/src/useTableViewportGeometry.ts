@@ -164,6 +164,10 @@ export function useTableViewportGeometry(
     () => () => bindings.mount?.invalidate(),
     [bindings],
   )
+  const tilesLayoutChanged = useMemo(
+    () => () => bindings.mount?.tilesLayoutChanged(),
+    [bindings],
+  )
 
   return {
     revision,
@@ -187,6 +191,7 @@ export function useTableViewportGeometry(
       current?.recordReader(rowKey, occurrence, projection, isCurrentRecord) ??
       (() => null),
     layoutChanged,
+    tilesLayoutChanged,
   }
 }
 
@@ -209,7 +214,8 @@ function createMount(
   let columnKeys: readonly string[] = []
   let frame: number | null = null
   let stopped = false
-  let signature = ''
+  let wideSignature = ''
+  let tilesSignature = ''
   let wideContainerWidth = 0
   let calibratedLayout: object | null = null
   let corrections = 0
@@ -543,11 +549,11 @@ function createMount(
     }
   }
 
-  function layoutSignature(): string {
+  function layoutSignatures(): { wide: string; tiles: string } | null {
     const node = root.current
-    if (!node) return ''
+    if (!node) return null
     const width = box(node)?.width ?? 0
-    if (width <= 0) return ''
+    if (width <= 0) return null
     const wideWidth = box(table.current?.parentElement)?.width ?? 0
     if (wideWidth > 0) wideContainerWidth = wideWidth
     const style = getComputedStyle(node)
@@ -564,17 +570,8 @@ function createMount(
     const gridBox = box(grid)
     const tileStyle = tile ? getComputedStyle(tile) : null
     const columnStyle = column ? getComputedStyle(column) : null
-    return [
+    const shared = [
       width,
-      tileBox?.width ?? 0,
-      columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
-      tile ? layoutZoom(tile) : 1,
-      tileStyle?.fontSize,
-      tileStyle?.lineHeight,
-      columnStyle?.paddingLeft,
-      columnStyle?.paddingRight,
-      columnStyle?.marginTop,
-      wideContainerWidth || width,
       // Zoom can change wrapping or used border widths even when a fixed
       // container keeps the same local width. Release its old track latch.
       layoutZoom(node),
@@ -588,26 +585,67 @@ function createMount(
       style.paddingLeft,
       style.paddingRight,
       getComputedStyle(node.ownerDocument.documentElement).fontSize,
-      table.current ? getComputedStyle(table.current).borderCollapse : '',
-      table.current ? getComputedStyle(table.current).borderSpacing : '',
-      headerStyle?.fontFamily,
-      headerStyle?.fontSize,
-      headerStyle?.lineHeight,
-      headerStyle?.paddingTop,
-      headerStyle?.paddingBottom,
-      headerStyle?.paddingLeft,
-      headerStyle?.paddingRight,
     ].join('|')
+    return {
+      wide: [
+        shared,
+        wideContainerWidth || width,
+        table.current ? getComputedStyle(table.current).borderCollapse : '',
+        table.current ? getComputedStyle(table.current).borderSpacing : '',
+        headerStyle?.fontFamily,
+        headerStyle?.fontSize,
+        headerStyle?.lineHeight,
+        headerStyle?.paddingTop,
+        headerStyle?.paddingBottom,
+        headerStyle?.paddingLeft,
+        headerStyle?.paddingRight,
+      ].join('|'),
+      tiles: [
+        shared,
+        tileBox?.width ?? 0,
+        columnBox && gridBox ? Math.round(gridBox.width / columnBox.width) : 0,
+        tile ? layoutZoom(tile) : 1,
+        tileStyle?.fontFamily,
+        tileStyle?.fontSize,
+        tileStyle?.lineHeight,
+        tileStyle?.fontWeight,
+        tileStyle?.fontStyle,
+        tileStyle?.letterSpacing,
+        tileStyle?.wordSpacing,
+        columnStyle?.paddingLeft,
+        columnStyle?.paddingRight,
+        columnStyle?.marginTop,
+      ].join('|'),
+    }
   }
 
-  function invalidate(): void {
+  function invalidateWide(): void {
     if (stopped) return
     releasingTracks = true
     registration?.invalidateLayout('wide')
     registration?.invalidateLayout('card')
-    registration?.invalidateLayout('tiles')
     calibratedLayout = null
     refresh()
+  }
+
+  function invalidate(): void {
+    if (stopped) return
+    invalidateWide()
+    registration?.invalidateLayout('tiles')
+  }
+
+  function checkLayout(): boolean {
+    const next = layoutSignatures()
+    if (!next) return false
+    const wideChanged = wideSignature !== '' && wideSignature !== next.wide
+    const tilesChanged = tilesSignature !== '' && tilesSignature !== next.tiles
+    wideSignature = next.wide
+    tilesSignature = next.tiles
+    if (wideChanged) invalidateWide()
+    if (tilesChanged) registration?.invalidateLayout('tiles')
+    // React must commit without the old fixed colgroup widths before reading
+    // the new auto layout. Tile-only changes keep that latch and calibration.
+    return !wideChanged
   }
 
   function schedule(): void {
@@ -615,16 +653,6 @@ function createMount(
     frame = window.requestAnimationFrame(() => {
       if (stopped) return
       frame = null
-      const next = layoutSignature()
-      if (next === '') return
-      const changed = signature !== '' && signature !== next
-      signature = next
-      if (changed) {
-        // Let React commit without the old fixed colgroup widths before measuring the
-        // new auto layout. Reading the still-fixed DOM would relatch old tracks.
-        invalidate()
-        return
-      }
       measure()
     })
   }
@@ -633,20 +661,14 @@ function createMount(
     const owner = registration
     if (!owner || stopped || !root.current?.isConnected) return
     bindFocusFallback()
-    const nextSignature = layoutSignature()
-    if (signature && nextSignature && signature !== nextSignature) {
-      signature = nextSignature
-      invalidate()
-      return
-    }
-    if (nextSignature) signature = nextSignature
+    if (root.current) observer?.observe(root.current)
+    if (table.current?.parentElement)
+      observer?.observe(table.current.parentElement)
+    if (!checkLayout()) return
     if (releasingTracks) {
       if (table.current?.classList.contains('hilos-table-fixed')) return
       releasingTracks = false
     }
-    if (root.current) observer?.observe(root.current)
-    if (table.current?.parentElement)
-      observer?.observe(table.current.parentElement)
     const floors = { wide: 0, card: 0, tiles: 0 }
     for (const projection of ['wide', 'card', 'tiles'] as const) {
       floors[projection] =
@@ -839,6 +861,11 @@ function createMount(
     recordReader,
     workPixels,
     invalidate,
+    tilesLayoutChanged: (): void => {
+      if (stopped) return
+      registration.invalidateLayout('tiles')
+      schedule()
+    },
     observe: (node: HTMLElement) => observer?.observe(node),
     unobserve: (node: HTMLElement | undefined) => {
       if (node) observer?.unobserve(node)

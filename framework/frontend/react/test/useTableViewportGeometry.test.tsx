@@ -410,11 +410,16 @@ function numericDOM() {
   const layout = {
     zoom: 1,
     width: 400,
+    wideWidth: null as number | null,
+    naturalWidth: null as number | null,
     main: 41.25,
     card: 260.75,
     reason: 18,
     fallback: 48,
     font: 16,
+    rootFont: null as number | null,
+    tileFont: null as number | null,
+    tileZoom: null as number | null,
     cardHidden: false,
     wideHidden: false,
     spacing: 0,
@@ -430,13 +435,11 @@ function numericDOM() {
   const reads: string[] = []
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function (this: HTMLElement) {
+      const zoom = this.closest('.tiles-projection')
+        ? (layout.tileZoom ?? layout.zoom)
+        : layout.zoom
       const rect = (top: number, height: number, width = layout.width, x = 0) =>
-        new DOMRect(
-          x * layout.zoom,
-          top * layout.zoom,
-          width * layout.zoom,
-          height * layout.zoom,
-        )
+        new DOMRect(x * zoom, top * zoom, width * zoom, height * zoom)
       if (
         this.closest('[hidden]') ||
         (layout.cardHidden && this.closest('.card-projection')) ||
@@ -505,7 +508,9 @@ function numericDOM() {
         const fixed = Number(
           table.style.getPropertyValue('--hilos-table-width-px'),
         )
-        const width = (fixed || layout.width) / cells.length
+        const width =
+          (fixed || layout.naturalWidth || layout.wideWidth || layout.width) /
+          cells.length
         return rect(0, 20, width, index * width)
       }
       if (this.tagName === 'TABLE')
@@ -513,19 +518,33 @@ function numericDOM() {
           0,
           180,
           Number(this.style.getPropertyValue('--hilos-table-width-px')) ||
+            layout.naturalWidth ||
+            layout.wideWidth ||
             layout.width,
         )
+      if (this.classList.contains('wide-projection'))
+        return rect(0, 100, layout.wideWidth ?? layout.width)
       return rect(0, 100)
     },
   )
   vi.spyOn(HTMLElement.prototype, 'currentCSSZoom', 'get').mockImplementation(
-    () => layout.zoom,
+    function (this: HTMLElement) {
+      return this.closest('.tiles-projection')
+        ? (layout.tileZoom ?? layout.zoom)
+        : layout.zoom
+    },
   )
   const nativeStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((node) => {
     const original = nativeStyle(node)
     const values: Record<string, string> = {
-      fontSize: `${layout.font}px`,
+      fontSize: `${
+        node === document.documentElement
+          ? (layout.rootFont ?? layout.font)
+          : node.closest('.tiles-projection')
+            ? (layout.tileFont ?? layout.font)
+            : layout.font
+      }px`,
       fontFamily: 'GeometryText, sans-serif',
       borderCollapse: 'collapse',
       borderSpacing: `0px ${layout.spacing}px`,
@@ -1266,35 +1285,200 @@ describe('React table geometry layout lifetime', () => {
     ).toBe('100')
   })
 
-  it('invalidates the tile layout from its column width and count while the root keeps its width and every allocation', () => {
-    const { layout } = numericDOM()
-    const events = observers()
-    const target = controller()
-    const source = instrument(target)
-    render(<Harness target={target} facade={source.facade} tiles />)
-    act(() => depart(target))
-    const owner = source.registrations[0]!
-    const previous = owner.layout('tiles')
-    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
-    // Three columns instead of four in the same grid width.
-    layout.column = 288.75
-    events.resizes[0]!.fire()
-    events.flush()
-    expect(owner.layout('tiles')).not.toBe(previous)
-    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
-    expect(owner.record('a', 'card')?.retained).toBe(268.75)
-    expect(owner.record('b', 'tiles')?.live?.total).toBe(426.5)
-    const settled = owner.layout('tiles')
-    events.resizes[0]!.fire()
-    events.flush()
-    expect(owner.layout('tiles')).toBe(settled)
-    // The gutter alone is a new layout too.
-    layout.gutter = 24
-    events.resizes[0]!.fire()
-    events.flush()
-    expect(owner.layout('tiles')).not.toBe(settled)
-    expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
-  })
+  it.each(['frame', 'post-commit'] as const)(
+    'invalidates only tiles for width/count, gutter, font and zoom changes through %s',
+    (entry) => {
+      const { layout } = numericDOM()
+      const events = observers()
+      const target = controller()
+      const source = instrument(target)
+      let geometry!: Geometry
+      const harness = () => (
+        <Harness
+          target={target}
+          facade={source.facade}
+          tiles
+          onCommit={(value) => {
+            geometry = value
+          }}
+        />
+      )
+      const view = render(harness())
+      act(() => depart(target))
+      const owner = source.registrations[0]!
+      const wide = owner.layout('wide')
+      const card = owner.layout('card')
+      const ticket = owner.measurement('b', 'wide')
+      const tracks = geometry.tracks
+      const widths = geometry.trackWidths
+      for (const change of ['width/count', 'gutter', 'font', 'zoom']) {
+        const previous = owner.layout('tiles')
+        vi.mocked(owner.invalidateLayout).mockClear()
+        // Three columns instead of four in the same grid width.
+        if (change === 'width/count') layout.column = 288.75
+        else if (change === 'gutter') layout.gutter = 24
+        else if (change === 'font') layout.tileFont = 18
+        else layout.tileZoom = 1.25
+        if (entry === 'frame') {
+          events.resizes[0]!.fire()
+          events.flush()
+        } else view.rerender(harness())
+        expect(owner.layout('tiles')).not.toBe(previous)
+        expect(owner.layout('wide')).toBe(wide)
+        expect(owner.layout('card')).toBe(card)
+        expect(owner.measurement('b', 'wide')).toBe(ticket)
+        expect(owner.tracks()).toBe(tracks)
+        expect(geometry.tracks).toBe(tracks)
+        expect(geometry.trackWidths).toBe(widths)
+        expect(owner.record('a', 'wide')?.retained).toBe(41.25)
+        expect(owner.record('a', 'card')?.retained).toBe(268.75)
+        expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+        expect(owner.record('b', 'tiles')?.live?.total).toBe(
+          change === 'width/count' ? 426.5 : 434.5,
+        )
+        expect(vi.mocked(owner.invalidateLayout).mock.calls).toEqual([
+          ['tiles'],
+        ])
+      }
+      const settled = owner.layout('tiles')
+      events.resizes[0]!.fire()
+      events.flush()
+      expect(owner.layout('tiles')).toBe(settled)
+    },
+  )
+
+  it.each(['frame', 'post-commit'] as const)(
+    'keeps wide/card layouts, tracks and departures through a hidden-visible-hidden tile cycle via %s',
+    (entry) => {
+      const { layout } = numericDOM()
+      const events = observers()
+      layout.tilesHidden = true
+      layout.wideWidth = 360
+      const target = controller()
+      const source = instrument(target)
+      let geometry!: Geometry
+      const harness = () => (
+        <Harness
+          target={target}
+          facade={source.facade}
+          tiles
+          onCommit={(value) => {
+            geometry = value
+          }}
+        />
+      )
+      const view = render(harness())
+      act(() => depart(target))
+      const owner = source.registrations[0]!
+      const wide = owner.layout('wide')
+      const card = owner.layout('card')
+      const ticket = owner.measurement('b', 'wide')
+      const tracks = geometry.tracks
+      const widths = geometry.trackWidths
+      expect(tracks?.tableWidth).toBe(360)
+      expect(owner.record('a', 'tiles')?.retained).toBeNull()
+      for (const visible of [true, false]) {
+        const tiles = owner.layout('tiles')
+        layout.tilesHidden = !visible
+        layout.wideHidden = visible
+        layout.cardHidden = visible
+        if (entry === 'frame') {
+          events.resizes[0]!.fire()
+          events.flush()
+        } else view.rerender(harness())
+        expect(owner.layout('tiles')).not.toBe(tiles)
+        expect(owner.layout('wide')).toBe(wide)
+        expect(owner.layout('card')).toBe(card)
+        expect(owner.measurement('b', 'wide')).toBe(ticket)
+        expect(owner.tracks()).toBe(tracks)
+        expect(geometry.tracks).toBe(tracks)
+        expect(geometry.trackWidths).toBe(widths)
+        expect(owner.record('a', 'wide')?.retained).toBe(41.25)
+        expect(owner.record('a', 'card')?.retained).toBe(268.75)
+        expect(owner.record('a', 'tiles')?.retained).toBe(82)
+      }
+    },
+  )
+
+  it.each([
+    'wide-container',
+    'root',
+    'font',
+    'root-font',
+    'font-completion',
+    'column-keys',
+  ])(
+    'releases tracks and relatches after DOM commit for a real %s change',
+    (change) => {
+      const { layout } = numericDOM()
+      const events = observers()
+      const target = controller()
+      const source = instrument(target)
+      let keys: readonly string[] = KEYS
+      let geometry!: Geometry
+      const harness = () => (
+        <Harness
+          target={target}
+          facade={source.facade}
+          tiles
+          keys={keys}
+          onCommit={(value) => {
+            geometry = value
+          }}
+        />
+      )
+      const view = render(harness())
+      act(() => depart(target))
+      const owner = source.registrations[0]!
+      const wide = owner.layout('wide')
+      const card = owner.layout('card')
+      const tiles = owner.layout('tiles')
+      const tracks = owner.tracks()
+      const measureTracks = owner.measureTracks
+      const autoReads: boolean[] = []
+      vi.spyOn(owner, 'measureTracks').mockImplementation((ticket, next) => {
+        autoReads.push(
+          !view.container
+            .querySelector('table')!
+            .classList.contains('hilos-table-fixed'),
+        )
+        measureTracks(ticket, next)
+      })
+      // Still-fixed DOM continues to report the old 400px until React releases
+      // it. Only the auto layout can supply the new used widths.
+      layout.naturalWidth = 520
+      if (change === 'wide-container') layout.wideWidth = 360
+      else if (change === 'root') layout.width = 440
+      else if (change === 'font') layout.font = 18
+      else if (change === 'root-font') layout.rootFont = 20
+      else if (change === 'column-keys') keys = ['column:name', 'renamed']
+      if (change === 'column-keys') view.rerender(harness())
+      else {
+        if (change === 'font-completion')
+          act(() => events.fonts.dispatchEvent(new Event('loadingdone')))
+        else events.resizes[0]!.fire()
+        events.flush()
+      }
+      expect(owner.layout('wide')).not.toBe(wide)
+      expect(owner.layout('card')).not.toBe(card)
+      if (change === 'wide-container') expect(owner.layout('tiles')).toBe(tiles)
+      else expect(owner.layout('tiles')).not.toBe(tiles)
+      expect(owner.tracks()).not.toBe(tracks)
+      expect(geometry.tracks).toEqual({
+        columnKeys:
+          change === 'column-keys'
+            ? ['column:name', 'renamed']
+            : ['column:name', 'state'],
+        widths: [260, 260],
+        tableWidth: 520,
+      })
+      expect(autoReads.length).toBeGreaterThan(0)
+      expect(autoReads.every(Boolean)).toBe(true)
+      expect(owner.record('a', 'wide')?.retained).toBe(41.25)
+      expect(owner.record('a', 'card')?.retained).toBe(268.75)
+      expect(owner.record('a', 'tiles')?.retained).toBe(426.5)
+    },
+  )
 
   it('keeps captured allocation while typography and spacing change repeatedly', () => {
     const { layout } = numericDOM()

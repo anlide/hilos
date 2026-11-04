@@ -247,7 +247,7 @@ function columnByKey(key: string): HilosTableColumn | undefined {
 function rowCells(
   message: HilosTableRowMessage | null,
 ): readonly HilosTableRowMessageCell[] {
-  return hilosTableRowMessageCells(frameColumns.value, message)
+  return hilosTableRowMessageCells(rowColumns.value, message)
 }
 
 // Which sources went quiet anywhere in the shown window, and which declared columns
@@ -291,7 +291,7 @@ const geometry = useTableViewportGeometry(
   (record) => props.controller.isTextRecordCurrent(record),
 )
 watch(frameColumns, geometry.layoutChanged)
-watch(tableView, geometry.layoutChanged)
+watch(tableView, geometry.tilesLayoutChanged)
 const tracks = computed(() => geometry.tracks.value)
 const trackWidths = computed(() => geometry.trackWidths.value)
 const reasonFloors = computed(() => geometry.reasonFloors.value)
@@ -1131,7 +1131,7 @@ function onSelectPage(event: Event): void {
           :controller="controller"
           :view="view"
           :card="card"
-          :columns="frameColumns"
+          :columns="rowColumns"
           :detail-fields="detailFields"
           :detail-id="cardDetailId(view.rowKey)"
           projection="card"
@@ -1190,7 +1190,6 @@ function onSelectPage(event: Event): void {
       class="position-relative"
       :class="{ 'd-none': tableView !== 'tiles' }"
       data-id="hilos-table-tiles"
-      @load.capture="geometry.layoutChanged()"
     >
       <!-- A framework-only twin has the same Bootstrap column width and shell.
       It never holds a picture, a row value, or an interactive clone. -->
@@ -1238,7 +1237,7 @@ function onSelectPage(event: Event): void {
             :view="record"
             :card="tileCard!"
             :image-column="imageColumn"
-            :columns="frameColumns"
+            :columns="rowColumns"
             :detail-fields="detailFields"
             :detail-id="`${tileDetailBaseId}-${record.rowKey}`"
             projection="tiles"
