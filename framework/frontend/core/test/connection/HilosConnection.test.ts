@@ -651,9 +651,13 @@ describe('action send', () => {
 })
 
 describe('table viewport send', () => {
-  it.each(['immediate', 'delayed', 'none'])(
-    'retains controls through an adapter access wait (unmount: %s)',
-    (unmount) => {
+  it.each(
+    ['immediate', 'delayed', 'none'].flatMap((unmount) =>
+      [true, false].map((matching) => ({ unmount, matching })),
+    ),
+  )(
+    'retains controls through an adapter access wait (unmount: $unmount, first filter matches: $matching)',
+    ({ unmount, matching }) => {
       const { connection } = createConnection({
         projectSchemas: PAGE_SIGNAL_SCHEMAS,
       })
@@ -670,7 +674,7 @@ describe('table viewport send', () => {
           sendViewport: (descriptor) =>
             connection.sendTableViewport('p', 't', descriptor),
           initialFilter: { document: 'terms' },
-          initialFilterInSubscription: true,
+
           frame: { columns: [] },
         })
       const controller = create()
@@ -680,7 +684,10 @@ describe('table viewport send', () => {
         { page: 'p', tableKey: 't' },
         controller,
       )
-      const answer = () =>
+      const answer = (
+        filter = { document: 'terms' } as Record<string, unknown>,
+        mismatched = false,
+      ) =>
         socket.message(
           JSON.stringify({
             type: 'page_response',
@@ -689,22 +696,38 @@ describe('table viewport send', () => {
               payload: {
                 windows: {
                   t: {
-                    rows: [],
-                    totalCount: 0,
+                    filter,
+                    rows: mismatched ? [{ rowKey: 'wrong', slots: {} }] : [],
+                    totalCount: mismatched ? 999 : 0,
                     totalExact: true,
-                    limit: 10,
-                    sort: [],
-                    firstAnchor: null,
-                    lastAnchor: null,
-                    rowsBefore: 0,
+                    limit: 37,
+                    sort: [{ field: 'id', direction: 'asc' }],
+                    firstAnchor: mismatched ? { id: 1 } : null,
+                    lastAnchor: mismatched ? { id: 9 } : null,
+                    rowsBefore: mismatched ? 50 : 0,
                   },
                 },
               },
             },
           }),
         )
-      answer()
+      answer(matching ? undefined : {}, !matching)
+      expect(controller.windowControlsAvailable.get()).toBe(true)
+      expect(controller.rows.get()).toEqual([])
+      expect(controller.frame.footer.get().totalCount).toBe(0)
+      expect(controller.loaded.get()).toBe(matching)
       controller.setSearch('desired')
+      const retained = controller.retainWindow()
+      expect(retained).toMatchObject({
+        current: {
+          filter: { document: 'terms', search: 'desired' },
+          sort: [{ field: 'id', direction: 'asc' }],
+          limit: 37,
+          anchor: null,
+          pageIndex: null,
+        },
+        opening: { filter: { document: 'terms' } },
+      })
       const stopLoading = subscribeSignal(pages.pageLoading, (loading) => {
         if (loading && unmount === 'immediate') {
           unbind()
@@ -725,6 +748,7 @@ describe('table viewport send', () => {
               payload: {
                 windows: {
                   t: {
+                    filter: {},
                     rows: [],
                     totalCount: 0,
                     totalExact: true,
@@ -742,9 +766,17 @@ describe('table viewport send', () => {
         unbind()
         controller.dispose()
       }
-      answer()
+      answer({ document: 'terms', search: 'desired' })
       if (unmount !== 'none') {
         const replacement = create()
+        const ingest = replacement.ingestSubscriptionWindow.bind(replacement)
+        vi.spyOn(replacement, 'ingestSubscriptionWindow').mockImplementation(
+          (...args) => {
+            expect(replacement.retainWindow()).toEqual(retained)
+            expect(replacement.loaded.get()).toBe(false)
+            ingest(...args)
+          },
+        )
         const release = bindTableViewport(
           connection,
           scopes,
@@ -770,7 +802,7 @@ describe('table viewport send', () => {
     },
   )
 
-  it('keeps legacy controllers outside access-wait retention', () => {
+  it('retains known controls without a route preset and clears them on navigation', () => {
     const { connection } = createConnection()
     const scopes = new ScopeManager()
     const pages = bindPageScope(connection, scopes)
@@ -794,15 +826,20 @@ describe('table viewport send', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
-    controller.setSearch('legacy')
+    controller.setSearch('desired')
     expect(connection.tableWindowDescriptors().t?.filter).toEqual({
-      search: 'legacy',
+      search: 'desired',
     })
     pages.awaitPageAnswer()
     release()
     controller.dispose()
+    expect(connection.tableWindowDescriptors().t?.filter).toEqual({
+      search: 'desired',
+    })
+    pages.subscribe('other')
     expect(connection.tableWindowDescriptors()).toEqual({})
     pages.unsubscribe()
     connection.close()
@@ -832,6 +869,7 @@ describe('table viewport send', () => {
       controller,
     )
     const window = {
+      filter: {},
       rows: [{ rowKey: 'initial', slots: {} }],
       totalCount: 1,
       totalExact: true,
@@ -923,7 +961,12 @@ describe('table viewport send', () => {
     reconnected.message(
       JSON.stringify({
         type: 'page_response',
-        data: { page: 'p', payload: { windows: { t: window } } },
+        data: {
+          page: 'p',
+          payload: {
+            windows: { t: { ...window, filter: { search: 'desired' } } },
+          },
+        },
       }),
     )
     expect(controller.frame.body.get()).toBe('rows')
@@ -1445,7 +1488,7 @@ describe('page frame buffer', () => {
   // The answer to a subscription, the one page_response that opens a page's table windows.
   const WINDOW_ANSWER =
     '{"type":"page_response","data":{"page":"hilos_settings","payload":{"windows":' +
-    '{"settings":{"rows":[],"sort":[],"limit":10,"totalCount":0,"totalExact":true,' +
+    '{"settings":{"filter":{},"rows":[],"sort":[],"limit":10,"totalCount":0,"totalExact":true,' +
     '"firstAnchor":null,"lastAnchor":null}}}}}'
 
   function connected(): HilosConnection {
@@ -1631,6 +1674,7 @@ describe('page frame buffer', () => {
         payload: {
           windows: {
             settings: {
+              filter: {},
               rows: [],
               sort: [],
               limit: 10,

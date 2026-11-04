@@ -168,6 +168,9 @@ export function harness(
         },
         windows: {
           [TABLE]: {
+            filter: root
+              ? {}
+              : { kind: navigation.currentRoute.get().params.kind },
             rows: rows.map((row) => ({
               rowKey: row.kind,
               slots: { kind: row },
@@ -182,6 +185,7 @@ export function harness(
           ...(answeredPage === HilosPages.MODERATION_KIND_RULES
             ? {
                 hilosModerationRules: {
+                  filter: { kind: navigation.currentRoute.get().params.kind },
                   rows: rules.map((rule) => ({
                     rowKey: String(rule.id),
                     slots: { rule },

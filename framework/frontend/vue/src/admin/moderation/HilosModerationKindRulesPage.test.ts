@@ -116,6 +116,7 @@ async function harness(
   }
   function ruleWindow(rules = options.empty ? [] : ['Own rule']) {
     return {
+      filter: { kind: first.kind },
       rows: rules.map((rule, index) => ({
         rowKey: String(index + 1),
         slots: { rule: { id: index + 1, kind: first.kind, rule } },
@@ -159,6 +160,7 @@ async function harness(
         windows: {
           [RULES]: ruleWindow(rules),
           [TABLE]: {
+            filter: { kind: row.kind },
             rows: [{ rowKey: row.kind, slots: { kind: row } }],
             sort: [],
             limit: 1,

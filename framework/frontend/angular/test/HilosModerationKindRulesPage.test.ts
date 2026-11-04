@@ -134,6 +134,7 @@ function backend() {
         },
         windows: {
           [HILOS_MODERATION_RULES_TABLE]: {
+            filter: { kind: row.kind },
             rows: rules.map((rule, i) => ({
               rowKey: String(i + 1),
               slots: { rule: { id: i + 1, kind: row.kind, rule } },
@@ -146,6 +147,7 @@ function backend() {
             lastAnchor: null,
           },
           [TABLE]: {
+            filter: { kind: row.kind },
             rows: [wire(row)],
             sort: [],
             limit: 1,

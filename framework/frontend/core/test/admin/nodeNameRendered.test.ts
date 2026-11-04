@@ -204,6 +204,7 @@ describe('rendered node names', () => {
           .replace('node-1', 'node-2')
           .replace('backup-1', 'backup-2')
         const window = {
+          filter: {},
           rows: [
             row,
             {

@@ -180,6 +180,7 @@ function seededContext(
         null,
         25,
         undefined,
+        {},
         [],
       )
       const descriptor = source.descriptor()

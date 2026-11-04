@@ -360,7 +360,7 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
                     self::assertSame($table, $section['name']);
                     self::assertSame(ChangeLogTablePage::PAGE, $response->payload->data['pageHeadOwner']['page']);
                     self::assertCount(4, $response->payload->data['pageTabs']);
-                    $window = $response->payload->windows[$tableKey];
+                    $window = $this->windowWithoutFilter($response->payload->windows[$tableKey], ['table' => $table]);
                     $metadata = $section[$sectionKey];
                     $expected = array_map(static function (array $row) use ($slot): array {
                         if ($slot === 'trigger') {
@@ -389,7 +389,14 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
                     self::assertSame(1, $reconnected->payload->windows[$tableKey]['limit']);
                     self::assertSame(1, $reconnected->payload->windows[$tableKey]['rowsBefore']);
                     $held = $this->dispatchSubscribe($acceptKey, ['tableId' => $table], $page)[0]['data'];
-                    self::assertSame($reconnected->payload->windows, $held->payload->windows);
+                    $reconnectedWindows = $reconnected->payload->windows;
+                    $heldWindows = $held->payload->windows;
+                    self::assertSame(array_keys($reconnectedWindows), array_keys($heldWindows));
+                    foreach ($reconnectedWindows as $windowKey => $reconnectedWindow) {
+                        $reconnectedWindows[$windowKey] = $this->windowWithoutFilter($reconnectedWindow, ['table' => $table]);
+                        $heldWindows[$windowKey] = $this->windowWithoutFilter($heldWindows[$windowKey], ['table' => $table]);
+                    }
+                    self::assertSame($reconnectedWindows, $heldWindows);
                     self::assertSame($table, $held->payload->data[ChangeLogTablePage::SECTION]['name']);
                 }
             }
@@ -409,7 +416,10 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
         self::assertSame([
             'rows' => [], 'sort' => [], 'limit' => 25, 'totalCount' => 0, 'totalExact' => true,
             'firstAnchor' => null, 'lastAnchor' => null, 'rowsBefore' => 0,
-        ], $response->payload->windows[ChatTableContext::hilosChangeLogTableTriggers]);
+        ], $this->windowWithoutFilter(
+            $response->payload->windows[ChatTableContext::hilosChangeLogTableTriggers],
+            ['table' => 'hilos_session'],
+        ));
     }
 
     public function testHistoryReadsItsReceiptThroughTheUnchangedFeedAction(): void
@@ -463,7 +473,14 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
             foreach ($admin->payload->data as $field => $value) {
                 self::assertSame($value, $viewer->payload->data[$field]);
             }
-            self::assertSame($admin->payload->windows, $viewer->payload->windows);
+            $adminWindows = $admin->payload->windows;
+            $viewerWindows = $viewer->payload->windows;
+            self::assertSame(array_keys($adminWindows), array_keys($viewerWindows));
+            foreach ($adminWindows as $windowKey => $adminWindow) {
+                $adminWindows[$windowKey] = $this->windowWithoutFilter($adminWindow, ['table' => 'bot']);
+                $viewerWindows[$windowKey] = $this->windowWithoutFilter($viewerWindows[$windowKey], ['table' => 'bot']);
+            }
+            self::assertSame($adminWindows, $viewerWindows);
             foreach ([[], ['tableId' => 'missing_table']] as $params) {
                 $frames = $this->dispatchSubscribe(self::ADMIN, $params, $page);
                 self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $frames[0]['data']);
@@ -536,6 +553,23 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
         self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $frames[0]['data']);
         self::assertSame($httpCode, $frames[0]['data']->httpCode);
         self::assertSame($errorCode, $frames[0]['data']->errorCode);
+    }
+
+    /**
+     * Checks the applied filter and returns the remainder of a copied window.
+     *
+     * @param array<string, mixed> $window Window whose filter is checked
+     * @param array<string, mixed> $expectedFilter Exact expected filter map
+     * @return array<string, mixed> Window with its checked filter removed
+     */
+    private function windowWithoutFilter(array $window, array $expectedFilter): array
+    {
+        self::assertArrayHasKey(TableWindowDescriptorDTO::FILTER, $window);
+        self::assertIsObject($window[TableWindowDescriptorDTO::FILTER]);
+        self::assertSame($expectedFilter, (array)$window[TableWindowDescriptorDTO::FILTER]);
+        unset($window[TableWindowDescriptorDTO::FILTER]);
+
+        return $window;
     }
 
     /**

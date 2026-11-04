@@ -7,6 +7,7 @@
 // nothing to send it with (HIL-1272).
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  type TableViewportController,
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -148,9 +149,23 @@ function seededContext(initial: SettingSlot[]): {
   }
 
   const connection = {
-    registerTableWindow(): void {
-      serveWindow()
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        rows.map((settings) => ({ rowKey: settings.key, slots: { settings } })),
+        rows.length,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
     },
+    sendTableRendered: () => true,
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(

@@ -74,6 +74,27 @@ function makeConnection(): {
   const filters: Record<string, unknown>[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'projectSignal')
+        listener({
+          type: 'page_response',
+          data: {
+            page: HilosPages.LOGS_KEYS,
+            payload: {
+              windows: {
+                hilosLogKeys: {
+                  filter: {},
+                  rows: [],
+                  totalCount: 0,
+                  totalExact: true,
+                  limit: 25,
+                  sort: [{ field: 'bytes', direction: 'desc' }],
+                  firstAnchor: null,
+                  lastAnchor: null,
+                },
+              },
+            },
+          },
+        } as never)
       if (event === 'projectSignal') {
         projectListeners.push(
           listener as unknown as (signal: {
@@ -212,6 +233,7 @@ describe('HilosLogsKeysPage', () => {
     const wrapper = mountPage(connection)
     pushHeader(header())
     pushEmptyWindow()
+    await nextTick()
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('nothing')
 

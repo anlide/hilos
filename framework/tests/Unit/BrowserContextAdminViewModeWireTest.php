@@ -121,6 +121,11 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
         $this->assertSame([self::hiddenRow('alpha'), self::hiddenRow('beta')], $window[TableWindowSignalData::rows]);
         // The table orders its first window by the person's name; a viewer is not ordered by it.
         $this->assertSame([], $window[TableWindowDescriptorDTO::SORT]);
+        $this->assertSame([], (array) $window[TableWindowDescriptorDTO::FILTER]);
+        $this->assertSame(
+            Hilos::$sr?->getTableViewport(self::ACCEPT_KEY, WireTestTable::TABLE)?->filter,
+            (array) $window[TableWindowDescriptorDTO::FILTER],
+        );
         $this->assertNull(Hilos::$sr?->getTableViewport(self::ACCEPT_KEY, WireTestTable::TABLE)?->sort);
     }
 

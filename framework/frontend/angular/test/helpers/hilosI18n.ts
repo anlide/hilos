@@ -11,6 +11,7 @@ import { Component } from '@angular/core'
 import type { Provider, Type } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  type TableViewportController,
   ActionLifecycle,
   COUNTRY_CARD_DATA,
   HilosPages,
@@ -576,7 +577,23 @@ export function i18nBench(
         group.delete(listener)
       }
     },
-    registerTableWindow: () => pushWindow(),
+    registerTableWindow: (
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ) => {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        100,
+        undefined,
+        {},
+        [],
+      )
+      pushWindow()
+    },
     unregisterTableWindow: unregister,
     tableWindowDescriptors: () => ({}),
     sendTableViewport: () => true,

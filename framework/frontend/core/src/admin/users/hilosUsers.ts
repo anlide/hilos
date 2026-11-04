@@ -924,6 +924,8 @@ export function createHilosMergeCandidates<TUser extends User>(
     controller,
     start(survivorId) {
       initialFilter[USER_MERGE_SURVIVOR_FILTER] = survivorId
+      const reset = controller.windowControlsAvailable.get()
+      controller.initializeFilter(initialFilter)
       teardown.push(
         bindTableViewport(
           context.connection,
@@ -933,7 +935,7 @@ export function createHilosMergeCandidates<TUser extends User>(
           { entityTypes: { [USER_SLOT]: context.users.type } },
         ),
       )
-      controller.resetFilters()
+      if (reset) controller.resetFilters()
     },
     dispose() {
       for (const off of teardown.splice(0)) {

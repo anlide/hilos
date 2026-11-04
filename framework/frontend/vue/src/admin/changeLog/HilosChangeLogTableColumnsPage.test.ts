@@ -137,7 +137,7 @@ describe('HilosChangeLogTableColumnsPage', () => {
     expect(
       wrapper.find('table tbody tr[data-id^="hilos-table-row-"]').exists(),
     ).toBe(false)
-    h.pushMetadataWindow(PAGE, TABLE, rows, true)
+    h.pushMetadataWindow(PAGE, TABLE, rows, true, { filter: {} })
     expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(1)
     expect(h.connection.sendTableViewport).toHaveBeenLastCalledWith(
       PAGE,

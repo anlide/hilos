@@ -160,6 +160,7 @@ function seededContext(initial: HilosMaintenanceNodeRow[]): {
       payload: {
         windows: {
           [NODES_TABLE]: {
+            filter: {},
             rows: initial.map(wireRow),
             totalCount: initial.length,
             totalExact: true,

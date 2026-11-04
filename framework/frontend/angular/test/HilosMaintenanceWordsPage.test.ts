@@ -130,6 +130,7 @@ function seededContext(initial: Stub[]): {
       payload: {
         windows: {
           [WORDS_TABLE]: {
+            filter: {},
             rows: initial.map(wireRow),
             totalCount: initial.length,
             totalExact: true,

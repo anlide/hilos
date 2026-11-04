@@ -172,6 +172,7 @@ function harness(section: unknown = BOT) {
         payload: {
           windows: {
             [HISTORY]: {
+              filter: {},
               rows: [],
               totalCount: 0,
               totalExact: true,

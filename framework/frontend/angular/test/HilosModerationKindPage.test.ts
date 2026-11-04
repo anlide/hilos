@@ -121,6 +121,7 @@ function backend() {
         },
         windows: {
           [TABLE]: {
+            filter: { kind: row.kind },
             rows: [wire(row)],
             sort: [],
             limit: 1,

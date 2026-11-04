@@ -141,6 +141,8 @@ async function expectDocumentsOpening(
     DOCUMENTS_TABLE,
     'hilosLegalSettings',
   ])
+  expect(object(windows[DOCUMENTS_TABLE]).filter).toEqual({})
+  expect(object(windows.hilosLegalSettings).filter).toEqual({})
   expect(object(windows[DOCUMENTS_TABLE]).sort).toEqual([
     { field: 'publishedOn', direction: 'desc' },
   ])
@@ -247,6 +249,7 @@ async function expectDocumentOpening(
     '2026-10-01',
   )
   if (pageKey === DOCUMENT) {
+    expect(window.filter).toEqual({})
     await expect(page.getByTestId('legal-document-sources')).toContainText(
       'Demo\\Chat\\Legal\\LegalCatalog',
     )
@@ -255,6 +258,7 @@ async function expectDocumentOpening(
         String(object(data.legalDocument)[field]),
       )
   } else {
+    expect(window.filter).toEqual({ document: 'terms' })
     expect(window).toMatchObject({ rowsBefore: 0, totalExact: true })
     await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
     const rows = window.rows as unknown[]
@@ -395,6 +399,9 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
         'hilosLegalChecks',
         'hilosLegalSettings',
       ])
+      const windows = object(payload.windows)
+      expect(object(windows.hilosLegalChecks).filter).toEqual({})
+      expect(object(windows.hilosLegalSettings).filter).toEqual({})
       expect(object(payload.data).legalOverview).toMatchObject({
         documentCount: 2,
         documents: [
@@ -562,6 +569,10 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
         'hilosLegalRevisions',
       ])
       const exactWindow = object(object(exact.windows).hilosLegalRevisions)
+      expect(exactWindow.filter).toEqual({
+        document: 'terms',
+        revision: '2026-09-27',
+      })
       expect(
         (exactWindow.rows as unknown[]).map((row) => object(row).rowKey),
       ).toEqual(['2026-09-27'])
@@ -1024,6 +1035,7 @@ test('Legal opens complete replies and navigates through searched and sorted Doc
       ])
       expect(object(payload.refusedWindows)).toEqual({})
       const window = object(object(payload.windows).hilosLegalDocumentSet)
+      expect(window.filter).toEqual({ document: 'privacy' })
       expect(window).toMatchObject({
         rowsBefore: 0,
         totalCount: 7,

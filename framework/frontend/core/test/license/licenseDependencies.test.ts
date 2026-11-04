@@ -122,6 +122,7 @@ describe('createHilosLicenseDependencies', () => {
       null,
       4,
       undefined,
+      {},
       [],
       0,
     )

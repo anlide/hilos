@@ -35,6 +35,17 @@ function controller(names = ['a', 'b']) {
     frame: { columns: [{ key: 'name', label: 'Name' }] },
   })
   controllers.push(result)
+  result.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    10,
+    undefined,
+    {},
+    [],
+  )
   snapshot(result, names)
   return result
 }

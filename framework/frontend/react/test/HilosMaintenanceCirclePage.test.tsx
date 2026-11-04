@@ -184,6 +184,7 @@ function seededContext(
       payload: {
         windows: {
           [CIRCLE_TABLE]: {
+            filter: {},
             rows: rows.map(wireRow),
             totalCount: rows.length,
             totalExact: true,

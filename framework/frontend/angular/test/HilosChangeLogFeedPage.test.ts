@@ -9,6 +9,7 @@ import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { By } from '@angular/platform-browser'
 import {
+  type TableViewportController,
   ActionLifecycle,
   CHANGE_LOG_OVERVIEW_SECTION,
   HILOS_CHANGE_LOG_ENTRY_READ,
@@ -304,9 +305,22 @@ function harness(
   const listeners = new Set<WindowListener>()
   const registered = new Set<string>()
   const connection = {
-    registerTableWindow: vi.fn((key: string): void => {
-      registered.add(key)
-    }),
+    registerTableWindow: vi.fn(
+      (key: string, controller: TableViewportController<unknown>): void => {
+        registered.add(key)
+        controller.ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          25,
+          undefined,
+          {},
+          [],
+        )
+      },
+    ),
     unregisterTableWindow: vi.fn((key: string): void => {
       registered.delete(key)
     }),

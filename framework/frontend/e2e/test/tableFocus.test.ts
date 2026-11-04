@@ -175,6 +175,7 @@ async function browser(batched = false, full = true) {
     null,
     10,
     undefined,
+    {},
     [],
   )
   const initial = full

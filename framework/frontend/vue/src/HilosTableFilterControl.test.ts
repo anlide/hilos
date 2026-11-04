@@ -30,6 +30,18 @@ function makeController(
     frame: { title: 'Deliveries', filters: [filter], columns: COLUMNS },
   })
 
+  controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    10,
+    undefined,
+    initialFilter ?? {},
+    [],
+  )
+
   return {
     controller,
     sent,

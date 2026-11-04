@@ -313,8 +313,8 @@ describe('createHilosChannelFields', () => {
         },
         scopes,
       } as unknown as HilosCommunicationsContext
-      // With no route preset yet, the first subscription window can be drawn immediately.
-      const channel = createSignal('')
+      // A matching subscription window can be drawn immediately at this address.
+      const channel = createSignal('email')
       const fields =
         page === undefined
           ? createHilosChannelFields(context, channel)
@@ -332,6 +332,7 @@ describe('createHilosChannelFields', () => {
           payload: {
             windows: {
               [tableKey]: {
+                filter: { channel: 'email' },
                 rows: [row],
                 sort: [],
                 totalCount: 1,
@@ -473,10 +474,32 @@ describe('createHilosChannelFields', () => {
     )
 
     fields.start()
+    fields.controller.ingestRefusal('internal_error')
     channel.set('sms')
+    expect(fields.controller.filter.get()).toEqual({ channel: 'sms' })
+    expect(sent).toEqual([])
+    channel.set('')
+    expect(fields.controller.filter.get()).toEqual({})
+    channel.set('sms')
+    fields.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
+    expect(sent.at(-1)?.filter).toEqual({ channel: 'sms' })
+    channel.set('push')
+    expect(sent.at(-1)?.filter).toEqual({ channel: 'push' })
+    fields.controller.resetFilters()
 
     // No filter is applied on the client any more: the next channel is a new window.
-    expect(sent.at(-1)?.filter).toEqual({ channel: 'sms' })
+    expect(sent.at(-1)?.filter).toEqual({ channel: 'email' })
     fields.dispose()
+    fields.controller.dispose()
   })
 })

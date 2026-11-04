@@ -58,13 +58,16 @@ function makeController(
     rowKeys: readonly string[] = [],
     totalCount = rowKeys.length,
   ): void =>
-    controller.ingestWindow(
+    controller.ingestSubscriptionWindow(
       rowKeys.map(row),
       totalCount,
       true,
       null,
       null,
       pageSize,
+      undefined,
+      initialFilter ?? {},
+      [],
     )
 
   /** The keys the panel would send, or null when it would send nothing. */

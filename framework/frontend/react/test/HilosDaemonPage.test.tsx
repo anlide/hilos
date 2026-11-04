@@ -167,6 +167,7 @@ function harness(
             : {
                 windows: {
                   hilosDaemonPlacement: {
+                    filter: {},
                     rows,
                     totalCount: rows.length,
                     totalExact: true,

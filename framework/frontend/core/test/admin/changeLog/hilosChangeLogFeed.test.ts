@@ -195,6 +195,7 @@ describe('change-log feed viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(sent).toEqual([])

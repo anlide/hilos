@@ -19,7 +19,17 @@ function makeController(
     initialFilter: { channel: 'mail' },
     frame,
   })
-  controller.ingestWindow([], 0, true, null, null, 10)
+  controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    10,
+    undefined,
+    { channel: 'mail' },
+    [],
+  )
 
   return { controller, sent }
 }

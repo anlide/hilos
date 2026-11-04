@@ -228,6 +228,7 @@ describe('change-log history viewport', () => {
         payload: {
           windows: {
             hilosChangeLogHistory: {
+              filter: {},
               rows: [
                 rawRow('9', {
                   createdAt: '2026-10-09T10:11:12.123Z',
@@ -297,6 +298,7 @@ describe('change-log history viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(sent.at(-1)?.page).toBe(HilosPages.CHANGE_LOG_TABLE_HISTORY)
@@ -320,6 +322,7 @@ describe('change-log history viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(withoutRecord.sent.at(-1)?.descriptor.filter).toEqual({

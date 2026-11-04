@@ -1496,6 +1496,7 @@ describe('PageSubscription presentation boundary', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     connection.registerTableWindow('settings', controller)

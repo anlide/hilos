@@ -87,6 +87,7 @@ describe('noisy-column viewport', () => {
           payload: {
             windows: {
               hilosChangeLogNoisyColumns: {
+                filter: {},
                 rows: [
                   {
                     rowKey: 'bot.heartbeat',

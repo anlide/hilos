@@ -337,6 +337,7 @@ function sectionHarness(
   const sendViewport = vi.fn()
   const dispatch = vi.fn()
   const windowOf = (rows: TableRow[]) => ({
+    filter: {},
     rows,
     totalCount: rows.length,
     totalExact: true,

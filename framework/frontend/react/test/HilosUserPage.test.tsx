@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  type TableViewportController,
   ActionLifecycle,
   ActionError,
   type ActionResult,
@@ -193,6 +194,24 @@ function userContext(
       listener(signal)
     }
   }
+  const registerWindow = connection.registerTableWindow.bind(connection)
+  vi.spyOn(connection, 'registerTableWindow').mockImplementation(
+    (key, source) => {
+      registerWindow(key, source)
+      if (key === 'mergeCandidates')
+        (source as TableViewportController<unknown>).ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          10,
+          undefined,
+          {},
+          [],
+        )
+    },
+  )
   vi.spyOn(connection, 'sendTableViewport').mockImplementation(
     (_page, _table, descriptor) => {
       serveCandidates(descriptor.requestId)

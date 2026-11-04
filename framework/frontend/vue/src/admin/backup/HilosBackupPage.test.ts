@@ -222,6 +222,7 @@ function seededContext(
       payload: {
         windows: {
           [BACKUPS_TABLE]: {
+            filter: {},
             rows: rows.map(wireRow),
             totalCount: rows.length,
             totalExact: true,
@@ -540,6 +541,7 @@ describe('HilosBackupPage run caption', () => {
         payload: {
           windows: {
             [BACKUPS_TABLE]: {
+              filter: {},
               rows: [wireRow(ARCHIVE_FIXTURE)],
               totalCount: 1,
               totalExact: true,

@@ -19,6 +19,42 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+function expectMetadataEntry(
+  frames: ReturnType<typeof watchDeliveryFrames>,
+  packetStart: number,
+  sentStart: number,
+  pageKey: string,
+  tableKey: string,
+) {
+  const response = frames.packets
+    .slice(packetStart)
+    .flatMap(({ frames: packetFrames }) => packetFrames)
+    .map(({ wire }) => deliveryObject(wire))
+    .find(
+      (frame) =>
+        frame.type === 'page_response' &&
+        deliveryObject(frame.data).page === pageKey,
+    )
+  expect(response).toBeDefined()
+  const payload = deliveryObject(deliveryObject(response).data).payload
+  const window = deliveryObject(
+    deliveryObject(deliveryObject(payload).windows)[tableKey],
+  )
+  expect(window.filter).toEqual({ table: 'hilos_user' })
+  expect(
+    frames.sent
+      .slice(sentStart)
+      .map(({ wire }) => deliveryObject(wire))
+      .filter(
+        (frame) =>
+          frame.type === 'table_viewport' &&
+          frame.page === pageKey &&
+          frame.tableKey === tableKey,
+      ),
+  ).toEqual([])
+  return deliveryObject(payload)
+}
+
 test('opens Tracked tables from Change Log, filters journal labels and reads schema metadata', async ({
   page,
 }) => {
@@ -55,6 +91,8 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     'href',
     '/hilos/change-log/tables/hilos_user/columns',
   )
+  const columnsPacketStart = frames.packets.length
+  const columnsSentStart = frames.sent.length
   await columnsLink.click()
   await expectPageReady(expect, page)
   await expectChangeLogTableHead(
@@ -73,16 +111,12 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(1)
   await expect(page.getByTestId('hilos-table-count')).toHaveText('1 – 9 of 9')
   await expect(page.getByRole('table')).toHaveAccessibleName('hilos_user')
-  const columnsAnswer = frames.packets
-    .flatMap(({ frames }) => frames)
-    .map(({ wire }) => deliveryObject(wire))
-    .find(
-      (frame) =>
-        frame.type === 'page_response' &&
-        deliveryObject(frame.data).page === 'hilos_change_log_table_columns',
-    )
-  const columnsPayload = deliveryObject(
-    deliveryObject(columnsAnswer?.data).payload,
+  const columnsPayload = expectMetadataEntry(
+    frames,
+    columnsPacketStart,
+    columnsSentStart,
+    'hilos_change_log_table_columns',
+    'hilosChangeLogTableColumns',
   )
   expect(columnsPayload).toMatchObject({
     data: { changeLogTable: { name: 'hilos_user' } },
@@ -112,17 +146,10 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(
     shownByTestId(page, 'hilos-table-row-last_activity'),
   ).toContainText('Noisy — not written')
-  expect(frames.sent.map(({ wire }) => deliveryObject(wire))).toContainEqual(
-    expect.objectContaining({
-      type: 'table_viewport',
-      page: 'hilos_change_log_table_columns',
-      tableKey: 'hilosChangeLogTableColumns',
-      filter: { table: 'hilos_user' },
-      limit: 25,
-    }),
-  )
   await page.getByTestId('hilos-page-tab-hilos_change_log_table').click()
   await expectTrackedTableOverview(expect, page, 'hilos_user')
+  const triggersPacketStart = frames.packets.length
+  const triggersSentStart = frames.sent.length
   await page.getByTestId('hilos-change-log-table-link-triggers').click()
   await expectPageReady(expect, page)
   await expectChangeLogTableHead(
@@ -141,16 +168,12 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(1)
   await expect(page.getByTestId('hilos-table-count')).toHaveText('1 – 3 of 3')
   await expect(page.getByRole('table')).toHaveAccessibleName('hilos_user')
-  const triggersAnswer = frames.packets
-    .flatMap(({ frames }) => frames)
-    .map(({ wire }) => deliveryObject(wire))
-    .find(
-      (frame) =>
-        frame.type === 'page_response' &&
-        deliveryObject(frame.data).page === 'hilos_change_log_table_triggers',
-    )
-  const triggersPayload = deliveryObject(
-    deliveryObject(triggersAnswer?.data).payload,
+  const triggersPayload = expectMetadataEntry(
+    frames,
+    triggersPacketStart,
+    triggersSentStart,
+    'hilos_change_log_table_triggers',
+    'hilosChangeLogTableTriggers',
   )
   expect(triggersPayload).toMatchObject({
     data: { changeLogTable: { name: 'hilos_user' } },
@@ -179,15 +202,6 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(insertTrigger).toContainText('AFTER INSERT on hilos_user')
   await expect(insertTrigger).toContainText('Journal')
   await expect(insertTrigger).toContainText('from migration 085')
-  expect(frames.sent.map(({ wire }) => deliveryObject(wire))).toContainEqual(
-    expect.objectContaining({
-      type: 'table_viewport',
-      page: 'hilos_change_log_table_triggers',
-      tableKey: 'hilosChangeLogTableTriggers',
-      filter: { table: 'hilos_user' },
-      limit: 25,
-    }),
-  )
   await page.getByTestId('hilos-page-tab-hilos_change_log_table').click()
   await expectTrackedTableOverview(expect, page, 'hilos_user')
   await page.getByTestId('hilos-change-log-table-link-history').click()
@@ -200,6 +214,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
       kind: 'columns',
       path: `${tablePath}/columns`,
       page: 'hilos_change_log_table_columns',
+      tableKey: 'hilosChangeLogTableColumns',
       body: 'hilos-change-log-table-columns',
       content: 'last_activity',
       otherBody: 'hilos-change-log-table-triggers',
@@ -209,6 +224,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
       kind: 'triggers',
       path: `${tablePath}/triggers`,
       page: 'hilos_change_log_table_triggers',
+      tableKey: 'hilosChangeLogTableTriggers',
       body: 'hilos-change-log-table-triggers',
       content: 'hilos_cl_hilos_user_after_insert',
       otherBody: 'hilos-change-log-table-columns',
@@ -240,6 +256,23 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     await expect(page.getByTestId('hilos-table-count')).toHaveText(route.count)
     await expect(page.getByRole('table')).toHaveAccessibleName('hilos_user')
   }
+  const expectNavigation = async (
+    route: (typeof tablePages)[number],
+    navigate: () => Promise<unknown>,
+  ) => {
+    const packetStart = frames.packets.length
+    const sentStart = frames.sent.length
+    await navigate()
+    await expectTablePage(route)
+    if (route.kind === 'columns' || route.kind === 'triggers')
+      expectMetadataEntry(
+        frames,
+        packetStart,
+        sentStart,
+        route.page,
+        route.tableKey,
+      )
+  }
 
   const overviewViewportStart = frames.sent.length
   await gotoPage(expect, page, tablePages[0].path)
@@ -261,32 +294,27 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   ).toEqual([])
 
   for (const route of tablePages.slice(1)) {
-    await gotoPage(expect, page, route.path)
-    await expectTablePage(route)
-    await page.reload()
-    await expectTablePage(route)
+    await expectNavigation(route, () => gotoPage(expect, page, route.path))
+    await expectNavigation(route, () => page.reload())
   }
 
   await gotoPage(expect, page, tablePages[0].path)
   await expectTablePage(tablePages[0])
-  await shownByTestId(page, 'hilos-change-log-table-link-columns').click()
-  await expectTablePage(tablePages[1])
-  await page
-    .getByTestId('hilos-page-tab-hilos_change_log_table_triggers')
-    .click()
-  await expectTablePage(tablePages[2])
-  await page
-    .getByTestId('hilos-page-tab-hilos_change_log_table_history')
-    .click()
-  await expectTablePage(tablePages[3])
+  await expectNavigation(tablePages[1], () =>
+    shownByTestId(page, 'hilos-change-log-table-link-columns').click(),
+  )
+  await expectNavigation(tablePages[2], () =>
+    page.getByTestId('hilos-page-tab-hilos_change_log_table_triggers').click(),
+  )
+  await expectNavigation(tablePages[3], () =>
+    page.getByTestId('hilos-page-tab-hilos_change_log_table_history').click(),
+  )
 
   for (const route of [tablePages[2], tablePages[1], tablePages[0]]) {
-    await page.goBack()
-    await expectTablePage(route)
+    await expectNavigation(route, () => page.goBack())
   }
   for (const route of [tablePages[1], tablePages[2], tablePages[3]]) {
-    await page.goForward()
-    await expectTablePage(route)
+    await expectNavigation(route, () => page.goForward())
   }
 
   await gotoPage(expect, page, CHANGE_LOG_TABLES_PATH)

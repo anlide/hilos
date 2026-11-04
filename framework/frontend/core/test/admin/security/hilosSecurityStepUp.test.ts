@@ -23,13 +23,26 @@ describe('createHilosSecurityStepUpTable', () => {
     const sent: Array<{ page: string; table: string }> = []
     const context = {
       connection: {
+        sendTableRendered: () => true,
         sendTableViewport: (page: string, table: string) => {
           sent.push({ page, table })
         },
       },
     } as unknown as HilosTwoFactorContext
 
-    createHilosSecurityStepUpTable(context).controller.refresh()
+    const { controller } = createHilosSecurityStepUpTable(context)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
+    controller.refresh()
 
     expect(sent[0]).toStrictEqual({
       page: 'hilos_security_step_up',

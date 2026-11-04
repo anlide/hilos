@@ -3,6 +3,7 @@ import { StrictMode, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { afterEach, expect, vi } from 'vitest'
 import {
+  type TableViewportController,
   ActionLifecycle,
   bindAdminAccess,
   COUNTRY_CARD_DATA,
@@ -278,7 +279,23 @@ export function harness(
         set.delete(listener)
       }
     },
-    registerTableWindow: () => pushWindow(),
+    registerTableWindow: (
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ) => {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        100,
+        undefined,
+        {},
+        [],
+      )
+      pushWindow()
+    },
     unregisterTableWindow: unregister,
     tableWindowDescriptors: () => ({}),
     sendTableViewport: sendViewport,

@@ -208,6 +208,7 @@ describe('hilosAnalyticsActions viewport', () => {
       null,
       25,
       [{ field: 'createdTs', direction: 'asc' }],
+      {},
       [],
     )
     expect(sent).toHaveLength(1)
@@ -246,6 +247,7 @@ describe('hilosAnalyticsActions viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(sent[0]?.descriptor.filter).toEqual({ browserSession: 0 })
@@ -261,6 +263,7 @@ describe('hilosAnalyticsActions viewport', () => {
     const payload = {
       windows: {
         hilosAnalyticsActions: {
+          filter: {},
           rows: [],
           limit: 25,
           totalCount: 0,

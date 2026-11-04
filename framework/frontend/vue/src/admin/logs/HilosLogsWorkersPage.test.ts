@@ -74,6 +74,27 @@ function makeConnection(): {
   const filters: Record<string, unknown>[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'projectSignal')
+        listener({
+          type: 'page_response',
+          data: {
+            page: HilosPages.LOGS_WORKERS,
+            payload: {
+              windows: {
+                hilosLogWorkers: {
+                  filter: {},
+                  rows: [],
+                  totalCount: 0,
+                  totalExact: true,
+                  limit: 25,
+                  sort: [{ field: 'bytes', direction: 'desc' }],
+                  firstAnchor: null,
+                  lastAnchor: null,
+                },
+              },
+            },
+          },
+        } as never)
       if (event === 'projectSignal') {
         projectListeners.push(
           listener as unknown as (signal: {
@@ -210,6 +231,7 @@ describe('HilosLogsWorkersPage', () => {
     const wrapper = mountPage(connection)
     pushHeader(header())
     pushEmptyWindow()
+    await nextTick()
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('nothing')
 
@@ -269,6 +291,7 @@ describe('HilosLogsWorkersPage', () => {
   it('sends the type switch to the server as a filter, never narrowing locally', async () => {
     const { connection, filters } = makeConnection()
     const wrapper = mountPage(connection)
+    await nextTick()
 
     await wrapper.find('[data-id="hilos-table-filter-type"]').setValue(true)
 

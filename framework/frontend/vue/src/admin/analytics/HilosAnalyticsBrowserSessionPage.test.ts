@@ -154,6 +154,7 @@ function harness(param: string | undefined = '57') {
           payload: {
             windows: {
               [TABLE]: {
+                filter: {},
                 rows: [],
                 limit: 25,
                 totalCount: 0,

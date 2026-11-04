@@ -212,6 +212,7 @@ describe('createHilosSecurityTwoFactorTable', () => {
         null,
         10,
         undefined,
+        {},
         [],
       )
 
@@ -238,6 +239,7 @@ describe('createHilosSecurityTwoFactorTable', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     expect(table.locked.get()).toStrictEqual([])
@@ -289,6 +291,7 @@ describe('createHilosSecurityTwoFactorTable', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -336,6 +339,7 @@ describe('createHilosSecurityTwoFactorTable', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 

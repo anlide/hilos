@@ -289,7 +289,22 @@ function harness(
   scope.data.set(CHANGE_LOG_OVERVIEW_SECTION, overview)
   const listeners = new Set<WindowListener>()
   const connection = {
-    registerTableWindow(): void {},
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        {},
+        [],
+      )
+    },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(): boolean {

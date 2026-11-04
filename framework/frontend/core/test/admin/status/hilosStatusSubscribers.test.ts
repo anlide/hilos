@@ -69,6 +69,7 @@ function setup(viewer = false) {
           payload: {
             windows: {
               [tableKey]: {
+                filter: {},
                 rows,
                 totalCount: rows.length,
                 totalExact: true,
@@ -226,6 +227,7 @@ describe('Status subscribers viewport and page state', () => {
           data: { statusSubscribers: { confirmedCount: 0, pendingCount: 1 } },
           windows: {
             [tableKey]: {
+              filter: {},
               rows: [row()],
               totalCount: 1,
               totalExact: true,
@@ -333,6 +335,7 @@ describe('Status subscribers viewport and page state', () => {
           data: { statusSubscribers: { confirmedCount: 0, pendingCount: 1 } },
           windows: {
             [tableKey]: {
+              filter: {},
               rows: [row()],
               totalCount: 1,
               totalExact: true,
@@ -478,6 +481,7 @@ describe('Status subscribers viewport and page state', () => {
       null,
       25,
       openingSort,
+      {},
       [],
     )
     h.setCounts({ confirmedCount: 0, pendingCount: 1 })

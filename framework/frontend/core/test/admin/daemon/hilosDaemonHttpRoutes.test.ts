@@ -134,6 +134,7 @@ describe('daemon HTTP routes viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

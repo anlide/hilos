@@ -3,6 +3,7 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
+  type TableViewportController,
   ActionLifecycle,
   bindAdminAccess,
   bindSessionScope,
@@ -140,9 +141,23 @@ function seededContext(initial: SettingSlot[]): {
   }
 
   const connection = {
-    registerTableWindow(): void {
-      serveWindow()
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        rows.map((settings) => ({ rowKey: settings.key, slots: { settings } })),
+        rows.length,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
     },
+    sendTableRendered: () => true,
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(

@@ -774,6 +774,7 @@ describe('createHilosLogRotationsTable and the address', () => {
       null,
       25,
       [{ field: 'batchAt', direction: 'desc' }],
+      {},
       [],
     )
   }
@@ -806,6 +807,7 @@ describe('createHilosLogRotationsTable and the address', () => {
       fakeAddress({ state: 'due' }, rewrites),
     )
     table.start()
+    servePageWindow(table)
 
     table.controller.setFilter('state', '')
 
@@ -852,6 +854,7 @@ describe('createHilosLogRotationsTable and the address', () => {
       fakeAddress({ state: 'due' }, rewrites),
     )
     table.start()
+    servePageWindow(table)
 
     table.controller.setFilter('state', '')
     table.controller.resetFilters()
@@ -1173,6 +1176,17 @@ describe('the rotation table frame', () => {
       createSignal(header()),
     )
     table.start()
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     table.controller.setFilter(ROTATION_FILTER_STATE, HILOS_ROTATION_STATE_DUE)
     table.controller.setFilter(ROTATION_FILTER_STATE, '')
 
@@ -1254,6 +1268,7 @@ describe('the rotation table frame', () => {
       null,
       25,
       [{ field: 'batchAt', direction: 'desc' }],
+      {},
       [],
     )
     table.controller.setFilter(ROTATION_FILTER_NODE, 'node-2')
@@ -1278,6 +1293,7 @@ describe('the rotation table frame', () => {
       null,
       25,
       [{ field: 'batchAt', direction: 'desc' }],
+      {},
       [],
     )
 
@@ -1310,6 +1326,7 @@ describe('the rotation table frame', () => {
       null,
       25,
       [{ field: 'batchAt', direction: 'desc' }],
+      {},
       [],
     )
 

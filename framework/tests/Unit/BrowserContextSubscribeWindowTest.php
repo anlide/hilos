@@ -87,6 +87,11 @@ final class BrowserContextSubscribeWindowTest extends TestCase
             new PageRouteParams([]),
         );
 
+        $window = self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE);
+        $this->assertIsObject($window[TableWindowDescriptorDTO::FILTER]);
+        $this->assertSame([], (array) $window[TableWindowDescriptorDTO::FILTER]);
+        $this->assertStringContainsString('"filter":{}', json_encode($snapshot->toArray(), JSON_THROW_ON_ERROR));
+        unset($window[TableWindowDescriptorDTO::FILTER]);
         $this->assertSame(
             [
                 TableWindowSignalData::rows => [
@@ -109,7 +114,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],
                 TableWindowSignalData::rowsBefore => 0,
             ],
-            self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE),
+            $window,
         );
     }
 
@@ -154,6 +159,10 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $this->assertSame(2, $viewport->limit);
         $this->assertSame('key', $viewport->sort?->last()->field);
         $this->assertSame(['b'], $viewport->rowIds());
+        $this->assertSame(
+            ['label' => 'Beta'],
+            (array) self::windowOf($snapshot, SubscribeWindowPresetTable::TABLE)[TableWindowDescriptorDTO::FILTER],
+        );
         $this->assertSame(1, self::windowOf($snapshot, SubscribeWindowPresetTable::TABLE)[TableWindowSignalData::totalCount]);
         $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->windows);
         $this->assertSame([], $snapshot->refusedWindows);
@@ -176,7 +185,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
             ),
         ]);
 
-        new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', new PageRouteParams([]),
         );
 
@@ -188,6 +197,10 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $this->assertSame(TableConstants::ORDER_DESC, $viewport->sort?->last()->direction);
         $this->assertSame(['c'], $viewport->rowIds());
         $this->assertNull(Hilos::$table->get(SubscribeWindowPresetTable::TABLE)->receivedParams);
+        $this->assertSame(
+            ['label' => 'Gamma'],
+            (array) self::windowOf($snapshot, SubscribeWindowPresetTable::TABLE)[TableWindowDescriptorDTO::FILTER],
+        );
     }
 
     public function testAHeldDescriptorKeepsItsFilterSizeOrderAndBoundary(): void
@@ -204,7 +217,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         );
         Hilos::$sr->setTableViewport('ak-1', $held);
 
-        new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PRESET_PAGE, 'ak-1', new PageRouteParams([]),
         );
 
@@ -215,6 +228,10 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $this->assertSame(TableConstants::ORDER_DESC, $held->sort?->last()->direction);
         $this->assertSame(['a'], $held->rowIds());
         $this->assertNull(Hilos::$table->get(SubscribeWindowPresetTable::TABLE)->receivedParams);
+        $this->assertSame(
+            ['label' => 'Alpha'],
+            (array) self::windowOf($snapshot, SubscribeWindowPresetTable::TABLE)[TableWindowDescriptorDTO::FILTER],
+        );
     }
 
     public function testAFailedPresetDeclarationRefusesOnlyItsWindowAndKeepsTheDebt(): void
@@ -393,6 +410,9 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $window = self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE);
         $this->assertArrayNotHasKey(TableProgressSignalData::progress, $window);
         $this->assertCount(2, $window[TableWindowSignalData::rows]);
+        $this->assertIsObject($window[TableWindowDescriptorDTO::FILTER]);
+        $this->assertSame([], (array) $window[TableWindowDescriptorDTO::FILTER]);
+        $this->assertStringContainsString('"filter":{}', json_encode($snapshot->toArray(), JSON_THROW_ON_ERROR));
     }
 
     public function testATableThatCannotBuildItsWindowGoesIntoRefusedWindows(): void

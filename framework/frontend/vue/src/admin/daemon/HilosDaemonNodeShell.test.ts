@@ -474,6 +474,7 @@ describe('HilosDaemonNodeShell', () => {
       {
         windows: {
           hilosDaemonWorkers: {
+            filter: {},
             rows,
             totalCount: 1,
             totalExact: true,

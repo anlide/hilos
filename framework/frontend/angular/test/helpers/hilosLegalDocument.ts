@@ -157,6 +157,7 @@ export function legalDocumentBench(
       scope.data.set(key, value)
   }
   const settingsWindow = (value: unknown) => ({
+    filter: {},
     rows: [
       {
         rowKey: 'legal.refusal_after_deadline',
@@ -171,6 +172,7 @@ export function legalDocumentBench(
     sort: null,
   })
   const windowOf = (rows: TableRow[], tableKey: string) => ({
+    filter: tableKey === 'hilosLegalSettings' ? {} : { document: documentKey },
     rows,
     totalCount: rows.length,
     totalExact: true,
@@ -185,6 +187,12 @@ export function legalDocumentBench(
   const configuredDocument = Object.hasOwn(options, 'document')
     ? options.document
     : DOCUMENT
+  const documentKey =
+    typeof configuredDocument === 'object' &&
+    configuredDocument !== null &&
+    'document' in configuredDocument
+      ? configuredDocument.document
+      : 'terms'
   const responseWindows = options.tableKey
     ? options.refused
       ? {}

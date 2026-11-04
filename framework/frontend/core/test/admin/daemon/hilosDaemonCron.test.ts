@@ -135,6 +135,7 @@ describe('daemon cron viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 
@@ -203,6 +204,7 @@ describe('daemon cron viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
       0,
     )

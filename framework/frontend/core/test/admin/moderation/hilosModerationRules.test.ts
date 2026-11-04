@@ -25,6 +25,7 @@ const TABLE = 'hilosModerationRules'
 const cleanups: Array<() => void> = []
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
+  vi.useRealTimers()
 })
 function wireRule(id = 1, kind = 'first', rule = `Rule ${id}`) {
   return { rowKey: String(id), slots: { rule: { id, kind, rule } } }
@@ -63,6 +64,7 @@ function setup(view?: { readonly openAdd: () => void }) {
     listeners.get('message')?.({ data: JSON.stringify({ type, data }) })
   function window(rows = [wireRule()], totalCount = rows.length) {
     return {
+      filter: { kind: kind.get() },
       rows,
       sort: [{ field: 'id', direction: 'asc' }],
       totalCount,
@@ -322,6 +324,131 @@ describe('moderation Rules', () => {
     })
     expect(h.rules.current.get()).toBe(false)
   })
+
+  it.each([true, false])(
+    'restores the searched window before a buffered access reply (filter matches: %s)',
+    (matching) => {
+      vi.useFakeTimers()
+      const h = setup()
+      h.start()
+      h.answer()
+      h.kind.set('second')
+      h.pages.subscribe(PAGE, { kind: 'second' })
+      h.answer([wireRule(2, 'second')])
+      h.rules.controller.setSearch('retained')
+      h.reply([wireRule(2, 'second', 'retained rule')])
+      const held = h.rules.controller.retainWindow()
+      expect(held?.opening.filter).toEqual({ kind: 'second' })
+      expect(held?.current.filter).toEqual({
+        kind: 'second',
+        search: 'retained',
+      })
+      h.pages.awaitPageAnswer()
+      h.rules.dispose()
+      h.receive('page_response', {
+        page: PAGE,
+        payload: {
+          windows: {
+            [TABLE]: {
+              filter: matching
+                ? { kind: 'second', search: 'retained' }
+                : { kind: 'second' },
+              rows: [
+                wireRule(
+                  2,
+                  'second',
+                  matching ? 'retained rule' : 'wrong result',
+                ),
+              ],
+              totalCount: 1,
+              totalExact: true,
+              firstAnchor: { id: 2 },
+              lastAnchor: { id: 2 },
+              rowsBefore: 0,
+              limit: 25,
+              sort: [{ field: 'id', direction: 'asc' }],
+            },
+          },
+        },
+      })
+      const before = h.viewports().length
+      const replacement = createHilosModerationRules(
+        { connection: h.connection, scopes: h.scopes },
+        h.kind,
+      )
+      cleanups.push(() => replacement.dispose())
+      replacement.start()
+      expect(h.viewports()).toHaveLength(before + (matching ? 0 : 1))
+      if (!matching) {
+        expect(h.viewports().at(-1)).toMatchObject({
+          page: PAGE,
+          tableKey: TABLE,
+          filter: { kind: 'second', search: 'retained' },
+          requestId: expect.any(String),
+        })
+        expect(replacement.current.get()).toBe(false)
+        expect(replacement.controller.rows.get()).toEqual([])
+        expect(replacement.controller.descriptor()).toBeNull()
+        h.reply([wireRule(9, 'foreign')])
+        expect(replacement.current.get()).toBe(false)
+        expect(replacement.controller.rows.get()).toEqual([])
+        h.reply([wireRule(2, 'second', 'retained rule')])
+      }
+      expect(replacement.current.get()).toBe(true)
+      expect(replacement.controller.filter.get()).toEqual({
+        kind: 'second',
+        search: 'retained',
+      })
+      expect(replacement.controller.rows.get()[0]?.row?.rule).toBe(
+        'retained rule',
+      )
+      expect(h.viewports()).toHaveLength(before + (matching ? 0 : 1))
+      replacement.controller.resetFilters()
+      expect(replacement.controller.filter.get()).toEqual({ kind: 'second' })
+    },
+  )
+
+  it.each(['page', 'kind', 'address'])(
+    'does not send a provenance-free corrector for a foreign %s',
+    (guard) => {
+      vi.useFakeTimers()
+      const h = setup()
+      if (guard === 'page') h.scopes.openPage(HilosPages.MODERATION)
+      if (guard === 'kind') h.kind.set('')
+      h.start()
+      h.rules.controller.ingestSubscriptionWindow(
+        [wireRule(9, 'foreign')],
+        1,
+        true,
+        null,
+        null,
+        25,
+        [{ field: 'id', direction: 'asc' }],
+        { kind: 'foreign' },
+        [],
+      )
+      if (guard === 'address') {
+        // The legitimate first corrector may run; a forged current address may not.
+        h.sent.splice(0)
+        const opening = {
+          filter: { kind: 'first' },
+          sort: null,
+          limit: 25,
+          anchor: null,
+          anchorDirection: 'after' as const,
+          pageIndex: null,
+        }
+        h.rules.controller.restoreWindow({
+          opening,
+          current: { ...opening, filter: { kind: 'foreign' } },
+        })
+        h.rules.controller.refresh()
+      }
+      expect(h.viewports()).toEqual([])
+      expect(h.rules.current.get()).toBe(false)
+      expect(h.rules.controller.rows.get()).toEqual([])
+    },
+  )
 
   it('retains the controller Apply, append and count semantics with live values', () => {
     const h = setup()

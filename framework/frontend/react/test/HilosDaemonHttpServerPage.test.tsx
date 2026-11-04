@@ -88,6 +88,7 @@ function harness() {
                   : {
                       windows: {
                         hilosDaemonHttpRoutes: {
+                          filter: {},
                           rows: rows.map((route) => ({
                             rowKey: String(route.rowKey),
                             slots: { route },

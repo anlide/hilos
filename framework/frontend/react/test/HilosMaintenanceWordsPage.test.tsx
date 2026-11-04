@@ -116,6 +116,7 @@ function seededContext(initial: HilosMaintenanceWordsRow[] = []) {
     payload: {
       windows: {
         [HILOS_MAINTENANCE_WORDS_TABLE]: {
+          filter: {},
           rows: rows.map(wireRow),
           totalCount: rows.length,
           totalExact: true,

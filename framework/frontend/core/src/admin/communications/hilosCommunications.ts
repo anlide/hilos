@@ -514,9 +514,16 @@ export function createHilosChannelFields(
     start() {
       teardown = [
         ...bindTable(context, page, FIELDS_TABLE, controller),
-        subscribeSignal(channel, (value) =>
-          controller.setFilter(FIELDS_FILTER_CHANNEL, value),
-        ),
+        subscribeSignal(channel, (value) => {
+          if (controller.windowControlsAvailable.get()) {
+            controller.setFilter(FIELDS_FILTER_CHANNEL, value)
+          } else {
+            const filter = { ...controller.filter.get() }
+            if (value === '') delete filter[FIELDS_FILTER_CHANNEL]
+            else filter[FIELDS_FILTER_CHANNEL] = value
+            controller.initializeFilter(filter)
+          }
+        }),
       ]
     },
     dispose() {

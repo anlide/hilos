@@ -71,6 +71,7 @@ function makeController(
   options: {
     refused?: (row: unknown) => boolean
     expandable?: (row: unknown) => boolean
+    known?: boolean
   } = {},
 ): {
   controller: TableViewportController<unknown>
@@ -87,6 +88,18 @@ function makeController(
       : {}),
   })
 
+  if (options.known !== false)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
   return { controller, sent }
 }
 
@@ -106,7 +119,7 @@ describe('HilosViewportTable', () => {
     const controller = new TableViewportController<unknown>({
       resolve: (row) => ({ name: String(row.slots.name) }),
       sendViewport: (descriptor) => sent.push(descriptor),
-      initialFilterInSubscription: true,
+
       frame: { title: 'List', columns: COLUMNS },
     })
     controller.ingestRefusal('internal_error')
@@ -145,6 +158,7 @@ describe('HilosViewportTable', () => {
         null,
         37,
         undefined,
+        {},
         [],
       )
       await nextTick()
@@ -256,6 +270,7 @@ describe('HilosViewportTable', () => {
       null,
       20,
       [{ field: 'name', direction: 'asc' }],
+      {},
       [],
     )
     const wrapper = mountTable(controller)
@@ -1871,7 +1886,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
   })
 
   it('says loading and then the page own empty words in both branches', async () => {
-    const { controller } = makeController(CARD_FRAME)
+    const { controller } = makeController(CARD_FRAME, { known: false })
     const wrapper = mount(HilosViewportTable, {
       props: { controller },
       slots: {
@@ -5174,6 +5189,17 @@ describe('HilosViewportTable Tiles mount', () => {
       })
       const wrapper = mountTable(f.controller)
       f.controller.setView('tiles')
+      f.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
       if (state === 'empty_page') {
         f.controller.ingestWindow(
           [{ rowKey: 'a', slots: { name: 'Earlier row' } }],

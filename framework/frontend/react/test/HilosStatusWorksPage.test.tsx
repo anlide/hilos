@@ -229,7 +229,7 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
         ])
       }
     }
-    h.window([], worksData, { search: 'no-match' })
+    h.window([], worksData, { search: 'no-match', componentKey: 'queue' })
     expect(document.body.textContent).toContain('Nothing found')
     fireEvent.click(get('hilos-table-filter-reset'))
     h.window([])

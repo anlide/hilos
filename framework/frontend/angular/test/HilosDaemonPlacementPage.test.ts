@@ -451,6 +451,7 @@ describe('HilosDaemonPlacementPage live windows', () => {
         payload: {
           windows: {
             hilosDaemonPlacement: {
+              filter: {},
               rows,
               totalCount: 2,
               totalExact: true,

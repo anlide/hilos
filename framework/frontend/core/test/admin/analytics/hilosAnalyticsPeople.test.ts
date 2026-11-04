@@ -62,6 +62,7 @@ function windowSection(
   changes: Partial<TableWindowSectionWire> = {},
 ): TableWindowSectionWire {
   return {
+    filter: {},
     rows: [],
     totalCount: 0,
     totalExact: true,
@@ -611,7 +612,9 @@ describe('Analytics People table lifecycle', () => {
     fixture.coldWindow()
     fixture.answer()
     expect(fixture.facets).toHaveLength(1)
-    fixture.coldWindow()
+    fixture.coldWindow(
+      windowSection({ filter: { ...CONTEXT, period: 'today' } }),
+    )
     expect(fixture.facets).toHaveLength(2)
     expect(fixture.sent).toHaveLength(1)
   })

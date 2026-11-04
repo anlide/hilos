@@ -147,7 +147,10 @@ describe('hasCustomValue', () => {
 describe('createHilosSettingsTable', () => {
   it('shows the catalog empty message only for an unfiltered empty window', () => {
     const context = {
-      connection: { sendTableViewport: () => undefined },
+      connection: {
+        sendTableViewport: () => undefined,
+        sendTableRendered: () => true,
+      },
       scopes: {},
       actions: {},
     } as unknown as HilosSettingsContext
@@ -155,7 +158,17 @@ describe('createHilosSettingsTable', () => {
 
     expect(controller.frame.body.get()).toBe('loading')
 
-    controller.ingestWindow([], 0, true, null, null, 10)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
 
     expect(controller.frame.body.get()).toBe('empty')
     expect(controller.frame.declaration.empty).toEqual({

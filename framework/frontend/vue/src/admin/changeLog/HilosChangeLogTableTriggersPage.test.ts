@@ -153,7 +153,7 @@ describe('HilosChangeLogTableTriggersPage', () => {
       TABLE,
       expect.anything(),
     )
-    h.pushMetadataWindow(PAGE, TABLE, rows, true)
+    h.pushMetadataWindow(PAGE, TABLE, rows, true, { filter: {} })
     expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(1)
     expect(h.connection.sendTableViewport).toHaveBeenLastCalledWith(
       PAGE,

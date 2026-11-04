@@ -43,6 +43,7 @@ function recordingContext(
     on: () => () => {},
     registerTableWindow: () => {},
     unregisterTableWindow: () => {},
+    sendTableRendered: () => true,
     sendTableRowFocus: () => {},
     sendTableViewport: (
       page: string,
@@ -71,14 +72,31 @@ describe('resolveHilosI18nLocaleRow', () => {
       subject,
     )
     table.start()
-    table.controller.ingestWindow([], 0, true, null, null, 100)
+    table.controller.ingestRefusal('internal_error')
+    subject.set(12)
+    expect(table.controller.filter.get()).toEqual({ language: 12 })
+    subject.set(null)
+    expect(table.controller.filter.get()).toEqual({})
     expect(sent).toEqual([])
+    subject.set(14)
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      100,
+      undefined,
+      { language: 14 },
+      [],
+    )
     subject.set(12)
     expect(sent.at(-1)?.filter).toEqual({ language: 12 })
     subject.set(null)
     expect(sent.at(-1)?.filter).toEqual({})
     expect(sent).toHaveLength(2)
     table.dispose()
+    table.controller.dispose()
   })
 
   it('reads the pair, the country and the locale with its switch', () => {
@@ -280,6 +298,17 @@ describe('createHilosI18nLanguageLocalesTable', () => {
     expect(table.controller.filter.get()).toEqual({ language: 12 })
 
     table.start()
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      100,
+      undefined,
+      { language: 12 },
+      [],
+    )
     language.set(11)
 
     expect(sent.at(-1)?.filter).toEqual({ language: 11 })

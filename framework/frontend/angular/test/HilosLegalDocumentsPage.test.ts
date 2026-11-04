@@ -78,6 +78,7 @@ function pageAnswer(policy: unknown, rows: TableRow[]) {
     payload: {
       windows: {
         [DOCUMENTS]: {
+          filter: {},
           rows,
           totalCount: rows.length,
           totalExact: true,
@@ -87,6 +88,7 @@ function pageAnswer(policy: unknown, rows: TableRow[]) {
           sort: [{ field: 'publishedOn', direction: 'desc' }],
         },
         [SETTINGS]: {
+          filter: {},
           rows: [
             {
               rowKey: 'legal.refusal_after_deadline',

@@ -158,6 +158,7 @@ function world(
         },
         windows: {
           [tableKey]: {
+            filter: {},
             rows: published
               ? rows.map((revision) => ({
                   rowKey: revision.revisionId,
@@ -358,6 +359,7 @@ describe.each(['terms', 'privacy'] as const)(
         null,
         25,
         undefined,
+        {},
         [],
       )
       expect(() => w.history.controller.rows.get()).toThrow()

@@ -106,6 +106,7 @@ function backend() {
         },
         windows: {
           [TABLE]: {
+            filter: {},
             rows: rows.map(wire),
             sort: [],
             limit: 50,

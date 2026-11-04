@@ -1314,7 +1314,14 @@ export function createHilosBackupsTable(
   const syncTimeZone = (timeZone: string): void => {
     initialFilter[BACKUP_FILTER_TIME_ZONE] = timeZone
     if (controller.filter.get()[BACKUP_FILTER_TIME_ZONE] !== timeZone) {
-      controller.setFilters({ [BACKUP_FILTER_TIME_ZONE]: timeZone })
+      if (controller.windowControlsAvailable.get()) {
+        controller.setFilters({ [BACKUP_FILTER_TIME_ZONE]: timeZone })
+      } else {
+        controller.initializeFilter({
+          ...controller.filter.get(),
+          [BACKUP_FILTER_TIME_ZONE]: timeZone,
+        })
+      }
     }
   }
 

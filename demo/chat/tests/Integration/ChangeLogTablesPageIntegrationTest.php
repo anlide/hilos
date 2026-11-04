@@ -21,6 +21,7 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
@@ -137,7 +138,16 @@ final class ChangeLogTablesPageIntegrationTest extends IntegrationTestCase
         $viewerPayload = $this->subscribe('change-log-tables-viewer');
         self::assertSame($adminPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS],
             $viewerPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS]);
-        self::assertSame($adminPayload->windows, $viewerPayload->windows);
+        $adminWindows = $adminPayload->windows;
+        $viewerWindows = $viewerPayload->windows;
+        self::assertSame(array_keys($adminWindows), array_keys($viewerWindows));
+        foreach ($adminWindows as $windowKey => $adminWindow) {
+            $adminWindows[$windowKey] = $this->windowWithoutFilter($adminWindow, []);
+            $viewerWindows[$windowKey] = $this->windowWithoutFilter($viewerWindows[$windowKey], []);
+        }
+        self::assertSame($adminWindows, $viewerWindows);
+        self::assertStringContainsString('"filter":{}', json_encode($adminPayload->toArray(), JSON_THROW_ON_ERROR));
+        self::assertStringContainsString('"filter":{}', json_encode($viewerPayload->toArray(), JSON_THROW_ON_ERROR));
         $reopened = $this->subscribe('change-log-tables-viewer');
         self::assertSame($viewerPayload->data[ChangeLogNoisyPage::NOISY_COLUMNS],
             $reopened->data[ChangeLogNoisyPage::NOISY_COLUMNS]);
@@ -166,6 +176,23 @@ final class ChangeLogTablesPageIntegrationTest extends IntegrationTestCase
             self::assertStringNotContainsString('Change log tables admin', $wire);
             self::assertStringNotContainsString('Change log tables viewer', $wire);
         }
+    }
+
+    /**
+     * Checks the applied filter and returns the remainder of a copied window.
+     *
+     * @param array<string, mixed> $window Window whose filter is checked
+     * @param array<string, mixed> $expectedFilter Exact expected filter map
+     * @return array<string, mixed> Window with its checked filter removed
+     */
+    private function windowWithoutFilter(array $window, array $expectedFilter): array
+    {
+        self::assertArrayHasKey(TableWindowDescriptorDTO::FILTER, $window);
+        self::assertIsObject($window[TableWindowDescriptorDTO::FILTER]);
+        self::assertSame($expectedFilter, (array)$window[TableWindowDescriptorDTO::FILTER]);
+        unset($window[TableWindowDescriptorDTO::FILTER]);
+
+        return $window;
     }
 
     /**

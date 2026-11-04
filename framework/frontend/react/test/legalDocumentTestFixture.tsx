@@ -160,8 +160,9 @@ function rowsFor(page: HilosPageKey, rows?: TableRow[]): TableRow[] {
   ]
 }
 
-function windowOf(page: HilosPageKey, rows: TableRow[]) {
+function windowOf(page: HilosPageKey, rows: TableRow[], document: string) {
   return {
+    filter: page === HilosPages.LEGAL_DOCUMENT ? {} : { document },
     rows,
     totalCount: rows.length,
     totalExact: true,
@@ -230,7 +231,7 @@ export function legalDocumentTestHarness(
       page,
       payload: {
         windows: {
-          [tableKey]: windowOf(page, tableRows),
+          [tableKey]: windowOf(page, tableRows, documentKey),
         },
       },
     },

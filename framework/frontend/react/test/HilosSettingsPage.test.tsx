@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { z } from 'zod'
-import { HIDDEN_VALUE } from '@hilos/core/base'
+import { type TableViewportController, HIDDEN_VALUE } from '@hilos/core/base'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -142,9 +142,23 @@ function seededContext(initial: SettingSlot[]): {
   }
 
   const connection = {
-    registerTableWindow(): void {
-      serveWindow()
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        rows.map((settings) => ({ rowKey: settings.key, slots: { settings } })),
+        rows.length,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
     },
+    sendTableRendered: () => true,
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(

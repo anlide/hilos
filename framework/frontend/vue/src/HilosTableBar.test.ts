@@ -27,6 +27,7 @@ function makeController(
   frame: HilosTableFrame,
   initialFilter?: Record<string, unknown>,
   declaredOrders?: readonly HilosTableSortOrder[],
+  known = true,
 ): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
@@ -39,6 +40,19 @@ function makeController(
     frame,
     declaredOrders,
   })
+
+  if (known)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      initialFilter ?? {},
+      [],
+    )
 
   return { controller, sent }
 }
@@ -86,6 +100,7 @@ function makeOrdered(
     { title: 'Deliveries', columns },
     undefined,
     declaredOrders,
+    false,
   )
   made.controller.ingestSubscriptionWindow(
     [],
@@ -95,6 +110,7 @@ function makeOrdered(
     null,
     20,
     OPENING_ORDER,
+    {},
     [],
   )
 
@@ -126,7 +142,7 @@ describe('HilosTableBar', () => {
         resolve: (row) => row,
         sendViewport: (descriptor) => sent.push(descriptor),
         initialFilter: { document: 'terms', unread: true },
-        initialFilterInSubscription: true,
+
         frame: {
           columns: [{ key: 'name', label: 'Name', sortable: true }],
           search: {},
@@ -195,6 +211,7 @@ describe('HilosTableBar', () => {
           null,
           37,
           undefined,
+          { document: 'terms', unread: true },
           [],
         )
         await nextTick()
@@ -343,6 +360,7 @@ describe('HilosTableBar', () => {
       },
       undefined,
       [],
+      false,
     )
     controller.ingestSubscriptionWindow(
       [],
@@ -352,6 +370,7 @@ describe('HilosTableBar', () => {
       null,
       20,
       OPENING_ORDER,
+      {},
       [],
     )
     const wrapper = mountBar(controller)

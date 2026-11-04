@@ -206,7 +206,15 @@ export function createHilosI18nLanguageLocalesTable(
         subscribeSignal(language, (value) => {
           controller.releaseFocus()
           if (value !== null) hasSubject = true
-          controller.setFilter(HILOS_I18N_LANGUAGE_LOCALES_FILTER, value)
+          if (controller.windowControlsAvailable.get()) {
+            controller.setFilter(HILOS_I18N_LANGUAGE_LOCALES_FILTER, value)
+          } else {
+            const filter = { ...controller.filter.get() }
+            if (value === null)
+              delete filter[HILOS_I18N_LANGUAGE_LOCALES_FILTER]
+            else filter[HILOS_I18N_LANGUAGE_LOCALES_FILTER] = value
+            controller.initializeFilter(filter)
+          }
         }),
       ]
     },

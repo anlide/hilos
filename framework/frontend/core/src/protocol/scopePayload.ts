@@ -96,9 +96,9 @@ export type TableProgressWire = z.infer<typeof tableProgressSectionSchema>
  *
  * The same rows and the same coordinates a `table_window` reply carries — it is one window
  * either way — plus the order it ran in, which the reply leaves out because the client asked
- * for it there and here nobody did. The filter is deliberately absent: on a cold entry it is
- * empty, and on a reconnect the tab sent it and still holds it, so a second source of truth
- * about it could only disagree.
+ * for it there and here nobody did. The required `filter` map names the filter actually used
+ * to build this window, after the route preset, reported or held descriptor and viewer scope
+ * were resolved. An empty filter is an object, never an array.
  *
  * The work running on the table rides along under `progress`, without an address: the section
  * already stands under the table's own key. It is absent rather than empty when nothing is
@@ -115,6 +115,7 @@ export const tableWindowSectionSchema = z.looseObject({
       direction: z.enum(['asc', 'desc']),
     }),
   ),
+  filter: z.record(z.string(), z.unknown()),
   limit: z.number().int(),
   totalCount: z.number().int(),
   totalExact: z.boolean(),

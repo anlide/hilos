@@ -164,6 +164,8 @@ export function documentHarness(
     },
   ]
   const windowOf = (rows: TableRow[]) => ({
+    filter:
+      tableKey === 'hilosLegalSettings' ? {} : { document: routeDocument },
     rows,
     totalCount: rows.length,
     totalExact: true,

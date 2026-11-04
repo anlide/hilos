@@ -215,6 +215,17 @@ describe('the worker table descriptor', () => {
   it('sends the type filter to the server rather than narrowing the window here', () => {
     const { table, sent } = tableOnAStubConnection()
 
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     table.controller.setFilter(
       WORKER_FILTER_TYPE,
       HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
@@ -228,6 +239,17 @@ describe('the worker table descriptor', () => {
   it('sends a chosen ordering to the server too', () => {
     const { table, sent } = tableOnAStubConnection()
 
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     table.controller.setSort('key')
 
     expect(sent.at(-1)?.descriptor.sort).toEqual([
@@ -273,6 +295,17 @@ describe('the worker table frame', () => {
   it('manages the type toggle filter', () => {
     const { table, sent } = tableOnAStubConnection()
 
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     table.controller.setFilter(
       WORKER_FILTER_TYPE,
       HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
@@ -372,6 +405,7 @@ describe('the worker table frame', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     const singleNodeRendered = singleNode.sentRendered[0]?.rendered ?? []
@@ -402,6 +436,7 @@ describe('the worker table frame', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

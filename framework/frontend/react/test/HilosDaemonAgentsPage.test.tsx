@@ -9,6 +9,7 @@ import {
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type TableViewportController,
   ActionError,
   bindAdminAccess,
   ScopeManager,
@@ -64,7 +65,21 @@ function harness(showLogLinks?: boolean) {
   } as unknown as HilosRouter
   const listeners = new Map<string, Set<(payload: never) => void>>()
   const unregister = vi.fn()
-  const register = vi.fn<HilosConnection['registerTableWindow']>()
+  const register = vi.fn(
+    (_key: string, controller: TableViewportController<unknown>) => {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        { node: 'n1' },
+        [],
+      )
+    },
+  )
   const focus = vi.fn()
   const connection = {
     on(event: string, callback: (payload: never) => void) {

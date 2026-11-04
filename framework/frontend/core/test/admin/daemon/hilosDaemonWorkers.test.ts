@@ -130,6 +130,7 @@ describe('daemon workers viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

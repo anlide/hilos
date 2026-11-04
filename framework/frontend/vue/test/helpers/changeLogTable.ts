@@ -259,6 +259,7 @@ function harness(section: unknown = BOT) {
         payload: {
           windows: {
             [HISTORY]: {
+              filter: {},
               rows: [],
               totalCount: 0,
               totalExact: true,
@@ -282,6 +283,7 @@ function harness(section: unknown = BOT) {
     extra: Record<string, unknown> = {},
   ) {
     const window = {
+      filter: { table: BOT.name },
       rows,
       totalCount: rows.length,
       totalExact: true,

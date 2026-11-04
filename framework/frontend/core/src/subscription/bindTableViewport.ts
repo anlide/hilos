@@ -164,6 +164,7 @@ export function bindTableViewport(
           window.lastAnchor,
           window.limit,
           toSortOrder(window.sort),
+          window.filter,
           toProgressFrames(window.progress),
           window.rowsBefore ?? null,
         )

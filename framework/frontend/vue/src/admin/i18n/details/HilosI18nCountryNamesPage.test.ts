@@ -1,5 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
+  type TableViewportController,
   ActionError,
   createSignal,
   bindAdminAccess,
@@ -189,7 +190,21 @@ function seededContext(initialRows: Array<Record<string, unknown>> = []): {
       }
       return () => {}
     },
-    registerTableWindow(): void {
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
       serveWindow()
     },
     unregisterTableWindow(): void {},

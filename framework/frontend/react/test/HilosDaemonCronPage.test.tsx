@@ -29,10 +29,21 @@ function transport(initialProjectTimeZone?: string) {
   let projectTimeZone = initialProjectTimeZone
   const listeners = new Map<string, Set<(payload: never) => void>>()
   const unregister = vi.fn()
-  const register =
-    vi.fn<
-      (tableKey: string, source: TableViewportController<unknown>) => void
-    >()
+  const register = vi.fn(
+    (_key: string, controller: TableViewportController<unknown>) => {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        { node: 'n1' },
+        [],
+      )
+    },
+  )
   const focus = vi.fn()
   const sendViewport = vi.fn<HilosConnection['sendTableViewport']>(() => true)
   const connection = {
@@ -123,6 +134,7 @@ function harness(projectTimeZone?: string) {
                 payload: {
                   windows: {
                     hilosDaemonCron: {
+                      filter: {},
                       rows: [],
                       totalCount: 0,
                       totalExact: true,

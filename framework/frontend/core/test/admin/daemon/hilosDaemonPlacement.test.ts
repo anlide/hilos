@@ -252,6 +252,7 @@ describe('daemon placement viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(sentRendered).toHaveLength(1)
@@ -388,6 +389,17 @@ function stubView() {
     )
   }
   view.start()
+  view.controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    25,
+    undefined,
+    {},
+    [],
+  )
   window()
   return { ...h, overview, view, window }
 }
@@ -722,6 +734,7 @@ describe('Placement table address', () => {
     const h = stubTable([])
     h.table.start()
     const window = {
+      filter: {},
       rows: [rawRow('x', { agentType: 'x' })],
       totalCount: 1,
       totalExact: true,

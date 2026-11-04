@@ -261,6 +261,7 @@ type Listener = (signal: { type?: string; data: unknown }) => void
  */
 function windowOf(rows: TableRow[]) {
   return {
+    filter: {},
     rows,
     totalCount: rows.length,
     totalExact: true,

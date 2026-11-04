@@ -154,13 +154,16 @@ function controller(
     },
   })
   controllers.push(c)
-  c.ingestWindow(
+  c.ingestSubscriptionWindow(
     [{ rowKey: 'a', slots: { name: value } }],
     1,
     true,
     null,
     null,
     10,
+    undefined,
+    {},
+    [],
   )
   return c
 }

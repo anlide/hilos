@@ -577,7 +577,6 @@ function tableFor<R>(
                 ? { [LEGAL_REVISION_FILTER]: revisionId.get() }
                 : {}),
             },
-            initialFilterInSubscription: true,
           }
         : {}),
       frame,

@@ -207,6 +207,7 @@ export function daemonHarness<T>(
             payload: {
               windows: {
                 [tableKey]: {
+                  filter: {},
                   rows,
                   totalCount: rows.length,
                   totalExact: true,

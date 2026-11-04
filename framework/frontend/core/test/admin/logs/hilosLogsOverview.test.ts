@@ -1157,6 +1157,7 @@ describe('logsOverviewThresholdPassed and its note', () => {
         payload: {
           windows: {
             hilosLogNodes: {
+              filter: {},
               rows: [
                 {
                   rowKey: 'node-1',

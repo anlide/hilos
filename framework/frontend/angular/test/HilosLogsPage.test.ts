@@ -139,6 +139,7 @@ function makeConnection() {
     }
   }
   const window = (rows: HilosLogNodeRow[], totalCount = rows.length) => ({
+    filter: {},
     rows: rows.map((slot) => ({
       rowKey: slot.nodeId,
       slots: { node: { ...slot } },

@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Core\Exception\MalformedInput;
 use Hilos\Core\Exception\NonArrayPayloadException;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\HilosException;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\Exception\UnknownWorkerMessageTypeException;
@@ -74,6 +80,10 @@ abstract class WorkerDTO extends BaseDTO
     // Field name constants
     public const string TYPE = 'type';
 
+    private const string PAGE_RESPONSE_JSON_WHITESPACE = " \t\r\n";
+
+    private const string PAGE_RESPONSE_JSON_STRING_BOUNDARIES = '"\\';
+
     /**
      * Get message type.
      *
@@ -85,6 +95,8 @@ abstract class WorkerDTO extends BaseDTO
      * Factory method to create WorkerDTO from JSON string.
      *
      * Parses JSON, determines message type, and creates appropriate DTO instance.
+     * Typed page responses keep their applied filter subtrees from the original JSON;
+     * the other fields and message types retain the shared associative decoding.
      *
      * Every way a frame can fail here is a way the input could not be parsed, so each
      * refusal is one that carries {@see MalformedInput}: the reader of the log asks the
@@ -110,6 +122,10 @@ abstract class WorkerDTO extends BaseDTO
         $type = $data[self::TYPE] ?? null;
         if (!is_string($type) || $type === '') {
             throw new InvalidFormatException('Message type is missing');
+        }
+
+        if ($type === WorkerAgentMessageDTO::MESSAGE_TYPE) {
+            $data = self::restorePageResponseFilters($data, $json);
         }
 
         return match ($type) {
@@ -166,5 +182,190 @@ abstract class WorkerDTO extends BaseDTO
             WorkerProtectedModeRefreezeDTO::MESSAGE_TYPE => WorkerProtectedModeRefreezeDTO::fromArray($data),
             default => throw new UnknownWorkerMessageTypeException($type),
         };
+    }
+
+    /**
+     * Preserves object/list shape only inside existing typed page-response window filters.
+     *
+     * Only page responses with windows inspect the already validated JSON a second time.
+     * Object-mode decoding of the whole frame would reject otherwise valid NUL-prefixed
+     * keys in unrelated sections. Those sections keep the shared associative decoding.
+     * Envelope selection retains byte ranges in the immutable frame, never raw subtrees.
+     *
+     * @param array<string, mixed> $data Worker frame decoded by the shared reader
+     * @param string $json Original, already validated JSON frame
+     * @return array<string, mixed> Worker frame with the original nested filter shapes
+     */
+    private static function restorePageResponseFilters(array $data, string $json): array
+    {
+        $signal = $data[WorkerAgentMessageDTO::SIGNAL] ?? null;
+        if (!is_array($signal)
+            || ($signal['signalName'] ?? null) !== SignalTypeConstants::PAGE_RESPONSE
+            || ($signal[SignalPayloadConstants::FIELD_DATA_TYPE] ?? null) !== WebSocketSignalData::class
+            || ($signal[SignalPayloadConstants::FIELD_DATA][SignalPayloadConstants::FIELD_DATA_TYPE] ?? null) !== PageResponseSignalData::class
+        ) {
+            return $data;
+        }
+
+        $windows = $signal[SignalPayloadConstants::FIELD_DATA][SignalPayloadConstants::FIELD_DATA]
+            [PageResponseSignalData::payload][PagePayload::windows] ?? null;
+        if (!is_array($windows) || $windows === []) {
+            return $data;
+        }
+
+        $windowsRange = [0, strlen($json)];
+        foreach ([
+            WorkerAgentMessageDTO::SIGNAL, SignalPayloadConstants::FIELD_DATA,
+            SignalPayloadConstants::FIELD_DATA, PageResponseSignalData::payload, PagePayload::windows,
+        ] as $key) {
+            $windowsRange = self::pageResponseJsonMembers($json, ...$windowsRange)[$key] ?? null;
+            if ($windowsRange === null || $json[$windowsRange[0]] !== '{') {
+                return $data;
+            }
+        }
+
+        foreach (self::pageResponseJsonMembers($json, ...$windowsRange) as $tableKey => $windowRange) {
+            $filterRange = self::pageResponseJsonMembers($json, ...$windowRange)[TableWindowDescriptorDTO::FILTER] ?? null;
+            if ($filterRange !== null && $json[$filterRange[0]] === '{' && is_array($windows[$tableKey] ?? null)) {
+                $offset = $filterRange[0];
+                $windows[$tableKey][TableWindowDescriptorDTO::FILTER] = (array) self::pageResponseFilterValue($json, $offset, $filterRange[1]);
+            }
+        }
+        $signal[SignalPayloadConstants::FIELD_DATA][SignalPayloadConstants::FIELD_DATA]
+            [PageResponseSignalData::payload][PagePayload::windows] = $windows;
+        $data[WorkerAgentMessageDTO::SIGNAL] = $signal;
+
+        return $data;
+    }
+
+    /**
+     * Consumes one filter value in a single forward traversal of the immutable frame.
+     * Only decoded children and O(depth) cursors survive recursion, never raw container copies.
+     * Only list-shaped object maps need a cast; associative maps retain NUL-prefixed keys.
+     *
+     * @param string $json Original worker frame, already validated by the native decoder
+     * @param int $offset Value start, advanced just past the consumed value
+     * @param int $end Exclusive upper bound of the selected filter in the frame
+     * @return mixed Filter value with its original JSON container shapes
+     */
+    private static function pageResponseFilterValue(string $json, int &$offset, int $end): mixed
+    {
+        $offset += strspn($json, self::PAGE_RESPONSE_JSON_WHITESPACE, $offset, $end - $offset);
+        if ($json[$offset] !== '{' && $json[$offset] !== '[') {
+            return self::pageResponseJsonScalarValue($json, $offset, $end);
+        }
+
+        $isObject = $json[$offset] === '{';
+        $offset++;
+        $filter = [];
+        while ($offset < $end) {
+            $offset += strspn($json, self::PAGE_RESPONSE_JSON_WHITESPACE, $offset, $end - $offset);
+            if ($json[$offset] === '}' || $json[$offset] === ']') {
+                $offset++;
+                break;
+            }
+            if ($isObject) {
+                $key = self::pageResponseJsonScalarValue($json, $offset, $end);
+                $offset += strspn($json, self::PAGE_RESPONSE_JSON_WHITESPACE, $offset, $end - $offset);
+                $offset++;
+                $filter[$key] = self::pageResponseFilterValue($json, $offset, $end);
+            } else {
+                $filter[] = self::pageResponseFilterValue($json, $offset, $end);
+            }
+            $offset += strspn($json, self::PAGE_RESPONSE_JSON_WHITESPACE, $offset, $end - $offset);
+            if ($json[$offset] === ',') {
+                $offset++;
+            }
+        }
+
+        return $isObject && array_is_list($filter) ? (object) $filter : $filter;
+    }
+
+    /**
+     * Reads one validated scalar or object key with native JSON scalar semantics.
+     * The only raw slice lives for this decode; no container is materialized as a string.
+     *
+     * @param string $json Original, already validated worker frame
+     * @param int $offset First non-whitespace byte, advanced just past the scalar
+     * @param int $end Exclusive upper bound of the selected filter in the frame
+     * @return mixed Decoded scalar or string key
+     */
+    private static function pageResponseJsonScalarValue(string $json, int &$offset, int $end): mixed
+    {
+        $start = $offset;
+        if ($json[$offset] === '"') {
+            $offset++;
+            while ($offset < $end) {
+                $offset += strcspn($json, self::PAGE_RESPONSE_JSON_STRING_BOUNDARIES, $offset, $end - $offset);
+                if ($json[$offset] === '"') {
+                    $offset++;
+                    break;
+                }
+                $offset += 2;
+            }
+        } else {
+            $offset += strcspn($json, ',]}' . self::PAGE_RESPONSE_JSON_WHITESPACE, $offset, $end - $offset);
+        }
+
+        return json_decode(substr($json, $start, $offset - $start), true);
+    }
+
+    /**
+     * Selects child byte ranges only along the fixed typed envelope/window path.
+     * The native decoder has already checked syntax and nesting. This boundary scan skips
+     * quoted/escaped bytes without copying containers; filter recursion uses its own cursor.
+     *
+     * @param string $json Original, already validated worker frame
+     * @param int $start Inclusive start of the selected value, possibly preceded by whitespace
+     * @param int $end Exclusive end of the selected value in the frame
+     * @return array<string|int, array{int, int}> Half-open child ranges; empty for a scalar or empty container
+     */
+    private static function pageResponseJsonMembers(string $json, int $start, int $end): array
+    {
+        $start += strspn($json, self::PAGE_RESPONSE_JSON_WHITESPACE, $start, $end - $start);
+        if ($json[$start] !== '{' && $json[$start] !== '[') {
+            return [];
+        }
+
+        $members = [];
+        $start++;
+        $colon = null;
+        $depth = 0;
+        for ($offset = $start; $offset < $end; $offset++) {
+            $offset += strcspn($json, '"{}[],:', $offset, $end - $offset);
+            $byte = $json[$offset];
+            if ($byte === '"') {
+                $offset++;
+                while ($offset < $end) {
+                    $offset += strcspn($json, self::PAGE_RESPONSE_JSON_STRING_BOUNDARIES, $offset, $end - $offset);
+                    if ($json[$offset] === '"') {
+                        break;
+                    }
+                    $offset += 2;
+                }
+                continue;
+            }
+            if ($byte === '{' || $byte === '[') {
+                $depth++;
+            } elseif (($byte === '}' || $byte === ']') && $depth > 0) {
+                $depth--;
+            } elseif ($depth === 0 && $byte === ':') {
+                $colon = $offset;
+            } elseif ($depth === 0 && ($byte === ',' || $byte === '}' || $byte === ']')) {
+                $valueStart = $colon === null ? $start : $colon + 1;
+                $valueStart += strspn($json, self::PAGE_RESPONSE_JSON_WHITESPACE, $valueStart, $offset - $valueStart);
+                if ($valueStart < $offset) {
+                    $key = $colon === null ? count($members) : json_decode(substr($json, $start, $colon - $start), true);
+                    $members[$key] = [$valueStart, $offset];
+                }
+                if ($byte !== ',') {
+                    break;
+                }
+                $start = $offset + 1;
+                $colon = null;
+            }
+        }
+
+        return $members;
     }
 }

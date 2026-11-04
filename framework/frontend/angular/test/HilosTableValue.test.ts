@@ -93,13 +93,16 @@ function controller(
     frame,
   })
   controllers.push(result)
-  result.ingestWindow(
+  result.ingestSubscriptionWindow(
     [{ rowKey: 'a', slots: { name: 'Long plain text' } }],
     1,
     true,
     null,
     null,
     10,
+    undefined,
+    {},
+    [],
   )
   return result
 }

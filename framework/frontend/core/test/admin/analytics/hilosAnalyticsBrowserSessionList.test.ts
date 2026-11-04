@@ -21,9 +21,10 @@ import {
 } from '../../../src/admin/analytics/index.js'
 import { type HilosAnalyticsContext } from '../../../src/admin/analytics/hilosAnalytics.js'
 import {
-  type HilosConnection,
+  HilosConnection,
   type TableViewportDescriptor,
   type TableWindowDescriptorSource,
+  type WebSocketLike,
 } from '../../../src/connection/HilosConnection.js'
 import { formatSnapshotMoment } from '../../../src/format/moment.js'
 import { parseSignalValue } from '../../../src/protocol/parseSignal.js'
@@ -32,6 +33,10 @@ import {
   type PageResponseWire,
   type TableWindowSectionWire,
 } from '../../../src/protocol/scopePayload.js'
+import {
+  bindPageScope,
+  PAGE_SIGNAL_SCHEMAS,
+} from '../../../src/subscription/bindPageScope.js'
 import { createAppPageRouter } from '../../../src/routing/appPageRouter.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
@@ -70,6 +75,7 @@ function windowSection(
   changes: Partial<TableWindowSectionWire> = {},
 ): TableWindowSectionWire {
   return {
+    filter: {},
     rows: [],
     totalCount: 0,
     totalExact: true,
@@ -649,6 +655,239 @@ describe('Analytics browser-session list controller', () => {
     expect(fixture.replaced).toEqual([])
   })
 
+  it('updates the opening seed when the route changes after start before metadata without an intermediate request', () => {
+    vi.useFakeTimers()
+    const fixture = stubTable('/today')
+    fixture.table.start()
+    fixture.currentRoute.set(router.match(`${ROOT}/this-hour`))
+    fixture.currentRoute.set(router.match(`${ROOT}/this-week`))
+    expect(fixture.table.controller.filter.get()).toEqual({
+      ...CONTEXT,
+      period: 'this-week',
+    })
+    expect(fixture.table.controller.windowControlsAvailable.get()).toBe(false)
+    expect(fixture.sent).toEqual([])
+    expect(fixture.facets).toEqual([])
+    expect(fixture.rendered).toEqual([])
+    expect(fixture.replaced).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+    fixture.coldWindow()
+    expect(fixture.sent).toHaveLength(1)
+    expect(fixture.sent[0]?.descriptor.filter).toEqual({
+      ...CONTEXT,
+      period: 'this-week',
+    })
+    expect(fixture.table.controller.descriptor()).toMatchObject({
+      filter: { ...CONTEXT, period: 'this-week' },
+      limit: 25,
+      sort: [{ field: 'lastSeenTs', direction: 'desc' }],
+      anchor: null,
+      pageIndex: null,
+    })
+    expect(fixture.table.controller.loaded.get()).toBe(false)
+    expect(fixture.table.controller.rows.get()).toEqual([])
+    fixture.answer()
+    expect(fixture.table.controller.descriptor(true)?.filter).toEqual({
+      ...CONTEXT,
+      period: 'this-week',
+    })
+    expect(fixture.sent).toHaveLength(1)
+    expect(fixture.table.periodContext).toEqual(CONTEXT)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('restores the original opening and current address after a silent Period URL change and access replacement', () => {
+    vi.useFakeTimers()
+    const listeners = new Map<string, (event: { data?: unknown }) => void>()
+    const sent: Array<Record<string, unknown>> = []
+    const socket: WebSocketLike = {
+      send: (text) => sent.push(JSON.parse(String(text))),
+      close: () => {},
+      addEventListener: (event, listener) => listeners.set(event, listener),
+    }
+    const connection = new HilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: () => socket,
+      projectSchemas: PAGE_SIGNAL_SCHEMAS,
+    })
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes)
+    const page = HilosPages.ANALYTICS_BROWSER_SESSIONS
+    const currentRoute = createSignal(router.match(`${ROOT}/today`))
+    const address = {
+      currentRoute,
+      replacePath: vi.fn((path: string) =>
+        currentRoute.set(router.match(path)),
+      ),
+    }
+    const create = () => {
+      const table = createHilosAnalyticsBrowserSessionListTable(
+        { connection, scopes },
+        address,
+        { periodContext: CONTEXT },
+      )
+      TABLES.push(table)
+      return table
+    }
+    const receive = (type: string, data: unknown) =>
+      listeners.get('message')?.({ data: JSON.stringify({ type, data }) })
+    const answer = (window: TableWindowSectionWire) =>
+      receive('page_response', {
+        page,
+        payload: {
+          windows: { [ANALYTICS_BROWSER_SESSION_LIST_TABLE]: window },
+        },
+      })
+    const viewports = () =>
+      sent.filter((frame) => frame.type === 'table_viewport')
+    const reply = (window: TableWindowSectionWire) =>
+      receive('table_window', {
+        page,
+        tableKey: ANALYTICS_BROWSER_SESSION_LIST_TABLE,
+        ...window,
+        requestId: viewports().at(-1)?.requestId,
+      })
+    connection.connect()
+    listeners.get('open')?.({})
+    pages.releaseOnSession()
+    pages.subscribe(page, { period: 'today' })
+    try {
+      const table = create()
+      table.start()
+      answer(windowSection({ filter: { ...CONTEXT, period: 'today' } }))
+      const c = table.controller
+      c.setFilter('period', 'this-week')
+      c.setSearch('retained')
+      c.setOrder([{ field: 'lastSeenTs', direction: 'asc' }])
+      const currentWindow = windowSection({
+        filter: { ...CONTEXT, period: 'this-week', search: 'retained' },
+        rows: [{ ...rawRow() }],
+        totalCount: 100,
+        sort: [{ field: 'lastSeenTs', direction: 'asc' }],
+        firstAnchor: { rowKey: 9 },
+        lastAnchor: { rowKey: 9 },
+      })
+      reply(currentWindow)
+      c.setPage(2)
+      reply({ ...currentWindow, rowsBefore: 50 })
+      expect(address.replacePath).toHaveBeenCalledExactlyOnceWith(
+        `${ROOT}/this-week`,
+      )
+      expect(
+        sent.filter((frame) => frame.type === 'page_subscribe'),
+      ).toHaveLength(1)
+      const retained = c.retainWindow()!
+      expect(retained.opening).toMatchObject({
+        filter: { ...CONTEXT, period: 'today' },
+        sort: [{ field: 'lastSeenTs', direction: 'desc' }],
+      })
+      expect(retained.current).toMatchObject({
+        filter: currentWindow.filter,
+        sort: [{ field: 'lastSeenTs', direction: 'asc' }],
+        pageIndex: 2,
+        anchor: null,
+        anchorDirection: 'after',
+      })
+      pages.awaitPageAnswer()
+      table.dispose()
+      answer({ ...currentWindow, rowsBefore: 50 })
+      const before = viewports().length
+      const replacement = create()
+      const ingest = replacement.controller.ingestSubscriptionWindow.bind(
+        replacement.controller,
+      )
+      vi.spyOn(
+        replacement.controller,
+        'ingestSubscriptionWindow',
+      ).mockImplementation((...args) => {
+        expect(replacement.controller.retainWindow()).toEqual(retained)
+        expect(replacement.controller.rows.get()).toEqual([])
+        ingest(...args)
+      })
+      replacement.start()
+      expect(replacement.controller.retainWindow()).toEqual(retained)
+      expect(replacement.controller.rows.get()[0]?.row?.rowKey).toBe(9)
+      expect(replacement.periodContext).toEqual(CONTEXT)
+      expect(viewports()).toHaveLength(before)
+      expect(address.replacePath).toHaveBeenCalledTimes(1)
+      replacement.controller.refresh()
+      expect(viewports().at(-1)).toMatchObject({
+        filter: currentWindow.filter,
+        sort: [{ field: 'lastSeenTs', direction: 'asc' }],
+        limit: 25,
+        pageIndex: 2,
+        rendered: retained.current.rendered,
+        requestId: expect.any(String),
+      })
+      reply({ ...currentWindow, rowsBefore: 50 })
+      replacement.controller.resetOrder()
+      expect(viewports().at(-1)?.sort).toEqual([
+        { field: 'lastSeenTs', direction: 'desc' },
+      ])
+      replacement.controller.resetFilters()
+      expect(viewports().at(-1)?.filter).toEqual(CONTEXT)
+      expect(currentRoute.get().params).toEqual({ period: 'any-time' })
+
+      // A genuine new subscription drops the previous opening identity.
+      pages.awaitPageAnswer()
+      replacement.dispose()
+      currentRoute.set(router.match(`${ROOT}/this-hour`))
+      pages.subscribe(page, { period: 'this-hour' })
+      const fresh = create()
+      fresh.start()
+      answer(windowSection({ filter: { ...CONTEXT, period: 'this-hour' } }))
+      expect(fresh.controller.descriptor(true)?.filter).toEqual({
+        ...CONTEXT,
+        period: 'this-hour',
+      })
+      expect(fresh.controller.descriptor()?.pageIndex).toBeNull()
+      expect(fresh.controller.search.get()).toBe('')
+      expect(viewports()).toHaveLength(before + 3)
+    } finally {
+      for (const table of TABLES) table.dispose()
+      pages.unsubscribe()
+      connection.close()
+    }
+  })
+
+  it.each(['page', 'period', 'calendar'])(
+    'rejects a retained opening from a foreign %s without changing its URL seed',
+    (guard) => {
+      vi.useFakeTimers()
+      const source = stubTable('/today')
+      source.table.start()
+      source.coldWindow(
+        windowSection({ filter: { ...CONTEXT, period: 'today' } }),
+      )
+      source.table.controller.setFilter('period', 'this-week')
+      const retained = source.table.controller.retainWindow()!
+      const replacement = stubTable(
+        guard === 'period' ? '/this-hour' : '/this-week',
+      )
+      if (guard === 'page')
+        replacement.currentRoute.set(router.match('/hilos/analytics/people'))
+      const seed = replacement.table.controller.filter.get()
+      replacement.table.controller.restoreWindow(
+        guard === 'calendar'
+          ? {
+              ...retained,
+              opening: {
+                ...retained.opening,
+                filter: { ...retained.opening.filter, hourStartTs: 0 },
+              },
+            }
+          : retained,
+      )
+      expect(replacement.table.controller.filter.get()).toEqual(seed)
+      expect(replacement.table.controller.windowControlsAvailable.get()).toBe(
+        false,
+      )
+      expect(replacement.table.controller.descriptor()).toBeNull()
+      expect(replacement.replaced).toEqual([])
+      expect(replacement.sent).toEqual([])
+    },
+  )
+
   it('ignores another page while its scope is leaving', () => {
     const fixture = stubTable()
     fixture.table.start()
@@ -779,7 +1018,7 @@ describe('Analytics browser-session list controller', () => {
       sort: null,
       facets: { period: ['this-hour', 'today', 'this-week'] },
     })
-    fixture.coldWindow()
+    fixture.coldWindow(windowSection({ filter: CONTEXT }))
     expect(facets).toHaveLength(2)
     expect(fixture.sent).toHaveLength(1)
     table.controller.setFilter('period', 'today')

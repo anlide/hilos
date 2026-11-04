@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 import {
   armSocketDrop,
@@ -28,11 +29,12 @@ import {
 // that answers a changed window.
 //
 // The third test walks the road back. Rows return when the table's own source
-// changes, and that change is made from a second tab. Lifting the lever sends
-// nothing by itself. The second tab opens while the lever still holds: a new
-// tab of the same session re-sends this page, and that resend has to be another
-// refusal rather than the window. example_string is also written by
-// settings.spec.ts; the binance suite runs in one worker
+// changes, and an independent editor with a known window makes that change.
+// Lifting the lever sends nothing by itself. A second tab of the refused
+// session opens while the lever still holds: it re-sends this page, and that
+// resend has to be another refusal rather than the window. Both refused tabs
+// still lack metadata, so the editor searches and writes. example_string is
+// also written by settings.spec.ts; the binance suite runs in one worker
 // (playwright.config.ts), so the two files do not race on the key.
 //
 // The 400 ms the table keeps its old rows before the skeleton (HIL-943) is not
@@ -45,6 +47,44 @@ import {
 // (framework/frontend/core/test/subscription/bindTableViewport.test.ts).
 
 test.afterEach(clearTableRefusal)
+
+// The fixture prepares an independent session before the lever is raised.
+// Its teardown has its own budget and keeps cleanup errors alongside the
+// original failure; the context closes even if clearing the setting fails.
+const recoveryTest = test.extend<{ editorPage: Page }>({
+  editorPage: async (
+    { browser, baseURL, ignoreHTTPSErrors, locale, timezoneId },
+    use,
+  ) => {
+    const context = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+      locale,
+      timezoneId,
+    })
+    try {
+      const editorPage = await context.newPage()
+      await grantAdminToSelf(expect, editorPage)
+      await gotoPage(expect, editorPage, '/hilos/settings', PAGE_READY)
+      await expect(editorPage.locator(ROWS).first()).toBeVisible()
+
+      await use(editorPage)
+
+      // afterEach lifts the lever before teardown. Find the row even if the
+      // scenario failed before its search, then restore the catalog default.
+      await typeInto(
+        editorPage.getByTestId('hilos-table-search'),
+        'example_string',
+      )
+      await expect(
+        editorPage.getByTestId('hilos-table-row-example_string'),
+      ).toBeVisible()
+      await clearCustomSetting(editorPage, 'example_string')
+    } finally {
+      await context.close()
+    }
+  },
+})
 
 test('a table refused on the way in shows it is unavailable while its page stands, and the page re-sent after a reconnect brings its rows back', async ({
   page,
@@ -107,76 +147,84 @@ test('a window the server cannot build turns the rows into the unavailable tile,
   await expect(shownByTestId(page, 'hilos-table-unavailable')).toHaveCount(0)
 })
 
-test('a refused table gets its rows back on the first change to its own data, with nothing pressed and no reload', async ({
-  page,
-}) => {
-  let settingsAnswers = 0
-  const frames: SocketFrame[] = []
-  const socketFrames = watchSocketFrames(page, (frame) => {
-    frames.push(frame)
-    const wire = frame.wire as
-      | {
-          type?: unknown
-          data?: { page?: unknown }
-        }
-      | undefined
-      | null
-    if (
-      wire?.type === 'page_response' &&
-      wire.data?.page === 'hilos_settings'
-    ) {
-      settingsAnswers += 1
-    }
-  })
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
-  })
-
-  await grantAdminToSelf(expect, page)
-  await refuseTableWindow('settings')
-  await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
-
-  await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
-  await expect(page.locator(ROWS)).toHaveCount(0)
-  const socketsAfterOpen = socketFrames.sockets()
-  const loadsAfterOpen = fullLoads
-  const answersAfterOpen = settingsAnswers
-
-  // A second tab of this session re-sends the page. It opens while the lever
-  // still holds, so that resend is another refusal. Lifting the lever, and the
-  // other tab's search, send nothing; the tile stays until the source is written.
-  const tabB = await page.context().newPage()
-  try {
-    await gotoPage(expect, tabB, '/hilos/settings')
-    await expect.poll(() => settingsAnswers).toBeGreaterThan(answersAfterOpen)
-    await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
-
-    await clearTableRefusal()
-    await typeInto(tabB.getByTestId('hilos-table-search'), 'example_string')
-    await expect(
-      tabB.getByTestId('hilos-table-row-example_string'),
-    ).toBeVisible()
-
-    // Instant: a retry would wait out a window that must not arrive.
-    expect(
-      await shownByTestId(page, 'hilos-table-unavailable').isVisible(),
-    ).toBe(true)
-
-    // The catalog default is empty, so a custom string is a real source write.
-    await setCustomSetting(tabB, 'example_string', 'owed-back')
-
-    await expect(page.locator(ROWS).first()).toBeVisible()
-    await expect(shownByTestId(page, 'hilos-table-unavailable')).toHaveCount(0)
-    expect(socketFrames.sockets()).toBe(socketsAfterOpen)
-    expect(fullLoads).toBe(loadsAfterOpen)
-  } finally {
-    socketFrames.stop()
-    await test.info().attach('table-recovery-frames', {
-      body: JSON.stringify(frames),
-      contentType: 'application/json',
+recoveryTest(
+  'a refused table gets its rows back on the first change to its own data, with nothing pressed and no reload',
+  async ({ page, editorPage }) => {
+    let settingsAnswers = 0
+    const frames: SocketFrame[] = []
+    const socketFrames = watchSocketFrames(page, (frame) => {
+      frames.push(frame)
+      const wire = frame.wire as
+        | {
+            type?: unknown
+            data?: { page?: unknown }
+          }
+        | undefined
+        | null
+      if (
+        wire?.type === 'page_response' &&
+        wire.data?.page === 'hilos_settings'
+      ) {
+        settingsAnswers += 1
+      }
     })
-    await clearCustomSetting(tabB, 'example_string')
-    await tabB.close()
-  }
-})
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+
+    await grantAdminToSelf(expect, page)
+    await refuseTableWindow('settings')
+    await gotoPage(expect, page, '/hilos/settings', PAGE_READY)
+
+    await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
+    await expect(page.locator(ROWS)).toHaveCount(0)
+    const socketsAfterOpen = socketFrames.sockets()
+    const loadsAfterOpen = fullLoads
+    const answersAfterOpen = settingsAnswers
+
+    // A second tab of this session re-sends the page. It opens while the lever
+    // still holds, so that resend is another refusal. Lifting the lever and the
+    // independent editor's search do not recover A; only the source write does.
+    const tabB = await page.context().newPage()
+    try {
+      await gotoPage(expect, tabB, '/hilos/settings')
+      await expect.poll(() => settingsAnswers).toBeGreaterThan(answersAfterOpen)
+      await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
+
+      await clearTableRefusal()
+      await typeInto(
+        editorPage.getByTestId('hilos-table-search'),
+        'example_string',
+      )
+      await expect(
+        editorPage.getByTestId('hilos-table-row-example_string'),
+      ).toBeVisible()
+
+      // Instant: a retry would wait out a window that must not arrive.
+      expect(
+        await shownByTestId(page, 'hilos-table-unavailable').isVisible(),
+      ).toBe(true)
+
+      // The catalog default is empty, so a custom string is a real source write.
+      await setCustomSetting(editorPage, 'example_string', 'owed-back')
+
+      await expect(page.locator(ROWS).first()).toBeVisible()
+      await expect(shownByTestId(page, 'hilos-table-unavailable')).toHaveCount(
+        0,
+      )
+      expect(socketFrames.sockets()).toBe(socketsAfterOpen)
+      expect(fullLoads).toBe(loadsAfterOpen)
+    } finally {
+      socketFrames.stop()
+      try {
+        await test.info().attach('table-recovery-frames', {
+          body: JSON.stringify(frames),
+          contentType: 'application/json',
+        })
+      } finally {
+        await tabB.close()
+      }
+    }
+  },
+)

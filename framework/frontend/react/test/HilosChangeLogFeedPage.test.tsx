@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  type TableViewportController,
   ActionLifecycle,
   CHANGE_LOG_OVERVIEW_SECTION,
   HILOS_CHANGE_LOG_ENTRY_READ,
@@ -297,7 +298,22 @@ function harness(
   scope.data.set(CHANGE_LOG_OVERVIEW_SECTION, overview)
   const listeners = new Set<WindowListener>()
   const connection = {
-    registerTableWindow(): void {},
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        {},
+        [],
+      )
+    },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(): boolean {

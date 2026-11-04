@@ -151,6 +151,7 @@ describe('createHilosSignInMethodsTable', () => {
         null,
         25,
         undefined,
+        {},
         [],
       )
 
@@ -206,6 +207,7 @@ describe('createHilosSignInMethodsTable', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

@@ -621,6 +621,21 @@ describe('createHilosMergeCandidates', () => {
     } as HilosUsersContext)
 
     candidates.start(12)
+    candidates.controller.ingestRefusal('internal_error')
+    expect(candidates.controller.filter.get()).toEqual({ survivor: 12 })
+    expect(sent).toEqual([])
+    candidates.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
+    expect(sent.at(-1)?.descriptor.filter).toEqual({ survivor: 12 })
     candidates.controller.setSearch('loser@example.test')
 
     expect(sent).toHaveLength(2)
@@ -646,7 +661,13 @@ describe('createHilosMergeCandidates', () => {
         filter: { survivor: 12 },
       },
     })
+    candidates.controller.setSearch('old search')
     candidates.dispose()
+    candidates.start(14)
+    expect(candidates.controller.filter.get()).toEqual({ survivor: 14 })
+    expect(sent.at(-1)?.descriptor.filter).toEqual({ survivor: 14 })
+    candidates.dispose()
+    candidates.controller.dispose()
   })
 })
 
@@ -1820,6 +1841,7 @@ describe('createHilosUsersTable', () => {
         null,
         10,
         [{ field: 'id', direction: 'asc' }],
+        {},
         [],
       )
 
@@ -1920,6 +1942,17 @@ describe('createHilosUsersTable', () => {
     (options) => {
       const { table, sent, replaced } = usersTable({ lapsed: 'terms' }, options)
       table.start()
+      table.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        { lapsed: 'terms' },
+        [],
+      )
 
       expect(table.controller.filter.get()).toEqual({ lapsed: 'terms' })
       table.controller.setSearch('maria')
@@ -1943,6 +1976,17 @@ describe('createHilosUsersTable', () => {
     (options) => {
       const { table, replaced } = usersTable({ lapsed: 'cookies' }, options)
       table.start()
+      table.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        {},
+        [],
+      )
 
       expect(table.controller.filter.get()).toEqual({})
       const filter = table.controller.frame.filters.get()[0]?.filter

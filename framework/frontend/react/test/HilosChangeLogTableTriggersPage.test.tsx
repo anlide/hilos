@@ -137,7 +137,7 @@ describe('HilosChangeLogTableTriggersPage', () => {
   it('requests its preset and draws only the matching reply slot rather than snapshot triggers', () => {
     const h = tableHarness(BOT, PAGE)
     const { container } = mountTriggers(h)
-    act(() => h.pushMetadataWindow(PAGE, TABLE, ROWS, true))
+    act(() => h.pushMetadataWindow(PAGE, TABLE, ROWS, true, { filter: {} }))
     expect(h.connection.sendTableViewport).toHaveBeenCalledTimes(1)
     expect(h.connection.sendTableViewport).toHaveBeenLastCalledWith(
       PAGE,

@@ -70,6 +70,7 @@ interface WindowMetadata {
   sort?: TableSortOrder
   totalCount?: number
   rowsBefore?: number
+  filter?: Record<string, unknown>
 }
 
 /** Only the socket is scripted; session, access, outlet and table bindings are real. */
@@ -145,6 +146,7 @@ function accessWindowHarness(admin: boolean, table: TableCase) {
     rows: readonly TableRow[],
     metadata: WindowMetadata = {},
   ) => ({
+    filter: { document: 'terms' },
     rows,
     totalCount: rows.length,
     totalExact: true,
@@ -238,7 +240,9 @@ describe.each(cases)('Legal held $tableKey after access re-answer', (table) => {
         )
         expect(test.frames).toHaveLength(before)
 
-        test.answer([])
+        test.answer([], {
+          filter: { document: 'terms', search: 'no matching clause' },
+        })
         await nextTick()
         expect(test.view.getComponent(table.component).vm === previous).toBe(
           false,
@@ -282,7 +286,12 @@ describe.each(cases)('Legal held $tableKey after access re-answer', (table) => {
     async (admin) => {
       const test = accessWindowHarness(admin, table)
       const order: TableSortOrder = [{ field: table.field, direction: 'desc' }]
-      const metadata = { totalCount: 75, rowsBefore: 50, sort: order }
+      const metadata = {
+        totalCount: 75,
+        rowsBefore: 50,
+        sort: order,
+        filter: { document: 'terms', search: 'retention' },
+      }
       try {
         test.answer(table.rows, { totalCount: 75 })
         await nextTick()
@@ -422,7 +431,9 @@ describe.each(cases)('Legal held $tableKey after access re-answer', (table) => {
         held,
       )
       expect(test.frames).toHaveLength(before)
-      test.answer(table.rows)
+      test.answer(table.rows, {
+        filter: { document: 'terms', search: 'retention' },
+      })
       await nextTick()
       expect(
         test.view.find('[data-id="hilos-table-unavailable"]').exists(),

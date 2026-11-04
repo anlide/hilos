@@ -307,7 +307,21 @@ final class HilosDaemonPlacementPageTest extends TestCase
         $this->subscribe('viewer');
         $viewer = $this->onlyResponse();
         self::assertSame($admin->payload->data['daemon'], $viewer->payload->data['daemon']);
-        self::assertSame($admin->payload->windows, $viewer->payload->windows);
+        $adminWindows = $admin->payload->windows;
+        $viewerWindows = $viewer->payload->windows;
+        foreach ([$adminWindows, $viewerWindows] as $windows) {
+            self::assertSame(
+                [TableConstants::FILTER_KEY_SEARCH => 'x:1'],
+                (array) $windows[HilosDaemonPlacementTable::TABLE][TableWindowDescriptorDTO::FILTER],
+            );
+            self::assertSame(
+                '{"search":"x:1"}',
+                json_encode($windows[HilosDaemonPlacementTable::TABLE][TableWindowDescriptorDTO::FILTER], JSON_THROW_ON_ERROR),
+            );
+        }
+        unset($adminWindows[HilosDaemonPlacementTable::TABLE][TableWindowDescriptorDTO::FILTER]);
+        unset($viewerWindows[HilosDaemonPlacementTable::TABLE][TableWindowDescriptorDTO::FILTER]);
+        self::assertSame($adminWindows, $viewerWindows);
         self::assertArrayNotHasKey('database', $viewer->payload->data);
         $this->deliver([$this->node($this->report()->withStanding(new DaemonNodeStanding(4, 5, false, null, null)))]);
         $updates = $this->drain();

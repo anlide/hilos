@@ -20,6 +20,18 @@ function makeController(): {
     frame: FRAME,
   })
 
+  controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    10,
+    undefined,
+    {},
+    [],
+  )
+
   return { controller, sent }
 }
 

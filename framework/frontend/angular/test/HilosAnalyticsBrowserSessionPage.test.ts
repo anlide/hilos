@@ -149,6 +149,7 @@ function harness(param: string | undefined = '57') {
         },
         windows: {
           [TABLE]: {
+            filter: {},
             rows: actions.map((action) => ({ rowKey, slots: { action } })),
             limit: 25,
             totalCount: actions.length,

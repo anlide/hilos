@@ -5,7 +5,7 @@
 // and the ↺ that resets only through a confirm dialog (HIL-1147).
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { HIDDEN_VALUE } from '@hilos/core/base'
+import { type TableViewportController, HIDDEN_VALUE } from '@hilos/core/base'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -134,7 +134,21 @@ function seededContext(initial: FieldSlot[]): {
   }
 
   const connection = {
-    registerTableWindow(): void {
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
       serveWindow()
     },
     unregisterTableWindow(): void {},

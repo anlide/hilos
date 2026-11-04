@@ -175,7 +175,7 @@ describe('HilosStatusComponentsPage over the real viewport', () => {
       slots: Object.freeze({ component: slot }),
       staleSources: ['component'],
     })
-    h.window([raw, rows[1]!], { state: 'operational' })
+    h.window([raw, rows[1]!])
     expect(badge(0).textContent?.trim()).toBe('Unknown')
     h.delta({ kind: 'row_removed', rowKey: 'component-0', reason: 'left_set' })
     for (const [staleSources, label] of [

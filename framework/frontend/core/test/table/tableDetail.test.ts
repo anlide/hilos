@@ -31,13 +31,16 @@ function makeController(pageSize = 10) {
     rowKeys: readonly string[] = [],
     totalCount = rowKeys.length,
   ): void =>
-    controller.ingestWindow(
+    controller.ingestSubscriptionWindow(
       rowKeys.map(row),
       totalCount,
       true,
       null,
       null,
       pageSize,
+      undefined,
+      {},
+      [],
     )
 
   /** Which rows say they are open, in window order. */

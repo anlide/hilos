@@ -274,7 +274,14 @@ export function createHilosI18nNamesTable(
         subscribeSignal(subject, (value) => {
           controller.releaseFocus()
           if (value !== null) hasSubject = true
-          controller.setFilter(target.filterKey, value)
+          if (controller.windowControlsAvailable.get()) {
+            controller.setFilter(target.filterKey, value)
+          } else {
+            const filter = { ...controller.filter.get() }
+            if (value === null) delete filter[target.filterKey]
+            else filter[target.filterKey] = value
+            controller.initializeFilter(filter)
+          }
         }),
       ]
     },

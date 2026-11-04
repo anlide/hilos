@@ -245,6 +245,7 @@ describe('bindPageScope', () => {
       data: { greeting: 'hi' },
       windows: {
         settings: {
+          filter: {},
           rows: [{ rowKey: 'a', slots: {} }],
           sort: [],
           limit: 10,
@@ -341,6 +342,7 @@ describe('page and table presentation ingress', () => {
         null,
         10,
         undefined,
+        {},
         [],
       )
       const capture = vi.fn((request: TableGeometryCaptureRequest) => {
@@ -376,6 +378,7 @@ describe('page and table presentation ingress', () => {
         }),
       })
     const window = {
+      filter: {},
       rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'new' } } }],
       sort: [],
       limit: 10,

@@ -194,6 +194,7 @@ function documentWindow(
   rows: TableRow[],
   field = 'position',
   direction: 'asc' | 'desc' = 'asc',
+  filter: Record<string, unknown> = { document: 'terms' },
 ) {
   return {
     type: 'page_response',
@@ -203,6 +204,7 @@ function documentWindow(
         data: { legalDocument: documentData, legalCatalogRefusal: null },
         windows: {
           [table]: {
+            filter,
             rows,
             totalCount: rows.length,
             totalExact: true,
@@ -630,6 +632,7 @@ describe('document tab table lifecycle', () => {
           [test.row],
           test.field,
           test.direction,
+          { document: 'terms /?#%' },
         ),
       )
 
@@ -683,6 +686,7 @@ describe('document tab table lifecycle', () => {
           [test.row],
           test.field,
           test.direction,
+          { document: 'retired' },
         ),
       )
       expect(h.windows.get(test.table)?.descriptor()).toMatchObject({
@@ -715,6 +719,7 @@ describe('document tab table lifecycle', () => {
               [test.row],
               test.field,
               test.direction,
+              { document: 'terms /?#%' },
             ),
           ),
         })
@@ -767,7 +772,10 @@ describe('document tab table lifecycle', () => {
         const before = frames.length
         emit('message', {
           data: JSON.stringify(
-            documentWindow(test.page, test.table, [test.row], field, 'asc'),
+            documentWindow(test.page, test.table, [test.row], field, 'asc', {
+              document: 'terms /?#%',
+              search: 'retention',
+            }),
           ),
         })
         expect(table.controller.rows.get()[0]?.row?.rowKey).toBe(
@@ -983,6 +991,7 @@ describe('document tab table lifecycle', () => {
           [privacyRow],
           test.field,
           test.direction,
+          { document: 'privacy' },
         )
         privacyWindow.data.payload.data.legalDocument = {
           ...documentData,
@@ -1027,6 +1036,7 @@ describe('document tab table lifecycle', () => {
         [test.row],
         test.field,
         test.direction,
+        { document: 'terms', revision: 'current' },
       ),
     )
     const departing = createHilosLegalRevisionsTable(
@@ -1110,7 +1120,9 @@ describe('document tab table lifecycle', () => {
       })
       expect(table.controller.frame.body.get()).toBe('unavailable')
       h.project(
-        documentWindow(test.page, test.table, [], test.field, test.direction),
+        documentWindow(test.page, test.table, [], test.field, test.direction, {
+          document: 'retired',
+        }),
       )
       expect(table.controller.frame.body.get()).toBe('empty')
       expect(table.controller.frame.refusal.get()).toBeNull()
@@ -1325,6 +1337,7 @@ describe('document tab table lifecycle', () => {
         ],
         'publishedOn',
         'desc',
+        { document: 'retired', revision: 'gone' },
       ),
     )
     expect(table.controller.rows.get()[0]?.row?.acceptedCount).toBe(12)
@@ -1773,6 +1786,7 @@ describe('legal table controllers', () => {
         payload: {
           windows: {
             hilosLegalDocuments: {
+              filter: {},
               rows: [
                 {
                   rowKey: 'terms',
@@ -1864,7 +1878,17 @@ describe('legal table controllers', () => {
       'privacy',
     ])
     expect(revisions.options()).toEqual([])
-    table.controller.ingestWindow([], 0, true, null, null, 25)
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     table.controller.setFilter('document', 'terms')
     expect(revisions.options()).toEqual([
       { value: 'current', label: 'current' },
@@ -1949,6 +1973,7 @@ describe('legal table controllers', () => {
         [],
         'publishedOn',
         'desc',
+        { document: 'terms', revision: 'old' },
       ),
     )
     table.start()

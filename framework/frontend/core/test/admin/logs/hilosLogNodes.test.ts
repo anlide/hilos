@@ -39,6 +39,7 @@ function nodeRow(overrides: Partial<HilosLogNodeRow> = {}): TableRow {
 
 function windowData(rows: TableRow[], totalCount = rows.length) {
   return {
+    filter: {},
     rows: rows.map((row) => ({ rowKey: row.rowKey, slots: row.slots })),
     totalCount,
     totalExact: true,

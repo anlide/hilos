@@ -1306,6 +1306,7 @@ abstract class BrowserContext
         $section = [
             TableWindowSignalData::rows => $window->rows,
             TableWindowDescriptorDTO::SORT => $viewport->sort?->toArray() ?? [],
+            TableWindowDescriptorDTO::FILTER => (object) $viewport->filter,
             TableWindowSignalData::limit => $window->snapshot->limit,
             TableWindowSignalData::totalCount => $window->snapshot->totalCount,
             TableWindowSignalData::totalExact => $window->snapshot->totalExact,

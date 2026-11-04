@@ -163,6 +163,7 @@ class MaintenanceCircleConnection {
         payload: {
           windows: {
             hilosVerifierCircle: {
+              filter: {},
               rows: [row],
               sort: [],
               limit: 10,
@@ -271,6 +272,17 @@ describe('createHilosMaintenanceCircleTable', () => {
     )
 
     circle.start()
+    circle.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     circle.controller.refresh()
     connection.emitPageResponse(
       HilosPages.MAINTENANCE,
@@ -318,6 +330,17 @@ describe('createHilosMaintenanceCircleTable', () => {
     )
 
     circle.start()
+    circle.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     circle.controller.refresh()
     connection.emitPageResponse(
       HilosPages.MAINTENANCE_CIRCLE,
@@ -400,6 +423,7 @@ describe('createHilosMaintenanceCircleTable', () => {
     const sent: Array<{ page: string; tableKey: string }> = []
     const connection = {
       on: () => () => {},
+      sendTableRendered: () => true,
       registerTableWindow: (tableKey: string) => registered.push(tableKey),
       unregisterTableWindow: () => {},
       sendTableViewport: (page: string, tableKey: string) =>
@@ -417,6 +441,17 @@ describe('createHilosMaintenanceCircleTable', () => {
     circle.start()
     // The first window rides the page's own answer; a request for it again goes to the
     // same address.
+    circle.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     circle.controller.refresh()
 
     expect(registered).toEqual(['hilosVerifierCircle'])
@@ -457,6 +492,7 @@ describe('createHilosMaintenanceCircleTable', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -552,6 +588,7 @@ describe('createHilosMaintenanceCircleTable', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 

@@ -72,6 +72,17 @@ function harness() {
   )
   const window = (rows = [raw()]) =>
     controller.ingestWindow(rows, rows.length, true, null, null, 25)
+  controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    25,
+    undefined,
+    { node: 'standalone' },
+    [],
+  )
   window()
   return {
     restart,

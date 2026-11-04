@@ -76,7 +76,21 @@ function harness(
     for (const listener of listeners.get(event) ?? [])
       listener(payload as never)
   }
-  const register = vi.fn()
+  const register = vi.fn(
+    (_key: string, controller: TableViewportController<unknown>) => {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        { node: 'n1' },
+        [],
+      )
+    },
+  )
   const unregister = vi.fn()
   const sendViewport = vi.fn(() => true)
   const send = vi.fn(() => true)

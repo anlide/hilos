@@ -180,6 +180,7 @@ function harness(section: unknown = BOT, page: string = PAGE) {
         payload: {
           windows: {
             [TABLE]: {
+              filter: {},
               rows: ROWS,
               totalCount: ROWS.length,
               totalExact: true,
@@ -509,6 +510,7 @@ describe('HilosChangeLogTableColumnsPage', () => {
     expect(rows()).toHaveLength(1)
     expect(text(get('h1'))).toBe('other')
     h.pushPageWindow()
+    h.pushWindow([ROWS[1]!])
     await settle()
     const controller = h.connection.registerTableWindow.mock.calls.at(-1)![1]
     expect(controller.descriptor()?.filter).toEqual({ table: 'other' })

@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  type TableViewportController,
   ActionLifecycle,
   formatMoment,
   HIDDEN_VALUE,
@@ -163,9 +164,24 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     // The first window arrives with the page's own answer now (HIL-642), and binding is
     // when that answer would have landed — so this double serves it there rather than in
     // reply to a request the table no longer makes on mount.
-    registerTableWindow(): void {
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        [{ field: 'id', direction: 'asc' }],
+        {},
+        [],
+      )
       serveWindow()
     },
+    sendTableRendered: () => true,
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(

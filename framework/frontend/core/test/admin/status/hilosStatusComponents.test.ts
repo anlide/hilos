@@ -84,6 +84,17 @@ describe('Status Components', () => {
     const table = createHilosStatusComponentsTable(h.context)
     const controller = table.controller
     table.start()
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     controller.setFilter('state', 'operational')
     const slot = Object.freeze({ ...component, state: 'operational' })
     const raw = Object.freeze({
@@ -104,6 +115,7 @@ describe('Status Components', () => {
       null,
       25,
       undefined,
+      { state: 'operational' },
       [],
     )
     expect(controller.rows.get()[0]?.row?.state).toBe('operational')
@@ -182,6 +194,7 @@ describe('Status Components', () => {
         null,
         25,
         undefined,
+        {},
         [],
       )
       expect(table.controller.rows.get()[0]?.row?.state).toBe('unknown')
@@ -215,6 +228,7 @@ describe('Status Components', () => {
         payload: {
           windows: {
             hilosStatusComponents: {
+              filter: {},
               rows: [
                 row(),
                 {
@@ -274,6 +288,7 @@ describe('Status Components', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     h.emit('tableViewportDelta', {

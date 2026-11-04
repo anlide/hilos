@@ -160,6 +160,7 @@ function makeConnection(): {
   let viewportRequestCount = 0
 
   const windowData = (rows: HilosLogNodeRow[], totalCount = rows.length) => ({
+    filter: {},
     rows: rows.map((row) => ({
       rowKey: row.nodeId,
       slots: { node: { ...row } },

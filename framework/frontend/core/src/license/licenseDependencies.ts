@@ -165,6 +165,7 @@ export function createHilosLicenseDependencies(
         null,
         limit,
         undefined,
+        filter,
         [],
         0,
       )

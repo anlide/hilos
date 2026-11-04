@@ -128,6 +128,7 @@ export function revisionHarness(
   const dispatch = vi.fn()
   const tableKey = 'hilosLegalRevisions'
   const windowOf = (rows: TableRow[]) => ({
+    filter: { document: details.document, revision: details.revisionId },
     rows,
     totalCount: rows.length,
     totalExact: true,

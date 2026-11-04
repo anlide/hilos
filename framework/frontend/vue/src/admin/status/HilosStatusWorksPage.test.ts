@@ -128,7 +128,7 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
         ])
       }
     }
-    h.window([], worksData, { search: 'no-match' })
+    h.window([], worksData, { search: 'no-match', componentKey: 'queue' })
     await nextTick()
     expect(h.wrapper.text()).toContain('Nothing found')
     await h.wrapper.get('[data-id="hilos-table-filter-reset"]').trigger('click')

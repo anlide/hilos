@@ -59,6 +59,7 @@ function makeController(
       lastAnchor,
       pageSize,
       initialOrder,
+      {},
       progress,
     )
 
@@ -313,6 +314,7 @@ describe('TableViewportController', () => {
         null,
         10,
         undefined,
+        {},
         [],
       )
     answer('old')
@@ -376,6 +378,7 @@ describe('TableViewportController', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -410,6 +413,7 @@ describe('TableViewportController', () => {
         null,
         10,
         undefined,
+        {},
         [],
       )
 
@@ -445,6 +449,7 @@ describe('TableViewportController', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -465,6 +470,617 @@ describe('TableViewportController', () => {
     expect(controller.descriptor()?.limit).toBe(25)
   })
 
+  it('initializes the full opening filter without requests or declarations while ordinary setters wait', () => {
+    vi.useFakeTimers()
+    const sendViewport = vi.fn()
+    const sendFacets = vi.fn()
+    const sendRendered = vi.fn()
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport,
+      sendFacets,
+      sendRendered,
+      initialFilter: { context: 'captured', obsolete: 'baseline' },
+      frame: {
+        columns: [{ key: 'name', label: 'Name' }],
+        filters: [
+          {
+            kind: 'select',
+            key: 'period',
+            label: 'Period',
+            options: () => [{ value: 'today', label: 'Today' }],
+          },
+        ],
+      },
+    })
+    try {
+      const seed = {
+        context: 'captured',
+        period: 'today',
+        empty: '',
+        flag: false,
+        value: null,
+      }
+      controller.initializeFilter(seed)
+      seed.period = 'changed outside'
+      expect(controller.filter.get()).toEqual({
+        context: 'captured',
+        period: 'today',
+        empty: '',
+        flag: false,
+        value: null,
+      })
+      controller.setSearch('ignored')
+      controller.setFilter('period', 'this-week')
+      controller.setFilters({ context: 'ignored' })
+      controller.resetFilters()
+      expect(controller.filter.get()).toEqual({
+        context: 'captured',
+        period: 'today',
+        empty: '',
+        flag: false,
+        value: null,
+      })
+      expect(controller.descriptor()).toBeNull()
+      expect(controller.retainWindow()).toBeNull()
+      expect(controller.frame.body.get()).toBe('loading')
+      expect(vi.getTimerCount()).toBe(0)
+      expect(sendViewport).not.toHaveBeenCalled()
+      expect(sendFacets).not.toHaveBeenCalled()
+      expect(sendRendered).not.toHaveBeenCalled()
+    } finally {
+      controller.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the initialized opening choice when current changes and resets to the original baseline', () => {
+    const sendViewport = vi.fn()
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport,
+      initialFilter: { context: 'captured' },
+      frame: { columns: [] },
+    })
+    try {
+      controller.initializeFilter({ context: 'captured', period: 'today' })
+      controller.ingestSubscriptionWindow(
+        [],
+        101,
+        true,
+        null,
+        null,
+        37,
+        undefined,
+        { period: 'today', context: 'captured' },
+        [],
+      )
+      expect(sendViewport).not.toHaveBeenCalled()
+      controller.setFilter('period', 'this-week')
+      controller.setSearch('reader choice')
+      controller.setPage(2)
+      expect(controller.descriptor()?.filter).toEqual({
+        context: 'captured',
+        period: 'this-week',
+        search: 'reader choice',
+      })
+      expect(controller.descriptor(true)).toMatchObject({
+        filter: { context: 'captured', period: 'today' },
+        anchor: null,
+        pageIndex: null,
+      })
+      controller.resetFilters()
+      expect(sendViewport.mock.calls.at(-1)?.[0].filter).toEqual({
+        context: 'captured',
+      })
+      expect(controller.descriptor()?.filter).toEqual({ context: 'captured' })
+      expect(controller.descriptor(true)?.filter).toEqual({
+        context: 'captured',
+        period: 'today',
+      })
+    } finally {
+      controller.dispose()
+    }
+  })
+
+  it('retains known metadata and changed controls before the first matching rows', () => {
+    vi.useFakeTimers()
+    const create = () =>
+      new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        initialFilter: { document: 'terms' },
+        sendViewport: vi.fn(),
+        frame: { columns: [] },
+      })
+    const source = create()
+    const replacement = create()
+    try {
+      source.ingestSubscriptionWindow(
+        [{ rowKey: 'wrong', slots: {} }],
+        999,
+        false,
+        { id: 1 },
+        { id: 9 },
+        37,
+        [{ field: 'id', direction: 'asc' }],
+        {},
+        [],
+        50,
+      )
+      expect(source.loaded.get()).toBe(false)
+      expect(source.windowControlsAvailable.get()).toBe(true)
+      expect(source.rowsBefore.get()).toBeNull()
+      source.setSearch('desired')
+      source.setOrder([{ field: 'id', direction: 'desc' }])
+      const continuation = source.retainWindow()
+      expect(continuation).toEqual({
+        current: {
+          filter: { document: 'terms', search: 'desired' },
+          sort: [{ field: 'id', direction: 'desc' }],
+          limit: 37,
+          anchor: null,
+          anchorDirection: 'after',
+          pageIndex: null,
+          rendered: [],
+        },
+        opening: {
+          filter: { document: 'terms' },
+          sort: [{ field: 'id', direction: 'asc' }],
+          limit: 37,
+          anchor: null,
+          anchorDirection: 'after',
+          pageIndex: null,
+          rendered: [],
+        },
+      })
+      replacement.restoreWindow(continuation!)
+      expect(replacement.retainWindow()).toEqual(continuation)
+      for (const controller of [source, replacement]) {
+        expect(controller.loaded.get()).toBe(false)
+        expect(controller.rows.get()).toEqual([])
+        expect(controller.frame.footer.get().totalCount).toBe(0)
+      }
+    } finally {
+      source.dispose()
+      replacement.dispose()
+    }
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each([true, false])(
+    'restores current controls only when the initialized opening seed matches: %s',
+    (matches) => {
+      const create = () =>
+        new TableViewportController<TableRow>({
+          resolve: (row) => row,
+          sendViewport: vi.fn(),
+          initialFilter: { context: 'captured' },
+          frame: { columns: [] },
+        })
+      const source = create()
+      const replacement = create()
+      try {
+        source.initializeFilter({ context: 'captured', period: 'today' })
+        source.ingestSubscriptionWindow(
+          [],
+          101,
+          true,
+          null,
+          null,
+          37,
+          [{ field: 'id', direction: 'asc' }],
+          { context: 'captured', period: 'today' },
+          [],
+        )
+        source.setFilter('period', 'this-week')
+        source.setSearch('current choice')
+        source.setSort('name')
+        source.setPage(2)
+        const continuation = source.retainWindow()!
+        replacement.initializeFilter({
+          period: matches ? 'today' : 'this-hour',
+          context: 'captured',
+        })
+        replacement.restoreWindow(continuation)
+        expect(replacement.windowControlsAvailable.get()).toBe(matches)
+        if (matches) {
+          expect(replacement.filter.get()).toEqual(continuation.current.filter)
+          replacement.ingestSubscriptionWindow(
+            [],
+            101,
+            true,
+            null,
+            null,
+            37,
+            [{ field: 'name', direction: 'asc' }],
+            continuation.current.filter,
+            [],
+          )
+          expect(replacement.descriptor()).toEqual(continuation.current)
+          expect(replacement.descriptor(true)).toEqual(continuation.opening)
+          replacement.resetFilters()
+          expect(replacement.filter.get()).toEqual({ context: 'captured' })
+        } else {
+          expect(replacement.filter.get()).toEqual({
+            period: 'this-hour',
+            context: 'captured',
+          })
+          expect(replacement.descriptor()).toBeNull()
+        }
+      } finally {
+        source.dispose()
+        replacement.dispose()
+      }
+    },
+  )
+
+  it.each(['matching', 'mismatch', 'disposed'] as const)(
+    'allows repeated initialization through refusal and standalone recovery, then ignores it after %s',
+    (ending) => {
+      const sendViewport = vi.fn()
+      const controller = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport,
+        frame: { columns: [] },
+      })
+      try {
+        controller.initializeFilter({ obsolete: 'removed', period: 'today' })
+        controller.ingestRefusal('internal_error')
+        controller.initializeFilter({ period: 'this-week' })
+        controller.ingestWindow([], 0, true, null, null, 37)
+        controller.initializeFilter({ period: 'this-hour' })
+        expect(controller.filter.get()).toEqual({ period: 'this-hour' })
+        expect(controller.windowControlsAvailable.get()).toBe(false)
+        expect(sendViewport).not.toHaveBeenCalled()
+        if (ending === 'disposed') controller.dispose()
+        else
+          controller.ingestSubscriptionWindow(
+            [],
+            0,
+            true,
+            null,
+            null,
+            37,
+            undefined,
+            ending === 'matching' ? { period: 'this-hour' } : {},
+            [],
+          )
+        controller.initializeFilter({ period: 'ignored' })
+        expect(controller.filter.get()).toEqual({ period: 'this-hour' })
+        expect(sendViewport).toHaveBeenCalledTimes(
+          ending === 'mismatch' ? 1 : 0,
+        )
+        if (ending === 'mismatch')
+          controller.ingestWindow(
+            [],
+            0,
+            true,
+            null,
+            null,
+            37,
+            null,
+            sendViewport.mock.calls[0]?.[0].requestId,
+          )
+        if (ending !== 'disposed')
+          expect(controller.descriptor(true)?.filter).toEqual({
+            period: 'this-hour',
+          })
+      } finally {
+        controller.dispose()
+      }
+    },
+  )
+
+  it.each([
+    {
+      expected: { document: 'terms' },
+      actual: { document: 'terms' },
+      matches: true,
+    },
+    { expected: { document: 'terms' }, actual: {}, matches: false },
+    { expected: {}, actual: { search: '' }, matches: false },
+    {
+      expected: { document: 'terms' },
+      actual: { document: 'terms', revision: 'old' },
+      matches: false,
+    },
+    {
+      expected: { nested: { a: 1, b: [null, { x: false, y: 0 }] } },
+      actual: { nested: { b: [null, { y: 0, x: false }], a: 1 } },
+      matches: true,
+    },
+    {
+      expected: { nested: { a: 1, absent: undefined } },
+      actual: { nested: { a: 1 } },
+      matches: true,
+    },
+    {
+      expected: { nested: [1, 2] },
+      actual: { nested: [2, 1] },
+      matches: false,
+    },
+    { expected: { nested: [1] }, actual: { nested: [1, 2] }, matches: false },
+    { expected: { nested: [] }, actual: { nested: {} }, matches: false },
+    { expected: { value: null }, actual: { value: '' }, matches: false },
+    { expected: { value: false }, actual: { value: 0 }, matches: false },
+    { expected: { value: 0 }, actual: { value: '0' }, matches: false },
+    { expected: { value: null }, actual: {}, matches: false },
+    { expected: { value: '' }, actual: { value: '' }, matches: true },
+    { expected: { value: false }, actual: { value: false }, matches: true },
+    { expected: { value: 0 }, actual: { value: 0 }, matches: true },
+  ])(
+    'compares the complete JSON filter: $expected / $actual',
+    ({ expected, actual, matches }) => {
+      const sendViewport = vi.fn()
+      const sendRendered = vi.fn()
+      const sendFacets = vi.fn()
+      const controller = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport,
+        sendRendered,
+        sendFacets,
+        initialFilter: expected,
+        frame: {
+          columns: [{ key: 'name', label: 'Name' }],
+          filters: [
+            {
+              kind: 'select',
+              key: 'state',
+              label: 'State',
+              options: () => [{ value: 'up', label: 'Up' }],
+            },
+          ],
+        },
+      })
+      try {
+        const rows = [{ rowKey: 'answer', slots: {} }]
+        controller.ingestSubscriptionWindow(
+          rows,
+          13,
+          true,
+          { name: 'a' },
+          { name: 'z' },
+          37,
+          [{ field: 'name', direction: 'asc' }],
+          actual,
+          [],
+        )
+        expect(controller.filter.get()).toEqual(expected)
+        expect(controller.windowControlsAvailable.get()).toBe(true)
+        if (matches) {
+          expect(controller.rows.get().map(({ rowKey }) => rowKey)).toEqual([
+            'answer',
+          ])
+          expect(controller.frame.footer.get().totalCount).toBe(13)
+          expect(sendViewport).not.toHaveBeenCalled()
+          expect(sendRendered).toHaveBeenCalledExactlyOnceWith(['name'])
+          expect(sendFacets).toHaveBeenCalledExactlyOnceWith({ state: ['up'] })
+        } else {
+          expect(controller.rows.get()).toEqual([])
+          expect(controller.frame.footer.get().totalCount).toBe(0)
+          expect(sendViewport).toHaveBeenCalledExactlyOnceWith({
+            filter: expected,
+            sort: [{ field: 'name', direction: 'asc' }],
+            limit: 37,
+            anchor: null,
+            anchorDirection: 'after',
+            pageIndex: null,
+            rendered: ['name'],
+            requestId: expect.any(String),
+          })
+          expect(sendRendered).not.toHaveBeenCalled()
+          expect(sendFacets).not.toHaveBeenCalled()
+          controller.ingestWindow(
+            rows,
+            1,
+            true,
+            null,
+            null,
+            37,
+            0,
+            sendViewport.mock.calls[0]?.[0].requestId,
+          )
+          expect(sendFacets).toHaveBeenCalledExactlyOnceWith({ state: ['up'] })
+          expect(sendRendered).not.toHaveBeenCalled()
+        }
+      } finally {
+        controller.dispose()
+      }
+    },
+  )
+
+  it('preserves known controls, rows and address when a later filter disagrees', () => {
+    const { controller, sent, open } = makeController(10, [
+      { field: 'id', direction: 'asc' },
+    ])
+    try {
+      open([{ rowKey: 'kept', slots: {} }], 101)
+      controller.setSearch('desired')
+      controller.setSort('name')
+      controller.setPage(2)
+      const current = controller.descriptor()
+      const before = sent.length
+      controller.ingestSubscriptionWindow(
+        [{ rowKey: 'wrong', slots: {} }],
+        999,
+        false,
+        { id: 3 },
+        { id: 9 },
+        77,
+        [{ field: 'other', direction: 'desc' }],
+        { search: 'other' },
+        [],
+      )
+      expect(controller.descriptor()).toEqual(current)
+      expect(controller.rows.get().map(({ rowKey }) => rowKey)).toEqual([
+        'kept',
+      ])
+      expect(controller.frame.footer.get().totalCount).toBe(101)
+      expect(sent).toHaveLength(before + 1)
+      expect(sent.at(-1)).toEqual({ ...current, requestId: expect.any(String) })
+      controller.ingestSubscriptionWindow(
+        [{ rowKey: 'accepted', slots: {} }],
+        1,
+        true,
+        null,
+        null,
+        10,
+        [{ field: 'actual', direction: 'asc' }],
+        { search: 'desired' },
+        [],
+      )
+      expect(controller.order.get()).toEqual([
+        { field: 'actual', direction: 'asc' },
+      ])
+      expect(controller.rows.get()[0]?.rowKey).toBe('accepted')
+    } finally {
+      controller.dispose()
+    }
+  })
+
+  it.each(['cold', 'refused', 'standalone'] as const)(
+    'declares facets once after a corrective window following %s',
+    (previous) => {
+      const sendViewport = vi.fn()
+      const sendFacets = vi.fn()
+      const sendRendered = vi.fn()
+      const controller = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport,
+        sendFacets,
+        sendRendered,
+        initialFilter: { document: 'terms' },
+        frame: {
+          columns: [{ key: 'name', label: 'Name' }],
+          filters: [
+            {
+              kind: 'select',
+              key: 'state',
+              label: 'State',
+              options: () => [{ value: 'up', label: 'Up' }],
+            },
+          ],
+        },
+      })
+      try {
+        if (previous === 'refused') controller.ingestRefusal('internal_error')
+        if (previous === 'standalone')
+          controller.ingestWindow([], 0, true, null, null, 11)
+        controller.ingestSubscriptionWindow(
+          [],
+          99,
+          true,
+          null,
+          null,
+          37,
+          undefined,
+          {},
+          [],
+        )
+        expect(sendFacets).not.toHaveBeenCalled()
+        expect(sendRendered).not.toHaveBeenCalled()
+        expect(sendViewport.mock.calls[0]?.[0].rendered).toEqual(['name'])
+        controller.ingestWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          37,
+          0,
+          sendViewport.mock.calls[0]?.[0].requestId,
+        )
+        expect(sendFacets).toHaveBeenCalledExactlyOnceWith({ state: ['up'] })
+        expect(sendRendered).not.toHaveBeenCalled()
+        controller.ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          37,
+          undefined,
+          { document: 'terms' },
+          [],
+        )
+        expect(sendFacets).toHaveBeenCalledTimes(2)
+        expect(sendRendered).not.toHaveBeenCalled()
+      } finally {
+        controller.dispose()
+      }
+    },
+  )
+
+  it.each([
+    { openingFilter: { nested: { a: 1, b: 2 } }, matches: true },
+    {
+      openingFilter: { nested: { b: 2, a: 1 }, absent: undefined },
+      matches: true,
+    },
+    {
+      openingFilter: { nested: { a: 1, b: 2 }, extra: 'wrong' },
+      matches: false,
+    },
+    { openingFilter: {}, matches: false },
+  ])(
+    'restores current controls only for an equal opening filter: $openingFilter',
+    ({ openingFilter, matches }) => {
+      const initialFilter = { nested: { a: 1, b: 2 } }
+      const controller = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport: vi.fn(),
+        initialFilter,
+        frame: { columns: [] },
+      })
+      const opening = {
+        filter: openingFilter,
+        sort: [{ field: 'id', direction: 'asc' as const }],
+        limit: 37,
+        anchor: null,
+        anchorDirection: 'after' as const,
+        pageIndex: null,
+      }
+      const current = {
+        ...opening,
+        filter: { search: 'desired' },
+        sort: [{ field: 'name', direction: 'desc' as const }],
+        anchor: { id: 7 },
+        pageIndex: 2,
+      }
+      try {
+        controller.restoreWindow({ opening, current })
+        expect(controller.filter.get()).toEqual(
+          matches ? { search: 'desired' } : initialFilter,
+        )
+        expect(controller.windowControlsAvailable.get()).toBe(matches)
+        if (matches) {
+          controller.ingestSubscriptionWindow(
+            [],
+            0,
+            true,
+            null,
+            null,
+            37,
+            current.sort,
+            current.filter,
+            [],
+          )
+          expect(controller.descriptor()).toMatchObject(current)
+          expect(controller.descriptor(true)).toMatchObject({
+            ...opening,
+            filter: initialFilter,
+          })
+          controller.resetOrder()
+          expect(controller.order.get()).toEqual(opening.sort)
+        } else {
+          expect(controller.descriptor()).toBeNull()
+        }
+      } finally {
+        controller.dispose()
+      }
+    },
+  )
+
   it('consumes a subscription window whose backend already applies the route preset', () => {
     const sent: TableViewportDescriptor[] = []
     const declared: (readonly string[])[] = []
@@ -473,7 +1089,7 @@ describe('TableViewportController', () => {
       sendViewport: (descriptor) => sent.push(descriptor),
       sendRendered: (keys) => declared.push(keys),
       initialFilter: { document: 'terms' },
-      initialFilterInSubscription: true,
+
       frame: {
         columns: [{ key: 'publishedOn', label: 'Revision', sortable: true }],
       },
@@ -486,6 +1102,7 @@ describe('TableViewportController', () => {
       null,
       10,
       [{ field: 'publishedOn', direction: 'desc' }],
+      { document: 'terms' },
       [],
     )
 
@@ -516,7 +1133,7 @@ describe('TableViewportController', () => {
       sendFacets,
       sendRendered,
       initialFilter: { document: 'terms' },
-      initialFilterInSubscription: true,
+
       frame: {
         columns: () => columns.get(),
         filters: [
@@ -570,6 +1187,7 @@ describe('TableViewportController', () => {
         { rowKey: 'clause' },
         37,
         undefined,
+        { document: 'terms' },
         [],
         0,
       )
@@ -627,7 +1245,7 @@ describe('TableViewportController', () => {
         sendViewport: (descriptor) => sent.push(descriptor),
         sendRendered: (keys) => rendered.push(keys),
         initialFilter: { document: 'terms' },
-        initialFilterInSubscription: true,
+
         frame: { columns: [{ key: 'position', label: 'Position' }] },
       })
       try {
@@ -653,6 +1271,7 @@ describe('TableViewportController', () => {
           null,
           37,
           order,
+          { document: 'terms' },
           [],
           0,
         )
@@ -682,6 +1301,7 @@ describe('TableViewportController', () => {
           null,
           37,
           order,
+          { document: 'terms' },
           [],
           0,
         )
@@ -729,7 +1349,7 @@ describe('TableViewportController', () => {
       resolve: (row) => row,
       sendViewport: () => {},
       initialFilter: { document: 'terms' },
-      initialFilterInSubscription: true,
+
       frame: { columns: [] },
     })
     try {
@@ -741,6 +1361,7 @@ describe('TableViewportController', () => {
         null,
         37,
         [{ field: 'position', direction: 'asc' }],
+        { document: 'terms' },
         [],
         0,
       )
@@ -803,6 +1424,7 @@ describe('TableViewportController', () => {
       null,
       25,
       [{ field: 'field', direction: 'asc' }],
+      {},
       [],
     )
 
@@ -828,7 +1450,7 @@ describe('TableViewportController', () => {
     ])
   })
 
-  it('a preset left empty does not hold the page window back', () => {
+  it('an empty string preset still rejects a window missing that key', () => {
     const sent: TableViewportDescriptor[] = []
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
@@ -845,11 +1467,13 @@ describe('TableViewportController', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 
-    expect(sent).toEqual([])
-    expect(controller.rows.get()).toHaveLength(1)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.filter).toEqual({ channel: '' })
+    expect(controller.rows.get()).toHaveLength(0)
   })
 
   it('setSearch sets the search filter, resets to page 0, and resends', () => {
@@ -952,6 +1576,17 @@ describe('TableViewportController', () => {
       initialFilter: { state: 'due' },
     })
 
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      { state: 'due' },
+      [],
+    )
     expect(controller.filter.get()).toEqual({ state: 'due' })
 
     controller.setFilter('state', '')
@@ -962,7 +1597,8 @@ describe('TableViewportController', () => {
   })
 
   it('setSort toggles the direction on the same field', () => {
-    const { controller, sent } = makeController()
+    const { controller, sent, open } = makeController()
+    open()
     controller.setSort('key')
     expect(sent.at(-1)).toMatchObject({
       sort: [{ field: 'key', direction: 'asc' }],
@@ -1081,7 +1717,8 @@ describe('TableViewportController', () => {
   })
 
   it('a header click leaves a composite order rather than adding to it', () => {
-    const { controller, sent } = makeController()
+    const { controller, sent, open } = makeController()
+    open()
     controller.setOrder([
       { field: 'channel', direction: 'desc' },
       { field: 'created', direction: 'desc' },
@@ -1148,6 +1785,17 @@ describe('TableViewportController', () => {
       },
     })
 
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setOrder([
       { field: 'channel', direction: 'asc' },
       { field: 'created', direction: 'asc' },
@@ -1200,6 +1848,7 @@ describe('TableViewportController', () => {
       null,
       10,
       [{ field: 'created', direction: 'desc' }],
+      {},
       [],
     )
     expect(controller.frame.orders.get()[0]?.label).toBe('Date ↓')
@@ -1310,6 +1959,7 @@ describe('TableViewportController', () => {
       null,
       10,
       [{ field: 'key', direction: 'asc' }],
+      {},
       [],
     )
 
@@ -1975,6 +2625,7 @@ describe('TableViewportController', () => {
       { id: 1 },
       10,
       undefined,
+      {},
       [],
       5,
     )
@@ -3390,6 +4041,7 @@ describe('TableViewportController window place', () => {
         lastAnchor,
         PAGE_SIZE,
         order,
+        {},
         [],
         rowsBefore,
       )
@@ -3924,6 +4576,7 @@ describe('TableViewportController focus', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -4197,6 +4850,7 @@ describe('TableViewportController retained presentation', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     controller.expandRow('a', true)
@@ -5321,7 +5975,18 @@ describe('TableViewportController text expansion', () => {
       slots: { name: rowKey, secret: 'not retained by text intent' },
     }))
     const open = () => controller.ingestWindow(rows, 5, true, null, null, 2)
-    open()
+    controller.ingestSubscriptionWindow(
+      rows,
+      5,
+      true,
+      null,
+      null,
+      2,
+      undefined,
+      {},
+      [],
+    )
+    rendered.mockClear()
     const registration = controller.geometry.register(() => ({ records: [] }))
     const record = (rowKey = 'a') => {
       const identity = registration.measurement(rowKey, 'wide')?.record
@@ -5708,6 +6373,7 @@ describe('TableViewportController refused predicate', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -5737,6 +6403,7 @@ describe('TableViewportController refused predicate', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -5788,6 +6455,7 @@ describe('TableViewportController refused predicate', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -5824,6 +6492,7 @@ describe('TableViewportController refused predicate', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     expect(controller.rows.get()[0]?.refused).toBe(true)
@@ -5847,6 +6516,7 @@ describe('TableViewportController refused predicate', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     expect(controller.rows.get()[0]?.placeholder).toBe(false)
@@ -5877,6 +6547,7 @@ describe('TableViewportController refused predicate', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -5977,6 +6648,7 @@ describe('TableViewportController rowMessage option', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -6006,6 +6678,7 @@ describe('TableViewportController rowMessage option', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     expect(controller.rows.get()[0]?.rowMessage).toEqual({
@@ -6044,6 +6717,7 @@ describe('TableViewportController rowMessage option', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 
@@ -6080,6 +6754,7 @@ describe('TableViewportController rowMessage option', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 

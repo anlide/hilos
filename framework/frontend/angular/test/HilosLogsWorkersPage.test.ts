@@ -47,6 +47,27 @@ function harness() {
   const sendTableViewport = vi.fn()
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'projectSignal')
+        listener({
+          type: 'page_response',
+          data: {
+            page: HilosPages.LOGS_WORKERS,
+            payload: {
+              windows: {
+                hilosLogWorkers: {
+                  filter: {},
+                  rows: [],
+                  totalCount: 0,
+                  totalExact: true,
+                  limit: 25,
+                  sort: [{ field: 'bytes', direction: 'desc' }],
+                  firstAnchor: null,
+                  lastAnchor: null,
+                },
+              },
+            },
+          },
+        } as never)
       if (event === 'projectSignal') headers.push(listener as never)
       if (event === 'tableWindow') windows.push(listener as never)
       return () => {}

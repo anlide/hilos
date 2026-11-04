@@ -213,6 +213,7 @@ describe('daemon environment mismatch viewports', () => {
       null,
       25,
       [{ field: 'position', direction: 'asc' }],
+      {},
       [],
     )
     controller.refresh()
@@ -358,6 +359,7 @@ describe('combined mismatch binding', () => {
           payload: {
             windows: {
               [address.tableKey]: {
+                filter: {},
                 rows: [a, b],
                 totalCount: 2,
                 totalExact: true,

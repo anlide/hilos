@@ -114,6 +114,7 @@ function world(
       null,
       10,
       undefined,
+      {},
       [],
     )
   }

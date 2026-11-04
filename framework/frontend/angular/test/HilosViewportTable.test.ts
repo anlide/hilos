@@ -371,9 +371,10 @@ function makeController(
   options: {
     refused?: (row: Row) => boolean
     expandable?: (row: Row) => boolean
+    known?: boolean
   } = {},
 ): TableViewportController<Row> {
-  return new TableViewportController<Row>({
+  const controller = new TableViewportController<Row>({
     resolve: (raw) => ({ name: String(raw.slots['name']) }),
     sendViewport: () => undefined,
     frame,
@@ -382,6 +383,19 @@ function makeController(
       ? { expandable: options.expandable }
       : {}),
   })
+  if (options.known !== false)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
+  return controller
 }
 
 function mountInAdminPage(
@@ -431,7 +445,7 @@ describe('HilosViewportTable', () => {
     const controller = new TableViewportController<Row>({
       resolve: (row) => ({ name: String(row.slots.name) }),
       sendViewport: (descriptor) => sent.push(descriptor),
-      initialFilterInSubscription: true,
+
       frame: { title: 'List', columns: COLUMNS },
     })
     controller.ingestRefusal('internal_error')
@@ -470,6 +484,7 @@ describe('HilosViewportTable', () => {
         null,
         37,
         undefined,
+        {},
         [],
       )
       fixture.detectChanges()
@@ -609,6 +624,17 @@ describe('HilosViewportTable', () => {
         : {}),
     })
 
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     return { controller, sent }
   }
 
@@ -2176,7 +2202,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
   })
 
   it('says loading and then the page own empty words in both branches', () => {
-    const controller = makeController(CARD_FRAME)
+    const controller = makeController(CARD_FRAME, { known: false })
     const fixture = mountCards(controller, { withEmpty: true })
 
     expect(
@@ -2212,7 +2238,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
   })
 
   it('keeps the words of an empty table beside the list and not inside it', () => {
-    const controller = makeController(CARD_FRAME)
+    const controller = makeController(CARD_FRAME, { known: false })
     const fixture = mountCards(controller)
 
     expect(
@@ -2971,6 +2997,18 @@ class DetailCardsHost {
 }
 
 function ingestTwo(controller: TableViewportController<Row>): void {
+  if (!controller.windowControlsAvailable.get())
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
   controller.ingestWindow(
     [
       { rowKey: 'a', slots: { name: 'Alice' } },
@@ -3285,6 +3323,18 @@ describe('HilosViewportTable drawing the states of the body', () => {
   }
 
   function twoRows(controller: TableViewportController<Row>): void {
+    if (!controller.windowControlsAvailable.get())
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
     controller.ingestWindow(
       [
         { rowKey: 'a', slots: { name: 'Alice' } },
@@ -3343,7 +3393,17 @@ describe('HilosViewportTable drawing the states of the body', () => {
   it('counts the skeleton by the window size when the window before was empty', () => {
     vi.useFakeTimers()
     const { controller } = makeStates(STATE_FRAME)
-    controller.ingestWindow([], 0, true, null, null, 3)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      3,
+      undefined,
+      {},
+      [],
+    )
     const fixture = mountStates(controller)
 
     controller.setSearch('x')

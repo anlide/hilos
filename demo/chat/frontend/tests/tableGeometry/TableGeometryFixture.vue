@@ -323,26 +323,17 @@ function reset(): void {
       })
     }
   }
-  controller.value.ingestWindow(
+  controller.value.ingestSubscriptionWindow(
     KEYS.map(raw),
     KEYS.length,
     true,
     null,
     null,
     10,
+    tilesEnabled.value ? [{ field: 'name', direction: 'asc' }] : undefined,
+    {},
+    [],
   )
-  if (tilesEnabled.value) {
-    controller.value.ingestSubscriptionWindow(
-      KEYS.map(raw),
-      KEYS.length,
-      true,
-      null,
-      null,
-      10,
-      [{ field: 'name', direction: 'asc' }],
-      [],
-    )
-  }
   stale.value = false
   pending.value = 'none'
   detail.value = 'collapsed'
@@ -578,6 +569,7 @@ function deliver(reconnect = false): void {
       { name: 'g' },
       limit,
       [{ field: 'name', direction: 'asc' }],
+      {},
       [],
       0,
     )

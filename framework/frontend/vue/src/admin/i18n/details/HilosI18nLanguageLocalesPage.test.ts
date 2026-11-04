@@ -1,5 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
+  type TableViewportController,
   createSignal,
   HilosPages,
   ScopeManager,
@@ -139,7 +140,22 @@ function makeConnection(): {
     sendTableRowFocus(_page: string, _tableKey: string, rowKey: string): void {
       focused.push(rowKey)
     },
-    registerTableWindow(): void {},
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        100,
+        undefined,
+        {},
+        [],
+      )
+    },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
     sendTableViewport(

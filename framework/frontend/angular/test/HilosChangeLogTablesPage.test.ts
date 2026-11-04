@@ -112,6 +112,7 @@ function harness(noisy: unknown = NOISY) {
           payload: {
             windows: {
               [TABLE]: {
+                filter: {},
                 rows,
                 totalCount: rows.length,
                 totalExact: true,

@@ -30,7 +30,12 @@ const initial = {
   data: {
     page: 'hilos_daemon_cron',
     payload: {
-      windows: { hilosDaemonCron: { rows: [ruleRow(1_800_000_000_000)] } },
+      windows: {
+        hilosDaemonCron: {
+          filter: {},
+          rows: [ruleRow(1_800_000_000_000)],
+        },
+      },
     },
   },
 }

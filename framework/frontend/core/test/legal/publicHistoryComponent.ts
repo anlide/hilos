@@ -116,6 +116,7 @@ function world(document: HilosLegalDocumentKey, signedIn = false) {
         },
         windows: {
           [tableKey]: {
+            filter: {},
             rows: rows.map((revision) => ({
               rowKey: revision.revisionId,
               slots: { revision: { ...revision } },

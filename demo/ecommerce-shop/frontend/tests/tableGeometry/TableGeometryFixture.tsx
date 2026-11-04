@@ -325,19 +325,18 @@ export function TableGeometryFixture() {
         picture: key === 'd' ? '' : PICTURES[TARGETS.indexOf(key) % 3]!,
       })
     }
-    owner.ingestWindow(KEYS.map(raw), KEYS.length, true, null, null, 10)
-    // The opening order names the menu's first item once headers can be hidden.
-    if (withTiles)
-      owner.ingestSubscriptionWindow(
-        KEYS.map(raw),
-        KEYS.length,
-        true,
-        null,
-        null,
-        10,
-        [{ field: 'name', direction: 'asc' }],
-        [],
-      )
+    // The local owner supplies its known order, including the unsorted projection.
+    owner.ingestSubscriptionWindow(
+      KEYS.map(raw),
+      KEYS.length,
+      true,
+      null,
+      null,
+      10,
+      withTiles ? [{ field: 'name', direction: 'asc' }] : undefined,
+      {},
+      [],
+    )
   }
   const [controller, setController] = useState(() => {
     const owner = makeController()
@@ -555,6 +554,7 @@ export function TableGeometryFixture() {
         { name: 'g' },
         limit,
         [{ field: 'name', direction: 'asc' }],
+        {},
         [],
         0,
       )

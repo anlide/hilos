@@ -288,6 +288,7 @@ describe('deliveries table reactive timezone recomputation', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

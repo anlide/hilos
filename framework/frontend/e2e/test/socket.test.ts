@@ -580,7 +580,10 @@ describe('shared incoming socket observations', () => {
         payload: {
           data: { cronReported: true },
           windows: {
-            hilosDaemonCron: { rows: [{ rowKey: 'rule', slots: { rule } }] },
+            hilosDaemonCron: {
+              filter: {},
+              rows: [{ rowKey: 'rule', slots: { rule } }],
+            },
           },
         },
       },

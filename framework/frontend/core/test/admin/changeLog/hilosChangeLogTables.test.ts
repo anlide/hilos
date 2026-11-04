@@ -337,6 +337,7 @@ describe('change-log tables viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(sent).toEqual([])

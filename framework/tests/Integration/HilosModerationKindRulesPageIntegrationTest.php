@@ -332,7 +332,11 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
             HilosModerationKindsTable::TABLE => new TableWindowDescriptorDTO(filter: ['search' => 'nothing'], limit: 99, pageIndex: 5),
             HilosModerationRulesTable::TABLE => $reported,
         ]);
-        $window = $first['payload']['windows'][HilosModerationRulesTable::TABLE];
+        $expectedFilter = ['kind' => 'test_note', 'search' => 'Rule'];
+        $window = $this->windowWithoutFilter(
+            $first['payload']['windows'][HilosModerationRulesTable::TABLE],
+            $expectedFilter,
+        );
         self::assertSame(31, $window['totalCount']);
         self::assertSame(3, $window['limit']);
         self::assertSame(['Rule 18.', 'Rule 17.', 'Rule 16.'], array_column(array_column(array_column($window['rows'], 'slots'), 'rule'), 'rule'));
@@ -340,7 +344,10 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
         $this->assertRestoredRulesViewport('first', $reported);
         $this->assertSelectedWindow($first, 'test_note');
         $repeat = $this->subscribe('first', ['kind' => 'test_note']);
-        self::assertSame($window, $repeat['payload']['windows'][HilosModerationRulesTable::TABLE]);
+        self::assertSame(
+            $window,
+            $this->windowWithoutFilter($repeat['payload']['windows'][HilosModerationRulesTable::TABLE], $expectedFilter),
+        );
         $this->assertRestoredRulesViewport('first', $reported);
         $this->createPageRouter()->dispatchPageUpdateSubscription(
             new WebSocketPageUpdateSubscriptionSignalDTO('first', ModerationKindRulesTestPage::PAGE, ['kind' => 'test_note']),
@@ -349,10 +356,16 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
         $frames = $this->takeFrames();
         self::assertCount(1, $frames);
         self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $frames[0]['name']);
-        self::assertSame($window, $frames[0]['data']['payload']['windows'][HilosModerationRulesTable::TABLE]);
+        self::assertSame(
+            $window,
+            $this->windowWithoutFilter($frames[0]['data']['payload']['windows'][HilosModerationRulesTable::TABLE], $expectedFilter),
+        );
         $this->assertRestoredRulesViewport('first', $reported);
         $reconnected = $this->subscribe('new-key', ['kind' => 'test_note'], reports: [HilosModerationRulesTable::TABLE => $reported]);
-        self::assertSame($window, $reconnected['payload']['windows'][HilosModerationRulesTable::TABLE]);
+        self::assertSame(
+            $window,
+            $this->windowWithoutFilter($reconnected['payload']['windows'][HilosModerationRulesTable::TABLE], $expectedFilter),
+        );
         $this->assertRestoredRulesViewport('new-key', $reported);
     }
 
@@ -538,6 +551,23 @@ final class HilosModerationKindRulesPageIntegrationTest extends FrameworkIntegra
         self::assertSame($kind, $window['rows'][0]['slots']['kind']['kind']);
 
         return $window['rows'][0]['slots']['kind'];
+    }
+
+    /**
+     * Checks the applied filter and returns the remainder of a copied window.
+     *
+     * @param array<string, mixed> $window Window whose filter is checked
+     * @param array<string, mixed> $expectedFilter Exact expected filter map
+     * @return array<string, mixed> Window with its checked filter removed
+     */
+    private function windowWithoutFilter(array $window, array $expectedFilter): array
+    {
+        self::assertArrayHasKey(TableWindowDescriptorDTO::FILTER, $window);
+        self::assertIsObject($window[TableWindowDescriptorDTO::FILTER]);
+        self::assertSame($expectedFilter, (array)$window[TableWindowDescriptorDTO::FILTER]);
+        unset($window[TableWindowDescriptorDTO::FILTER]);
+
+        return $window;
     }
 
     /**

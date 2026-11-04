@@ -106,6 +106,7 @@ describe('HilosStatusSubscribersPage with the real viewport', () => {
         data: { statusSubscribers: { confirmedCount: 0, pendingCount: 1 } },
         windows: {
           hilosStatusSubscribers: {
+            filter: {},
             rows: [subscriberRow()],
             totalCount: 1,
             totalExact: true,
@@ -228,7 +229,7 @@ describe('HilosStatusSubscribersPage with the real viewport', () => {
       'hilosStatusSubscribers',
       { confirmed: [true, false] },
     ])
-    h.window([], { search: 'no-match' })
+    h.window([], { search: 'no-match', confirmed: false })
     expect(document.body.textContent).toContain('Nothing found')
     fireEvent.click(get('hilos-table-filter-reset'))
     h.window([])

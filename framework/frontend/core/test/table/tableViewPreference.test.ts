@@ -197,6 +197,7 @@ describe('table view browser preference', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     bind(value)

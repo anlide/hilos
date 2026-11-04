@@ -168,6 +168,7 @@ function liveBackupTable() {
   const viewports = (): BackupRequest[] =>
     requests().filter((frame) => frame.type === 'table_viewport')
   const window = (keys: string[], totalCount: number) => ({
+    filter: {},
     rows: keys.map((rowKey) => ({
       rowKey,
       slots: { backup: { finished: true } },
@@ -188,10 +189,16 @@ function liveBackupTable() {
     socket,
     requests,
     viewports,
-    subscription(keys = ['cold'], totalCount = 40): void {
+    subscription(
+      keys = ['cold'],
+      totalCount = 40,
+      filter: Record<string, unknown> = {},
+    ): void {
       socket().message('page_response', {
         page: 'hilos_backup',
-        payload: { windows: { hilosBackups: window(keys, totalCount) } },
+        payload: {
+          windows: { hilosBackups: { ...window(keys, totalCount), filter } },
+        },
       })
     },
     answer(keys = ['b1'], totalCount = 40): void {
@@ -1115,18 +1122,25 @@ describe('createHilosBackupsTable', () => {
       zones.choose('Asia/Tokyo')
       table.start()
       table.start()
-      expect(live.viewports()).toHaveLength(1)
-      expect(live.viewports()[0]?.filter).toEqual({ timeZone: 'Asia/Tokyo' })
+      expect(table.controller.filter.get()).toEqual({ timeZone: 'Asia/Tokyo' })
+      expect(live.viewports()).toHaveLength(0)
       live.subscription()
 
-      expect(live.viewports()).toHaveLength(2)
+      expect(live.viewports()).toHaveLength(1)
       expect(live.viewports().at(-1)?.filter).toEqual({
         timeZone: 'Asia/Tokyo',
       })
       expect(table.controller.loaded.get()).toBe(false)
       expect(table.controller.rows.get()).toEqual([])
       expect(table.controller.frame.body.get()).toBe('loading')
-      expect(table.controller.descriptor()).toBeNull()
+      expect(table.controller.descriptor()).toMatchObject({
+        filter: { timeZone: 'Asia/Tokyo' },
+        sort: [{ field: 'createdAt', direction: 'desc' }],
+        limit: 10,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: null,
+      })
 
       live.answer([], 0)
       expect(table.controller.descriptor()?.filter).toEqual({
@@ -1135,6 +1149,32 @@ describe('createHilosBackupsTable', () => {
       expect(table.controller.frame.activeFilterCount.get()).toBe(0)
       expect(table.controller.frame.filters.get()).toHaveLength(2)
       expect(table.controller.frame.body.get()).toBe('empty')
+    } finally {
+      live.dispose()
+    }
+  })
+
+  it('follows a live zone through cold refusal without losing the full initialized map', () => {
+    const live = liveBackupTable()
+    const { controller } = live.table
+    try {
+      live.table.start()
+      controller.initializeFilter({ timeZone: 'UTC', scope: 'full' })
+      controller.ingestRefusal('internal_error')
+      zones.choose('Asia/Tokyo')
+      expect(controller.filter.get()).toEqual({
+        timeZone: 'Asia/Tokyo',
+        scope: 'full',
+      })
+      expect(live.viewports()).toEqual([])
+      live.subscription()
+      expect(live.viewports().at(-1)?.filter).toEqual({
+        timeZone: 'Asia/Tokyo',
+        scope: 'full',
+      })
+      live.answer()
+      controller.resetFilters()
+      expect(controller.filter.get()).toEqual({ timeZone: 'Asia/Tokyo' })
     } finally {
       live.dispose()
     }
@@ -1274,7 +1314,11 @@ describe('createHilosBackupsTable', () => {
       expect(
         live.requests()[0]?.tableWindows?.['hilosBackups']?.filter,
       ).toEqual(controller.descriptor()?.filter)
-      live.subscription(['new-zone'])
+      live.subscription(['new-zone'], 40, {
+        timeZone: 'Asia/Tokyo',
+        from: '2026-08-01',
+        to: '2026-08-31',
+      })
       expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
         'new-zone',
       ])
@@ -1310,12 +1354,12 @@ describe('createHilosBackupsTable', () => {
       expect(table.controller.filter.get()).toEqual({
         timeZone: 'Europe/Warsaw',
       })
-      expect(live.viewports()).toHaveLength(before + 2)
-      zones.choose('America/New_York')
       expect(live.viewports()).toHaveLength(before + 3)
+      zones.choose('America/New_York')
+      expect(live.viewports()).toHaveLength(before + 4)
       table.dispose()
       zones.choose('UTC')
-      expect(live.viewports()).toHaveLength(before + 3)
+      expect(live.viewports()).toHaveLength(before + 4)
     } finally {
       live.dispose()
     }

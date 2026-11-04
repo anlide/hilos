@@ -89,6 +89,7 @@ function setup(
       payload: {
         windows: {
           [TABLE]: {
+            filter: { kind: kind.get() },
             rows: [wireRow(key, patch)],
             sort: [],
             totalCount: 1,
@@ -132,6 +133,45 @@ function setup(
 }
 
 describe('moderation kind detail', () => {
+  it('corrects a cold unscoped window without exposing its metadata row', () => {
+    const { detail, receive, sent } = setup()
+    detail.start()
+    receive('page_response', {
+      page: PAGE,
+      payload: {
+        windows: {
+          [TABLE]: {
+            filter: {},
+            rows: [wireRow('foreign')],
+            sort: [],
+            limit: 1,
+            totalCount: 1,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+          },
+        },
+      },
+    })
+    expect(detail.row.get()).toBeNull()
+    const requests = sent.filter((frame) => frame.type === 'table_viewport')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ filter: { kind: 'first' }, limit: 1 })
+    receive('table_window', {
+      page: PAGE,
+      tableKey: TABLE,
+      requestId: requests[0]!.requestId,
+      rows: [wireRow('first')],
+      limit: 1,
+      totalCount: 1,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+    })
+    expect(detail.row.get()?.kind).toBe('first')
+    expect(sent.filter((frame) => frame.type === 'table_rendered')).toEqual([])
+  })
+
   it.each(['before mount', 'after mount'])(
     'uses the one page answer %s without a viewport fetch',
     (timing) => {
@@ -217,7 +257,7 @@ describe('moderation kind detail', () => {
       type: 'page_subscribe',
       page: PAGE,
       params: { kind: 'second' },
-      tableWindows: { [TABLE]: detail.controller.descriptor() },
+      tableWindows: { [TABLE]: detail.controller.descriptor(true) },
     })
     answer('first')
     expect(detail.row.get()).toBeNull()
@@ -273,6 +313,7 @@ describe('moderation kind detail', () => {
         payload: {
           windows: {
             [TABLE]: {
+              filter: {},
               rows: ['first', 'second', 'third', 'fourth'].map((key) =>
                 wireRow(key),
               ),

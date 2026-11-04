@@ -76,6 +76,7 @@ function harness(
       payload: {
         windows: {
           hilosLegalDocuments: {
+            filter: {},
             rows: documentRows,
             totalCount: documentRows.length,
             totalExact: true,
@@ -85,6 +86,7 @@ function harness(
             sort: [{ field: 'publishedOn', direction: 'desc' }],
           },
           hilosLegalSettings: {
+            filter: {},
             rows: [
               {
                 rowKey: 'legal.refusal_after_deadline',

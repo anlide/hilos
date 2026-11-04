@@ -136,6 +136,7 @@ describe('createHilosChannelSummary', () => {
         data: { channelSummary: summary, pageLabel: 'Channel' },
         windows: {
           hilosCommunicationsChannelFields: {
+            filter: {},
             rows: [],
             sort: [],
             limit: 10,

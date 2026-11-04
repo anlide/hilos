@@ -195,6 +195,7 @@ describe('daemon agents viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

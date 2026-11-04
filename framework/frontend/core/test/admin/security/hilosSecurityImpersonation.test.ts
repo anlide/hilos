@@ -167,6 +167,7 @@ describe('createHilosSecurityImpersonationTable', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 

@@ -266,6 +266,7 @@ function fakeSink(): TableWindowSink & {
     limit: number
     sort: TableSortOrder | undefined
   }>
+  filters: Readonly<Record<string, unknown>>[]
   deltas: TableViewportDelta[]
   counts: Array<{
     totalCount: number
@@ -340,6 +341,7 @@ function fakeSink(): TableWindowSink & {
     totalExact: boolean
   }> = []
   const unannouncements: string[] = []
+  const filters: Readonly<Record<string, unknown>>[] = []
   const progress: HilosTableProgressFrame[] = []
   const snapshots: Array<readonly HilosTableProgressFrame[]> = []
   const bulkReports: HilosTableBulkReport[] = []
@@ -349,6 +351,7 @@ function fakeSink(): TableWindowSink & {
 
   return {
     windows,
+    filters,
     deltas,
     counts,
     appends,
@@ -390,8 +393,10 @@ function fakeSink(): TableWindowSink & {
       lastAnchor,
       limit,
       sort,
+      filter,
       bars,
     ): void {
+      filters.push(filter)
       snapshots.push(bars)
       windows.push({
         rows,
@@ -509,6 +514,7 @@ describe('bindTableViewport', () => {
       payload: {
         windows: {
           settings: {
+            filter: { state: 'up', nested: { value: false } },
             rows: [{ rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } }],
             sort: [{ field: 'key', direction: 'asc' }],
             limit: 25,
@@ -523,6 +529,7 @@ describe('bindTableViewport', () => {
 
     // The cold entry: no request was made and the window is here anyway, carrying the size
     // and the order the table declares on the backend (HIL-642).
+    expect(sink.filters).toEqual([{ state: 'up', nested: { value: false } }])
     expect(sink.windows).toHaveLength(1)
     expect(sink.windows[0]?.limit).toBe(25)
     expect(sink.windows[0]?.sort).toEqual([{ field: 'key', direction: 'asc' }])
@@ -574,6 +581,7 @@ describe('bindTableViewport', () => {
       payload: {
         windows: {
           backups: {
+            filter: {},
             rows: [{ rowKey: 'b1', slots: {} }],
             sort: [],
             limit: 10,
@@ -691,6 +699,7 @@ describe('bindTableViewport', () => {
       payload: {
         windows: {
           settings: {
+            filter: {},
             rows: [],
             sort: [],
             limit: 10,
@@ -1314,6 +1323,7 @@ describe('bindTableViewport', () => {
       payload: {
         windows: {
           settings: {
+            filter: {},
             rows: [],
             sort: [],
             limit: 25,
@@ -1365,6 +1375,7 @@ describe('bindTableViewport', () => {
       payload: {
         windows: {
           settings: {
+            filter: {},
             rows: [],
             sort: [],
             limit: 25,
@@ -1574,6 +1585,7 @@ describe('bindTableViewport presentation ingress', () => {
       null,
       2,
       undefined,
+      {},
       [],
     )
     let oldExtent = 88.25
@@ -1681,6 +1693,7 @@ describe('bindTableViewport presentation ingress', () => {
       payload: {
         windows: {
           settings: {
+            filter: {},
             rows: [{ rowKey: 'restored', slots: {} }],
             totalCount: 1,
             totalExact: true,
@@ -1750,7 +1763,13 @@ describe('bindTableViewport presentation ingress', () => {
             page: 'main',
             payload: {
               windows: {
-                settings: { ...counts, rows: [row], limit: 2, sort: [] },
+                settings: {
+                  ...counts,
+                  rows: [row],
+                  limit: 2,
+                  sort: [],
+                  filter: {},
+                },
               },
             },
           })
@@ -1835,6 +1854,7 @@ describe('bindTableViewport presentation ingress', () => {
       payload: {
         windows: {
           settings: {
+            filter: {},
             rows: [row],
             sort: [],
             limit: 2,

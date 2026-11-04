@@ -49,6 +49,7 @@ function pageAnswer(sort = [{ field: 'lastSeenTs', direction: 'desc' }]) {
     payload: {
       windows: {
         [TABLE]: {
+          filter: {},
           rows: [],
           limit: 25,
           totalCount: 0,

@@ -172,6 +172,7 @@ export function tableHarness(
     extra: Record<string, unknown> = {},
   ) {
     const window = {
+      filter: { table: BOT.name },
       rows,
       totalCount: rows.length,
       totalExact: true,

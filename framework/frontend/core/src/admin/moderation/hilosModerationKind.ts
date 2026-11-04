@@ -26,6 +26,38 @@ export interface HilosModerationKind {
   dispose(): void
 }
 
+/** Only an accepted window or refusal establishes the metadata's provenance. */
+class ModerationKindViewportController extends TableViewportController<HilosModerationKindRow> {
+  constructor(
+    options: ConstructorParameters<
+      typeof TableViewportController<HilosModerationKindRow>
+    >[0],
+    private readonly accept: () => void,
+  ) {
+    super(options)
+  }
+
+  override ingestWindow(
+    ...args: Parameters<
+      TableViewportController<HilosModerationKindRow>['ingestWindow']
+    >
+  ): void {
+    if (!this.acceptsWindowResponse(args[7])) return
+    super.ingestWindow(...args)
+    this.accept()
+  }
+
+  override ingestRefusal(
+    ...args: Parameters<
+      TableViewportController<HilosModerationKindRow>['ingestRefusal']
+    >
+  ): void {
+    if (!this.acceptsWindowResponse(args[1])) return
+    super.ingestRefusal(...args)
+    this.accept()
+  }
+}
+
 /**
  * Bind the kind's first window and live values without another first-screen fetch.
  *
@@ -40,29 +72,40 @@ export function createHilosModerationKind(
     | typeof HilosPages.MODERATION_KIND
     | typeof HilosPages.MODERATION_KIND_RULES = HilosPages.MODERATION_KIND,
 ): HilosModerationKind {
-  const controller = new TableViewportController<HilosModerationKindRow>({
-    resolve: resolveHilosModerationKindRow,
-    // No client preset: the page already fixes kind and limit before its reply.
-    // initialFilter would discard that canonical window and ask for it again.
-    frame: {
-      columns: Object.values(HilosModerationKindRowKey).map((key) => ({
-        key,
-        label: key,
-      })),
+  const initialFilter = { kind: kind.get() }
+  // Navigation already owns the next answer; only its synchronous reset is silent.
+  let resettingKind = false
+  const controller = new ModerationKindViewportController(
+    {
+      resolve: resolveHilosModerationKindRow,
+      // The page fixes this same canonical kind and limit before its reply.
+      initialFilter,
+      frame: {
+        columns: Object.values(HilosModerationKindRowKey).map((key) => ({
+          key,
+          label: key,
+        })),
+      },
+      sendViewport: (descriptor) => {
+        if (resettingKind) return
+        context.connection.sendTableViewport(
+          page,
+          HILOS_MODERATION_KINDS_TABLE,
+          descriptor,
+        )
+      },
+      sendRendered: (rendered) =>
+        context.connection.sendTableRendered(
+          page,
+          HILOS_MODERATION_KINDS_TABLE,
+          rendered,
+        ),
     },
-    sendViewport: (descriptor) =>
-      context.connection.sendTableViewport(
-        page,
-        HILOS_MODERATION_KINDS_TABLE,
-        descriptor,
-      ),
-    sendRendered: (rendered) =>
-      context.connection.sendTableRendered(
-        page,
-        HILOS_MODERATION_KINDS_TABLE,
-        rendered,
-      ),
-  })
+    () => {
+      const scope = context.scopes.page()
+      delivered.set(scope?.key === page ? { scope, kind: kind.get() } : null)
+    },
+  )
   // Only provenance is held here; row values remain owned by the controller.
   const delivered = createSignal<{ scope: Scope; kind: string } | null>(null)
   const current = computedSignal(() => {
@@ -97,19 +140,29 @@ export function createHilosModerationKind(
     ),
     start() {
       if (teardown.length > 0) return
+      initialFilter.kind = kind.get()
+      controller.initializeFilter(initialFilter)
       teardown = [
-        subscribeSignal(kind, () => delivered.set(null)),
+        subscribeSignal(kind, (value) => {
+          delivered.set(null)
+          initialFilter.kind = value
+          if (controller.windowControlsAvailable.get()) {
+            resettingKind = true
+            try {
+              controller.resetFilters()
+            } finally {
+              resettingKind = false
+              controller.resetWindowRequests()
+            }
+          } else {
+            controller.initializeFilter(initialFilter)
+          }
+        }),
         subscribeSignal({ get: () => context.scopes.page() }, (scope) => {
           delivered.set(null)
           // Navigation gathers held windows before the outgoing view unmounts.
           // Release this binding now; a new scope for this same page keeps it.
           if (scope?.key !== page) dispose()
-        }),
-        subscribeSignal(controller.rows, () => {
-          const scope = context.scopes.page()
-          delivered.set(
-            scope?.key === page ? { scope, kind: kind.get() } : null,
-          )
         }),
         bindTableViewport(
           context.connection,

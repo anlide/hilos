@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosOAuthProviderFields,
+  createHilosOAuthProviderSummary,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
   resolveHilosOAuthFieldRow,
@@ -14,10 +15,76 @@ import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../../src/connection/actionLifecycle.js'
-import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import {
+  type HilosConnection,
+  type TableViewportDescriptor,
+} from '../../../src/connection/HilosConnection.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+
+it.each([createHilosOAuthProviderSummary, createHilosOAuthProviderFields])(
+  'initializes an early provider change and keeps clearing and Reset after metadata for %s',
+  (create) => {
+    const sent: TableViewportDescriptor[] = []
+    const provider = createSignal('first')
+    const table = create(
+      {
+        connection: {
+          on: () => () => {},
+          registerTableWindow: () => {},
+          unregisterTableWindow: () => {},
+          sendTableRendered: () => true,
+          sendTableViewport: (
+            _page: string,
+            _table: string,
+            descriptor: TableViewportDescriptor,
+          ) => sent.push(descriptor),
+        } as unknown as HilosConnection,
+        scopes: new ScopeManager(),
+      } as HilosSecurityOauthContext,
+      provider,
+    )
+    try {
+      table.start()
+      table.controller.initializeFilter({ provider: 'first', retained: false })
+      table.controller.ingestRefusal('internal_error')
+      provider.set('second')
+      expect(table.controller.filter.get()).toEqual({
+        provider: 'second',
+        retained: false,
+      })
+      provider.set('')
+      expect(table.controller.filter.get()).toEqual({ retained: false })
+      expect(sent).toEqual([])
+      provider.set('second')
+      table.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        { provider: 'second', retained: false },
+        [],
+      )
+      expect(sent).toEqual([])
+      provider.set('third')
+      expect(sent.at(-1)?.filter).toEqual({
+        provider: 'third',
+        retained: false,
+      })
+      provider.set('')
+      expect(sent.at(-1)?.filter).toEqual({ retained: false })
+      table.controller.resetFilters()
+      expect(sent.at(-1)?.filter).toEqual({ provider: 'first' })
+    } finally {
+      table.dispose()
+      table.controller.dispose()
+    }
+  },
+)
 
 /** Build a row whose inline slot of the given name carries the given fields. */
 function slotRow(
@@ -279,6 +346,7 @@ describe('row focus on the tables a dialog edits over', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
 

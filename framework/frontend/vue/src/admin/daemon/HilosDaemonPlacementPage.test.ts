@@ -500,6 +500,7 @@ function liveHarness(
             : {
                 windows: {
                   hilosDaemonPlacement: {
+                    filter: {},
                     rows,
                     totalCount: rows.length,
                     totalExact: true,

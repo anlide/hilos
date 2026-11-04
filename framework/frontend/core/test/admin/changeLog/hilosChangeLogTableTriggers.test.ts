@@ -83,6 +83,7 @@ function harness(tableName = 'bot') {
         payload: {
           windows: {
             [tableKey]: {
+              filter: {},
               rows: [rawRow()],
               totalCount: 1,
               totalExact: true,
@@ -237,16 +238,26 @@ describe('table triggers viewport', () => {
     expect(table.controller.rows.get()[0]?.row?.rowKey).toBe('first')
   })
 
-  it('addresses the cold rendered report when there is no active preset', () => {
+  it('corrects an empty-string preset that is absent from the cold filter', () => {
     const { table, connection, firstWindow } = harness('')
     table.start()
     firstWindow()
-    expect(connection.sendTableRendered).toHaveBeenCalledExactlyOnceWith(
+    expect(connection.sendTableRendered).not.toHaveBeenCalled()
+    expect(connection.sendTableViewport).toHaveBeenCalledExactlyOnceWith(
       PAGE,
       TABLE,
-      ['name', 'owner', 'event', 'table', 'writesTo', 'validFromMigration'],
+      expect.objectContaining({
+        filter: { table: '' },
+        rendered: [
+          'name',
+          'owner',
+          'event',
+          'table',
+          'writesTo',
+          'validFromMigration',
+        ],
+      }),
     )
-    expect(connection.sendTableViewport).not.toHaveBeenCalled()
     table.dispose()
   })
 

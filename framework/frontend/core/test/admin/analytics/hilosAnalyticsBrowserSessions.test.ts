@@ -236,6 +236,7 @@ describe('hilosAnalyticsBrowserSessions viewport', () => {
       null,
       25,
       [{ field: 'lastSeenTs', direction: 'desc' }],
+      {},
       [],
     )
     expect(sent).toHaveLength(1)
@@ -280,6 +281,7 @@ describe('hilosAnalyticsBrowserSessions viewport', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     expect(sent[0]?.descriptor.filter).toEqual({ user: 0 })
@@ -297,6 +299,7 @@ describe('hilosAnalyticsBrowserSessions viewport', () => {
     const payload = {
       windows: {
         hilosAnalyticsBrowserSessions: {
+          filter: {},
           rows: [],
           limit: 25,
           totalCount: 0,

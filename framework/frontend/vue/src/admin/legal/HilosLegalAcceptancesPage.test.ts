@@ -333,6 +333,17 @@ async function mountExport(
     },
     setup(props) {
       controller = props.controller
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        {},
+        [],
+      )
       return {}
     },
     template: '<div />',

@@ -162,9 +162,9 @@ interface TableWindowRegistration {
  * table mounted.
  */
 export interface TableWindowDescriptorSource {
-  /** Report the held window, or an opted-in route preset for a new opening. */
+  /** Report the held window, or the opening controls for a new mount. */
   descriptor(opening?: boolean): TableViewportDescriptor | null
-  /** Opt in to carrying controls, without row data, across an access wait. */
+  /** Carry known controls, without row data, across an access wait. */
   retainWindow?(): TableWindowContinuation | null
   /** Restore the same subscription's controls before its answer is replayed. */
   restoreWindow?(continuation: TableWindowContinuation): void
@@ -696,7 +696,7 @@ export class HilosConnection {
   /**
    * Drop every buffered page frame.
    *
-   * An access wait keeps opted-in tables' controls in their existing registrations.
+   * An access wait keeps known table controls in their existing registrations.
    * Navigation and refusal discard that continuation along with the page frames.
    *
    * @param retainTableWindows Whether the same live subscription is being re-answered.

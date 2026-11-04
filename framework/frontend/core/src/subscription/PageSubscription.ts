@@ -386,7 +386,7 @@ export class PageSubscription {
    * nothing changes for it. The frames the connection holds are dropped with it,
    * for the same reason: they too were decided for circumstances that are gone.
    *
-   * An opted-in table keeps only its window controls in the existing connection
+   * A known table keeps only its window controls in the existing connection
    * registration, so a replacement view can consume the server's held window.
    * Capture them before publishing loading: a view adapter may unmount at once.
    *
@@ -573,7 +573,7 @@ export class PageSubscription {
       [FIELD_PAGE]: current.pageKey,
       [FIELD_PARAMS]: params,
     }
-    // A new opening will mount new controllers. Opted-in tables report their route preset
+    // A new opening will mount new controllers. Tables report their opening controls
     // instead of a departing controller's search and address; reconnects keep the live window.
     // The server checks route scope before accepting a report for a reused table key.
     const windows = this.connection.tableWindowDescriptors(!current.prepared)

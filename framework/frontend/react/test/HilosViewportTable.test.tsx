@@ -53,6 +53,7 @@ function makeController(
   options: {
     refused?: (row: Row) => boolean
     expandable?: (row: Row) => boolean
+    known?: boolean
   } = {},
 ): {
   controller: TableViewportController<Row>
@@ -69,6 +70,18 @@ function makeController(
       : {}),
   })
 
+  if (options.known !== false)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
   return { controller, sent }
 }
 
@@ -87,7 +100,7 @@ describe('HilosViewportTable', () => {
     const controller = new TableViewportController<Row>({
       resolve: (row) => ({ name: String(row.slots.name) }),
       sendViewport: (descriptor) => sent.push(descriptor),
-      initialFilterInSubscription: true,
+
       frame: { title: 'List', columns: COLUMNS },
     })
     controller.ingestRefusal('internal_error')
@@ -125,6 +138,7 @@ describe('HilosViewportTable', () => {
           null,
           37,
           undefined,
+          {},
           [],
         ),
       )
@@ -1532,7 +1546,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
   })
 
   it('says loading and then the page own empty words in both branches', () => {
-    const { controller } = makeController(CARD_FRAME)
+    const { controller } = makeController(CARD_FRAME, { known: false })
     const { container } = render(
       <HilosViewportTable
         controller={controller}
@@ -1572,7 +1586,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
   })
 
   it('keeps the words of an empty table beside the list and not inside it', () => {
-    const { controller } = makeController(CARD_FRAME)
+    const { controller } = makeController(CARD_FRAME, { known: false })
     const { container } = renderCards(controller)
 
     expect(
@@ -3795,6 +3809,17 @@ describe('HilosViewportTable Tiles mount', () => {
         <HilosViewportTable controller={f.controller} cells={TILE_CELLS} />,
       )
       act(() => f.controller.setView('tiles'))
+      f.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        {},
+        [],
+      )
       if (state === 'empty_page') {
         act(() => {
           f.controller.ingestWindow(

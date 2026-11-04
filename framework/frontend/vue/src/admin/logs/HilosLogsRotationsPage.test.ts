@@ -159,6 +159,27 @@ function makeConnection(): {
   const focus: string[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'projectSignal')
+        listener({
+          type: 'page_response',
+          data: {
+            page: HilosPages.LOGS_ROTATIONS,
+            payload: {
+              windows: {
+                hilosLogRotations: {
+                  filter: {},
+                  rows: [],
+                  totalCount: 0,
+                  totalExact: true,
+                  limit: 25,
+                  sort: [{ field: 'batchAt', direction: 'desc' }],
+                  firstAnchor: null,
+                  lastAnchor: null,
+                },
+              },
+            },
+          },
+        } as never)
       if (event === 'projectSignal') {
         projectListeners.push(
           listener as unknown as (signal: {
@@ -275,6 +296,7 @@ function makeConnection(): {
             payload: {
               windows: {
                 hilosLogRotations: {
+                  filter: {},
                   rows: rows.map((slot) => ({
                     rowKey: String(slot.rowKey),
                     slots: { batch: slot },
@@ -506,6 +528,7 @@ describe('HilosLogsRotationsPage', () => {
     const wrapper = mountPage(connection)
     pushHeader(header())
     pushEmptyWindow()
+    await nextTick()
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('2019-01-01')
 
@@ -548,6 +571,7 @@ describe('HilosLogsRotationsPage', () => {
   it('offers the node column and the node filter once the picture names nodes', async () => {
     const { connection, sent, pushHeader } = makeConnection()
     const wrapper = mountPage(connection)
+    await nextTick()
 
     pushHeader(
       header({
@@ -1240,6 +1264,7 @@ describe('HilosLogsRotationsPage', () => {
       makeActions().actions,
       router({ state: 'due' }, rewrites),
     )
+    await nextTick()
 
     await wrapper.find('[data-id="hilos-table-filter-state"]').setValue(false)
 
@@ -1377,6 +1402,7 @@ describe('HilosLogsRotationsPage', () => {
     bindSession().handshake(null, true)
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
+    await nextTick()
 
     pushHeader(header())
     pushWindow([

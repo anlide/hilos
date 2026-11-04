@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type TableWindowContinuation } from '../../connection/HilosConnection.js'
 import { formatSnapshotMoment } from '../../format/moment.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
@@ -186,10 +187,45 @@ export function analyticsBrowserSessionsPath(period: AnalyticsPeriod): string {
   })
 }
 
+/** Adapt a same-subscription continuation after this owner silently rewrote its URL. */
+class BrowserSessionListViewportController extends TableViewportController<HilosAnalyticsBrowserSessionListRow> {
+  constructor(
+    options: ConstructorParameters<
+      typeof TableViewportController<HilosAnalyticsBrowserSessionListRow>
+    >[0],
+    private readonly address: HilosAnalyticsBrowserSessionListAddress,
+  ) {
+    super(options)
+  }
+
+  /** Restore the original opening only when the retained current Period addresses this route. */
+  override restoreWindow(continuation: TableWindowContinuation): void {
+    const route = this.address.currentRoute.get()
+    if (
+      route.page !== HilosPages.ANALYTICS_BROWSER_SESSIONS ||
+      readAnalyticsBrowserSessionsAddress(route.params) !==
+        (continuation.current.filter[ANALYTICS_PERIOD_FILTER] ?? 'any-time')
+    )
+      return
+
+    // Registration alone carries the historical opening. Keep this mount's calendar
+    // and all other seed keys so the inherited exact guard still rejects foreign context.
+    const seed = this.filter.get()
+    this.initializeFilter({
+      ...seed,
+      [ANALYTICS_PERIOD_FILTER]:
+        continuation.opening.filter[ANALYTICS_PERIOD_FILTER],
+    })
+    super.restoreWindow(continuation)
+    if (!this.windowControlsAvailable.get()) this.initializeFilter(seed)
+  }
+}
+
 /**
  * Build one page opening with a context-only reset baseline and its actual URL preset.
  * The controller owns UI choice; createHilosAnalyticsPeriod owns the captured
- * calendar. No other process reads either, so no backend store or Hilos::$rt is needed.
+ * calendar. The connection registration carries opening/current controls across access
+ * replacement. No other process reads them, so no backend store or Hilos::$rt is needed.
  *
  * @param context Connection and current page scope.
  * @param address Navigator carrying the actual route and silent URL replacement.
@@ -233,8 +269,8 @@ export function createHilosAnalyticsBrowserSessionListTable(
     },
   ]
   let bound = false
-  const controller =
-    new TableViewportController<HilosAnalyticsBrowserSessionListRow>({
+  const controller = new BrowserSessionListViewportController(
+    {
       resolve: resolveHilosAnalyticsBrowserSessionListRow,
       initialFilter: period.initialFilter,
       frame: {
@@ -266,20 +302,32 @@ export function createHilosAnalyticsBrowserSessionListTable(
             facets,
           )
       },
-    })
-  controller.setFilter(ANALYTICS_PERIOD_FILTER, period.initialPeriod)
-  controller.resetWindowRequests()
+    },
+    address,
+  )
+  controller.initializeFilter({
+    ...period.initialFilter,
+    ...(period.initialPeriod === undefined
+      ? {}
+      : { [ANALYTICS_PERIOD_FILTER]: period.initialPeriod }),
+  })
   const selectedPeriod = (): AnalyticsPeriod =>
     (controller.filter.get()[ANALYTICS_PERIOD_FILTER] as
       AnalyticsPeriod | undefined) ?? 'any-time'
   const syncRoute = (route: PageRouteMatch): void => {
     if (route.page !== HilosPages.ANALYTICS_BROWSER_SESSIONS) return
     const next = readAnalyticsBrowserSessionsAddress(route.params)
-    if (next !== selectedPeriod())
+    if (!controller.windowControlsAvailable.get()) {
+      controller.initializeFilter({
+        ...period.initialFilter,
+        ...(next === 'any-time' ? {} : { [ANALYTICS_PERIOD_FILTER]: next }),
+      })
+    } else if (next !== selectedPeriod()) {
       controller.setFilter(
         ANALYTICS_PERIOD_FILTER,
         next === 'any-time' ? undefined : next,
       )
+    }
   }
   const teardown: Array<() => void> = []
   let started = false
@@ -301,7 +349,20 @@ export function createHilosAnalyticsBrowserSessionListTable(
       const scope = context.scopes.page()
       // A route may have moved between construction and mount.
       syncRoute(address.currentRoute.get())
-      controller.resetWindowRequests()
+      // Restore before observing filters: adopting the historical opening must not
+      // rewrite the URL before the same continuation restores its current controls.
+      bound = true
+      teardown.push(
+        bindTableViewport(
+          context.connection,
+          context.scopes,
+          {
+            page: HilosPages.ANALYTICS_BROWSER_SESSIONS,
+            tableKey: ANALYTICS_BROWSER_SESSION_LIST_TABLE,
+          },
+          controller,
+        ),
+      )
       teardown.push(
         subscribeSignal(address.currentRoute, syncRoute),
         subscribeSignal(controller.filter, () => {
@@ -314,19 +375,6 @@ export function createHilosAnalyticsBrowserSessionListTable(
             address.replacePath(analyticsBrowserSessionsPath(selectedPeriod()))
           }
         }),
-      )
-      // Binding can replay a buffered page answer synchronously.
-      bound = true
-      teardown.push(
-        bindTableViewport(
-          context.connection,
-          context.scopes,
-          {
-            page: HilosPages.ANALYTICS_BROWSER_SESSIONS,
-            tableKey: ANALYTICS_BROWSER_SESSION_LIST_TABLE,
-          },
-          controller,
-        ),
       )
       teardown.push(
         subscribeSignal({ get: () => context.scopes.page() }, (current) => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   HilosConnection,
   type WebSocketLike,
@@ -76,6 +76,7 @@ const WINDOW_ANSWER = JSON.stringify({
     payload: {
       windows: {
         [TABLE]: {
+          filter: {},
           rows: [
             { rowKey: 'example_string', slots: { setting: { key: 'a' } } },
           ],
@@ -113,9 +114,12 @@ describe('the cold entry of a table', () => {
     pages.subscribe(PAGE)
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
-      sendViewport: () => {},
+      sendViewport: () => {
+        throw new Error('matching opening must not request another window')
+      },
       frame: { columns: [] },
     })
+    const ingress = vi.spyOn(controller, 'ingestSubscriptionWindow')
     bindTableViewport(
       connection,
       scopes,
@@ -131,6 +135,7 @@ describe('the cold entry of a table', () => {
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
       'example_string',
     ])
+    expect(ingress.mock.calls[0]?.[7]).toEqual({})
   })
 
   it('draws the window the page answered with, bound after the answer arrived', () => {
@@ -152,9 +157,14 @@ describe('the cold entry of a table', () => {
     // Only now does the view mount and the table bind — the order a router gives it.
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
-      sendViewport: () => {},
+      sendViewport: () => {
+        throw new Error(
+          'matching buffered opening must not request another window',
+        )
+      },
       frame: { columns: [] },
     })
+    const ingress = vi.spyOn(controller, 'ingestSubscriptionWindow')
     bindTableViewport(
       connection,
       scopes,
@@ -167,9 +177,10 @@ describe('the cold entry of a table', () => {
     ])
     expect(controller.loaded.get()).toBe(true)
     expect(controller.descriptor()?.limit).toBe(10)
+    expect(ingress.mock.calls[0]?.[7]).toEqual({})
   })
 
-  it('keeps a legacy controller report on a new subscription without the opt-in', () => {
+  it('reports opening controls for a new mount after a current search', () => {
     const connection = new HilosConnection({
       url: 'ws://test/ws',
       webSocketFactory: (url) => new ScriptedSocket(url),
@@ -202,9 +213,33 @@ describe('the cold entry of a table', () => {
         type: 'page_subscribe',
         page: PAGE,
         params: {},
-        tableWindows: { [TABLE]: controller.descriptor() },
+        tableWindows: { [TABLE]: controller.descriptor(true) },
       })
       expect(controller.descriptor()?.filter).toEqual({ search: 'kept' })
+      unbind()
+      controller.dispose()
+      ScriptedSocket.last.message(WINDOW_ANSWER)
+      const mounted = new TableViewportController<TableRow>({
+        resolve: (row) => row,
+        sendViewport: () => {
+          throw new Error(
+            'matching replacement must not request another window',
+          )
+        },
+        frame: { columns: [] },
+      })
+      const release = bindTableViewport(
+        connection,
+        scopes,
+        { page: PAGE, tableKey: TABLE },
+        mounted,
+      )
+      expect(mounted.search.get()).toBe('')
+      expect(mounted.rows.get().map(({ rowKey }) => rowKey)).toEqual([
+        'example_string',
+      ])
+      release()
+      mounted.dispose()
     } finally {
       unbind()
       pages.unsubscribe()

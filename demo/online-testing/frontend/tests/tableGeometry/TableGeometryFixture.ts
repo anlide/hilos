@@ -1017,6 +1017,7 @@ export class TableGeometryFixture {
         { name: 'g' },
         10,
         [{ field: 'name', direction: 'asc' }],
+        {},
         [],
         0,
       )
@@ -1245,6 +1246,7 @@ export class TableGeometryFixture {
           last,
           limit,
           [{ field: 'name', direction: 'asc' }],
+          {},
           [],
           0,
         )

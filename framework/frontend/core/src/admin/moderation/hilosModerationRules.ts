@@ -96,13 +96,18 @@ class ModerationRulesViewportController extends TableViewportController<HilosMod
     ) => TableViewportDescriptor | null,
     private readonly accept: () => void,
     private readonly matches: (rows: readonly TableRow[]) => boolean,
+    private readonly kind: ReadonlySignal<string>,
   ) {
     super(options)
   }
 
-  override descriptor(): TableViewportDescriptor | null {
-    const descriptor = super.descriptor()
+  override descriptor(opening = false): TableViewportDescriptor | null {
+    const descriptor = super.descriptor(opening)
     return descriptor === null ? null : this.project(descriptor)
+  }
+
+  override setFilters(filters: Readonly<Record<string, unknown>>): void {
+    super.setFilters({ ...filters, kind: this.kind.get() })
   }
 
   override ingestWindow(
@@ -177,13 +182,11 @@ export function createHilosModerationRules(
         .every((view) => view.placeholder || view.row?.kind === kind.get())
     )
   })
-  const withKind = (descriptor: TableViewportDescriptor) => ({
-    ...descriptor,
-    filter: { ...descriptor.filter, kind: kind.get() },
-  })
+  const initialFilter = { kind: kind.get() }
   const controller = new ModerationRulesViewportController(
     {
       resolve,
+      initialFilter,
       frame: {
         columns: RULES_COLUMNS,
         rowHeight: { mode: 'lines', count: 3 },
@@ -198,11 +201,18 @@ export function createHilosModerationRules(
           : {}),
       },
       sendViewport: (descriptor) => {
-        if (!current.get()) return
+        // A replacement may need its expected window before any rows establish
+        // provenance. Only that route's canonical address may be requested.
+        if (
+          context.scopes.page()?.key !== HilosPages.MODERATION_KIND_RULES ||
+          kind.get() === '' ||
+          descriptor.filter['kind'] !== kind.get()
+        )
+          return
         context.connection.sendTableViewport(
           HilosPages.MODERATION_KIND_RULES,
           HILOS_MODERATION_RULES_TABLE,
-          withKind(descriptor),
+          descriptor,
         )
       },
       sendRendered: (rendered) =>
@@ -218,7 +228,13 @@ export function createHilosModerationRules(
           rowKey,
         ),
     },
-    (descriptor) => (current.get() ? withKind(descriptor) : null),
+    (descriptor) =>
+      current.get()
+        ? {
+            ...descriptor,
+            filter: { ...descriptor.filter, kind: kind.get() },
+          }
+        : null,
     () => {
       const scope = context.scopes.page()
       delivered.set(
@@ -231,6 +247,7 @@ export function createHilosModerationRules(
       context.scopes.page()?.key === HilosPages.MODERATION_KIND_RULES &&
       kind.get() !== '' &&
       rows.every((row) => resolve(row).kind === kind.get()),
+    kind,
   )
   let teardown: Unsubscribe[] = []
 
@@ -245,8 +262,19 @@ export function createHilosModerationRules(
     current,
     start() {
       if (teardown.length > 0) return
+      initialFilter.kind = kind.get()
+      controller.initializeFilter(initialFilter)
       teardown = [
-        subscribeSignal(kind, () => delivered.set(null)),
+        subscribeSignal(kind, (value) => {
+          delivered.set(null)
+          initialFilter.kind = value
+          if (controller.windowControlsAvailable.get()) {
+            controller.resetFilters()
+            controller.resetWindowRequests()
+          } else {
+            controller.initializeFilter(initialFilter)
+          }
+        }),
         subscribeSignal({ get: () => context.scopes.page() }, (scope) => {
           delivered.set(null)
           if (scope?.key !== HilosPages.MODERATION_KIND_RULES) dispose()

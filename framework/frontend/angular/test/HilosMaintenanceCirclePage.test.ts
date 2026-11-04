@@ -189,6 +189,7 @@ function seededContext(
     (signal: { type: string; data: unknown }) => void
   >()
   const firstWindow = () => ({
+    filter: {},
     rows: rows.map(wireRow),
     totalCount: rows.length,
     totalExact: true,

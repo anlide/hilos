@@ -99,7 +99,7 @@ describe('HilosStatusWorksPage over the real viewport', () => {
         ])
       }
     }
-    h.window([], undefined, { search: 'no-match' })
+    h.window([], undefined, { search: 'no-match', componentKey: 'queue' })
     h.detect()
     expect(h.fixture.nativeElement.textContent).toContain('Nothing found')
   })

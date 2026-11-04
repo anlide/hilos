@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page\DTO;
 
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+
 /**
  * PagePayload - The scope payload delivered to a subscribing client.
  *
@@ -133,6 +135,9 @@ final class PagePayload
     /**
      * Serializes the payload, omitting empty sections.
      *
+     * Existing array-valued window filters become JSON objects at the root. The typed
+     * worker reader preserves their nested object/list shape from the original JSON.
+     *
      * @return array<string, mixed> Scope payload with only the present sections
      */
     public function toArray(): array
@@ -152,6 +157,11 @@ final class PagePayload
         }
         if ($this->windows !== []) {
             $payload[self::windows] = $this->windows;
+            foreach ($this->windows as $tableKey => $window) {
+                if (is_array($window) && is_array($window[TableWindowDescriptorDTO::FILTER] ?? null)) {
+                    $payload[self::windows][$tableKey][TableWindowDescriptorDTO::FILTER] = (object) $window[TableWindowDescriptorDTO::FILTER];
+                }
+            }
         }
         if ($this->refusedWindows !== []) {
             $payload[self::refusedWindows] = $this->refusedWindows;

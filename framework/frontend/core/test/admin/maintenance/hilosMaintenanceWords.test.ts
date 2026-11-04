@@ -105,6 +105,7 @@ class MaintenanceWordsConnection {
         payload: {
           windows: {
             hilosMaintenanceWords: {
+              filter: {},
               rows,
               sort: [],
               limit: 10,

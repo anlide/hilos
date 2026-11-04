@@ -99,6 +99,7 @@ function harness(strictMode = false) {
   const sendRendered = vi.fn(() => true)
   const dispatch = vi.fn()
   const settingsWindow = (value: unknown) => ({
+    filter: {},
     rows: [
       {
         rowKey: 'legal.refusal_after_deadline',

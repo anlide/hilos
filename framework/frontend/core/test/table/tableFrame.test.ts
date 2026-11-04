@@ -48,6 +48,7 @@ function makeController(
         lastAnchor,
         pageSize,
         undefined,
+        initialFilter ?? {},
         [],
       )
       return
@@ -178,6 +179,7 @@ describe('TableViewportController frame declaration', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     const rendered = controller.descriptor()?.rendered
@@ -265,6 +267,7 @@ describe('TableViewportController frame declaration', () => {
       { id: 1 },
       10,
       undefined,
+      {},
       [],
     )
     controller.setSearch('camera')
@@ -520,6 +523,7 @@ describe('TableViewportController frame declaration', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     expect(rendered).toEqual([['key']])
@@ -570,6 +574,7 @@ describe('TableViewportController frame declaration', () => {
       null,
       10,
       undefined,
+      {},
       [],
     )
     expect(rendered).toEqual([['status']])
@@ -658,6 +663,17 @@ describe('TableViewportController frame filters', () => {
       false,
     ])
 
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setFilter('kind', 'full')
 
     const views = controller.frame.filters.get()
@@ -669,6 +685,17 @@ describe('TableViewportController frame filters', () => {
 
   it('counts a date range active on either bound alone', () => {
     const { controller } = makeController(backupsFrame)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setFilter('createdTo', '2026-09-01')
 
     const range = controller.frame.filters.get()[1]
@@ -679,6 +706,17 @@ describe('TableViewportController frame filters', () => {
 
   it('counts neither the search nor a filter-map key nobody declared', () => {
     const { controller } = makeController(backupsFrame, { tenant: 'acme' })
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setSearch('nightly')
 
     expect(controller.frame.activeFilterCount.get()).toBe(0)
@@ -715,6 +753,17 @@ describe('TableViewportController frame filters', () => {
 
   it('sets both bounds of a date range in ONE window change', () => {
     const { controller, sent } = makeController(backupsFrame)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setFilters({
       createdFrom: '2026-08-01',
       createdTo: '2026-09-01',
@@ -729,6 +778,17 @@ describe('TableViewportController frame filters', () => {
 
   it('clears the keys given an empty value and leaves the rest alone', () => {
     const { controller, sent } = makeController(backupsFrame)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setFilters({
       createdFrom: '2026-08-01',
       createdTo: '2026-09-01',
@@ -754,6 +814,17 @@ describe('TableViewportController frame filters', () => {
     const { controller, sent } = makeController(backupsFrame, {
       channel: 'email',
     })
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      { channel: 'email' },
+      [],
+    )
     controller.setFilter('kind', 'full')
     controller.setSearch('nightly')
     controller.resetFilters()
@@ -807,6 +878,7 @@ describe('TableViewportController frame facets', () => {
           null,
           10,
           undefined,
+          {},
           [],
         )
         return
@@ -1092,6 +1164,17 @@ describe('TableViewportController frame body', () => {
 
   it('still calls an empty filtered set filtered when no window of it could hold rows', () => {
     const { controller, open } = makeController(backupsFrame)
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      {},
+      [],
+    )
     controller.setFilter('kind', 'full')
 
     open([], 0, true, null, null)

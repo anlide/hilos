@@ -156,6 +156,59 @@ describe('scopePayloadSchema', () => {
     }
   })
 
+  describe('subscription window filter', () => {
+    const window = {
+      rows: [],
+      sort: [],
+      limit: 2,
+      totalCount: 0,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+    }
+
+    it('preserves the applied map including nested records and arrays', () => {
+      const filter = {
+        document: 7,
+        criteria: { states: ['active', 'draft'], archived: false },
+      }
+      const result = scopePayloadSchema.parse({
+        windows: { documents: { ...window, filter } },
+      })
+      expect(result.windows?.documents?.filter).toEqual(filter)
+    })
+
+    it('accepts an explicitly empty filter map', () => {
+      const result = scopePayloadSchema.parse({
+        windows: { documents: { ...window, filter: {} } },
+      })
+      expect(result.windows?.documents?.filter).toEqual({})
+    })
+
+    it('requires a filter on every successful window', () => {
+      expect(
+        scopePayloadSchema.safeParse({ windows: { documents: window } })
+          .success,
+      ).toBe(false)
+    })
+
+    it.each([null, [], ['active']])('rejects a non-map filter %j', (filter) => {
+      expect(
+        scopePayloadSchema.safeParse({
+          windows: { documents: { ...window, filter } },
+        }).success,
+      ).toBe(false)
+    })
+
+    it.each(['active', 7, false])('rejects a scalar filter %j', (filter) => {
+      expect(
+        scopePayloadSchema.safeParse({
+          windows: { documents: { ...window, filter } },
+        }).success,
+      ).toBe(false)
+    })
+  })
+
   it('stays assignable to the normalizer ScopePayload type', () => {
     const wire: ScopePayloadWire = {
       entities: { currentUser: { id: 7 } },

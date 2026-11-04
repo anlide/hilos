@@ -11,6 +11,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { h, markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type TableViewportController,
   ActionLifecycle,
   ActionError,
   type ActionResult,
@@ -301,9 +302,22 @@ function userContext(
 
       return true
     },
-    registerTableWindow(tableKey: string): void {
+    registerTableWindow(
+      tableKey: string,
+      controller: TableViewportController<unknown>,
+    ): void {
       if (tableKey === 'mergeCandidates') {
-        serveCandidates()
+        controller.ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          10,
+          undefined,
+          {},
+          [],
+        )
       }
     },
     unregisterTableWindow(): void {},

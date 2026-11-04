@@ -41,6 +41,7 @@ function recordingContext(
     on: () => () => {},
     registerTableWindow: () => {},
     unregisterTableWindow: () => {},
+    sendTableRendered: () => true,
     sendTableViewport: (
       _page: string,
       _tableKey: string,
@@ -56,24 +57,44 @@ function recordingContext(
 }
 
 describe('resolveHilosI18nNameRow', () => {
-  it('waits for a subject ID and resets its window after that subject disappears', () => {
-    const sent: TableViewportDescriptor[] = []
-    const subject = createSignal<number | null>(null)
-    const table = createHilosI18nNamesTable(
-      recordingContext(sent),
-      HILOS_I18N_LANGUAGE_NAMES,
-      subject,
-    )
-    table.start()
-    table.controller.ingestWindow([], 0, true, null, null, 100)
-    expect(sent).toEqual([])
-    subject.set(12)
-    expect(sent.at(-1)?.filter).toEqual({ language: 12 })
-    subject.set(null)
-    expect(sent.at(-1)?.filter).toEqual({})
-    expect(sent).toHaveLength(2)
-    table.dispose()
-  })
+  it.each([HILOS_I18N_LANGUAGE_NAMES, HILOS_I18N_COUNTRY_NAMES])(
+    'follows the early subject and clears it after recovery for $filterKey',
+    (target) => {
+      const sent: TableViewportDescriptor[] = []
+      const subject = createSignal<number | null>(null)
+      const table = createHilosI18nNamesTable(
+        recordingContext(sent),
+        target,
+        subject,
+      )
+      table.start()
+      table.controller.ingestRefusal('internal_error')
+      subject.set(12)
+      expect(table.controller.filter.get()).toEqual({ [target.filterKey]: 12 })
+      subject.set(null)
+      expect(table.controller.filter.get()).toEqual({})
+      expect(sent).toEqual([])
+      subject.set(14)
+      table.controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        100,
+        undefined,
+        { [target.filterKey]: 14 },
+        [],
+      )
+      subject.set(12)
+      expect(sent.at(-1)?.filter).toEqual({ [target.filterKey]: 12 })
+      subject.set(null)
+      expect(sent.at(-1)?.filter).toEqual({})
+      expect(sent).toHaveLength(2)
+      table.dispose()
+      table.controller.dispose()
+    },
+  )
 
   it('reads the language, its base name and the corrections under it', () => {
     const row = resolveHilosI18nNameRow(
@@ -282,6 +303,17 @@ describe('createHilosI18nNamesTable', () => {
     expect(table.controller.filter.get()).toEqual({ country: 14 })
 
     table.start()
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      100,
+      undefined,
+      { country: 14 },
+      [],
+    )
     subject.set(55)
 
     expect(sent.at(-1)?.filter).toEqual({ country: 55 })

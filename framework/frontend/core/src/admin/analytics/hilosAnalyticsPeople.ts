@@ -177,9 +177,12 @@ export function createHilosAnalyticsPeopleTable(
         )
     },
   })
-  controller.setFilter(ANALYTICS_PERIOD_FILTER, period.initialPeriod)
-  // The suppressed initialization ask must leave no pending request or timer.
-  controller.resetWindowRequests()
+  controller.initializeFilter({
+    ...period.initialFilter,
+    ...(period.initialPeriod === undefined
+      ? {}
+      : { [ANALYTICS_PERIOD_FILTER]: period.initialPeriod }),
+  })
   let off: (() => void) | undefined
   let offScope: (() => void) | undefined
   let disposed = false

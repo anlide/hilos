@@ -485,9 +485,16 @@ function tableHandle<R>(
       ]
       if (provider !== undefined) {
         teardown.push(
-          subscribeSignal(provider, (value) =>
-            controller.setFilter(FILTER_PROVIDER, value),
-          ),
+          subscribeSignal(provider, (value) => {
+            if (controller.windowControlsAvailable.get()) {
+              controller.setFilter(FILTER_PROVIDER, value)
+            } else {
+              const filter = { ...controller.filter.get() }
+              if (value === '') delete filter[FILTER_PROVIDER]
+              else filter[FILTER_PROVIDER] = value
+              controller.initializeFilter(filter)
+            }
+          }),
         )
       }
     },

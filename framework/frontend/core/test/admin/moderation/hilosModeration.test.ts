@@ -299,6 +299,17 @@ describe('createHilosModerationKindsTable', () => {
     // Cold window: no sendTableViewport on creation before refresh or start
     expect(sent).toHaveLength(0)
 
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      {},
+      [],
+    )
     table.controller.refresh()
 
     expect(sent[0].page).toBe(HilosPages.MODERATION)

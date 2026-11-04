@@ -27,7 +27,13 @@ const components = {
   data: {
     page: 'hilos_status_components',
     payload: {
-      windows: { hilosStatusComponents: { rows: [], windowSize: 25 } },
+      windows: {
+        hilosStatusComponents: {
+          filter: {},
+          rows: [],
+          windowSize: 25,
+        },
+      },
     },
   },
 }
@@ -63,7 +69,7 @@ describe('Status real wire observations', () => {
       expect(log.overviews).toEqual([status])
       expect(log.latest()).toEqual(status)
       expect(log.replies).toEqual([overview.data.payload])
-      expect(log.components).toEqual([{ rows: [], windowSize: 25 }])
+      expect(log.components).toEqual([{ filter: {}, rows: [], windowSize: 25 }])
       expect(log.frames.map((frame) => frame.wire)).toEqual(frames)
       expect(log.frames.map((frame) => frame.raw)).toEqual(
         batch ? [raw[0], raw[0]] : raw,

@@ -101,80 +101,91 @@ what the first does. Ask for a neighbouring page this way and the count is paid 
 nothing — its boundary is already in hand, which is what `nextPage` / `prevPage`
 use and what `setPage` does not.
 
-### The first window is declared on the backend
+### The first window reports its applied filter
 
-A table's **first** window is not declared by the client at all: its size, order
-and route preset are stated on the table definition (`windowSize()`,
-`defaultSort()`, `defaultFilter(PageRouteParams)`), and the page subscription
-builds the window from them and answers with it. The preset uses the same typed
-route params as that subscription, reads no row source, and defaults to an empty
-filter map for tables that need none. The window says on arrival what size and
-what order it ran at, and the controller takes both from there rather than
-holding an opinion beside the backend's.
+When a page subscription has no usable reported or held descriptor, the table
+declares its cold window with `windowSize()`, `defaultSort()`, and
+`defaultFilter(PageRouteParams)`. A reported descriptor takes precedence; a
+window already held on the connection is used when no descriptor was reported.
+After that choice, `viewportForViewer()` applies the viewer's policy. Every
+successful subscription window reports the complete `filter` map of that
+resulting viewport in `page_response.data.payload.windows[tableKey]`. This is
+the filter actually used for its rows, not a second calculation from the table
+declaration. The required value is an object map: `{}` is empty; a missing
+`filter` field, array, `null`, or scalar is invalid. Cold, reported, held,
+reconnect, and repeated deliveries all carry it. On the worker-to-master JSON
+hop, `WorkerDTO::factoryWorkerDTO()` preserves the nested object/list shape of
+existing window filters in typed page responses from the original JSON before
+hydration. `PagePayload::toArray()` encodes an array-valued filter root as an
+object, including `{}`, without changing those nested values.
+A refused window stays in `refusedWindows` as `{ errorCode }`, and a data-only
+`page_response` carries no invented window.
 
-`TableViewportControllerOptions.initialFilterInSubscription?: boolean` defaults
-to `false`. With an explicit `true`, the controller consumes the first
-subscription window for its `initialFilter` without requesting it again. Legal
-opts in only for its document-scoped tables, whose backend
-`defaultFilter(PageRouteParams)` matches the client `initialFilter`. This is a
-controller option, not a wire field.
+The protocol parser requires the map, with no default or reconstruction from
+`initialFilter`, and `bindTableViewport` passes it to
+`TableWindowSink.ingestSubscriptionWindow()` after `sort` and before `progress`.
+The controller compares it with its expected filter; it never assigns the
+reported value to the controls. A browser-only owner supplies the actual filter
+it used to build its rows through the same ingress.
 
-For a new opening, `PageSubscription` asks `tableWindowDescriptors(true)`.
-An opted-in controller still bound on the departing page reports its initial
-filter, opening order and the start of the set, so a new controller can consume
-the answer with the same controls. The destination page discards any report
-outside its route scope before building its windows. This also applies to an
-active link opening the same page again. Legacy controllers keep reporting
-their held window. Reconnects and owner recovery use the default
-`tableWindowDescriptors()` and preserve the live controller's search, order
-and address.
+Filter comparison covers the whole JSON-shaped map. Object key order does not
+matter; array order and values do. Objects and arrays are different shapes,
+primitive types are not coerced, and undefined object members are omitted as
+they are in JSON. Meaningful `null`, `''`, `false`, and `0` remain distinct
+values, and missing or additional keys differ. If the applied map differs, the
+controller silently requests one normal tracked corrective viewport with its
+expected controls. It does not draw the mismatched rows or apply their count or
+anchors. On the first successful window,
+it learns the returned `sort` and `limit` even when the filter differs. Once
+controls are known, a mismatch leaves the current filter, order, size, and
+address in place. A matching reply normally ingests its rows and progress.
 
-An access re-answer keeps the subscription live while `awaitPageAnswer()` drops
-the page scope and unmounts its view. Before publishing that wait,
-`forgetPageFrames(true)` lets an opted-in controller retain its current and
-opening descriptors in the existing table registration. Unmount releases the
-controller and its rows; only those controls remain. The replacement registers
-before the buffered page answer is replayed and restores its filter, search,
-order and address through `restoreWindow()`. The original opening order remains
-the reset target. The response supplies fresh rows and their place in the set.
-Neither the wait nor restoration requests a window; the usual `table_rendered`
-declaration may follow. A reply that arrives before unmount lets the live
-controller consume it and discards the continuation. Navigation and page refusal
-discard it too. A cold refusal retains no unknown descriptor, and controllers
-with the default-false option keep their existing policy. This lifecycle is in
-core and is shared by all three view adapters.
+`windowControlsAvailable` is `openingOrderKnown` for every controller. Until a
+successful subscription window supplies both its size and order, ordinary user
+search, filter, order, paging, Show, refresh, reset, `setFilter()`, and
+`setFilters()` actions are no-ops. A refusal may end the skeleton and set
+`loaded=true`, but supplies no size or order. A standalone `table_window`
+without order metadata also cannot establish an unknown order. A successful
+window with no sort is known-unsorted and enables controls. After metadata is
+known, a later refusal preserves controls and explicit retry. The views disable
+the corresponding search, filter, and order controls while metadata is unknown;
+paging is unavailable, and the empty-state copy explains when controls become
+available. Initial facet and rendered declarations wait for the accepted-window
+or recovery paths described below; a first-known mismatch carries `rendered` on
+its corrective viewport.
 
-A tab that is already holding a window reports it instead, in the `tableWindows`
-map of its `page_subscribe`, and the server serves back what the descriptor
-names. That is what a reconnect is: the same page, the same window, the reader's
-place kept. Without a reported descriptor, a window already held on the server
-also keeps its own filter and boundaries; both precede the cold declarations.
-A controller that has never received a window reports none — it does
-not know its own size or order until one arrives — and the table's declaration
-answers for it, which is the same cold entry a second time.
-A first refusal ends the skeleton but teaches neither size nor order, so both
-opening and reconnect reports still omit that table. A standalone recovery
-snapshot teaches its size but carries no order; the report stays absent until
-a subscription window names the order, including a known absence of sorting.
-That first successful subscription window still declares its rendered fields.
-A refusal after a known window preserves its size, order, filter and address
-in the reports. A browser-only table's local owner supplies its known opening
-order through the same subscription-window ingress before ordinary snapshots.
+`initialFilter` remains the reset baseline; by default, the private
+`openingFilter` starts as its copy. `initializeFilter(filter)` is the separate
+API for choosing a complete opening map before binding and buffered replay.
+Until `openingOrderKnown` becomes
+true, it replaces both the private `openingFilter` and current `filterSignal`;
+repeated calls allow a route change before the first metadata arrives. After the
+first successful window, including a mismatched one, or after disposal, it is a
+no-op. It does not change the `initialFilter` reset baseline, send a viewport,
+facets or rendered declaration, create a request id or pending request, arm a
+timer, or rewrite the URL. This initializer is not a user action and does not
+trust the server's filter: the exact comparison still applies. After metadata is
+known, ordinary search, filter, and reset actions change only the current map.
 
-For `initialFilterInSubscription: true`, `windowControlsAvailable` remains false
-until the first successful subscription window supplies both size and order.
-Search, filter changes and resets, order changes and resets, paging, Show and
-refresh leave controls and request tracking unchanged while it is false. They
-send no viewport; facet and rendered declarations also wait. All three SDKs
-disable the corresponding inputs, filter controls, order menus and headers;
-paging is absent until its window is known. The unavailable body explains that
-controls become available when the list loads. A standalone snapshot without
-order metadata does not enable them. A known unsorted subscription window does.
-There is no retained user intent to replay: active navigation and an access
-remount consume the route preset with the server's full default window, with no
-additional mount viewport. Once known, even a later refusal leaves controls
-available for explicit retry. Default-false controllers keep their existing
-startup and `initialFilter` policy.
+`descriptor(true)` reports the opening filter and order at the start of the set,
+with the known current size; `descriptor()` reports current controls. On a new
+mount, `PageSubscription` uses `tableWindowDescriptors(true)`, so a departing
+controller does not lend its search or address to the new opening. Reconnects
+use `tableWindowDescriptors()` and retain the live current filter, order, and
+address. `retainWindow()` and `restoreWindow()` work for every known window in
+the existing connection registration. For an access wait,
+`forgetPageFrames(true)` retains only the current and opening descriptors; the
+new controller restores current controls before buffered replay. Its opening
+filter must structurally match the new controller's `openingFilter`, while the
+current filter may include a user search or period. Navigation and refusal
+discard the continuation. If the mounted controller consumes the answer before
+unmount, the connection clears the continuation. No additional store is used.
+
+Initial facet and rendered declarations use the existing hooks once when the
+opening is accepted, including recovery after a first refusal. A mismatched
+opening is corrected by a `table_viewport` that already carries `rendered`, so
+it needs no extra `table_rendered`. Reconnects keep their existing declaration
+and restoration behavior. This lifecycle is shared by all three view adapters.
 
 **Every declared order ends with the primary key**, so the order is total.
 Without that, a column with repeats (a status, a kind) lets two adjacent pages
@@ -207,18 +218,20 @@ questions — see the next section.
 The list rides every `table_viewport` frame and the report of a held window at
 `page_subscribe`. One window can carry it in neither: the cold entry, which the server
 builds from the table's declaration and sends with `page_response` before the table
-has mounted. For that window the controller sends **`table_rendered`** once, when the
-page's answer brings the first window of a table that held none
+has mounted. After the first matching window, the controller sends **`table_rendered`**
+once when its rendered list is non-empty
 (`TableViewportControllerOptions.sendRendered`). The server answers it with nothing:
 it reads the held window from the table once more and lays the list over it
 (`BrowserContext::declareTableRendered()`, `TableViewportSubscription::withRendered()`).
 The rows themselves were never kept, so the drawn part of a row is taken from that
 second read, and only for a row whose whole digest is still the one delivered — a row
 that changed in between stays compared whole until it is delivered again, a delta too
-many rather than one too few. A table opening with a preset asks for its own window
-at once and needs no such frame. After a loaded window changes its resolved columns,
-the controller sends `table_rendered` again if their drawn field list changed, including
-an empty list. Every later `table_viewport` and held-window report carries the current list.
+many rather than one too few. If the first applied-filter map mismatches, the corrective
+`table_viewport` already carries `rendered`; no extra `table_rendered` is needed. The
+same initial declaration path applies when a first refusal recovers. After a loaded
+window changes its resolved columns, the controller sends `table_rendered` again if
+their drawn field list changed, including an empty list. Every later `table_viewport`
+and held-window report carries the current list.
 
 The server therefore knows each connection's concrete window and notifies it only
 about what that connection shows, not about every change to the table.
@@ -534,19 +547,20 @@ page heading, whose id the admin shell hands down (Vue `hilosPageHeadingIdKey`,
 React and Angular their own context and token). A page holding two tables names
 both.
 
-**A preset is not a filter of the bar.** The channel a route names reaches the
-table as `initialFilter`. The backend serves a cold entry by the table's
-declaration alone, and the window does not report which filter it ran at. By
-default, a table opening with a preset draws none of that window's rows: it keeps
-the order and the size the window says and asks for its own, the skeleton
-standing until it arrives. Even a matching backend preset keeps that behavior
-unless the caller explicitly sets `initialFilterInSubscription: true` as
-described above.
+**A preset is not a filter of the bar.** A page may provide a route-derived
+opening filter through `initializeFilter()` before binding. By default, the
+controller's opening filter is a copy of `initialFilter`; an explicit
+initialization can choose a different complete map. The server's first window
+reports the filter it actually applied, and the controller accepts its rows only
+when the whole map matches its expected filter. Otherwise it requests a normal
+corrective window for its expected controls.
 
 Several filter-map entries are set in one window change with `setFilters()`, and
-`resetFilters()` returns the map to the filters the table opened with —
-`initialFilter`, not an empty map, since a route preset arrives that way. Search
-is cleared along with them, being an entry of the same map.
+`resetFilters()` returns the map to the `initialFilter` baseline, not necessarily
+to an explicitly initialized opening filter. For example, an Analytics table can
+open on Today from its route while its reset baseline contains only the captured
+calendar context; Reset returns to Any time and keeps that context. Search is
+cleared along with the filters, being an entry of the same map.
 
 The declaration carries no counts beside its options — those are the table's to
 take, and they arrive on a frame of their own ("Facet counts" below) — and no
@@ -2149,9 +2163,9 @@ addressed to the one connection it concerns:
 | Frame | Direction | Carries |
 |---|---|---|
 | `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address, `rendered` included — the windows this tab is already holding |
-| `page_response` | server → client, complete subscription answer or data-only live publication | a complete answer carries the page payload and a `windows` map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each viewport table and its running work — plus an optional `refusedWindows` map of `tableKey` → `{ errorCode }`; a live data publication carries only changed `payload.data`, with no window section |
+| `page_response` | server → client, complete subscription answer or data-only live publication | a complete answer carries the page payload and a `windows` map of `tableKey` → `rows`, `sort`, required object `filter`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each viewport table, its actual applied filter, and its running work — plus an optional `refusedWindows` map of `tableKey` → `{ errorCode }`; a live data publication carries only changed `payload.data`, with no window section |
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional non-empty `requestId` (absent for untracked callers), an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
-| `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
+| `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — declares the fields inside row slots that the table draws; a mismatched opening carries it on the corrective `table_viewport` instead, so no extra `table_rendered` is needed; nothing is sent back |
 | `table_row_focus` | client → server | `page`, `tableKey`, `rowKey` (required; empty releases the focus) — the row a tab holds in focus for an open dialog, sent on open, on close, and again with every window the tab receives; nothing is sent back while the window holds the row, and one `table_viewport_delta` of kind `row_removed` when it does not — with the row's body, or without one when the row is gone |
 | `table_window` | server → client, reply or catch-up of a window owed whole (see below) | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is), and the optional `requestId` only when answering a tracked `table_viewport` |
 | `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`), and the optional `requestId` only when refusing a tracked `table_viewport` |
@@ -2209,13 +2223,14 @@ because the run outlives the timeout the reply is bound by. That frame is a
 report and never a window — it carries no rows, only how many were touched and
 which were not.
 
-The `windows` section carries one key the reply does not, `sort`, and leaves out
-one the reply has no reason to carry either, `filter`. The order is there because
-nobody asked for it: a cold entry runs in the order the table declares on the
-backend, and the tab has no other way to learn what that is. The filter is absent
-because a second source of truth about it could only disagree — on a cold entry
-the table declares its route preset, and on a reconnect the tab sent it and still
-holds it.
+The `windows` section adds `sort` and `filter` to the `table_window` reply. The
+order names how the window ran, including a known empty sort. The required
+object `filter` names the complete applied filter after the server resolves a
+reported descriptor, a held viewport, or the table's cold declaration, then
+applies viewer policy. `{}` means no filters; `[]`, `null`, a scalar, or a
+missing key is invalid. The page payload serializer preserves the object shape
+of an empty map across IPC. `refusedWindows` remains `{ errorCode }` because a
+refusal is not a window, and a data-only `page_response` has no `windows` section.
 
 Naming a frame here does not clear the gate. The leaf that implements one still
 stops and asks before touching the signal constants, the DTOs, or the routes.

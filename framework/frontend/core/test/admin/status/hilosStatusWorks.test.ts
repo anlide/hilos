@@ -134,6 +134,7 @@ function setup(zone = 'UTC') {
             data: { statusWorks: data },
             windows: {
               [tableKey]: {
+                filter: {},
                 rows,
                 totalCount: rows.length,
                 totalExact: true,
@@ -329,6 +330,7 @@ describe('Works page state and viewport', () => {
         data: { statusWorks: catalog },
         windows: {
           [tableKey]: {
+            filter: {},
             rows: [row()],
             totalCount: 1,
             totalExact: true,

@@ -47,7 +47,7 @@ export interface HilosAnalyticsPeriod {
   readonly context: AnalyticsPeriodContext
   /** Reset baseline: context only, never the initial visible choice. */
   readonly initialFilter: Readonly<Record<string, unknown>>
-  /** Value to set before binding; undefined serializes Any time by absence. */
+  /** Choice for initializeFilter before binding; undefined means Any time by absence. */
   readonly initialPeriod: Exclude<AnalyticsPeriod, 'any-time'> | undefined
   readonly filter: Extract<HilosTableFilter, { kind: 'select' }>
 }

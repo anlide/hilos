@@ -205,6 +205,7 @@ describe('daemon environment viewports', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
     orphans.controller.ingestSubscriptionWindow(
@@ -215,6 +216,7 @@ describe('daemon environment viewports', () => {
       null,
       25,
       undefined,
+      {},
       [],
     )
 

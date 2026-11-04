@@ -5,6 +5,7 @@
 // window at once, and finds the confirmation in it disabled by the mode.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  type TableViewportController,
   ActionLifecycle,
   ActionError,
   type ActionResult,
@@ -203,6 +204,24 @@ function userContext(
       listener(signal)
     }
   }
+  const registerWindow = connection.registerTableWindow.bind(connection)
+  vi.spyOn(connection, 'registerTableWindow').mockImplementation(
+    (key, source) => {
+      registerWindow(key, source)
+      if (key === 'mergeCandidates')
+        (source as TableViewportController<unknown>).ingestSubscriptionWindow(
+          [],
+          0,
+          true,
+          null,
+          null,
+          10,
+          undefined,
+          {},
+          [],
+        )
+    },
+  )
   vi.spyOn(connection, 'sendTableViewport').mockImplementation(() => {
     serveCandidates()
 

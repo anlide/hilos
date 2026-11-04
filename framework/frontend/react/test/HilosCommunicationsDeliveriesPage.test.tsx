@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  type TableViewportController,
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -123,8 +124,22 @@ function seededContext(
   }
 
   const connection = {
-    registerTableWindow(): void {
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
       requests.registrations += 1
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        25,
+        undefined,
+        {},
+        [],
+      )
       serveWindow()
     },
     unregisterTableWindow(): void {},

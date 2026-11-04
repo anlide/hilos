@@ -158,6 +158,7 @@ export function legalRevisionBench(
     legalRevision: revision,
   })
   const windowOf = (rows: TableRow[]) => ({
+    filter: { document: details.document, revision: details.revisionId },
     rows,
     totalCount: rows.length,
     totalExact: true,

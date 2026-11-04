@@ -5,6 +5,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type TableViewportController,
   ActionError,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
@@ -145,6 +146,7 @@ function makeActions(): {
 }
 
 interface SeededOptions {
+  appliedFilter?: Readonly<Record<string, unknown>>
   backupRestore?: { uiEnabled: boolean; targetEnv?: string }
   backupReopen?: { offered: boolean }
 }
@@ -195,8 +197,21 @@ function seededContext(
   }
 
   const connection = {
-    registerTableWindow(): void {
-      serveWindow()
+    registerTableWindow(
+      _key: string,
+      controller: TableViewportController<unknown>,
+    ): void {
+      controller.ingestSubscriptionWindow(
+        rows.map(wireRow),
+        rows.length,
+        true,
+        null,
+        null,
+        10,
+        [{ field: 'createdAt', direction: 'desc' }],
+        options.appliedFilter ?? {},
+        [],
+      )
     },
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -974,6 +989,7 @@ describe('HilosBackupPage in the admin view mode', () => {
       const { actions, dispatched } = makeActions()
       const context = seededContext([ARCHIVE_FIXTURE], actions, {
         backupRestore: { uiEnabled: true, targetEnv: 'dev' },
+        appliedFilter: { timeZone: firstZone },
       })
       bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
       const registrations = vi.spyOn(context.connection, 'registerTableWindow')

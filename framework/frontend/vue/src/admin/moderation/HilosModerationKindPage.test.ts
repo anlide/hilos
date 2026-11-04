@@ -118,6 +118,7 @@ async function harness(
         },
         windows: {
           [TABLE]: {
+            filter: { kind: row.kind },
             rows: [{ rowKey: row.kind, slots: { kind: row } }],
             sort: [],
             limit: 1,
