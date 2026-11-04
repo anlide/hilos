@@ -7,10 +7,12 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\SecurityNotice\SecurityNotificationType;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -31,9 +33,15 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\DTO\AccountAdminSetSignalData;
+use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
@@ -55,7 +63,8 @@ use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
  * and the same rename handed to the person's agent goes through. The agent writes the name with
  * its journal row, the admin flag and the block, and answers every frame - the sessions library
  * finishes only on that answer. Two removals of the last two administrators crossing each other
- * are told apart by the mark the sessions library keeps while a removal is on its way.
+ * are told apart by the mark the sessions library keeps while a revoke or a block is on its way:
+ * the second request is refused while both database rows still say active administrator.
  *
  * Every writer runs in its own frame and under the claims its own class declares, and the frames
  * between them are carried by the case.
@@ -76,6 +85,9 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     /** @var ?HilosNotifier Notifier the suite had, put back so this file does not decide the next one */
     private ?HilosNotifier $previousNotify = null;
 
+    /** Runtime restored after a case mounts its administrator browsers. */
+    private ?RtContext $previousRt = null;
+
     /**
      * @throws HilosException When the schema reset or the context build fails
      */
@@ -85,6 +97,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
 
         $this->previousRouter = Hilos::$sr;
         $this->previousNotify = Hilos::$notify;
+        $this->previousRt = Hilos::$rt;
         Hilos::$sr = new SignalRouter();
         Hilos::$notify = new HilosNotifier();
         $this->users = new PersonEditsTestUsersLibrary();
@@ -105,6 +118,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         }
         Hilos::$notify = $this->previousNotify;
         Hilos::$sr = $this->previousRouter;
+        Hilos::$rt = $this->previousRt;
 
         parent::tearDown();
     }
@@ -701,6 +715,24 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         self::assertFalse($this->reply()->isOk());
     }
 
+    /** A pending block leaves the other administrator as the last one, before either row changes. */
+    public function testABlockOnItsWayRefusesTheOtherAdministratorsBlock(): void
+    {
+        $this->assertCrossingAdministratorRemovals(firstBlocks: true, secondBlocks: true);
+    }
+
+    /** A pending revoke also closes a crossing block at the sessions library's entrance. */
+    public function testARevokeOnItsWayRefusesTheOtherAdministratorsBlock(): void
+    {
+        $this->assertCrossingAdministratorRemovals(firstBlocks: false, secondBlocks: true);
+    }
+
+    /** A pending block also closes a crossing revoke with the existing rights-refusal words. */
+    public function testABlockOnItsWayRefusesTheOtherAdministratorsRevoke(): void
+    {
+        $this->assertCrossingAdministratorRemovals(firstBlocks: true, secondBlocks: false);
+    }
+
     /**
      * @throws HilosException When a fixture row cannot be written
      */
@@ -726,6 +758,143 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
             '',
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE,
         ));
+    }
+
+    /**
+     * Holds the first owner write outside the queue while the same library judges a crossing request.
+     * The in-flight mark is private to that process; an integration frame holds its window deterministically.
+     *
+     * @param bool $firstBlocks Whether the first administrator blocks rather than revokes
+     * @param bool $secondBlocks Whether the second administrator blocks rather than revokes
+     */
+    private function assertCrossingAdministratorRemovals(bool $firstBlocks, bool $secondBlocks): void
+    {
+        $firstId = self::seedPerson('Root', admin: true);
+        $secondId = self::seedPerson('Grace', admin: true);
+        Hilos::$rt = new PersonEditsTestRtContext();
+        Hilos::$rt->configure();
+        $this->seedAdministratorBrowser($firstId, 'first-admin-tab', str_repeat('a', 32));
+        $this->seedAdministratorBrowser($secondId, 'second-admin-tab', str_repeat('b', 32));
+        self::assertEqualsCanonicalizing([$firstId, $secondId], Hilos::adminAudienceClass()::all());
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            // Fixture confirmations queued their ordinary DB synchronization frames.
+        }
+
+        $first = $firstBlocks
+            ? new AccountBlockSetSignalData(
+                $secondId, true, HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE,
+                'first-admin-tab', 'first-removal', HilosSignalConstants::HILOS_USER_BLOCK_SET, null,
+            )
+            : new AccountAdminSetSignalData(
+                $secondId, false, HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE,
+                'first-admin-tab', 'first-removal', HilosSignalConstants::HILOS_USER_ADMIN_SET, null,
+            );
+        $this->inSessions(fn () => $this->sessions->onSignalAgent(
+            new AgentSignalData(data: $first),
+            '',
+            $firstBlocks ? HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET : HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET,
+        ));
+        $onItsWay = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($onItsWay);
+        self::assertSame(
+            $firstBlocks ? HilosSignalConstants::HILOS_USER_BLOCK_WRITE : HilosSignalConstants::HILOS_USER_ADMIN_WRITE,
+            $onItsWay->signalName->getName(),
+        );
+        self::assertInstanceOf(AgentSignalData::class, $onItsWay->data);
+        self::assertSame($secondId, $onItsWay->data->data->userId);
+        self::assertSame($first->requestId, $onItsWay->data->data->requestId);
+        self::assertSame($first->acceptKey, $onItsWay->data->data->acceptKey);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertPersonFlags($firstId, admin: true, block: false);
+        $this->assertPersonFlags($secondId, admin: true, block: false);
+
+        $second = $secondBlocks
+            ? new AccountBlockSetSignalData(
+                $firstId, true, HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE,
+                'second-admin-tab', 'second-removal', HilosSignalConstants::HILOS_USER_BLOCK_SET, null,
+            )
+            : new AccountAdminSetSignalData(
+                $firstId, false, HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE,
+                'second-admin-tab', 'second-removal', HilosSignalConstants::HILOS_USER_ADMIN_SET, null,
+            );
+        $this->inSessions(fn () => $this->sessions->onSignalAgent(
+            new AgentSignalData(data: $second),
+            '',
+            $secondBlocks ? HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET : HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET,
+        ));
+        $refused = $this->onlyAnswer($second->replySignal);
+        self::assertInstanceOf(HandoverAnswerSignalData::class, $refused);
+        self::assertSame(
+            $secondBlocks ? 'The last active administrator cannot be blocked' : 'The last active administrator cannot lose the rights',
+            $refused->error,
+        );
+        self::assertSame($second->requestId, $refused->requestId);
+        self::assertSame($second->acceptKey, $refused->acceptKey);
+        self::assertSame($second->action, $refused->action);
+        self::assertNull($refused->errorType);
+        self::assertNull($refused->errorDetail);
+        $this->assertPersonFlags($firstId, admin: true, block: false);
+        $this->assertPersonFlags($secondId, admin: true, block: false);
+
+        $this->deliverToPerson($onItsWay);
+        $doneSignal = $firstBlocks ? HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE : HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE;
+        $done = $this->answer($doneSignal);
+        self::assertInstanceOf($firstBlocks ? UserBlockWriteDoneSignalData::class : UserAdminWriteDoneSignalData::class, $done);
+        self::assertNull($done->error);
+        self::assertSame($first->requestId, $done->ask->requestId);
+        self::assertSame($first->acceptKey, $done->ask->acceptKey);
+        $this->inSessions(fn () => $this->sessions->onSignalAgent(new AgentSignalData(data: $done), '', $doneSignal));
+        $accepted = $this->answer($first->replySignal);
+        self::assertInstanceOf(HandoverAnswerSignalData::class, $accepted);
+        self::assertNull($accepted->error);
+        self::assertNull($accepted->errorType);
+        self::assertNull($accepted->errorDetail);
+        self::assertSame($first->requestId, $accepted->requestId);
+        self::assertSame($first->acceptKey, $accepted->acceptKey);
+        self::assertSame($first->action, $accepted->action);
+        self::assertNotNull($accepted->successMessage);
+
+        $this->assertPersonFlags($firstId, admin: true, block: false);
+        $this->assertPersonFlags($secondId, admin: $firstBlocks, block: $firstBlocks);
+        $active = array_filter(
+            [self::personRow($firstId), self::personRow($secondId)],
+            static fn (array $row): bool => (int)$row['admin'] === 1 && (int)$row['block'] === 0,
+        );
+        self::assertCount(1, $active);
+        self::assertSame([$firstId], Hilos::adminAudienceClass()::all());
+    }
+
+    /**
+     * @param int $userId Administrator behind this browser
+     * @param string $acceptKey Live browser tab
+     * @param string $token Browser session cookie
+     */
+    private function seedAdministratorBrowser(int $userId, string $acceptKey, string $token): void
+    {
+        self::seedSession($token, $userId, '2026-01-01 00:00:00', null);
+        $sessionId = Hilos::$db->sessions->findByToken($token)?->id;
+        self::assertNotNull($sessionId);
+        Hilos::$rt->addConnection(PersonEditsTestConnection::create($acceptKey, $userId, $token, $sessionId));
+        foreach ([StepUpOperationKey::BLOCK_ACCOUNT, StepUpOperationKey::REVOKE_ADMIN] as $operation) {
+            Hilos::$db->stepUps->actions->confirm(
+                ProtectedModeRuntime::hashSessionToken($token),
+                $userId,
+                $operation,
+                date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_HOUR),
+            );
+        }
+    }
+
+    /**
+     * @param int $userId Person whose stored flags are checked
+     * @param bool $admin Expected rights flag
+     * @param bool $block Expected block flag
+     */
+    private function assertPersonFlags(int $userId, bool $admin, bool $block): void
+    {
+        $row = self::personRow($userId);
+        self::assertSame((int)$admin, (int)$row['admin']);
+        self::assertSame((int)$block, (int)$row['block']);
     }
 
     /**
@@ -931,4 +1100,55 @@ final class PersonEditsTestUsersLibrary extends AbstractUsersLibraryAgent
 final class PersonEditsTestSessionsLibrary extends AbstractSessionsLibraryAgent
 {
     public const string AGENT_TYPE = 'integration_person_edits_sessions_library';
+}
+
+/** Runtime exposing the two administrator browsers to the sessions library. */
+final class PersonEditsTestRtContext extends RtContext
+{
+    private PersonEditsTestConnections $connections;
+
+    /** Mounts the session-stage sockets used by the crossing requests. */
+    public function configure(): void
+    {
+        $this->connections = PersonEditsTestConnections::init();
+        $this->_stateCollections[PersonEditsTestConnections::RT_COLLECTION] = $this->connections;
+    }
+
+    /** @param PersonEditsTestConnection $connection Administrator's live browser tab */
+    public function addConnection(PersonEditsTestConnection $connection): void
+    {
+        $this->connections->add($connection);
+    }
+}
+
+/** Framework session sockets without project-specific fields. */
+final class PersonEditsTestConnections extends HilosSessionConnections
+{
+    public const string RT_COLLECTION = 'personEditsTestConnections';
+    public const string STATE_CLASS = PersonEditsTestConnection::class;
+}
+
+/** Session-stage connection with no fields added to the framework row. */
+final class PersonEditsTestConnection extends HilosSessionConnection
+{
+    /** This fixture adds no fields to the session stage. */
+    protected function initOwn(): void
+    {
+    }
+
+    /** @param array<string, mixed> $row Serialized runtime row */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /** @return array<string, mixed> No project-owned fields */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /** @param array<string, mixed> $diff Incoming field changes */
+    protected function applyOwnDiff(array $diff): void
+    {
+    }
 }

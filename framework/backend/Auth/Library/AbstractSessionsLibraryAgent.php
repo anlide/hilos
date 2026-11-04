@@ -778,6 +778,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var string Why a session named to be ended is not ended: it no longer stands for the person it was listed under */
     private const string SESSION_ALREADY_ENDED_MESSAGE = 'This session has already ended';
 
+    /** Refusal shared by browser and command requests to remove the last administrator's rights. */
+    private const string LAST_ADMINISTRATOR_REVOKE_MESSAGE = 'The last active administrator cannot lose the rights';
+
     /** Last private maintenance pass; attempts themselves live in the holder's RT collection. */
     private float $lastProfileNameSweepAt = 0.0;
 
@@ -2217,7 +2220,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         try {
             if (!$admin) {
-                $this->refuseLastAdministrator($userId);
+                $this->refuseLastAdministrator($userId, self::LAST_ADMINISTRATOR_REVOKE_MESSAGE);
             }
             AddressablePerson::require($userId);
             $request = new UserAdminCommandSignalData(
@@ -9076,22 +9079,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Refuses to take the rights of the last active administrator.
+     * Refuses a rights removal or a block that would leave no active administrator.
      *
      * The rights and blocks already sent to a person's agent and not yet answered count as taken
      * (HIL-1404): the check and the write are two hops now, and two removals crossing each other
      * would otherwise both see a second administrator. The mark is in this library's memory alone,
      * so a restart forgets it - which can only let through what the database already decides.
      *
-     * @param int $userId Account whose administrator rights would be removed
+     * @param int $userId Account losing active administration through a rights removal or a block
+     * @param string $message Refusal sentence for the requested operation
      * @throws ValidationException When it is the last active administrator
      * @throws HilosException When the project's administrator list cannot be read
      */
-    private function refuseLastAdministrator(int $userId): void
+    private function refuseLastAdministrator(int $userId, string $message): void
     {
         $all = array_values(array_diff(Hilos::adminAudienceClass()::all(), array_keys($this->adminRemovalsInFlight)));
         if (in_array($userId, $all, true) && count($all) === 1) {
-            throw new ValidationException('The last active administrator cannot lose the rights');
+            throw new ValidationException($message);
         }
     }
 
@@ -9105,6 +9109,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param AccountAdminSetSignalData $request Target rights and waiting administrator
      * @throws WiringRefusal When this worker cannot access a required source
      * @throws InvalidArgumentException When the ask or the answer frame cannot be named or queued
+     * @throws InvalidFormatException When the owner write names a nonpositive person id
      */
     private function handleAdminSetRequest(AccountAdminSetSignalData $request): void
     {
@@ -9117,7 +9122,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if ($request->userId === $by) {
                     throw new ValidationException('You cannot remove your own admin rights');
                 }
-                $this->refuseLastAdministrator($request->userId);
+                $this->refuseLastAdministrator($request->userId, self::LAST_ADMINISTRATOR_REVOKE_MESSAGE);
             }
             AddressablePerson::require($request->userId);
         } catch (WiringRefusal $refusal) {
@@ -9187,13 +9192,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Judges the card's request for a block and asks the person's agent to write it (HIL-1404).
      *
-     * The confirmation step and the own account are checked here, and a refusal answers the card
-     * at once. Blocking an administrator is marked in flight until the agent answers, so the
-     * last-administrator check counts them gone already ({@see self::refuseLastAdministrator()}).
+     * The confirmation step, the own account and the last active administrator are checked here,
+     * and a refusal answers the card at once. Blocking an administrator is marked in flight until
+     * the agent answers, so the last-administrator check counts them gone already ({@see self::refuseLastAdministrator()}).
      *
      * @param AccountBlockSetSignalData $request Target block and waiting administrator
      * @throws WiringRefusal When this worker cannot access a required source
      * @throws InvalidArgumentException When the ask or the answer frame cannot be named or queued
+     * @throws InvalidFormatException When the owner write names a nonpositive person id
      */
     private function handleBlockSetRequest(AccountBlockSetSignalData $request): void
     {
@@ -9204,6 +9210,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 : AskingAdministrator::of($request->acceptKey);
             if ($request->userId === $by) {
                 throw new ValidationException('You cannot block yourself');
+            }
+            if ($request->block) {
+                $this->refuseLastAdministrator($request->userId, 'The last active administrator cannot be blocked');
             }
             $blocksAdministrator = $request->block && in_array($request->userId, Hilos::adminAudienceClass()::all(), true);
             AddressablePerson::require($request->userId);
