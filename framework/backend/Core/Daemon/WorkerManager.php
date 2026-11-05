@@ -3492,15 +3492,33 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * window its type declared. Both go out through {@see self::stopAgentLocally()}. The agent's
      * unit covers a stop taken here too, so a transaction a stop hook leaves open is closed and
      * charged to the agent like one its tick left.
+     *
+     * Default hooks with no maintenance duty need no unit. Custom stop and schedule hooks keep
+     * the unit even with a default tick, so project callbacks never run outside its boundary.
      */
     private function tickAgents(): void
     {
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
+            $hasOwnTick = !($agent instanceof AbstractAgent) || $agent->hasOwnTick();
+            if ($agent instanceof AbstractAgent
+                && !$hasOwnTick
+                && !$agent->hasOwnStopCheck()
+                && !$agent->hasCronRulesHook()
+                && !$agent->shouldStop()
+                && !isset($this->pageSignalRouters[$agentId])
+                && !isset($this->cronFireWaits[$agentId])
+                && AgentRegistry::idleTimeout(Hilos::appClass()::AGENTS[$agent->getType()] ?? null) === null
+                && !(Hilos::$browser?->hasHeldFacetCounts($agentId) ?? false)) {
+                continue;
+            }
+
             $this->setCurrentAgentId($agent->getId());
 
             Database::handlerStart();
             try {
-                $agent->onTick();
+                if ($hasOwnTick) {
+                    $agent->onTick();
+                }
                 if ($agent instanceof AbstractAgent) {
                     $agent->reportCronRulesIfDue(microtime(true));
                 }

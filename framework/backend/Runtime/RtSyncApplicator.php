@@ -12,6 +12,7 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Utils\Logger;
 
@@ -211,6 +212,10 @@ final class RtSyncApplicator
         $state = Hilos::$rt?->getStateItem($collectionKey);
         if ($state === null || $state->getId() !== $stateId) {
             return;
+        }
+
+        if ($collectionKey === StateProtectedModeRuntime::RT_ITEM) {
+            Hilos::$ac?->invalidateProtectedMode();
         }
 
         try {

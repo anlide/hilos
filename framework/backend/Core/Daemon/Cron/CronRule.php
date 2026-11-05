@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
@@ -92,6 +93,15 @@ class CronRule
 
     /** Armed by {@see fireOnNextCheck()} and taken by the next {@see shouldRun()}. */
     private bool $fireOnNextCheck = false;
+
+    /** Last absolute minute whose expression did not match; private to this rule instance. */
+    private ?float $lastUnmatchedMinute = null;
+
+    /** Expression used by the last negative calculation. */
+    private ?string $lastUnmatchedExpression = null;
+
+    /** Accessor identity of that calculation, so replacing the context invalidates it. */
+    private ?EnvAccessor $lastUnmatchedEnv = null;
 
     /**
      * Creates a cron rule after checking the name against its origin.
@@ -306,8 +316,8 @@ class CronRule
     /**
      * Check if cron job should run now.
      *
-     * Checks if current time matches cron expression.
-     * Only checks once per minute to avoid duplicate executions.
+     * Reuses a negative check within the same absolute minute while the expression and env
+     * context stay the same. Failed calculations are retried, and run history stays separate.
      *
      * The minute guard is absolute and the five fields are read on the project clock, so the
      * repeated autumn hour fires once per absolute minute and the skipped spring hour not at all.
@@ -322,6 +332,7 @@ class CronRule
     {
         if ($this->fireOnNextCheck) {
             $this->fireOnNextCheck = false;
+            $this->lastUnmatchedMinute = null;
             $now = $this->currentTimestamp();
             $this->lastRun = floor($now / self::SECONDS_PER_MINUTE);
             $this->lastFiredAt = $now;
@@ -338,36 +349,22 @@ class CronRule
             return false;
         }
 
-        // Get current time components for cron expression matching, weekday 0 = Sunday
-        [$currentMinute, $currentHour, $currentDay, $currentMonth, $currentWeekday] = self::calendarFields(
-            self::localTime($currentTime, new DateTimeZone(Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string())),
-        );
-
-        // Parse and check cron expression
-        $parts = self::parseExpression($this->expression);
-        if (count($parts) !== self::FIELD_COUNT) {
+        if ($this->lastUnmatchedMinute === $currentMinuteTimestamp
+            && $this->lastUnmatchedExpression === $this->expression
+            && $this->lastUnmatchedEnv === Hilos::$env) {
             return false;
         }
 
-        $matches = self::matchesTime(
-            $parts[0], // minute
-            $parts[1], // hour
-            $parts[2], // day
-            $parts[3], // month
-            $parts[4], // weekday
-            $currentMinute,
-            $currentHour,
-            $currentDay,
-            $currentMonth,
-            $currentWeekday,
-        );
-
-        if ($matches) {
+        $this->lastUnmatchedMinute = null;
+        if ($this->matchesAt($currentTime)) {
             $this->lastRun = $currentMinuteTimestamp;
             $this->lastFiredAt = $currentTime;
             return true;
         }
 
+        $this->lastUnmatchedMinute = $currentMinuteTimestamp;
+        $this->lastUnmatchedExpression = $this->expression;
+        $this->lastUnmatchedEnv = Hilos::$env;
         return false;
     }
 
@@ -410,6 +407,38 @@ class CronRule
     protected function currentTimestamp(): int
     {
         return time();
+    }
+
+    /**
+     * Match the expression on the current project clock without changing run history.
+     *
+     * @param int $timestamp Unix time of the check
+     * @return bool Whether all five calendar fields match
+     * @throws EnvException When the project time zone cannot be read
+     */
+    protected function matchesAt(int $timestamp): bool
+    {
+        [$currentMinute, $currentHour, $currentDay, $currentMonth, $currentWeekday] = self::calendarFields(
+            self::localTime($timestamp, new DateTimeZone(Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string())),
+        );
+
+        $parts = self::parseExpression($this->expression);
+        if (count($parts) !== self::FIELD_COUNT) {
+            return false;
+        }
+
+        return self::matchesTime(
+            $parts[0], // minute
+            $parts[1], // hour
+            $parts[2], // day
+            $parts[3], // month
+            $parts[4], // weekday
+            $currentMinute,
+            $currentHour,
+            $currentDay,
+            $currentMonth,
+            $currentWeekday,
+        );
     }
 
     /**

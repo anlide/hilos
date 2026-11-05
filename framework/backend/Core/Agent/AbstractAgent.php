@@ -299,6 +299,15 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /** @var bool Flag indicating agent should stop */
     private bool $shouldStop = false;
 
+    /** Whether this instance resolves onTick() to a non-default implementation. */
+    private ?bool $hasOwnTick = null;
+
+    /** Whether this instance resolves shouldStop() to a non-default implementation. */
+    private ?bool $hasOwnStopCheck = null;
+
+    /** Whether this instance resolves cronRules() to a non-default implementation. */
+    private ?bool $hasCronRulesHook = null;
+
     /**
      * The node that answers this agent's actions, built on first use.
      *
@@ -308,6 +317,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
     /** @var ?list<DaemonCronRuleReport> Last non-empty cron report, or null before/after withdrawal */
     private ?array $reportedCronRows = null;
+
+    /** @var list<AgentCronRuleSnapshot> Last valid observation in hook order, rebuilt after process restart */
+    private array $observedCronRules = [];
 
     private float $cronReportedAt = 0.0;
 
@@ -1156,6 +1168,33 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * @internal Worker hook detection; never executes the hook.
+     * @return bool True when shouldStop() differs from the base implementation
+     */
+    final public function hasOwnStopCheck(): bool
+    {
+        return $this->hasOwnStopCheck ??= ($this->shouldStop(...) != self::shouldStop(...));
+    }
+
+    /**
+     * @internal Worker hook detection; inherited overrides count as own implementations.
+     * @return bool True when onTick() differs from the base implementation
+     */
+    final public function hasOwnTick(): bool
+    {
+        return $this->hasOwnTick ??= ($this->onTick(...) != self::onTick(...));
+    }
+
+    /**
+     * @internal Worker hook detection; never reads the current schedule.
+     * @return bool True when cronRules() differs from the base implementation
+     */
+    final public function hasCronRulesHook(): bool
+    {
+        return $this->hasCronRulesHook ??= ($this->cronRules(...) != self::cronRules(...));
+    }
+
+    /**
      * Default implementation - the agent claims no work of its own.
      *
      * Override in an agent that runs long work nobody addresses it about, and only there: an
@@ -1208,8 +1247,26 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     final public function reportCronRulesIfDue(float $now): void
     {
+        $rules = $this->cronRules();
+        $changed = count($rules) !== count($this->observedCronRules);
+        if (!$changed) {
+            foreach ($rules as $index => $rule) {
+                $snapshot = $this->observedCronRules[$index];
+                if ($rule !== $snapshot->rule || $rule->name !== $snapshot->name ||
+                    $rule->expression !== $snapshot->expression || $rule->lastFiredAt !== $snapshot->lastFiredAt) {
+                    $changed = true;
+                    break;
+                }
+            }
+        }
+        if (!$changed && ($rules === [] || $now - $this->cronReportedAt < self::CRON_REPORT_REANNOUNCE_SECONDS)) {
+            return;
+        }
+
         $rows = [];
-        foreach ($this->cronRules() as $rule) {
+        $snapshots = [];
+        foreach ($rules as $rule) {
+            $snapshots[] = new AgentCronRuleSnapshot($rule);
             $rows[] = new DaemonCronRuleReport(
                 $rule->name,
                 $rule->expression,
@@ -1233,6 +1290,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             $this->reportedCronRows = $rows === [] ? null : $rows;
             $this->cronReportedAt = $now;
         }
+        $this->observedCronRules = $snapshots;
     }
 
     /**

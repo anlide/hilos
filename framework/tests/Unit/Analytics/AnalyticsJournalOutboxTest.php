@@ -15,10 +15,20 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\TableLagRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * The source half of the analytics journal (HIL-1154): what a worker's collector hands the journal
@@ -36,8 +46,12 @@ final class AnalyticsJournalOutboxTest extends TestCase
 
     private const string API_REQUEST_KEY = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
+    private ?AnalyticsCollector $previousCollector = null;
+
     protected function setUp(): void
     {
+        $this->previousCollector = Hilos::$ac;
+        Hilos::$ac = null;
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = null;
     }
@@ -46,6 +60,8 @@ final class AnalyticsJournalOutboxTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$rt = null;
+        Hilos::$ac = $this->previousCollector;
+        RtTruthSourceRegistry::unregisterDaemon(ProtectedModeRuntime::RT_ITEM);
 
         parent::tearDown();
     }
@@ -224,11 +240,16 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $outbox = new AnalyticsJournalOutbox(self::T0);
         $outbox->add(AnalyticsJournalRecord::browserSessionRename('a', 'b', self::T0), [], self::T0);
 
+        $this->assertFalse($outbox->isFlushDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS - 1));
+        $this->assertTrue($outbox->isFlushDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS));
+        $this->assertTrue($outbox->isFlushDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS));
+        $this->assertSame([], $this->batches());
         $outbox->flushIfDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS - 1);
         $this->assertSame([], $this->batches());
 
         $outbox->flushIfDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS);
         $this->assertCount(1, $this->batches());
+        $this->assertFalse($outbox->isFlushDue(self::T0 + 2 * AnalyticsJournalOutbox::FLUSH_INTERVAL_MS - 1));
 
         $outbox->flushIfDue(self::T0 + 2 * AnalyticsJournalOutbox::FLUSH_INTERVAL_MS);
         $this->assertSame([], $this->batches());
@@ -303,10 +324,17 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $collector->flush();
         $this->assertSame([], $this->batches());
 
-        usleep(20_000);
-        $this->freeze(ProtectedModeRuntime::PHASE_VERIFYING);
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        Hilos::$ac = $collector;
+        RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerifying();
+        Hilos::$sr = new SignalRouter();
         $collector->tick();
-        $collector->flush();
+        $this->assertSame([], (new ReflectionProperty(AnalyticsCollector::class, 'heldStops'))->getValue($collector));
+        $this->assertSame([], $this->frames());
+        $this->setLastFlush($collector, 0);
+        $collector->tick();
 
         $frames = $this->frames();
         $this->assertCount(1, $frames);
@@ -321,6 +349,179 @@ final class AnalyticsJournalOutboxTest extends TestCase
         ], array_column($batches[0], 't'));
         $this->assertGreaterThanOrEqual($before, $batches[0][2]['ts']);
         $this->assertLessThanOrEqual($after, $batches[0][2]['ts']);
+    }
+
+    public function testIdleTicksReadTheFreezeOnlyAtTheOutboxDeadline(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        $collector = new AnalyticsCollector();
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $collector->tick();
+        $this->assertSame(1, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        $collector->tick();
+        $this->assertSame(1, Hilos::$rt->protectedModeReads);
+
+        $this->setLastFlush($collector, 0);
+        $collector->tick();
+        $this->assertSame(2, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        $this->assertSame(2, Hilos::$rt->protectedModeReads);
+    }
+
+    public function testRecordFlushAndShutdownAlwaysReadTheFreezeBetweenDeadlines(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_ACTIVE);
+        $collector = new AnalyticsCollector();
+        $collector->openWorkerSession(self::WORKER_INDEX, false);
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $reads = Hilos::$rt->protectedModeReads;
+        $collector->logWorkerSystemSignal('frozen', null);
+        $this->assertSame($reads + 1, Hilos::$rt->protectedModeReads);
+        $collector->flush();
+        $this->assertSame($reads + 2, Hilos::$rt->protectedModeReads);
+        $collector->shutdown();
+        $this->assertSame($reads + 3, Hilos::$rt->protectedModeReads);
+        $this->assertSame([], $this->frames());
+    }
+
+    public function testLocalSyncInvalidatesBeforeTheDeadlineAndDiscardsTheFrozenBatch(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::$ac = $collector = new AnalyticsCollector();
+        RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
+        $collector->openWorkerSession(self::WORKER_INDEX, false);
+        $collector->logWorkerSystemSignal('pending', null);
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $reads = Hilos::$rt->protectedModeReads;
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterActive();
+        Hilos::$sr = new SignalRouter();
+        $collector->tick();
+        $this->assertSame($reads + 2, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        $this->assertSame($reads + 2, Hilos::$rt->protectedModeReads);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerifying();
+        Hilos::$sr = new SignalRouter();
+        $collector->tick();
+        $this->assertSame($reads + 4, Hilos::$rt->protectedModeReads);
+        $this->setLastFlush($collector, 0);
+        $collector->tick();
+        $frames = $this->frames();
+        $this->assertCount(1, $frames);
+        $this->assertSame([], $frames[0]->lines);
+        $this->assertSame(1, $frames[0]->losses[0]->events);
+        $this->assertSame(AnalyticsLossReason::RESTORE, $frames[0]->losses[0]->reason);
+    }
+
+    /**
+     * @param bool $created Whether the remote payload arrives as CREATED rather than UPDATED
+     * @param bool $refused Whether a later field refuses after phase has already changed
+     */
+    #[DataProvider('remoteFreezeWrites')]
+    public function testRemoteSyncInvalidatesBeforeApplyingEvenARefusedDiff(bool $created, bool $refused): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::$ac = $collector = new AnalyticsCollector();
+        $collector->openWorkerSession(self::WORKER_INDEX, false);
+        $collector->logWorkerSystemSignal('pending', null);
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $reads = Hilos::$rt->protectedModeReads;
+        $row = [ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE];
+        if ($refused) {
+            $row[ProtectedModeRuntime::startedAt] = 'invalid';
+        }
+        if ($created) {
+            RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::ID, $row), false);
+        } else {
+            RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::ID, $row), false);
+        }
+        $collector->tick();
+        $this->assertSame($reads + 1, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        $this->assertSame($reads + 1, Hilos::$rt->protectedModeReads);
+        RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
+            ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::ID,
+            [ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING],
+        ), false);
+        $collector->tick();
+        $this->assertSame($reads + 2, Hilos::$rt->protectedModeReads);
+        $this->setLastFlush($collector, 0);
+        $collector->tick();
+        $frames = $this->frames();
+        $this->assertCount(1, $frames);
+        $this->assertSame([], $frames[0]->lines);
+        $this->assertSame(AnalyticsLossReason::RESTORE, $frames[0]->losses[0]->reason);
+        $this->assertSame(1, $frames[0]->losses[0]->events);
+    }
+
+    /** @return iterable<string, array{bool, bool}> Remote delivery and refusal combinations */
+    public static function remoteFreezeWrites(): iterable
+    {
+        yield 'created' => [true, false];
+        yield 'updated' => [false, false];
+        yield 'partially refused created' => [true, true];
+        yield 'partially refused updated' => [false, true];
+    }
+
+    public function testFailedLocalSyncStillInvalidatesAfterThePhaseChanged(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::$ac = $collector = new AnalyticsCollector();
+        RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $collector->tick();
+        Hilos::$sr = new AnalyticsJournalOutboxTestRefusingRouter();
+        try {
+            Hilos::$rt->hilosProtectedModeRuntime->actions->enterActive();
+            $this->fail('The router must refuse the sync after the phase mutation');
+        } catch (InvalidArgumentException) {
+        }
+        $collector->tick();
+        $this->assertSame(3, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        $this->assertSame(3, Hilos::$rt->protectedModeReads);
+    }
+
+    public function testContextReplacementAndDatabaseRestoreInvalidateBeforeTheDeadline(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        $collector = new AnalyticsCollector();
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $collector->tick();
+        $previousContext = Hilos::$rt;
+        $this->freeze(ProtectedModeRuntime::PHASE_ACTIVE);
+        $collector->tick();
+        $this->assertSame(1, $previousContext->protectedModeReads);
+        $this->assertSame(1, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        $this->assertSame(1, Hilos::$rt->protectedModeReads);
+        $collector->forgetReplacedDatabase();
+        $collector->tick();
+        $this->assertSame(2, Hilos::$rt->protectedModeReads);
+        Hilos::$rt = null;
+        $collector->tick();
+        $collector->openWsConnection('after-context-removal', null);
+        $collector->flush();
+        $this->assertSame([[AnalyticsJournalRecord::TYPE_WS_CONNECTION_OPEN]], array_map(
+            static fn(array $batch): array => array_column($batch, 't'), $this->batches(),
+        ));
+    }
+
+    public function testOtherStandaloneWritesAndWrongSingletonIdsDoNotInvalidate(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::$rt->mountFeatureItem(TableLagRuntime::RT_ITEM, TableLagRuntime::create());
+        Hilos::$ac = $collector = new AnalyticsCollector();
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $collector->tick();
+        RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
+            TableLagRuntime::RT_ITEM, TableLagRuntime::ID, [TableLagRuntime::windowMs => 42],
+        ), false);
+        RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
+            ProtectedModeRuntime::RT_ITEM, 'other-id', [ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE],
+        ), false);
+        $collector->tick();
+        $this->assertSame(1, Hilos::$rt->protectedModeReads);
     }
 
     public function testTheJournalDoesNotRecordItsOwnAgents(): void
@@ -339,6 +540,16 @@ final class AnalyticsJournalOutboxTest extends TestCase
             static fn(array $batch): array => array_column($batch, 't'),
             $this->batches(),
         ));
+    }
+
+    /**
+     * @param AnalyticsCollector $collector Source whose existing outbox deadline is arranged
+     * @param int $lastFlushAtMs Last flush moment; zero makes the next tick due
+     */
+    private function setLastFlush(AnalyticsCollector $collector, int $lastFlushAtMs): void
+    {
+        $outbox = (new ReflectionProperty(AnalyticsCollector::class, 'outbox'))->getValue($collector);
+        (new ReflectionProperty(AnalyticsJournalOutbox::class, 'lastFlushAtMs'))->setValue($outbox, $lastFlushAtMs);
     }
 
     /**
@@ -396,7 +607,34 @@ final class AnalyticsJournalOutboxTest extends TestCase
  */
 final class AnalyticsJournalOutboxTestRtContext extends RtContext
 {
+    public int $protectedModeReads = 0;
+
     public function configure(): void
     {
+    }
+
+    /**
+     * @param string $name Requested runtime alias
+     * @return RtCollection|RtItem|null Registered view, counting only protected-mode reads
+     */
+    public function __get(string $name): RtCollection|RtItem|null
+    {
+        if ($name === ProtectedModeRuntime::RT_ITEM) {
+            $this->protectedModeReads++;
+        }
+
+        return parent::__get($name);
+    }
+}
+
+final class AnalyticsJournalOutboxTestRefusingRouter extends SignalRouter
+{
+    /**
+     * @param string $signalName RT sync signal name
+     * @param RtSyncSignalDataInterface $signalData RT sync payload
+     */
+    public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
+    {
+        throw new InvalidArgumentException('Refused test sync');
     }
 }

@@ -883,6 +883,21 @@ abstract class BrowserContext
     }
 
     /**
+     * @param string $agentId Agent whose pending counts to check
+     * @return bool True when this context holds at least one count for the agent
+     */
+    public function hasHeldFacetCounts(string $agentId): bool
+    {
+        foreach ($this->heldFacetCounts as $held) {
+            if ($held->agentId === $agentId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Counts and sends every facet count one agent asked for whose test-only lag is over (HIL-1020).
      *
      * Called on the worker tick under that agent, so a held count leaves from the agent it was

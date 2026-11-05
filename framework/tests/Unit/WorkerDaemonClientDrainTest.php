@@ -8,6 +8,7 @@ use Hilos\Socket\Exception\Base\ConnectionResetException;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Socket\SocketOperation;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Socket;
@@ -32,6 +33,38 @@ final class WorkerDaemonClientDrainTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    /** An empty non-blocking socket is drained without entering the error policy. */
+    public function testWouldBlockBypassesErrorHandlerAndClearsSocketError(): void
+    {
+        [$client] = $this->connectedClient();
+
+        $client->read();
+
+        $this->assertSame([], $client->handledOperations);
+        $this->assertSame(0, socket_last_error($client->getSocket()));
+        $this->assertTrue($client->isConnected());
+        $this->assertNull($client->getNextMessage());
+    }
+
+    /** Bytes preceding would-block are parsed before the ordinary drain completes. */
+    public function testMessageBeforeWouldBlockBypassesErrorHandler(): void
+    {
+        [$client, $daemonEnd] = $this->connectedClient();
+        $message = new AgentStartDTO('before-would-block');
+        $wire = $message->toJson() . "\n";
+        $this->assertSame(strlen($wire), socket_write($daemonEnd, $wire));
+
+        $client->read();
+
+        $this->assertSame([], $client->handledOperations);
+        $this->assertSame(0, socket_last_error($client->getSocket()));
+        $queued = $client->getNextMessage();
+        $this->assertInstanceOf(AgentStartDTO::class, $queued);
+        $this->assertSame($message->toArray(), $queued->toArray());
+        $this->assertNull($client->getNextMessage());
+        $this->assertTrue($client->isConnected());
     }
 
     /** All three messages, including an upload-sized base64 field, arrive in one read. */
@@ -197,6 +230,9 @@ final class WorkerDaemonClientDrainTest extends TestCase
 /** Hands the worker one end of an established non-blocking socket pair. */
 final class WorkerDaemonClientDrainTestClient extends WorkerDaemonClient
 {
+    /** @var list<SocketOperation> Calls entering the shared socket error policy */
+    public array $handledOperations = [];
+
     /**
      * @param Socket $socket Connected worker end
      */
@@ -204,5 +240,16 @@ final class WorkerDaemonClientDrainTestClient extends WorkerDaemonClient
     {
         $this->socket = $socket;
         $this->state = DaemonConnectionState::CONNECTED;
+    }
+
+    /**
+     * Record error-policy calls while preserving the real EOF/reset behavior.
+     *
+     * @param SocketOperation $operation Socket operation whose error is handled
+     */
+    protected function handleSocketError(SocketOperation $operation): void
+    {
+        $this->handledOperations[] = $operation;
+        parent::handleSocketError($operation);
     }
 }

@@ -48,6 +48,9 @@ class WorkerDaemonClient extends AbstractSocket
     /** Read watch on the daemon socket for the idle wait; off the watch before the socket closes. */
     private ?Event $waitEvent = null;
 
+    /** Reusable timer armed only for the current idle wait. */
+    private ?Event $waitTimer = null;
+
     /**
      * Connect to daemon WorkerServer (non-blocking)
      *
@@ -186,7 +189,7 @@ class WorkerDaemonClient extends AbstractSocket
 
         $data = '';
         do {
-            // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
+            // warning-suppressed: after parsing the bytes, would-block is cleared and other errors go to handleSocketError()
             $chunk = @socket_read($this->socket, self::READ_CHUNK_BYTES, PHP_BINARY_READ);
             if ($chunk === '' || $chunk === false) {
                 break;
@@ -200,6 +203,11 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         if ($chunk === false) {
+            $errorCode = socket_last_error($this->socket);
+            if ($errorCode === self::ERR_WOULDBLOCK || $errorCode === self::WSA_WOULDBLOCK) {
+                socket_clear_error($this->socket);
+                return;
+            }
             $this->handleSocketError(SocketOperation::READ);
         } else {
             $this->loseConnection();
@@ -284,6 +292,9 @@ class WorkerDaemonClient extends AbstractSocket
      * own no longer reaches the handler. libevent takes the interruption in silence and waits
      * on; a signal is handled once the wait is over, at most the given time later.
      *
+     * The read watch stays registered for the socket's lifetime. A separate reusable timer
+     * bounds this call and is removed even when readiness or a callback failure ends it early.
+     *
      * @param float $timeoutSeconds Longest wait, in seconds
      */
     public function awaitReadable(float $timeoutSeconds): void
@@ -293,11 +304,19 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         $this->waitBase ??= new EventBase();
-        $this->waitEvent ??= new Event($this->waitBase, $this->socket, Event::READ, static function (): void {
+        if ($this->waitEvent === null) {
+            $this->waitEvent = new Event($this->waitBase, $this->socket, Event::READ | Event::PERSIST, static function (): void {
+            });
+            $this->waitEvent->add();
+        }
+        $this->waitTimer ??= new Event($this->waitBase, -1, Event::TIMEOUT, static function (): void {
         });
-        $this->waitEvent->add($timeoutSeconds);
-        $this->waitBase->loop(EventBase::LOOP_ONCE);
-        $this->waitEvent->del();
+        try {
+            $this->waitTimer->add($timeoutSeconds);
+            $this->waitBase->loop(EventBase::LOOP_ONCE);
+        } finally {
+            $this->waitTimer->del();
+        }
     }
 
     /**
@@ -394,6 +413,10 @@ class WorkerDaemonClient extends AbstractSocket
      */
     private function closeSocket(): void
     {
+        if ($this->waitTimer !== null) {
+            $this->waitTimer->free();
+            $this->waitTimer = null;
+        }
         if ($this->waitEvent !== null) {
             $this->waitEvent->free();
             $this->waitEvent = null;

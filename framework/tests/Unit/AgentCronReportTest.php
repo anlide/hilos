@@ -6,12 +6,15 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentCronRuleSnapshot;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\Hilos;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -82,6 +85,125 @@ final class AgentCronReportTest extends TestCase
         self::assertSame([], $this->takeReport()->rules);
         $agent->reportCronRulesIfDue(300.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** A retained mutable rule must be compared with the values observed before the mutation. */
+    public function testMutableRuleChangesAndUnchangedObservations(): void
+    {
+        $agent = new CronReportProbeAgent();
+        $rule = new CronRule('daily', '0 3 * * *');
+        $agent->rules = [$rule];
+        $agent->reportCronRulesIfDue(100.0);
+        $this->takeReport();
+        $observed = new ReflectionProperty(AbstractAgent::class, 'observedCronRules');
+        $initial = $observed->getValue($agent);
+        self::assertInstanceOf(AgentCronRuleSnapshot::class, $initial[0]);
+        self::assertSame($rule, $initial[0]->rule);
+        self::assertSame('daily', $initial[0]->name);
+
+        $agent->reportCronRulesIfDue(101.0);
+        self::assertSame($initial, $observed->getValue($agent));
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $rule->expression = '30 4 * * *';
+        $agent->reportCronRulesIfDue(102.0);
+        self::assertSame('30 4 * * *', $this->takeReport()->rules[0]->expression);
+        self::assertSame('0 3 * * *', $initial[0]->expression);
+
+        $rule->lastFiredAt = 1_767_225_600;
+        $agent->reportCronRulesIfDue(103.0);
+        self::assertSame(1_767_225_600_000, $this->takeReport()->rules[0]->lastRunAt);
+        $fired = $observed->getValue($agent);
+        self::assertSame(1_767_225_600, $fired[0]->lastFiredAt);
+        self::assertNull($initial[0]->lastFiredAt);
+
+        $agent->reportCronRulesIfDue(162.0);
+        self::assertSame($fired, $observed->getValue($agent));
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $agent->reportCronRulesIfDue(163.0);
+        self::assertSame(1_767_225_600_000, $this->takeReport()->rules[0]->lastRunAt);
+        self::assertNotSame($fired[0], $observed->getValue($agent)[0]);
+
+        $rule->lastFiredAt = null;
+        $agent->reportCronRulesIfDue(164.0);
+        self::assertNull($this->takeReport()->rules[0]->lastRunAt);
+    }
+
+    /** Hook order and identities are observed separately from the sorted outgoing schedule. */
+    public function testDynamicSetReplacementAndReordering(): void
+    {
+        $agent = new CronReportProbeAgent();
+        $first = new CronRule('z-last', '0 3 * * *');
+        $second = new CronRule('a-first', '30 * * * *');
+        $agent->rules = [$first, $second];
+        $agent->reportCronRulesIfDue(100.0);
+        $this->takeReport();
+        $observed = new ReflectionProperty(AbstractAgent::class, 'observedCronRules');
+
+        $agent->rules = [$second, $first];
+        $agent->reportCronRulesIfDue(101.0);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $reordered = $observed->getValue($agent);
+        self::assertSame([$second, $first], array_map(static fn ($snapshot): CronRule => $snapshot->rule, $reordered));
+        $agent->reportCronRulesIfDue(102.0);
+        self::assertSame($reordered, $observed->getValue($agent));
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $replacement = new CronRule('a-first', '30 * * * *');
+        $agent->rules = [$replacement, $first];
+        $agent->reportCronRulesIfDue(103.0);
+        self::assertSame($replacement, $observed->getValue($agent)[0]->rule);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $replaced = $observed->getValue($agent);
+        $agent->reportCronRulesIfDue(104.0);
+        self::assertSame($replaced, $observed->getValue($agent));
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $agent->rules = [$first];
+        $agent->reportCronRulesIfDue(105.0);
+        self::assertSame(['z-last'], array_map(static fn ($rule): string => $rule->name, $this->takeReport()->rules));
+        $agent->rules = [$first, new CronRule('b-added', '* * * * *')];
+        $agent->reportCronRulesIfDue(106.0);
+        self::assertSame(['b-added', 'z-last'], array_map(static fn ($rule): string => $rule->name, $this->takeReport()->rules));
+        $agent->rules = [new CronRule('renamed', '0 3 * * *'), $replacement];
+        $agent->reportCronRulesIfDue(107.0);
+        self::assertSame(['a-first', 'renamed'], array_map(static fn ($rule): string => $rule->name, $this->takeReport()->rules));
+    }
+
+    /** @return iterable<string, array{bool, bool}> Prior observation and duplicate identity cases */
+    public static function duplicateRuleSets(): iterable
+    {
+        yield 'initial distinct rules' => [false, false];
+        yield 'replacement by duplicate name' => [true, false];
+        yield 'replacement by repeated reference' => [true, true];
+    }
+
+    /**
+     * A refused observation must never become the next tick's fast-path baseline.
+     *
+     * @param bool $reportBefore Whether a valid schedule was already reported
+     * @param bool $repeatReference Whether both entries point at the same object
+     */
+    #[DataProvider('duplicateRuleSets')]
+    public function testDuplicateNamesAreRefusedOnEveryObservation(bool $reportBefore, bool $repeatReference): void
+    {
+        $agent = new CronReportProbeAgent();
+        $first = new CronRule('daily', '0 3 * * *');
+        if ($reportBefore) {
+            $agent->rules = [$first, new CronRule('other', '0 3 * * *')];
+            $agent->reportCronRulesIfDue(100.0);
+            $this->takeReport();
+        }
+        $agent->rules = [$first, $repeatReference ? $first : new CronRule('daily', '0 3 * * *')];
+        foreach ([101.0, 102.0] as $now) {
+            try {
+                $agent->reportCronRulesIfDue($now);
+                self::fail('Duplicate names must be refused before caching an observation');
+            } catch (InvalidFormatException $exception) {
+                self::assertStringContainsString('unique sorted names', $exception->getMessage());
+            }
+            self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        }
     }
 
     public function testArmingFindsTheRuleByNameAndTheReportCarriesItsRun(): void

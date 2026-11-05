@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Actions\Item;
 
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
@@ -529,5 +530,16 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->watchdogVerdict = null;
         $this->state->watchdogPendingNodeIds = [];
         $this->sync();
+    }
+
+    /**
+     * Invalidates analytics before syncing, even when the sync refuses the changed row.
+     *
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    protected function sync(): void
+    {
+        Hilos::$ac?->invalidateProtectedMode();
+        parent::sync();
     }
 }

@@ -131,6 +131,15 @@ final class AnalyticsJournalOutbox
     }
 
     /**
+     * @param int $nowMs Moment of the check, in milliseconds
+     * @return bool True when the interval since the last flush has elapsed
+     */
+    public function isFlushDue(int $nowMs): bool
+    {
+        return $nowMs - $this->lastFlushAtMs >= self::FLUSH_INTERVAL_MS;
+    }
+
+    /**
      * Sends the batch when a second has passed since the last one.
      *
      * @param int $nowMs Moment of the tick, in milliseconds
@@ -138,7 +147,7 @@ final class AnalyticsJournalOutbox
      */
     public function flushIfDue(int $nowMs): void
     {
-        if ($nowMs - $this->lastFlushAtMs >= self::FLUSH_INTERVAL_MS) {
+        if ($this->isFlushDue($nowMs)) {
             $this->flush($nowMs);
         }
     }

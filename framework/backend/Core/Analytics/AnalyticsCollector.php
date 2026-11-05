@@ -12,6 +12,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 
@@ -71,6 +72,12 @@ final class AnalyticsCollector
 
     /** @var ?string Active user action key during synchronous signal dispatch */
     private ?string $activeUserActionKey = null;
+
+    /** @var bool Whether the next tick must read the current protected-mode singleton */
+    private bool $protectedModeDirty = true;
+
+    /** @var ?RtContext Identity of the context last checked; never a source of runtime values */
+    private ?RtContext $protectedModeContext = null;
 
     public function __construct()
     {
@@ -651,16 +658,29 @@ final class AnalyticsCollector
     /**
      * Sends the gathered batch once a second.
      *
-     * Runs under the gate even when nothing is due, so the stops the freeze kept back are
-     * handed over on the first tick after it.
+     * A changed freeze or context reads the gate before the deadline too, so held stops
+     * enter the outbox on the first tick after the lift.
      */
     public function tick(): void
     {
+        $nowMs = $this->nowTs();
+        if (!$this->protectedModeDirty && $this->protectedModeContext === Hilos::$rt && !$this->outbox->isFlushDue($nowMs)) {
+            return;
+        }
+
         if (!$this->recordable()) {
             return;
         }
 
-        $this->toOutbox(fn() => $this->outbox->flushIfDue($this->nowTs()));
+        $this->toOutbox(fn() => $this->outbox->flushIfDue($nowMs));
+    }
+
+    /**
+     * Makes the next tick read protected mode, including after a partially refused write.
+     */
+    public function invalidateProtectedMode(): void
+    {
+        $this->protectedModeDirty = true;
     }
 
     /**
@@ -700,6 +720,7 @@ final class AnalyticsCollector
      */
     public function forgetReplacedDatabase(): void
     {
+        $this->invalidateProtectedMode();
         $lost = $this->outbox->clear();
         $this->outbox->countLoss(AnalyticsLossReason::RESTORE, $lost, $this->nowTs(), $this->nowTs());
         $this->activeApiRequestKey = null;
@@ -750,7 +771,10 @@ final class AnalyticsCollector
      */
     private function recordable(): bool
     {
-        if ($this->isHeld()) {
+        $isHeld = $this->isHeld();
+        $this->protectedModeContext = Hilos::$rt;
+        $this->protectedModeDirty = false;
+        if ($isHeld) {
             $lost = $this->outbox->clear();
             $this->outbox->countLoss(AnalyticsLossReason::RESTORE, $lost, $this->nowTs(), $this->nowTs());
 
