@@ -85,15 +85,21 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
     public function testWithoutOwnRulesEveryKindReadsItsBuiltInRules(): void
     {
         foreach (Hilos::moderationKinds() as $key => $kind) {
+            $this->assertSame([], Hilos::$db->moderationRules->ownForKind($key), $key);
             $this->assertSame($kind->defaultRules, Hilos::$db->moderationRules->effectiveForKind($key), $key);
         }
         $this->assertSame([], self::rows());
     }
 
-    public function testOwnRulesReplaceTheBuiltInRulesWholeInIdOrder(): void
+    public function testOwnRulesFollowTheBuiltInRulesInIdOrder(): void
     {
+        $defaults = Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules;
         $first = Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, 'Only first names.');
-        $this->assertSame(['Only first names.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(['Only first names.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...$defaults, 'Only first names.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
 
         $second = Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, 'No digits.');
         $third = Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, 'No brand names.');
@@ -102,6 +108,10 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertLessThan($third->id, $second->id);
         $this->assertSame(
             ['Only first names.', 'No digits.', 'No brand names.'],
+            Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME),
+        );
+        $this->assertSame(
+            [...$defaults, 'Only first names.', 'No digits.', 'No brand names.'],
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
         );
         $this->assertSame(ModerationKindKey::PROFILE_NAME, $first->kind);
@@ -124,9 +134,18 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->assertSame(
             ['Notes stay polite.', 'Notes carry no links.'],
+            Hilos::$db->moderationRules->ownForKind(ModerationRulesTestDirectory::NOTE),
+        );
+        $this->assertSame(
+            ['Notes are allowed.', 'Notes stay polite.', 'Notes carry no links.'],
             Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::NOTE),
         );
-        $this->assertSame(['Names stay short.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(['Names stay short.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, 'Names stay short.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_PHOTO));
         $this->assertSame(
             Hilos::moderationKinds()[ModerationKindKey::PROFILE_PHOTO]->defaultRules,
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_PHOTO),
@@ -140,24 +159,31 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
 
         $rule->actions->update('New text.');
 
-        $this->assertSame(['New text.', 'Second rule.'], Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::NOTE));
+        $this->assertSame(['New text.', 'Second rule.'], Hilos::$db->moderationRules->ownForKind(ModerationRulesTestDirectory::NOTE));
+        $this->assertSame(
+            ['Notes are allowed.', 'New text.', 'Second rule.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::NOTE),
+        );
         $this->assertSame(ModerationRulesTestDirectory::NOTE, $rule->kind);
         $this->assertSame('New text.', self::rows()[0][EntityModerationRule::rule]);
         $this->assertSame(ModerationRulesTestDirectory::NOTE, self::rows()[0][EntityModerationRule::kind]);
     }
 
-    public function testDeletingTheLastOwnRuleBringsTheBuiltInRulesBack(): void
+    public function testDeletingOwnRulesKeepsTheBuiltInRulesThroughout(): void
     {
+        $defaults = Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules;
         $first = Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, 'First.');
         $second = Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, 'Second.');
 
         $first->actions->delete();
-        $this->assertSame(['Second.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(['Second.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame([...$defaults, 'Second.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
         $this->assertArrayNotHasKey($first->id, Hilos::$db->moderationRules);
 
         $second->actions->delete();
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
         $this->assertSame(
-            Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules,
+            $defaults,
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
         );
         $this->assertArrayNotHasKey($second->id, Hilos::$db->moderationRules);
@@ -166,11 +192,13 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
 
     public function testUnknownKindIsRefusedByTheReaderAndTheCreateDoor(): void
     {
-        try {
-            Hilos::$db->moderationRules->effectiveForKind('no_such_kind');
-            $this->fail('An unknown kind must not read as any rules');
-        } catch (InvalidArgumentException $error) {
-            $this->assertSame('Unknown moderation kind: no_such_kind', $error->getMessage());
+        foreach (['ownForKind', 'effectiveForKind'] as $reader) {
+            try {
+                Hilos::$db->moderationRules->$reader('no_such_kind');
+                $this->fail('An unknown kind must not read as any rules');
+            } catch (InvalidArgumentException $error) {
+                $this->assertSame('Unknown moderation kind: no_such_kind', $error->getMessage());
+            }
         }
 
         try {
@@ -186,11 +214,13 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
     {
         self::bindAppClass(ModerationRulesNoPhotoTestHilos::class);
 
-        try {
-            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_PHOTO);
-            $this->fail('A photo kind the directory does not publish must not read as any rules');
-        } catch (InvalidArgumentException $error) {
-            $this->assertSame('Unknown moderation kind: ' . ModerationKindKey::PROFILE_PHOTO, $error->getMessage());
+        foreach (['ownForKind', 'effectiveForKind'] as $reader) {
+            try {
+                Hilos::$db->moderationRules->$reader(ModerationKindKey::PROFILE_PHOTO);
+                $this->fail('A photo kind the directory does not publish must not read as any rules');
+            } catch (InvalidArgumentException $error) {
+                $this->assertSame('Unknown moderation kind: ' . ModerationKindKey::PROFILE_PHOTO, $error->getMessage());
+            }
         }
         try {
             Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_PHOTO, 'No selfies.');
@@ -199,6 +229,7 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
             $this->assertSame('Unknown moderation kind: ' . ModerationKindKey::PROFILE_PHOTO, $error->getMessage());
         }
         $this->assertSame([], self::rows());
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
         $this->assertSame(
             Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules,
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
@@ -225,7 +256,11 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
                 $this->assertSame('Kept.', self::rows()[0][EntityModerationRule::rule]);
             }
         }
-        $this->assertSame(['Kept.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(['Kept.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, 'Kept.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
     }
 
     public function testUnicodeTextUpToTheColumnIsStoredAsGiven(): void
@@ -237,10 +272,19 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
         $rule = Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, $spaced);
         Hilos::$db->moderationRules->actions->create(ModerationKindKey::PROFILE_NAME, $widest);
 
-        $this->assertSame([$spaced, $widest], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame([$spaced, $widest], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, $spaced, $widest],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
         $this->assertSame([$spaced, $widest], array_column(self::rows(), EntityModerationRule::rule));
 
         $rule->actions->update('Ünïcödé ✓');
+        $this->assertSame(['Ünïcödé ✓', $widest], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, 'Ünïcödé ✓', $widest],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
         $this->assertSame('Ünïcödé ✓', self::rows()[0][EntityModerationRule::rule]);
     }
 
@@ -271,7 +315,44 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
         } finally {
             ExecutionContext::setCurrentAgentId(self::OWNER_AGENT_ID);
         }
-        $this->assertSame(['Owned.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(['Owned.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, 'Owned.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
+    }
+
+    public function testAKindWithoutBuiltInRulesReadsItsOwnRules(): void
+    {
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationRulesTestDirectory::OWN_ONLY));
+        $this->assertSame([], Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::OWN_ONLY));
+
+        Hilos::$db->moderationRules->actions->create(ModerationRulesTestDirectory::OWN_ONLY, 'Only own policy.');
+
+        $this->assertSame(['Only own policy.'], Hilos::$db->moderationRules->ownForKind(ModerationRulesTestDirectory::OWN_ONLY));
+        $this->assertSame(['Only own policy.'], Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::OWN_ONLY));
+        $this->assertSame(['Only own policy.'], array_column(self::rows(), EntityModerationRule::rule));
+    }
+
+    public function testIdenticalTextInBothLayersKeepsTheOwnRowAndBothOccurrences(): void
+    {
+        $rule = Hilos::$db->moderationRules->actions->create(ModerationRulesTestDirectory::NOTE, 'Notes are allowed.');
+
+        $this->assertSame(['Notes are allowed.'], Hilos::$db->moderationRules->ownForKind(ModerationRulesTestDirectory::NOTE));
+        $this->assertSame(
+            ['Notes are allowed.', 'Notes are allowed.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::NOTE),
+        );
+        $this->assertSame([
+            [EntityModerationRule::id => $rule->id, EntityModerationRule::kind => ModerationRulesTestDirectory::NOTE,
+                EntityModerationRule::rule => 'Notes are allowed.'],
+        ], self::rows());
+
+        $rule->actions->delete();
+
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationRulesTestDirectory::NOTE));
+        $this->assertSame(['Notes are allowed.'], Hilos::$db->moderationRules->effectiveForKind(ModerationRulesTestDirectory::NOTE));
+        $this->assertSame([], self::rows());
     }
 
     public function testSchemaAuditAndPersonalDataVerdictAcceptEveryColumn(): void
@@ -302,6 +383,7 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
         $reader = [self::configuredContext(), new SignalRouter()];
         $defaults = Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules;
         [Hilos::$db, Hilos::$sr] = $reader;
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
         $this->assertSame($defaults, Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
 
         [Hilos::$db, Hilos::$sr] = $writer;
@@ -318,7 +400,11 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
         foreach (array_reverse($created) as $frame) {
             DbSyncApplicator::applyCreated($frame, originNodeId: 'other-node');
         }
-        $this->assertSame(['First.', 'Second.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(['First.', 'Second.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame(
+            [...$defaults, 'First.', 'Second.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
+        );
 
         [Hilos::$db, Hilos::$sr] = $writer;
         $first->actions->update('First, edited.');
@@ -328,18 +414,29 @@ final class ModerationRulesIntegrationTest extends FrameworkIntegrationTestCase
         DbSyncApplicator::applyUpdated($updated[0], originNodeId: 'other-node');
         $this->assertSame(
             ['First, edited.', 'Second.'],
+            Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME),
+        );
+        $this->assertSame(
+            [...$defaults, 'First, edited.', 'Second.'],
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME),
         );
 
         [Hilos::$db, Hilos::$sr] = $writer;
         $first->actions->delete();
+        $deleted = self::drainDbFrames(SignalConstants::DB_SYNC_DELETED);
+        $this->assertCount(1, $deleted);
+        [Hilos::$db, Hilos::$sr] = $reader;
+        DbSyncApplicator::applyDeleted($deleted[0], originNodeId: 'other-node');
+        $this->assertSame(['Second.'], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
+        $this->assertSame([...$defaults, 'Second.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
+
+        [Hilos::$db, Hilos::$sr] = $writer;
         $second->actions->delete();
         $deleted = self::drainDbFrames(SignalConstants::DB_SYNC_DELETED);
-        $this->assertCount(2, $deleted);
+        $this->assertCount(1, $deleted);
         [Hilos::$db, Hilos::$sr] = $reader;
-        foreach ($deleted as $frame) {
-            DbSyncApplicator::applyDeleted($frame, originNodeId: 'other-node');
-        }
+        DbSyncApplicator::applyDeleted($deleted[0], originNodeId: 'other-node');
+        $this->assertSame([], Hilos::$db->moderationRules->ownForKind(ModerationKindKey::PROFILE_NAME));
         $this->assertSame($defaults, Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
         [Hilos::$db, Hilos::$sr] = $writer;
     }
@@ -407,17 +504,19 @@ final class ModerationRulesTestDbContext extends HilosDbContext
 {
 }
 
-/** A project directory appending one text kind of its own after the framework's. */
+/** Project text kinds with a built-in policy and with own rules alone. */
 final class ModerationRulesTestDirectory extends ModerationKindDirectory
 {
     public const string NOTE = 'test_note';
+    public const string OWN_ONLY = 'test_own_only';
 
-    /** @return list<ModerationKind> Framework kinds followed by the project's note */
+    /** @return list<ModerationKind> Framework kinds followed by the project's text kinds */
     protected static function kinds(): array
     {
         return [
             ...parent::kinds(),
             new ModerationKind(self::NOTE, 'Note', ModerationInput::TEXT, ['rude'], ['Notes are allowed.'], 'test_note_owner'),
+            new ModerationKind(self::OWN_ONLY, 'Own only', ModerationInput::TEXT, ['rude'], [], 'test_note_owner'),
         ];
     }
 }

@@ -415,14 +415,13 @@ export async function expectModerationKindOverview(
   ).toHaveCount(0)
 }
 
-/** Rules without a rule of its own names the kind and lists its built-in rules. */
+/** An empty own table still leaves the kind's exact built-in rules visible. */
 export async function expectModerationBuiltInRules(
   expect: Expect,
   page: Page,
   declared: ModerationKindDeclaration,
 ): Promise<void> {
-  const empty = shownByTestId(page, 'hilos-table-empty')
-  await expect(empty).toContainText(declared.title)
+  await expect(shownByTestId(page, 'hilos-table-empty')).toBeVisible()
   const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
   await expect(builtIn).toBeVisible()
   await expect(builtIn.getByRole('heading', { level: 2 })).toHaveText(
@@ -436,15 +435,15 @@ export async function expectModerationBuiltInRules(
 }
 
 /**
- * After the last own rule departed, the built-in rules are back in force on
- * the open Rules page without a reload; the departed row may still hold its
+ * After the last own rule departed, the built-in rules remain on the open
+ * Rules page without a reload; the departed row may still hold its
  * data-free placeholder, and no window is pending Apply.
  *
  * @param expect The calling spec's Playwright expect.
  * @param page The page with the kind's Rules open.
  * @param declared The kind whose built-in rules are listed.
  */
-export async function expectModerationBuiltInRulesReturned(
+export async function expectModerationBuiltInRulesAfterDelete(
   expect: Expect,
   page: Page,
   declared: ModerationKindDeclaration,
@@ -453,6 +452,7 @@ export async function expectModerationBuiltInRulesReturned(
   await expect(
     table.locator(ROWS).locator('.hilos-table-text[id]'),
   ).toHaveCount(0)
+  await expect(table.getByTestId('hilos-table-count')).toHaveText('0 – 0 of 0')
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
   const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
   await expect(builtIn).toBeVisible()
@@ -460,29 +460,30 @@ export async function expectModerationBuiltInRulesReturned(
 }
 
 /**
- * Overview names the rules in force: the built-in policy while the kind has
- * no rule of its own, otherwise how many of its own it holds.
+ * Overview counts both layers independently: built-in rules always apply,
+ * with the kind's own rules on top.
  *
  * @param expect The calling spec's Playwright expect.
  * @param page The page with the kind's Overview open.
+ * @param declared The kind whose built-in rules are counted.
  * @param ownRuleCount How many rules of its own the kind holds.
  */
 export async function expectModerationRulesInForce(
   expect: Expect,
   page: Page,
+  declared: ModerationKindDeclaration,
   ownRuleCount: number,
 ): Promise<void> {
   await expect(page.getByTestId('hilos-moderation-kind-rules')).toHaveText(
-    ownRuleCount === 0
-      ? 'Built-in until you add a rule of your own'
-      : `${ownRuleCount} ${ownRuleCount === 1 ? 'rule' : 'rules'} of your own`,
+    `${declared.defaultRules.length} built-in + ${ownRuleCount} of your own`,
   )
 }
 
-/** Read real rule text in the desktop table, including its server count. */
+/** Read both layers: the exact built-ins and own rows with their server count. */
 export async function expectModerationOwnRules(
   expect: Expect,
   page: Page,
+  declared: ModerationKindDeclaration,
   rules: readonly string[],
 ): Promise<void> {
   const table = page.getByTestId('hilos-moderation-rules-table')
@@ -498,9 +499,9 @@ export async function expectModerationOwnRules(
   await expect(shownByTestId(table, 'hilos-table-search')).toHaveAccessibleName(
     'Search rules…',
   )
-  await expect(page.getByTestId('hilos-moderation-rules-built-in')).toHaveCount(
-    0,
-  )
+  const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
+  await expect(builtIn).toBeVisible()
+  await expect(builtIn.locator('li')).toHaveText([...declared.defaultRules])
   await expect(page.getByTestId('hilos-moderation-rules-loading')).toHaveCount(
     0,
   )

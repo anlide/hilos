@@ -1602,13 +1602,23 @@ and, through `expectModerationKindTabs(expect, page, kind, current)`, the two
 link tabs Overview and Rules with their addresses and the current one;
 `current` is `'overview' | 'rules'`. `expectModerationKindOverview(expect, page, declared)`
 reads the model, profile and reasons and finds nothing to write with;
-`expectModerationRulesInForce(expect, page, ownRuleCount)` reads the Overview's
-line of rules in force. On Rules, `expectModerationBuiltInRules(expect, page, declared)`
-checks the empty table that names the kind above its built-in rules,
-`expectModerationOwnRules(expect, page, rules)` the own rules in the desktop
-table with the server's count, search, Add and the row openers, and
-`expectModerationBuiltInRulesReturned(expect, page, declared)` the built-in rules
-back after the last own rule left, without a reload and with no Apply pending.
+`expectModerationRulesInForce(expect: Expect, page: Page, declared:
+ModerationKindDeclaration, ownRuleCount: number)` reads the Overview's count
+as `<declared.defaultRules.length> built-in + <ownRuleCount> of your own`,
+including zero values. On Rules,
+`expectModerationBuiltInRules(expect: Expect, page: Page, declared:
+ModerationKindDeclaration)` checks the empty own-rules table, the generic
+`Built-in rules` heading and the exact built-in list; it does not require the
+former title-bearing permanent caption.
+`expectModerationOwnRules(expect: Expect, page: Page, declared:
+ModerationKindDeclaration, rules: readonly string[])` checks the exact built-in
+list alongside the own rows, plus the server's count, search, Add and row
+openers; a fresh window has no placeholders.
+`expectModerationBuiltInRulesAfterDelete(expect: Expect, page: Page, declared:
+ModerationKindDeclaration)` checks that built-ins remain visible after the own
+data leaves, the count is `0 – 0 of 0`, and no Apply is pending; data-free
+departure placeholders may remain. Each of these helpers returns
+`Promise<void>`.
 `expectModerationRulesOpening(expect, log, declared)` reads a `DeliveryFrameLog`
 instead of a page: a cold Rules subscription answers in one `page_response`
 with the head, the tabs and both windows, and no action or `table_viewport`

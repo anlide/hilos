@@ -263,6 +263,7 @@ describe('createHilosModerationKindsTable', () => {
         key: HilosModerationKindRowKey.ownRuleCount,
         label: 'Rules',
         sortable: true,
+        reads: [HilosModerationKindRowKey.defaultRules],
       },
       {
         key: HILOS_TABLE_ACTIONS_KEY,

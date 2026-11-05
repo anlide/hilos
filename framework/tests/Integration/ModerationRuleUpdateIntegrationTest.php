@@ -202,9 +202,10 @@ final class ModerationRuleUpdateIntegrationTest extends FrameworkIntegrationTest
         $expected = $before;
         $expected[0]['rule'] = self::NEW_RULE;
         self::assertSame($expected, $this->rows());
-        self::assertSame([self::NEW_RULE, 'Second own rule.'],
+        self::assertSame([...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, self::NEW_RULE, 'Second own rule.'],
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
-        self::assertSame(['Photo policy.'], Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_PHOTO));
+        self::assertSame([...Hilos::moderationKinds()[ModerationKindKey::PROFILE_PHOTO]->defaultRules, 'Photo policy.'],
+            Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_PHOTO));
         $updated = array_values(array_filter($frames, static fn (SignalDTO $frame): bool => $frame->data instanceof DbSyncUpdatedSignalData));
         self::assertCount(1, $updated);
         self::assertSame(HilosDbContext::moderationRules, $updated[0]->data->collectionKey);
@@ -270,7 +271,7 @@ final class ModerationRuleUpdateIntegrationTest extends FrameworkIntegrationTest
         $this->assertAck($acks, false, 'rule-request');
         self::assertSame($reason, $acks[0]->data->data->reason);
         self::assertSame($before, $this->rows());
-        self::assertSame([self::RAW_RULE, 'Second own rule.'],
+        self::assertSame([...Hilos::moderationKinds()[ModerationKindKey::PROFILE_NAME]->defaultRules, self::RAW_RULE, 'Second own rule.'],
             Hilos::$db->moderationRules->effectiveForKind(ModerationKindKey::PROFILE_NAME));
     }
 

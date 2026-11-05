@@ -167,6 +167,9 @@ describe('HilosModerationKindRulesPage', () => {
     expect(h.view.getAllByRole('table', { name: 'Profile name' })).toHaveLength(
       1,
     )
+    expect(
+      h.view.getAllByText('No rules of your own yet').length,
+    ).toBeGreaterThan(0)
     const panel = el('hilos-moderation-rules-built-in')
     expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe(
       'Built-in rules',
@@ -233,7 +236,7 @@ describe('HilosModerationKindRulesPage', () => {
 
   it('uses the overall count for built-ins and plain text, while empty search keeps the stock Nothing found surface', () => {
     const h = rulesHarness()
-    expect(el('hilos-moderation-rules-built-in')).toBeNull()
+    expect(el('hilos-moderation-rules-built-in')).not.toBeNull()
     fireEvent.change(h.view.getByRole('searchbox', { name: 'Search rules…' }), {
       target: { value: 'no match' },
     })
@@ -259,11 +262,12 @@ describe('HilosModerationKindRulesPage', () => {
     )
     expect(h.view.getAllByText('Nothing found').length).toBeGreaterThan(0)
     expect(h.view.queryByText('No rules of your own yet')).toBeNull()
-    expect(el('hilos-moderation-rules-built-in')).toBeNull()
+    expect(el('hilos-moderation-rules-built-in')).not.toBeNull()
     deliver(() =>
       h.update({
         ...initial,
         defaultRules: ['<script>plain rule</script>', 'Second rule'],
+        ownRuleCount: 2,
       }),
     )
     const panel = el('hilos-moderation-rules-built-in')
@@ -273,8 +277,7 @@ describe('HilosModerationKindRulesPage', () => {
         .map((node) => node.textContent),
     ).toEqual(['<script>plain rule</script>', 'Second rule'])
     expect(panel.querySelector('script')).toBeNull()
-    deliver(() => h.update({ ...initial, ownRuleCount: 2 }))
-    expect(el('hilos-moderation-rules-built-in')).toBeNull()
+    expect(el('hilos-moderation-rules-built-in')).not.toBeNull()
   })
 
   it.each([TABLE, RULES])(

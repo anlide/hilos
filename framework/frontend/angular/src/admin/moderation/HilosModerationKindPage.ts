@@ -115,18 +115,8 @@ import {
               class="col-sm-9 mb-0 py-1"
               data-id="hilos-moderation-kind-rules"
             >
-              @if (kind.ownRuleCount === 0) {
-                <span
-                  class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-                  >{{ copy.builtIn }}</span
-                >
-                <span class="text-body-secondary">
-                  until you add a rule of your own</span
-                >
-              } @else {
-                {{ kind.ownRuleCount }}
-                {{ kind.ownRuleCount === 1 ? 'rule' : 'rules' }} of your own
-              }
+              {{ kind.defaultRules.length }} built-in +
+              {{ kind.ownRuleCount }} of your own
             </dd>
           </dl>
         </div>

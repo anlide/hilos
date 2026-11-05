@@ -21,8 +21,8 @@ use Hilos\HilosException;
 class ModerationRulesActions extends DbActions
 {
     /**
-     * Adds an administrator's own rule to a kind; the kind's first own rule replaces its
-     * built-in rules whole.
+     * Adds an administrator's own rule alongside the kind's built-in rules, taking precedence
+     * where they conflict.
      *
      * @param string $kind Moderation kind key the directory publishes
      * @param string $rule Rule text, stored as given

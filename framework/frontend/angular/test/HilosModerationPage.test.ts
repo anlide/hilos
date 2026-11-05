@@ -37,6 +37,7 @@ const photo: HilosModerationKindRow = {
   input: 'image',
   model: { _hidden: true },
   ownRuleCount: 0,
+  defaultRules: [],
 }
 let fixture: ComponentFixture<HilosModerationPage> | undefined
 const releases: Array<() => void> = []
@@ -173,9 +174,17 @@ describe('HilosModerationPage', () => {
     expect(text(table)).toContain('Framework')
     expect(text(table)).toContain('Text model')
     expect(text(table)).toContain('text-model')
-    expect(text(table)).toContain('2 rules')
+    expect(
+      text(
+        table.querySelector('[data-id="hilos-table-row-hilos_profile_name"]'),
+      ),
+    ).toContain('1 built-in + 2 of your own')
     expect(text(table)).toContain('Vision model')
-    expect(text(table)).toContain('Built-in')
+    expect(
+      text(
+        table.querySelector('[data-id="hilos-table-row-hilos_profile_photo"]'),
+      ),
+    ).toContain('0 built-in + 0 of your own')
     expect(text(table.querySelector('[data-id="hilos-hidden"]'))).toBe('Hidden')
     expect(text(view)).not.toContain('[object Object]')
     const open = table.querySelector<HTMLAnchorElement>(
@@ -214,10 +223,19 @@ describe('HilosModerationPage', () => {
     const h = backend()
     h.answer()
     const view = mount(h)
-    h.delta('row_updated', { ...initial, model: 'new-model', ownRuleCount: 1 })
+    h.delta('row_updated', {
+      ...initial,
+      model: 'new-model',
+      ownRuleCount: 1,
+      defaultRules: ['Allow polite names.', 'Block threats.'],
+    })
     fixture!.detectChanges()
     expect(text(view.querySelector('table'))).toContain('new-model')
-    expect(text(view.querySelector('table'))).toContain('1 rule')
+    expect(
+      text(
+        view.querySelector('[data-id="hilos-table-row-hilos_profile_name"]'),
+      ),
+    ).toContain('2 built-in + 1 of your own')
     h.delta('row_removed')
     fixture!.detectChanges()
     expect(

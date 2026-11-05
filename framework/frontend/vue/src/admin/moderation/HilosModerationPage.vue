@@ -70,13 +70,8 @@ onUnmounted(() => kindsTable.dispose())
       </template>
       <template #cell-ownRuleCount="{ row }">
         <span
-          v-if="row.ownRuleCount === 0"
-          class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-          >{{ HILOS_MODERATION_COPY.builtIn }}</span
-        >
-        <span v-else
-          >{{ row.ownRuleCount }}
-          {{ row.ownRuleCount === 1 ? 'rule' : 'rules' }}</span
+          >{{ row.defaultRules.length }} built-in + {{ row.ownRuleCount }} of
+          your own</span
         >
       </template>
       <template #cell-actions="{ row }">

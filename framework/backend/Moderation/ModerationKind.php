@@ -11,9 +11,9 @@ use Hilos\Core\Exception\InvalidArgumentException;
  *
  * The key is the stable vocabulary that addresses the kind's rules and its checks. The title
  * names it on the administration screen, the input says what the moderator looks at, the
- * reasons are the codes a refusal may carry, the default rules apply while an administrator
- * has written none of their own, and the verdict goes to the agent named here, which writes
- * the subject itself.
+ * reasons are the codes a refusal may carry, and the built-in rules always apply alongside
+ * administrators' own rules, which take precedence where they conflict. The verdict goes to
+ * the agent named here, which writes the subject itself.
  *
  * A developer declares it in a {@see ModerationKindDirectory}; it is not a reader of a person's
  * payload, so a bad value is a mistake in the declaration.
@@ -34,7 +34,7 @@ final readonly class ModerationKind
      * @param string $title Administration-screen title
      * @param ModerationInput $input What the moderator is handed to look at
      * @param list<string> $reasons Codes a refusal of this kind may carry
-     * @param list<string> $defaultRules Rules that apply while an administrator has written none for the kind
+     * @param list<string> $defaultRules Built-in rules, with own rules taking precedence where they conflict
      * @param string $verdictTo Agent type the verdict is sent to
      * @throws InvalidArgumentException When the key is malformed, the title or the recipient is empty, a reason is
      *     malformed, repeated or reserved, or a rule is not a string with content

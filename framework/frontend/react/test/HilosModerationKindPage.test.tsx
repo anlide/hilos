@@ -79,7 +79,8 @@ describe('HilosModerationKindPage', () => {
       0,
       'Text model',
       'Framework',
-      'Built-in until you add a rule of your own',
+      initial.defaultRules,
+      '2 built-in + 0 of your own',
     ],
     [
       'image',
@@ -87,7 +88,8 @@ describe('HilosModerationKindPage', () => {
       1,
       'Vision model',
       'Framework',
-      '1 rule of your own',
+      [],
+      '0 built-in + 1 of your own',
     ],
     [
       'text_with_files',
@@ -95,13 +97,14 @@ describe('HilosModerationKindPage', () => {
       4,
       'Text model',
       'Project',
-      '4 rules of your own',
+      ['One built-in rule.'],
+      '1 built-in + 4 of your own',
     ],
   ])(
     'presents %s / %s / %s rules through semantic definitions',
-    (input, owner, ownRuleCount, model, badge, rules) => {
+    (input, owner, ownRuleCount, model, badge, defaultRules, rules) => {
       const h = harness(PAGE)
-      h.answer([{ ...initial, input, owner, ownRuleCount }])
+      h.answer([{ ...initial, input, owner, ownRuleCount, defaultRules }])
       h.mount(<HilosModerationKindPage context={h.context} />)
       const details = el('hilos-moderation-kind-overview')
       expect(
@@ -134,11 +137,22 @@ describe('HilosModerationKindPage', () => {
     expect(el('hilos-hidden')).not.toBeNull()
     expect(view.container.textContent).not.toContain('qwen2.5:3b')
     expect(view.container.textContent).not.toContain('[object Object]')
-    deliver(() => h.update({ ...initial, model: 'new-model', ownRuleCount: 2 }))
+    deliver(() =>
+      h.update({
+        ...initial,
+        model: 'new-model',
+        ownRuleCount: 2,
+        defaultRules: ['One remaining built-in.'],
+      }),
+    )
     expect(el('hilos-moderation-kind-model').textContent).toContain('new-model')
     expect(el('hilos-hidden')).toBeNull()
     expect(el('hilos-moderation-kind-rules').textContent).toBe(
-      '2 rules of your own',
+      '1 built-in + 2 of your own',
+    )
+    deliver(() => h.update({ ...initial, ownRuleCount: 0 }))
+    expect(el('hilos-moderation-kind-rules').textContent).toBe(
+      '2 built-in + 0 of your own',
     )
     expect(view.container.querySelector('button, form')).toBeNull()
     expect(
@@ -290,13 +304,18 @@ describe('HilosModerationKindPage', () => {
       'Profile name',
     )
     deliver(() =>
-      h.update({ ...initial, title: 'After replay', ownRuleCount: 3 }),
+      h.update({
+        ...initial,
+        title: 'After replay',
+        ownRuleCount: 3,
+        defaultRules: [],
+      }),
     )
     expect(view.getByRole('heading', { level: 1 }).textContent).toBe(
       'After replay',
     )
     expect(el('hilos-moderation-kind-rules').textContent).toBe(
-      '3 rules of your own',
+      '0 built-in + 3 of your own',
     )
     expect(h.navigation.currentTitle.get()).toBe('After replay · Tasks')
     expect(h.sent.filter((frame) => frame.type === 'table_viewport')).toEqual(

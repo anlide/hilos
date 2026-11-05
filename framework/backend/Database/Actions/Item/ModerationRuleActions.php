@@ -40,7 +40,7 @@ class ModerationRuleActions extends DbActions
     }
 
     /**
-     * Removes the rule; once a kind's last own rule is gone, its built-in rules apply again.
+     * Removes the own rule; the kind's built-in rules continue to apply.
      *
      * @throws ItemNotFoundForDeleteException When the row has no persisted id
      * @throws ObjectCollectionNullException When the item is detached from its collection

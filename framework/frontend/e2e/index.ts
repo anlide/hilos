@@ -559,7 +559,7 @@ export {
   editModerationRule,
   expectModerationAddDialogAccessibility,
   expectModerationBuiltInRules,
-  expectModerationBuiltInRulesReturned,
+  expectModerationBuiltInRulesAfterDelete,
   expectModerationDeleteEcho,
   expectModerationKindHead,
   expectModerationKindOverview,

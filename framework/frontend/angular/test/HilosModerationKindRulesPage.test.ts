@@ -109,7 +109,7 @@ function backend() {
   function wire(row: HilosModerationKindRow) {
     return { rowKey: row.kind, slots: { kind: row } }
   }
-  function answer(row = initial, rules: string[] = []): void {
+  function answer(row = initial, rules: string[] = [], search = ''): void {
     receive('page_response', {
       page: PAGE,
       payload: {
@@ -134,7 +134,7 @@ function backend() {
         },
         windows: {
           [HILOS_MODERATION_RULES_TABLE]: {
-            filter: { kind: row.kind },
+            filter: { kind: row.kind, ...(search === '' ? {} : { search }) },
             rows: rules.map((rule, i) => ({
               rowKey: String(i + 1),
               slots: { rule: { id: i + 1, kind: row.kind, rule } },
@@ -230,9 +230,14 @@ describe('HilosModerationKindRulesPage', () => {
     expect(h.router.currentTitle.get()).toBe('Live kind · Test')
   })
 
-  it('shows built-in rules only from the total own count, never an empty search result or unavailable table', () => {
+  it('keeps built-in rules beside own rules and a no-match search, hiding them on refusal', () => {
     const h = backend()
-    h.answer()
+    const policy = {
+      ...initial,
+      ownRuleCount: 2,
+      defaultRules: ['<script>plain</script>'],
+    }
+    h.answer(policy, ['Existing own rule'])
     const view = mount(h)
     expect(text(view.querySelector('h2'))).toBe('Built-in rules')
     expect(
@@ -241,16 +246,55 @@ describe('HilosModerationKindRulesPage', () => {
           '[data-id="hilos-moderation-rules-built-in"] li',
         ),
       ].map(text),
-    ).toEqual(initial.defaultRules)
-    h.delta('row_updated', { ...initial, ownRuleCount: 2 })
+    ).toEqual(policy.defaultRules)
+    expect(
+      view.querySelector('[data-id="hilos-moderation-rules-built-in"] script'),
+    ).toBeNull()
+    expect(text(view.querySelector('table'))).toContain('Existing own rule')
+
+    const search = view.querySelector<HTMLInputElement>(
+      '[data-id="hilos-table-search"]',
+    )!
+    search.value = 'no-match'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
     fixture!.detectChanges()
     expect(
-      view.querySelector('[data-id="hilos-moderation-rules-built-in"]'),
-    ).toBeNull()
-    expect(text(view.querySelector('table'))).toContain(
+      h.sent.filter((frame) => frame.type === 'table_viewport').at(-1),
+    ).toMatchObject({
+      type: 'table_viewport',
+      page: PAGE,
+      tableKey: HILOS_MODERATION_RULES_TABLE,
+      filter: { kind: policy.kind, search: 'no-match' },
+    })
+    const request = h.sent
+      .filter((frame) => frame.type === 'table_viewport')
+      .at(-1)!
+    h.receive('table_window', {
+      page: PAGE,
+      tableKey: HILOS_MODERATION_RULES_TABLE,
+      requestId: String(request.requestId),
+      filter: { kind: policy.kind, search: 'no-match' },
+      rows: [],
+      sort: [],
+      limit: 25,
+      totalCount: 0,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+    })
+    fixture!.detectChanges()
+    expect(text(view.querySelector('table'))).toContain('Nothing found')
+    expect(text(view.querySelector('table'))).not.toContain(
       'No rules of your own yet',
     )
-    h.delta('row_updated', initial)
+    expect(
+      [
+        ...view.querySelectorAll(
+          '[data-id="hilos-moderation-rules-built-in"] li',
+        ),
+      ].map(text),
+    ).toEqual(policy.defaultRules)
+
     h.receive('table_window_refused', {
       page: PAGE,
       tableKey: HILOS_MODERATION_RULES_TABLE,
@@ -263,7 +307,7 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       view.querySelector('[data-id="hilos-moderation-rules-built-in"]'),
     ).toBeNull()
-    h.answer()
+    h.answer(policy, [], 'no-match')
     fixture!.detectChanges()
     expect(
       view.querySelector('[data-id="hilos-moderation-rules-built-in"]'),
@@ -288,8 +332,11 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       view.querySelector('[aria-label="Loading moderation rules"]'),
     ).toBeNull()
-    h.answer(initial, ['Old rule'])
+    h.answer({ ...initial, ownRuleCount: 2 }, ['Old rule'])
     fixture!.detectChanges()
+    expect(
+      view.querySelector('[data-id="hilos-moderation-rules-built-in"]'),
+    ).not.toBeNull()
     view.querySelector<HTMLButtonElement>('[aria-label="Edit rule"]')!.click()
     fixture!.detectChanges()
     expect(view.querySelector('textarea')?.value).toBe('Old rule')
@@ -297,6 +344,9 @@ describe('HilosModerationKindRulesPage', () => {
     fixture!.detectChanges()
     expect(view.querySelector('[role="dialog"]')).toBeNull()
     expect(view.querySelector('table')).toBeNull()
+    expect(
+      view.querySelector('[data-id="hilos-moderation-rules-built-in"]'),
+    ).toBeNull()
     h.answer(photo, ['Photo rule'])
     fixture!.detectChanges()
     expect(text(view.querySelector('h1'))).toBe('Profile photo')

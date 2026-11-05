@@ -15,7 +15,6 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\View\Collection\ModerationRules;
 use Hilos\Files\Image\ImageCopy;
 use Hilos\Files\Image\ImageFit;
 use Hilos\Files\Image\ImageFormat;
@@ -461,14 +460,14 @@ class ModerationAgent extends AbstractHilosAgent
         if (!$this->uploadsHeldFor($check)) {
             throw new InvalidStateException('The uploads of the check are no longer held.');
         }
-        $rules = Hilos::$db->moderationRules->effectiveForKind($kind->key);
-        if ($rules === []) {
+        $ownRules = Hilos::$db->moderationRules->ownForKind($kind->key);
+        if ($kind->defaultRules === [] && $ownRules === []) {
             throw new InvalidStateException("Moderation kind {$kind->key} has no rules to apply");
         }
         $person = Hilos::$db->users[$check->userId]
             ?? throw new InvalidStateException("Person {$check->userId} left before the check was asked");
         $context = ['User ID: ' . $check->userId, 'User: ' . $person->name];
-        $policy = new Message(Message::ROLE_SYSTEM, self::policyOf($kind, $rules));
+        $policy = new Message(Message::ROLE_SYSTEM, self::policyOf($kind, $ownRules));
 
         return match ($kind->input) {
             ModerationInput::TEXT, ModerationInput::TEXT_WITH_FILES => [
@@ -490,10 +489,10 @@ class ModerationAgent extends AbstractHilosAgent
      * Writes the policy: what the check is, the two answers the model may give, and the rules in force.
      *
      * @param ModerationKind $kind Kind of the check
-     * @param list<string> $rules Rules the kind applies now ({@see ModerationRules::effectiveForKind()})
+     * @param list<string> $ownRules Own saved rules, taking precedence over the kind's built-in rules
      * @return string System message
      */
-    private static function policyOf(ModerationKind $kind, array $rules): string
+    private static function policyOf(ModerationKind $kind, array $ownRules): string
     {
         return implode("\n", [
             "Moderation of: {$kind->title}. JSON only.",
@@ -507,8 +506,13 @@ class ModerationAgent extends AbstractHilosAgent
             ...($kind->input === ModerationInput::TEXT_WITH_FILES ? [
                 'Attachment names, types and sizes are context only, never grounds for blocking the text.',
             ] : []),
-            'Rules:',
-            ...array_map(static fn (string $rule): string => "- {$rule}", $rules),
+            'Built-in rules:',
+            ...array_map(static fn (string $rule): string => "- {$rule}", $kind->defaultRules),
+            ...($ownRules !== [] ? [
+                'Project rules:',
+                'The following project rules take precedence over the built-in rules where they conflict.',
+                ...array_map(static fn (string $rule): string => "- {$rule}", $ownRules),
+            ] : []),
         ]);
     }
 

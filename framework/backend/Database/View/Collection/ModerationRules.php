@@ -32,12 +32,8 @@ class ModerationRules extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectModerationRules::class;
 
     /**
-     * The rules a check of one kind applies now: the kind's own rules in the order they were
-     * written, or its built-in rules while it has none. Own rules replace the built-in ones
-     * whole and are never mixed with them; the list is computed on every call and kept nowhere.
-     *
-     * The kind is looked up in the published directory whether or not moderation is switched
-     * on, so the profile photo kind is unknown while the project takes no profile photos.
+     * Built-in rules in declaration order followed by own rules in id order, including repeats.
+     * Own rules take precedence where the layers conflict; the list is computed on every call.
      *
      * @param string $kind Moderation kind key
      * @return list<string> Rule texts the check applies
@@ -50,13 +46,31 @@ class ModerationRules extends DbCollection
      */
     public function effectiveForKind(string $kind): array
     {
+        $ownRules = $this->ownForKind($kind);
+
+        return [...Hilos::moderationKinds()[$kind]->defaultRules, ...$ownRules];
+    }
+
+    /**
+     * Own saved rule texts in id order, without built-in rules or retained results.
+     *
+     * The kind is looked up in the published directory whether or not moderation is switched
+     * on, so the profile photo kind is unknown while the project takes no profile photos.
+     *
+     * @param string $kind Moderation kind key
+     * @return list<string> Own rule texts for the kind
+     * @throws InvalidArgumentException When the directory does not publish the kind, the project's directory is
+     *     malformed, or a loaded object does not match the collection
+     * @throws DatabaseException When the rules cannot be read
+     * @throws LogicException When collection class constants are not configured
+     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
+     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
+     */
+    public function ownForKind(string $kind): array
+    {
         $definition = Hilos::moderationKinds()[$kind]
             ?? throw new InvalidArgumentException("Unknown moderation kind: {$kind}");
         $own = iterator_to_array($this->whereColumnIs(EntityModerationRule::kind, $definition->key), false);
-        if ($own === []) {
-            return $definition->defaultRules;
-        }
-
         usort($own, static fn (ModerationRule $a, ModerationRule $b): int => $a->id <=> $b->id);
         return array_map(static fn (ModerationRule $rule): string => $rule->rule, $own);
     }

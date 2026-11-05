@@ -225,17 +225,19 @@ final class ModerationRuleDeleteIntegrationTest extends FrameworkIntegrationTest
         self::assertSame([['receipt_id' => (string)$receiptId]], $entries);
     }
 
-    public function testRemovingOneOwnRuleKeepsTheSecondAndOnlyTheLastRemovalRestoresDefaults(): void
+    public function testRemovingOwnRulesKeepsTheDefaultsAndOtherKindsThroughout(): void
     {
         $name = ModerationKindKey::PROFILE_NAME;
         $photo = ModerationKindKey::PROFILE_PHOTO;
-        self::assertSame([self::RAW_RULE, 'Second own rule.'], Hilos::$db->moderationRules->effectiveForKind($name));
+        $defaults = Hilos::moderationKinds()[$name]->defaultRules;
+        $otherDefaults = Hilos::moderationKinds()[$photo]->defaultRules;
+        self::assertSame([...$defaults, self::RAW_RULE, 'Second own rule.'], Hilos::$db->moderationRules->effectiveForKind($name));
         $this->submit(self::target(), 'first');
-        self::assertSame(['Second own rule.'], Hilos::$db->moderationRules->effectiveForKind($name));
-        self::assertSame(['Photo policy.'], Hilos::$db->moderationRules->effectiveForKind($photo));
+        self::assertSame([...$defaults, 'Second own rule.'], Hilos::$db->moderationRules->effectiveForKind($name));
+        self::assertSame([...$otherDefaults, 'Photo policy.'], Hilos::$db->moderationRules->effectiveForKind($photo));
         $this->submit(['id' => 2, 'kind' => $name, 'expectedRule' => 'Second own rule.'], 'last');
-        self::assertSame(Hilos::moderationKinds()[$name]->defaultRules, Hilos::$db->moderationRules->effectiveForKind($name));
-        self::assertSame(['Photo policy.'], Hilos::$db->moderationRules->effectiveForKind($photo));
+        self::assertSame($defaults, Hilos::$db->moderationRules->effectiveForKind($name));
+        self::assertSame([...$otherDefaults, 'Photo policy.'], Hilos::$db->moderationRules->effectiveForKind($photo));
         self::assertSame([['id' => '3', 'kind' => $photo, 'rule' => 'Photo policy.']], $this->rows());
     }
 

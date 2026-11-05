@@ -90,17 +90,22 @@ published kinds, so the photo kind's recipient is judged only with
 ## Rules Per Kind
 
 Store custom rules in `hilos_moderation_rule`, addressing the kind by a string
-key, not an ENUM. A kind's custom rules replace its built-in rules **whole**;
-they are not appended. With no custom rows, including after the last one is
-deleted, the built-in rules apply again.
+key, not an ENUM. A kind has two rule layers: built-in `defaultRules` and its
+own saved rules. Every check applies the built-ins in declaration order,
+followed by the own rules in id order. Own rules take precedence where the
+layers conflict, so they can strengthen or relax a built-in rule.
 
-Read the rules a check of one kind applies as
-`Hilos::$db->moderationRules->effectiveForKind($kind)`: the kind's own rule
-texts in id order, or its `defaultRules` while it has none. The kind is looked
-up in `Hilos::moderationKinds()` whether or not `MODERATION` is on, so an
-unknown kind, and the photo kind without `PROFILE_PHOTO`, is an
-`InvalidArgumentException`; a database failure propagates rather than turning
-into the built-in rules. The list is computed on every call and kept nowhere.
+Read only the own rule texts through
+`Hilos::$db->moderationRules->ownForKind($kind)`. Read the rules a check applies
+through `Hilos::$db->moderationRules->effectiveForKind($kind)`, which combines
+the built-ins and own rules in that order, retaining repeats and exact text.
+Both readers use the current collection and compute their result on each call;
+the policy is not cached. The kind is looked up in `Hilos::moderationKinds()`
+whether or not `MODERATION` is on, so an unknown kind, and the photo kind
+without `PROFILE_PHOTO`, is an `InvalidArgumentException`; a database failure
+propagates rather than becoming an empty policy. An empty built-in list is
+valid when own rules exist; when both layers are empty, the check is refused
+before the provider is called.
 
 The table has `id` (`INT UNSIGNED` auto-increment primary key), `kind`
 (`VARCHAR(64)`, ASCII binary) and `rule` (`TEXT`), with an index on `kind` and
@@ -133,10 +138,12 @@ log keeps `id` as the record key and `kind` and `rule` as values; see
 
 On a fresh chat seed,
 [006_framework_moderation_rules.sql](../../../demo/chat/backend/Database/Migration/Seed/006_framework_moderation_rules.sql)
-makes the three current message rules custom rules for `chat_message`, and the
-three name rules custom rules for `hilos_profile_name`. Profile photos and
-message pictures use their built-in rules. Do not migrate old rule rows into
-the new table. Chat carries the table through the framework install pair
+makes the three current message rules own rules for `chat_message`, and the
+three name rules own rules for `hilos_profile_name`. They are applied after
+those kinds' built-in rules; the seed rows remain own rules rather than
+replacing the built-ins. Profile photos and message pictures use their
+built-in rules. Do not migrate old rule rows into the new table. Chat carries
+the table through the framework install pair
 `101_framework_install_moderation_rule`, the pair `db:framework:pull` writes
 with the feature.
 
@@ -467,8 +474,9 @@ and mounted through `ChatTableContext`:
   (`framework` or `project`), `input` (`text`, `image` or `text_with_files`),
   `model`, nonnegative `ownRuleCount`, `profile: string`,
   `reasons: list<string>` and `defaultRules: list<string>`. Rows follow
-  directory order by default. The count covers persisted rules of that kind;
-  zero means its built-in rules apply, and built-in rules are not database rows.
+  directory order by default. `ownRuleCount` counts persisted own rules of that
+  kind; zero means there are no own rows. Built-in rules always apply and are
+  not database rows.
   `model` uses
   `ModerationSettingsCatalog::IMAGE_MODEL` for `image` input and
   `ModerationSettingsCatalog::TEXT_MODEL` otherwise. Its wire field uses
@@ -569,9 +577,12 @@ second fetch. `createHilosModerationRules(context, kind, view?)` owns the Rules
 controller and scope checks, confines viewport sends and accepted rows to that
 page and kind, and disposes before another page subscribes; an optional
 `view.openAdd` supplies its main action. A later Vue unmount can safely dispose
-it again. The Rules view has one own-rules viewport table and shows
-`defaultRules` as plain built-in text only when the overall
-`ownRuleCount === 0`; an empty search of own rules does not show the built-ins.
+it again. The Rules view has one own-rules viewport table. With current valid
+kind metadata, it shows `defaultRules` as built-in text alongside the own
+rules, including when own rows exist or a search finds no own rows. Search
+filters only the own-rules table. The built-in panel says `Built-in rules
+always apply. Your own rules are added on top and take precedence where they
+conflict.` An empty own-rules table says `No rules of your own yet.`
 The Add form captures the current kind and title for `Add rule · <title>`,
 starts with an empty raw-text area and keeps the draft verbatim; trimming only
 guards against submitting blank text. A dirty draft asks before discard. While
@@ -583,10 +594,11 @@ one. In admin view mode, a viewer may open and edit the local draft, but submit
 is blocked in the browser and the server's `ADMIN` gate refuses the page action
 before it reaches the writer.
 
-The first own rule makes `ownRuleCount` nonzero and replaces the built-ins as a
-whole, so the built-in panel disappears. The next moderation check after an Add,
-Edit or Delete reads fresh `effectiveForKind()` rules as before. Existing
-source-change fan-out and the table's Apply behavior remain unchanged.
+Each new moderation attempt reads the current rules through
+`effectiveForKind()`. An attempt already sent keeps the rules it was sent with;
+it is not rewritten or restarted. The verdict format, source-change fan-out and
+the table's Apply behavior remain unchanged. The user and image payloads and
+the check lifecycle are unchanged.
 
 Edit is available only on an own rule, in the same Rules actions column as
 Delete. `createHilosModerationRuleEdit(context, kind, rules)` opens only a fresh
@@ -666,8 +678,8 @@ only, registers the Profile page on `ONLINE_TESTING` with
 
 - Do not build a project moderator; declare a kind and use the common door.
 - Do not add a project photo checker; use the moderation feature's photo kind.
-- Do not append custom rules to built-ins; custom rows replace the entire
-  built-in set.
+- Keep built-in and own rules as separate layers; checks apply built-ins first
+  and own rules after them, with own rules taking precedence on conflicts.
 - Do not add an LLM container or bypass the router on a stand; use the existing
   `/model` resident as [stand-services.md](../stand-services.md) prescribes.
 

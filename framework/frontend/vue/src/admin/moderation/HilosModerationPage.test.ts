@@ -93,6 +93,7 @@ function seededContext(customRows?: TableRow[]): {
           input: 'text',
           model: 'qwen2.5:3b',
           ownRuleCount: 2,
+          defaultRules: ['Allow polite names.', 'Block threats.'],
         },
       },
     },
@@ -106,6 +107,7 @@ function seededContext(customRows?: TableRow[]): {
           input: 'image',
           model: { _hidden: true },
           ownRuleCount: 0,
+          defaultRules: ['Block nudity.', 'Block violence.', 'Block spam.'],
         },
       },
     },
@@ -119,6 +121,7 @@ function seededContext(customRows?: TableRow[]): {
           input: 'text_with_files',
           model: 'qwen2.5:3b',
           ownRuleCount: 1,
+          defaultRules: [],
         },
       },
     },
@@ -251,7 +254,7 @@ describe('HilosModerationPage', () => {
       wrapper.find('[data-id="hilos-moderation-kinds-table"] table').exists(),
     ).toBe(true)
 
-    // Row 1: Profile name (framework, text model, 2 rules)
+    // Row 1: Profile name (framework, text model, 2 built-in + 2 own rules)
     const nameCode = wrapper.find(
       'table code[data-id="hilos-moderation-row-hilos_profile_name"]',
     )
@@ -260,7 +263,11 @@ describe('HilosModerationPage', () => {
     expect(wrapper.text()).toContain(HILOS_MODERATION_COPY.framework)
     expect(wrapper.text()).toContain('Text model')
     expect(wrapper.text()).toContain('qwen2.5:3b')
-    expect(wrapper.text()).toContain('2 rules')
+    expect(
+      wrapper
+        .get('[data-id="hilos-table-row-hilos_profile_name"] td:nth-child(4)')
+        .text(),
+    ).toBe('2 built-in + 2 of your own')
 
     const openName = wrapper.find(
       'table a[data-id="hilos-moderation-open-hilos_profile_name"]',
@@ -271,7 +278,7 @@ describe('HilosModerationPage', () => {
     expect(openName.attributes('aria-label')).toBe('Open Profile name')
     expect(openName.text()).toBe(HILOS_MODERATION_COPY.open)
 
-    // Row 2: Profile photo (framework, image/vision model, hidden model value, 0 rules / Built-in)
+    // Row 2: Profile photo (framework, vision model, 3 built-in + 0 own rules)
     const photoCode = wrapper.find(
       'table code[data-id="hilos-moderation-row-hilos_profile_photo"]',
     )
@@ -279,7 +286,11 @@ describe('HilosModerationPage', () => {
     expect(wrapper.text()).toContain('Profile photo')
     expect(wrapper.text()).toContain('Vision model')
     expect(wrapper.find('[data-id="hilos-hidden"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain(HILOS_MODERATION_COPY.builtIn)
+    expect(
+      wrapper
+        .get('[data-id="hilos-table-row-hilos_profile_photo"] td:nth-child(4)')
+        .text(),
+    ).toBe('3 built-in + 0 of your own')
 
     const openPhoto = wrapper.find(
       'table a[data-id="hilos-moderation-open-hilos_profile_photo"]',
@@ -290,14 +301,18 @@ describe('HilosModerationPage', () => {
     expect(openPhoto.attributes('aria-label')).toBe('Open Profile photo')
     expect(openPhoto.text()).toBe(HILOS_MODERATION_COPY.open)
 
-    // Row 3: Chat message (project, text model, 1 rule)
+    // Row 3: Chat message (project, text model, 0 built-in + 1 own rule)
     const chatCode = wrapper.find(
       'table code[data-id="hilos-moderation-row-chat_message"]',
     )
     expect(chatCode.text()).toBe('chat_message')
     expect(wrapper.text()).toContain('Chat message')
     expect(wrapper.text()).toContain(HILOS_MODERATION_COPY.project)
-    expect(wrapper.text()).toContain('1 rule')
+    expect(
+      wrapper
+        .get('[data-id="hilos-table-row-chat_message"] td:nth-child(4)')
+        .text(),
+    ).toBe('0 built-in + 1 of your own')
 
     const openChat = wrapper.find(
       'table a[data-id="hilos-moderation-open-chat_message"]',

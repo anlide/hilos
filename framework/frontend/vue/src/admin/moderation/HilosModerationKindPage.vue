@@ -124,20 +124,8 @@ onUnmounted(() => {
             Rules in force
           </dt>
           <dd class="col-sm-9 mb-0 py-1" data-id="hilos-moderation-kind-rules">
-            <template v-if="row.ownRuleCount === 0">
-              <span
-                class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-              >
-                {{ HILOS_MODERATION_COPY.builtIn }}
-              </span>
-              <span class="text-body-secondary">
-                until you add a rule of your own
-              </span>
-            </template>
-            <template v-else>
-              {{ row.ownRuleCount }}
-              {{ row.ownRuleCount === 1 ? 'rule' : 'rules' }} of your own
-            </template>
+            {{ row.defaultRules.length }} built-in + {{ row.ownRuleCount }} of
+            your own
           </dd>
         </dl>
       </div>

@@ -210,15 +210,10 @@ function ModerationKindRules({ binding }: { binding: RulesBinding }) {
                   aria-hidden="true"
                 />
                 <p className="fw-semibold mb-1">No rules of your own yet</p>
-                <p className="text-body-secondary mb-0">
-                  {row.title} is checked by its built-in rules below.
-                </p>
               </div>
             }
           />
-          {row.ownRuleCount === 0 &&
-          body !== 'loading' &&
-          body !== 'unavailable' ? (
+          {body !== 'loading' && body !== 'unavailable' ? (
             <div
               className="border rounded-3 p-3 mt-3 bg-body-tertiary"
               data-id="hilos-moderation-rules-built-in"
@@ -232,8 +227,8 @@ function ModerationKindRules({ binding }: { binding: RulesBinding }) {
                 </span>
               </div>
               <p className="small text-body-secondary mb-2">
-                They come with the kind and apply until you add a rule of your
-                own. Your first rule replaces them all.
+                Built-in rules always apply. Your own rules are added on top and
+                take precedence where they conflict.
               </p>
               <ul className="small text-body-secondary mb-0 ps-3 text-break">
                 {row.defaultRules.map((rule, index) => (

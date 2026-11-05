@@ -62,7 +62,7 @@ final class ModerationActivationTest extends ModerationActivationEnvironment
         self::assertSame(['id', 'kind', 'rule'], array_column(Database::rows(), 'COLUMN_NAME'));
     }
 
-    /** Both published kinds use the real owner-bound actions and fall back to built-in rules after deletion. */
+    /** Both published kinds use owner-bound actions and keep built-in rules alongside their own. */
     public function testFrameworkOwnerCanCreateReadUpdateAndDeleteRulesForBothKinds(): void
     {
         foreach ([ModerationKindKey::PROFILE_NAME, ModerationKindKey::PROFILE_PHOTO] as $kind) {
@@ -73,13 +73,13 @@ final class ModerationActivationTest extends ModerationActivationEnvironment
             $id = $rule->id;
             self::assertGreaterThan(0, $id);
             self::assertSame($kind, Hilos::$db->moderationRules[$id]->kind);
-            self::assertSame([$text], Hilos::$db->moderationRules->effectiveForKind($kind));
+            self::assertSame([...$defaults, $text], Hilos::$db->moderationRules->effectiveForKind($kind));
             Database::sql('SELECT kind, rule FROM hilos_moderation_rule WHERE id = ?', [$id]);
             self::assertSame([['kind' => $kind, 'rule' => $text]], Database::rows());
 
             $updated = 'Allow ordinary content and refuse threats.';
             Hilos::$db->moderationRules[$id]->actions->update($updated);
-            self::assertSame([$updated], Hilos::$db->moderationRules->effectiveForKind($kind));
+            self::assertSame([...$defaults, $updated], Hilos::$db->moderationRules->effectiveForKind($kind));
             Database::sql('SELECT kind, rule FROM hilos_moderation_rule WHERE id = ?', [$id]);
             self::assertSame([['kind' => $kind, 'rule' => $updated]], Database::rows());
 

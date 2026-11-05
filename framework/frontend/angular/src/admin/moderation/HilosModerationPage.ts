@@ -67,15 +67,8 @@ import {
           </hilos-hideable>
         </ng-template>
         <ng-template [hilosTableCell]="keys.ownRuleCount" let-row>
-          @if (row.ownRuleCount === 0) {
-            <span
-              class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-              >{{ copy.builtIn }}</span
-            >
-          } @else {
-            {{ row.ownRuleCount }}
-            {{ row.ownRuleCount === 1 ? 'rule' : 'rules' }}
-          }
+          {{ row.defaultRules.length }} built-in + {{ row.ownRuleCount }} of
+          your own
         </ng-template>
         <ng-template [hilosTableCell]="actionsKey" let-row>
           <a

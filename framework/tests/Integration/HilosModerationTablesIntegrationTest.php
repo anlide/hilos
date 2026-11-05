@@ -221,7 +221,10 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
             $table->getPage(new TableQueryDTO())->rows,
         ));
         $this->assertSame(['Polite notes.'], $table->findRow(ModerationTablesTestDirectory::NOTE)->defaultRules);
-        $this->assertSame(['First note rule.', 'Second note rule.'], Hilos::$db->moderationRules->effectiveForKind(
+        $this->assertSame(['First note rule.', 'Second note rule.'], Hilos::$db->moderationRules->ownForKind(
+            ModerationTablesTestDirectory::NOTE,
+        ));
+        $this->assertSame(['Polite notes.', 'First note rule.', 'Second note rule.'], Hilos::$db->moderationRules->effectiveForKind(
             ModerationTablesTestDirectory::NOTE,
         ));
         $this->assertSame(3, count(Hilos::$db->moderationRules));

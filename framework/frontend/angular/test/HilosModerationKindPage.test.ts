@@ -220,7 +220,7 @@ describe('HilosModerationKindPage', () => {
     ).toEqual(initial.reasons)
     expect(
       text(view.querySelector('[data-id="hilos-moderation-kind-rules"]')),
-    ).toBe('Built-in until you add a rule of your own')
+    ).toBe('1 built-in + 0 of your own')
     expect(
       view.querySelector('table, input, select, button, [role="tablist"]'),
     ).toBeNull()
@@ -229,7 +229,12 @@ describe('HilosModerationKindPage', () => {
       [],
     )
     expect(h.router.currentTitle.get()).toBe('Profile name · Test')
-    h.delta('row_updated', { ...initial, title: 'Live title', ownRuleCount: 1 })
+    h.delta('row_updated', {
+      ...initial,
+      title: 'Live title',
+      ownRuleCount: 1,
+      defaultRules: ['Allow polite names.', 'Block threats.'],
+    })
     fixture!.detectChanges()
     expect(text(view.querySelector('h1'))).toBe('Live title')
     expect(text(crumbs.querySelector('li[aria-current="page"]'))).toBe(
@@ -238,7 +243,7 @@ describe('HilosModerationKindPage', () => {
     expect(h.router.currentTitle.get()).toBe('Live title · Test')
     expect(
       text(view.querySelector('[data-id="hilos-moderation-kind-rules"]')),
-    ).toBe('1 rule of your own')
+    ).toBe('2 built-in + 1 of your own')
     fixture!.destroy()
     fixture = undefined
     expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe('Kind')
@@ -253,6 +258,7 @@ describe('HilosModerationKindPage', () => {
       input: 'image',
       model: { _hidden: true },
       ownRuleCount: 4,
+      defaultRules: [],
     })
     const view = mount(h)
     expect(
@@ -266,7 +272,7 @@ describe('HilosModerationKindPage', () => {
     expect(text(view)).not.toContain('[object Object]')
     expect(
       text(view.querySelector('[data-id="hilos-moderation-kind-rules"]')),
-    ).toBe('4 rules of your own')
+    ).toBe('0 built-in + 4 of your own')
   })
 
   it('keeps metadata loading separate from a refused window and recovers through the canonical answer', () => {

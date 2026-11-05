@@ -136,9 +136,6 @@ import { HilosModerationRuleDelete } from './HilosModerationRuleDelete.js'
                 aria-hidden="true"
               ></i>
               <p class="fw-semibold mb-1">No rules of your own yet</p>
-              <p class="text-body-secondary mb-0">
-                {{ row()?.title }} is checked by its built-in rules below.
-              </p>
             </div>
           </ng-template>
         </hilos-viewport-table>
@@ -157,8 +154,8 @@ import { HilosModerationRuleDelete } from './HilosModerationRuleDelete.js'
               >
             </div>
             <p class="small text-body-secondary mb-2">
-              They come with the kind and apply until you add a rule of your
-              own. Your first rule replaces them all.
+              Built-in rules always apply. Your own rules are added on top and
+              take precedence where they conflict.
             </p>
             <ul class="small text-body-secondary mb-0 ps-3 text-break">
               @for (rule of row()?.defaultRules; track $index) {
@@ -235,7 +232,6 @@ export class HilosModerationKindRulesPage {
         mirrorHilosSignal(
           computedSignal(
             () =>
-              detail.row.get()?.ownRuleCount === 0 &&
               rules.current.get() &&
               rules.controller.frame.body.get() !== 'unavailable',
           ),

@@ -129,6 +129,7 @@ const MODERATION_KINDS_COLUMNS: readonly HilosTableColumnOf<HilosModerationKindR
       key: HilosModerationKindRowKey.ownRuleCount,
       label: 'Rules',
       sortable: true,
+      reads: [HilosModerationKindRowKey.defaultRules],
     },
     {
       key: HILOS_TABLE_ACTIONS_KEY,

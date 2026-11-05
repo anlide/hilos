@@ -324,15 +324,43 @@ final class ModerationAgentIntegrationTest extends ModerationAgentIntegrationEnv
     #[DataProvider('roles')]
     public function testAnOwnRuleReachesThePromptAndItsEditOrRemovalReachesTheNextCheck(ModerationAgentIntegrationRole $role): void
     {
+        $builtIn = "Built-in rules:\n" . implode("\n", array_map(
+            static fn (string $text): string => "- {$text}",
+            Hilos::moderationKinds()[$role->kind]->defaultRules,
+        ));
+        $priority = "\nProject rules:\n"
+            . "The following project rules take precedence over the built-in rules where they conflict.\n";
+        $withoutOwn = $this->openCheck($role);
+        $this->tick();
+        $sentWithoutOwn = $this->model()->requests[0]->messages[0];
+        self::assertStringEndsWith($builtIn, $sentWithoutOwn->content);
+        self::assertStringNotContainsString('Project rules:', $sentWithoutOwn->content);
+        self::assertStringNotContainsString('take precedence', $sentWithoutOwn->content);
+        $this->assertAsked($role, $this->model()->requests[0]);
+
         $rule = $this->asRulesLibrary(
             static fn (): ModerationRule => Hilos::$db->moderationRules->actions->create($role->kind, 'Only what a colleague may see.'),
         );
+        $this->tick();
+        self::assertCount(1, $this->model()->requests);
+        self::assertSame($sentWithoutOwn, $this->model()->requests[0]->messages[0]);
+        $this->model()->answer(self::ALLOWED);
+        $this->tick();
+        $this->assertVerdict($withoutOwn, true, ModerationReason::OK);
+        $this->close($withoutOwn);
+
         $first = $this->openCheck($role);
         $this->tick();
-        self::assertStringEndsWith("Rules:\n- Only what a colleague may see.", $this->model()->requests[0]->messages[0]->content);
+        $sentOwn = $this->model()->requests[1]->messages[0];
+        self::assertStringEndsWith($builtIn . $priority . '- Only what a colleague may see.', $sentOwn->content);
+        self::assertCount(2, $this->model()->requests[1]->messages);
+        $this->assertAsked($role, $this->model()->requests[1]);
 
         // An edit while the check is with the model neither drops it nor changes what it was asked.
         $this->asRulesLibrary(static fn () => $rule->actions->update('Nothing a colleague would mind.'));
+        $this->tick();
+        self::assertCount(2, $this->model()->requests);
+        self::assertSame($sentOwn, $this->model()->requests[1]->messages[0]);
         $this->model()->answer(self::ALLOWED);
         $this->tick();
         $this->assertVerdict($first, true, ModerationReason::OK);
@@ -340,16 +368,24 @@ final class ModerationAgentIntegrationTest extends ModerationAgentIntegrationEnv
 
         $second = $this->openCheck($role);
         $this->tick();
-        self::assertStringEndsWith("Rules:\n- Nothing a colleague would mind.", $this->model()->requests[1]->messages[0]->content);
+        $sentEdited = $this->model()->requests[2]->messages[0];
+        self::assertStringEndsWith($builtIn . $priority . '- Nothing a colleague would mind.', $sentEdited->content);
+        $this->assertAsked($role, $this->model()->requests[2]);
+        $this->asRulesLibrary(static fn () => $rule->actions->delete());
+        $this->tick();
+        self::assertCount(3, $this->model()->requests);
+        self::assertSame($sentEdited, $this->model()->requests[2]->messages[0]);
         $this->model()->answer(self::ALLOWED);
         $this->tick();
         $this->close($second);
 
-        $this->asRulesLibrary(static fn () => $rule->actions->delete());
         $this->openCheck($role);
         $this->tick();
-        $builtIn = array_map(static fn (string $text): string => "- {$text}", Hilos::moderationKinds()[$role->kind]->defaultRules);
-        self::assertStringEndsWith("Rules:\n" . implode("\n", $builtIn), $this->model()->requests[2]->messages[0]->content);
+        self::assertStringEndsWith($builtIn, $this->model()->requests[3]->messages[0]->content);
+        self::assertStringNotContainsString('Project rules:', $this->model()->requests[3]->messages[0]->content);
+        self::assertStringNotContainsString('take precedence', $this->model()->requests[3]->messages[0]->content);
+        self::assertCount(4, $this->model()->requests);
+        $this->assertAsked($role, $this->model()->requests[3]);
         self::assertCount(1, $this->agent->clients);
     }
 

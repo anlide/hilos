@@ -12,7 +12,7 @@ import {
   editModerationRule,
   expectDataFreeDeparture,
   expectModerationBuiltInRules,
-  expectModerationBuiltInRulesReturned,
+  expectModerationBuiltInRulesAfterDelete,
   expectModerationDeleteEcho,
   expectModerationKindHead,
   expectModerationKindOverview,
@@ -259,14 +259,14 @@ test('refuses an unknown kind on Overview and Rules as 404 from the server subsc
   }
 })
 
-test('adds, finds, sorts, edits and deletes own rules until the built-in policy returns', async ({
+test('adds, finds, sorts, edits and deletes own rules while built-in rules remain in force', async ({
   page,
   cleanup,
 }) => {
   // Proves: the Rules page writes to the server and reads back what it wrote —
   // the one reply on a cold entry, the count, the search and the sort answered
   // by the server, the row that leaves without its data, and the built-in
-  // policy that returns once the last own rule is gone.
+  // rules that remain alongside own rules through every change.
   const marker = randomUUID()
   const firstRule = `Allow ordinary profile photos. Polls policy alpha ${marker}.`
   const secondRule = `Allow ordinary profile photos. Polls policy beta ${marker}.`
@@ -297,29 +297,30 @@ test('adds, finds, sorts, edits and deletes own rules until the built-in policy 
     await expectModerationRulesOpening(expect, log, { ...PHOTO, ownRules: [] })
     await clickSubmit(expect, overviewTab)
     await expectPageReady(expect, page)
-    await expectModerationRulesInForce(expect, page, 0)
+    await expectModerationRulesInForce(expect, page, PHOTO, 0)
     await clickSubmit(expect, rulesTab)
     await expectPageReady(expect, page)
     await expectModerationKindHead(expect, page, PHOTO, 'rules')
   })
 
-  await test.step('Add two rules: their rows, no built-ins, the count; Overview counts them', async () => {
+  await test.step('Add two rules: their rows and built-ins remain; Overview counts both layers', async () => {
     firstId = await addModerationRule(expect, page, PHOTO, firstRule)
+    await expectModerationOwnRules(expect, page, PHOTO, [firstRule])
     secondId = await addModerationRule(expect, page, PHOTO, secondRule)
-    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [firstRule, secondRule])
     expect(adds()).toBe(2)
     await clickSubmit(expect, overviewTab)
     await expectPageReady(expect, page)
-    await expectModerationRulesInForce(expect, page, 2)
+    await expectModerationRulesInForce(expect, page, PHOTO, 2)
     await clickSubmit(expect, rulesTab)
     await expectPageReady(expect, page)
-    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [firstRule, secondRule])
   })
 
   await test.step('Search narrows to one row, nonsense finds nothing, reset restores both', async () => {
     const search = shownByTestId(table, 'hilos-table-search')
     await typeInto(search, 'policy beta')
-    await expectModerationOwnRules(expect, page, [secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [secondRule])
     await typeInto(search, 'no_such_own_rule')
     await expect(shownByTestId(table, 'hilos-table-no-matches')).toContainText(
       'Nothing found',
@@ -327,16 +328,16 @@ test('adds, finds, sorts, edits and deletes own rules until the built-in policy 
     await expect(
       shownByTestId(table, 'hilos-table-no-matches-terms'),
     ).toHaveText('No rows match “no_such_own_rule”')
-    await expect(
-      page.getByTestId('hilos-moderation-rules-built-in'),
-    ).toHaveCount(0)
+    const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
+    await expect(builtIn).toBeVisible()
+    await expect(builtIn.locator('li')).toHaveText([...PHOTO.defaultRules])
     await expect(table.locator(ROWS)).toHaveCount(0)
     await clickSubmit(
       expect,
       shownByTestId(table, 'hilos-table-no-matches-reset'),
     )
     await expect(search).toHaveValue('')
-    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [firstRule, secondRule])
   })
 
   await test.step('Sort by Rule: ascending answered by the server, descending reversed, none restored', async () => {
@@ -346,7 +347,7 @@ test('adds, finds, sorts, edits and deletes own rules until the built-in policy 
     const sentBefore = log.sent.length
     await clickSubmit(expect, sort)
     await expect(header).toHaveAttribute('aria-sort', 'ascending')
-    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [firstRule, secondRule])
     // Ascending matches the insertion order, so DOM text alone cannot prove
     // its reply: the one viewport request and its one answer do.
     const ascending = await expectModerationSortReply(
@@ -358,42 +359,51 @@ test('adds, finds, sorts, edits and deletes own rules until the built-in policy 
     )
     await clickSubmit(expect, sort)
     await expect(header).toHaveAttribute('aria-sort', 'descending')
-    await expectModerationOwnRules(expect, page, [secondRule, firstRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [secondRule, firstRule])
     await ascending.answeredOnce()
     await clickSubmit(expect, sort)
     await expect(header).toHaveAttribute('aria-sort', 'none')
-    await expectModerationOwnRules(expect, page, [firstRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [firstRule, secondRule])
   })
 
   await test.step('Edit the first rule; F5 reads both from one reply', async () => {
     await editModerationRule(expect, page, PHOTO, firstId, editedRule)
-    await expectModerationOwnRules(expect, page, [editedRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [
+      editedRule,
+      secondRule,
+    ])
     expect(updates()).toBe(1)
     await page.reload()
     await expectPageReady(expect, page)
-    await expectModerationOwnRules(expect, page, [editedRule, secondRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [
+      editedRule,
+      secondRule,
+    ])
     await expectModerationRulesOpening(expect, log, {
       ...PHOTO,
       ownRules: [editedRule, secondRule],
     })
   })
 
-  await test.step('Delete one rule: its row leaves without data; delete the last: the built-in policy returns', async () => {
+  await test.step('Delete each own rule: its row leaves without data and built-ins remain', async () => {
     await deleteModerationRule(expect, page, secondId, secondRule)
     await expect(
       table.locator(ROWS).locator('.hilos-table-text[id]'),
     ).toHaveText([editedRule])
-    await expect(
-      page.getByTestId('hilos-moderation-rules-built-in'),
-    ).toHaveCount(0)
+    await expect(table.getByTestId('hilos-table-count')).toHaveText(
+      '1 – 1 of 1',
+    )
+    const builtIn = page.getByTestId('hilos-moderation-rules-built-in')
+    await expect(builtIn).toBeVisible()
+    await expect(builtIn.locator('li')).toHaveText([...PHOTO.defaultRules])
     expect(deletes()).toBe(1)
 
     await deleteModerationRule(expect, page, firstId, editedRule)
-    await expectModerationBuiltInRulesReturned(expect, page, PHOTO)
+    await expectModerationBuiltInRulesAfterDelete(expect, page, PHOTO)
     expect(deletes()).toBe(2)
     await clickSubmit(expect, overviewTab)
     await expectPageReady(expect, page)
-    await expectModerationRulesInForce(expect, page, 0)
+    await expectModerationRulesInForce(expect, page, PHOTO, 0)
     await clickSubmit(expect, rulesTab)
     await expectPageReady(expect, page)
     await page.reload()
@@ -428,7 +438,7 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
   cleanup.defer(() => own.stop())
   await gotoPage(expect, page, RULES_PATH)
   const id = await addModerationRule(expect, page, PHOTO, initialRule)
-  await expectModerationOwnRules(expect, page, [initialRule])
+  await expectModerationOwnRules(expect, page, PHOTO, [initialRule])
 
   const editor = await page.context().newPage()
   cleanup.defer(() => editor.close())
@@ -436,7 +446,7 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
   cleanup.defer(() => foreign.stop())
   const otherUpdates = countSentFrames(editor, 'hilos_moderation_rule_update')
   await gotoPage(expect, editor, RULES_PATH)
-  await expectModerationOwnRules(expect, editor, [initialRule])
+  await expectModerationOwnRules(expect, editor, PHOTO, [initialRule])
   await expectModerationRulesOpening(expect, foreign, {
     ...PHOTO,
     ownRules: [initialRule],
@@ -468,8 +478,8 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
     await expect(field).toHaveValue(mineRule)
     await expect(save).toBeDisabled()
     expect(updates()).toBe(0)
-    await expectModerationOwnRules(expect, page, [otherRule])
-    await expectModerationOwnRules(expect, editor, [otherRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [otherRule])
+    await expectModerationOwnRules(expect, editor, PHOTO, [otherRule])
 
     await clickSubmit(expect, page.getByTestId('conflict-accept-mine'))
     await expect(page.getByTestId('conflict-choices')).toHaveCount(0)
@@ -482,8 +492,8 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
     await expect(dialog).toBeHidden()
     expect(updates()).toBe(1)
     expect(otherUpdates()).toBe(1)
-    await expectModerationOwnRules(expect, page, [mineRule])
-    await expectModerationOwnRules(expect, editor, [mineRule])
+    await expectModerationOwnRules(expect, page, PHOTO, [mineRule])
+    await expectModerationOwnRules(expect, editor, PHOTO, [mineRule])
   })
 
   await test.step('Each tab sent one update with its expectedRule and got its action_success; no refetch, no reconnect', async () => {
@@ -524,7 +534,7 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
       expectedRule: mineRule,
     })
     await expectDataFreeDeparture(expect, page, String(id), 'Removed', retired)
-    await expectModerationBuiltInRulesReturned(expect, page, PHOTO)
+    await expectModerationBuiltInRulesAfterDelete(expect, page, PHOTO)
 
     await expect(
       shownByTestId(editor, `hilos-table-pending-remove-${id}`),
@@ -541,7 +551,7 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
       'Removed',
       retired,
     )
-    await expectModerationBuiltInRulesReturned(expect, editor, PHOTO)
+    await expectModerationBuiltInRulesAfterDelete(expect, editor, PHOTO)
 
     // Neither the own echo nor Apply may borrow a later fetched window.
     for (const [log, after, isOwn] of [
@@ -570,7 +580,7 @@ test('lets an admin view-mode viewer read Moderation and draft rule forms withou
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, RULES_PATH)
   const id = await addModerationRule(expect, page, PHOTO, rule)
-  await expectModerationOwnRules(expect, page, [rule])
+  await expectModerationOwnRules(expect, page, PHOTO, [rule])
 
   cleanup.defer(() => setAdminViewMode(false))
   await setAdminViewMode(true)
@@ -607,7 +617,7 @@ test('lets an admin view-mode viewer read Moderation and draft rule forms withou
     await expect(
       viewer.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
     ).toHaveCount(0)
-    await expectModerationRulesInForce(expect, viewer, 1)
+    await expectModerationRulesInForce(expect, viewer, PHOTO, 1)
 
     await clickSubmit(
       expect,
@@ -616,20 +626,24 @@ test('lets an admin view-mode viewer read Moderation and draft rule forms withou
     await expectPageReady(expect, viewer)
     await expectModerationKindHead(expect, viewer, PHOTO, 'rules')
     await expect(banner).toBeVisible()
-    await expectModerationOwnRules(expect, viewer, [rule])
+    await expectModerationOwnRules(expect, viewer, PHOTO, [rule])
     const search = shownByTestId(viewerTable, 'hilos-table-search')
     await typeInto(search, marker)
-    await expectModerationOwnRules(expect, viewer, [rule])
+    await expectModerationOwnRules(expect, viewer, PHOTO, [rule])
     await typeInto(search, 'no_such_own_rule')
     await expect(
       shownByTestId(viewerTable, 'hilos-table-no-matches-terms'),
     ).toHaveText('No rows match “no_such_own_rule”')
+    await expect(viewerTable.locator(ROWS)).toHaveCount(0)
+    const builtIn = viewer.getByTestId('hilos-moderation-rules-built-in')
+    await expect(builtIn).toBeVisible()
+    await expect(builtIn.locator('li')).toHaveText([...PHOTO.defaultRules])
     await clickSubmit(
       expect,
       shownByTestId(viewerTable, 'hilos-table-no-matches-reset'),
     )
     await expect(search).toHaveValue('')
-    await expectModerationOwnRules(expect, viewer, [rule])
+    await expectModerationOwnRules(expect, viewer, PHOTO, [rule])
   })
 
   await test.step('Add, Edit and Delete keep their drafts, refuse to submit and send nothing', async () => {
@@ -683,10 +697,10 @@ test('lets an admin view-mode viewer read Moderation and draft rule forms withou
       await expect(dialog).toBeHidden()
     }
     await expect(viewer.getByTestId('hilos-toast-success')).toHaveCount(0)
-    await expectModerationOwnRules(expect, viewer, [rule])
+    await expectModerationOwnRules(expect, viewer, PHOTO, [rule])
     await viewer.reload()
     await expectPageReady(expect, viewer)
-    await expectModerationOwnRules(expect, viewer, [rule])
+    await expectModerationOwnRules(expect, viewer, PHOTO, [rule])
     expect(sentWrites()).toEqual([0, 0, 0])
   })
 })

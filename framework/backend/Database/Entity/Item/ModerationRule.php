@@ -10,8 +10,8 @@ use Hilos\Database\PhpType;
 /**
  * An administrator's own rule for one moderation kind (HIL-1624).
  *
- * The kind is the string key of the moderation kind directory; a kind's own rules replace its
- * built-in rules whole while at least one of them exists.
+ * The kind is the string key of the moderation kind directory; its own rules apply alongside
+ * its built-in rules and take precedence where the two layers conflict.
  *
  * @method static EntityModerationRules get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityModerationRules getAll()

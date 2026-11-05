@@ -22,6 +22,7 @@ const rows = [
     title: 'Profile photo',
     input: 'image',
     model: { _hidden: true } as const,
+    defaultRules: [],
   },
   {
     ...initial,
@@ -53,12 +54,12 @@ describe('HilosModerationPage', () => {
     expect(tableRows[0]!.textContent).toContain('hilos_profile_name')
     expect(tableRows[0]!.textContent).toContain('Framework')
     expect(tableRows[0]!.textContent).toContain('Text modelqwen2.5:3b')
-    expect(tableRows[0]!.textContent).toContain('2 rules')
+    expect(tableRows[0]!.textContent).toContain('2 built-in + 2 of your own')
     expect(tableRows[1]!.textContent).toContain('Vision modelHidden')
-    expect(tableRows[1]!.textContent).toContain('Built-in')
+    expect(tableRows[1]!.textContent).toContain('0 built-in + 0 of your own')
     expect(tableRows[1]!.textContent).not.toContain('qwen2.5:3b')
     expect(tableRows[2]!.textContent).toContain('Project')
-    expect(tableRows[2]!.textContent).toContain('1 rule')
+    expect(tableRows[2]!.textContent).toContain('2 built-in + 1 of your own')
     const open = within(table).getByRole('link', { name: 'Open Profile name' })
     expect(open.getAttribute('href')).toBe(
       '/hilos/moderation/hilos_profile_name',
@@ -122,10 +123,17 @@ describe('HilosModerationPage', () => {
       view.getByRole('table', { name: 'Moderation' }).textContent,
     ).toContain('Profile name')
     deliver(() =>
-      h.update({ ...rows[0]!, title: 'Live title', ownRuleCount: 3 }),
+      h.update({
+        ...rows[0]!,
+        title: 'Live title',
+        ownRuleCount: 3,
+        defaultRules: [],
+      }),
     )
     expect(view.getByRole('table').textContent).toContain('Live title')
-    expect(view.getByRole('table').textContent).toContain('3 rules')
+    expect(view.getByRole('table').textContent).toContain(
+      '0 built-in + 3 of your own',
+    )
     expect(h.sent.filter((frame) => frame.type === 'table_viewport')).toEqual(
       [],
     )

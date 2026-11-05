@@ -220,37 +220,58 @@ describe('HilosModerationKindPage', () => {
   })
 
   it.each([
-    [
-      'text',
-      'framework',
-      0,
-      'Text model',
-      'Framework',
-      'Built-in until you add a rule of your own',
-    ],
-    [
-      'image',
-      'framework',
-      1,
-      'Vision model',
-      'Framework',
-      '1 rule of your own',
-    ],
-    [
-      'text_with_files',
-      'project',
-      4,
-      'Text model',
-      'Project',
-      '4 rules of your own',
-    ],
+    {
+      input: 'text',
+      owner: 'framework',
+      ownRuleCount: 0,
+      defaultRules: ['Allow polite names.', 'Block threats.'],
+      label: 'Text model',
+      badge: 'Framework',
+      rules: '2 built-in + 0 of your own',
+    },
+    {
+      input: 'image',
+      owner: 'framework',
+      ownRuleCount: 1,
+      defaultRules: ['Block nudity.', 'Block violence.', 'Block spam.'],
+      label: 'Vision model',
+      badge: 'Framework',
+      rules: '3 built-in + 1 of your own',
+    },
+    {
+      input: 'text_with_files',
+      owner: 'project',
+      ownRuleCount: 4,
+      defaultRules: [],
+      label: 'Text model',
+      badge: 'Project',
+      rules: '0 built-in + 4 of your own',
+    },
+    {
+      input: 'text',
+      owner: 'project',
+      ownRuleCount: 0,
+      defaultRules: [],
+      label: 'Text model',
+      badge: 'Project',
+      rules: '0 built-in + 0 of your own',
+    },
   ])(
-    'draws %s / %s / %s rules with semantic definition rows',
-    async (input, owner, ownRuleCount, label, badge, rules) => {
+    'draws $input / $owner / $rules with semantic definition rows',
+    async ({
+      input,
+      owner,
+      ownRuleCount,
+      defaultRules,
+      label,
+      badge,
+      rules,
+    }) => {
       const { view } = await harness({
-        input: String(input),
-        owner: String(owner),
-        ownRuleCount: Number(ownRuleCount),
+        input,
+        owner,
+        ownRuleCount,
+        defaultRules,
       })
       expect(view.findAll('dl dt').map((term) => term.text())).toEqual([
         'Checked by',
@@ -291,7 +312,12 @@ describe('HilosModerationKindPage', () => {
     expect(model().get('[data-id="hilos-hidden"]').text()).toBe('Hidden')
     expect(view.text()).not.toContain('[object Object]')
     expect(view.text()).not.toContain('qwen2.5:3b')
-    update({ ...first, model: 'new-model', ownRuleCount: 2 })
+    update({
+      ...first,
+      model: 'new-model',
+      ownRuleCount: 2,
+      defaultRules: ['First rule', 'Second rule', 'Third rule'],
+    })
     await nextTick()
     expect(model().text()).toContain('new-model')
     expect(model().find('[data-id="hilos-hidden"]').exists()).toBe(false)
@@ -300,7 +326,15 @@ describe('HilosModerationKindPage', () => {
         .get('[data-id="hilos-moderation-kind-rules"]')
         .text()
         .replace(/\s+/g, ' '),
-    ).toBe('2 rules of your own')
+    ).toBe('3 built-in + 2 of your own')
+    update({ ...first, model: 'new-model', ownRuleCount: 2, defaultRules: [] })
+    await nextTick()
+    expect(
+      view
+        .get('[data-id="hilos-moderation-kind-rules"]')
+        .text()
+        .replace(/\s+/g, ' '),
+    ).toBe('0 built-in + 2 of your own')
     expect(view.find('[data-id="hilos-table-pending-row"]').exists()).toBe(
       false,
     )

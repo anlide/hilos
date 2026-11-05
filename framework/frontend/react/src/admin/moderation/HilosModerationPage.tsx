@@ -81,16 +81,12 @@ export function HilosModerationPage({ context }: HilosModerationPageProps) {
                 </HilosHideable>
               </>
             ),
-            [HilosModerationKindRowKey.ownRuleCount]: (row) =>
-              row.ownRuleCount === 0 ? (
-                <span className="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
-                  {HILOS_MODERATION_COPY.builtIn}
-                </span>
-              ) : (
-                <span>
-                  {row.ownRuleCount} {row.ownRuleCount === 1 ? 'rule' : 'rules'}
-                </span>
-              ),
+            [HilosModerationKindRowKey.ownRuleCount]: (row) => (
+              <span>
+                {row.defaultRules.length} built-in + {row.ownRuleCount} of your
+                own
+              </span>
+            ),
             [HILOS_TABLE_ACTIONS_KEY]: (row) => (
               <HilosLink
                 to={moderationKindPath(row.kind)}

@@ -188,7 +188,10 @@ final class ModerationAgentTest extends TestCase
         self::assertStringContainsString('Moderation of: Note.', $request->messages[0]->content);
         self::assertStringContainsString('{"allow":true,"reason":"ok"}', $request->messages[0]->content);
         self::assertStringContainsString('{"allow":false,"reason":"spam"}', $request->messages[0]->content);
-        self::assertStringContainsString('- Allow notes.', $request->messages[0]->content);
+        self::assertStringEndsWith("Built-in rules:\n- Allow notes.", $request->messages[0]->content);
+        self::assertStringNotContainsString('Project rules:', $request->messages[0]->content);
+        self::assertStringNotContainsString('take precedence', $request->messages[0]->content);
+        self::assertCount(2, $request->messages);
         self::assertSame(Message::ROLE_USER, $request->messages[1]->role);
         self::assertSame(
             "User ID: 7\n\nUser: " . self::PERSON_NAME . "\n\nText:\nHello key-7",
@@ -566,13 +569,55 @@ final class ModerationAgentTest extends TestCase
 
     public function testAKindWithNoRulesIsUnavailable(): void
     {
-        $this->db->rules->byKind[ModerationAgentTestDirectory::NOTE] = [];
-        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
+        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::RULELESS, 'request-1', text: 'anything');
 
         $this->agent->onTick();
 
         self::assertSame([], $this->agent->clients);
         $this->assertOneUnavailableVerdict('request-1');
+    }
+
+    public function testAKindWithOwnRulesAloneAsksTheModel(): void
+    {
+        $this->db->rules->byKind[ModerationAgentTestDirectory::RULELESS] = ['Allow ordinary notes.'];
+        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::RULELESS, 'own-only', text: 'Hello');
+
+        $this->agent->onTick();
+
+        self::assertStringEndsWith(
+            "Built-in rules:\nProject rules:\n"
+                . "The following project rules take precedence over the built-in rules where they conflict.\n"
+                . '- Allow ordinary notes.',
+            $this->client()->requests[0]->messages[0]->content,
+        );
+        self::assertSame([], $this->router->sent);
+        $this->client()->finish('{"allow":true,"reason":"ok"}');
+        $this->agent->onTick();
+
+        self::assertTrue($this->router->verdicts()[0]->allow);
+        self::assertSame(ModerationReason::OK, $this->router->verdicts()[0]->reason);
+    }
+
+    public function testAnOwnExceptionToABuiltInProhibitionKeepsBothLayersAndTheirPriority(): void
+    {
+        $this->db->rules->byKind[ModerationKindKey::PROFILE_NAME] = ['Allow impersonation of fictional characters.'];
+        $this->open(self::ACCEPT_KEY, ModerationKindKey::PROFILE_NAME, 'exception', text: 'Sherlock Holmes');
+
+        $this->agent->onTick();
+
+        $request = $this->client()->requests[0];
+        self::assertSame(Message::ROLE_SYSTEM, $request->messages[0]->role);
+        self::assertStringEndsWith(
+            "Built-in rules:\n"
+                . "- Default policy: allow benign display names.\n"
+                . "- Block explicit insults, threats, hate speech, sexual content, spam, and impersonation.\n"
+                . "- If uncertain, return allow=true.\n"
+                . "Project rules:\n"
+                . "The following project rules take precedence over the built-in rules where they conflict.\n"
+                . '- Allow impersonation of fictional characters.',
+            $request->messages[0]->content,
+        );
+        self::assertCount(2, $request->messages);
     }
 
     public function testAPersonWhoLeftIsUnavailable(): void
@@ -641,8 +686,12 @@ final class ModerationAgentTest extends TestCase
         $second = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-2', text: 'two');
         $this->agent->onTick();
         self::assertCount(1, $this->agent->clients);
-        self::assertStringContainsString('- Block every link.', $this->client()->requests[1]->messages[0]->content);
-        self::assertStringNotContainsString('Allow notes.', $this->client()->requests[1]->messages[0]->content);
+        self::assertStringEndsWith(
+            "Built-in rules:\n- Allow notes.\nProject rules:\n"
+                . "The following project rules take precedence over the built-in rules where they conflict.\n"
+                . '- Block every link.',
+            $this->client()->requests[1]->messages[0]->content,
+        );
         $this->client()->finish('{"allow":true,"reason":"ok"}');
         $this->agent->onTick();
         $this->close($second);
@@ -986,7 +1035,7 @@ final class ModerationAgentTest extends TestCase
 }
 
 /**
- * Two text kinds and an image kind, all answered by the test initiator.
+ * Test inputs, including a text kind without built-in rules, answered by the test initiator.
  */
 final class ModerationAgentTestDirectory extends ModerationKindDirectory
 {
@@ -994,6 +1043,7 @@ final class ModerationAgentTestDirectory extends ModerationKindDirectory
     public const string OTHER_NOTE = 'unit_other_note';
     public const string PHOTO = 'unit_photo';
     public const string FILES = 'unit_files';
+    public const string RULELESS = 'unit_ruleless';
 
     /** @return list<ModerationKind> Framework kinds followed by the test kinds */
     protected static function kinds(): array
@@ -1005,6 +1055,7 @@ final class ModerationAgentTestDirectory extends ModerationKindDirectory
             new ModerationKind(self::PHOTO, 'Photo', ModerationInput::IMAGE, ['nudity'], ['Allow photos.'], ModerationAgentTest::INITIATOR),
             new ModerationKind(self::FILES, 'Files', ModerationInput::TEXT_WITH_FILES, ['spam'], ['Allow notes with files.'],
                 ModerationAgentTest::INITIATOR),
+            new ModerationKind(self::RULELESS, 'Ruleless', ModerationInput::TEXT, ['spam'], [], ModerationAgentTest::INITIATOR),
         ];
     }
 }
@@ -1148,19 +1199,20 @@ final class ModerationAgentTestDbContext extends HilosDbContext
 }
 
 /**
- * The rules each kind applies, as the rules table would answer.
+ * Own saved rules, as the rules table would answer.
  */
 final class ModerationAgentTestRules
 {
-    /** @var array<string, list<string>> Rules by kind; a kind left out applies its built-in rules */
+    /** @var array<string, list<string>> Own rules by kind; a kind left out has no own rules */
     public array $byKind = [];
 
     /**
-     * @return list<string> Rules the kind applies now
+     * @param string $kind Moderation kind key
+     * @return list<string> Own saved rules for the kind
      */
-    public function effectiveForKind(string $kind): array
+    public function ownForKind(string $kind): array
     {
-        return $this->byKind[$kind] ?? Hilos::moderationKinds()[$kind]->defaultRules;
+        return $this->byKind[$kind] ?? [];
     }
 }
 

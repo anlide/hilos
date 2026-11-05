@@ -211,7 +211,7 @@ final class ModerationRuleAddIntegrationTest extends FrameworkIntegrationTestCas
         self::assertSame([['receipt_id' => (string)$receiptId]], $entries);
     }
 
-    public function testFirstOwnRuleReplacesAllDefaultsAndFurtherRulesKeepIdOrderAndOtherKinds(): void
+    public function testOwnRulesFollowAllDefaultsInIdOrderAndKeepOtherKinds(): void
     {
         $name = ModerationKindKey::PROFILE_NAME;
         $photo = ModerationKindKey::PROFILE_PHOTO;
@@ -220,13 +220,13 @@ final class ModerationRuleAddIntegrationTest extends FrameworkIntegrationTestCas
         self::assertGreaterThan(1, count($defaults));
         self::assertSame($defaults, Hilos::$db->moderationRules->effectiveForKind($name));
         $this->submit(['kind' => $name, 'rule' => 'Z first.'], 'first');
-        self::assertSame(['Z first.'], Hilos::$db->moderationRules->effectiveForKind($name));
+        self::assertSame([...$defaults, 'Z first.'], Hilos::$db->moderationRules->effectiveForKind($name));
         $this->submit(['kind' => $name, 'rule' => 'A second.'], 'second');
-        self::assertSame(['Z first.', 'A second.'], Hilos::$db->moderationRules->effectiveForKind($name));
+        self::assertSame([...$defaults, 'Z first.', 'A second.'], Hilos::$db->moderationRules->effectiveForKind($name));
         self::assertSame($otherDefaults, Hilos::$db->moderationRules->effectiveForKind($photo));
         $this->submit(['kind' => $photo, 'rule' => 'Photo policy.'], 'photo');
-        self::assertSame(['Photo policy.'], Hilos::$db->moderationRules->effectiveForKind($photo));
-        self::assertSame(['Z first.', 'A second.'], Hilos::$db->moderationRules->effectiveForKind($name));
+        self::assertSame([...$otherDefaults, 'Photo policy.'], Hilos::$db->moderationRules->effectiveForKind($photo));
+        self::assertSame([...$defaults, 'Z first.', 'A second.'], Hilos::$db->moderationRules->effectiveForKind($name));
     }
 
     /** @return iterable<string, array{string}> ORM rule-text refusals */

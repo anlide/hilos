@@ -114,12 +114,15 @@ async function harness(
   function receive(type: string, data: unknown): void {
     listeners.get('message')?.({ data: JSON.stringify({ type, data }) })
   }
-  function ruleWindow(rules = options.empty ? [] : ['Own rule']) {
+  function ruleWindow(
+    rules = options.empty ? [] : ['Own rule'],
+    kind = first.kind,
+  ) {
     return {
-      filter: { kind: first.kind },
+      filter: { kind },
       rows: rules.map((rule, index) => ({
         rowKey: String(index + 1),
-        slots: { rule: { id: index + 1, kind: first.kind, rule } },
+        slots: { rule: { id: index + 1, kind, rule } },
       })),
       sort: [{ field: 'id', direction: 'asc' }],
       limit: 25,
@@ -158,7 +161,7 @@ async function harness(
           pageChildren: [],
         },
         windows: {
-          [RULES]: ruleWindow(rules),
+          [RULES]: ruleWindow(rules, row.kind),
           [TABLE]: {
             filter: { kind: row.kind },
             rows: [{ rowKey: row.kind, slots: { kind: row } }],
@@ -308,8 +311,11 @@ describe('HilosModerationKindRulesPage', () => {
     )
     expect(view.text()).toContain('Own rule')
     expect(
-      view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
-    ).toBe(false)
+      view
+        .get('[data-id="hilos-moderation-rules-built-in"]')
+        .findAll('li')
+        .map((rule) => rule.text()),
+    ).toEqual(['Allow polite names.', 'Block threats.'])
     expect(view.findAll('button[aria-label="Edit rule"]')).toHaveLength(2)
     expect(view.findAll('button[aria-label="Delete rule"]')).toHaveLength(2)
     expect(
@@ -736,8 +742,8 @@ describe('HilosModerationKindRulesPage', () => {
     ).toBeNull()
   })
 
-  it('shows the design empty copy and plain built-in texts only when metadata says no own rules', async () => {
-    const { view, first, update } = await harness(
+  it('shows the own-rule empty state and plain built-in texts alongside either own-rule count', async () => {
+    const { view, first, update, ruleAnswer } = await harness(
       {
         ownRuleCount: 0,
         defaultRules: ['<script>plain</script>', 'Second rule'],
@@ -745,29 +751,35 @@ describe('HilosModerationKindRulesPage', () => {
       { empty: true },
     )
     expect(view.text()).toContain('No rules of your own yet')
-    expect(view.text()).toContain(
-      'Profile name is checked by its built-in rules below.',
-    )
     const builtIn = view.get('[data-id="hilos-moderation-rules-built-in"]')
     expect(builtIn.findAll('li').map((li) => li.text())).toEqual([
       '<script>plain</script>',
       'Second rule',
     ])
     expect(builtIn.find('script').exists()).toBe(false)
-    expect(builtIn.text()).toContain('Your first rule replaces them all.')
     expect(view.findAll('button[aria-label="Edit rule"]')).toHaveLength(0)
     expect(view.findAll('button[aria-label="Delete rule"]')).toHaveLength(0)
     update({ ...first, title: 'Renamed kind', defaultRules: [] })
     await nextTick()
-    expect(view.text()).toContain(
-      'Renamed kind is checked by its built-in rules below.',
-    )
+    expect(view.get('h1').text()).toBe('Renamed kind')
     expect(builtIn.findAll('li')).toHaveLength(0)
+    ruleAnswer(['First own rule', 'Second own rule'])
     update({ ...first, ownRuleCount: 2 })
     await nextTick()
-    expect(
-      view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
-    ).toBe(false)
+    expect(view.text()).not.toContain('No rules of your own yet')
+    expect(view.get('[data-id="hilos-table-row-1"]').text()).toContain(
+      'First own rule',
+    )
+    expect(view.get('[data-id="hilos-table-row-2"]').text()).toContain(
+      'Second own rule',
+    )
+    expect(builtIn.findAll('li').map((li) => li.text())).toEqual([
+      '<script>plain</script>',
+      'Second rule',
+    ])
+    expect(builtIn.find('script').exists()).toBe(false)
+    expect(view.findAll('button[aria-label="Edit rule"]')).toHaveLength(4)
+    expect(view.findAll('button[aria-label="Delete rule"]')).toHaveLength(4)
   })
 
   it.each([0, 2])(
@@ -787,8 +799,11 @@ describe('HilosModerationKindRulesPage', () => {
       expect(view.text()).toContain('Nothing found')
       expect(view.text()).not.toContain('No rules of your own yet')
       expect(
-        view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
-      ).toBe(ownRuleCount === 0)
+        view
+          .get('[data-id="hilos-moderation-rules-built-in"]')
+          .findAll('li')
+          .map((rule) => rule.text()),
+      ).toEqual(['Allow polite names.', 'Block threats.'])
     },
   )
 
@@ -877,6 +892,12 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       view.find('[data-id="hilos-moderation-rules-loading"]').exists(),
     ).toBe(false)
+    expect(
+      view
+        .get('[data-id="hilos-moderation-rules-built-in"]')
+        .findAll('li')
+        .map((rule) => rule.text()),
+    ).toEqual(['Allow polite names.', 'Block threats.'])
     navigation.navigate('/hilos/moderation/second/rules')
     await nextTick()
     expect(
@@ -886,6 +907,32 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
     ).toBe(false)
+    answer()
+    await nextTick()
+    expect(
+      view.find('[data-id="hilos-moderation-rules-built-in"]').exists(),
+    ).toBe(false)
+    expect(view.text()).not.toContain('Allow polite names.')
+    answer(
+      {
+        ...first,
+        kind: 'second',
+        title: 'Second kind',
+        ownRuleCount: 1,
+        defaultRules: ['Second kind built-in rule'],
+      },
+      ['Second kind own rule'],
+    )
+    await nextTick()
+    expect(view.get('h1').text()).toBe('Second kind')
+    expect(view.text()).toContain('Second kind own rule')
+    expect(
+      view
+        .get('[data-id="hilos-moderation-rules-built-in"]')
+        .findAll('li')
+        .map((rule) => rule.text()),
+    ).toEqual(['Second kind built-in rule'])
+    expect(view.text()).not.toContain('Allow polite names.')
   })
 
   it.each([TABLE, RULES])(
