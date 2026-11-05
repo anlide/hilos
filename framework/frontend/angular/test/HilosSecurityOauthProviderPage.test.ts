@@ -94,7 +94,7 @@ function fieldSlot(
     secret,
     value: secret ? null : value,
     source,
-    setState: true,
+    setState: secret ? true : value !== null && value !== '',
     defaultValue:
       fallback.defaultValue !== undefined
         ? fallback.defaultValue
@@ -126,7 +126,7 @@ function seededContext(
 ): {
   context: HilosSecurityOauthContext
   pushUpdate: (
-    value: string | null,
+    value: string,
     source?: string,
     fallback?: {
       defaultValue?: unknown
@@ -282,7 +282,7 @@ function seededContext(
       scopes,
       actions,
     },
-    pushUpdate(value: string | null, source = 'db', fallback = {}): void {
+    pushUpdate(value: string, source = 'db', fallback = {}): void {
       const field = fieldSlot('client_id', value, source, fallback)
       fields = new Map(fields).set(CLIENT_ID_KEY, field)
       pushDelta({
@@ -434,7 +434,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     const fixture = openModal(context, 'client_id')
     typeDraft(fixture, 'Iv1.mine')
 
-    pushUpdate(null)
+    pushUpdate('', 'default')
     fixture.detectChanges()
 
     expect(el(fixture, 'conflict-badge')).not.toBeNull()

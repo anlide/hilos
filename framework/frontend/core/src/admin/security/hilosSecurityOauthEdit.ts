@@ -99,13 +99,13 @@ export function createHilosOauthRedirectEdit(
 }
 
 /**
- * The effective value of a provider field that is not the secret, as the notice
- * says it: nothing reads as a dash.
+ * The effective value of an ordinary provider field, as the notice says it:
+ * nothing reads as a dash.
  *
- * @param row The field's row.
+ * @param value The field's effective value.
  */
-function providerFieldDisplayValue(row: HilosOAuthFieldRow): string {
-  return row.value === null || row.value === '' ? '—' : row.value
+export function hilosOauthFieldDisplayValue(value: string | null): string {
+  return value === null || value === '' ? '—' : value
 }
 
 /**
@@ -133,7 +133,7 @@ export function createHilosOauthProviderFieldEdit(
         conflict: (_state, live) =>
           live === undefined
             ? ''
-            : `Changed elsewhere to "${providerFieldDisplayValue(live)}".`,
+            : `Changed elsewhere to "${hilosOauthFieldDisplayValue(live.value)}".`,
       },
     },
   )

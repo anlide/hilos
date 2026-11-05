@@ -38,6 +38,7 @@ import * as moderationRuleEdit from '../../src/admin/moderation/hilosModerationR
 import * as moderationRules from '../../src/admin/moderation/hilosModerationRules.js'
 import * as security from '../../src/admin/security/index.js'
 import * as securityOverview from '../../src/admin/security/hilosSecurityOverview.js'
+import * as oauthFieldDisplay from '../../src/admin/security/hilosSecurityOauthEdit.js'
 import * as oauthProviderHead from '../../src/admin/security/hilosSecurityOauthHead.js'
 import * as settings from '../../src/admin/settings/index.js'
 import * as status from '../../src/admin/status/index.js'
@@ -262,6 +263,8 @@ const oauthProviderHeadTypes = [
   'HilosOAuthProviderHead',
   'HilosOAuthProviderHeadContext',
 ]
+/** An ordinary OAuth field's display value belongs only to the lazy Security section. */
+const oauthFieldDisplayValues = ['hilosOauthFieldDisplayValue']
 /** The overview's new API belongs only to the lazy Analytics section. */
 const analyticsOverviewValues = [
   'ANALYTICS_OVERVIEW_SECTION',
@@ -1303,6 +1306,19 @@ describe('core public entries', () => {
             name,
           ).toBe(true)
         } else if (
+          entry === './admin/security' &&
+          oauthFieldDisplayValues.includes(name)
+        ) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(
+            Object.is(
+              value,
+              oauthFieldDisplay[name as keyof typeof oauthFieldDisplay],
+            ),
+            name,
+          ).toBe(true)
+        } else if (
           entry === './admin/change-log' &&
           changeLogPresentationValues.includes(name)
         ) {
@@ -1348,6 +1364,7 @@ describe('core public entries', () => {
         ...adminModerationRuleEditValues,
         ...securityOverviewValues,
         ...oauthProviderHeadValues,
+        ...oauthFieldDisplayValues,
         ...statusWorksValues,
         ...statusWorkActionValues,
         ...statusWorkEditorValues,
@@ -1889,6 +1906,10 @@ describe('core public entries', () => {
       ...oauthProviderHeadValues,
       ...oauthProviderHeadTypes,
     ]
+    const oauthFieldDisplayExports = exportsOf(
+      'admin/security/hilosSecurityOauthEdit.ts',
+    )
+    const oauthFieldDisplayNames = [...oauthFieldDisplayValues]
     const worksExports = exportsOf('admin/status/hilosStatusWorks.ts')
     const historyExports = exportsOf('admin/status/hilosStatusHistory.ts')
     const workActionExports = exportsOf(
@@ -2097,6 +2118,15 @@ describe('core public entries', () => {
             oauthProviderHeadExports.get(name),
           )
         } else if (
+          entry === 'admin/security/index.ts' &&
+          oauthFieldDisplayNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            oauthFieldDisplayExports.get(name),
+          )
+        } else if (
           entry === 'admin/changeLog/index.ts' &&
           changeLogPresentationNames.includes(name)
         ) {
@@ -2145,6 +2175,7 @@ describe('core public entries', () => {
         ...ruleEditNames,
         ...securityOverviewNames,
         ...oauthProviderHeadNames,
+        ...oauthFieldDisplayNames,
         ...workNames,
         ...workActionNames,
         ...statusWorkEditorValues,

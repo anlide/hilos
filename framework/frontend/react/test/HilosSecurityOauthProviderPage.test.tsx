@@ -529,7 +529,7 @@ function fieldSlot(
     secret,
     value: secret ? null : value,
     source,
-    setState: true,
+    setState: secret || (value !== null && value !== ''),
     defaultValue: secret
       ? null
       : field === 'scope'
@@ -557,7 +557,7 @@ function seededContext(
   hasProvider = true,
 ): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string | null, source?: string) => void
+  pushUpdate: (value: string, source?: string) => void
   pushFieldUpdate: (
     field: 'client_id' | 'client_secret' | 'scope',
     overrides: Record<string, unknown>,
@@ -708,7 +708,7 @@ function seededContext(
       scopes,
       actions,
     },
-    pushUpdate(value: string | null, source = 'db'): void {
+    pushUpdate(value: string, source = 'db'): void {
       const field = fieldSlot('client_id', value, source)
       fields = new Map(fields).set(CLIENT_ID_KEY, field)
       pushDelta(FIELDS_TABLE, {
@@ -877,7 +877,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     typeDraft('Iv1.mine')
 
     act(() => {
-      pushUpdate(null)
+      pushUpdate('', 'default')
     })
 
     expect(byId('conflict-badge')).not.toBeNull()
@@ -1074,8 +1074,7 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
   it.each([
     { value: 'Iv1.env', source: 'env', expected: 'Iv1.env From env' },
     { value: 'recipe-id', source: 'default', expected: 'recipe-id Default' },
-    { value: null, source: 'default', expected: '— Default' },
-    { value: '', source: 'env', expected: '— From env' },
+    { value: '', source: 'default', expected: '— Default' },
   ])(
     'shows the non-secret fallback $value from $source',
     ({ value, source, expected }) => {

@@ -115,22 +115,30 @@ describe('OAuth provider field window', () => {
   })
 
   it('says a dash for a value emptied elsewhere', () => {
-    const scope = {
-      ...secret,
-      key: 'google.scope',
-      field: 'scope',
+    const field: HilosOAuthFieldRow = {
+      key: 'google.client_id',
+      providerKey: 'google',
+      field: 'client_id',
+      label: 'Client ID',
+      type: 'string',
       secret: false,
-      value: 'email',
-    } as HilosOAuthFieldRow
-    const { controller, focused } = controllerOf([scope])
+      value: 'id-a',
+      source: 'db',
+      setState: true,
+      defaultValue: '',
+      defaultSource: 'default',
+      defaultSetState: false,
+      resetDisabledReason: null,
+    }
+    const { controller, focused } = controllerOf([field])
     const edit = createHilosOauthProviderFieldEdit(
       controller,
       actionsSpy().actions,
     )
     edit.start()
-    edit.open(scope.key)
-    edit.setForm({ value: 'profile' })
-    focused.set({ ...scope, value: null })
+    edit.open(field.key)
+    edit.setForm({ value: 'id-mine' })
+    focused.set({ ...field, value: '', source: 'default', setState: false })
     expect(edit.noticeText.get()).toBe('Changed elsewhere to "—".')
   })
 })

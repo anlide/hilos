@@ -33,6 +33,7 @@ export {
 export {
   createHilosOauthProviderFieldEdit,
   createHilosOauthRedirectEdit,
+  hilosOauthFieldDisplayValue,
   type HilosOauthProviderFieldEditFields,
   type HilosOauthRedirectEditFields,
   type HilosOauthRedirectEditForm,

@@ -32,6 +32,7 @@ import {
   createHilosOAuthProviderHead,
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
+  hilosOauthFieldDisplayValue,
   type HilosOAuthFieldRow,
   type HilosOAuthProviderHead,
   type HilosSecurityOauthContext,
@@ -133,11 +134,6 @@ const SOURCE_LABEL: Record<string, string> = {
   default: 'Default',
 }
 
-/** Human-readable effective value of a field that is not the secret. */
-function displayValue(row: HilosOAuthFieldRow): string {
-  return row.value === null || row.value === '' ? '—' : row.value
-}
-
 // Edit dialog: one field of the provider, as the core window has it; this view
 // binds the input. The secret's dialog always opens empty and forgets what was
 // typed when it closes.
@@ -210,7 +206,7 @@ function resetNowText(row: HilosOAuthFieldRow): string {
     return row.setState ? 'Set' : 'Not set'
   }
 
-  return displayValue(row)
+  return hilosOauthFieldDisplayValue(row.value)
 }
 
 function openEdit(row: HilosOAuthFieldRow): void {
@@ -350,7 +346,7 @@ async function submitReset(): Promise<void> {
             {{ row.setState ? 'Set' : 'Not set' }}
           </span>
           <span v-else :data-id="`hilos-oauth-field-value-${row.field}`">
-            {{ displayValue(row) }}
+            {{ hilosOauthFieldDisplayValue(row.value) }}
           </span>
         </template>
         <template #cell-source="{ row }">
@@ -522,7 +518,7 @@ async function submitReset(): Promise<void> {
           </template>
           <HilosHideable v-else :value="resetShown.defaultValue">
             <template #default="{ value }">
-              {{ value === null || value === '' ? '—' : value }}
+              {{ hilosOauthFieldDisplayValue(value) }}
             </template>
           </HilosHideable>
           {{ ' ' }}

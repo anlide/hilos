@@ -30,6 +30,7 @@ import {
   createHilosOAuthProviderSummary,
   createHilosOauthProviderFieldEdit,
   createHilosSecurityOauthActions,
+  hilosOauthFieldDisplayValue,
 } from '@hilos/core/admin/security'
 import type {
   HilosOAuthFieldRow,
@@ -63,18 +64,13 @@ const SOURCE_LABEL: Record<string, string> = {
   default: 'Default',
 }
 
-/** Human-readable effective value of a field that is not the secret. */
-function displayValue(row: HilosOAuthFieldRow): string {
-  return row.value === null || row.value === '' ? '—' : row.value
-}
-
 /** What the reset dialog shows as the value now; the secret never reads back. */
 function resetNowText(row: HilosOAuthFieldRow): string {
   if (row.secret) {
     return row.setState ? 'Set' : 'Not set'
   }
 
-  return displayValue(row)
+  return hilosOauthFieldDisplayValue(row.value)
 }
 
 /**
@@ -289,7 +285,7 @@ export function HilosSecurityOauthProviderPage({
                   </span>
                 ) : (
                   <span data-id={`hilos-oauth-field-value-${row.field}`}>
-                    {displayValue(row)}
+                    {hilosOauthFieldDisplayValue(row.value)}
                   </span>
                 ),
               source: (row) => (
@@ -507,7 +503,7 @@ export function HilosSecurityOauthProviderPage({
                 )
               ) : (
                 <HilosHideable value={resetShown.defaultValue}>
-                  {(value) => (value === null || value === '' ? '—' : value)}
+                  {(value) => hilosOauthFieldDisplayValue(value)}
                 </HilosHideable>
               )}{' '}
               <span className="badge text-bg-secondary-subtle text-secondary-emphasis ms-2">

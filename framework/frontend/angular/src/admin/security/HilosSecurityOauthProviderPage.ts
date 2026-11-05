@@ -36,6 +36,7 @@ import {
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
   createHilosOauthProviderFieldEdit,
+  hilosOauthFieldDisplayValue,
 } from '@hilos/core/admin/security'
 import type {
   HilosOauthProviderFieldEditFields,
@@ -71,18 +72,13 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
   default: 'Default',
 }
 
-/** Human-readable effective value of a field that is not the secret. */
-function displayValue(row: HilosOAuthFieldRow): string {
-  return row.value === null || row.value === '' ? '—' : row.value
-}
-
 /** What the reset dialog shows as the value now; the secret never reads back. */
 function resetNowText(row: HilosOAuthFieldRow): string {
   if (row.secret) {
     return row.setState ? 'Set' : 'Not set'
   }
 
-  return displayValue(row)
+  return hilosOauthFieldDisplayValue(row.value)
 }
 
 /** The framework OAuth provider page: one provider's fields table and its recipe. */
@@ -135,7 +131,7 @@ function resetNowText(row: HilosOAuthFieldRow): string {
               </span>
             } @else {
               <span [attr.data-id]="'hilos-oauth-field-value-' + row.field">
-                {{ displayValue(row) }}
+                {{ displayValue(row.value) }}
               </span>
             }
           </ng-template>
@@ -335,7 +331,7 @@ function resetNowText(row: HilosOAuthFieldRow): string {
               } @else {
                 <hilos-hideable [value]="row.defaultValue">
                   <ng-template let-value>
-                    {{ defaultValueText(value) }}
+                    {{ displayValue(value) }}
                   </ng-template>
                 </hilos-hideable>
               }
@@ -557,19 +553,12 @@ export class HilosSecurityOauthProviderPage {
     return SOURCE_LABEL[source]
   }
 
-  /** Human-readable effective value of a field that is not the secret. */
-  protected displayValue(row: HilosOAuthFieldRow): string {
-    return displayValue(row)
-  }
+  /** Human-readable effective value of an ordinary field; nothing reads as a dash. */
+  protected readonly displayValue = hilosOauthFieldDisplayValue
 
   /** What the reset dialog shows as the value now; the secret never reads back. */
   protected resetNowText(row: HilosOAuthFieldRow): string {
     return resetNowText(row)
-  }
-
-  /** Human-readable fallback for a non-secret field. */
-  protected defaultValueText(value: string | null): string {
-    return value === null || value === '' ? '—' : value
   }
 
   protected openReset(row: HilosOAuthFieldRow): void {
