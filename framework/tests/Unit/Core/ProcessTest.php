@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Core;
 
 use Hilos\Core\Process;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,23 +20,46 @@ final class ProcessTest extends TestCase
 
     private const int PROCESS_POLL_INTERVAL_US = 5_000;
 
-    public function testCapturesTerminatingSignal(): void
+    /** @param bool $observe Whether to close the child through the watchdog observation path */
+    #[DataProvider('observationPaths')]
+    public function testCapturesTerminatingSignal(bool $observe): void
     {
         $process = new Process('sh', ['-c', 'kill -9 $$']);
 
-        $this->waitUntilStopped($process);
+        $status = $this->waitUntilStopped($process, $observe);
 
+        self::assertSame(9, $process->getTermSignal());
+        if ($observe) {
+            self::assertTrue($status[Process::STATUS_SIGNALED]);
+            self::assertSame(9, $status[Process::STATUS_TERM_SIGNAL]);
+        }
+        self::assertFalse($process->isInFlight());
+        self::assertSame($status, $process->observe());
         self::assertSame(9, $process->getTermSignal());
     }
 
-    public function testCapturesExitCodeWithoutTerminatingSignal(): void
+    /** @param bool $observe Whether to close the child through the watchdog observation path */
+    #[DataProvider('observationPaths')]
+    public function testCapturesExitCodeWithoutTerminatingSignal(bool $observe): void
     {
         $process = new Process('sh', ['-c', 'exit 3']);
 
-        $this->waitUntilStopped($process);
+        $status = $this->waitUntilStopped($process, $observe);
 
         self::assertSame(3, $process->getExitCode());
         self::assertNull($process->getTermSignal());
+        self::assertSame(3, $status[Process::STATUS_EXIT_CODE]);
+        self::assertFalse($process->isInFlight());
+        self::assertSame($status, $process->observe());
+        self::assertSame(3, $process->getExitCode());
+        self::assertNull($process->getTermSignal());
+    }
+
+    /** @return iterable<string, array{bool}> General tick and watchdog observation paths */
+    public static function observationPaths(): iterable
+    {
+        yield 'tick' => [false];
+        yield 'observe' => [true];
     }
 
     public function testPidIsAvailableOnlyWhileTheChildRuns(): void
@@ -49,14 +73,21 @@ final class ProcessTest extends TestCase
 
     /**
      * @param Process $process Process to poll
+     * @param bool $observe Whether to observe and close without ticking stdin
+     * @return array<string, mixed> Final status after closing the child
      */
-    private function waitUntilStopped(Process $process): void
+    private function waitUntilStopped(Process $process, bool $observe = false): array
     {
         $deadline = microtime(true) + self::PROCESS_TIMEOUT_SECONDS;
         do {
-            $process->tick();
-            if ($process->getStatus()[Process::STATUS_RUNNING] !== true) {
-                return;
+            if ($observe) {
+                $status = $process->observe();
+            } else {
+                $process->tick();
+                $status = $process->getStatus();
+            }
+            if ($status[Process::STATUS_RUNNING] !== true) {
+                return $status;
             }
 
             usleep(self::PROCESS_POLL_INTERVAL_US);

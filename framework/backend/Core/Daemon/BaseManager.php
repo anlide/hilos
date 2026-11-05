@@ -21,7 +21,8 @@ use Throwable;
 abstract class BaseManager
 {
     /**
-     * Signal handling every manager needs, checked whatever else it asks for.
+     * Signal functions for managers using dispatched PCNTL handlers.
+     * A manager with its own signal receiver overrides this requirement.
      *
      * @var list<string> Function names
      */
@@ -223,11 +224,9 @@ abstract class BaseManager
     /**
      * Ensures the process-management functions a manager relies on exist.
      *
-     * The signal anchor is checked for every manager whether it names it or not.
-     * A manager that forgets pcntl_signal_dispatch does not fail to start — it
-     * starts and then quietly ignores every signal sent to it, which is the one
-     * failure mode this guard exists to prevent. On top of the anchor a manager
-     * names only what it adds.
+     * The manager's signal requirements are always checked. The default pair
+     * keeps a PCNTL manager from starting without the dispatch that delivers its
+     * signals; a libevent receiver declares the mask primitive it needs instead.
      *
      * @param list<string> $additionalFunctions Functions this manager needs beyond the signal anchor
      * @throws MissingRequiredParameterException When any required function is unavailable
@@ -235,7 +234,7 @@ abstract class BaseManager
     protected function checkRequiredFunctions(array $additionalFunctions = []): void
     {
         $missingFunctions = [];
-        foreach ([...self::SIGNAL_FUNCTIONS, ...$additionalFunctions] as $function) {
+        foreach ([...static::SIGNAL_FUNCTIONS, ...$additionalFunctions] as $function) {
             if (!function_exists($function)) {
                 $missingFunctions[] = $function;
             }

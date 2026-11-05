@@ -6,16 +6,15 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
-use Hilos\Core\Exception\Process\FailedToReadStdOutException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
-use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
-use Hilos\Core\Exception\Process\FailedToWriteStdInException;
+use Hilos\Core\Exception\ProcessException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\DirectoryCreateException;
@@ -37,8 +36,14 @@ use Throwable;
  */
 class DockerManager extends BaseManager
 {
+    /** @var list<string> The watchdog receives signals through libevent, not PCNTL dispatch */
+    protected const array SIGNAL_FUNCTIONS = ['pcntl_sigprocmask'];
+
     /** How much of what the daemon printed the crash record quotes, across all its streams. */
     private const int DAEMON_OUTPUT_TAIL_BYTES = 2000;
+
+    /** @var float Longest gap between child observations when no earlier work is due */
+    private const float STATUS_CHECK_INTERVAL_SECONDS = 60.0;
 
     /** @var bool Flag for daemon restart mode */
     private bool $shouldRestart = false;
@@ -49,11 +54,14 @@ class DockerManager extends BaseManager
     /** @var ?DaemonOutputQuote What the daemon has printed since this start, or null before the first start */
     private ?DaemonOutputQuote $outputQuote = null;
 
-    /** @var ?float Timestamp of last error-based restart attempt */
+    /** @var ?float Monotonic seconds of the last unexpected daemon stop */
     private ?float $lastErrorRestartTime = null;
 
-    /** @var ?float Timestamp when current process was started */
+    /** @var ?float Monotonic seconds when the current process was started */
     private ?float $processStartTime = null;
+
+    /** @var bool Whether normal shutdown has already asked the current daemon to stop */
+    private bool $daemonStopRequested = false;
 
     /** @var bool Flag to track if restart interval message was logged for current restart */
     private bool $restartIntervalLogged = false;
@@ -80,11 +88,8 @@ class DockerManager extends BaseManager
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
-     * @throws FailedToReadStdOutException If stdout data cannot be read
-     * @throws FailedToSetStdErrException If stderr data cannot be read
-     * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
-     * @throws FailedToWriteStdInException If buffered input cannot be written to the daemon process
+     * @throws ProcessException If watchdog signal installation or event waiting fails
      * @throws EnvException If required env values are missing or invalid
      * @throws LogRotationException If log rotation fails
      */
@@ -96,68 +101,106 @@ class DockerManager extends BaseManager
         // Check the availability of required functions
         $this->checkRequiredFunctions(self::PROCESS_FUNCTIONS);
 
-        // Setup error handling and signal handlers
+        // The watchdog owns its signal receiver before checking or starting any child.
         $this->setupErrorHandling();
-        $this->setupSignalHandlers();
-
-        // Before anything that consequence follows from, and before the rotation that silently
-        // skips itself when the log directory is unknown.
-        $this->announceMissingLogAddresses();
-
-        // Rotate logs before starting processes
-        $this->rotateLogs();
-
-        // Resolve the alert mail once, at startup: an unconfigured mailbox is worth saying while
-        // the node is healthy, and a watchdog on its way out must not be reading the environment.
-        // After the rotation, not before it, or the line saying so is archived the moment it is written.
-        // A failure before this line — the path check, the missing functions, the log rotation —
-        // therefore leaves no mail at all: there is no mailer yet, and no catch either. That is the
-        // price of the order above and not an oversight; building the mailer earlier to cover it, or
-        // wrapping the file work in a `try`, is the watchdog growing handlers it has nobody to
-        // supervise (HIL-617). Who restarts a watchdog is a question outside Hilos.
-        $this->alertMailer = WatchdogAlertMailer::fromEnv();
-
-        Logger::info("Docker watchdog started");
-
-        // Main loop. The catch mails and rethrows rather than recovering: the watchdog is not
-        // made resilient by the watchdog, and DockerApplication still decides the exit code.
-        // The catch covers the loop only; the note above says what that leaves out.
+        $wait = new WatchdogWait();
         try {
-            while ($this->shouldExit === false || $this->process !== null) {
-                $loopStartTime = microtime(true);
+            // Before anything that consequence follows from, and before the rotation that silently
+            // skips itself when the log directory is unknown.
+            $this->announceMissingLogAddresses();
+            $this->rotateLogs();
 
-                // If the process is not running, and we don't need to exit, start daemon
-                if ($this->shouldStartDaemon()) {
-                    $this->startDaemon($daemonScript);
+            // Resolve mail after rotation, so the line about an unconfigured mailbox stays live.
+            // Startup failures still leave without an alert: only the loop catch mails the failure
+            // (HIL-617). The outer finally only releases this process's signal watches.
+            $this->alertMailer = WatchdogAlertMailer::fromEnv();
+
+            Logger::info("Docker watchdog started");
+
+            // The watchdog does not recover from its own failure. DockerApplication decides the exit code.
+            try {
+                while ($this->shouldExit === false || $this->process !== null) {
+                    $this->applySignals($wait);
+                    $this->tickDaemon();
+
+                    if ($this->shouldStartDaemon()) {
+                        $this->startDaemon($daemonScript, $wait);
+                        // Observe a new descriptor on the next pass without waiting for a signal.
+                        continue;
+                    }
+                    if ($this->shouldExit && $this->process === null) {
+                        break;
+                    }
+
+                    $wait->wait($this->nextWaitSeconds());
                 }
+            } catch (Throwable $e) {
+                $this->alertWatchdogDeath(sprintf(
+                    '%s: %s in %s:%d',
+                    get_class($e),
+                    $e->getMessage(),
+                    basename($e->getFile()),
+                    $e->getLine(),
+                ));
 
-                $this->tickDaemon();
-
-                $this->sleepWithPreciseTiming($loopStartTime);
-
-                // Process signals
-                pcntl_signal_dispatch();
+                throw $e;
             }
-        } catch (Throwable $e) {
-            $this->alertWatchdogDeath(sprintf(
-                '%s: %s in %s:%d',
-                get_class($e),
-                $e->getMessage(),
-                basename($e->getFile()),
-                $e->getLine(),
-            ));
 
-            throw $e;
+            Logger::info("Docker watchdog stopped");
+        } finally {
+            $wait->close();
         }
-
-        Logger::info("Docker watchdog stopped");
     }
 
 
     /**
-     * Atomic check for daemon start necessity
-     * Prevents race condition between $shouldExit and $process checks
-     * Implements minimum restart interval for error-based restarts
+     * Applies control signals outside libevent callbacks. SIGCHLD only wakes the
+     * next Process observation; it never collects a child's status here.
+     *
+     * @param WatchdogWait $wait Watchdog's sole signal receiver
+     * @throws ProcessException If pending events cannot be dispatched
+     */
+    private function applySignals(WatchdogWait $wait): void
+    {
+        foreach ($wait->consumeSignals() as $signal) {
+            switch ($signal) {
+                case SIGTERM:
+                case SIGINT:
+                    $this->handleShutdown();
+                    break;
+                case SIGHUP:
+                    $this->handleRestart();
+                    break;
+            }
+        }
+    }
+
+    /**
+     * @return float Seconds until the next restart, protection reset or fallback observation
+     * @throws EnvException If the restart interval is missing or invalid
+     */
+    private function nextWaitSeconds(): float
+    {
+        $timeout = self::STATUS_CHECK_INTERVAL_SECONDS;
+        if ($this->lastErrorRestartTime !== null) {
+            $minRestartInterval = Hilos::$env[EnvConstants::DAEMON_MIN_RESTART_INTERVAL]->int();
+            if ($this->process === null && !$this->shouldExit && !$this->shouldRestart) {
+                $timeout = min($timeout, $this->lastErrorRestartTime + $minRestartInterval - $this->monotonicSeconds());
+            } elseif ($this->process !== null && $this->processStartTime !== null) {
+                $timeout = min($timeout, $this->processStartTime + $minRestartInterval - $this->monotonicSeconds());
+            }
+        }
+        return max(0.0, $timeout);
+    }
+
+    /** @return float Monotonic seconds for watchdog durations and deadlines */
+    private function monotonicSeconds(): float
+    {
+        return hrtime(true) / (TimeConstants::NS_PER_MILLISECOND * TimeConstants::MS_PER_SECOND);
+    }
+
+    /**
+     * Checks the exit request, current descriptor and minimum restart interval.
      *
      * @return bool True if daemon should be started
      * @throws EnvException If restart interval env value is missing or invalid
@@ -176,7 +219,7 @@ class DockerManager extends BaseManager
         // For error-based restarts, check minimum interval
         if ($this->lastErrorRestartTime !== null) {
             $minRestartInterval = Hilos::$env[EnvConstants::DAEMON_MIN_RESTART_INTERVAL]->int();
-            $timeSinceLastRestart = microtime(true) - $this->lastErrorRestartTime;
+            $timeSinceLastRestart = $this->monotonicSeconds() - $this->lastErrorRestartTime;
 
             if ($timeSinceLastRestart < $minRestartInterval) {
                 // Log message only once per restart attempt
@@ -206,11 +249,7 @@ class DockerManager extends BaseManager
      * Handles process termination and outputs appropriate messages
      *
      * @throws FailedToGetStatusException If process status cannot be retrieved
-     * @throws FailedToReadStdOutException If stdout data cannot be read
-     * @throws FailedToSetStdErrException If stderr data cannot be read
-     * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
-     * @throws FailedToWriteStdInException If buffered input cannot be written to the daemon process
      * @throws EnvException If the restart interval or failed-start threshold env value is missing or invalid
      */
     private function tickDaemon(): void
@@ -219,12 +258,9 @@ class DockerManager extends BaseManager
             return;
         }
 
-        $this->process->tick();
-
-        // Check if the daemon is running
-        $status = $this->process->getStatus();
+        $status = $this->process->observe();
         if ($status[Process::STATUS_RUNNING] !== true) {
-            $uptime = $this->processStartTime === null ? 0.0 : microtime(true) - $this->processStartTime;
+            $uptime = $this->processStartTime === null ? 0.0 : $this->monotonicSeconds() - $this->processStartTime;
             $exitCode = $this->process->getExitCode();
             $termSignal = $this->process->getTermSignal();
             $this->process = null;
@@ -237,7 +273,7 @@ class DockerManager extends BaseManager
                     Logger::info("Daemon process has stopped for restart");
                 } else {
                     // Error-based restart - record timestamp and reset logging flag
-                    $this->lastErrorRestartTime = microtime(true);
+                    $this->lastErrorRestartTime = $this->monotonicSeconds();
                     $this->restartIntervalLogged = false;
                     // Keep the tail read ahead of the watchdog's own line: the order is essential because
                     // the watchdog reads a file it also writes, and reading after logging would quote itself.
@@ -249,9 +285,17 @@ class DockerManager extends BaseManager
                     $this->recordFailedStart($uptime, $outputTail);
                 }
             }
-        } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
+            return;
+        }
+
+        if ($this->shouldExit && !$this->daemonStopRequested) {
+            $this->daemonStopRequested = true;
+            $this->initiateDaemonStop($status);
+        }
+
+        if ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
             // Process is running successfully - check if it worked long enough to reset restart protection
-            $processUptime = microtime(true) - $this->processStartTime;
+            $processUptime = $this->monotonicSeconds() - $this->processStartTime;
             $minRestartInterval = Hilos::$env[EnvConstants::DAEMON_MIN_RESTART_INTERVAL]->int();
 
             if ($processUptime >= $minRestartInterval) {
@@ -336,7 +380,7 @@ class DockerManager extends BaseManager
      * The daemon's stdout and stderr are opened as {@see Process::DESCRIPTOR_FILE} straight
      * into the raw pair beside DAEMON_LOG_FILE and DAEMON_ERROR_LOG_FILE, so `proc_open` creates
      * no pipes 1 and 2 and the watchdog never sees the daemon's output: the daemon writes its own
-     * logs. Only stdin stays a pipe, and it is the one the watchdog actually uses.
+     * logs. Stdin reads /dev/null; the watchdog has no input to send.
      *
      * The files are the raw pair rather than the two the Logger writes because these descriptors
      * stay open for the life of the daemon: rotation renames a file away, the descriptor follows
@@ -351,20 +395,27 @@ class DockerManager extends BaseManager
      * which open() answers with ENOENT.
      *
      * @param string $script Path to daemon script
+     * @param WatchdogWait $wait Receiver checked again before opening the child
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
+     * @throws ProcessException If pending events cannot be dispatched
      * @throws LogRotationException If log directory cannot be created
      */
-    private function startDaemon(string $script): void
+    private function startDaemon(string $script, WatchdogWait $wait): void
     {
         Logger::info("Starting daemon process...");
-        $startTime = microtime(true);
+        $startTime = $this->monotonicSeconds();
 
         // A daemon that died without stopping its workers leaves them holding its
         // listening sockets, and the next daemon then cannot bind. Orphans are
         // re-parented to PID 1 — this watchdog — so sweeping our own children first
         // makes "the daemon starts alone" an invariant instead of a race.
         new OrphanReaper()->reap();
+
+        $this->applySignals($wait);
+        if ($this->shouldExit) {
+            return;
+        }
 
         $logFile = DaemonLogAddress::configured(EnvConstants::DAEMON_LOG_FILE);
         $errorLogFile = DaemonLogAddress::configured(EnvConstants::DAEMON_ERROR_LOG_FILE);
@@ -390,11 +441,15 @@ class DockerManager extends BaseManager
         // Create Process object with stdout and stderr redirected to files. An address that was
         // never named has no raw stream to sit beside, so there is nothing to hand pathFor(); the
         // child gets our own descriptor, which is what docker logs is reading.
+        $this->applySignals($wait);
+        if ($this->shouldExit) {
+            return;
+        }
         $this->process = new Process(
             'php',
             [$script],
             getcwd(),
-            [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
+            [Process::DESCRIPTOR_FILE, '/dev/null', Process::PIPE_READ], // stdin
             // stdout - to the raw output file, or our own stdout when unconfigured
             $logFile === null
                 ? [Process::DESCRIPTOR_REDIRECT, 1]
@@ -406,20 +461,23 @@ class DockerManager extends BaseManager
         );
 
         // Log startup time
-        $startupTime = microtime(true) - $startTime;
-        $this->processStartTime = microtime(true);
+        $this->processStartTime = $this->monotonicSeconds();
+        $startupTime = $this->processStartTime - $startTime;
 
         $this->shouldRestart = false;
+        $this->daemonStopRequested = false;
 
-        Logger::info("Daemon started (startup time: " . number_format($startupTime * 1000, 2) . "ms)");
+        Logger::info("Daemon started (startup time: " . number_format($startupTime * TimeConstants::MS_PER_SECOND, 2) . "ms)");
     }
 
     /**
      * Initiate daemon process stop.
      *
      * Stops the current daemon process. No-op if no process is running.
+     *
+     * @param ?array<string, mixed> $status Current snapshot, or null for an emergency stop that reads its own status
      */
-    private function initiateDaemonStop(): void
+    private function initiateDaemonStop(?array $status = null): void
     {
         if ($this->process === null) {
             return;
@@ -428,7 +486,11 @@ class DockerManager extends BaseManager
         Logger::info("Stopping daemon process...");
 
         try {
-            $this->process->stop();
+            if ($status === null) {
+                $this->process->stop();
+            } else {
+                $this->process->stopFromStatus($status);
+            }
         } catch (FailedToGetStatusException $e) {
             Logger::error('Failed to get status while stopping daemon: ' . $e->getMessage());
         } catch (FailedToTerminateProcessException $e) {
@@ -517,21 +579,15 @@ class DockerManager extends BaseManager
         $this->alertWatchdogDeath($this->lastFatalMessage);
     }
 
-    /**
-     * Handle shutdown signal event
-     */
+    /** Defers the stop to tickDaemon(), which uses that pass's process snapshot. */
     protected function onShutdownSignal(): void
     {
-        $this->initiateDaemonStop();
     }
 
-    /**
-     * Handle restart signal event
-     */
+    /** Records restart intent; tickDaemon() sends the stop from its current snapshot. */
     protected function onRestartSignal(): void
     {
         $this->shouldRestart = true;
-        $this->initiateDaemonStop();
     }
 
     /**

@@ -271,6 +271,23 @@ class Process implements TickDrivenIo
         return $status;
     }
 
+    /**
+     * Takes one status snapshot and closes an exited child from that observation.
+     * Does no periodic stdin work; live output remains for tick() to collect.
+     *
+     * @return array<string, mixed> Observed proc_get_status() fields
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws FailedToClosePipeException If pipes cannot be closed
+     */
+    public function observe(): array
+    {
+        $status = $this->getStatus();
+        if (!$status[self::STATUS_RUNNING] && !$this->closed) {
+            $this->closeProcess();
+        }
+        return $status;
+    }
+
     /** @return bool True until the child has been reaped and its handle closed */
     public function isInFlight(): bool
     {
@@ -322,15 +339,26 @@ class Process implements TickDrivenIo
     public function stop(?float $shutdownTimeout = null): void
     {
         $status = $this->getStatus();
+        $this->stopFromStatus($status);
         if ($status[self::STATUS_RUNNING]) {
-            if (!proc_terminate($this->process)) {
-                throw new FailedToTerminateProcessException('Failed to terminate the process.');
-            }
-
             // Set halt time if timeout specified
             if ($shutdownTimeout !== null && $shutdownTimeout > 0) {
                 $this->haltTime = microtime(true) + $shutdownTimeout;
             }
+        }
+    }
+
+    /**
+     * Requests SIGTERM using the caller's current snapshot, without another status read.
+     * The snapshot must come from this process in the same observation pass.
+     *
+     * @param array<string, mixed> $status Current proc_get_status() fields from getStatus() or observe()
+     * @throws FailedToTerminateProcessException If process cannot be terminated
+     */
+    public function stopFromStatus(array $status): void
+    {
+        if (!$this->closed && $status[self::STATUS_RUNNING] && !proc_terminate($this->process)) {
+            throw new FailedToTerminateProcessException('Failed to terminate the process.');
         }
     }
 
@@ -353,21 +381,7 @@ class Process implements TickDrivenIo
                 }
             }
 
-            // Drain any output still buffered in the pipes before closing them, so the
-            // final burst a process emits right before exiting is not lost.
-            $this->drainPipes();
-            $this->closePipes();
-
-            // Release the process handle. proc_close() blocks until the child is reaped and
-            // returns its exit status, which is our last chance to learn the exit code for
-            // a force-killed process.
-            $exitCode = proc_close($this->process);
-            if ($this->exitCode === null && $exitCode !== -1) {
-                $this->exitCode = $exitCode;
-            }
-
-            $this->closed = true;
-            $this->lastStatus[self::STATUS_RUNNING] = false;
+            $this->closeProcess();
         }
 
         // Clear halt time
@@ -426,6 +440,29 @@ class Process implements TickDrivenIo
         } catch (Throwable) {
             // Best-effort cleanup; nothing useful can be done if teardown fails here.
         }
+    }
+
+    /**
+     * Releases a child already observed as exited, or forcefully terminated by halt().
+     * Keeps the exit code and signal captured before proc_close() collects the handle.
+     *
+     * @throws FailedToClosePipeException If pipes cannot be closed
+     */
+    private function closeProcess(): void
+    {
+        // Keep the final burst emitted just before exit, including on the general halt path.
+        $this->drainPipes();
+        $this->closePipes();
+
+        // A force kill may leave proc_close() as the last chance to learn the exit code.
+        $exitCode = proc_close($this->process);
+        if ($this->exitCode === null && $exitCode !== -1) {
+            $this->exitCode = $exitCode;
+        }
+
+        $this->closed = true;
+        $this->lastStatus[self::STATUS_RUNNING] = false;
+        $this->haltTime = null;
     }
 
     /**

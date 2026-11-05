@@ -199,6 +199,20 @@ Any synchronous blocking operation in a callback or `onTick()` blocks all I/O:
 The master: after each main loop iteration it sleeps the rest of a 10 ms tick
 (`BaseManager::sleepWithPreciseTiming()`).
 
+The container watchdog waits in libevent for `SIGCHLD`, `SIGTERM`, `SIGINT`,
+`SIGHUP`, or a one-shot timer. Its persistent signal watches are installed
+before the first daemon check and remain active between waits; callbacks only
+mark signals for the watchdog to apply on its ordinary pass. Each wait is
+capped at 60 seconds and shortened to the nearest monotonic
+`DAEMON_MIN_RESTART_INTERVAL` deadline, which permits a restart after failure
+or resets the early-failure series after a sufficiently long run. When a daemon
+is present, the pass takes one status snapshot through `Process::observe()`;
+`Process` preserves the exit code or terminating signal before closing an
+exited child, and a shutdown requested on that pass uses the same snapshot to
+send SIGTERM. After an exited daemon has been observed and closed, `OrphanReaper`
+collects leftover children before a new start; it does not collect a live
+supervised daemon.
+
 A worker has no event loop of its own and does not sleep on a clock while it is
 idle. A pass that handled a message, left bytes for the daemon, or has a
 tick-driven operation in flight keeps the 10 ms tick. Any other pass waits on the
