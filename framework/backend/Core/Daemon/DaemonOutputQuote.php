@@ -98,7 +98,7 @@ final class DaemonOutputQuote
             $lines[] = implode(', ', $chunk['names']) . ': ' . $text;
         }
 
-        return implode("\n", $lines);
+        return str_replace("\n", "\n    ", implode("\n", $lines));
     }
 
     /**

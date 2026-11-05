@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\LogStreamConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Daemon\DaemonCrashReason;
+use Hilos\Core\Daemon\DaemonOutputQuote;
 use Hilos\Log\DaemonRawStream;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -166,6 +168,65 @@ final class LogStreamVerdictsTest extends TestCase
         self::assertSame([], judgeLogStreamRecord($record, $snapshot));
     }
 
+    /** Reproduces a probe warning quoted after two master errors, as observed in run 0794. */
+    public function testQuotedMasterWarningDoesNotBecomeAContainerEntry(): void
+    {
+        $records = logStreamRecordsOf(require __DIR__ . '/../../../scripts/log-streams.php', 'master-error');
+        $warningRecord = array_find($records, static fn(array $record): bool => $record['rows'] === [19, 6]);
+        $crashRecord = array_find(
+            $records,
+            static fn(array $record): bool => $record['rows'] === [17] && !$record['nowhere'],
+        );
+        self::assertNotNull($warningRecord);
+        self::assertNotNull($crashRecord);
+
+        $warning = 'WARNING in hilos-log-stream-probe.php:42 - fopen(/nonexistent/hilos-log-stream-probe-warning)';
+        $journal = "[2026-11-03T12:00:00.001Z] No suitable regular worker available\n"
+            . "[2026-11-03T12:00:00.002Z] No suitable regular worker available\n"
+            . '[2026-11-03T12:00:00.003Z] ' . $warning . "\n";
+        $raw = "Fatal error: Allowed memory size of 134217728 bytes exhausted\n";
+        $crash = '[2026-11-03T12:00:00.004Z] ERROR: Daemon process exited: ' . $this->quotedCrash($journal, $raw) . "\n";
+        $snapshot = [
+            'daemon.log' => '[2026-11-03T12:00:00.003Z] ERROR: ' . $warning . "\n",
+            'daemon-error.log' => $journal . $crash,
+            'daemon-raw.log' => $raw,
+            'container-log' => $crash,
+        ] + self::SETTLED;
+
+        self::assertSame([], judgeLogStreamRecord($crashRecord, $snapshot));
+        self::assertSame([], judgeLogStreamRecord($warningRecord, $snapshot));
+
+        $snapshot['container-log'] .= '[2026-11-03T12:00:00.005Z] ' . $warning . "\n";
+        $verdicts = judgeLogStreamRecord($warningRecord, $snapshot);
+        self::assertCount(1, $verdicts);
+        self::assertSame('container-log', $verdicts[0]['stream']);
+        self::assertStringStartsWith('forbidden in container-log, found at line ', $verdicts[0]['reason']);
+    }
+
+    /** A raw fatal on an internal line stays quoted; a standalone fatal still violates the table. */
+    public function testQuotedInternalFatalDoesNotBecomeAContainerEntry(): void
+    {
+        $records = logStreamRecordsOf(require __DIR__ . '/../../../scripts/log-streams.php', 'master-error');
+        $fatalRecord = array_find($records, static fn(array $record): bool => $record['rows'] === [14]);
+        self::assertNotNull($fatalRecord);
+        $fatal = 'Fatal error: Allowed memory size of 134217728 bytes exhausted';
+        $raw = "Preparing daemon\n" . $fatal . "\n";
+        $crash = '[2026-11-03T12:00:00.004Z] ERROR: Daemon process exited: ' . $this->quotedCrash('', $raw) . "\n";
+        $snapshot = [
+            'daemon-raw.log' => $raw,
+            'container-log' => $crash,
+            'daemon-error.log' => $crash,
+        ] + self::SETTLED;
+
+        self::assertSame([], judgeLogStreamRecord($fatalRecord, $snapshot));
+
+        $snapshot['container-log'] .= $fatal . "\n";
+        $verdicts = judgeLogStreamRecord($fatalRecord, $snapshot);
+        self::assertCount(1, $verdicts);
+        self::assertSame('container-log', $verdicts[0]['stream']);
+        self::assertSame('forbidden in container-log, found at line 3', $verdicts[0]['reason']);
+    }
+
     public function testAnEmptinessRecordWantsTheFilePresentAndAtZeroBytes(): void
     {
         $record = ['pattern' => null, 'lands' => [], 'never' => [], 'empty' => ['daemon-raw.log', 'daemon-error-raw.log']] + self::SOUND;
@@ -195,6 +256,7 @@ final class LogStreamVerdictsTest extends TestCase
         self::assertStringNotContainsString('worker-regular-1.log', $text);
     }
 
+    /** The actual table keeps both its structural rules and the master warning's container prohibition. */
     public function testTheTableInTheRepositoryKeepsItsOwnRules(): void
     {
         $records = require __DIR__ . '/../../../scripts/log-streams.php';
@@ -204,6 +266,12 @@ final class LogStreamVerdictsTest extends TestCase
         foreach (LOG_STREAM_SCENARIOS as $scenario) {
             self::assertNotSame([], logStreamRecordsOf($records, $scenario), $scenario . ' has no record');
         }
+        $warningRecord = array_find(
+            logStreamRecordsOf($records, 'master-error'),
+            static fn(array $record): bool => $record['rows'] === [19, 6],
+        );
+        self::assertNotNull($warningRecord);
+        self::assertContains('container-log', $warningRecord['never']);
     }
 
     public function testARecordWithAPatternMustNameSomewhereTheLineMustNotBe(): void
@@ -287,5 +355,33 @@ final class LogStreamVerdictsTest extends TestCase
             'pattern',
         );
         self::assertSame(['/' . preg_quote(Logger::AGENT_LOG_MARKER, '/') . '/'], $markerPatterns);
+    }
+
+    /**
+     * @param string $journal Error journal written after the start marks
+     * @param string $raw Raw stdout written after the start marks
+     * @return string Real watchdog reason quoting the temporary streams
+     */
+    private function quotedCrash(string $journal, string $raw): string
+    {
+        $root = sys_get_temp_dir() . '/' . uniqid('hilos-verdict-quote-', true);
+        mkdir($root);
+        $logFile = $root . '/daemon.log';
+        $errorLogFile = $root . '/daemon-error.log';
+        $rawFile = DaemonRawStream::pathFor($logFile);
+        try {
+            $quote = DaemonOutputQuote::markedAt($logFile, $errorLogFile);
+            file_put_contents($errorLogFile, $journal);
+            file_put_contents($rawFile, $raw);
+
+            return DaemonCrashReason::render(255, null, 0.5, $quote->render(2000));
+        } finally {
+            foreach ([$errorLogFile, $rawFile] as $path) {
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
+            rmdir($root);
+        }
     }
 }

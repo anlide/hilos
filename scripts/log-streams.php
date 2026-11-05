@@ -219,16 +219,10 @@ return [
         'source' => 'the master\'s PHP error handler files a warning into both Logger files and nowhere raw',
         // framework/backend/Core/Daemon/BaseManager.php errorHandler(): "WARNING in <basename>:<line> - <message>",
         // written by Logger::error as "[stamp] ERROR: ..." in daemon.log and "[stamp] ..." in daemon-error.log.
-        // Anchored: the watchdog quotes daemon-error.log's tail into the container log mid-line.
+        // Anchored: the quote's first line sits inside the watchdog entry; its continuations are indented.
         'pattern' => '/^\[[^\]]+\] (ERROR: )?WARNING in hilos-log-stream-probe\.php:\d+ - fopen\(\/nonexistent\/hilos-log-stream-probe-warning\)/',
         'lands' => ['daemon.log', 'daemon-error.log'],
-        // FIXME(P-481): 'container-log' is out of `never` until P-481 is cured, and goes back with
-        // the cure. Run 0794 (7 lanes) found the probe warning at line 3 of the docker log, run
-        // 0795 (one lane) passed: the master wrote two errors of its own before the probe
-        // ("No suitable regular worker available"), so the watchdog's multi-line quote of
-        // daemon-error.log's tail ("Last daemon output: daemon-error.log: ...") put the warning
-        // at the start of a docker-log line, where the anchor matches. The stream did not move.
-        'never' => ['container-log-stderr', 'daemon-raw.log'],
+        'never' => ['container-log', 'container-log-stderr', 'daemon-raw.log'],
         'nowhere' => false,
         'empty' => [],
     ],

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
+use Hilos\Core\Daemon\DaemonCrashReason;
+use Hilos\Core\Daemon\DaemonOutputQuote;
 use Hilos\Log\LogLine;
 use Hilos\Log\LogLinePage;
 use Hilos\Log\LogLineReader;
@@ -125,6 +127,47 @@ final class LogLineReaderTest extends TestCase
         $agentLine = '[AGENT_LOG]agent-7|ERROR|[2026-07-28T12:00:00.005Z] agent boom';
         $this->assertNull(LogLineReader::stampText($agentLine));
         $this->assertSame($agentLine, LogLineReader::entryText($agentLine));
+    }
+
+    /** Quoted ISO stamps remain continuations between the crash entry and the next real entry. */
+    public function testQuotedIsoStampsRemainCrashContinuations(): void
+    {
+        $quote = DaemonOutputQuote::markedAt($this->root . '/daemon.log', $this->root . '/daemon-error.log');
+        $this->writeLines('daemon-error.log', [
+            '[2026-11-03T12:00:00.001Z] first master failure',
+            '[2026-11-03T12:00:00.002Z] second master failure',
+            '[2026-11-03T12:00:00.003Z] WARNING: probe',
+        ]);
+        $crash = '[2026-11-03T12:00:00.004Z] ERROR: Daemon process exited: '
+            . DaemonCrashReason::render(255, null, 0.5, $quote->render(2000));
+        file_put_contents(
+            $this->root . '/daemon-error.log',
+            $crash . "\n[2026-11-03T12:00:00.005Z] next entry\n",
+            FILE_APPEND,
+        );
+        $reader = new LogLineReader($this->root, new LogStoreReader($this->root, [], 'daemon-error.log'));
+
+        foreach ([LogReadQuery::ANCHOR_HEAD, LogReadQuery::ANCHOR_TAIL] as $anchor) {
+            $page = $reader->read('daemon-error.log', new LogReadQuery($anchor));
+            $this->assertTrue($page->readable);
+            $this->assertCount(7, $page->lines);
+            $this->assertSame(
+                [false, false, false, false, true, true, false],
+                array_map(static fn(LogLine $line): bool => $line->isContinuation, $page->lines),
+            );
+            $this->assertSame(
+                [
+                    '2026-11-03T12:00:00.001Z',
+                    '2026-11-03T12:00:00.002Z',
+                    '2026-11-03T12:00:00.003Z',
+                    '2026-11-03T12:00:00.004Z',
+                    null,
+                    null,
+                    '2026-11-03T12:00:00.005Z',
+                ],
+                array_map(static fn(LogLine $line): ?string => LogLineReader::stampText($line->text), $page->lines),
+            );
+        }
     }
 
     public function testHeadReadsFirstLinesAndReportsMore(): void

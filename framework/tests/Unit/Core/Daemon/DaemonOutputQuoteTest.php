@@ -48,6 +48,28 @@ final class DaemonOutputQuoteTest extends TestCase
         self::assertSame('daemon-raw.log: Fatal error: Uncaught Exception', $quote->render(2000));
     }
 
+    /** Internal blank lines and source indentation receive the same four added spaces. */
+    public function testMultilineQuoteIndentsEveryContinuation(): void
+    {
+        $quote = DaemonOutputQuote::markedAt($this->logFile, $this->errorLogFile);
+        file_put_contents(
+            $this->errorLogFile,
+            "[2026-11-03T12:00:00.001Z] first failure\n"
+                . "[2026-11-03T12:00:00.002Z] second failure\n\n"
+                . "  existing indentation\n"
+                . "[2026-11-03T12:00:00.003Z] WARNING: probe\n",
+        );
+
+        self::assertSame(
+            "daemon-error.log: [2026-11-03T12:00:00.001Z] first failure\n"
+                . "    [2026-11-03T12:00:00.002Z] second failure\n    \n"
+                . "      existing indentation\n"
+                . '    [2026-11-03T12:00:00.003Z] WARNING: probe',
+            $quote->render(2000),
+        );
+    }
+
+    /** Formatting is added after each stream receives its unchanged share of the source budget. */
     public function testJournalComesFirstAndTheBudgetIsSplit(): void
     {
         $quote = DaemonOutputQuote::markedAt($this->logFile, $this->errorLogFile);
@@ -60,8 +82,8 @@ final class DaemonOutputQuoteTest extends TestCase
         file_put_contents($stderrRaw, "xxxxxxxxxyyyyyyyyyy\n");
 
         $expected = "daemon-error.log: 2222222222\n"
-            . "daemon-raw.log: bbbbbbbbbb\n"
-            . "daemon-error-raw.log: yyyyyyyyyy";
+            . "    daemon-raw.log: bbbbbbbbbb\n"
+            . "    daemon-error-raw.log: yyyyyyyyyy";
 
         self::assertSame($expected, $quote->render(30));
     }
