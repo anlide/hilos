@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Context\HilosDbContext;
@@ -12,6 +13,7 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Tables\Users\HilosUserTableRow;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * Unit tests for the framework Hilos users table that need no database.
@@ -92,13 +94,32 @@ final class AbstractHilosUsersTableTest extends TestCase
                     AbstractHilosUsersTable::SLOT_CONNECTIONS => [
                         HilosUserTableRow::presence => null,
                         HilosUserTableRow::onlineSessionCount => 0,
+                        HilosUserTableRow::openSessionCount => 2,
                     ],
                     AbstractHilosUsersTable::SLOT_MERGE => [
                         HilosUserTableRow::merged => true,
                     ],
                 ],
             ],
-            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann', merged: true)),
+            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann', merged: true, openSessionCount: 2)),
+        );
+    }
+
+    public function testDistinctSessionCountIsNotPersonalAndSortable(): void
+    {
+        $table = $this->table();
+        $this->assertContains(
+            HilosUserTableRow::openSessionCount,
+            ViewerFields::shownNames($table->wireFields(), static fn (string $collection, string $field): bool => false),
+        );
+        $sortFields = (new ReflectionMethod($table, 'sortableFields'))->invoke($table);
+        $this->assertSame(
+            HilosUserTableRow::openSessionCount,
+            $sortFields[HilosUserTableRow::openSessionCount],
+        );
+        $this->assertSame(
+            HilosUserTableRow::onlineSessionCount,
+            $sortFields[HilosUserTableRow::onlineSessionCount],
         );
     }
 
@@ -118,9 +139,13 @@ final class AbstractHilosUsersTableTest extends TestCase
 
     public function testBrowserRowOfAUserWhosePresenceIsCurrentCarriesNoFreshnessKey(): void
     {
+        $browserRow = $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann'));
         $this->assertArrayNotHasKey(
             BrowserPageSignalData::staleSources,
-            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann')),
+            $browserRow,
+        );
+        $this->assertNull(
+            $browserRow[BrowserPageSignalData::sources][AbstractHilosUsersTable::SLOT_CONNECTIONS][HilosUserTableRow::openSessionCount],
         );
     }
 

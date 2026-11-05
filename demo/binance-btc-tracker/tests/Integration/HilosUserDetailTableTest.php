@@ -9,17 +9,23 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -47,8 +53,13 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
         Hilos::$db->users[$userId]->actions->setAdmin(true);
         Hilos::$db->users[$userId]->actions->setTimeZone('Pacific/Honolulu');
         Hilos::$db->identities->createPasswordIdentity($userId, "card-{$userId}@example.test", 'correct horse battery');
+        $sessionToken = RandomHelper::hex(16);
+        $sessionId = (int) Hilos::$db->sessions->actions->createAnonymous($sessionToken)->id;
+        Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
         RtTruthSourceRegistry::register(BinanceBtcTrackerRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
+        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId, $sessionToken, $sessionId);
+        Hilos::$rt->connections->actions->register('card-second-tab', $userId, $sessionToken, $sessionId);
+        Hilos::$rt->connections->actions->register('card-third-tab', $userId, $sessionToken, $sessionId);
 
         try {
             $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
@@ -68,7 +79,14 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
             $connections = $slots[HilosUserDetailBrowserTable::CONNECTIONS] ?? null;
             $this->assertIsArray($connections);
             $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $connections[HilosUserPresenceSummary::presence]);
-            $this->assertSame(1, $connections[HilosUserPresenceSummary::onlineSessionCount]);
+            $this->assertSame(3, $connections[HilosUserPresenceSummary::onlineSessionCount]);
+            $this->assertSame(1, $connections[HilosUserPresenceSummary::openSessionCount]);
+            $this->assertSame([
+                HilosConnection::userId,
+                HilosUserPresenceSummary::presence,
+                HilosUserPresenceSummary::onlineSessionCount,
+                HilosUserPresenceSummary::openSessionCount,
+            ], array_keys($connections));
 
             $identities = $slots[HilosDbContext::identities] ?? null;
             $this->assertIsArray($identities);
@@ -87,6 +105,72 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
         } finally {
             Hilos::$rt->connections->actions->clear();
             RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
+            Hilos::$sr = null;
+        }
+    }
+
+    public function testLastCloseAndFreshSnapshotKeepTheKnownZeroConnectionsFragment(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::initBrowser();
+        $userId = (int) Hilos::$db->users->actions->createWithName('Closing person')->id;
+        $viewerId = (int) Hilos::$db->users->actions->createWithName('Card administrator')->id;
+        Hilos::$db->users[$viewerId]->actions->setAdmin(true);
+        $sessionToken = RandomHelper::hex(16);
+        $sessionId = (int) Hilos::$db->sessions->actions->createAnonymous($sessionToken)->id;
+        Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
+        RtTruthSourceRegistry::register(BinanceBtcTrackerRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $viewerId);
+        Hilos::$rt->connections->actions->register('closing-tab', $userId, $sessionToken, $sessionId);
+        $params = new PageRouteParams([HilosPageRouteParams::HILOS_USER_USER_ID => (string)$userId]);
+
+        try {
+            $initial = Hilos::$browser?->buildSubscribeSnapshot(UserPage::PAGE, self::ACCEPT_KEY, $params);
+            $this->assertNotNull($initial);
+            $this->assertSame(1, $this->cardSlotsOf($initial)[HilosUserDetailBrowserTable::CONNECTIONS][
+                HilosUserPresenceSummary::openSessionCount
+            ]);
+            Hilos::$sr->subscribeToPage(UserPage::PAGE, new WebSocketPageSubscribeSignalDTO(
+                self::ACCEPT_KEY, UserPage::PAGE, $params->toArray(),
+            ));
+            $this->drainSignals();
+
+            Hilos::$rt->connections['closing-tab']->actions->unregister();
+            Hilos::$browser?->record(SourceChange::rtDeleted(
+                BinanceBtcTrackerRtContext::connections,
+                'closing-tab',
+                [HilosConnection::userId => $userId],
+            ));
+            Hilos::$browser?->flushToSignalRouter();
+            $livePayloads = [];
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof WebSocketSignalData
+                    && $signal->data->targetAcceptKey === self::ACCEPT_KEY
+                    && $signal->data->data instanceof PageResponseSignalData
+                    && $signal->data->data->pageKey === UserPage::PAGE
+                ) {
+                    $livePayloads[] = $signal->data->data->payload;
+                }
+            }
+            $this->assertCount(1, $livePayloads);
+            $expected = [
+                HilosConnection::userId => $userId,
+                HilosUserPresenceSummary::presence => HilosUserPresenceSummary::PRESENCE_OFFLINE,
+                HilosUserPresenceSummary::onlineSessionCount => 0,
+                HilosUserPresenceSummary::openSessionCount => 0,
+            ];
+            $this->assertSame(
+                $expected,
+                $this->cardSlotsOf($livePayloads[0])[HilosUserDetailBrowserTable::CONNECTIONS],
+            );
+
+            $fresh = Hilos::$browser?->buildSubscribeSnapshot(UserPage::PAGE, self::ACCEPT_KEY, $params);
+            $this->assertNotNull($fresh);
+            $this->assertSame($expected, $this->cardSlotsOf($fresh)[HilosUserDetailBrowserTable::CONNECTIONS]);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+            RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
+            Hilos::initBrowser();
             Hilos::$sr = null;
         }
     }

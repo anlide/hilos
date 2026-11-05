@@ -2,9 +2,18 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 
 import {
+  HilosPages,
+  SIGNAL_TYPE_PAGE_RESPONSE,
+} from '../../../../../framework/frontend/core/src/base/index.js'
+import {
+  USER_CONNECTIONS_SLOT,
+  USER_ONLINE_SESSION_COUNT_FIELD,
+} from '../../../../../framework/frontend/core/src/admin/users/index.js'
+import {
   bindTestUser,
   bringLivenessMomentToNow,
   createTestUser,
+  deliveryObject,
   openRawWebSocket,
   sessionToken,
   shownByTestId,
@@ -12,7 +21,10 @@ import {
   gotoPage,
   grantAdminToSelf,
   userColumnCell,
+  watchSocketFrames,
+  type RawWebSocket,
   type SignedInUser,
+  type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 // Presence over silent sockets (HIL-1566). The master pings a browser socket that
@@ -20,16 +32,17 @@ import {
 // and closes it at the longest; any frame from the browser ends the silence. The
 // people list and the card say a person is online while one socket of theirs
 // still answers, probably offline when every one of them is in doubt, and offline
-// when none is left. The list counts the person's sockets beside their presence.
+// when none is left. The list counts distinct open sessions beside their presence;
+// the card shows that count beside the total saved sessions, which outlive sockets.
 //
 // No browser keeps that silence — Chromium answers a ping by itself, whatever its
 // page is doing — so the person's sockets here are raw ones
 // (framework/frontend/e2e/rawWebSocket.ts), opened with the cookies of the
 // person's own browser, which then leaves. The person signs in on two browsers and
-// each leaves one raw socket: the moment below is brought to the sockets of one
-// browser, and presence counts the person's sockets across all of them. An
-// administrator watches the person on the list and on the card: two
-// subscriptions, opened once and never reopened.
+// temporarily opens a second raw socket of the first session: three connections
+// still mean two open sessions. Each browser leaves one raw socket before its
+// liveness moment is moved. An administrator watches the list and card live, then
+// reloads the card after the last close to compare the snapshot with the live zero.
 //
 // The stand runs production's spans: a ping after 40 s of silence, the next every
 // 50 s, probably offline at 120 s, closed at 600 s. The spec never waits them out:
@@ -66,44 +79,52 @@ function listPresence(list: Page, userId: number): Locator {
 }
 
 /**
- * The number of the person's sockets in their row of the people list. The list's
- * Sessions column counts sockets; the card's first tile counts the person's
- * sign-ins instead (HIL-1662), which outlive a socket. The data cell is the one
- * under that column's header, and the number is its text region.
+ * The number of the person's distinct open sessions in their people-list row.
+ * Multiple sockets of one session count once. The data cell is the one under
+ * that column's header, and the number is its text region.
  *
  * @param list The observer's tab on the people list.
  * @param userId The person's id, the key of their row.
  * @returns The value of the row's Sessions cell.
  */
-async function listSockets(list: Page, userId: number): Promise<Locator> {
+async function listOpenSessions(list: Page, userId: number): Promise<Locator> {
   const cell = await userColumnCell(
     shownByTestId(list, `hilos-table-row-${userId}`),
-    list.getByTestId('hilos-table-sort-onlineSessionCount'),
+    list.getByTestId('hilos-table-sort-openSessionCount'),
   )
 
   return cell.locator('.hilos-table-text')
 }
 
 /**
- * Wait until the list and the card both say the person's presence, and the list
- * counts the person's sockets — doubted ones included, until they close.
+ * Wait until the list and card agree on presence and distinct open sessions —
+ * doubted sockets still keep their session open until they close. The person's
+ * two saved sessions remain after every socket closes.
  *
  * @param card The observer's tab on the person's card.
  * @param list The observer's tab on the people list.
  * @param userId The person's id.
  * @param presence The word both badges say.
- * @param sockets The number of the person's sockets the list counts.
+ * @param openSessionCount The number of distinct sessions with a registered socket.
  */
 async function expectPresence(
   card: Page,
   list: Page,
   userId: number,
   presence: string,
-  sockets: number,
+  openSessionCount: number,
 ): Promise<void> {
   await expect(cardPresence(card)).toHaveText(presence)
   await expect(listPresence(list, userId)).toHaveText(presence)
-  await expect(await listSockets(list, userId)).toHaveText(String(sockets))
+  await expect(await listOpenSessions(list, userId)).toHaveText(
+    String(openSessionCount),
+  )
+  await expect(
+    card
+      .getByTestId('hilos-user-detail')
+      .getByText(`${openSessionCount} open now`, { exact: true }),
+  ).toBeVisible()
+  await expect(card.getByTestId('hilos-user-sessions')).toHaveText('2')
 }
 
 /**
@@ -140,6 +161,9 @@ test('says a person probably offline while every socket of theirs is silent', as
   }
   const contextA = await browser.newContext(contextOptions)
   const contextB = await browser.newContext(contextOptions)
+  const sockets: RawWebSocket[] = []
+  let observer: ReturnType<typeof watchSocketFrames> | undefined
+  const connectionSnapshot: { count?: unknown; frame?: SocketFrame } = {}
   try {
     await grantAdminToSelf(expect, page)
     const pageA = await contextA.newPage()
@@ -149,12 +173,49 @@ test('says a person probably offline while every socket of theirs is silent', as
     await bindTestUser(expect, pageB, person)
     const tokenB = await leaveWithToken(pageB, person)
     const first = await openRawWebSocket(contextA, use)
+    sockets.push(first)
     const second = await openRawWebSocket(contextB, use)
+    sockets.push(second)
 
+    observer = watchSocketFrames(page, (frame) => {
+      const wire = deliveryObject(frame.wire)
+      const data = deliveryObject(wire.data)
+      if (
+        wire.type !== SIGNAL_TYPE_PAGE_RESPONSE ||
+        data.page !== HilosPages.USER
+      )
+        return
+      const tables = deliveryObject(deliveryObject(data.payload).tables)
+      const detail = deliveryObject(tables.userDetail)
+      for (const value of Array.isArray(detail.rows) ? detail.rows : []) {
+        const row = deliveryObject(value)
+        if (row.rowKey !== person.userId) continue
+        const connections = deliveryObject(
+          deliveryObject(row.slots)[USER_CONNECTIONS_SLOT],
+        )
+        connectionSnapshot.count = connections[USER_ONLINE_SESSION_COUNT_FIELD]
+        connectionSnapshot.frame = frame
+      }
+    })
     await gotoPage(expect, page, `/hilos/user/${person.userId}`)
     const list = await page.context().newPage()
     await gotoPage(expect, list, '/hilos/users')
     await typeInto(list.getByTestId('hilos-table-search'), person.name)
+    await expectPresence(page, list, person.userId, 'online', 2)
+
+    // Three connections of two sessions: the extra socket changes neither count.
+    const extra = await openRawWebSocket(contextA, use)
+    sockets.push(extra)
+    // The 101 precedes runtime registration. Wait for that registration before
+    // closing, then for its deletion before moving either browser's liveness.
+    await expect.poll(() => connectionSnapshot.count).toBe(3)
+    expect(connectionSnapshot.frame?.failure).toBeUndefined()
+    expect(connectionSnapshot.frame?.raw).toEqual(expect.any(String))
+    await expectPresence(page, list, person.userId, 'online', 2)
+    expect(await extra.close()).toBe('client')
+    await expect.poll(() => connectionSnapshot.count).toBe(2)
+    expect(connectionSnapshot.frame?.failure).toBeUndefined()
+    expect(connectionSnapshot.frame?.raw).toEqual(expect.any(String))
     await expectPresence(page, list, person.userId, 'online', 2)
 
     // One socket silent into the doubt, the other answering: still online. The
@@ -185,11 +246,18 @@ test('says a person probably offline while every socket of theirs is silent', as
     expect(await second.close()).toBe('client')
     await expectPresence(page, list, person.userId, 'offline', 0)
 
+    // A fresh snapshot keeps the same known zero and the two saved sessions.
+    await page.reload()
+    await expectPresence(page, list, person.userId, 'offline', 0)
+
     // A new socket of the same person brings them back to the same observer.
     const again = await openRawWebSocket(contextA, use)
+    sockets.push(again)
     await expectPresence(page, list, person.userId, 'online', 1)
     await again.close()
   } finally {
+    observer?.stop()
+    await Promise.all(sockets.map((socket) => socket.close()))
     await contextA.close()
     await contextB.close()
   }

@@ -56,6 +56,7 @@ interface UserSeed {
   lastActivity: number | null
   presence: string
   onlineSessionCount: number
+  openSessionCount?: number | null
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
   merged?: boolean
 }
@@ -77,6 +78,10 @@ function wireRow(user: UserSeed): Record<string, unknown> {
       connections: {
         presence: user.presence,
         onlineSessionCount: user.onlineSessionCount,
+        openSessionCount:
+          user.openSessionCount === undefined
+            ? user.onlineSessionCount
+            : user.openSessionCount,
       },
       merge: { merged: user.merged ?? false },
     },
@@ -369,6 +374,7 @@ describe('HilosUsersPage', () => {
         lastActivity: 1781863200000,
         presence: 'offline',
         onlineSessionCount: 12,
+        openSessionCount: 4,
         merged: true,
       },
       {
@@ -377,6 +383,7 @@ describe('HilosUsersPage', () => {
         lastActivity: null,
         presence: 'offline',
         onlineSessionCount: 0,
+        openSessionCount: null,
       },
     ])
 
@@ -400,6 +407,7 @@ describe('HilosUsersPage', () => {
     expect(textRegion1!.textContent).toContain('Maria-Luisa')
     expect(textRegion1!.textContent).not.toContain('Merged')
     expect(row1.querySelector('[data-id="hilos-users-merged"]')).not.toBeNull()
+    expect(row1.querySelectorAll('td')[3]?.textContent).toContain('4')
 
     // 2. Sessions and Last activity have their own toggle buttons with their column label:
     const sessionsToggle = row1.querySelector<HTMLButtonElement>(
@@ -421,6 +429,7 @@ describe('HilosUsersPage', () => {
     // 3. Hidden name: renders mark without reading toggle button:
     const row2 = host.querySelector('[data-id="hilos-table-row-2"]')!
     expect(row2.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(row2.querySelectorAll('td')[3]?.textContent).toContain('—')
     expect(
       row2.querySelector('button[aria-label="Show in full: Name"]'),
     ).toBeNull()

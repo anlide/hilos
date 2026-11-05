@@ -82,6 +82,7 @@ interface UserSeed {
   lastActivity: number | null
   presence: string
   onlineSessionCount: number
+  openSessionCount?: number | null
   block?: boolean
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
   merged?: boolean
@@ -105,6 +106,10 @@ function wireRow(user: UserSeed): Record<string, unknown> {
       connections: {
         presence: user.presence,
         onlineSessionCount: user.onlineSessionCount,
+        openSessionCount:
+          user.openSessionCount === undefined
+            ? user.onlineSessionCount
+            : user.openSessionCount,
       },
       merge: { merged: user.merged ?? false },
     },
@@ -567,6 +572,7 @@ describe('HilosUsersPage', () => {
         lastActivity: 1781863200000,
         presence: 'offline',
         onlineSessionCount: 12,
+        openSessionCount: 4,
         merged: true,
       },
       {
@@ -575,6 +581,7 @@ describe('HilosUsersPage', () => {
         lastActivity: 1781863200000,
         presence: 'online',
         onlineSessionCount: 3,
+        openSessionCount: null,
         block: true,
       },
       {
@@ -625,6 +632,7 @@ describe('HilosUsersPage', () => {
 
     // 3. Sessions and Last activity have their own toggle buttons with their column label:
     const sessionsCell = cell(wrapper, 1, 'Sessions')
+    expect(sessionsCell.text()).toContain('4')
     const sessionsToggle = sessionsCell.get(
       '[data-id="hilos-table-text-toggle"]',
     )
@@ -639,6 +647,7 @@ describe('HilosUsersPage', () => {
     expect(activityToggle.attributes('aria-label')).toBe(
       'Show in full: Last activity',
     )
+    expect(cell(wrapper, 2, 'Sessions').text()).toContain('—')
 
     // 4. Hidden name: renders mark without reading toggle button:
     const nameCell3 = cell(wrapper, 3, 'Name')

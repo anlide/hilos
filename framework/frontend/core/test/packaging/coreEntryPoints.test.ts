@@ -48,6 +48,7 @@ import * as statusWorkActions from '../../src/admin/status/hilosStatusWorkAction
 import * as statusHistory from '../../src/admin/status/hilosStatusHistory.js'
 import * as localDateTime from '../../src/timeZone/localDateTime.js'
 import * as users from '../../src/admin/users/index.js'
+import * as userRows from '../../src/admin/users/hilosUsers.js'
 import * as userSessions from '../../src/admin/users/hilosUserSessions.js'
 import * as base from '../../src/base/index.js'
 import * as textLineMerge from '../../src/conflict/textLineMerge.js'
@@ -128,6 +129,8 @@ const legalRevisionValues = ['createHilosLegalRevision']
 /** The card's sessions controller belongs only to the lazy Users section. */
 const userSessionsValues = ['createHilosUserSessions']
 const userSessionsTypes = ['HilosUserSession', 'HilosUserSessions']
+/** The distinct open-session field belongs only to the lazy Users section. */
+const userRowValues = ['USER_OPEN_SESSION_COUNT_FIELD']
 /** Document tab APIs shared by the compatibility root and lazy Legal entry. */
 const legalDocumentValues = [
   'createHilosLegalDocument',
@@ -1138,6 +1141,10 @@ describe('core public entries', () => {
           expect(value, name).toBe(
             userSessions[name as keyof typeof userSessions],
           )
+        } else if (entry === './admin/users' && userRowValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(base, name).not.toHaveProperty(name)
+          expect(value, name).toBe(userRows[name as keyof typeof userRows])
         } else if (
           entry === './admin/communications' &&
           channelSummaryValues.includes(name)
@@ -1363,6 +1370,7 @@ describe('core public entries', () => {
         ...legalOverviewValues,
         ...legalRevisionValues,
         ...userSessionsValues,
+        ...userRowValues,
         ...channelSummaryValues,
         ...letterFrameValues,
         ...letterFrameEditValues,
@@ -1846,6 +1854,7 @@ describe('core public entries', () => {
     const legalRevisionExports = exportsOf('admin/legal/hilosLegal.ts')
     const userSessionsExports = exportsOf('admin/users/hilosUserSessions.ts')
     const userSessionsNames = [...userSessionsValues, ...userSessionsTypes]
+    const userRowExports = exportsOf('admin/users/hilosUsers.ts')
     const daemonClockExports = exportsOf('admin/daemon/hilosDaemonNode.ts')
     const daemonClockNames = [...daemonClockValues, ...daemonClockTypes]
     const names = new Set<string>()
@@ -2034,6 +2043,13 @@ describe('core public entries', () => {
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(userSessionsExports.get(name))
         } else if (
+          entry === 'admin/users/index.ts' &&
+          userRowValues.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(baseExports.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(userRowExports.get(name))
+        } else if (
           entry === 'admin/communications/index.ts' &&
           sectionOnly.includes(name)
         ) {
@@ -2188,6 +2204,7 @@ describe('core public entries', () => {
         ...legalOverviewNames,
         ...legalRevisionValues,
         ...userSessionsNames,
+        ...userRowValues,
         ...sectionOnly,
         ...frameNames,
         ...frameEditNames,

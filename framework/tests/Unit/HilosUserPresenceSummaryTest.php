@@ -18,6 +18,7 @@ final class HilosUserPresenceSummaryTest extends TestCase
         $summary = new HilosUserPresenceSummary(2);
 
         $this->assertSame(2, $summary->onlineSessionCount);
+        $this->assertNull($summary->openSessionCount);
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $summary->presence);
     }
 
@@ -80,6 +81,25 @@ final class HilosUserPresenceSummaryTest extends TestCase
         $frozen = new HilosUserPresenceSummary(1, true);
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $frozen->presence);
         $this->assertTrue($frozen->stale);
+        $this->assertNull($frozen->openSessionCount);
+        $named = new HilosUserPresenceSummary(onlineSessionCount: 2, stale: true, probablyOffline: true);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $named->presence);
+        $this->assertNull($named->openSessionCount);
+    }
+
+    public function testOpenSessionCountIsIndependentOfConnectionCountAndPresence(): void
+    {
+        $summary = new HilosUserPresenceSummary(3, true, true, 1);
+
+        $this->assertSame(3, $summary->onlineSessionCount);
+        $this->assertSame(1, $summary->openSessionCount);
+        $this->assertTrue($summary->stale);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $summary->presence);
+
+        $withoutSession = new HilosUserPresenceSummary(onlineSessionCount: 1, openSessionCount: 0);
+        $this->assertSame(1, $withoutSession->onlineSessionCount);
+        $this->assertSame(0, $withoutSession->openSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $withoutSession->presence);
     }
 
     public function testPresenceConstantValues(): void

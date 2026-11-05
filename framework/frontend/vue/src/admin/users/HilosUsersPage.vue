@@ -110,8 +110,8 @@ const blockedBadge = hilosStandingBadge('blocked')
           >
         </span>
       </template>
-      <template #cell-onlineSessionCount="{ row }">{{
-        row.onlineSessionCount
+      <template #cell-openSessionCount="{ row }">{{
+        row.openSessionCount ?? '—'
       }}</template>
       <template #cell-lastActivity="{ row }">{{
         row.lastActivity ?? '—'

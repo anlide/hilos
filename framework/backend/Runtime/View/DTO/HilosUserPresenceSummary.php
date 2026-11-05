@@ -17,6 +17,7 @@ final class HilosUserPresenceSummary
 {
     public const string presence = 'presence';
     public const string onlineSessionCount = 'onlineSessionCount';
+    public const string openSessionCount = 'openSessionCount';
 
     public const string PRESENCE_ONLINE = 'online';
     public const string PRESENCE_PROBABLY_OFFLINE = 'probably_offline';
@@ -42,14 +43,16 @@ final class HilosUserPresenceSummary
      * replica can be fresh and doubted, or frozen and trusted. The default is no doubt, so a
      * presence source that knows nothing of liveness keeps the constructor it had.
      *
-     * @param int $onlineSessionCount Number of active runtime sessions
+     * @param int $onlineSessionCount Number of registered runtime connections, including doubted and stale copies
      * @param bool $stale Whether any of those connections is a copy that stopped being updated
      * @param bool $probablyOffline Whether every one of those connections went silent and is doubted
+     * @param ?int $openSessionCount Distinct non-null session ids of those connections, or null when unknown
      */
     public function __construct(
         public readonly int $onlineSessionCount,
         public readonly bool $stale = false,
         bool $probablyOffline = false,
+        public readonly ?int $openSessionCount = null,
     ) {
         $this->presence = match (true) {
             $onlineSessionCount <= 0 => self::PRESENCE_OFFLINE,

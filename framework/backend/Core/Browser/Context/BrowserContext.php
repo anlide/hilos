@@ -125,6 +125,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
+use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
@@ -3027,6 +3028,7 @@ abstract class BrowserContext
         if (
             $field === HilosUserPresenceSummary::presence
             || $field === HilosUserPresenceSummary::onlineSessionCount
+            || $field === HilosUserPresenceSummary::openSessionCount
         ) {
             return $this->computeUserPresenceField($field, $rowKey);
         }
@@ -3113,7 +3115,7 @@ abstract class BrowserContext
     }
 
     /**
-     * Computes a person's presence or session count out of the connections the framework reads.
+     * Computes a person's presence, connection count or distinct session count from the mounted source.
      *
      * The connections are read under the key the framework holds for them
      * ({@see HilosUserDetailBrowserTable::CONNECTIONS}), the way the people list reads its own
@@ -3121,7 +3123,7 @@ abstract class BrowserContext
      * report presence, gets null rather than a refusal: the card then draws the person as
      * offline, as a project without a connections collection always has.
      *
-     * @param string $field Summary field name (presence or online session count)
+     * @param string $field Presence summary field name
      * @param int|string $rowKey User id row key
      * @return mixed Summary field value, or null when no presence source is mounted under the key
      * @throws PageInternalErrorException When the connections cannot read their runtime state
@@ -3148,7 +3150,12 @@ abstract class BrowserContext
             throw new PageInternalErrorException('Presence could not be resolved', $exception);
         }
 
-        return $field === HilosUserPresenceSummary::presence ? $summary->presence : $summary->onlineSessionCount;
+        return match ($field) {
+            HilosUserPresenceSummary::presence => $summary->presence,
+            HilosUserPresenceSummary::onlineSessionCount => $summary->onlineSessionCount,
+            HilosUserPresenceSummary::openSessionCount => $summary->openSessionCount,
+            default => null,
+        };
     }
 
     /**
@@ -4016,12 +4023,19 @@ abstract class BrowserContext
                 if ($isAnchor) {
                     return null;
                 }
-                if ($browserKey !== HilosUserDetailBrowserTable::TABLE || $sourceKey !== HilosDbContext::secondFactors) {
+                if ($browserKey !== HilosUserDetailBrowserTable::TABLE) {
                     continue;
                 }
-                // The card answers whether this person has an app even when the set is empty.
-                // Keep the same fragment fields so a viewer's mask does not reveal that absence.
-                $items = [[ObjectSecondFactor::userId => (int)$rowKey]];
+                if ($sourceKey === HilosUserDetailBrowserTable::CONNECTIONS) {
+                    // An empty connections set still has a typed summary, including a known session-stage zero.
+                    $items = [[HilosConnection::userId => (int)$rowKey]];
+                } elseif ($sourceKey === HilosDbContext::secondFactors) {
+                    // The card answers whether this person has an app even when the set is empty.
+                    // Keep the same fragment fields so a viewer's mask does not reveal that absence.
+                    $items = [[ObjectSecondFactor::userId => (int)$rowKey]];
+                } else {
+                    continue;
+                }
             }
 
             if ($isAnchor) {

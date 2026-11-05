@@ -17,7 +17,7 @@ import { useContext, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import {
-  USER_ONLINE_SESSION_COUNT_FIELD,
+  USER_OPEN_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   HILOS_PRESENCE_WIDEST_LABEL,
   createHilosUsersTable,
@@ -105,7 +105,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
               </span>
             )
           },
-          [USER_ONLINE_SESSION_COUNT_FIELD]: (row) => row.onlineSessionCount,
+          [USER_OPEN_SESSION_COUNT_FIELD]: (row) => row.openSessionCount ?? '—',
           lastActivity: (row) => row.lastActivity ?? '—',
           [HILOS_TABLE_ACTIONS_KEY]: (row) => rowActions?.(row),
         }}

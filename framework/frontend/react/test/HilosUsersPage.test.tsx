@@ -61,6 +61,7 @@ interface UserSeed {
   lastActivity: number | null
   presence: string
   onlineSessionCount: number
+  openSessionCount?: number | null
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
   merged?: boolean
 }
@@ -82,6 +83,10 @@ function wireRow(user: UserSeed): Record<string, unknown> {
       connections: {
         presence: user.presence,
         onlineSessionCount: user.onlineSessionCount,
+        openSessionCount:
+          user.openSessionCount === undefined
+            ? user.onlineSessionCount
+            : user.openSessionCount,
       },
       merge: { merged: user.merged ?? false },
     },
@@ -237,6 +242,7 @@ function twoUsers(): HilosUsersContext {
       lastActivity: 1781863200000,
       presence: 'online',
       onlineSessionCount: 2,
+      openSessionCount: 4,
     },
     {
       id: 2,
@@ -244,6 +250,7 @@ function twoUsers(): HilosUsersContext {
       lastActivity: null,
       presence: 'offline',
       onlineSessionCount: 0,
+      openSessionCount: 0,
     },
   ])
 }
@@ -477,7 +484,7 @@ describe('HilosUsersPage', () => {
     expect(cells).toHaveLength(container.querySelectorAll('thead th').length)
     expect(cells[1]?.textContent).toBe('AliceShow in full')
     expect(cells[1]?.classList.contains('fw-medium')).toBe(true)
-    expect(cells[3]?.textContent).toBe('2Show in full')
+    expect(cells[3]?.textContent).toBe('4Show in full')
     expect(cells[3]?.classList.contains('text-end')).toBe(true)
   })
 
@@ -544,6 +551,7 @@ describe('HilosUsersPage', () => {
         lastActivity: 1781863200000,
         presence: 'offline',
         onlineSessionCount: 12,
+        openSessionCount: 4,
         merged: true,
       },
       {
@@ -552,6 +560,7 @@ describe('HilosUsersPage', () => {
         lastActivity: null,
         presence: 'offline',
         onlineSessionCount: 0,
+        openSessionCount: null,
       },
     ])
 
@@ -586,6 +595,7 @@ describe('HilosUsersPage', () => {
     expect(sessionsToggle?.getAttribute('data-id')).toBe(
       'hilos-table-text-toggle',
     )
+    expect(row1.querySelectorAll('td')[3]?.textContent).toContain('4')
 
     const activityToggle = row1.querySelector<HTMLButtonElement>(
       'button[aria-label="Show in full: Last activity"]',
@@ -598,6 +608,7 @@ describe('HilosUsersPage', () => {
     // 3. Hidden name: renders mark without reading toggle button:
     const row2 = container.querySelector('[data-id="hilos-table-row-2"]')!
     expect(row2.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(row2.querySelectorAll('td')[3]?.textContent).toContain('—')
     expect(
       row2.querySelector('button[aria-label="Show in full: Name"]'),
     ).toBeNull()

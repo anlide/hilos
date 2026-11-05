@@ -200,6 +200,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
         $connections = [
             HilosUserTableRow::presence => $fields[HilosUserTableRow::presence] ?? null,
             HilosUserTableRow::onlineSessionCount => $fields[HilosUserTableRow::onlineSessionCount] ?? 0,
+            HilosUserTableRow::openSessionCount => $fields[HilosUserTableRow::openSessionCount] ?? null,
         ];
         $merge = [
             HilosUserTableRow::merged => $fields[HilosUserTableRow::merged] ?? false,
@@ -207,6 +208,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
         unset(
             $fields[HilosUserTableRow::presence],
             $fields[HilosUserTableRow::onlineSessionCount],
+            $fields[HilosUserTableRow::openSessionCount],
             $fields[HilosUserTableRow::merged],
         );
 
@@ -249,6 +251,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             onlineSessionCount: $summary->onlineSessionCount,
             presence: $summary->presence,
             merged: isset(Hilos::$db->userMerges[(int) $user->id]),
+            openSessionCount: $summary->openSessionCount,
         );
     }
 
@@ -351,7 +354,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      * Declares the sortable columns of the users row, which here are the row payload keys themselves.
      *
      * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
-     * no identifier is built out of it. Presence and the session count are computed on the fly
+     * no identifier is built out of it. Presence and both counts are computed on the fly
      * and could not be handed to an index, but a set filtered in memory needs none
      * (`docs/agents/frontend/table-sort-orders.md`).
      *
@@ -363,6 +366,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             HilosUserTableRow::id => HilosUserTableRow::id,
             HilosUserTableRow::presence => HilosUserTableRow::presence,
             HilosUserTableRow::onlineSessionCount => HilosUserTableRow::onlineSessionCount,
+            HilosUserTableRow::openSessionCount => HilosUserTableRow::openSessionCount,
             HilosUserTableRow::name => HilosUserTableRow::name,
             HilosUserTableRow::lastActivity => HilosUserTableRow::lastActivity,
         ];
@@ -385,7 +389,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      *
      * The name is declared as a column and hidden by the column's verdict (FAKE_NAME) rather than by
      * omission in the map; the id, the admin and block flags and the last activity are non-personal by
-     * their column verdicts; presence and onlineSessionCount are aggregates of runtime connections and
+     * their column verdicts; presence and both counts are aggregates of runtime connections and
      * declared non-personal, as is whether the account was merged - a fact of the merge table, not a
      * column of the person (HIL-1292). The name being the one field searched, a viewer's window is
      * served without the search and without the order by name.
@@ -402,6 +406,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             HilosUserTableRow::lastActivity => WireField::column(HilosDbContext::users, ObjectUser::lastActivity),
             HilosUserTableRow::presence => WireField::notPersonal(),
             HilosUserTableRow::onlineSessionCount => WireField::notPersonal(),
+            HilosUserTableRow::openSessionCount => WireField::notPersonal(),
             HilosUserTableRow::merged => WireField::notPersonal(),
         ];
     }

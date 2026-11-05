@@ -51,10 +51,12 @@ final class HilosConnectionsViewTest extends TestCase
 
         $online = $connections->summaryForUser(1);
         $this->assertSame(2, $online->onlineSessionCount);
+        $this->assertNull($online->openSessionCount);
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $online->presence);
 
         $offline = $connections->summaryForUser(2);
         $this->assertSame(0, $offline->onlineSessionCount);
+        $this->assertNull($offline->openSessionCount);
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_OFFLINE, $offline->presence);
     }
 
@@ -84,6 +86,93 @@ final class HilosConnectionsViewTest extends TestCase
         $this->assertSame([], $connections->acceptKeysForSessionToken('no-such-token'));
         $this->assertSame([], $connections->acceptKeysForSessionToken(''));
         $this->assertCount(2, $connections->forUser(1));
+    }
+
+    public function testThreeTabsOfOneSessionCountOnceAcrossTokenRotation(): void
+    {
+        $state = SessionViewStates::init();
+        $state->add(SessionViewConnection::create('node-a-tab-1', 1, 'old-token', 10));
+        $state->add(SessionViewConnection::create('node-a-tab-2', 1, 'new-token', 10));
+        $state->add(SessionViewConnection::create('node-b-tab-3', 1, null, 10));
+        $connections = SessionViewConnections::init();
+        $connections->setStateCollection($state);
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertSame(3, $summary->onlineSessionCount);
+        $this->assertSame(1, $summary->openSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $summary->presence);
+    }
+
+    public function testTwoSessionIdsCountTwiceEvenWithTheSameToken(): void
+    {
+        $state = SessionViewStates::init();
+        $state->add(SessionViewConnection::create('view-ak-1', 1, 'tok-x', 10));
+        $state->add(SessionViewConnection::create('view-ak-2', 1, 'tok-x', 20));
+        $connections = SessionViewConnections::init();
+        $connections->setStateCollection($state);
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertSame(2, $summary->onlineSessionCount);
+        $this->assertSame(2, $summary->openSessionCount);
+    }
+
+    public function testSessionCountExcludesForeignUsersAndNullSessionIds(): void
+    {
+        $state = SessionViewStates::init();
+        $state->add(SessionViewConnection::create('own-session', 1, 'tok-x', 10));
+        $state->add(SessionViewConnection::create('own-without-id', 1, 'tok-y'));
+        $state->add(SessionViewConnection::create('own-without-token', 1));
+        $state->add(SessionViewConnection::create('other-person', 2, 'tok-z', 20));
+        $state->add(SessionViewConnection::create('anonymous', null, 'tok-anon', 30));
+        $connections = SessionViewConnections::init();
+        $connections->setStateCollection($state);
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertSame(3, $summary->onlineSessionCount);
+        $this->assertSame(1, $summary->openSessionCount);
+        $this->assertSame(1, $connections->summaryForUser(2)->openSessionCount);
+        $state->remove('own-session');
+        $withoutIds = $connections->summaryForUser(1);
+        $this->assertSame(2, $withoutIds->onlineSessionCount);
+        $this->assertSame(0, $withoutIds->openSessionCount);
+        foreach ([3, null] as $userId) {
+            $empty = $connections->summaryForUser($userId);
+            $this->assertSame(0, $empty->onlineSessionCount);
+            $this->assertSame(0, $empty->openSessionCount);
+            $this->assertSame(HilosUserPresenceSummary::PRESENCE_OFFLINE, $empty->presence);
+            $this->assertFalse($empty->stale);
+        }
+    }
+
+    public function testSessionStageWithoutConnectionsHasZeroOpenSessions(): void
+    {
+        $connections = SessionViewConnections::init();
+        $connections->setStateCollection(SessionViewStates::init());
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertSame(0, $summary->onlineSessionCount);
+        $this->assertSame(0, $summary->openSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_OFFLINE, $summary->presence);
+        $this->assertFalse($summary->stale);
+    }
+
+    public function testSessionSummaryKeepsFreshnessFromTheNamedCollection(): void
+    {
+        $connections = $this->sessionConnections();
+        $connections->setCollectionName(self::COLLECTION);
+        RtStaleness::mark(self::COLLECTION, ['view-ak-1'], 1000.0);
+
+        $summary = $connections->summaryForUser(1);
+
+        $this->assertTrue($summary->stale);
+        $this->assertSame(2, $summary->onlineSessionCount);
+        $this->assertSame(1, $summary->openSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $summary->presence);
+        $this->assertFalse($connections->summaryForUser(2)->stale);
     }
 
     /**
@@ -276,11 +365,11 @@ final class HilosConnectionsViewTest extends TestCase
     {
         $state = SessionViewStates::init();
         foreach (['view-ak-1', 'view-ak-2'] as $acceptKey) {
-            $doubted = SessionViewConnection::create($acceptKey, 1, 'tok-x');
+            $doubted = SessionViewConnection::create($acceptKey, 1, 'tok-x', 10);
             $doubted->probablyOffline = true;
             $state->add($doubted);
         }
-        $state->add(SessionViewConnection::create('view-ak-3', 2, 'tok-y'));
+        $state->add(SessionViewConnection::create('view-ak-3', 2, 'tok-y', 20));
         $connections = SessionViewConnections::init();
         $connections->setStateCollection($state);
 
@@ -288,7 +377,22 @@ final class HilosConnectionsViewTest extends TestCase
 
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $summary->presence);
         $this->assertSame(2, $summary->onlineSessionCount);
+        $this->assertSame(1, $summary->openSessionCount);
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $connections->summaryForUser(2)->presence);
+
+        $state->remove('view-ak-1');
+
+        $remaining = $connections->summaryForUser(1);
+        $this->assertSame(1, $remaining->onlineSessionCount);
+        $this->assertSame(1, $remaining->openSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $remaining->presence);
+
+        $state->remove('view-ak-2');
+
+        $closed = $connections->summaryForUser(1);
+        $this->assertSame(0, $closed->onlineSessionCount);
+        $this->assertSame(0, $closed->openSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_OFFLINE, $closed->presence);
     }
 
     /**
@@ -340,9 +444,9 @@ final class HilosConnectionsViewTest extends TestCase
     private function sessionConnections(): SessionViewConnections
     {
         $state = SessionViewStates::init();
-        $state->add(SessionViewConnection::create('view-ak-1', 1, 'tok-x'));
-        $state->add(SessionViewConnection::create('view-ak-2', 1, 'tok-x'));
-        $state->add(SessionViewConnection::create('view-ak-3', 2, 'tok-y'));
+        $state->add(SessionViewConnection::create('view-ak-1', 1, 'tok-x', 10));
+        $state->add(SessionViewConnection::create('view-ak-2', 1, 'tok-x', 10));
+        $state->add(SessionViewConnection::create('view-ak-3', 2, 'tok-y', 20));
 
         $view = SessionViewConnections::init();
         $view->setStateCollection($state);

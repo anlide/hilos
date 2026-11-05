@@ -33,7 +33,7 @@ function makeRow(
 const columns: readonly HilosTableColumn[] = [
   { key: 'name', label: 'Name' },
   { key: 'presence', label: 'Presence', source: 'connections' },
-  { key: 'onlineSessionCount', label: 'Sessions', source: 'connections' },
+  { key: 'openSessionCount', label: 'Sessions', source: 'connections' },
   { key: 'size', label: 'Size', source: 'volumes' },
 ]
 
@@ -73,7 +73,7 @@ describe('hilosTableStaleColumns', () => {
 
     expect(stale.map((column) => column.key)).toEqual([
       'presence',
-      'onlineSessionCount',
+      'openSessionCount',
       'size',
     ])
   })

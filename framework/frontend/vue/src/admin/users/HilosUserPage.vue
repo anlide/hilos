@@ -654,6 +654,14 @@ function submit(): void {
                   </template>
                 </HilosHideable>
               </div>
+              <p
+                v-if="
+                  sessionCount !== undefined && detail.openSessionCount !== null
+                "
+                class="small text-body-secondary mb-0"
+              >
+                {{ overviewCopy.openNow(detail.openSessionCount) }}
+              </p>
             </div>
           </div>
         </div>

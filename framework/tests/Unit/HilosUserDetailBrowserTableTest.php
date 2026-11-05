@@ -127,11 +127,20 @@ final class HilosUserDetailBrowserTableTest extends TestCase
         $this->assertSame([HilosConnection::userId => self::TABLE_USER_ID], $row[BrowserTableFieldKey::WHERE]);
         $this->assertSame([HilosConnection::userId], $row[BrowserTableFieldKey::FIELDS]);
         $this->assertSame(
-            [HilosUserPresenceSummary::presence, HilosUserPresenceSummary::onlineSessionCount],
+            [
+                HilosUserPresenceSummary::presence,
+                HilosUserPresenceSummary::onlineSessionCount,
+                HilosUserPresenceSummary::openSessionCount,
+            ],
             $row[BrowserTableFieldKey::COMPUTED],
         );
         $this->assertSame(
-            [HilosConnection::userId, HilosUserPresenceSummary::presence, HilosUserPresenceSummary::onlineSessionCount],
+            [
+                HilosConnection::userId,
+                HilosUserPresenceSummary::presence,
+                HilosUserPresenceSummary::onlineSessionCount,
+                HilosUserPresenceSummary::openSessionCount,
+            ],
             $row[BrowserTableFieldKey::NOT_PERSONAL],
         );
     }

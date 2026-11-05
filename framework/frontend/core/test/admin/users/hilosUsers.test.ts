@@ -43,6 +43,7 @@ import {
   type HilosUsersContext,
   type HilosUsersTableOptions,
 } from '../../../src/admin/users/hilosUsers.js'
+import { USER_OPEN_SESSION_COUNT_FIELD } from '../../../src/admin/users/index.js'
 import { hilosLegalLapsedHref } from '../../../src/admin/legal/hilosLegal.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
 import { type HilosPathResolver } from '../../../src/routing/hilosAdmin.js'
@@ -119,7 +120,11 @@ describe('resolveHilosUserRow', () => {
         rowKey: '7',
         slots: {
           users: ref,
-          connections: { presence: 'online', onlineSessionCount: 2 },
+          connections: {
+            presence: 'online',
+            onlineSessionCount: 2,
+            openSessionCount: 1,
+          },
           merge: { merged: true },
         },
       }
@@ -132,6 +137,7 @@ describe('resolveHilosUserRow', () => {
         lastActivity: null,
         presence: 'online',
         onlineSessionCount: 2,
+        openSessionCount: 1,
         merged: true,
       })
       scopes.page()!.entities.upsert(ref, { block: !block })
@@ -143,6 +149,57 @@ describe('resolveHilosUserRow', () => {
       })
     },
   )
+
+  it('exports the open-session key from the owning users section', () => {
+    expect(USER_OPEN_SESSION_COUNT_FIELD).toBe('openSessionCount')
+  })
+
+  it.each([0, 1, 3])(
+    'keeps the explicit open-session count %s independent of the connection count',
+    (openSessionCount) => {
+      const { users } = userStore()
+      const row: TableRow = {
+        rowKey: '7',
+        slots: {
+          connections: {
+            presence: 'online',
+            onlineSessionCount: 4,
+            openSessionCount,
+          },
+        },
+      }
+
+      expect(resolveHilosUserRow(row, users)).toMatchObject({
+        onlineSessionCount: 4,
+        openSessionCount,
+      })
+    },
+  )
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { onlineSessionCount: 2 },
+    { onlineSessionCount: 2, openSessionCount: null },
+    { onlineSessionCount: 2, openSessionCount: '2' },
+    { onlineSessionCount: 2, openSessionCount: 1.5 },
+    { onlineSessionCount: 2, openSessionCount: NaN },
+    { onlineSessionCount: 2, openSessionCount: Infinity },
+  ])('keeps an unknown open-session count null for %j', (connections) => {
+    const { users } = userStore()
+    const row: TableRow = { rowKey: '7', slots: { connections } }
+
+    expect(resolveHilosUserRow(row, users).openSessionCount).toBeNull()
+  })
+
+  it.each([
+    [0, '0 open now'],
+    [1, '1 open now'],
+    [3, '3 open now'],
+  ] as const)('says %s open now in the Overview copy', (count, expected) => {
+    expect(HILOS_USER_OVERVIEW_COPY.openNow(count)).toBe(expected)
+  })
 })
 
 describe('activity display projections', () => {
@@ -941,6 +998,7 @@ describe('hilosUserLifecyclePromptOffered', () => {
     timeZone: null,
     presence: 'online',
     onlineSessionCount: 1,
+    openSessionCount: null,
     hasPassword: true,
     hasSecondFactor: false,
     admin: false,
@@ -1359,6 +1417,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     timeZone: null,
     presence: 'online',
     onlineSessionCount: 1,
+    openSessionCount: null,
     hasPassword: true,
     hasSecondFactor: false,
     admin: false,
@@ -1556,33 +1615,41 @@ describe('a presence in doubt (HIL-1566)', () => {
     const page = scopes.page()!
     const ref = { type: 'user', id: 1 }
     page.entities.upsert(ref, { id: 1, name: 'Alice', lastActivity: null })
-    const connections = (presence: string, onlineSessionCount: number) => {
+    const connections = (
+      presence: string,
+      onlineSessionCount: number,
+      openSessionCount: number | null,
+    ) => {
       page.tables.upsert('userDetail', 1, {
         users: ref,
-        connections: { presence, onlineSessionCount },
+        connections: { presence, onlineSessionCount, openSessionCount },
       })
     }
-    connections('probably_offline', 1)
+    connections('probably_offline', 1, null)
     const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
 
     expect(detail.get()).toMatchObject({
       presence: 'probably_offline',
       onlineSessionCount: 1,
+      openSessionCount: null,
     })
-    connections('online', 2)
+    connections('online', 2, 1)
     expect(detail.get()).toMatchObject({
       presence: 'online',
       onlineSessionCount: 2,
+      openSessionCount: 1,
     })
-    connections('probably_offline', 2)
+    connections('probably_offline', 2, 2)
     expect(detail.get()).toMatchObject({
       presence: 'probably_offline',
       onlineSessionCount: 2,
+      openSessionCount: 2,
     })
-    connections('offline', 0)
+    connections('offline', 0, 0)
     expect(detail.get()).toMatchObject({
       presence: 'offline',
       onlineSessionCount: 0,
+      openSessionCount: 0,
     })
   })
 })
@@ -1595,6 +1662,7 @@ describe('a merged account on the card (HIL-1292)', () => {
     timeZone: null,
     presence: 'offline',
     onlineSessionCount: 0,
+    openSessionCount: null,
     hasPassword: true,
     hasSecondFactor: false,
     admin: false,
@@ -1871,8 +1939,8 @@ describe('createHilosUsersTable', () => {
         columns.filter((column) => column.sortable).map((column) => column.key),
       ).toEqual(
         options?.idInName
-          ? ['name', 'presence', 'onlineSessionCount', 'lastActivity']
-          : ['id', 'name', 'presence', 'onlineSessionCount', 'lastActivity'],
+          ? ['name', 'presence', 'openSessionCount', 'lastActivity']
+          : ['id', 'name', 'presence', 'openSessionCount', 'lastActivity'],
       )
       expect(columns.find((column) => column.key === 'actions')?.reads).toEqual(
         ['id'],
@@ -1882,14 +1950,17 @@ describe('createHilosUsersTable', () => {
         columns
           .filter((column) => column.heightContent !== undefined)
           .map((column) => column.key),
-      ).toEqual(['name', 'onlineSessionCount', 'lastActivity'])
+      ).toEqual(['name', 'openSessionCount', 'lastActivity'])
       expect(
         columns.find((column) => column.key === 'name')?.heightContent,
       ).toBe('parts')
       expect(
-        columns.find((column) => column.key === 'onlineSessionCount')
+        columns.find((column) => column.key === 'openSessionCount')
           ?.heightContent,
       ).toBe('text')
+      expect(
+        columns.find((column) => column.key === 'openSessionCount')?.source,
+      ).toBe('connections')
       expect(
         columns.find((column) => column.key === 'lastActivity')?.heightContent,
       ).toBe('text')
@@ -1913,6 +1984,10 @@ describe('createHilosUsersTable', () => {
       expect(sent.at(-1)?.sort).toEqual([{ field: 'name', direction: 'desc' }])
       controller.setSort('name')
       expect(sent.at(-1)?.sort).toEqual([{ field: 'id', direction: 'asc' }])
+      controller.setSort('openSessionCount')
+      expect(sent.at(-1)?.sort).toEqual([
+        { field: 'openSessionCount', direction: 'asc' },
+      ])
       expect(sent.at(-1)?.rendered).toEqual(
         options?.idInName
           ? [
@@ -1921,7 +1996,7 @@ describe('createHilosUsersTable', () => {
               'block',
               'merged',
               'presence',
-              'onlineSessionCount',
+              'openSessionCount',
               'lastActivity',
             ]
           : [
@@ -1929,7 +2004,7 @@ describe('createHilosUsersTable', () => {
               'name',
               'merged',
               'presence',
-              'onlineSessionCount',
+              'openSessionCount',
               'lastActivity',
             ],
       )
@@ -2392,6 +2467,7 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
       timeZone: null,
       presence: 'online',
       onlineSessionCount: 1,
+      openSessionCount: null,
       hasPassword: true,
       hasSecondFactor: false,
       admin: false,
@@ -2438,6 +2514,7 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     timeZone: null,
     presence: 'online',
     onlineSessionCount: 1,
+    openSessionCount: null,
     hasPassword: true,
     hasSecondFactor: false,
     admin: false,

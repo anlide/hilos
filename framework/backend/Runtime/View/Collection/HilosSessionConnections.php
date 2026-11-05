@@ -7,6 +7,7 @@ namespace Hilos\Runtime\View\Collection;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateHilosSessionConnections;
 use Hilos\Runtime\View\Actions\Collection\HilosConnectionsActions;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
 
 /**
@@ -30,6 +31,31 @@ abstract class HilosSessionConnections extends HilosConnections
     {
         /** @var StateHilosSessionConnections */
         return parent::getStateCollection();
+    }
+
+    /**
+     * Adds distinct sessions to the presence-stage summary, retaining doubted and stale connections.
+     *
+     * @param ?int $userId User id to summarize, or null for an empty summary
+     * @return HilosUserPresenceSummary Presence, connection count and distinct non-null session count
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     */
+    public function summaryForUser(?int $userId): HilosUserPresenceSummary
+    {
+        $summary = parent::summaryForUser($userId);
+        $sessionIds = [];
+        foreach ($this->getStateCollection()->findByUser($userId) as $stateConnection) {
+            if ($stateConnection->sessionId !== null) {
+                $sessionIds[$stateConnection->sessionId] = true;
+            }
+        }
+
+        return new HilosUserPresenceSummary(
+            $summary->onlineSessionCount,
+            $summary->stale,
+            $summary->presence === HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
+            count($sessionIds),
+        );
     }
 
     /**

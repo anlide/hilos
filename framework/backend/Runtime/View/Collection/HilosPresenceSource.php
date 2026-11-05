@@ -21,7 +21,7 @@ interface HilosPresenceSource
      * Summarizes a user's active runtime connections.
      *
      * @param ?int $userId User id to summarize, or null for an empty summary
-     * @return HilosUserPresenceSummary Presence and active session count for the user
+     * @return HilosUserPresenceSummary Presence, connection count and distinct session count (null when unknown)
      * @throws HilosException When the presence source cannot read its runtime state
      */
     public function summaryForUser(?int $userId): HilosUserPresenceSummary;

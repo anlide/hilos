@@ -94,8 +94,8 @@ export interface UsersRowActionsContext {
             }}</span>
           </span>
         </ng-template>
-        <ng-template hilosTableCell="onlineSessionCount" let-row>{{
-          row.onlineSessionCount
+        <ng-template hilosTableCell="openSessionCount" let-row>{{
+          row.openSessionCount ?? '—'
         }}</ng-template>
         <ng-template hilosTableCell="lastActivity" let-row>{{
           row.lastActivity ?? '—'

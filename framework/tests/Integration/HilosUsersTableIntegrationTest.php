@@ -21,16 +21,17 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
+use Hilos\Runtime\State\Collection\HilosSessionConnections as StateHilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
+use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnection;
 use Hilos\Runtime\State\Item\RtState;
-use Hilos\Runtime\View\Actions\Collection\HilosConnectionsActions;
+use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
 use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
-use Hilos\Runtime\View\Collection\HilosConnections;
+use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
-use Hilos\Runtime\View\Item\HilosConnection;
+use Hilos\Runtime\View\Item\HilosSessionConnection;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -214,6 +215,80 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $row->presence);
     }
 
+    public function testDistinctSessionCountsSortIndependentlyOfTabCountsWithStableAnchors(): void
+    {
+        $twoSessions = self::seedPerson('Two sessions');
+        $oneSessionFirst = self::seedPerson('One session first');
+        $oneSessionLast = self::seedPerson('One session last');
+        $offline = self::seedPerson('Offline');
+        $this->connections()->actions->register('two-a', $twoSessions, sessionId: 11);
+        $this->connections()->actions->register('two-b', $twoSessions, sessionId: 12);
+        $this->connections()->actions->register('one-a', $oneSessionFirst, sessionId: 21);
+        $this->connections()->actions->register('one-b', $oneSessionFirst, sessionId: 21);
+        $this->connections()->actions->register('one-c', $oneSessionFirst, sessionId: 21);
+        $this->connections()->actions->register('other-a', $oneSessionLast, sessionId: 31);
+        $table = $this->table();
+        $sort = TableSortOrderDTO::of(new TableSortDTO(HilosUserTableRow::openSessionCount));
+        $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: 2));
+
+        $this->assertSame([$offline, $oneSessionFirst], self::rowKeys($first->rows));
+        $this->assertSame(['openSessionCount' => 0, 'id' => $offline], $first->firstAnchor?->toArray());
+        $this->assertSame(['openSessionCount' => 1, 'id' => $oneSessionFirst], $first->lastAnchor?->toArray());
+        $next = $table->getPage(new TableQueryDTO(sort: $sort, limit: 2, anchor: $first->lastAnchor));
+        $this->assertSame([$oneSessionLast, $twoSessions], self::rowKeys($next->rows));
+        $this->assertSame(['openSessionCount' => 2, 'id' => $twoSessions], $next->lastAnchor?->toArray());
+        $this->assertSame(
+            [$offline, $oneSessionLast, $twoSessions, $oneSessionFirst],
+            self::rowKeys($table->getPage(new TableQueryDTO(
+                sort: TableSortOrderDTO::of(new TableSortDTO(HilosUserTableRow::onlineSessionCount)),
+            ))->rows),
+        );
+        $row = self::userRow($table->buildMutationForSourceEvent(
+            SourceChange::dbUpdated(HilosDbContext::users, (string)$oneSessionFirst, []),
+        ), TableMutationType::Update, $oneSessionFirst);
+        $this->assertSame(3, $row->onlineSessionCount);
+        $this->assertSame(1, $row->openSessionCount);
+        $this->assertSame(
+            [
+                HilosUserTableRow::presence => HilosUserPresenceSummary::PRESENCE_ONLINE,
+                HilosUserTableRow::onlineSessionCount => 3,
+                HilosUserTableRow::openSessionCount => 1,
+            ],
+            $table->browserRow($row)[BrowserPageSignalData::sources][AbstractHilosUsersTable::SLOT_CONNECTIONS],
+        );
+    }
+
+    public function testConnectionUpdatesAndLastCloseRebuildDistinctSessionCount(): void
+    {
+        $ann = self::seedPerson('Ann');
+        $this->connections()->actions->register(self::FIRST_TAB, $ann, sessionId: 11);
+        $this->connections()->actions->register(self::SECOND_TAB, $ann, sessionId: 11);
+        $this->connections()[self::FIRST_TAB]->actions->setProbablyOffline(true);
+        $this->connections()[self::SECOND_TAB]->actions->setProbablyOffline(true);
+        $table = $this->table();
+        $row = self::userRow($table->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            UsersTableTestRtContext::connections,
+            self::SECOND_TAB,
+            [StateHilosConnection::probablyOffline => true],
+        )), TableMutationType::Update, $ann);
+
+        $this->assertSame(1, $row->openSessionCount);
+        $this->assertSame(2, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE, $row->presence);
+
+        $this->connections()[self::FIRST_TAB]->actions->unregister();
+        $this->connections()[self::SECOND_TAB]->actions->unregister();
+        $row = self::userRow($table->buildMutationForSourceEvent(SourceChange::rtDeleted(
+            UsersTableTestRtContext::connections,
+            self::SECOND_TAB,
+            [StateHilosConnection::userId => $ann],
+        )), TableMutationType::Update, $ann);
+
+        $this->assertSame(0, $row->openSessionCount);
+        $this->assertSame(0, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_OFFLINE, $row->presence);
+    }
+
     /**
      * A connection change that carries its person names the row to refresh.
      *
@@ -319,6 +394,7 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
             [
                 HilosUserTableRow::presence => HilosUserPresenceSummary::PRESENCE_PROBABLY_OFFLINE,
                 HilosUserTableRow::onlineSessionCount => 2,
+                HilosUserTableRow::openSessionCount => 0,
             ],
             $this->table()->browserRow($row)[BrowserPageSignalData::sources][AbstractHilosUsersTable::SLOT_CONNECTIONS],
             'the presence rides the connections slot it always did, and the flag itself does not',
@@ -475,9 +551,9 @@ final class UsersTableTestTable extends AbstractHilosUsersTable
 }
 
 /**
- * Presence-stage row with nothing of its own, as the two simple demos have.
+ * Session-stage row with nothing of its own, so cases can distinguish sessions from tabs.
  */
-final class UsersTableTestConnection extends StateHilosConnection
+final class UsersTableTestConnection extends StateHilosSessionConnection
 {
     protected function initOwn(): void
     {
@@ -507,17 +583,17 @@ final class UsersTableTestConnection extends StateHilosConnection
 }
 
 /**
- * @extends StateHilosConnections<UsersTableTestConnection>
+ * @extends StateHilosSessionConnections<UsersTableTestConnection>
  */
-final class UsersTableTestStates extends StateHilosConnections
+final class UsersTableTestStates extends StateHilosSessionConnections
 {
     public const string STATE_CLASS = UsersTableTestConnection::class;
 }
 
 /**
- * @extends HilosConnection<UsersTableTestConnection>
+ * @extends HilosSessionConnection<UsersTableTestConnection>
  */
-final class UsersTableTestItem extends HilosConnection
+final class UsersTableTestItem extends HilosSessionConnection
 {
 }
 
@@ -529,16 +605,16 @@ final class UsersTableTestItemActions extends HilosConnectionActions
 }
 
 /**
- * @extends HilosConnectionsActions<UsersTableTestItem, UsersTableTestConnections>
+ * @extends HilosSessionConnectionsActions<UsersTableTestItem, UsersTableTestConnections>
  */
-final class UsersTableTestCollectionActions extends HilosConnectionsActions
+final class UsersTableTestCollectionActions extends HilosSessionConnectionsActions
 {
 }
 
 /**
- * @extends HilosConnections<UsersTableTestItem, UsersTableTestCollectionActions>
+ * @extends HilosSessionConnections<UsersTableTestItem, UsersTableTestCollectionActions>
  */
-final class UsersTableTestConnections extends HilosConnections
+final class UsersTableTestConnections extends HilosSessionConnections
 {
     /**
      * @param RtState $state Backing state row

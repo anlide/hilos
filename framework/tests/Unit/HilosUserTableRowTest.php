@@ -22,7 +22,7 @@ final class HilosUserTableRowTest extends TestCase
     /**
      * The order of the keys is part of the wire, and the tables' own assertions compare it exactly.
      */
-    public function testToArrayCarriesTheEightFieldsInTheWireOrder(): void
+    public function testToArrayCarriesTheNineFieldsInTheWireOrder(): void
     {
         $row = new HilosUserTableRow(
             id: 42,
@@ -33,6 +33,7 @@ final class HilosUserTableRowTest extends TestCase
             onlineSessionCount: 3,
             presence: 'online',
             merged: true,
+            openSessionCount: 1,
         );
 
         $this->assertSame(
@@ -41,6 +42,7 @@ final class HilosUserTableRowTest extends TestCase
                 HilosUserTableRow::admin => true,
                 HilosUserTableRow::block => false,
                 HilosUserTableRow::onlineSessionCount => 3,
+                HilosUserTableRow::openSessionCount => 1,
                 HilosUserTableRow::presence => 'online',
                 HilosUserTableRow::name => 'Ann',
                 HilosUserTableRow::lastActivity => 1790762400000,
@@ -64,11 +66,43 @@ final class HilosUserTableRowTest extends TestCase
             block: true,
             name: 'Bob',
             lastActivity: null,
-            onlineSessionCount: 0,
+            onlineSessionCount: 3,
             presence: null,
+            openSessionCount: null,
         );
 
+        $this->assertArrayHasKey(HilosUserTableRow::openSessionCount, $row->toArray());
+        $this->assertNull($row->toArray()[HilosUserTableRow::openSessionCount]);
         $this->assertSame($row->toArray(), HilosUserTableRow::fromArray($row->toArray())->toArray());
+    }
+
+    public function testDistinctSessionCountSurvivesTheRoundTrip(): void
+    {
+        $row = new HilosUserTableRow(7, onlineSessionCount: 3, openSessionCount: 1);
+
+        $restored = HilosUserTableRow::fromArray($row->toArray());
+        $this->assertSame(1, $restored->openSessionCount);
+        $this->assertSame(3, $restored->onlineSessionCount);
+        $this->assertSame($row->toArray(), $restored->toArray());
+    }
+
+    public function testAbsentSessionCountRemainsUnknown(): void
+    {
+        $payload = (new HilosUserTableRow(7, onlineSessionCount: 3))->toArray();
+        unset($payload[HilosUserTableRow::openSessionCount]);
+
+        $this->assertNull(HilosUserTableRow::fromArray($payload)->openSessionCount);
+    }
+
+    public function testSessionCountOfAnotherTypeIsRefused(): void
+    {
+        $payload = (new HilosUserTableRow(7))->toArray();
+        $payload[HilosUserTableRow::openSessionCount] = '1';
+
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HilosUserTableRow::openSessionCount);
+
+        HilosUserTableRow::fromArray($payload);
     }
 
     public function testNumericActivitySurvivesTheRoundTripIncludingEpochZero(): void
@@ -84,6 +118,7 @@ final class HilosUserTableRowTest extends TestCase
     {
         $this->assertSame(HilosUserPresenceSummary::presence, HilosUserTableRow::presence);
         $this->assertSame(HilosUserPresenceSummary::onlineSessionCount, HilosUserTableRow::onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::openSessionCount, HilosUserTableRow::openSessionCount);
     }
 
     public function testARowPayloadWithoutTheUserIdIsRefused(): void

@@ -113,11 +113,13 @@ final class HilosUserDetailBrowserTable
                 BrowserTableFieldKey::COMPUTED => [
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
+                    HilosUserPresenceSummary::openSessionCount,
                 ],
                 BrowserTableFieldKey::NOT_PERSONAL => [
                     HilosConnection::userId,
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
+                    HilosUserPresenceSummary::openSessionCount,
                 ],
             ],
             [

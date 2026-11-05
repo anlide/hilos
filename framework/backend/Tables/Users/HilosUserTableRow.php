@@ -33,6 +33,7 @@ final class HilosUserTableRow extends AbstractTableRow
     public const string FIELD_MERGED_INTO_NAME = 'mergedIntoName';
     public const string presence = HilosUserPresenceSummary::presence;
     public const string onlineSessionCount = HilosUserPresenceSummary::onlineSessionCount;
+    public const string openSessionCount = HilosUserPresenceSummary::openSessionCount;
     public const string name = ObjectUser::name;
     public const string lastActivity = ObjectUser::lastActivity;
 
@@ -42,9 +43,10 @@ final class HilosUserTableRow extends AbstractTableRow
      * @param bool $block Account block flag
      * @param string $name Display name
      * @param ?int $lastActivity Last activity in epoch milliseconds UTC, or null
-     * @param int $onlineSessionCount Open session count
+     * @param int $onlineSessionCount Registered connection count
      * @param ?string $presence Connection presence
      * @param bool $merged Whether the account was merged
+     * @param ?int $openSessionCount Distinct sessions with registered connections, or null when unknown
      */
     public function __construct(
         public int $id,
@@ -55,6 +57,7 @@ final class HilosUserTableRow extends AbstractTableRow
         public int $onlineSessionCount = 0,
         public ?string $presence = null,
         public bool $merged = false,
+        public ?int $openSessionCount = null,
     ) {
     }
 
@@ -77,11 +80,11 @@ final class HilosUserTableRow extends AbstractTableRow
     /**
      * Serializes the row to the frontend table payload shape.
      *
-     * The key order is part of the wire: the presence pair sits between the flags and the name, and
+     * The key order is part of the wire: the presence summary sits between the flags and the name, and
      * the merge flag closes the row.
      *
-     * @return array{id: int, admin: bool, block: bool, onlineSessionCount: int, presence: ?string, name: string,
-     *     lastActivity: ?int, merged: bool}
+     * @return array{id: int, admin: bool, block: bool, onlineSessionCount: int, openSessionCount: ?int,
+     *     presence: ?string, name: string, lastActivity: ?int, merged: bool} Serialized user row
      */
     public function toArray(): array
     {
@@ -90,6 +93,7 @@ final class HilosUserTableRow extends AbstractTableRow
             self::admin => $this->admin,
             self::block => $this->block,
             self::onlineSessionCount => $this->onlineSessionCount,
+            self::openSessionCount => $this->openSessionCount,
             self::presence => $this->presence,
             self::name => $this->name,
             self::lastActivity => $this->lastActivity,
@@ -115,6 +119,7 @@ final class HilosUserTableRow extends AbstractTableRow
             onlineSessionCount: self::requireInt($data, self::onlineSessionCount),
             presence: self::optionalString($data, self::presence),
             merged: self::requireBool($data, self::merged),
+            openSessionCount: self::optionalInt($data, self::openSessionCount),
         );
     }
 }

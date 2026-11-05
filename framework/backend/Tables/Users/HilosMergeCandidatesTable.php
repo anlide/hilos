@@ -450,6 +450,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
         unset(
             $userFields[HilosUserTableRow::presence],
             $userFields[HilosUserTableRow::onlineSessionCount],
+            $userFields[HilosUserTableRow::openSessionCount],
             $userFields[HilosUserTableRow::merged],
         );
         $normalizedSearch = $search === null ? null : trim($search);

@@ -179,6 +179,8 @@ export interface HilosUserRow {
   readonly presence: HilosPresence
   /** Count of the user's currently open sessions. */
   readonly onlineSessionCount: number
+  /** Distinct sessions with registered connections, or null when unknown. */
+  readonly openSessionCount: number | null
   /**
    * Whether the account was folded into another one by a merge (HIL-1292), from
    * the inline `merge` slot of the people list; the card's own table carries no
@@ -315,6 +317,9 @@ export const USER_PRESENCE_FIELD = 'presence'
 
 /** Row payload key of the open-session count, inside the inline `connections` slot. */
 export const USER_ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
+
+/** Row payload key of the distinct open-session count in the `connections` slot. */
+export const USER_OPEN_SESSION_COUNT_FIELD = 'openSessionCount'
 
 // Wire keys: the framework users table and the single-user detail table, which
 // carry the same row slots so both resolve through resolveHilosUserRow. A project
@@ -506,6 +511,9 @@ export function resolveHilosUserRow<TUser extends User>(
   const user = ref ? users.signal(ref).get() : undefined
   const connection = recordSlot(row.slots[USER_CONNECTIONS_SLOT])
   const merge = recordSlot(row.slots[MERGE_SLOT])
+  const openSessionCount = connection
+    ? readNumberOrNull(connection, USER_OPEN_SESSION_COUNT_FIELD)
+    : null
 
   // The typed person keeps a string name for every reader outside the admin
   // section; the row asks the collection whether it arrived hidden.
@@ -521,6 +529,9 @@ export function resolveHilosUserRow<TUser extends User>(
     onlineSessionCount: connection
       ? readNumber(connection, USER_ONLINE_SESSION_COUNT_FIELD)
       : 0,
+    openSessionCount: Number.isInteger(openSessionCount)
+      ? openSessionCount
+      : null,
     merged: merge ? readBoolean(merge, USER_MERGED_FIELD) : false,
   }
 }
@@ -698,7 +709,7 @@ const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
     source: USER_CONNECTIONS_SLOT,
   },
   {
-    key: USER_ONLINE_SESSION_COUNT_FIELD,
+    key: USER_OPEN_SESSION_COUNT_FIELD,
     label: 'Sessions',
     sortable: true,
     headerClass: 'text-end',
@@ -1522,6 +1533,7 @@ export const HILOS_USERS_LIST_COPY = { you: 'You' } as const
 /** Presentation copy for the user Overview, without changing lifecycle verdicts. */
 export const HILOS_USER_OVERVIEW_COPY = {
   openConnections: 'Open connections',
+  openNow: (count: number): string => `${count} open now`,
   profile: 'Profile',
   displayName: 'Display name',
   timeZone: 'Time zone',

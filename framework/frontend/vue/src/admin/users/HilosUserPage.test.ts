@@ -48,6 +48,10 @@ import {
   createHilosUserDetail,
   type HilosUserDetailRow,
   type HilosUsersContext,
+  USER_CONNECTIONS_SLOT,
+  USER_ONLINE_SESSION_COUNT_FIELD,
+  USER_OPEN_SESSION_COUNT_FIELD,
+  USER_PRESENCE_FIELD,
 } from '@hilos/core/admin/users'
 
 import HilosUserPage from './HilosUserPage.vue'
@@ -721,6 +725,57 @@ describe('HilosUserPage Overview', () => {
     expect(saveButton().disabled).toBe(true)
   })
 
+  it('shows the open-session summary live without changing the saved total or its link', async () => {
+    const { context, sent } = userContext()
+    giveSessions(context.scopes, [
+      sessionItem(41, ['ak-a', 'ak-b']),
+      sessionItem(42, ['ak-c']),
+      sessionItem(43),
+    ])
+    const connections = (openSessionCount: number): void => {
+      context.scopes.page()!.tables.upsert('userDetail', 1, {
+        users: { type: USER_ENTITY_TYPE, id: 1 },
+        [USER_CONNECTIONS_SLOT]: {
+          [USER_PRESENCE_FIELD]: 'online',
+          [USER_ONLINE_SESSION_COUNT_FIELD]: 3,
+          [USER_OPEN_SESSION_COUNT_FIELD]: openSessionCount,
+        },
+      })
+    }
+    connections(2)
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+      },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+    const total = wrapper.get('[data-id="hilos-user-sessions"]')
+    const overview = wrapper.get('[data-id="hilos-user-detail"]')
+    expect(total.text()).toBe('3')
+    expect(total.get('a').attributes('href')).toBe('/hilos/user/1/sessions')
+    expect(
+      overview
+        .findAll('p')
+        .find((text) => text.text() === '2 open now')
+        ?.isVisible(),
+    ).toBe(true)
+
+    connections(0)
+    await nextTick()
+    expect(
+      overview
+        .findAll('p')
+        .find((text) => text.text() === '0 open now')
+        ?.isVisible(),
+    ).toBe(true)
+    expect(overview.text()).not.toContain('2 open now')
+    expect(total.text()).toBe('3')
+    expect(total.get('a').attributes('href')).toBe('/hilos/user/1/sessions')
+    expect(sent).toEqual([])
+  })
+
   it('counts sessions on the first tile only where the page reads them, and never draws a hidden count as zero', async () => {
     /**
      * Mount the card and return its first tile and the caption above it.
@@ -741,15 +796,25 @@ describe('HilosUserPage Overview', () => {
       return {
         tile,
         caption: tile.element.previousElementSibling?.textContent?.trim(),
+        overview: wrapper.get('[data-id="hilos-user-detail"]'),
       }
     }
 
     // A page that reads no list keeps the open connections it always showed.
     const plain = userContext()
+    plain.context.scopes.page()!.tables.upsert('userDetail', 1, {
+      users: { type: USER_ENTITY_TYPE, id: 1 },
+      [USER_CONNECTIONS_SLOT]: {
+        [USER_PRESENCE_FIELD]: 'online',
+        [USER_ONLINE_SESSION_COUNT_FIELD]: 1,
+        [USER_OPEN_SESSION_COUNT_FIELD]: 1,
+      },
+    })
     const fallback = await firstTile(plain.context)
     expect(fallback.caption).toBe('Open connections')
     expect(fallback.tile.text()).toBe('1')
     expect(fallback.tile.find('a').exists()).toBe(false)
+    expect(fallback.overview.text()).not.toMatch(/\d+ open now/)
 
     // A read list with no session is a zero, and still the way to the tab.
     const empty = userContext()
@@ -758,10 +823,37 @@ describe('HilosUserPage Overview', () => {
     expect(none.caption).toBe('Sessions')
     expect(none.tile.text()).toBe('0')
     expect(none.tile.get('a').attributes('href')).toBe('/hilos/user/1/sessions')
+    expect(none.overview.text()).not.toMatch(/\d+ open now/)
+
+    const unknown = userContext()
+    giveSessions(unknown.context.scopes, [sessionItem(41)])
+    unknown.context.scopes.page()!.tables.upsert('userDetail', 1, {
+      users: { type: USER_ENTITY_TYPE, id: 1 },
+      [USER_CONNECTIONS_SLOT]: {
+        [USER_PRESENCE_FIELD]: 'online',
+        [USER_ONLINE_SESSION_COUNT_FIELD]: 1,
+        [USER_OPEN_SESSION_COUNT_FIELD]: null,
+      },
+    })
+    const missing = await firstTile(unknown.context)
+    expect(missing.tile.text()).toBe('1')
+    expect(missing.overview.text()).not.toMatch(/\d+ open now/)
 
     // A viewer of the admin view mode is shown the mark, not a number.
     const hidden = userContext()
-    giveSessions(hidden.context.scopes, [sessionItem(41, ['ak-a'])])
+    giveSessions(hidden.context.scopes, [
+      sessionItem(41, ['ak-a', 'ak-b']),
+      sessionItem(42, ['ak-c']),
+      sessionItem(43),
+    ])
+    hidden.context.scopes.page()!.tables.upsert('userDetail', 1, {
+      users: { type: USER_ENTITY_TYPE, id: 1 },
+      [USER_CONNECTIONS_SLOT]: {
+        [USER_PRESENCE_FIELD]: 'online',
+        [USER_ONLINE_SESSION_COUNT_FIELD]: 3,
+        [USER_OPEN_SESSION_COUNT_FIELD]: 2,
+      },
+    })
     hidden.context.scopes.session.data.set('adminViewMode', true)
     const release = bindAdminAccess(hidden.context.scopes)
     try {
@@ -770,10 +862,21 @@ describe('HilosUserPage Overview', () => {
       expect(viewer.tile.find('[data-id="hilos-hidden"]').exists()).toBe(true)
       expect(viewer.tile.text()).not.toMatch(/\d/)
       expect(viewer.tile.find('a').exists()).toBe(false)
+      expect(
+        viewer.overview
+          .findAll('p')
+          .find((text) => text.text() === '2 open now')
+          ?.isVisible(),
+      ).toBe(true)
     } finally {
       release()
     }
-    expect([...plain.sent, ...empty.sent, ...hidden.sent]).toEqual([])
+    expect([
+      ...plain.sent,
+      ...empty.sent,
+      ...unknown.sent,
+      ...hidden.sent,
+    ]).toEqual([])
   })
 
   it('renders the read-only time zone through live visible and hidden entity updates', async () => {
