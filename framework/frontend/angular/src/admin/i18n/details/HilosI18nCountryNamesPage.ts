@@ -140,13 +140,6 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
         @for (subject of [binding()]; track subject.names) {
           @if (card(); as current) {
             <section class="mb-4" data-id="country-names">
-              <h2 class="h5 d-flex flex-wrap align-items-center gap-2">
-                Names in different languages
-                <span
-                  class="badge bg-body-tertiary text-body-secondary border fw-normal"
-                  >A row for every language</span
-                >
-              </h2>
               <hilos-i18n-names-table
                 [controller]="subject.names.controller"
                 [nameActions]="nameActions"
@@ -156,7 +149,9 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
             <ng-template #nameActions let-row>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-secondary"
+                class="btn btn-sm"
+                [class.btn-primary]="row.name === null"
+                [class.btn-outline-primary]="row.name !== null"
                 [attr.aria-label]="
                   nameCopy.open(
                     row.name === null,
@@ -195,7 +190,9 @@ import { HilosI18nNamesTable } from './HilosI18nNamesTable.js'
               @if (row.name !== null) {
                 <button
                   type="button"
-                  class="btn btn-sm btn-outline-secondary"
+                  class="btn btn-sm"
+                  [class.btn-primary]="correction.name === null"
+                  [class.btn-outline-primary]="correction.name !== null"
                   [attr.aria-label]="
                     nameCopy.open(
                       correction.name === null,

@@ -128,7 +128,7 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       'not chosen',
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await expect(page.getByTestId('country-card-edit')).toBeVisible()
     const remove = page.getByTestId('country-card-delete')
@@ -147,10 +147,12 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
     expect(deletes()).toBe(0)
     await markDocument(page)
-    await clickSubmit(
-      expect,
-      page.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
+    const names = page.getByTestId('country-overview-name-count')
+    await expect(names).toHaveAttribute(
+      'href',
+      '/hilos/i18n/countries/us/names',
     )
+    await clickSubmit(expect, names)
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/countries\/us\/names$/)
     await expectCountryPageHead(expect, page, {
@@ -161,12 +163,16 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     })
     await expect(page.getByTestId('country-names')).toBeVisible()
     await expectDocumentUnchanged(expect, page)
-    const overview = page.getByTestId('hilos-page-tab-hilos_i18n_country')
-    await overview.focus()
-    await overview.press('Enter')
+    await page.goBack()
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/countries\/us$/)
     await expect(page.getByTestId('country-card-main')).toBeVisible()
+    await expectDocumentUnchanged(expect, page)
+    const namesTab = page.getByTestId('hilos-page-tab-hilos_i18n_country_names')
+    await namesTab.focus()
+    await namesTab.press('Enter')
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/countries\/us\/names$/)
     await expectDocumentUnchanged(expect, page)
     for (const [path, currentPage] of [
       ['/hilos/i18n/countries/us', 'hilos_i18n_country'],
@@ -187,11 +193,9 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       page.getByTestId('hilos-page-tab-hilos_i18n_country'),
     )
     await expectPageReady(expect, page)
-    await page.goBack()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/countries\/us\/names$/)
+    await expect(page).toHaveURL(/\/countries\/us$/)
     await expect(
-      page.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
+      page.getByTestId('hilos-page-tab-hilos_i18n_country'),
     ).toHaveAttribute('aria-current', 'page')
     expect(writes()).toHaveLength(0)
   })
@@ -284,7 +288,9 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     await expect(
       page.getByTestId('country-card-switch-on-confirm'),
     ).toHaveCount(0)
-    await expect(page.getByTestId('country-card-enabled')).toHaveText('Enabled')
+    await expect(page.getByTestId('country-card-enabled')).toHaveText(
+      'Country switched on',
+    )
     await expect(page.getByTestId('country-card-frozen')).toBeVisible()
     await clickSubmit(expect, page.getByTestId('country-card-view'))
     await expect(page.getByTestId('i18n-country-title')).toHaveText(
@@ -321,7 +327,7 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       page.getByTestId('country-card-switch-off-confirm'),
     ).toHaveCount(0)
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
     await expect(page.getByTestId('country-card-switch-on')).toBeVisible()
@@ -380,7 +386,9 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     await expect(
       page.getByTestId('country-card-switch-on-confirm'),
     ).toHaveCount(0)
-    await expect(page.getByTestId('country-card-enabled')).toHaveText('Enabled')
+    await expect(page.getByTestId('country-card-enabled')).toHaveText(
+      'Country switched on',
+    )
     await clickSubmit(expect, page.getByTestId('country-card-switch-off'))
     await clickSubmit(
       expect,
@@ -390,7 +398,7 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       page.getByTestId('country-card-switch-off-confirm'),
     ).toHaveCount(0)
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await clearLocale(locale.code)
     await expect(page.getByTestId('country-card-default-locale')).toHaveText(

@@ -260,19 +260,13 @@ function CountryNames({
       {card ? (
         <>
           <section className="mb-4" data-id="country-names">
-            <h2 className="h5 d-flex flex-wrap align-items-center gap-2">
-              Names in different languages
-              <span className="badge bg-body-tertiary text-body-secondary border fw-normal">
-                A row for every language
-              </span>
-            </h2>
             <HilosI18nNamesTable
               controller={names.controller}
               nameActions={(row) => (
                 <>
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline-secondary"
+                    className={`btn btn-sm ${row.name === null ? 'btn-primary' : 'btn-outline-primary'}`}
                     aria-label={nameCopy.open(
                       row.name === null,
                       card.summary.name ?? card.code.toUpperCase(),
@@ -303,7 +297,7 @@ function CountryNames({
                   {row.name !== null && (
                     <button
                       type="button"
-                      className="btn btn-sm btn-outline-secondary"
+                      className={`btn btn-sm ${correction.name === null ? 'btn-primary' : 'btn-outline-primary'}`}
                       aria-label={nameCopy.open(
                         correction.name === null,
                         card.summary.name ?? card.code.toUpperCase(),

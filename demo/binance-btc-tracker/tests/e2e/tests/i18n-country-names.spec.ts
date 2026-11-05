@@ -104,6 +104,8 @@ test('country-names.life', async ({ page, context, i18n }) => {
     )
   }
   await gotoPage(expect, overview, '/hilos/i18n/countries/qj', PAGE_READY)
+  const nameCount = overview.getByTestId('country-overview-name-count')
+  await expect(nameCount).toHaveText('1')
   const live = await watchI18nLivePages(expect, [page, observer, overview])
 
   await test.step('Cancel an Add, then add/rename/save empty/delete the default-language name; both Names and Overview heads follow live', async () => {
@@ -122,18 +124,21 @@ test('country-names.life', async ({ page, context, i18n }) => {
         control: 'add-en',
         value: 'Country from UI',
         operation: 'add',
+        nameCount: '2',
         message: 'Name of Country from UI (qj) in English (en) added.',
       },
       {
         control: 'edit-en',
         value: 'Renamed country',
         operation: 'update',
+        nameCount: '2',
         message: 'Name of Renamed country (qj) in English (en) saved.',
       },
       {
         control: 'edit-en',
         value: '',
         operation: 'update',
+        nameCount: '1',
         message: 'Name of qj in English (en) saved.',
       },
     ] as const) {
@@ -172,6 +177,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
       }
       for (const tab of [page, observer])
         await expectI18nName(expect, tab, 'country', 'en', episode.value)
+      await expect(nameCount).toHaveText(episode.nameCount)
       await live.unchanged()
     }
     for (const tab of [page, observer]) {
@@ -218,6 +224,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
     await expect(overview.getByTestId('hilos-page-head-title')).toHaveText(
       'Unnamed country',
     )
+    await expect(nameCount).toHaveText('1')
     await live.unchanged()
   })
 
@@ -228,6 +235,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         key: 'qk',
         value: '  Edited base  ',
         previous: 'Fixture base',
+        nameCount: '1',
         message: 'Name of qj in HIL-1501 writing (qk) saved.',
       },
       {
@@ -235,6 +243,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         key: 'qk-GB',
         value: '  Edited British correction  ',
         previous: 'Fixture correction',
+        nameCount: '1',
         message: 'Correction qk-GB of the name of qj saved.',
       },
       {
@@ -242,6 +251,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         key: 'qk-US',
         value: 'American correction',
         previous: '',
+        nameCount: '1',
         message: 'Correction qk-US of the name of qj saved.',
       },
       {
@@ -249,6 +259,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         key: 'qk-US',
         value: '',
         previous: 'American correction',
+        nameCount: '1',
         message: 'Correction qk-US of the name of qj saved.',
       },
       {
@@ -256,6 +267,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         key: 'qk',
         value: '',
         previous: '  Edited base  ',
+        nameCount: '0',
         message: 'Name of qj in HIL-1501 writing (qk) saved.',
       },
     ]) {
@@ -297,6 +309,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
           'Unnamed country',
         )
+      await expect(nameCount).toHaveText(episode.nameCount)
       await live.unchanged()
     }
     // A disabled locale accepts its own empty correction under an existing empty base.
@@ -314,6 +327,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
       await expectI18nName(expect, tab, 'country', 'qk-FR', '')
       await expect(tab.getByTestId('i18n-names-inherit-qk-FR')).toHaveCount(0)
     }
+    await expect(nameCount).toHaveText('0')
   })
 
   await test.step('Cancel/remove corrections, inherit the base, and delete it while the other confirmation explains its disappearance', async () => {
@@ -362,6 +376,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         ).toHaveText('as in “HIL-1501 writing”')
         await expectI18nName(expect, tab, 'country', 'qk', '')
       }
+      await expect(nameCount).toHaveText('0')
       await live.unchanged()
     }
     await dismissToasts(page)
@@ -410,6 +425,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
       await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(
         'Unnamed country',
       )
+    await expect(nameCount).toHaveText('0')
     await live.unchanged()
   })
 

@@ -238,18 +238,12 @@ onUnmounted(() => {
     </template>
     <template v-if="card">
       <section class="mb-4" data-id="country-names">
-        <h2 class="h5 d-flex flex-wrap align-items-center gap-2">
-          Names in different languages
-          <span
-            class="badge bg-body-tertiary text-body-secondary border fw-normal"
-            >A row for every language</span
-          >
-        </h2>
         <HilosI18nNamesTable :controller="names.controller">
           <template #name-actions="{ row }">
             <button
               type="button"
-              class="btn btn-sm btn-outline-secondary"
+              class="btn btn-sm"
+              :class="row.name === null ? 'btn-primary' : 'btn-outline-primary'"
               :aria-label="
                 nameCopy.open(
                   row.name === null,
@@ -279,7 +273,10 @@ onUnmounted(() => {
             <button
               v-if="row.name !== null"
               type="button"
-              class="btn btn-sm btn-outline-secondary"
+              class="btn btn-sm"
+              :class="
+                correction.name === null ? 'btn-primary' : 'btn-outline-primary'
+              "
               :aria-label="
                 nameCopy.open(
                   correction.name === null,

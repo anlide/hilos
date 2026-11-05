@@ -90,9 +90,6 @@ describe('HilosI18nCountryNamesPage', () => {
       'Currency $ USD · Default locale not chosen',
     )
     expect(h.el('country-head-own')).toBeNull()
-    expect(h.el('country-names')?.querySelector('h2')?.textContent).toContain(
-      'Names in different languages',
-    )
     expect(h.el('hilos-page-tabs')?.getAttribute('aria-label')).toBe(
       'Country pages',
     )
@@ -102,7 +99,13 @@ describe('HilosI18nCountryNamesPage', () => {
     const overview = h.el(`hilos-page-tab-${HilosPages.I18N_COUNTRY}`)
     expect(overview?.getAttribute('href')).toBe('/hilos/i18n/countries/us')
     expect(overview?.getAttribute('aria-current')).toBeNull()
-    expect(document.querySelector('table')).not.toBeNull()
+    const table = document.querySelector('table')
+    expect(table).not.toBeNull()
+    const tableNameId = table?.getAttribute('aria-labelledby')
+    expect(
+      document.getElementById(tableNameId ?? '')?.textContent?.trim(),
+    ).toBe('United States')
+    expect(h.el('hilos-table-row-11')?.textContent).toContain('United States')
     h.act(() =>
       bench.countryCard({
         ...countryCard,

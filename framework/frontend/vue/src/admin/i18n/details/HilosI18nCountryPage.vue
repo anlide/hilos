@@ -29,6 +29,7 @@ import {
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
+import HilosLink from '../../../HilosLink.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCountryDelete from './HilosI18nCountryDelete.vue'
@@ -64,6 +65,17 @@ if (!router) {
   throw new Error('HilosI18nCountryPage requires a provided Hilos router.')
 }
 const loading = useSignal(router.pageLoading)
+const namesPath = computed(() =>
+  card.value === null
+    ? undefined
+    : router.resolvePath(HilosPages.I18N_COUNTRY_NAMES, {
+        countryCode: card.value.code,
+      }),
+)
+const enabledLocaleCount = computed(
+  () =>
+    card.value?.summary.locales.filter((locale) => locale.enabled).length ?? 0,
+)
 const { deleteCountry } = createHilosI18nCountryDelete(props.context)
 const deleteOpen = ref(false)
 const deleteTarget = ref<HilosI18nCountryDeleteTarget | null>(null)
@@ -128,12 +140,75 @@ const deleted = (): void => {
       </p>
     </template>
     <template v-if="card">
+      <div class="row row-cols-1 row-cols-sm-2 g-3 mb-4">
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="country-overview-names"
+          >
+            <h2 class="small text-body-secondary">Names</h2>
+            <div class="fs-4 fw-semibold lh-sm my-1">
+              <HilosLink
+                v-if="namesPath !== undefined"
+                :to="namesPath"
+                :aria-label="`Names: ${card.summary.nameCount}`"
+                data-id="country-overview-name-count"
+                >{{ card.summary.nameCount }}</HilosLink
+              >
+              <span v-else data-id="country-overview-name-count">{{
+                card.summary.nameCount
+              }}</span>
+            </div>
+            <p class="small text-body-secondary mb-0">
+              Non-empty base names in other languages; corrections do not count.
+            </p>
+          </section>
+        </div>
+        <div class="col">
+          <section
+            class="border rounded-3 p-3 h-100"
+            data-id="country-overview-locales"
+          >
+            <h2 class="small text-body-secondary">Locales</h2>
+            <div
+              class="fs-4 fw-semibold lh-sm my-1"
+              data-id="country-overview-locale-count"
+            >
+              {{ card.summary.localeCount }}
+            </div>
+            <p class="small text-body-secondary mb-0">
+              Switched on:
+              <span data-id="country-overview-enabled-locale-count">{{
+                enabledLocaleCount
+              }}</span>
+              · Edited in their language cards.
+            </p>
+          </section>
+        </div>
+      </div>
+
       <section class="mb-4" data-id="country-card-main">
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <h2 class="h5 mb-0">Main</h2>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+          <h2 class="h5 mb-0 me-auto">Main</h2>
+          <span
+            v-if="card.enabled"
+            class="badge bg-warning-subtle text-warning-emphasis"
+            data-id="country-card-frozen"
+          >
+            <i class="bi bi-lock me-1" aria-hidden="true"></i>
+            Country switched on — frozen
+          </span>
+          <span
+            v-else
+            class="badge bg-info-subtle text-info-emphasis"
+            data-id="country-card-editable"
+          >
+            <i class="bi bi-pencil me-1" aria-hidden="true"></i>
+            Country switched off — edit freely
+          </span>
           <button
             type="button"
-            class="btn btn-sm ms-auto"
+            class="btn btn-sm"
             :class="
               card.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'
             "
@@ -149,94 +224,111 @@ const deleted = (): void => {
             ></i>
           </button>
         </div>
-        <div class="border rounded-3 p-3">
-          <p
-            v-if="card.enabled"
-            class="badge text-bg-warning mb-3"
-            data-id="country-card-frozen"
-          >
-            Country enabled — frozen
-          </p>
-          <dl class="row mb-0">
-            <dt class="col-sm-4">Code</dt>
-            <dd class="col-sm-8">
-              <span class="text-uppercase" data-id="country-card-code">{{
-                card.code
-              }}</span>
-              <span class="d-block small text-body-secondary">
-                ISO 3166-1 alpha-2, unique. Never changes: locales and names
-                refer to it.
-              </span>
-            </dd>
-            <dt class="col-sm-4">Currency</dt>
-            <dd class="col-sm-8">
-              <span data-id="country-card-currency"
-                >{{ card.currencySymbol }} {{ card.currencyCode }}</span
+        <dl class="border rounded-3 p-3 mb-0">
+          <div class="row align-items-baseline g-2 py-2 border-bottom">
+            <dt class="col-sm-3 small text-body-secondary fw-normal">Code</dt>
+            <dd class="col-sm-3 small fw-semibold mb-0">
+              <span
+                class="font-monospace text-uppercase"
+                data-id="country-card-code"
+                >{{ card.code }}</span
               >
-              <span class="d-block small text-body-secondary">
-                The symbol is for display, the ISO 4217 code is for
-                calculations.
-              </span>
             </dd>
-            <dt class="col-sm-4">Default locale</dt>
-            <dd class="col-sm-8 mb-0">
-              <span data-id="country-card-default-locale">{{
-                card.summary.defaultLocaleCode ?? 'not chosen'
-              }}</span>
-              <span class="d-block small text-body-secondary">
-                Formats used when the country is known but the language is not.
-                Empty takes the formats from the language.
-              </span>
+            <dd class="col-sm-6 small text-body-secondary mb-0">
+              ISO 3166-1 alpha-2, unique. Never changes: locales and names refer
+              to it.
             </dd>
-          </dl>
-        </div>
+          </div>
+          <div class="row align-items-baseline g-2 py-2 border-bottom">
+            <dt class="col-sm-3 small text-body-secondary fw-normal">
+              Currency
+            </dt>
+            <dd
+              class="col-sm-3 small fw-semibold mb-0"
+              data-id="country-card-currency"
+            >
+              {{ card.currencySymbol }}
+              <span class="font-monospace">{{ card.currencyCode }}</span>
+            </dd>
+            <dd class="col-sm-6 small text-body-secondary mb-0">
+              The symbol is for display, the ISO 4217 code is for calculations.
+            </dd>
+          </div>
+          <div class="row align-items-baseline g-2 py-2">
+            <dt class="col-sm-3 small text-body-secondary fw-normal">
+              Default locale
+            </dt>
+            <dd
+              class="col-sm-3 small fw-semibold mb-0"
+              data-id="country-card-default-locale"
+            >
+              {{ card.summary.defaultLocaleCode ?? 'not chosen' }}
+            </dd>
+            <dd class="col-sm-6 small text-body-secondary mb-0">
+              Formats used when the country is known but the language is not.
+              You choose the locale.
+            </dd>
+          </div>
+        </dl>
       </section>
 
       <section class="mb-4" data-id="country-card-state">
         <h2 class="h5">State</h2>
-        <dl class="row mb-0 border rounded-3 p-3">
-          <dt class="col-sm-4">Availability</dt>
-          <dd class="col-sm-8">
-            <span data-id="country-card-enabled">{{
-              card.enabled ? 'Enabled' : 'Disabled'
-            }}</span>
-            <span class="d-block small text-body-secondary">
-              <template v-if="card.enabled">
-                Values are frozen; switch the country off to edit them.
-              </template>
-              <template v-else>
-                Values can be edited; the code never changes.
-              </template>
-            </span>
-            <div class="mt-2">
+        <div class="border rounded-3 p-3">
+          <div
+            class="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom"
+          >
+            <div class="flex-grow-1">
+              <div class="fw-semibold small" data-id="country-card-enabled">
+                {{
+                  card.enabled ? 'Country switched on' : 'Country switched off'
+                }}
+              </div>
+              <p class="small text-body-secondary mb-0">
+                <template v-if="card.enabled">
+                  Values are frozen; switch the country off to edit them.
+                </template>
+                <template v-else>
+                  Values can be edited; the code never changes.
+                </template>
+              </p>
+            </div>
+            <div class="text-nowrap">
               <HilosI18nCountrySwitchOn :context="context" :card="card" />
               <HilosI18nCountrySwitchOff :context="context" :card="card" />
             </div>
-          </dd>
-          <dt class="col-sm-4">Delete country</dt>
-          <dd class="col-sm-8 mb-0" data-id="country-card-delete-verdict">
-            <span id="country-card-delete-reason">{{
-              hilosI18nCountryDeleteReason(deleteSource)
-            }}</span>
-            <div class="mt-2">
-              <button
-                type="button"
-                class="btn btn-sm"
-                :class="
-                  card.summary.canDelete
-                    ? 'btn-outline-danger'
-                    : 'border border-secondary text-body-secondary'
-                "
-                :aria-disabled="!card.summary.canDelete || undefined"
-                aria-describedby="country-card-delete-reason"
-                data-id="country-card-delete"
-                @click="openDelete"
+          </div>
+          <div
+            class="d-flex flex-wrap align-items-center gap-2 py-2"
+            data-id="country-card-delete-verdict"
+          >
+            <div class="flex-grow-1">
+              <div class="fw-semibold small">Delete country</div>
+              <p
+                id="country-card-delete-reason"
+                class="small text-body-secondary mb-0"
               >
-                {{ HILOS_I18N_COUNTRY_DELETE_COPY.open }}
-              </button>
+                {{ hilosI18nCountryDeleteReason(deleteSource) }}
+              </p>
             </div>
-          </dd>
-        </dl>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="
+                card.summary.canDelete
+                  ? 'btn-outline-danger'
+                  : 'border border-secondary text-body-secondary'
+              "
+              :aria-label="HILOS_I18N_COUNTRY_DELETE_COPY.open"
+              :aria-disabled="!card.summary.canDelete || undefined"
+              aria-describedby="country-card-delete-reason"
+              data-id="country-card-delete"
+              @click="openDelete"
+            >
+              <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
       </section>
     </template>
     <div

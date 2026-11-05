@@ -9,6 +9,7 @@ import {
 } from '@hilos/core/base'
 import {
   createHilosI18nCountryNameWindow,
+  HILOS_I18N_COUNTRY_NAME_COPY,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
   type HilosI18nNameRow,
@@ -205,7 +206,7 @@ describe('country name modal', () => {
       )
       expect(hint?.textContent).toBe(
         kind === 'value'
-          ? 'Empty text is saved as your own value. Delete the name to remove it.'
+          ? `${name === null ? HILOS_I18N_COUNTRY_NAME_COPY.hints.baseAdd : HILOS_I18N_COUNTRY_NAME_COPY.hints.baseEdit} Empty text is saved as your own value. Delete the name to remove it.`
           : 'Empty text is saved as your own correction. Delete the correction to inherit the base name.',
       )
       const dialog = document.querySelector('[role="dialog"]')!
@@ -225,6 +226,63 @@ describe('country name modal', () => {
       expect(el('i18n-country-name-title')?.textContent).toContain('Subject')
     },
   )
+
+  it.each([
+    [
+      null,
+      'Names for known countries come from the built-in catalog. Add names manually for custom countries and languages.',
+    ],
+    [
+      '',
+      'This is the base name. All locales of this language without their own correction use it.',
+    ],
+  ] as const)(
+    'describes the %s base name with its mode and empty-value hints',
+    async (name, explanation) => {
+      harness(name)
+      await settled()
+      const hint = document.getElementById(
+        input().getAttribute('aria-describedby')!,
+      )
+      expect(hint?.textContent).toBe(
+        `${explanation} Empty text is saved as your own value. Delete the name to remove it.`,
+      )
+      expect(el('i18n-country-name-window')?.textContent).toContain(
+        'Your saved name is kept when the built-in catalog refreshes. Delete it to let the catalog supply the name again.',
+      )
+    },
+  )
+
+  it('follows live occupation in the base hint while keeping the opening title, draft and save guard', async () => {
+    const h = harness(null)
+    await settled()
+    const hint = document.getElementById(
+      input().getAttribute('aria-describedby')!,
+    )!
+    expect(hint.textContent).toContain(
+      HILOS_I18N_COUNTRY_NAME_COPY.hints.baseAdd,
+    )
+    await fill('My draft')
+    h.focused.set(original)
+    await settled()
+    expect(hint.textContent).toBe(
+      'This is the base name. All locales of this language without their own correction use it. Empty text is saved as your own value. Delete the name to remove it.',
+    )
+    expect(
+      document.getElementById(input().getAttribute('aria-describedby')!),
+    ).toBe(hint)
+    expect(el('i18n-country-name-title')?.textContent).toContain(
+      'Add name · Subject',
+    )
+    expect(input().value).toBe('My draft')
+    expect(el('i18n-country-name-notice')?.textContent).toContain(
+      'Name changed elsewhere to "Original".',
+    )
+    expect(button('submit').disabled).toBe(true)
+    enter()
+    button('submit').click()
+    expect(h.dispatched).toHaveLength(0)
+  })
 
   it.each([null, 'qw-GB'])(
     'submits empty add at %s, keeps a duplicate refusal and succeeds with literal text',

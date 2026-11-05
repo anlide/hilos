@@ -194,7 +194,7 @@ test('updates the whole overview in its existing window after language and custo
 
     await gotoPage(expect, editor, `${ROOT_PATH}/countries/qx`, PAGE_READY)
     await expect(editor.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await submit(editor.getByTestId('country-card-delete'))
     const remove = editor.getByTestId('i18n-country-delete-confirm')

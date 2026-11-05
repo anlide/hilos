@@ -563,7 +563,7 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
   await test.step('Select a country default through UI and preserve that pointer after a real deletion refusal while the country is off', async () => {
     await gotoPage(expect, page, '/hilos/i18n/countries/qq', PAGE_READY)
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await clickSubmit(expect, page.getByTestId('country-card-edit'))
     await page
@@ -602,7 +602,7 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
       'ql-QQ',
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
   })
 })

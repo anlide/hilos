@@ -196,6 +196,202 @@ function harness(
 }
 
 describe('HilosI18nCountryPage', () => {
+  it('draws overview counts from the card and follows live summary changes down to zero', async () => {
+    const h = harness(true)
+    expect(h.view.find('[data-id="country-overview-names"]').exists()).toBe(
+      false,
+    )
+    expect(h.view.find('[data-id="country-overview-locales"]').exists()).toBe(
+      false,
+    )
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      summary: { ...initialCard.summary, nameCount: 7, localeCount: 5 },
+    })
+    await nextTick()
+    expect(h.view.get('[data-id="country-overview-name-count"]').text()).toBe(
+      '7',
+    )
+    expect(h.view.get('[data-id="country-overview-locale-count"]').text()).toBe(
+      '5',
+    )
+    expect(h.view.get('[data-id="country-overview-names"]').text()).toContain(
+      'Non-empty base names in other languages; corrections do not count.',
+    )
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    await nextTick()
+    const names = h.view.get('[data-id="country-overview-name-count"]')
+    expect(names.text()).toBe('0')
+    expect(names.attributes('aria-label')).toBe('Names: 0')
+    expect(names.attributes('href')).toBe('/hilos/i18n/countries/us/names')
+    expect(h.view.get('[data-id="country-overview-locale-count"]').text()).toBe(
+      '0',
+    )
+    expect(
+      h.view.get('[data-id="country-overview-enabled-locale-count"]').text(),
+    ).toBe('0')
+    h.scope.data.set(COUNTRY_CARD_DATA, [])
+    await nextTick()
+    expect(h.view.find('[data-id="country-overview-names"]').exists()).toBe(
+      false,
+    )
+    expect(h.view.find('[data-id="country-overview-locales"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('navigates Names for the current country, follows page scopes, and falls back to text without a mount', async () => {
+    const h = harness(true, {} as ActionLifecycle, true)
+    const navigate = vi.spyOn(h.navigation, 'navigate')
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    await nextTick()
+    const names = h.view.get('[data-id="country-overview-name-count"]')
+    expect(names.element.tagName).toBe('A')
+    expect(names.attributes('aria-label')).toBe('Names: 0')
+    expect(names.attributes('href')).toBe('/hilos/i18n/countries/us/names')
+    await names.trigger('click')
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(
+      '/hilos/i18n/countries/us/names',
+    )
+    h.scopes.dropPage()
+    await nextTick()
+    expect(h.view.find('[data-id="country-overview-names"]').exists()).toBe(
+      false,
+    )
+    expect(h.view.find('[data-id="country-overview-locales"]').exists()).toBe(
+      false,
+    )
+    const next = h.scopes.openPage(HilosPages.I18N_COUNTRY)
+    next.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      countryId: 140,
+      code: 'ie',
+      summary: { ...initialCard.summary, nameCount: 3 },
+    })
+    await nextTick()
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    await nextTick()
+    const currentNames = h.view.get('[data-id="country-overview-name-count"]')
+    expect(currentNames.text()).toBe('3')
+    expect(currentNames.attributes('aria-label')).toBe('Names: 3')
+    expect(currentNames.attributes('href')).toBe(
+      '/hilos/i18n/countries/ie/names',
+    )
+    await currentNames.trigger('click')
+    expect(navigate).toHaveBeenLastCalledWith('/hilos/i18n/countries/ie/names')
+    h.view.unmount()
+
+    const fallback = harness(false, {} as ActionLifecycle, false, {
+      initialCardValue: initialCard,
+    })
+    expect(
+      fallback.view.get('[data-id="country-overview-name-count"]').text(),
+    ).toBe('0')
+    expect(
+      fallback.view.find('[data-id="country-overview-names"] a').exists(),
+    ).toBe(false)
+  })
+
+  it('keeps Locales as data and counts switched-on locales again when the list changes', async () => {
+    const h = harness(true)
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      summary: {
+        ...initialCard.summary,
+        localeCount: 3,
+        locales: [
+          { localeId: 1, code: 'en-US', enabled: true },
+          { localeId: 2, code: 'es-US', enabled: false },
+          { localeId: 3, code: 'fr-US', enabled: true },
+        ],
+      },
+    })
+    await nextTick()
+    const locales = h.view.get('[data-id="country-overview-locales"]')
+    expect(locales.get('h2').text()).toBe('Locales')
+    expect(
+      locales.get('[data-id="country-overview-locale-count"]').text(),
+    ).toBe('3')
+    expect(
+      locales.get('[data-id="country-overview-enabled-locale-count"]').text(),
+    ).toBe('2')
+    expect(locales.text()).toContain('Edited in their language cards.')
+    expect(locales.find('a, button, [role="link"]').exists()).toBe(false)
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      summary: {
+        ...initialCard.summary,
+        localeCount: 1,
+        locales: [{ localeId: 2, code: 'es-US', enabled: true }],
+      },
+    })
+    await nextTick()
+    expect(
+      locales.get('[data-id="country-overview-locale-count"]').text(),
+    ).toBe('1')
+    expect(
+      locales.get('[data-id="country-overview-enabled-locale-count"]').text(),
+    ).toBe('1')
+    expect(locales.find('a, button, [role="link"]').exists()).toBe(false)
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    await nextTick()
+    expect(
+      locales.get('[data-id="country-overview-locale-count"]').text(),
+    ).toBe('0')
+    expect(
+      locales.get('[data-id="country-overview-enabled-locale-count"]').text(),
+    ).toBe('0')
+    expect(locales.find('a, button, [role="link"]').exists()).toBe(false)
+  })
+
+  it('keeps a refused deletion focusable and described, guarding click and keyboard activation', async () => {
+    const dispatch = vi.fn()
+    const h = harness(
+      false,
+      { dispatch } as unknown as ActionLifecycle,
+      false,
+      {
+        initialCardValue: initialCard,
+      },
+    )
+    const remove = h.view.get('[data-id="country-card-delete"]')
+    expect(remove.attributes('aria-label')).toBe('Delete country')
+    expect(remove.get('i').attributes('aria-hidden')).toBe('true')
+    expect(remove.attributes('aria-disabled')).toBe('true')
+    expect(remove.attributes('aria-describedby')).toBe(
+      'country-card-delete-reason',
+    )
+    expect((remove.element as HTMLButtonElement).disabled).toBe(false)
+    ;(remove.element as HTMLButtonElement).focus()
+    expect(document.activeElement).toBe(remove.element)
+    expect(h.view.get('#country-card-delete-reason').text()).toContain(
+      'the built-in catalog knows this country',
+    )
+    for (const key of ['Enter', ' ']) {
+      await remove.trigger('keydown', { key })
+      await remove.trigger('keyup', { key })
+      // jsdom does not synthesize a button's native keyboard click.
+      await remove.trigger('click')
+      expect(
+        document.querySelector('[data-id="i18n-country-delete-window"]'),
+      ).toBeNull()
+      expect(dispatch).not.toHaveBeenCalled()
+    }
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      summary: { ...initialCard.summary, deleteReason: 'locales' },
+    })
+    await nextTick()
+    expect(h.view.get('#country-card-delete-reason').text()).toBe(
+      'Cannot delete: locales refer to this country',
+    )
+    await remove.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).toBeNull()
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
   it('waits for the first card, then shows the country block, its read-only fields and the Overview · Names row', async () => {
     const h = harness(true, {} as ActionLifecycle, false, { realShell: true })
     expect(h.view.find('[data-id="country-head-tile"]').exists()).toBe(false)
@@ -219,14 +415,10 @@ describe('HilosI18nCountryPage', () => {
     const block = h.view.get('[data-id="hilos-page-head-block"]')
     const tile = block.get('[data-id="country-head-tile"]')
     expect(tile.text()).toBe('us')
-    expect(tile.classes()).toEqual(
-      expect.arrayContaining(['text-uppercase', 'rounded-3']),
-    )
     expect(tile.attributes('aria-hidden')).toBe('true')
     expect(tile.find('img').exists()).toBe(false)
     const code = block.get('[data-id="country-head-code"]')
     expect(code.text()).toBe('us')
-    expect(code.classes()).toContain('text-uppercase')
     expect(block.get('[data-id="country-head-description"]').text()).toBe(
       'Currency $ USD · Default locale not chosen',
     )
@@ -254,12 +446,11 @@ describe('HilosI18nCountryPage', () => {
     )
     expect(h.view.find('[data-id="country-card-frozen"]').exists()).toBe(false)
     expect(h.view.find('[data-id="country-card-enabled"]').text()).toBe(
-      'Disabled',
+      'Country switched off',
     )
     expect(h.view.find('#country-card-delete-reason').text()).toContain(
       'the built-in catalog knows this country',
     )
-    expect(h.view.findAll('button')).toHaveLength(3)
     expect(
       h.view.get('[data-id="country-card-edit"]').attributes('aria-label'),
     ).toBe('Edit country')
@@ -271,15 +462,43 @@ describe('HilosI18nCountryPage', () => {
   })
 
   it('opens edit and view from Main, including for an admin-view reader', async () => {
-    const h = harness(false, {} as ActionLifecycle, true)
+    const dispatch = vi.fn()
+    const h = harness(false, { dispatch } as unknown as ActionLifecycle, true)
     h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
     await nextTick()
+    expect(h.view.get('[data-id="country-card-editable"]').text()).toBe(
+      'Country switched off — edit freely',
+    )
+    expect(h.view.get('[data-id="country-card-enabled"]').text()).toBe(
+      'Country switched off',
+    )
     const edit = h.view.get('[data-id="country-card-edit"]')
     expect((edit.element as HTMLButtonElement).disabled).toBe(false)
     await edit.trigger('click')
     expect(
       document.querySelector('[data-id="i18n-country-title"]')?.textContent,
     ).toContain('Edit country · United States')
+    const symbol = document.querySelector<HTMLInputElement>(
+      '[data-id="i18n-country-edit-currency-symbol"]',
+    )!
+    expect(symbol.disabled).toBe(false)
+    symbol.value = 'US$'
+    symbol.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    const save = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-country-save"]',
+    )!
+    expect(save.disabled).toBe(true)
+    save.click()
+    document
+      .getElementById('i18n-country-edit-form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(dispatch).not.toHaveBeenCalled()
+    // Return the draft to its baseline so Cancel closes without discarding.
+    symbol.value = '$'
+    symbol.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
     document
       .querySelector<HTMLButtonElement>('[data-id="i18n-country-cancel"]')
       ?.click()
@@ -288,12 +507,21 @@ describe('HilosI18nCountryPage', () => {
     await nextTick()
     const eye = h.view.get('[data-id="country-card-view"]')
     expect(eye.attributes('title')).toBe('View country: nothing to edit')
-    expect(h.view.find('[data-id="country-card-frozen"]').exists()).toBe(true)
+    expect(h.view.get('[data-id="country-card-frozen"]').text()).toBe(
+      'Country switched on — frozen',
+    )
+    expect(h.view.find('[data-id="country-card-editable"]').exists()).toBe(
+      false,
+    )
+    expect(h.view.get('[data-id="country-card-enabled"]').text()).toBe(
+      'Country switched on',
+    )
     await eye.trigger('click')
     expect(
       document.querySelector('[data-id="i18n-country-title"]')?.textContent,
     ).toContain('Country · United States')
     expect(document.querySelector('[data-id="i18n-country-save"]')).toBeNull()
+    expect(dispatch).not.toHaveBeenCalled()
     document
       .querySelector<HTMLButtonElement>('[data-id="i18n-country-close"]')
       ?.click()
@@ -323,20 +551,11 @@ describe('HilosI18nCountryPage', () => {
     await nextTick()
     const title = h.view.get('[data-id="hilos-page-head-title"]')
     expect(title.text()).toBe('Unnamed country')
-    expect(title.classes()).not.toContain('text-uppercase')
     expect(h.view.get('[data-id="country-head-tile"]').text()).toBe('qx')
     expect(h.view.get('[data-id="country-head-code"]').text()).toBe('qx')
     const own = h.view.get(
       '[data-id="hilos-page-head-block"] [data-id="country-head-own"]',
     )
-    expect(own.classes()).toEqual(
-      expect.arrayContaining([
-        'badge',
-        'text-bg-warning-subtle',
-        'text-warning-emphasis',
-      ]),
-    )
-    expect(own.get('i').classes()).toContain('bi-question-circle')
     expect(own.get('i').attributes('aria-hidden')).toBe('true')
     expect(own.get('.visually-hidden').text()).toBe(
       'Custom country. This country is absent from the catalog and source.',
@@ -493,14 +712,11 @@ describe('HilosI18nCountryPage', () => {
       'Currency € EUR · Default locale en-US',
     )
     expect(h.view.find('[data-id="country-card-frozen"]').text()).toBe(
-      'Country enabled — frozen',
+      'Country switched on — frozen',
     )
     expect(h.view.find('[data-id="country-card-enabled"]').text()).toBe(
-      'Enabled',
+      'Country switched on',
     )
-    expect(
-      h.view.find('[data-id="country-card-state"]').findAll('button'),
-    ).toHaveLength(2)
     expect(h.view.find('[data-id="country-card-switch-off"]').exists()).toBe(
       true,
     )
@@ -858,6 +1074,8 @@ describe('HilosI18nCountryPage under a country deleted elsewhere', () => {
       'hilos-page-head',
       'hilos-breadcrumb',
       'hilos-page-tabs',
+      'country-overview-names',
+      'country-overview-locales',
       'country-card-main',
       'country-card-state',
       'country-card-unavailable',

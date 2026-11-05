@@ -51,6 +51,10 @@ export const HILOS_I18N_COUNTRY_NAME_COPY = {
     name: 'Name',
   },
   hints: {
+    baseAdd:
+      'Names for known countries come from the built-in catalog. Add names manually for custom countries and languages.',
+    baseEdit:
+      'This is the base name. All locales of this language without their own correction use it.',
     base: 'Empty text is saved as your own value. Delete the name to remove it.',
     correction:
       'Empty text is saved as your own correction. Delete the correction to inherit the base name.',

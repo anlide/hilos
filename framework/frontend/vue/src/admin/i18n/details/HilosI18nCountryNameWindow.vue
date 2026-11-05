@@ -20,6 +20,7 @@ const props = defineProps<{ window: HilosI18nCountryNameWindow }>()
 const copy = HILOS_I18N_COUNTRY_NAME_COPY
 const opened = useSignal(props.window.opened)
 const target = useSignal(props.window.target)
+const mode = useSignal(props.window.mode)
 const form = useSignal(props.window.form)
 const state = useSignal(props.window.state)
 const dirty = useSignal(props.window.dirty)
@@ -52,7 +53,9 @@ const title = computed(() => {
   return `${copy.title[key]} · ${held.countryName}`
 })
 const hint = computed(() =>
-  target.value?.localeCode === null ? copy.hints.base : copy.hints.correction,
+  target.value?.localeCode === null
+    ? `${mode.value === 'add' ? copy.hints.baseAdd : copy.hints.baseEdit} ${copy.hints.base}`
+    : copy.hints.correction,
 )
 const modalOpen = computed({
   get: () => opened.value,
