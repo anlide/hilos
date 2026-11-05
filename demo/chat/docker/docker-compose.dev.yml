@@ -85,7 +85,7 @@ services:
   # read where a person can see it (P-062). Development mail never leaves the box
   # — the catcher accepts everything and forwards nothing.
   mailpit-dev:
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     container_name: chat-mailpit-dev
     environment:
       # A development relay authenticates nobody and encrypts nothing; the daemon

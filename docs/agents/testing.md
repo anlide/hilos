@@ -674,7 +674,7 @@ Each demo's root `docker/docker-compose.cluster.yml` keeps the project name and
 `x-hilos-cluster`. One `include` path-list merges `cluster/local.yml` with
 `cluster/tooling.yml`. Local services extend the canonical `database.yml`,
 `node.yml` and, where present, `entry.yml` in that directory. Those canonical
-services do not become extra nodes in the aggregate. Compose 2.40.3, pinned in
+services do not become extra nodes in the aggregate. Compose 5.6.1, pinned in
 the harness, resolves this model directly, including `!reset` and `!override`.
 
 The local aggregate removes standalone port publications with `ports: !reset []`.
@@ -781,11 +781,12 @@ Every invocation builds `framework/docker/Dockerfile.cluster-harness` with
 Docker's normal cache and without `--pull`, then runs that invocation's exact
 image ID in a disposable `--rm --init` container. The first build happens
 automatically; unchanged inputs use cached layers on later invocations. The
-image pins Python 3.12.12, Docker CLI 28.5.1 and Compose 2.40.3. It reads the
-current Python sources from the repository mount. The launcher preserves
-arguments, standard streams, exit codes and signals; build output goes to
-stderr, leaving `inspect` stdout as JSON. The container has temporary `HOME`
-and `DOCKER_CONFIG`, and Python bytecode is not written into the repository.
+image pins Python 3.12.16 on Alpine 3.24.3, Docker CLI 29.9.2, Compose 5.6.1
+and Buildx 0.38.1. It reads the current Python sources from the repository mount.
+The launcher preserves arguments, standard streams, exit codes and signals;
+build output goes to stderr, leaving `inspect` stdout as JSON. The container
+has temporary `HOME` and `DOCKER_CONFIG`, and Python bytecode is not written
+into the repository.
 
 The repository is mounted read/write at its physical absolute path, and the
 container working directory is the physical demo directory. It mounts the

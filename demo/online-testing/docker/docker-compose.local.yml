@@ -23,7 +23,7 @@ services:
   # MySQL: inside the network use online-testing-mysql-local:3306. From host
   # use localhost:${MYSQL_HOST_PORT} (default 33071).
   online-testing-mysql-local:
-    image: mariadb:11.4
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     container_name: online-testing-mysql-local
     ports:
       # Host-side of every publish binds to loopback by default; set
@@ -54,7 +54,7 @@ services:
   # and its web UI is published on the host, so a code is read where a person
   # can see it.
   online-testing-mailpit-local:
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     container_name: online-testing-mailpit-local
     environment:
       # A local relay authenticates nobody and encrypts nothing; the daemon
@@ -206,7 +206,7 @@ services:
   # Internal dev gateway: the frontend reads public Status files from the
   # writer's shared directory even when no daemon answers. No host listener.
   online-testing-files-local:
-    image: nginx:alpine
+    image: nginx:1.31.8-alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
     container_name: online-testing-files-local
     volumes:
       - ./nginx.files-local.conf:/etc/nginx/conf.d/default.conf:ro
@@ -223,13 +223,15 @@ services:
   # import.meta.env mechanism, so the dev server proxies the app's same-origin
   # /ws to the daemon (frontend/proxy.conf.json).
   online-testing-frontend-local:
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: online-testing-frontend-local
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/online-testing/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # Browser storage belongs to DOM tests and the browser, not Node SSR.
+      NODE_OPTIONS: "--no-experimental-webstorage"
     command: sh -c "npm install && npm run dev"
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_DEV_PORT:-5178}:5173"
@@ -241,7 +243,7 @@ services:
   # Profile cli so it never starts with the stack — invoked per command via
   # `run --rm` (see the composer frontend:* scripts).
   online-testing-frontend-cli-local:
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: online-testing-frontend-cli-local
     volumes:
       - ../../..:/hilos
@@ -254,6 +256,8 @@ services:
     working_dir: /hilos/demo/online-testing/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # Browser storage belongs to DOM tests and the browser, not Node SSR.
+      NODE_OPTIONS: "--no-experimental-webstorage"
     profiles:
       - cli
     networks:

@@ -49,7 +49,7 @@ function playwrightInfo(timeout = 30_000, scale = 1, retry = 0) {
     set timeout(timeoutMs: number) {
       slot.timeout = timeoutMs
     },
-    config: { version: '1.60.0', metadata: { hilosTimeoutScale: scale } },
+    config: { version: '1.64.1', metadata: { hilosTimeoutScale: scale } },
     _timeoutManager: manager,
     _onDidFinishTestFunctionCallbacks: new Set<() => void>(),
     file: join(process.cwd(), 'tests', 'adaptive.spec.ts'),
@@ -495,14 +495,14 @@ it('rejects unsupported versions before pressure, listener registration or use',
   const readPressure = vi.fn().mockReturnValue(TRIPLE)
   const fixture = captureFixture({ readPressure })
   const { info, manager, slot } = playwrightInfo()
-  info.config.version = '1.60.1'
+  info.config.version = '1.64.2'
   const add = vi.spyOn(info._onDidFinishTestFunctionCallbacks, 'add')
   const interval = vi.spyOn(globalThis, 'setInterval')
   const use = vi.fn()
   await expect(
     fixture({ adaptiveTimeout: undefined }, use, info as unknown as TestInfo),
   ).rejects.toThrow(
-    'hilos adaptive timeouts: unsupported Playwright version "1.60.1"; supported: 1.60.0',
+    'hilos adaptive timeouts: unsupported Playwright version "1.64.2"; supported: 1.64.1',
   )
   expect(readPressure).not.toHaveBeenCalled()
   expect(add).not.toHaveBeenCalled()
@@ -526,7 +526,7 @@ it('rejects incompatible internals before pressure, listener registration or use
   await expect(
     fixture({ adaptiveTimeout: undefined }, use, info as unknown as TestInfo),
   ).rejects.toThrow(
-    'hilos adaptive timeouts: incompatible Playwright 1.60.0 timeout internals',
+    'hilos adaptive timeouts: incompatible Playwright 1.64.1 timeout internals',
   )
   expect(readPressure).not.toHaveBeenCalled()
   expect(add).not.toHaveBeenCalled()

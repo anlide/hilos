@@ -394,7 +394,6 @@ test('Angular Service status reads Maintenance during a real freeze and History 
   const publicLog = watchPublicStatus(guest)
   cleanup.defer(() => log.stop())
   cleanup.defer(() => overview.stop())
-  cleanup.defer(() => publicLog.stop())
   cleanup.defer(() =>
     test.info().attach('angular-status-freeze-history', {
       body: JSON.stringify({
@@ -405,6 +404,10 @@ test('Angular Service status reads Maintenance during a real freeze and History 
       contentType: 'application/json',
     }),
   )
+  cleanup.defer(() => publicLog.stop())
+  // Close before draining captures that may still belong to an old document.
+  // The early registration also covers failures before observer setup.
+  cleanup.defer(() => guestContext.close())
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, STATUS_PATH)
   await expect.poll(() => overview.latest()).toBeDefined()

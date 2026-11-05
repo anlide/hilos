@@ -139,63 +139,57 @@ the output graph and the separate permission inventory.
 ## Angular versions: exact in every root, a range only in the peers
 
 **Every npm root in the tree that carries Angular declares every `@angular/*`
-of its `dependencies` / `devDependencies` exactly, and all of them declare the
-same version.** An npm root is a directory with its own `package-lock.json`; it
-carries Angular when its manifest, or the manifest of a member of its
-workspace, names an `@angular/*` package in those two fields — every
-`package.json` outside `node_modules` that names `@angular/` points at one.
-Today there are three: the SDK workspace `framework/frontend` — its Angular
-entries live in the manifest of the `@hilos/angular` view layer,
-`framework/frontend/angular/package.json` — and the two consumers of that layer,
-`demo/polls/frontend`, the Angular conformance demo, and
-`demo/online-testing/frontend`. In those two fields the SDK
-manifest declares `@angular/compiler`, `@angular/compiler-cli` and
-`@angular/platform-browser`; each demo declares `@angular/common`,
-`@angular/compiler`, `@angular/core` and `@angular/platform-browser`, plus
-`@angular/build`, `@angular/cli`, `@angular/compiler-cli`,
-`@angular/platform-server`, `@angular/router` and `@angular/ssr`. Every one of
-them reads `22.2.3`, with no caret and no tilde. The frontend of a new project
+of its `dependencies` / `devDependencies` exactly. Keep two version families:
+all packages within a family have the same exact version, and that family's
+version is equal across every root. Both families keep the same Angular major.**
+An npm root is a directory with its own `package-lock.json`; it carries Angular
+when its manifest, or the manifest of a workspace member, names an `@angular/*`
+package in those two fields. Today the families are:
+
+| Family | Packages | Exact version |
+|---|---|---|
+| Framework | `@angular/common`, `@angular/compiler`, `@angular/compiler-cli`, `@angular/core`, `@angular/platform-browser`, `@angular/platform-server`, `@angular/router` | `22.2.4` |
+| Tooling | `@angular/build`, `@angular/cli`, `@angular/ssr` | `22.2.5` |
+
+Today there are three roots: the SDK workspace `framework/frontend`, whose
+Angular entries live in `framework/frontend/angular/package.json`, and the
+consumers `demo/polls/frontend` and `demo/online-testing/frontend`. The SDK
+declares compiler, compiler-cli and platform-browser; the consumers declare the
+framework and tooling packages listed above. Each existing entry uses its
+family's exact version, with no caret or tilde. Do not add an otherwise unneeded
+package just to complete a family. A new project's frontend
 ([docs/new-project/README.md](../../new-project/README.md), *Project layout*)
-joins them with the first `@angular/*` its manifest names, and the rule binds
-it from its first install. `22.2.3` and the three roots are today's facts, not a
-list to keep: what the rule fixes is that the entries are exact and equal
-across every root that carries Angular, whatever the number is and however
-many roots there are. The reason sits inside Angular. Its packages hold each
-other to an exact version in their own `peerDependencies` —
-`@angular/core@22.2.3` declares `{"@angular/compiler": "22.2.3"}`, readable in
-`framework/frontend/package-lock.json` — so one caret resolved a minor ahead of
-its siblings drags the whole framework in, and the lockfile shows it as an
-ordinary neighbour bump.
+joins the rule with its first Angular entry.
+
+The reason is Angular's peer contracts. Framework packages hold each other to
+exact versions: `@angular/core@22.2.4`, for example, declares
+`{"@angular/compiler": "22.2.4"}` in its peers. Tooling accepts compatible
+framework ranges: build and ssr `22.2.5` accept framework `^22.0.0`. This permits
+the two selected patch versions; it does not permit arbitrary mixed versions.
+A caret on a direct framework entry can still resolve ahead of its siblings
+and drag the framework along as an ordinary lockfile neighbour bump.
 
 **Three kinds of entry beside them are ranges on purpose; do not "fix" them into
 exact versions.** The `peerDependencies` of `@hilos/angular` —
-`"@angular/common": "^22"` and `"@angular/core": "^22"` — stay a range: a peer
-range is what a consuming project resolves against, and the SDK declares the
-major it is compatible with, not the version a project must install.
-`"ng-packagr": "^22.0.0"` in the same manifest stays a caret: its own peer on
-`@angular/compiler-cli` is a range (`^22.0.0 || ^22.2.0-next || ^22.3.0-next`),
-so it does not drag Angular by itself — but it belongs to the same set when
-Angular is lifted.
+`"@angular/common": "^22"` and `"@angular/core": "^22"` — stay ranges: the SDK
+declares its compatible major, and a consumer resolves that range.
+`"ng-packagr": "^22.2.5"` stays a caret: its compiler-cli peer is a compatible
+range, so it does not drag Angular by itself, but it moves with the Angular set.
 The `typescript` entry stays a tilde (`"~6.0.3"` today) in every root that
-carries Angular — today `demo/polls/frontend/package.json`,
-`demo/online-testing/frontend/package.json` and the workspace root
-`framework/frontend/package.json` — because `@angular/compiler-cli`
-requires `typescript >=6.0 <6.1`. This section rules on the Angular set and on
-that tilde; it says nothing about any other range in any of these roots.
+carries Angular — the two consumers and `framework/frontend/package.json` —
+because compiler-cli requires `typescript >=6.0 <6.1`. This section rules on
+the Angular set and that tilde, not on other ranges in these roots.
 
-**Add a new `@angular/*` package at the version already in the tree; lift
-Angular as one change to every root.** A new `@angular/*` entry, in any root,
-is written as the exact version the tree already carries. Do not write a
-caret, and do not take a newer version because the registry offers one — a bare
-`npm install @angular/<name>` does both at once, so name the version
-(`--save-exact @angular/<name>@<the version in the tree>`) or write the manifest
-line by hand. A new project's frontend is no exception: its first install
-writes that root's whole Angular set in one command, exactly, at the version
-the tree already carries — not at the ranges of the manifest a generator
-writes. Upgrading Angular is one deliberate edit of every root in the same
-change: in each root, install that root's whole Angular set at the new version
-in one command. Never let Angular move as a side effect of installing something
-else, and never leave one root ahead of the rest.
+**Add a new `@angular/*` package at its family's version already in the tree;
+lift Angular as one change to every root.** Do not use a caret or take a newer
+version because the registry offers one. Name the selected exact version
+(`--save-exact @angular/<name>@<family version>`) or write the manifest by hand.
+A new project's first install writes its whole Angular set together at the
+corresponding family versions, not at a generator's ranges or registry latest.
+An upgrade deliberately edits every root together: install each root's whole
+Angular set in one command, using each family's selected exact version. Never
+let Angular move as a side effect of installing something else, and never leave
+one root ahead of the corresponding family in the others.
 
 **Do not delete a `package-lock.json` to get past an `ERESOLVE` conflict.** The
 lockfile is the resolution of every range in its root, not only of the entry
@@ -203,6 +197,7 @@ being changed, so deleting it re-resolves all of them. On HIL-974 that carried
 137 unrelated versions along in `demo/polls/frontend` (+46 / −100 packages)
 while the intended change was ten Angular packages. Instead, install the version
 already in the tree, or lift the whole Angular set of that root in one install.
+Do not bypass a peer conflict with `--force` or `--legacy-peer-deps`.
 
 In the SDK workspace, the only step that fails on a mixed Angular is the AOT
 build of `@hilos/angular` (`ng-packagr`), i.e.

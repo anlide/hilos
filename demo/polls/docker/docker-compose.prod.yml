@@ -79,13 +79,15 @@ services:
   # builder. Run on demand via the `build` profile, before bringing up
   # polls-frontend-prod.
   polls-frontend-builder:
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: polls-frontend-builder-prod
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/polls/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # Browser storage belongs to DOM tests and the browser, not Node SSR.
+      NODE_OPTIONS: "--no-experimental-webstorage"
     command: sh -c "npm install && npm run build"
     profiles:
       - build

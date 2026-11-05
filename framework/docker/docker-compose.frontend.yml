@@ -15,7 +15,7 @@ services:
   # node_modules lands in the project via the bind-mount, where PhpStorm sees it.
   hilos-frontend-cli:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: hilos-frontend-cli${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../..:/hilos
@@ -27,6 +27,8 @@ services:
     environment:
       # Silence npm's update-notifier; the version is pinned by the image.
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # Browser storage belongs to DOM tests and the browser, not Node SSR.
+      NODE_OPTIONS: "--no-experimental-webstorage"
     # A crashing Node (an out-of-memory abort in a test worker) must not drop a
     # multi-gigabyte, root-owned core file into the bind-mounted project.
     ulimits:

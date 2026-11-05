@@ -50,9 +50,9 @@ function isSlot(value: unknown): value is Slot {
   )
 }
 
-/** Read only the installed 1.60.0 fields needed to observe native deadlines. */
+/** Read only the installed 1.64.1 fields needed to observe native deadlines. */
 function nativeInfo(info: TestInfo): NativeInfo {
-  assert.equal(info.config.version, '1.60.0')
+  assert.equal(info.config.version, '1.64.1')
   const value: unknown = info
   assert.ok(isRecord(value) && isRecord(value._timeoutManager))
   assert.ok(typeof value._timeoutManager.defaultSlot === 'function')

@@ -21,7 +21,7 @@ services:
   # here for the day it does, and meanwhile it gives a stray message somewhere to
   # land other than the work tree.
   polls-mailpit-dev:
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     container_name: polls-mailpit-dev
     environment:
       # A local relay authenticates nobody and encrypts nothing; the daemon

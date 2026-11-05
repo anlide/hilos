@@ -44,7 +44,7 @@ demo/<name>/
     e2e/               # Playwright package (own package.json; own eslint and prettier configs)
   docker/
     Dockerfile         # php:8.4.27-cli + sockets/pcntl/posix/mysqli/pdo + pecl event
-    Dockerfile.nginx   # nginx:alpine + envsubst + self-signed TLS entrypoint
+    Dockerfile.nginx   # pinned nginx:1.31.8-alpine + envsubst + self-signed TLS entrypoint
     nginx.conf.template
     docker-entrypoint-nginx.sh
     mysql/init.sql     # first-boot DB + grants (project DB name hardcoded)

@@ -74,13 +74,14 @@ services:
   # the same layout as the test builder. Run on demand via the `build` profile,
   # before bringing up chat-frontend-prod.
   chat-frontend-builder:
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: chat-frontend-builder-prod
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/chat/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NODE_OPTIONS: "--no-experimental-webstorage"
     command: sh -c "npm install && npm run build"
     profiles:
       - build

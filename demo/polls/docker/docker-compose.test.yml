@@ -13,7 +13,7 @@ name: hilos-polls-test${HILOS_STAND_SUFFIX:-}
 services:
   polls-mysql-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: mariadb:11.4
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     container_name: polls-mysql-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the three demos spell
     # their database service three different ways, so it is asked for by role rather
@@ -60,7 +60,7 @@ services:
   # other than the work tree. No host ports: nothing outside the stack talks to it.
   polls-mailpit-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     container_name: polls-mailpit-test${HILOS_STAND_SUFFIX:-}
     environment:
       # A test relay authenticates nobody and encrypts nothing; the daemon
@@ -264,7 +264,7 @@ services:
   # serves.
   polls-frontend-cli-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: polls-frontend-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../../..:/hilos
@@ -277,6 +277,8 @@ services:
     working_dir: /hilos/demo/polls/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # Browser storage belongs to DOM tests and the browser, not Node SSR.
+      NODE_OPTIONS: "--no-experimental-webstorage"
     profiles:
       - cli
     # The stand's claimed network: without one, compose makes a <project>_default
@@ -371,7 +373,7 @@ services:
   # bind-mount (docs/agents/frontend/build-and-docker.md).
   polls-e2e-runner:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: mcr.microsoft.com/playwright:v1.60.0-noble
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
     container_name: polls-e2e-runner${HILOS_STAND_SUFFIX:-}
     # The browser's scratch lives in memory: chromium runs with
     # --disable-dev-shm-usage, so its shared memory and profile churn land in

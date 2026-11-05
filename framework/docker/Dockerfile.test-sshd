@@ -5,7 +5,7 @@
 # way the chat stand grew a mail interceptor rather than mocking SMTP.
 #
 # Used only via docker compose, only under the `test` profile.
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
 # openssh-client is here for ssh-keygen (host and client keys) and ssh-keyscan,
 # which the compose healthcheck asks whether sshd is answering yet.

@@ -276,7 +276,7 @@ only when that deletion is intended:
 
 The root includes one merged pair, `docker/cluster/local.yml` and
 `docker/cluster/tooling.yml`. Local services extend `database.yml`, `node.yml`
-and `entry.yml` there; the canonical services add no extra nodes. Compose 2.40.3,
+and `entry.yml` there; the canonical services add no extra nodes. Compose 5.6.1,
 pinned by the harness, resolves `ports: !reset []` and per-node
 `env_file: !override`. Local nodes load tracked `.env.example`, `common.env`
 and their fixed `nodes/<id>.env`. The CLI is default-on, with `APP_ENV=test`

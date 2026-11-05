@@ -165,7 +165,7 @@
   "dependencies": {
     "@hilos/core": "*",
     "bootstrap": "^5.3.3",
-    "bootstrap-icons": "^1.13.1"
+    "bootstrap-icons": "^1.13.2"
   },
   "peerDependencies": {
     "vue": "^3"
@@ -174,10 +174,10 @@
     "@vitejs/plugin-vue": "^6.0.0",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^21.0.4",
-    "sass-embedded": "^1.83.0",
+    "sass-embedded": "^1.107.1",
     "vite": "^7.0.0",
     "vite-plugin-lib-inject-css": "^2.2.2",
     "vue": "^3.5.35",
-    "vue-tsc": "^3.3.4"
+    "vue-tsc": "^3.3.14"
   }
 }

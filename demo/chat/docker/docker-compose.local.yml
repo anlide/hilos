@@ -17,7 +17,7 @@ services:
   # MySQL: inside the network use mysql-local:3306. From host use localhost:${MYSQL_HOST_PORT} (default 33060 for demo/chat).
   # To publish it on a different host port, set MYSQL_HOST_PORT in docker/.env (not ../.env).
   mysql-local:
-    image: mariadb:11.4
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     container_name: chat-mysql-local
     ports:
       # Host-side of every publish binds to loopback by default; set
@@ -48,7 +48,7 @@ services:
   # read where a person can see it (P-062). Local mail never leaves the box — the
   # catcher accepts everything and forwards nothing.
   mailpit-local:
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     container_name: chat-mailpit-local
     environment:
       # A local relay authenticates nobody and encrypts nothing; the daemon
@@ -285,7 +285,7 @@ services:
   # frames through the daemon (HIL-456). No profile: starts with daemon-start alongside
   # the default stack. No published ports: only the Vite container reaches it.
   chat-files-local:
-    image: nginx:alpine
+    image: nginx:1.31.8-alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
     container_name: chat-files-local
     volumes:
       - ./nginx.files-local.conf:/etc/nginx/conf.d/default.conf:ro
@@ -303,13 +303,14 @@ services:
   # resolves, and runs npm install first so a fresh checkout or an SDK re-vendor is
   # picked up. Native WSL2 filesystem events drive HMR — no polling (see vite.config.ts).
   chat-frontend-local:
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: chat-frontend-local
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/chat/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NODE_OPTIONS: "--no-experimental-webstorage"
       # Registry files (attachments, thumbnails) proxy same-origin (Vite → files-nginx → daemon)
       # so the session cookie rides along; nginx streams the bytes from disk via X-Accel.
       VITE_FILES_TARGET: "http://chat-files-local"
@@ -324,13 +325,14 @@ services:
   # Profile cli so it never starts with the stack — invoked per command via
   # `run --rm` (see the composer frontend:* scripts).
   chat-frontend-cli-local:
-    image: node:24-bookworm-slim
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
     container_name: chat-frontend-cli-local
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/chat/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NODE_OPTIONS: "--no-experimental-webstorage"
     profiles:
       - cli
 

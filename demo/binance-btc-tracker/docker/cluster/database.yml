@@ -2,7 +2,7 @@
 services:
   database:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: mariadb:11.4
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
     # name (HIL-841).

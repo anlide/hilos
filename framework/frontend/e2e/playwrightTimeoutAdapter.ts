@@ -1,8 +1,8 @@
 import type { TestInfo } from '@playwright/test'
 
-const SUPPORTED_VERSION = '1.60.0'
+const SUPPORTED_VERSION = '1.64.1'
 const INCOMPATIBLE_INTERNALS =
-  'hilos adaptive timeouts: incompatible Playwright 1.60.0 timeout internals'
+  'hilos adaptive timeouts: incompatible Playwright 1.64.1 timeout internals'
 
 /** The attempt's overall budget, independent of the active fixture's slot. @internal */
 export interface TimeoutBudgetPort {

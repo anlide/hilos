@@ -2783,7 +2783,9 @@ test.describe('React fixed rem text window stylesheet invalidation', () => {
       })
       await settleTableLayout(page)
       await expectTableTextControl(expect, page, 'a', false)
-      await tableTextToggle(page, 'a').click()
+      // Settle scrolling in preparation: pointer retries cycle scroll alignment
+      // and can move the overflowing scrollport before the native click lands.
+      await clickSubmit(expect, tableTextToggle(page, 'a'))
       await expectTableTextControl(expect, page, 'a', true)
       await settleTableLayout(page)
       await info.attach(`${content}-width-spacing-font`, {

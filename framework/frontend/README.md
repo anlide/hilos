@@ -24,20 +24,30 @@ For example, append `npm install` or `npm run build` as `<command>`.
 
 ## Angular versions
 
-Every npm root in the tree that carries Angular — today this workspace, through
+Every npm root that carries Angular — this workspace through
 `angular/package.json`, `demo/polls/frontend` and `demo/online-testing/frontend`
-— declares every `@angular/*`
-in `dependencies` / `devDependencies` as an exact version, and all of them
-declare the same one. Three kinds of entry beside them are ranges on purpose:
-the `^22` `peerDependencies` of `@hilos/angular` (a peer range is what a
-consuming project resolves against), the `ng-packagr` caret, and the
-`typescript` tilde (`@angular/compiler-cli` requires `typescript >=6.0 <6.1`).
-Angular's own packages hold each other to an exact version in their
-`peerDependencies`, so one caret resolved a minor ahead of its siblings drags
-the whole framework with it, and only the AOT build (`ng-packagr`, i.e.
-`npm run build` for `@hilos/angular`) notices (HIL-848). Adding an `@angular/*`
-package or upgrading Angular follows `docs/agents/frontend/sdk-packaging.md`,
-section "Angular versions: exact in every root, a range only in the peers".
+today — declares exact `@angular/*` versions in `dependencies` /
+`devDependencies` within two families:
+
+- Framework: common, compiler, compiler-cli, core, platform-browser,
+  platform-server and router at `22.2.4`.
+- Tooling: build, cli and ssr at `22.2.5`.
+
+Each family is equal across roots, and both keep major 22. Framework peers
+require exact siblings; tooling accepts compatible framework ranges. This is
+the selected pair of families, not permission to mix versions freely. A new
+root or package inherits its family's exact version; upgrade the whole Angular
+set in every root together, naming both families' versions in the same install.
+Do not use registry latest, delete a lockfile, or bypass peer conflicts with
+`--force` / `--legacy-peer-deps`.
+
+Three kinds of entry stay ranges: the SDK's `^22` common/core peers, the
+`ng-packagr` caret (`^22.2.5`) and the TypeScript tilde (`~6.0.3`, because
+compiler-cli requires `>=6.0 <6.1`). A direct Angular caret can drag the framework
+ahead of its siblings, and only the AOT build (`ng-packagr`, i.e. `npm run build`
+for `@hilos/angular`) notices (HIL-848). Follow
+`docs/agents/frontend/sdk-packaging.md`, section
+"Angular versions: exact in every root, a range only in the peers".
 
 ## Commands
 

@@ -30,7 +30,7 @@ services:
 
   online-testing-cluster-mailpit:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     container_name: online-testing-cluster-mailpit${HILOS_STAND_SUFFIX:-}
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
@@ -77,7 +77,7 @@ services:
 
   online-testing-cluster-e2e-runner:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: mcr.microsoft.com/playwright:v1.60.0-noble
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
     container_name: online-testing-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
     tmpfs:
       - /tmp

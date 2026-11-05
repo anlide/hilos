@@ -42,7 +42,7 @@ The ceremony has three layers:
   storage, synchronization and phone handoff are the person's checks below.
 
 The CDP virtual authenticator has no algorithm-set option
-(`VirtualAuthenticatorOptions`, Playwright 1.60.0), so it cannot replace the
+(`VirtualAuthenticatorOptions`, Playwright 1.64.1), so it cannot replace the
 platform table. That table is our knowledge, not a live device measurement;
 a change in a platform's behavior is caught only by a manual run.
 

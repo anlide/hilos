@@ -410,7 +410,7 @@ without a partial list or fallback. The PHP metadata is validated even for
 `--help` itself needs neither Chromium nor a running daemon.
 
 An explicit config `use.timezoneId` covers contexts that inherit it. In the
-pinned Playwright Test 1.60.0, combined `use` options fill **absent keys**, also
+pinned Playwright Test 1.64.1, combined `use` options fill **absent keys**, also
 for `browser.newContext()` and `browser.newPage()`. An explicit override wins;
 `timezoneId: undefined` is a present key and does not inherit the default.
 Do not duplicate the config literal at every context creation. A scenario with
@@ -1904,12 +1904,12 @@ Each demo config passes its initial factor as `metadata.hilosTimeoutScale` to
 the local test entry's `withAdaptiveTimeouts` fixture. The automatic fixture is
 test-scoped and has no browser or page dependency. It samples host pressure
 immediately during fixture setup, before `beforeEach`, then every two seconds.
-Its narrow adapter supports Playwright 1.60.0. It checks the public
+Its narrow adapter supports Playwright 1.64.1. It checks the public
 `FullConfig.version` first, then validates the timeout-manager shape before
 reading pressure, registering its finish callback or changing a timeout. An
 unsupported version throws `hilos adaptive timeouts: unsupported Playwright
-version "<actual>"; supported: 1.60.0`; an unexpected internal shape throws
-`hilos adaptive timeouts: incompatible Playwright 1.60.0 timeout internals`.
+version "<actual>"; supported: 1.64.1`; an unexpected internal shape throws
+`hilos adaptive timeouts: incompatible Playwright 1.64.1 timeout internals`.
 Either error fails fixture setup, so the run is red and the test body does not
 start. There is no warning or fallback. This adapter is the only production
 access to Playwright's timeout internals.

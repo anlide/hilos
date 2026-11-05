@@ -730,7 +730,7 @@ to move in.
 **A passkey authenticator is not a service at all.** Its ceremony leaves the
 browser for the OS and the device behind it; there is no route from the daemon
 for this house to emulate. e2e drives Chrome's virtual authenticator over CDP,
-whose `VirtualAuthenticatorOptions` (Playwright 1.60.0) cannot set an algorithm
+whose `VirtualAuthenticatorOptions` (Playwright 1.64.1) cannot set an algorithm
 list. Instead, `framework/frontend/e2e/passkeyCreation.ts` judges the request
 against a platform table; the rest is in [manual-checks.md](manual-checks.md).
 

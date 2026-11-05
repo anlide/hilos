@@ -65,7 +65,7 @@ RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-sockets.ini \
 # - Ensure proper loading order (after sockets)
 # -----------------------------------------------------------
 RUN pecl channel-update pecl.php.net \
- && yes "" | pecl install -o -f event \
+ && yes "" | pecl install -o -f event-3.1.6 \
  && rm -f /usr/local/etc/php/conf.d/docker-php-ext-event.ini \
  && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
 
@@ -74,14 +74,14 @@ RUN pecl channel-update pecl.php.net \
 # - Kernel-backed filesystem watching for Hilos\Fs\Watch
 # - Optional by design: without it the watch polls directory mtimes instead
 # -----------------------------------------------------------
-RUN yes "" | pecl install -o -f inotify \
+RUN yes "" | pecl install -o -f inotify-3.0.1 \
  && rm -f /usr/local/etc/php/conf.d/docker-php-ext-inotify.ini \
  && echo "extension=inotify" > /usr/local/etc/php/conf.d/30-inotify.ini
 
 # -----------------------------------------------------------
 # Install Composer (copied from the official Composer image)
 # -----------------------------------------------------------
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2.11.1@sha256:5190d9b445add2fa26090108273cb1ef1e1af98175201c737b85b3c4f90fbf7c /usr/bin/composer /usr/bin/composer
 
 # -----------------------------------------------------------
 # Application setup

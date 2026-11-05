@@ -747,10 +747,94 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
         }
         await expectModerationRuleShown(expect, page, recoveryRule, false)
         await expectModerationRulesInForce(expect, overview, PHOTO, 0)
-        await reconnect.release()
-        await overviewReconnect.release()
+        const fullAnswers = () =>
+          readers.map(({ log }) =>
+            log.packets
+              .filter(({ socket }) => socket === 2)
+              .flatMap(({ frames }) => frames)
+              .map(({ wire }) => deliveryObject(wire))
+              .filter((wire) => wire.type === 'page_response')
+              .map((wire) => deliveryObject(wire.data)),
+          )
+        const expectFreshAnswer = (
+          answer: Record<string, unknown>,
+          pageKey: string,
+        ) => {
+          expect(answer).toMatchObject({ page: pageKey })
+          const windows = deliveryObject(deliveryObject(answer.payload).windows)
+          expect(windows.hilosModerationKinds).toMatchObject({
+            totalCount: 1,
+            totalExact: true,
+            rows: [
+              {
+                rowKey: PHOTO.kind,
+                slots: { kind: { kind: PHOTO.kind, ownRuleCount: 1 } },
+              },
+            ],
+          })
+          if (pageKey === HilosPages.MODERATION_KIND_RULES) {
+            expect(Object.keys(windows)).toEqual([
+              'hilosModerationKinds',
+              'hilosModerationRules',
+            ])
+            expect(windows.hilosModerationRules).toMatchObject({
+              totalCount: 1,
+              totalExact: true,
+              rows: [
+                {
+                  slots: {
+                    rule: {
+                      id: recoveryId,
+                      kind: PHOTO.kind,
+                      rule: recoveryRule,
+                    },
+                  },
+                },
+              ],
+            })
+          } else {
+            expect(Object.keys(windows)).toEqual(['hilosModerationKinds'])
+          }
+        }
 
-        for (const reader of readers) {
+        // Both readers missed the Add. Restore Rules first so its subscription
+        // exists when Overview's session frame rechecks the same user's pages.
+        // That second full answer has a separate cause from the one subscribe.
+        await reconnect.release()
+        await expectWelcomedSockets(expect, sockets, 2)
+        await expect
+          .poll(() => fullAnswers().map((answers) => answers.length))
+          .toEqual([1, 0])
+        expectFreshAnswer(
+          fullAnswers()[0]![0]!,
+          HilosPages.MODERATION_KIND_RULES,
+        )
+        await expectPageReady(expect, page)
+        await expectModerationRuleShown(expect, page, recoveryRule, true)
+        expect(overviewLog.packets).toHaveLength(beforeAdd[1]!.packets)
+        expect(overviewLog.sent).toHaveLength(beforeAdd[1]!.sent)
+        expect(overviewSockets).toHaveLength(1)
+        const beforeRecheck = own.packets.length
+        await overviewReconnect.release()
+        await expectWelcomedSockets(expect, overviewSockets, 2)
+        await expect
+          .poll(() => fullAnswers().map((answers) => answers.length))
+          .toEqual([2, 1])
+        const recheck = own.packets
+          .slice(beforeRecheck)
+          .flatMap(({ frames }) => frames)
+          .map(({ wire }) => deliveryObject(wire))
+        expect(
+          recheck
+            .filter(
+              (wire) =>
+                wire.type === SIGNAL_HANDSHAKE_RESPONSE ||
+                wire.type === 'page_response',
+            )
+            .map((wire) => wire.type),
+        ).toEqual([SIGNAL_HANDSHAKE_RESPONSE, 'page_response'])
+
+        for (const [index, reader] of readers.entries()) {
           // release only opens the route; wait for the real welcome and page reply.
           await expectWelcomedSockets(expect, reader.sockets, 2)
           await expect
@@ -782,46 +866,10 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
             { page: reader.pageKey, params: { kind: PHOTO.kind } },
           ])
           expect(session!.at).toBeLessThanOrEqual(subscriptions[0]!.at)
-          const answers = frames
-            .map(({ wire }) => deliveryObject(wire))
-            .filter((wire) => wire.type === 'page_response')
-            .map((wire) => deliveryObject(wire.data))
-          expect(answers).toHaveLength(1)
-          expect(answers[0]).toMatchObject({ page: reader.pageKey })
-          const windows = deliveryObject(
-            deliveryObject(answers[0]!.payload).windows,
-          )
-          expect(windows.hilosModerationKinds).toMatchObject({
-            totalCount: 1,
-            totalExact: true,
-            rows: [
-              {
-                rowKey: PHOTO.kind,
-                slots: { kind: { kind: PHOTO.kind, ownRuleCount: 1 } },
-              },
-            ],
-          })
-          if (reader.pageKey === HilosPages.MODERATION_KIND_RULES) {
-            expect(Object.keys(windows)).toEqual([
-              'hilosModerationKinds',
-              'hilosModerationRules',
-            ])
-            expect(windows.hilosModerationRules).toMatchObject({
-              totalCount: 1,
-              totalExact: true,
-              rows: [
-                {
-                  slots: {
-                    rule: {
-                      id: recoveryId,
-                      kind: PHOTO.kind,
-                      rule: recoveryRule,
-                    },
-                  },
-                },
-              ],
-            })
-          }
+          const answers = fullAnswers()[index]!
+          expect(answers).toHaveLength(index === 0 ? 2 : 1)
+          for (const answer of answers)
+            expectFreshAnswer(answer, reader.pageKey)
           await expectPageReady(expect, reader.page)
           await expect(reader.page.getByTestId('conn-state')).toHaveText(
             'connected',
@@ -841,6 +889,30 @@ test('resolves an Edit conflict from a second tab and shows a Delete there live 
           )
         }
         await expectModerationRulesInForce(expect, overview, PHOTO, 1)
+
+        // Recovery and every full snapshot are proved before this later request.
+        // Recount behind its answer, after the queued rechecks have crossed the
+        // same page owner's queue and Rules socket.
+        const beforeFence = own.sent.length
+        await clickSubmit(expect, table.getByTestId('hilos-table-sort-rule'))
+        await expectModerationSortReply(expect, own, beforeFence, PHOTO, 'asc')
+        expect(fullAnswers().map((answers) => answers.length)).toEqual([2, 1])
+        for (const [index, reader] of readers.entries()) {
+          for (const answer of fullAnswers()[index]!)
+            expectFreshAnswer(answer, reader.pageKey)
+          expect(
+            reader.log.packets
+              .filter(({ socket }) => socket === 2)
+              .flatMap(({ frames }) => frames)
+              .filter(({ failure }) => failure !== undefined),
+          ).toEqual([])
+          expect(
+            reader.log.sent.filter(
+              ({ socket, wire }) =>
+                socket === 2 && deliveryObject(wire).type === 'page_subscribe',
+            ),
+          ).toHaveLength(1)
+        }
         for (const document of documents) await document.unchanged()
       } finally {
         await overviewReconnect.dispose()

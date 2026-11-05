@@ -39,7 +39,7 @@ RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-sockets.ini \
  && echo "extension=sockets" > /usr/local/etc/php/conf.d/20-sockets.ini
 
 RUN pecl channel-update pecl.php.net \
- && yes "" | pecl install -o -f event \
+ && yes "" | pecl install -o -f event-3.1.6 \
  && rm -f /usr/local/etc/php/conf.d/docker-php-ext-event.ini \
  && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
 

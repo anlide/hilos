@@ -165,7 +165,7 @@
   "dependencies": {
     "@hilos/core": "*",
     "bootstrap": "^5.3.3",
-    "bootstrap-icons": "^1.13.1"
+    "bootstrap-icons": "^1.13.2"
   },
   "peerDependencies": {
     "react": "^19"
@@ -177,8 +177,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^29.1.1",
-    "react-dom": "^19.2.7",
-    "sass-embedded": "^1.83.0",
+    "react-dom": "^19.3.1",
+    "sass-embedded": "^1.107.1",
     "vite": "^7.0.0",
     "vite-plugin-lib-inject-css": "^2.2.2"
   }

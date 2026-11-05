@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { createPlaywrightTimeoutAdapter } from '../playwrightTimeoutAdapter.js'
 
 const INCOMPATIBLE =
-  'hilos adaptive timeouts: incompatible Playwright 1.60.0 timeout internals'
+  'hilos adaptive timeouts: incompatible Playwright 1.64.1 timeout internals'
 
 interface Slot {
   timeout: number
@@ -34,7 +34,7 @@ function nativeInfo() {
   }
   const callbacks = new Set<() => void>()
   const info = {
-    config: { version: '1.60.0' },
+    config: { version: '1.64.1' },
     _timeoutManager: manager,
     _onDidFinishTestFunctionCallbacks: callbacks,
     setTimeout: vi.fn(),
@@ -44,7 +44,19 @@ function nativeInfo() {
   return { info, slot, running, manager, callbacks, create }
 }
 
-it.each([undefined, null, '', '1.59.1', '1.60', '1.60.1', '1.61.0', '2.0.0'])(
+it.each([
+  undefined,
+  null,
+  '',
+  '1.59.1',
+  '1.60',
+  '1.60.0',
+  '1.60.1',
+  '1.61.0',
+  '1.64.0',
+  '1.64.2',
+  '2.0.0',
+])(
   'rejects version %s before inspecting internals or registering anything',
   (version) => {
     const test = nativeInfo()
@@ -53,7 +65,7 @@ it.each([undefined, null, '', '1.59.1', '1.60', '1.60.1', '1.61.0', '2.0.0'])(
     Object.defineProperty(test.info.config, 'version', { value: version })
     const add = vi.spyOn(test.callbacks, 'add')
     expect(test.create).toThrow(
-      `hilos adaptive timeouts: unsupported Playwright version "${version}"; supported: 1.60.0`,
+      `hilos adaptive timeouts: unsupported Playwright version "${version}"; supported: 1.64.1`,
     )
     expect(readManager).not.toHaveBeenCalled()
     expect(add).not.toHaveBeenCalled()

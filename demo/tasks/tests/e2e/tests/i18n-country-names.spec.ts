@@ -5,6 +5,7 @@ import {
   clickUnavailableControl,
   confirmI18nNameDelete,
   countSentFrames,
+  deliveryObject,
   dismissToasts,
   expandI18nNameCorrections,
   expectCountryPageHead,
@@ -28,6 +29,7 @@ import {
   i18nFixtures,
   type I18nFixtureScope,
 } from '../../../../../framework/frontend/scripts/i18nFixtures.mjs'
+import { TOAST_ACTION_READING } from '../../../../../framework/frontend/core/src/session/sessionToasts.js'
 
 const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
 const APP_NAME = 'Hilos Tasks'
@@ -450,6 +452,17 @@ test('country-names.life', async ({ page, context, i18n }) => {
 
   await test.step('Cancel/remove corrections, inherit the base, and delete it while the other confirmation explains its disappearance', async () => {
     await dismissToasts(page)
+    // A closed toast releases its focus hold after leaving the DOM. Finish that
+    // service action before counting traffic from opening and canceling Delete.
+    await expect
+      .poll(
+        () =>
+          log.sent
+            .map(({ wire }) => deliveryObject(wire))
+            .filter(({ action }) => action === TOAST_ACTION_READING)
+            .at(-1)?.data,
+      )
+      .toEqual({ reading: false })
     const trash = shownByTestId(page, 'i18n-names-delete-qk-GB')
     await expect(trash).toHaveAccessibleName('Remove locale correction qk-GB')
     const before = actions()
@@ -497,6 +510,15 @@ test('country-names.life', async ({ page, context, i18n }) => {
       await live.unchanged()
     }
     await dismissToasts(page)
+    await expect
+      .poll(
+        () =>
+          log.sent
+            .map(({ wire }) => deliveryObject(wire))
+            .filter(({ action }) => action === TOAST_ACTION_READING)
+            .at(-1)?.data,
+      )
+      .toEqual({ reading: false })
     const baseTrash = shownByTestId(page, 'i18n-names-delete-qk')
     const noWrite = actions()
     await clickSubmit(expect, baseTrash)

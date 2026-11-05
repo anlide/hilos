@@ -38,10 +38,12 @@ built on it; each one is supply-chain and maintenance risk passed downstream.
 - "It is convenient" is not a justification. Weigh the maintenance cost, the
   transitive tree, and whether the real need is one function or a whole library.
 - An `@angular/*` package carries a version rule of its own: in
-  `dependencies` / `devDependencies` every npm root that carries Angular
-  declares it as the same exact version, and a caret there lifts the whole
-  Angular framework — see `docs/agents/frontend/sdk-packaging.md`,
-  "Angular versions".
+  `dependencies` / `devDependencies` every npm root declares exact versions
+  within two families — framework and tooling — with the corresponding family
+  equal across roots and one common major. Framework peers require exact
+  versions; tooling accepts compatible framework ranges. A caret on a direct
+  Angular entry can still lift the framework — see
+  `docs/agents/frontend/sdk-packaging.md`, "Angular versions".
 
 ## Heavy data files
 

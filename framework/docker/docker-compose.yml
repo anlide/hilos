@@ -85,7 +85,7 @@ services:
     profiles: [preview]
 
   hilos-preview-caddy:
-    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    image: caddy:2.11.7-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
     container_name: hilos-preview-caddy
     network_mode: host
     environment:
@@ -110,7 +110,7 @@ services:
   # backup receiver up, which `composer run test:framework:up` is for.
   mysql-framework-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: mariadb:11.4
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     container_name: hilos-mysql-framework-test${HILOS_STAND_SUFFIX:-}
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
@@ -153,7 +153,7 @@ services:
   # It uses the same database names as the primary service on a separate server.
   mysql-framework-remote-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    image: mariadb:11.4
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     container_name: hilos-mysql-framework-remote-test${HILOS_STAND_SUFFIX:-}
     labels:
       hilos.role: database
