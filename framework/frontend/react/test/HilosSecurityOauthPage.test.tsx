@@ -15,6 +15,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
 } from '@hilos/core'
 import type {
   HilosConnection,
@@ -32,6 +33,7 @@ const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
 const ROW_KEY = 'oauth_redirect_uri'
 
 function router(): HilosRouter {
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_OAUTH,
@@ -44,7 +46,7 @@ function router(): HilosRouter {
     pageLoading: createSignal(false),
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -101,22 +103,23 @@ function seededContext(initial: unknown): {
         page: HilosPages.SECURITY_OAUTH,
         tableKey,
         rows: [
-          {
-            rowKey: 'oauth:github',
-            slots: {
-              provider: {
-                providerKey: 'oauth:github',
-                label: 'GitHub',
-                builtIn: true,
-                configured: true,
-                missingFields: 0,
-                secretSet: true,
-                clientIdSource: 'db',
-              },
+          { providerKey: 'oauth:github', label: 'GitHub' },
+          { providerKey: 'oauth:google', label: 'Google' },
+        ].map(({ providerKey, label }) => ({
+          rowKey: providerKey,
+          slots: {
+            provider: {
+              providerKey,
+              label,
+              builtIn: true,
+              configured: true,
+              missingFields: 0,
+              secretSet: true,
+              clientIdSource: 'db',
             },
           },
-        ],
-        totalCount: 1,
+        })),
+        totalCount: 2,
         totalExact: true,
         firstAnchor: null,
         lastAnchor: null,
@@ -822,10 +825,15 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
     )
 
     expect(
-      document.querySelector(
-        '[data-id="hilos-oauth-provider-open-oauth:github"]',
-      ),
-    ).not.toBeNull()
+      document
+        .querySelector('[data-id="hilos-oauth-provider-open-oauth:github"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/security/oauth/github')
+    expect(
+      document
+        .querySelector('[data-id="hilos-oauth-provider-open-oauth:google"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/security/oauth/google')
   })
 
   it('an admin on a node in the mode has Save and Reset active', () => {

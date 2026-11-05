@@ -218,9 +218,9 @@ final class SecurityOverviewTest extends IntegrationTestCase
     /** @return iterable<string, array{?string, ?array<string, mixed>}> Known, incomplete, unknown and absent route targets */
     public static function providerHeads(): iterable
     {
-        yield 'configured' => ['oauth:github', ['providerKey' => 'oauth:github', 'label' => 'GitHub', 'configured' => true, 'missingFields' => 0]];
-        yield 'incomplete' => ['oauth:google', ['providerKey' => 'oauth:google', 'label' => 'Google', 'configured' => false, 'missingFields' => 1]];
-        yield 'unknown' => ['oauth:unknown', null];
+        yield 'configured' => ['github', ['providerKey' => 'oauth:github', 'label' => 'GitHub', 'configured' => true, 'missingFields' => 0]];
+        yield 'incomplete' => ['google', ['providerKey' => 'oauth:google', 'label' => 'Google', 'configured' => false, 'missingFields' => 1]];
+        yield 'unknown' => ['unknown', null];
         yield 'absent' => [null, null];
     }
 

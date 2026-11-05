@@ -52,7 +52,7 @@ test('provider resets apply env credentials and the recipe scope without exposin
 }) => {
   await grantAdminToSelf(expect, page)
   // TasksOAuthProviderDirectory uses OAuthProviderPreset::GITHUB (oauth:github).
-  await gotoPage(expect, page, '/hilos/security/oauth/oauth:github')
+  await gotoPage(expect, page, '/hilos/security/oauth/github')
 
   for (const field of [
     {

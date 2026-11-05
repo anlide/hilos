@@ -37,6 +37,7 @@ import {
   createHilosSecurityOauthActions,
   createHilosOauthProviderFieldEdit,
   hilosOauthFieldDisplayValue,
+  hilosOAuthProviderKey,
 } from '@hilos/core/admin/security'
 import type {
   HilosOauthProviderFieldEditFields,
@@ -395,8 +396,8 @@ export class HilosSecurityOauthProviderPage {
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
-  // The route provider, as a core signal both tables follow: navigating to another
-  // provider sets their provider filter again and asks the server for its windows.
+  // Both tables follow the full key restored from the route name. Navigation
+  // sets their provider filter again and asks the server for its windows.
   private readonly providerSignal = computedSignal(() => {
     if (!this.router) {
       throw new Error(
@@ -404,9 +405,9 @@ export class HilosSecurityOauthProviderPage {
       )
     }
 
-    return (
+    return hilosOAuthProviderKey(
       (this.router.currentRoute.get().params['providerId'] as
-        string | undefined) ?? ''
+        string | undefined) ?? '',
     )
   })
   protected readonly providerKey = hilosSignal(this.providerSignal)

@@ -131,7 +131,7 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
     {
         $providerId = $params->getString('providerId');
-        $descriptor = $providerId === null ? null : $this->providerDirectoryClass()::get($providerId);
+        $descriptor = $providerId === null ? null : $this->providerDirectoryClass()::getByName($providerId);
 
         return new PagePayload(data: [
             HilosOAuthProviderHeadData::DATA => $descriptor === null ? null : HilosOAuthProviderHeadData::fromDescriptor($descriptor)->toArray(),

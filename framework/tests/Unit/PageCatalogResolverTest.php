@@ -316,7 +316,7 @@ final class PageCatalogResolverTest extends TestCase
             HilosPageConstants::HILOS_SECURITY_OAUTH,
             HilosPageCatalog::CATALOG[$provider][PageCatalogConstants::CATALOG_ENTRY_PARENT],
         );
-        $providerHead = PageCatalogResolver::head($provider, new PageRouteParams(['providerId' => 'oauth:github']));
+        $providerHead = PageCatalogResolver::head($provider, new PageRouteParams(['providerId' => 'github']));
         self::assertNotNull($providerHead);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -397,7 +397,7 @@ final class PageCatalogResolverTest extends TestCase
         }
 
         ChatSecurityPageHeadTestHilos::initBrowser();
-        $head = PageCatalogResolver::head($owner, new PageRouteParams(['providerId' => 'oauth:github']));
+        $head = PageCatalogResolver::head($owner, new PageRouteParams(['providerId' => 'github']));
         self::assertNotNull($head);
         self::assertSame([
             'page' => $owner,

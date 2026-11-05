@@ -19,6 +19,7 @@ the passkey block (D-122). Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
+  hilosOAuthProviderName,
   isSignInMethodOn,
   type HilosSignInMethodRow,
   type HilosSignInMethodsContext,
@@ -58,10 +59,10 @@ const { busy: switchBusy, run: runSwitch } = useTrackedAction()
 const pendingMethodKey = ref<string | null>(null)
 const passkeyPending = ref(false)
 
-/** The provider's own screen (its {providerId} route param is the key). */
+/** The provider's own screen (its {providerId} route param is the name). */
 function providerPath(providerKey: string): string {
   return resolveHilosPath(HilosPages.SECURITY_OAUTH_PROVIDER, {
-    providerId: providerKey,
+    providerId: hilosOAuthProviderName(providerKey),
   })
 }
 

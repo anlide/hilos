@@ -23,6 +23,7 @@ import {
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
+  hilosOAuthProviderName,
   type HilosOAuthProviderRow,
   type HilosOAuthRedirectRow,
   type HilosSecurityOauthContext,
@@ -77,10 +78,10 @@ const SOURCE_LABEL: Record<string, string> = {
   default: 'Default',
 }
 
-/** The provider's configuration page path (its {providerId} route param is the key). */
+/** The provider's configuration page path (its {providerId} route param is the name). */
 function providerPath(row: HilosOAuthProviderRow): string {
   return resolveHilosPath(HilosPages.SECURITY_OAUTH_PROVIDER, {
-    providerId: row.providerKey,
+    providerId: hilosOAuthProviderName(row.providerKey),
   })
 }
 

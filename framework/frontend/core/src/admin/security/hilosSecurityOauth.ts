@@ -15,6 +15,7 @@
 // backend's echo; there is no new server->client signal. A project supplies a
 // HilosSecurityOauthContext and the framework owns the rest.
 
+import { OAUTH_METHOD_PREFIX } from '../../auth/authFlow.js'
 import { type Hideable } from '../../state/hiddenValue.js'
 import {
   type ActionHandle,
@@ -40,6 +41,18 @@ import {
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
+/** Remove one leading OAuth prefix from a full provider key, preserving the name. */
+export function hilosOAuthProviderName(providerKey: string): string {
+  return providerKey.startsWith(OAUTH_METHOD_PREFIX)
+    ? providerKey.slice(OAUTH_METHOD_PREFIX.length)
+    : providerKey
+}
+
+/** Restore a full provider key from a name; the server catalog checks membership. */
+export function hilosOAuthProviderKey(providerName: string): string {
+  return OAUTH_METHOD_PREFIX + providerName
+}
+
 /** Where an OAuth value comes from: entered in the admin, env, or the provider's recipe. */
 export type OAuthValueSource = 'db' | 'env' | 'default'
 
@@ -47,7 +60,7 @@ const VALUE_SOURCES: readonly OAuthValueSource[] = ['db', 'env', 'default']
 
 /** One row of the providers table — the framework provider view-model. */
 export interface HilosOAuthProviderRow {
-  /** Provider key (e.g. `oauth:github`); also the row key and the {providerId} route param. */
+  /** Full provider key (e.g. `oauth:github`); also the row key. */
   readonly providerKey: string
   /** Human provider name; falls back to the key when the row names none. */
   readonly label: string

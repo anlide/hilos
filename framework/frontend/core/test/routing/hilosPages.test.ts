@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import {
+  hilosOAuthProviderName,
+  hilosOAuthProviderKey,
+} from '../../src/admin/security/index.js'
 import { resolveHilosPath } from '../../src/routing/hilosAdmin.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
 import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
@@ -11,6 +15,30 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it.each([
+    ['oauth:github', 'github', '/hilos/security/oauth/github'],
+    ['oauth:google', 'google', '/hilos/security/oauth/google'],
+    ['oauth:Acme.sso', 'Acme.sso', '/hilos/security/oauth/Acme.sso'],
+  ])(
+    'roundtrips OAuth provider %s by name',
+    (providerKey, providerName, path) => {
+      const page = HilosPages.SECURITY_OAUTH_PROVIDER
+      const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+      const params = { providerId: hilosOAuthProviderName(providerKey) }
+
+      expect(params.providerId).toBe(providerName)
+      expect(router.path(page, params)).toBe(path)
+      expect(resolveHilosPath(page, params)).toBe(path)
+      const match = router.match(path)
+      expect(match).toEqual({
+        page,
+        params: { providerId: providerName },
+        admin: true,
+      })
+      expect(hilosOAuthProviderKey(match.params.providerId)).toBe(providerKey)
+    },
+  )
+
   it('addresses Step-up as a first-level Security page', () => {
     const page = HilosPages.SECURITY_STEP_UP
     const path = '/hilos/security/step-up'

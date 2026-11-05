@@ -13,6 +13,8 @@ export {
   type HilosOAuthProviderHeadContext,
 } from './hilosSecurityOauthHead.js'
 export {
+  hilosOAuthProviderName,
+  hilosOAuthProviderKey,
   resolveHilosOAuthProviderRow,
   resolveHilosOAuthFieldRow,
   resolveHilosOAuthRedirectRow,

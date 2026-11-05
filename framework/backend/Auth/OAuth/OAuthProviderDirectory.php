@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\OAuth;
 
+use Hilos\Auth\AuthMethodKey;
 use Hilos\Constants\EnvConstants;
 use Hilos\Hilos;
 
@@ -85,5 +86,20 @@ abstract class OAuthProviderDirectory
     public static function get(string $key): ?OAuthProviderDescriptor
     {
         return static::all()[$key] ?? null;
+    }
+
+    /**
+     * Returns a declared provider by its exact name, or null when unknown.
+     *
+     * @param string $name Provider name without the OAuth key prefix
+     * @return ?OAuthProviderDescriptor Descriptor, or null when unknown
+     */
+    public static function getByName(string $name): ?OAuthProviderDescriptor
+    {
+        if ($name === '') {
+            return null;
+        }
+
+        return static::get(AuthMethodKey::OAUTH_PREFIX . $name);
     }
 }

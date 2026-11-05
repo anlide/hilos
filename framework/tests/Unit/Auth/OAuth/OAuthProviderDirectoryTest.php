@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\OAuth;
 
+use Hilos\Auth\AuthMethodKey;
+use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
@@ -46,6 +48,34 @@ final class OAuthProviderDirectoryTest extends TestCase
     {
         self::assertNull(ProjectTestOAuthProviderDirectory::get('oauth:gitlab'));
     }
+
+    public function testKnownPresetNamesResolveToTheirDescriptors(): void
+    {
+        $github = ProjectTestOAuthProviderDirectory::getByName('github');
+        self::assertNotNull($github);
+        self::assertSame(OAuthProviderPreset::GITHUB->value, $github->key);
+        self::assertSame(OAuthProviderPreset::GITHUB, $github->preset);
+
+        $google = ProjectTestOAuthProviderDirectory::getByName('google');
+        self::assertNotNull($google);
+        self::assertSame(OAuthProviderPreset::GOOGLE->value, $google->key);
+        self::assertSame(OAuthProviderPreset::GOOGLE, $google->preset);
+    }
+
+    public function testUnknownEmptyAndFullKeyNamesDoNotResolveAsPresets(): void
+    {
+        self::assertNull(NameTestOAuthProviderDirectory::getByName(''));
+        self::assertNull(NameTestOAuthProviderDirectory::getByName('gitlab'));
+        self::assertNull(NameTestOAuthProviderDirectory::getByName('oauth:github'));
+    }
+
+    public function testAnExactCustomNameWithCaseAndDotResolves(): void
+    {
+        $provider = NameTestOAuthProviderDirectory::getByName('Acme.sso');
+        self::assertNotNull($provider);
+        self::assertSame(AuthMethodKey::OAUTH_PREFIX . 'Acme.sso', $provider->key);
+        self::assertNull(NameTestOAuthProviderDirectory::getByName('acme.sso'));
+    }
 }
 
 /**
@@ -69,5 +99,46 @@ final class ProjectTestOAuthProviderDirectory extends OAuthProviderDirectory
             OAuthProviderPreset::GOOGLE->value => OAuthProviderDescriptor::fromPreset(OAuthProviderPreset::GOOGLE, 'Google'),
             'mistyped' => OAuthProviderDescriptor::fromPreset(OAuthProviderPreset::GITHUB, 'GitHub'),
         ]);
+    }
+}
+
+/**
+ * A directory with a provider whose key is only the OAuth prefix and an exact custom name.
+ */
+final class NameTestOAuthProviderDirectory extends OAuthProviderDirectory
+{
+    /**
+     * @return array<string, OAuthProviderDescriptor> Descriptors keyed by provider key
+     */
+    protected static function providers(): array
+    {
+        return array_replace(parent::providers(), [
+            'empty-name' => OAuthProviderDescriptor::fromRecipe(self::recipe(AuthMethodKey::OAUTH_PREFIX), 'Empty name'),
+            'custom-name' => OAuthProviderDescriptor::fromRecipe(
+                self::recipe(AuthMethodKey::OAUTH_PREFIX . 'Acme.sso'),
+                'Acme SSO',
+            ),
+        ]);
+    }
+
+    /**
+     * @param string $key OAuth provider key for the test descriptor
+     * @return OAuthProviderConfig Recipe for the test descriptor
+     */
+    private static function recipe(string $key): OAuthProviderConfig
+    {
+        return new OAuthProviderConfig(
+            key: $key,
+            clientId: '',
+            clientSecret: '',
+            authorizeUrl: '',
+            tokenUrl: '',
+            userInfoUrl: '',
+            scope: '',
+            redirectUri: '',
+            subjectKey: '',
+            emailKey: '',
+            nameKey: '',
+        );
     }
 }

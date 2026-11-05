@@ -497,7 +497,7 @@ test('OAuth provider has one named entity head and table, decorative icons and k
       log,
       opening,
       SECURITY_PROVIDER_PAGE,
-      { providerId: 'oauth:github' },
+      { providerId: 'github' },
     )
     const provider = await expectSecurityProviderFirstHead(
       expect,

@@ -7,7 +7,7 @@
 // confirm dialog (HIL-1147).
 import { flushPromises, mount } from '@vue/test-utils'
 import { h, markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -28,6 +28,7 @@ import type {
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportController,
 } from '@hilos/core/base'
 import {
   OAUTH_PROVIDER_HEAD_DATA,
@@ -39,6 +40,7 @@ import HilosSecurityOauthProviderPage from './HilosSecurityOauthProviderPage.vue
 import HilosLayout from '../../HilosLayout.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
+const PROVIDER_NAME = 'github'
 const PROVIDER = 'oauth:github'
 const FIELDS_TABLE = 'hilosSecurityOauthProviderFields'
 const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
@@ -57,7 +59,7 @@ function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_OAUTH_PROVIDER,
-      params: { providerId: PROVIDER },
+      params: { providerId: PROVIDER_NAME },
       admin: true,
     }),
     currentPath: createSignal(''),
@@ -471,12 +473,13 @@ afterEach(() => {
 function headHarness(
   options: {
     head?: unknown
-    providerKey?: string
+    providerName?: string
     provider?: Record<string, unknown> | null
     viewer?: boolean
   } = {},
 ) {
   const t = seededContext('Iv1.a', {}, options.provider, false)
+  const registrations = vi.spyOn(t.context.connection, 'registerTableWindow')
   const { scopes } = t.context
   scopes.session.data.set('adminViewMode', options.viewer === true)
   if (!options.viewer) {
@@ -511,7 +514,7 @@ function headHarness(
   const routes = createAppPageRouter({})
   const route = createSignal<PageRouteMatch>({
     page: HilosPages.SECURITY_OAUTH_PROVIDER,
-    params: { providerId: options.providerKey ?? PROVIDER },
+    params: { providerId: options.providerName ?? PROVIDER_NAME },
     admin: true,
   })
   const loading = createSignal(false)
@@ -543,7 +546,16 @@ function headHarness(
     global: { provide: { [hilosRouterKey as symbol]: navigation } },
   })
   mounted.push(view)
-  return { ...t, scope, answer, route, loading, navigation, view }
+  return {
+    ...t,
+    scope,
+    answer,
+    route,
+    loading,
+    navigation,
+    view,
+    registrations,
+  }
 }
 
 describe('HilosSecurityOauthProviderPage entity head', () => {
@@ -609,18 +621,25 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
   )
 
   it.each([
-    { key: 'oauth:google', label: 'Google', missing: 1, icon: 'bi-google' },
+    {
+      key: 'oauth:google',
+      name: 'google',
+      label: 'Google',
+      missing: 1,
+      icon: 'bi-google',
+    },
     {
       key: 'oauth:custom',
+      name: 'custom',
       label: 'Company login',
       missing: 2,
       icon: 'bi-box-arrow-in-right',
     },
   ])(
     'shows $missing missing and the shared icon for $key',
-    async ({ key, label, missing, icon }) => {
+    async ({ key, name, label, missing, icon }) => {
       const t = headHarness({
-        providerKey: key,
+        providerName: name,
         head: {
           providerKey: key,
           label,
@@ -704,8 +723,14 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
     t.releaseWindows()
     await settle()
     t.loading.set(true)
-    t.route.set({ ...t.route.get(), params: { providerId: 'oauth:google' } })
+    t.route.set({ ...t.route.get(), params: { providerId: 'google' } })
     await settle()
+    for (const table of [PROVIDERS_TABLE, FIELDS_TABLE]) {
+      const controller = t.registrations.mock.calls.find(
+        ([tableKey]) => tableKey === table,
+      )?.[1] as TableViewportController<unknown> | undefined
+      expect(controller?.filter.get()).toEqual({ provider: 'oauth:google' })
+    }
     expect(t.view.find('[data-id="oauth-provider-head-state"]').exists()).toBe(
       false,
     )
@@ -754,7 +779,7 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
   it('ignores an old unknown null during navigation and accepts a new known head before its window', async () => {
     const t = headHarness({
       head: null,
-      providerKey: 'oauth:unknown',
+      providerName: 'unknown',
       provider: null,
     })
     t.releaseWindows()
@@ -768,7 +793,7 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
     expect(document.title).toBe('OAuth provider · Chat')
 
     t.loading.set(true)
-    t.route.set({ ...t.route.get(), params: { providerId: PROVIDER } })
+    t.route.set({ ...t.route.get(), params: { providerId: PROVIDER_NAME } })
     await settle()
     expect(
       t.view.find('[data-id="hilos-oauth-provider-not-found"]').exists(),
@@ -792,7 +817,7 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
     t.releaseWindows()
     await settle()
     t.loading.set(true)
-    t.route.set({ ...t.route.get(), params: { providerId: 'oauth:unknown' } })
+    t.route.set({ ...t.route.get(), params: { providerId: 'unknown' } })
     await settle()
     expect(t.view.find('[data-id="oauth-provider-head-key"]').exists()).toBe(
       false,
@@ -905,6 +930,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
 
   it('surfaces a conflict on a changed edit, without Merge, and Keep mine sends mine', async () => {
     const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    const registrations = vi.spyOn(context.connection, 'registerTableWindow')
     await openModal(context, 'client_id')
     await typeDraft('Iv1.mine')
 
@@ -920,6 +946,12 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
     await nextTick()
     saveButton().click()
     await nextTick()
+    for (const table of [PROVIDERS_TABLE, FIELDS_TABLE]) {
+      const controller = registrations.mock.calls.find(
+        ([tableKey]) => tableKey === table,
+      )?.[1] as TableViewportController<unknown> | undefined
+      expect(controller?.filter.get()).toEqual({ provider: 'oauth:github' })
+    }
     expect(sent).toHaveLength(1)
     expect(sent[0]?.action).toBe('security_oauth_provider_set')
     expect(sent[0]?.payload).toMatchObject({

@@ -47,17 +47,17 @@ describe('Security subscription evidence', () => {
   it('excludes an old opening, another socket and packets after the next route subscription', () => {
     const { log, open } = peer()
     const old = open()
-    old.send(subscribe('oauth:github'))
+    old.send(subscribe('github'))
     old.receive(reply({ label: 'Old GitHub' }))
     const opening = log.sent.length
     const current = open()
-    current.send(subscribe('oauth:github'))
+    current.send(subscribe('github'))
     old.receive(reply({ label: 'Stale socket' }))
     current.receive(reply({ label: 'Current GitHub' }))
-    current.send(subscribe('oauth:google'))
+    current.send(subscribe('google'))
     current.receive(reply({ label: 'Google' }))
     const replies = securityPageReplies(log, opening, SECURITY_PROVIDER_PAGE, {
-      providerId: 'oauth:github',
+      providerId: 'github',
     })
     expect(replies.map(({ data }) => data.oauthProviderHead)).toEqual([
       { label: 'Current GitHub' },
@@ -70,9 +70,9 @@ describe('Security subscription evidence', () => {
   it('matches the exact provider params and retains every batch neighbor and the physical raw text', () => {
     const { log, open } = peer()
     const socket = open()
-    socket.send(subscribe('oauth:github'))
+    socket.send(subscribe('github'))
     socket.receive(reply({ label: 'GitHub' }))
-    socket.send(subscribe('oauth:google'))
+    socket.send(subscribe('google'))
     const batch = {
       type: 'signal_batch',
       data: {
@@ -87,7 +87,7 @@ describe('Security subscription evidence', () => {
     }
     socket.receive(batch)
     const replies = securityPageReplies(log, 0, SECURITY_PROVIDER_PAGE, {
-      providerId: 'oauth:google',
+      providerId: 'google',
     })
     expect(replies).toHaveLength(1)
     expect(replies[0]!.packet.raw).toBe(JSON.stringify(batch))
@@ -95,7 +95,7 @@ describe('Security subscription evidence', () => {
     expect(replies[0]!.frame).toBe(replies[0]!.packet.frames[1])
     expect(
       securityPageReplies(log, 0, SECURITY_PROVIDER_PAGE, {
-        providerId: 'oauth:google',
+        providerId: 'google',
         extra: 'foreign',
       }),
     ).toEqual([])
@@ -105,7 +105,7 @@ describe('Security subscription evidence', () => {
   it('keeps a malformed first response ahead of a later complete one without dropping its decoder failure', () => {
     const { log, open } = peer()
     const socket = open()
-    socket.send(subscribe('oauth:github'))
+    socket.send(subscribe('github'))
     const malformed = {
       type: 'page_response',
       time: 'invalid',
@@ -114,7 +114,7 @@ describe('Security subscription evidence', () => {
     socket.receive(malformed)
     socket.receive(reply({ label: 'Later GitHub' }))
     const replies = securityPageReplies(log, 0, SECURITY_PROVIDER_PAGE, {
-      providerId: 'oauth:github',
+      providerId: 'github',
     })
     expect(replies).toHaveLength(2)
     expect(replies[0]!.data).toEqual({})

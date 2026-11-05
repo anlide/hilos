@@ -159,23 +159,25 @@ test('provider row opens a complete first head before filtered asks and keeps ro
   try {
     await createTestAdmin(expect, page)
     await gotoPage(expect, page, `${SECURITY_PATH}/oauth`)
-    for (const providerKey of ['oauth:github', 'oauth:google']) {
+    for (const [providerKey, providerName, path] of [
+      ['oauth:github', 'github', '/hilos/security/oauth/github'],
+      ['oauth:google', 'google', '/hilos/security/oauth/google'],
+    ]) {
       const link = shownByTestId(
         page,
         `hilos-oauth-provider-open-${providerKey}`,
       )
-      const path = await link.getAttribute('href')
-      expect(path).toBeTruthy()
+      expect(await link.getAttribute('href')).toBe(path)
       const opening = log.sent.length
       await link.click()
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(path!)
+      await expect(page).toHaveURL(path)
       const first = await expectSecurityFirstReply(
         expect,
         log,
         opening,
         SECURITY_PROVIDER_PAGE,
-        { providerId: providerKey },
+        { providerId: providerName },
       )
       const head = await expectSecurityProviderFirstHead(
         expect,
@@ -198,15 +200,16 @@ test('provider row opens a complete first head before filtered asks and keeps ro
 
     await shownByTestId(page, 'hilos-oauth-provider-open-oauth:google').click()
     await expectPageReady(expect, page)
-    const providerPath = new URL(page.url()).pathname
+    const providerPath = '/hilos/security/oauth/google'
+    await expect(page).toHaveURL(providerPath)
     let opening = log.sent.length
-    await gotoPage(expect, page, `${SECURITY_PATH}/oauth/oauth:unknown`)
+    await gotoPage(expect, page, '/hilos/security/oauth/unknown')
     const unknown = await expectSecurityFirstReply(
       expect,
       log,
       opening,
       SECURITY_PROVIDER_PAGE,
-      { providerId: 'oauth:unknown' },
+      { providerId: 'unknown' },
     )
     expect(unknown.data.oauthProviderHead).toBeNull()
     await expect(
@@ -226,7 +229,7 @@ test('provider row opens a complete first head before filtered asks and keeps ro
       log,
       opening,
       SECURITY_PROVIDER_PAGE,
-      { providerId: 'oauth:google' },
+      { providerId: 'google' },
     )
     let head = await expectSecurityProviderFirstHead(
       expect,
@@ -243,7 +246,7 @@ test('provider row opens a complete first head before filtered asks and keeps ro
       log,
       opening,
       SECURITY_PROVIDER_PAGE,
-      { providerId: 'oauth:google' },
+      { providerId: 'google' },
     )
     head = await expectSecurityProviderFirstHead(
       expect,

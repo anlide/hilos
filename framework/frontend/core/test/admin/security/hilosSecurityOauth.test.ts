@@ -5,6 +5,8 @@ import {
   createHilosOAuthProviderSummary,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
+  hilosOAuthProviderName,
+  hilosOAuthProviderKey,
   resolveHilosOAuthFieldRow,
   resolveHilosOAuthProviderRow,
   resolveHilosOAuthRedirectRow,
@@ -23,11 +25,29 @@ import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
+it.each([
+  ['oauth:oauth:github', 'oauth:github'],
+  ['Acme.oauth:sso', 'Acme.oauth:sso'],
+  ['github', 'github'],
+  ['oauth: Acme /?% ', ' Acme /?% '],
+  ['', ''],
+])('preserves the provider name in %j as %j', (providerKey, providerName) => {
+  expect(hilosOAuthProviderName(providerKey)).toBe(providerName)
+})
+
+it.each([
+  ['oauth:github', 'oauth:oauth:github'],
+  [' Acme /?% ', 'oauth: Acme /?% '],
+  ['', 'oauth:'],
+])('prefixes the provider name %j as %j', (providerName, providerKey) => {
+  expect(hilosOAuthProviderKey(providerName)).toBe(providerKey)
+})
+
 it.each([createHilosOAuthProviderSummary, createHilosOAuthProviderFields])(
   'initializes an early provider change and keeps clearing and Reset after metadata for %s',
   (create) => {
     const sent: TableViewportDescriptor[] = []
-    const provider = createSignal('first')
+    const provider = createSignal(hilosOAuthProviderKey('github'))
     const table = create(
       {
         connection: {
@@ -47,17 +67,20 @@ it.each([createHilosOAuthProviderSummary, createHilosOAuthProviderFields])(
     )
     try {
       table.start()
-      table.controller.initializeFilter({ provider: 'first', retained: false })
+      table.controller.initializeFilter({
+        provider: 'oauth:github',
+        retained: false,
+      })
       table.controller.ingestRefusal('internal_error')
-      provider.set('second')
+      provider.set(hilosOAuthProviderKey('google'))
       expect(table.controller.filter.get()).toEqual({
-        provider: 'second',
+        provider: 'oauth:google',
         retained: false,
       })
       provider.set('')
       expect(table.controller.filter.get()).toEqual({ retained: false })
       expect(sent).toEqual([])
-      provider.set('second')
+      provider.set(hilosOAuthProviderKey('google'))
       table.controller.ingestSubscriptionWindow(
         [],
         0,
@@ -66,19 +89,19 @@ it.each([createHilosOAuthProviderSummary, createHilosOAuthProviderFields])(
         null,
         25,
         undefined,
-        { provider: 'second', retained: false },
+        { provider: 'oauth:google', retained: false },
         [],
       )
       expect(sent).toEqual([])
-      provider.set('third')
+      provider.set(hilosOAuthProviderKey('Acme.sso'))
       expect(sent.at(-1)?.filter).toEqual({
-        provider: 'third',
+        provider: 'oauth:Acme.sso',
         retained: false,
       })
       provider.set('')
       expect(sent.at(-1)?.filter).toEqual({ retained: false })
       table.controller.resetFilters()
-      expect(sent.at(-1)?.filter).toEqual({ provider: 'first' })
+      expect(sent.at(-1)?.filter).toEqual({ provider: 'oauth:github' })
     } finally {
       table.dispose()
       table.controller.dispose()
@@ -524,7 +547,7 @@ describe('createHilosSecurityOauthActions', () => {
   it('dispatches a provider field write with the provider, field, and value', () => {
     const { context, calls } = recordingContext()
     createHilosSecurityOauthActions(context).sendProviderSet(
-      'oauth:github',
+      hilosOAuthProviderKey('google'),
       'client_secret',
       'new-secret',
     )
@@ -533,7 +556,7 @@ describe('createHilosSecurityOauthActions', () => {
       {
         action: 'security_oauth_provider_set',
         payload: {
-          providerKey: 'oauth:github',
+          providerKey: 'oauth:google',
           field: 'client_secret',
           value: 'new-secret',
         },
@@ -544,14 +567,14 @@ describe('createHilosSecurityOauthActions', () => {
   it('dispatches a provider field reset with the provider and field', () => {
     const { context, calls } = recordingContext()
     createHilosSecurityOauthActions(context).sendProviderReset(
-      'oauth:github',
+      hilosOAuthProviderKey('google'),
       'scope',
     )
 
     expect(calls).toEqual([
       {
         action: 'security_oauth_provider_reset',
-        payload: { providerKey: 'oauth:github', field: 'scope' },
+        payload: { providerKey: 'oauth:google', field: 'scope' },
       },
     ])
   })

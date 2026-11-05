@@ -448,7 +448,14 @@ describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
       label: 'Google OAuth',
       enabled: true,
       ready: true,
-      providerKey: 'google',
+      providerKey: 'oauth:google',
+    },
+    {
+      methodKey: 'oauth_github',
+      label: 'GitHub OAuth',
+      enabled: true,
+      ready: true,
+      providerKey: 'oauth:github',
     },
   ]
 
@@ -479,10 +486,16 @@ describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
     expect(wrapper.find(PASSKEY_POLICY_SWITCH).exists()).toBe(false)
     expect(dispatched).toEqual([])
 
-    const providerLink = wrapper.find(
-      '[data-id="hilos-sign-in-method-provider-oauth_google"]',
-    )
-    expect(providerLink.exists()).toBe(true)
+    expect(
+      wrapper
+        .get('[data-id="hilos-sign-in-method-provider-oauth_github"]')
+        .attributes('href'),
+    ).toBe('/hilos/security/oauth/github')
+    expect(
+      wrapper
+        .get('[data-id="hilos-sign-in-method-provider-oauth_google"]')
+        .attributes('href'),
+    ).toBe('/hilos/security/oauth/google')
   })
 
   it('an admin on a node in the mode dispatches a switch without the mode strip reference', async () => {

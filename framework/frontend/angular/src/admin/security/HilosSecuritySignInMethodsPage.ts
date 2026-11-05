@@ -29,6 +29,7 @@ import { HilosPages, resolveHilosPath, subscribeSignal } from '@hilos/core/base'
 import {
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
+  hilosOAuthProviderName,
   isSignInMethodOn,
 } from '@hilos/core/admin/security'
 import type { Hideable } from '@hilos/core/base'
@@ -203,10 +204,10 @@ export class HilosSecuritySignInMethodsPage {
     return isSignInMethodOn(row, this.enabledKeys())
   }
 
-  /** The provider's own screen (its {providerId} route param is the key). */
+  /** The provider's own screen (its {providerId} route param is the name). */
   protected providerPath(providerKey: string): string {
     return resolveHilosPath(HilosPages.SECURITY_OAUTH_PROVIDER, {
-      providerId: providerKey,
+      providerId: hilosOAuthProviderName(providerKey),
     })
   }
 

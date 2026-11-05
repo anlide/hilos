@@ -13,6 +13,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
   hilosToasts,
 } from '@hilos/core'
 import type {
@@ -29,6 +30,7 @@ import { HilosSecuritySignInMethodsPage } from '../src/admin/security/HilosSecur
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 function router(): HilosRouter {
+  const paths = createAppPageRouter({})
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_SIGN_IN_METHODS,
@@ -41,7 +43,7 @@ function router(): HilosRouter {
     pageLoading: createSignal(false),
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => paths.path(page, params),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -174,7 +176,14 @@ const ROWS_WITH_PROVIDER: Record<string, unknown>[] = [
     label: 'Google OAuth',
     enabled: true,
     ready: true,
-    providerKey: 'google',
+    providerKey: 'oauth:google',
+  },
+  {
+    methodKey: 'oauth_github',
+    label: 'GitHub OAuth',
+    enabled: true,
+    ready: true,
+    providerKey: 'oauth:github',
   },
 ]
 
@@ -449,10 +458,15 @@ describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
     expect(dispatched).toEqual([])
 
     expect(
-      container.querySelector(
-        '[data-id="hilos-sign-in-method-provider-oauth_google"]',
-      ),
-    ).not.toBeNull()
+      container
+        .querySelector('[data-id="hilos-sign-in-method-provider-oauth_github"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/security/oauth/github')
+    expect(
+      container
+        .querySelector('[data-id="hilos-sign-in-method-provider-oauth_google"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/security/oauth/google')
   })
 
   it('an admin on a node in the mode dispatches a switch without the mode strip reference', () => {

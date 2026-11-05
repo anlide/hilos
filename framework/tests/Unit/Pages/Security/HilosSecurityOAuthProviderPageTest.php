@@ -96,10 +96,10 @@ final class HilosSecurityOAuthProviderPageTest extends TestCase
     public function testFirstAnswerCarriesTheCompletePresetHeadWithoutATableWindow(): void
     {
         self::assertSame([HilosDbContext::oauthProviders], ProviderPageTestPage::READS_DB);
-        $this->assertFirstHead(['providerId' => 'oauth:github'], [
+        $this->assertFirstHead(['providerId' => 'github'], [
             'providerKey' => 'oauth:github', 'label' => 'GitHub', 'configured' => false, 'missingFields' => 2,
         ]);
-        $this->assertFirstHead(['providerId' => 'oauth:google'], [
+        $this->assertFirstHead(['providerId' => 'google'], [
             'providerKey' => 'oauth:google', 'label' => 'Company sign-in', 'configured' => false, 'missingFields' => 2,
         ]);
     }
@@ -107,14 +107,14 @@ final class HilosSecurityOAuthProviderPageTest extends TestCase
     public function testCustomRecipeUsesThePageDirectorySeamAndIgnoresTableStyleParams(): void
     {
         self::assertNull(Hilos::oauthProviderDirectoryClass()::get('oauth:custom'));
-        $this->assertFirstHead(['providerId' => 'oauth:custom', 'search' => 'no-match', 'limit' => '1'], [
+        $this->assertFirstHead(['providerId' => 'custom', 'search' => 'no-match', 'limit' => '1'], [
             'providerKey' => 'oauth:custom', 'label' => 'Project identity', 'configured' => true, 'missingFields' => 0,
         ]);
     }
 
     public function testReadinessFollowsTheEffectiveEnvAndStoredClientPairWithoutReadingSecrets(): void
     {
-        $params = ['providerId' => 'oauth:google'];
+        $params = ['providerId' => 'google'];
         $head = ['providerKey' => 'oauth:google', 'label' => 'Company sign-in', 'configured' => false, 'missingFields' => 2];
         $this->assertFirstHead($params, $head);
 
@@ -140,7 +140,7 @@ final class HilosSecurityOAuthProviderPageTest extends TestCase
 
     public function testRecipeHeadRecomputesMissingFieldsWhenAStoredOverrideCompletesThePair(): void
     {
-        $params = ['providerId' => 'oauth:partial'];
+        $params = ['providerId' => 'partial'];
         $head = ['providerKey' => 'oauth:partial', 'label' => 'Partial recipe', 'configured' => false, 'missingFields' => 1];
         $this->assertFirstHead($params, $head);
         $this->storeProvider('oauth:partial', '', true);
@@ -149,18 +149,23 @@ final class HilosSecurityOAuthProviderPageTest extends TestCase
 
     public function testUnknownMissingAndEmptyProviderIdsKeepANullHeadInTheFirstAnswer(): void
     {
-        foreach ([['providerId' => 'oauth:gitlab'], [], ['providerId' => '']] as $params) {
+        foreach ([['providerId' => 'gitlab'], [], ['providerId' => '']] as $params) {
             $this->assertFirstHead($params, null);
         }
+    }
+
+    public function testFullProviderKeyDoesNotOpenTheDescriptorByName(): void
+    {
+        $this->assertFirstHead(['providerId' => 'oauth:github'], null);
     }
 
     public function testViewerReceivesTheSameNonpersonalHeadAndNullForAnUnknownProvider(): void
     {
         ProviderPageTestHilos::initBrowser(new ProviderPageTestBrowser(viewer: true));
-        $this->assertFirstHead(['providerId' => 'oauth:custom'], [
+        $this->assertFirstHead(['providerId' => 'custom'], [
             'providerKey' => 'oauth:custom', 'label' => 'Project identity', 'configured' => true, 'missingFields' => 0,
         ]);
-        $this->assertFirstHead(['providerId' => 'oauth:gitlab'], null);
+        $this->assertFirstHead(['providerId' => 'gitlab'], null);
     }
 
     public function testAProviderReadFailureDoesNotQueueAnIncompleteFirstAnswer(): void
@@ -172,7 +177,7 @@ final class HilosSecurityOAuthProviderPageTest extends TestCase
         try {
             new ProviderPageTestPage(new ProviderPageTestAgent())->onSubscribe(
                 self::ACCEPT_KEY,
-                new PageRouteParams(['providerId' => 'oauth:github']),
+                new PageRouteParams(['providerId' => 'github']),
             );
             self::fail('A provider read failure must refuse the complete answer.');
         } catch (DatabaseException) {

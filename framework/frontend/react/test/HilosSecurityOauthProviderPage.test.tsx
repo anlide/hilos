@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { HIDDEN_VALUE } from '@hilos/core/base'
 import {
@@ -19,11 +19,13 @@ import type {
   HilosSecurityOauthContext,
   PageRouteMatch,
   ProjectSignal,
+  TableViewportController,
 } from '@hilos/core'
 
 import { HilosSecurityOauthProviderPage } from '../src/admin/security/HilosSecurityOauthProviderPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
+const PROVIDER_NAME = 'github'
 const PROVIDER = 'oauth:github'
 const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
 const FIELDS_TABLE = 'hilosSecurityOauthProviderFields'
@@ -32,7 +34,7 @@ function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.SECURITY_OAUTH_PROVIDER,
-      params: { providerId: PROVIDER },
+      params: { providerId: PROVIDER_NAME },
       admin: true,
     }),
     currentPath: createSignal(''),
@@ -873,6 +875,7 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
 
   it('surfaces a conflict on a changed edit, without Merge, and Keep mine sends mine', () => {
     const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    const registrations = vi.spyOn(context.connection, 'registerTableWindow')
     openModal(context, 'client_id')
     typeDraft('Iv1.mine')
 
@@ -887,6 +890,12 @@ describe('HilosSecurityOauthProviderPage field modal', () => {
 
     fireEvent.click(byId('conflict-accept-mine') as Element)
     fireEvent.click(saveButton())
+    for (const table of [PROVIDERS_TABLE, FIELDS_TABLE]) {
+      const controller = registrations.mock.calls.find(
+        ([tableKey]) => tableKey === table,
+      )?.[1] as TableViewportController<unknown> | undefined
+      expect(controller?.filter.get()).toEqual({ provider: 'oauth:github' })
+    }
     expect(sent).toHaveLength(1)
     expect(sent[0]?.action).toBe('security_oauth_provider_set')
     expect(sent[0]?.payload).toMatchObject({

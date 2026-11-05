@@ -33,6 +33,7 @@ import {
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
   hilosOauthFieldDisplayValue,
+  hilosOAuthProviderKey,
   type HilosOAuthFieldRow,
   type HilosOAuthProviderHead,
   type HilosSecurityOauthContext,
@@ -67,11 +68,12 @@ if (!router) {
   )
 }
 
-// The route provider, as a core signal both tables follow: navigating to another
-// provider sets their provider filter again and asks the server for its windows.
-const providerSignal = computedSignal(
-  () =>
+// Both tables follow the full key restored from the route name. Navigation
+// sets their provider filter again and asks the server for its windows.
+const providerSignal = computedSignal(() =>
+  hilosOAuthProviderKey(
     (router.currentRoute.get().params.providerId as string | undefined) ?? '',
+  ),
 )
 const providerKey = useSignal(providerSignal)
 

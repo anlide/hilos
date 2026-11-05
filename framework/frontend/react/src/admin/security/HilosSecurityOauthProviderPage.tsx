@@ -31,6 +31,7 @@ import {
   createHilosOauthProviderFieldEdit,
   createHilosSecurityOauthActions,
   hilosOauthFieldDisplayValue,
+  hilosOAuthProviderKey,
 } from '@hilos/core/admin/security'
 import type {
   HilosOAuthFieldRow,
@@ -89,14 +90,15 @@ export function HilosSecurityOauthProviderPage({
     )
   }
 
-  // The route provider, as a core signal both tables follow: navigating to another
-  // provider sets their provider filter again and asks the server for its windows.
+  // Both tables follow the full key restored from the route name. Navigation
+  // sets their provider filter again and asks the server for its windows.
   const providerSignal = useMemo(
     () =>
-      computedSignal(
-        () =>
+      computedSignal(() =>
+        hilosOAuthProviderKey(
           (router.currentRoute.get().params.providerId as string | undefined) ??
-          '',
+            '',
+        ),
       ),
     [router],
   )

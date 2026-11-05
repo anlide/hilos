@@ -21,6 +21,7 @@ import {
   HilosSignInMethodRowKey,
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
+  hilosOAuthProviderName,
   isSignInMethodOn,
 } from '@hilos/core/admin/security'
 import type { Hideable } from '@hilos/core/base'
@@ -43,10 +44,10 @@ export interface HilosSecuritySignInMethodsPageProps {
   context: HilosSignInMethodsContext
 }
 
-/** The provider's own screen (its {providerId} route param is the key). */
+/** The provider's own screen (its {providerId} route param is the name). */
 function providerPath(providerKey: string): string {
   return resolveHilosPath(HilosPages.SECURITY_OAUTH_PROVIDER, {
-    providerId: providerKey,
+    providerId: hilosOAuthProviderName(providerKey),
   })
 }
 
