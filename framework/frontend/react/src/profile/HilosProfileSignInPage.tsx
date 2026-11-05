@@ -18,6 +18,7 @@ import {
   SEND_AGAIN_LABEL,
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
+  sendProgressLine,
   sessionAuthMethods,
   watchHilosProfilePasswordUpdated,
   type HilosAuthContext,
@@ -177,9 +178,27 @@ export function HilosProfileSignInPage({
   const sentEmail = useSignal(flow.email)
   const sentPhone = useSignal(flow.phone)
   const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
+  const stepUpOpening = useSignal(flow.stepUp.opening)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
+  const stepUpSendProgress = useSignal(flow.stepUp.sendProgress)
   const stepUpBusy = useSignal(flow.stepUp.busy)
   const pendingProvider = useSignal(flow.provider)
+  // What the add dialog's calm region says: the send line of the code step on
+  // screen, to the address or number its block names - the confirmation's own
+  // while it stands in front of the steps. The blocks only show it
+  // (accessibility.md, "Live regions").
+  const addSendVoice =
+    step === 'step-up'
+      ? stepUpOpening?.method === 'email_code' ||
+        stepUpOpening?.method === 'sms_code'
+        ? (sendProgressLine(stepUpSendProgress, stepUpOpening.destination ?? '')
+            ?.text ?? '')
+        : ''
+      : step === 'password-code'
+        ? (sendProgressLine(sendProgress, sentEmail)?.text ?? '')
+        : step === 'phone-code'
+          ? (sendProgressLine(sendProgress, sentPhone)?.text ?? '')
+          : ''
   // The dialog opens on the server's answer, never on the click.
   const addOpening = step === 'opening'
   // The button that asked for the dialog; it alone spins while it opens.
@@ -537,6 +556,14 @@ export function HilosProfileSignInPage({
               data-id="profile-sign-in-add-live"
             >
               {step === 'step-up' ? stepUpRefusal : refusal}
+            </div>
+            <div
+              className="visually-hidden"
+              role="status"
+              aria-live="polite"
+              data-id="profile-sign-in-add-live-polite"
+            >
+              {addSendVoice}
             </div>
             <div className="hilos-stack">
               <div className="invisible" aria-hidden="true" inert>

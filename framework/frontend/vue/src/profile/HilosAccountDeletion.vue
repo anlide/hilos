@@ -25,6 +25,7 @@ import {
   HILOS_DATA_EXPORT_COPY,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  sendProgressLine,
   type HilosSecondFactorContext,
 } from '@hilos/core/base'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -57,6 +58,7 @@ const sendProgress = useSignal(flow.sendProgress)
 const resendAt = useSignal(flow.resendAt)
 const stepUpOpening = useSignal(flow.stepUp.opening)
 const stepUpRefusal = useSignal(flow.stepUp.refusal)
+const stepUpSendProgress = useSignal(flow.stepUp.sendProgress)
 const now = ref(Date.now())
 const body = ref<HTMLElement | null>(null)
 let tick: ReturnType<typeof setInterval> | null = null
@@ -125,6 +127,25 @@ const daysLeft = computed(() =>
 const voice = computed(() =>
   step.value === 'step-up' ? stepUpRefusal.value : refusal.value,
 )
+// What the calm region says: the send line of the code step on screen, to the
+// address its block names - the confirmation's own while it stands in front of
+// the steps. The blocks only show it (accessibility.md, "Live regions").
+const sendVoice = computed(() => {
+  if (step.value === 'step-up') {
+    const confirmation = stepUpOpening.value
+    return confirmation?.method === 'email_code' ||
+      confirmation?.method === 'sms_code'
+      ? (sendProgressLine(
+          stepUpSendProgress.value,
+          confirmation.destination ?? '',
+        )?.text ?? '')
+      : ''
+  }
+  return step.value === 'code'
+    ? (sendProgressLine(sendProgress.value, opening.value?.destination ?? '')
+        ?.text ?? '')
+    : ''
+})
 
 /**
  * Keep the Your data link in place while a step of the window is out: it is an
@@ -218,6 +239,14 @@ function fill(template: string): string {
         data-id="account-deletion-live"
       >
         {{ voice }}
+      </div>
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="account-deletion-live-polite"
+      >
+        {{ sendVoice }}
       </div>
       <div ref="body" data-id="account-deletion-modal">
         <form

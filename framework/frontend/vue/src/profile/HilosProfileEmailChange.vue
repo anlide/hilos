@@ -5,6 +5,7 @@ import {
   HILOS_PROFILE_EMAIL_CHANGE_COPY as COPY,
   HILOS_PROFILE_EMAIL_CHANGE_STEPS,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   type HilosProfileEmailChangeFlow,
 } from '@hilos/core/base'
 import { computed, nextTick, ref, watch } from 'vue'
@@ -30,6 +31,7 @@ const canSubmit = useSignal(props.flow.canSubmit)
 const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const stepUpOpening = useSignal(props.flow.stepUp.opening)
 const stepUpRefusal = useSignal(props.flow.stepUp.refusal)
+const stepUpSendProgress = useSignal(props.flow.stepUp.sendProgress)
 const body = ref<HTMLElement | null>(null)
 const open = computed({
   get: () => step.value !== 'closed',
@@ -44,6 +46,30 @@ const title = computed(() =>
       ? COPY.doneTitle
       : COPY.title,
 )
+// What the calm region says: the send line of the code step on screen, to the
+// address its block names - the confirmation's own while it stands in front of
+// the steps. The blocks only show it (accessibility.md, "Live regions").
+const sendVoice = computed(() => {
+  if (step.value === 'step-up') {
+    const confirmation = stepUpOpening.value
+    return confirmation?.method === 'email_code' ||
+      confirmation?.method === 'sms_code'
+      ? (sendProgressLine(
+          stepUpSendProgress.value,
+          confirmation.destination ?? '',
+        )?.text ?? '')
+      : ''
+  }
+  if (step.value === 'confirm-current') {
+    return sendProgressLine(sendProgress.value, was.value)?.text ?? ''
+  }
+  if (step.value === 'confirm-new') {
+    return (
+      sendProgressLine(sendProgress.value, newEmail.value.trim())?.text ?? ''
+    )
+  }
+  return ''
+})
 // The step's place in the list: 1 to 5, 0 on the confirmation.
 const stepNumber = computed(
   () =>
@@ -85,8 +111,9 @@ watch(step, (next, previous) => {
     :busy="busy"
     initial-focus="inner"
   >
-    <!-- This dialog's own voice; one region for all the steps, since only one
-    step is on screen at a time. -->
+    <!-- This dialog's own voice; one pair of regions for all the steps, since
+    only one step is on screen at a time: a refusal interrupts, the send line
+    waits its turn. -->
     <div
       class="visually-hidden"
       role="alert"
@@ -94,6 +121,14 @@ watch(step, (next, previous) => {
       data-id="profile-email-live-assertive"
     >
       {{ step === 'step-up' ? stepUpRefusal : refusal }}
+    </div>
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      data-id="profile-email-live-polite"
+    >
+      {{ sendVoice }}
     </div>
 
     <div ref="body">

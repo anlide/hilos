@@ -28,6 +28,7 @@ import {
   SEND_AGAIN_LABEL,
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
+  sendProgressLine,
   sessionAuthMethods,
   subscribeSignal,
   watchHilosProfilePasswordUpdated,
@@ -37,6 +38,7 @@ import {
   type HilosProfileAddableWay,
   type HilosProfilePasswordChangeStep,
   type HilosProfileSignInMethod,
+  type HilosStepUpOpening,
   type CodeSendProgress,
 } from '@hilos/core/base'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
@@ -258,6 +260,14 @@ let signInSequence = 0
               data-id="profile-sign-in-add-live"
             >
               {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
+            </div>
+            <div
+              class="visually-hidden"
+              role="status"
+              aria-live="polite"
+              data-id="profile-sign-in-add-live-polite"
+            >
+              {{ addSendVoice() }}
             </div>
             <div class="hilos-stack">
               <div class="invisible" aria-hidden="true" inert>
@@ -678,7 +688,9 @@ export class HilosProfileSignInPage {
   protected readonly sentEmail = signal('')
   protected readonly sentPhone = signal('')
   protected readonly addAsksBeforeClosing = signal(false)
+  protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
+  protected readonly stepUpSendProgress = signal<CodeSendProgress | null>(null)
   protected readonly stepUpBusy = signal(false)
   protected readonly pendingProvider = signal<string | null>(null)
   /** The dialog's title: the confirmation step names itself. */
@@ -687,6 +699,31 @@ export class HilosProfileSignInPage {
       ? this.stepUpCopy.title
       : 'Add a way to sign in',
   )
+  /**
+   * What the add dialog's calm region says: the send line of the code step on
+   * screen, to the address or number its block names - the confirmation's own
+   * while it stands in front of the steps. The blocks only show it
+   * (accessibility.md, "Live regions").
+   */
+  protected readonly addSendVoice = computed(() => {
+    const step = this.step()
+    if (step === 'step-up') {
+      const opening = this.stepUpOpening()
+      return opening?.method === 'email_code' || opening?.method === 'sms_code'
+        ? (sendProgressLine(
+            this.stepUpSendProgress(),
+            opening.destination ?? '',
+          )?.text ?? '')
+        : ''
+    }
+    if (step === 'password-code') {
+      return sendProgressLine(this.sendProgress(), this.sentEmail())?.text ?? ''
+    }
+    if (step === 'phone-code') {
+      return sendProgressLine(this.sendProgress(), this.sentPhone())?.text ?? ''
+    }
+    return ''
+  })
   protected readonly draft = signal(emptyDraft())
   private readonly addBody = viewChild<ElementRef<HTMLElement>>('addBody')
   protected readonly addDirty = computed(
@@ -823,7 +860,9 @@ export class HilosProfileSignInPage {
       this.sentEmail.set(flow.email.get())
       this.sentPhone.set(flow.phone.get())
       this.addAsksBeforeClosing.set(flow.asksBeforeClosing.get())
+      this.stepUpOpening.set(flow.stepUp.opening.get())
       this.stepUpRefusal.set(flow.stepUp.refusal.get())
+      this.stepUpSendProgress.set(flow.stepUp.sendProgress.get())
       this.stepUpBusy.set(flow.stepUp.busy.get())
       this.pendingProvider.set(flow.provider.get())
       const stops = [
@@ -848,8 +887,14 @@ export class HilosProfileSignInPage {
         subscribeSignal(flow.asksBeforeClosing, (value) =>
           this.addAsksBeforeClosing.set(value),
         ),
+        subscribeSignal(flow.stepUp.opening, (value) =>
+          this.stepUpOpening.set(value),
+        ),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepUpRefusal.set(value),
+        ),
+        subscribeSignal(flow.stepUp.sendProgress, (value) =>
+          this.stepUpSendProgress.set(value),
         ),
         subscribeSignal(flow.stepUp.busy, (value) =>
           this.stepUpBusy.set(value),

@@ -2,11 +2,18 @@ import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  ACCOUNT_DELETION_OPERATION,
   ActionError,
   applyServerTime,
+  bindCodeSendProgress,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_HELD,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createSignal,
   bindProfileFlows,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   type HilosConnection,
   type HilosRouter,
   type HilosSecondFactorContext,
@@ -21,6 +28,7 @@ const DAY = 86_400_000
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  tellSend({ state: null })
 })
 
 /** The answer to a code request: the code is out, and another may follow at once. */
@@ -28,6 +36,73 @@ const SENT = {
   sent: true,
   resendAt: Date.now() - 1_000,
   expiresAt: Date.now() + 600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
+  expiresAt: Date.now() + 600_000,
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  act(() => {
+    for (const listener of sendListeners)
+      listener({
+        type: SIGNAL_CODE_SEND_PROGRESS,
+        data: { message: null, ...line },
+      })
+  })
+  unbind()
+}
+
+/**
+ * One frame of the line a send follows.
+ *
+ * @param purpose The operation that ordered the send.
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ */
+function sendLine(
+  purpose: string,
+  ticket: string,
+  state: string,
+): Record<string, unknown> {
+  return { state, channel: 'email', purpose, ticket }
+}
+
+/** What the window's calm region says now. */
+function calmText(): string | null {
+  return document.querySelector('[data-id="account-deletion-live-polite"]')!
+    .textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
 }
 
 function deferredReply() {
@@ -580,5 +655,207 @@ describe('HilosAccountDeletion', () => {
       dispatched.filter((d) => d.action === 'hilos_account_deletion_code'),
     ).toHaveLength(2)
     expect((node('account-deletion-code') as HTMLInputElement).value).toBe('')
+  })
+
+  it('says the step 2 line to the opening destination and leaves it behind with the window', async () => {
+    const { answers, node, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    state({ deletion: null })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-open'))
+    })
+    const first = node('account-deletion-live-polite')
+    expect(first.getAttribute('role')).toBe('status')
+    expect(first.getAttribute('aria-live')).toBe('polite')
+    expect(first.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    await act(async () => {
+      fireEvent.click(node('account-deletion-continue'))
+    })
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    expect(node('account-deletion-live-polite')).toBe(first)
+    expect(calmText()).toBe('Sent to me@example.test')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_HELD),
+    )
+    expect(calmText()).toBe(
+      'The last code sent to me@example.test was already used',
+    )
+    expect(
+      selfOrInside(node('account-deletion-send'), '[role], [aria-live]'),
+    ).toBeNull()
+
+    // The confirmation's line is not this step's.
+    tellSend(
+      sendLine(CODE_SEND_PURPOSE_STEP_UP, 'confirmation', CODE_SEND_STATE_SENT),
+    )
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+
+    await act(async () => {
+      fireEvent.click(node('account-deletion-cancel'))
+    })
+    expect(node('modal')).toBeNull()
+
+    await act(async () => {
+      fireEvent.click(node('account-deletion-open'))
+    })
+    expect(node('account-deletion-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    await act(async () => {
+      fireEvent.click(node('account-deletion-continue'))
+    })
+    expect(node('account-deletion-code')).not.toBeNull()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'again', CODE_SEND_STATE_QUEUED),
+    )
+    expect(calmText()).toBe('Queued for sending…')
+  })
+
+  it('says the line of an emailed confirmation to its destination and not the window line', async () => {
+    const { answers, node, state } = setup()
+    answers.hilos_step_up_start = {
+      required: true,
+      purpose: 'delete your account',
+      method: 'email_code',
+      destination: 'person@example.test',
+    }
+    state({ deletion: null })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-open'))
+    })
+    const calm = node('account-deletion-live-polite')
+    expect(calmText()).toBe('')
+    tellSend(sendLine(ACCOUNT_DELETION_OPERATION, 'own', CODE_SEND_STATE_SENT))
+    expect(calmText()).toBe('')
+
+    tellSend(
+      sendLine(CODE_SEND_PURPOSE_STEP_UP, 'confirmation', CODE_SEND_STATE_HELD),
+    )
+    expect(node('account-deletion-live-polite')).toBe(calm)
+    expect(calmText()).toBe(
+      'The last code sent to person@example.test was already used',
+    )
+    expect(
+      selfOrInside(
+        node('step-up'),
+        '[role="status"], [role="alert"], [aria-live]',
+      ),
+    ).toBeNull()
+  })
+
+  it.each(['password', 'second_factor'])(
+    'says no line of a %s confirmation, which sent no code',
+    async (method) => {
+      const { answers, node, state } = setup()
+      answers.hilos_step_up_start = {
+        required: true,
+        purpose: 'delete your account',
+        method,
+      }
+      state({ deletion: null })
+      await act(async () => {
+        fireEvent.click(node('account-deletion-open'))
+      })
+      const calm = node('account-deletion-live-polite')
+      expect(calmText()).toBe('')
+      tellSend(
+        sendLine(ACCOUNT_DELETION_OPERATION, 'own', CODE_SEND_STATE_SENT),
+      )
+      expect(calmText()).toBe('')
+
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+      )
+      expect(node('account-deletion-live-polite')).toBe(calm)
+      expect(calmText()).toBe('')
+      expect(
+        selfOrInside(
+          node('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+    },
+  )
+
+  it('keeps a refused code in the alert and the send line in the calm region', async () => {
+    const { answers, node, state, hold } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    state({ deletion: null })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-open'))
+    })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-continue'))
+    })
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(node('account-deletion-live').textContent).toBe('')
+
+    fireEvent.change(node('account-deletion-code'), {
+      target: { value: '000000' },
+    })
+    const pending = hold('hilos_account_deletion_start')
+    await act(async () => {
+      fireEvent.click(node('account-deletion-start'))
+    })
+    await act(async () => {
+      pending.reject(
+        new ActionError(
+          'hilos_account_deletion_start',
+          'fail',
+          'That code is not right',
+        ),
+      )
+    })
+    expect(node('account-deletion-live').textContent).toBe(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(node('account-deletion-code')).not.toBeNull()
+  })
+
+  it('draws the countdown on the send row and keeps it out of the calm region', async () => {
+    const { answers, node, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    answers.hilos_account_deletion_code = SENT_RESEND_LATER
+    state({ deletion: null })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-open'))
+    })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-continue'))
+    })
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+
+    const row = node('account-deletion-send')
+    expect(row.textContent).toContain('Sent to me@example.test')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(calmText()).not.toContain('Send again in')
   })
 })

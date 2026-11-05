@@ -14,8 +14,15 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   ActionError,
+  bindCodeSendProgress,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createSignal,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
+  type HilosConnection,
   type HilosSecondFactorContext,
   type ProjectSignal,
 } from '@hilos/core'
@@ -26,6 +33,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  tellSend({ state: null })
 })
 
 /** A section with no app connected yet, as the group frame carries it. */
@@ -195,6 +203,87 @@ function wait(ms: number): void {
   act(() => {
     vi.advanceTimersByTime(ms)
   })
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  act(() => {
+    for (const listener of sendListeners)
+      listener({
+        type: SIGNAL_CODE_SEND_PROGRESS,
+        data: { message: null, ...line },
+      })
+  })
+  unbind()
+}
+
+/**
+ * One frame of the confirmation's send line.
+ *
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail, when the frame carries one.
+ */
+function confirmationLine(
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    state,
+    channel: 'email',
+    purpose: CODE_SEND_PURPOSE_STEP_UP,
+    ticket,
+    ...more,
+  }
+}
+
+/** The connect window's calm region, standing now. */
+function calmRegion(): HTMLElement {
+  return document.querySelector<HTMLElement>(
+    '[data-id="profile-2fa-enroll-live-polite"]',
+  )!
+}
+
+/** What the connect window's calm region says now. */
+function calmText(): string | null {
+  return calmRegion().textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
+}
+
+/** A confirmation that emailed its code, whose resend gate opens in a minute. */
+const EMAIL_STEP = {
+  required: true,
+  purpose: 'add an authenticator app',
+  method: 'email_code',
+  destination: 'a@example.test',
+  send: { sent: true, resendAt: Date.now() + 60_000, expiresAt: null },
 }
 
 it('asks the server before the modal opens and starts at the name when no step is needed', async () => {
@@ -834,4 +923,135 @@ it('closes a pending window when it turns off, then returns when turned back on'
   push(SECTION_ON)
   expect(node('hilos-2fa-turned-off')).toBeNull()
   expect(node('profile-2fa-apps')).not.toBeNull()
+})
+
+it("says the confirmation's line to its address through a region that outlives the step and falls silent at the name", async () => {
+  const answer = held()
+  const replies: Record<string, unknown> = {
+    ...REPLIES,
+    hilos_step_up_start: EMAIL_STEP,
+  }
+  const { dispatch, node } = setup(replies)
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  const calm = calmRegion()
+  expect(calm.getAttribute('role')).toBe('status')
+  expect(calm.getAttribute('aria-live')).toBe('polite')
+  expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+  expect(calmText()).toBe('')
+
+  tellSend(confirmationLine('this', CODE_SEND_STATE_QUEUED))
+  expect(calmText()).toBe('Queued for sending…')
+  tellSend(confirmationLine('this', CODE_SEND_STATE_SENT))
+  expect(calmRegion()).toBe(calm)
+  expect(calmText()).toBe('Sent to a@example.test')
+  tellSend(
+    confirmationLine('this', CODE_SEND_STATE_FAILED, {
+      detail: 'mailbox unavailable',
+    }),
+  )
+  expect(calmText()).toBe('Could not send: mailbox unavailable')
+
+  // The countdown and the line show on the row, which has no voice of its own.
+  const row = node('step-up-send')!
+  expect(row.textContent).toContain('Could not send: mailbox unavailable')
+  expect(row.textContent).toContain('Send again in')
+  expect(calmText()).not.toContain('Send again in')
+  expect(
+    selfOrInside(
+      node('step-up')!,
+      '[role="status"], [role="alert"], [aria-live]',
+    ),
+  ).toBeNull()
+
+  // A refusal interrupts through its own region; the send line stays calm.
+  replies.hilos_step_up_confirm = answer.reply
+  fireEvent.change(node('step-up-code')!, { target: { value: '000000' } })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  await act(async () => {
+    answer.refuse('hilos_step_up_confirm', 'That code is not right')
+  })
+  expect(node('profile-2fa-enroll-live')!.textContent).toContain(
+    'That code is not right',
+  )
+  expect(calmRegion()).toBe(calm)
+  expect(calmText()).toBe('Could not send: mailbox unavailable')
+
+  // The name follows, and the app's own code later on is typed, not sent.
+  replies.hilos_step_up_confirm = []
+  fireEvent.change(node('step-up-code')!, { target: { value: '123456' } })
+  await act(async () => {
+    fireEvent.submit(node('profile-2fa-enroll')!)
+  })
+  expect(
+    dispatch.mock.calls.filter(
+      ([action]) => action === 'hilos_step_up_confirm',
+    ),
+  ).toHaveLength(2)
+  expect(node('profile-2fa-enroll-label')).not.toBeNull()
+  expect(calmRegion()).toBe(calm)
+  expect(calmText()).toBe('')
+})
+
+it.each([
+  {
+    method: 'sms_code',
+    destination: '+15550001111',
+    said: 'Sent to +15550001111',
+  },
+  { method: 'second_factor', destination: undefined, said: '' },
+])(
+  'says the confirmation line of a $method step only when a code was sent',
+  async ({ method, destination, said }) => {
+    const { node } = setup(
+      {
+        ...REPLIES,
+        hilos_step_up_start: {
+          required: true,
+          purpose: 'add an authenticator app',
+          method,
+          destination,
+        },
+      },
+      SECTION_ON,
+    )
+    await act(async () => {
+      fireEvent.click(node('profile-2fa-add')!)
+    })
+    const calm = calmRegion()
+    expect(calmText()).toBe('')
+
+    tellSend(confirmationLine('this', CODE_SEND_STATE_SENT))
+    expect(calmRegion()).toBe(calm)
+    expect(calmText()).toBe(said)
+  },
+)
+
+it('leaves the line of a closed window behind and says the next attempt from a new region', async () => {
+  const { node } = setup({ ...REPLIES, hilos_step_up_start: EMAIL_STEP })
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  const first = calmRegion()
+  tellSend(confirmationLine('closed', CODE_SEND_STATE_SENT))
+  expect(calmText()).toBe('Sent to a@example.test')
+
+  await act(async () => {
+    fireEvent.click(
+      document.querySelector('[data-id="modal"] .modal-footer .btn-secondary')!,
+    )
+  })
+  expect(node('modal')).toBeNull()
+
+  await act(async () => {
+    fireEvent.click(node('profile-2fa-add')!)
+  })
+  expect(node('step-up')).not.toBeNull()
+  expect(calmRegion()).not.toBe(first)
+  expect(calmText()).toBe('')
+  tellSend(confirmationLine('again', CODE_SEND_STATE_QUEUED))
+  expect(calmText()).toBe('Queued for sending…')
 })

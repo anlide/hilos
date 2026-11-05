@@ -3,16 +3,23 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
+  ADD_SIGN_IN_METHOD_OPERATION,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+  bindCodeSendProgress,
   bindTimeZoneState,
   bindProfileFlows,
   cancelOAuthTrip,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createConnectionInteractionState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
   PROFILE_UNLINK_IDENTITY_ACTION,
   profileFlowsSchema,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_PROFILE_FLOWS,
   resolveHilosProfileSignInMethods,
   type ConnectionInteractionState,
@@ -32,6 +39,7 @@ afterEach(() => {
   cleanup()
   releaseTimeZone?.()
   releaseTimeZone = undefined
+  tellSend({ state: null })
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -48,6 +56,13 @@ const PASSWORD_STEP = {
 const SENT = {
   sent: true,
   resendAt: Date.now() - 1_000,
+  expiresAt: Date.now() + 600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
   expiresAt: Date.now() + 600_000,
 }
 const CODE_REQUESTS = [
@@ -147,6 +162,66 @@ const PROFILE_METHODS = resolveHilosProfileSignInMethods(
   ],
   [],
 )
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  act(() => {
+    for (const listener of sendListeners)
+      listener({
+        type: SIGNAL_CODE_SEND_PROGRESS,
+        data: { message: null, ...line },
+      })
+  })
+  unbind()
+}
+
+/**
+ * One frame of the line a send follows.
+ *
+ * @param purpose The operation that ordered the send.
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ */
+function sendLine(
+  purpose: string,
+  ticket: string,
+  state: string,
+): Record<string, unknown> {
+  return { state, channel: 'email', purpose, ticket }
+}
+
+/** What the add dialog's calm region says now. */
+function calmText(): string | null {
+  return document.querySelector('[data-id="profile-sign-in-add-live-polite"]')!
+    .textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
+}
 
 /** Feed the framework list and normalized identities to the page scope. */
 function setMethods(
@@ -429,6 +504,7 @@ function setup(
   methods = MAGIC_LINK,
   offered: readonly object[] = OFFERED,
   interaction: ConnectionInteractionState | null = null,
+  codeAnswer: object = SENT,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const emit = (type: string, data: unknown) => {
@@ -476,7 +552,7 @@ function setup(
           action === 'hilos_step_up_start'
             ? { reply: opening }
             : CODE_REQUESTS.includes(action)
-              ? { reply: SENT }
+              ? { reply: codeAnswer }
               : {},
         ),
       }
@@ -1425,5 +1501,204 @@ describe('profile sign-in add modal busy body', () => {
     expect(node('modal-confirm')).toBeNull()
     expect(dispatch).toHaveBeenCalledTimes(2)
     interaction.dispose()
+  })
+})
+
+describe('profile sign-in add dialog send line', () => {
+  it.each([
+    {
+      initial: MAGIC_LINK,
+      choose: 'profile-sign-in-choose-phone',
+      address: 'profile-add-sms-phone',
+      value: '+15557654321',
+      request: 'profile-add-sms-request',
+      code: 'profile-add-sms-code',
+      send: 'profile-add-sms-send',
+    },
+    {
+      initial: PASSKEY_ONLY,
+      choose: 'profile-sign-in-choose-password',
+      address: 'profile-add-password-email',
+      value: 'me@example.test',
+      request: 'profile-add-password-request',
+      code: 'profile-add-password-code',
+      send: 'profile-add-password-send',
+    },
+  ])(
+    'says the line of $code to where the code went and nothing on the steps before it',
+    async (way) => {
+      const { node } = setup(NO_STEP, way.initial)
+      tellSend(
+        sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'earlier', CODE_SEND_STATE_SENT),
+      )
+      await act(async () => fireEvent.click(node('profile-sign-in-add')))
+      const calm = node('profile-sign-in-add-live-polite')
+      expect(calm.getAttribute('role')).toBe('status')
+      expect(calm.getAttribute('aria-live')).toBe('polite')
+      expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+      expect(calmText()).toBe('')
+
+      fireEvent.click(node(way.choose))
+      expect(node(way.address)).not.toBeNull()
+      expect(node('profile-sign-in-add-live-polite')).toBe(calm)
+      expect(calmText()).toBe('')
+
+      fireEvent.change(node(way.address), { target: { value: way.value } })
+      await act(async () => fireEvent.click(node(way.request)))
+      expect(node(way.code)).not.toBeNull()
+      expect(calmText()).toBe('')
+      tellSend(
+        sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'this', CODE_SEND_STATE_SENDING),
+      )
+      expect(node('profile-sign-in-add-live-polite')).toBe(calm)
+      expect(calmText()).toBe(`Sending to ${way.value}…`)
+      expect(node(way.send).textContent).toContain(`Sending to ${way.value}…`)
+      expect(selfOrInside(node(way.send), '[role], [aria-live]')).toBeNull()
+
+      // The confirmation's line is not this step's.
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+      )
+      expect(calmText()).toBe('')
+    },
+  )
+
+  it('leaves the line of a discarded dialog behind and says the next attempt from a new region', async () => {
+    const { node } = setup()
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    const first = node('profile-sign-in-add-live-polite')
+    fireEvent.click(node('profile-sign-in-choose-phone'))
+    fireEvent.change(node('profile-add-sms-phone'), {
+      target: { value: '+15557654321' },
+    })
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'discarded', CODE_SEND_STATE_SENT),
+    )
+    expect(calmText()).toBe('Sent to +15557654321')
+
+    fireEvent.click(node('profile-sign-in-add-cancel'))
+    await act(async () => fireEvent.click(node('modal-confirm-discard')))
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    expect(node('profile-sign-in-add-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    fireEvent.click(node('profile-sign-in-choose-phone'))
+    fireEvent.change(node('profile-add-sms-phone'), {
+      target: { value: '+15557654321' },
+    })
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    expect(node('profile-add-sms-code')).not.toBeNull()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'again', CODE_SEND_STATE_QUEUED),
+    )
+    expect(calmText()).toBe('Queued for sending…')
+  })
+
+  it.each([
+    {
+      opening: {
+        required: true,
+        purpose: 'add a way to sign in',
+        method: 'email_code',
+        destination: 'a@example.test',
+      },
+      said: 'Sent to a@example.test',
+    },
+    { opening: PASSWORD_STEP, said: '' },
+  ])(
+    'says the confirmation line only when its $opening.method step sent a code',
+    async ({ opening, said }) => {
+      const { node } = setup(opening)
+      await act(async () => fireEvent.click(node('profile-sign-in-add')))
+      const calm = node('profile-sign-in-add-live-polite')
+      tellSend(
+        sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'own', CODE_SEND_STATE_SENT),
+      )
+      expect(calmText()).toBe('')
+
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+      )
+      expect(node('profile-sign-in-add-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+      expect(
+        selfOrInside(
+          node('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+    },
+  )
+
+  it('keeps a refused code in the alert and the send line in the calm region', async () => {
+    const { dispatch, node } = setup()
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    fireEvent.click(node('profile-sign-in-choose-phone'))
+    fireEvent.change(node('profile-add-sms-phone'), {
+      target: { value: '+15557654321' },
+    })
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'this', CODE_SEND_STATE_SENT),
+    )
+    expect(calmText()).toBe('Sent to +15557654321')
+    expect(node('profile-sign-in-add-live').textContent).toBe('')
+
+    fireEvent.change(node('profile-add-sms-code'), {
+      target: { value: '000000' },
+    })
+    const confirm = held()
+    dispatch.mockImplementationOnce(() => confirm.answer)
+    await act(async () => fireEvent.click(node('profile-add-sms-confirm')))
+    await act(async () =>
+      confirm.reject(
+        new ActionError(
+          'profile_add_sms_confirm',
+          'fail',
+          'That code is not right',
+        ),
+      ),
+    )
+    expect(node('profile-sign-in-add-live').textContent).toBe(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Sent to +15557654321')
+    expect(node('profile-add-sms-code')).not.toBeNull()
+  })
+
+  it('draws the countdown on the send row and keeps it out of the calm region', async () => {
+    const { node } = setup(
+      NO_STEP,
+      MAGIC_LINK,
+      OFFERED,
+      null,
+      SENT_RESEND_LATER,
+    )
+    await act(async () => fireEvent.click(node('profile-sign-in-add')))
+    fireEvent.click(node('profile-sign-in-choose-phone'))
+    fireEvent.change(node('profile-add-sms-phone'), {
+      target: { value: '+15557654321' },
+    })
+    await act(async () => fireEvent.click(node('profile-add-sms-request')))
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'this', CODE_SEND_STATE_SENT),
+    )
+
+    const row = node('profile-add-sms-send')
+    expect(row.textContent).toContain('Sent to +15557654321')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).toBe('Sent to +15557654321')
+    expect(calmText()).not.toContain('Send again in')
   })
 })

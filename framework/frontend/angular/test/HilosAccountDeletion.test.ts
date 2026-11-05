@@ -1,11 +1,18 @@
 import { By } from '@angular/platform-browser'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  ACCOUNT_DELETION_OPERATION,
   ActionError,
   applyServerTime,
+  bindCodeSendProgress,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_HELD,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createSignal,
   bindProfileFlows,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   type HilosAccountDeletionFlow,
   type HilosConnection,
   type HilosRouter,
@@ -28,7 +35,88 @@ afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  tellSend({ state: null })
 })
+
+/** The answer to a code request: the code is out, and another may follow at once. */
+const SENT = {
+  sent: true,
+  resendAt: PAST,
+  expiresAt: 1_900_000_600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
+  expiresAt: 1_900_000_600_000,
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ * @param fixture The window to draw once the frame is in, when there is one.
+ */
+function tellSend(
+  line: Record<string, unknown>,
+  fixture?: ComponentFixture<unknown>,
+): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+  fixture?.detectChanges()
+}
+
+/**
+ * One frame of the line a send follows.
+ *
+ * @param purpose The operation that ordered the send.
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ */
+function sendLine(
+  purpose: string,
+  ticket: string,
+  state: string,
+): Record<string, unknown> {
+  return { state, channel: 'email', purpose, ticket }
+}
+
+/** What the window's calm region says now, past the template's own spacing. */
+function calmText(): string | undefined {
+  return document
+    .querySelector('[data-id="account-deletion-live-polite"]')!
+    .textContent?.trim()
+}
+
+/**
+ * The block's element-host, or else its root, or else the first thing inside
+ * either, that matches the selector: the host and the root of a block are the
+ * likeliest places for a voice to return.
+ *
+ * @param block The root of a step-up or send block, drawn inside its host.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(block: Element, selector: string): Element | null {
+  const host = block.closest('hilos-step-up-step, hilos-send-progress') ?? block
+  return host.matches(selector) ? host : host.querySelector(selector)
+}
 
 async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
   await flush(fixture)
@@ -544,4 +632,197 @@ describe('HilosAccountDeletion', () => {
     expect(node('modal')).toBeNull()
     fixture.destroy()
   })
+
+  it('says the step 2 line to the opening destination and leaves it behind with the window', async () => {
+    const { answers, fixture, node, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    answers.hilos_account_deletion_code = SENT
+    state({ deletion: null })
+    await settle(fixture)
+    node('account-deletion-open').click()
+    await settle(fixture)
+    const calm = node('account-deletion-live-polite')
+    expect(calm.getAttribute('role')).toBe('status')
+    expect(calm.getAttribute('aria-live')).toBe('polite')
+    expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    node('account-deletion-continue').click()
+    await settle(fixture)
+    expect(node('account-deletion-code')).not.toBeNull()
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+    expect(node('account-deletion-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Sent to me@example.test')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_HELD),
+      fixture,
+    )
+    expect(calmText()).toBe(
+      'The last code sent to me@example.test was already used',
+    )
+    expect(
+      selfOrInside(node('account-deletion-send'), '[role], [aria-live]'),
+    ).toBeNull()
+
+    // The confirmation's line is not this step's.
+    tellSend(
+      sendLine(CODE_SEND_PURPOSE_STEP_UP, 'confirmation', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+
+    const first = node('modal')
+    node('account-deletion-cancel').click()
+    await settle(fixture)
+    expect(node('modal')).toBeNull()
+
+    // The window opens as a new dialog; the region it projects stands in it
+    // with nothing to say, and says the next attempt's line once it comes.
+    node('account-deletion-open').click()
+    await settle(fixture)
+    expect(node('modal')).not.toBe(first)
+    expect(
+      node('account-deletion-live-polite').closest('[aria-modal="true"]'),
+    ).toBe(node('modal'))
+    expect(calmText()).toBe('')
+    node('account-deletion-continue').click()
+    await settle(fixture)
+    expect(node('account-deletion-code')).not.toBeNull()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'again', CODE_SEND_STATE_QUEUED),
+      fixture,
+    )
+    expect(calmText()).toBe('Queued for sending…')
+    fixture.destroy()
+  })
+
+  it('keeps a refused code in the alert and the send line in the calm region', async () => {
+    const { answers, fixture, node, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    answers.hilos_account_deletion_code = SENT
+    state({ deletion: null })
+    await settle(fixture)
+    node('account-deletion-open').click()
+    await settle(fixture)
+    node('account-deletion-continue').click()
+    await settle(fixture)
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(node('account-deletion-live').textContent?.trim()).toBe('')
+
+    const code = node('account-deletion-code') as HTMLInputElement
+    code.value = '000000'
+    code.dispatchEvent(new Event('input', { bubbles: true }))
+    const refused = held<unknown>()
+    answers.hilos_account_deletion_start = refused.promise
+    node('account-deletion-start').click()
+    await flush(fixture)
+    refused.reject(
+      new ActionError(
+        'hilos_account_deletion_start',
+        'fail',
+        'That code is not right',
+      ),
+    )
+    await settle(fixture)
+    expect(node('account-deletion-live').textContent?.trim()).toBe(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(node('account-deletion-code')).toBe(code)
+    fixture.destroy()
+  })
+
+  it('draws the countdown on the send row and keeps it out of the calm region', async () => {
+    const { answers, fixture, node, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    answers.hilos_account_deletion_code = SENT_RESEND_LATER
+    state({ deletion: null })
+    await settle(fixture)
+    node('account-deletion-open').click()
+    await settle(fixture)
+    node('account-deletion-continue').click()
+    await settle(fixture)
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+
+    const row = node('account-deletion-send')
+    expect(row.textContent).toContain('Sent to me@example.test')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(calmText()).not.toContain('Send again in')
+    fixture.destroy()
+  })
+
+  it.each([
+    {
+      method: 'email_code',
+      destination: 'person@example.test',
+      said: 'The last code sent to person@example.test was already used',
+    },
+    { method: 'passkey', destination: undefined, said: '' },
+  ])(
+    'says the line of a $method confirmation only when it sent a code, and not the window line',
+    async ({ method, destination, said }) => {
+      const { answers, fixture, node, state } = setup()
+      answers.hilos_step_up_start = {
+        required: true,
+        purpose: 'delete your account',
+        method,
+        destination,
+      }
+      state({ deletion: null })
+      await settle(fixture)
+      node('account-deletion-open').click()
+      await settle(fixture)
+      const calm = node('account-deletion-live-polite')
+      expect(calmText()).toBe('')
+      tellSend(
+        sendLine(ACCOUNT_DELETION_OPERATION, 'own', CODE_SEND_STATE_SENT),
+        fixture,
+      )
+      expect(calmText()).toBe('')
+
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_HELD,
+        ),
+        fixture,
+      )
+      expect(node('account-deletion-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+      expect(
+        selfOrInside(
+          node('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+      fixture.destroy()
+    },
+  )
 })

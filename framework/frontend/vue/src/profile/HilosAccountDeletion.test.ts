@@ -2,14 +2,22 @@
 // (HIL-302): the zone turning into the warning and back from the person's
 // state, the refusal drawn in the room kept above the buttons, the code field
 // taking the focus on step 2, the send block of step 2 asking for another
-// code, and the window held with its body locked while a step is out, its Your
-// data link with it (HIL-1763).
+// code, the window held with its body locked while a step is out, its Your
+// data link with it (HIL-1763), and the window's calm region saying the send
+// line of the code step on screen (HIL-1810).
 import {
+  ACCOUNT_DELETION_OPERATION,
   ActionError,
   applyServerTime,
+  bindCodeSendProgress,
   bindProfileFlows,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_HELD,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createSignal,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
@@ -28,6 +36,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  tellSend({ state: null })
 })
 
 enableAutoUnmount(afterEach)
@@ -39,6 +48,13 @@ const DAY = 86_400_000
 const SENT_RESEND_OPEN = {
   sent: true,
   resendAt: Date.now() - 60_000,
+  expiresAt: Date.now() + 600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
   expiresAt: Date.now() + 600_000,
 }
 
@@ -197,6 +213,63 @@ function typeInto(id: string, value: string): void {
   const field = byId(id) as HTMLInputElement
   field.value = value
   field.dispatchEvent(new Event('input'))
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+}
+
+/**
+ * One frame of the line a send follows.
+ *
+ * @param purpose The operation that ordered the send.
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ */
+function sendLine(
+  purpose: string,
+  ticket: string,
+  state: string,
+): Record<string, unknown> {
+  return { state, channel: 'email', purpose, ticket }
+}
+
+/** What the window's calm region says now. */
+function calmText(): string | null {
+  return byId('account-deletion-live-polite').textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
 }
 
 describe('HilosAccountDeletion', () => {
@@ -447,6 +520,217 @@ describe('HilosAccountDeletion', () => {
     expect(byId('account-deletion-error').textContent).toContain(
       'That code is not right',
     )
+  })
+
+  it('says the step 2 line to the opening destination and leaves it behind with the window', async () => {
+    const world = zoneWorld({
+      hilos_step_up_start: { required: false, purpose: 'delete your account' },
+      hilos_account_deletion_open: {
+        graceDays: 30,
+        channel: 'email',
+        destination: 'me@example.test',
+      },
+      hilos_account_deletion_code: SENT_RESEND_OPEN,
+    })
+    world.state({ deletion: null })
+    await nextTick()
+    byId('account-deletion-open').click()
+    await flushPromises()
+    const first = byId('account-deletion-live-polite')
+    expect(first.getAttribute('role')).toBe('status')
+    expect(first.getAttribute('aria-live')).toBe('polite')
+    expect(first.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    byId('account-deletion-continue').click()
+    await flushPromises()
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    await nextTick()
+    expect(byId('account-deletion-live-polite')).toBe(first)
+    expect(calmText()).toBe('Sent to me@example.test')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_HELD),
+    )
+    await nextTick()
+    expect(calmText()).toBe(
+      'The last code sent to me@example.test was already used',
+    )
+    expect(
+      selfOrInside(byId('account-deletion-send'), '[role], [aria-live]'),
+    ).toBeNull()
+
+    // The confirmation's line is not this step's.
+    tellSend(
+      sendLine(CODE_SEND_PURPOSE_STEP_UP, 'confirmation', CODE_SEND_STATE_SENT),
+    )
+    await nextTick()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    await nextTick()
+
+    byId('account-deletion-cancel').click()
+    await flushPromises()
+    expect(find('modal')).toBeNull()
+
+    byId('account-deletion-open').click()
+    await flushPromises()
+    expect(byId('account-deletion-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    byId('account-deletion-continue').click()
+    await flushPromises()
+    expect(byId('account-deletion-code')).toBeDefined()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'again', CODE_SEND_STATE_QUEUED),
+    )
+    await nextTick()
+    expect(calmText()).toBe('Queued for sending…')
+  })
+
+  it('says the line of an emailed confirmation to its destination and not the window line', async () => {
+    zoneWorld({
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'delete your account',
+        method: 'email_code',
+        destination: 'person@example.test',
+      },
+    })
+    byId('account-deletion-open').click()
+    await flushPromises()
+    const calm = byId('account-deletion-live-polite')
+    expect(calmText()).toBe('')
+    tellSend(sendLine(ACCOUNT_DELETION_OPERATION, 'own', CODE_SEND_STATE_SENT))
+    await nextTick()
+    expect(calmText()).toBe('')
+
+    tellSend(
+      sendLine(CODE_SEND_PURPOSE_STEP_UP, 'confirmation', CODE_SEND_STATE_HELD),
+    )
+    await nextTick()
+    expect(byId('account-deletion-live-polite')).toBe(calm)
+    expect(calmText()).toBe(
+      'The last code sent to person@example.test was already used',
+    )
+    expect(
+      selfOrInside(
+        byId('step-up'),
+        '[role="status"], [role="alert"], [aria-live]',
+      ),
+    ).toBeNull()
+  })
+
+  it.each(['password', 'second_factor'])(
+    'says no line of a %s confirmation, which sent no code',
+    async (method) => {
+      zoneWorld({
+        hilos_step_up_start: {
+          required: true,
+          purpose: 'delete your account',
+          method,
+        },
+      })
+      byId('account-deletion-open').click()
+      await flushPromises()
+      const calm = byId('account-deletion-live-polite')
+      expect(calmText()).toBe('')
+      tellSend(
+        sendLine(ACCOUNT_DELETION_OPERATION, 'own', CODE_SEND_STATE_SENT),
+      )
+      await nextTick()
+      expect(calmText()).toBe('')
+
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+      )
+      await nextTick()
+      expect(byId('account-deletion-live-polite')).toBe(calm)
+      expect(calmText()).toBe('')
+      expect(
+        selfOrInside(
+          byId('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+    },
+  )
+
+  it('keeps a refused code in the alert and the send line in the calm region', async () => {
+    const world = zoneWorld(
+      {
+        hilos_step_up_start: {
+          required: false,
+          purpose: 'delete your account',
+        },
+        hilos_account_deletion_open: {
+          graceDays: 30,
+          channel: 'email',
+          destination: 'me@example.test',
+        },
+        hilos_account_deletion_code: SENT_RESEND_OPEN,
+      },
+      ['hilos_account_deletion_start'],
+    )
+    world.state({ deletion: null })
+    await nextTick()
+    byId('account-deletion-open').click()
+    await flushPromises()
+    byId('account-deletion-continue').click()
+    await flushPromises()
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    await nextTick()
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(byId('account-deletion-live').textContent).toBe('')
+
+    typeInto('account-deletion-code', '000000')
+    await nextTick()
+    byId('account-deletion-start').click()
+    await flushPromises()
+    world.held[0]!.refuse('That code is not right')
+    await flushPromises()
+    expect(byId('account-deletion-live').textContent).toBe(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(byId('account-deletion-code')).toBeDefined()
+  })
+
+  it('draws the countdown on the send row and keeps it out of the calm region', async () => {
+    const world = zoneWorld({
+      hilos_step_up_start: { required: false, purpose: 'delete your account' },
+      hilos_account_deletion_open: {
+        graceDays: 30,
+        channel: 'email',
+        destination: 'me@example.test',
+      },
+      hilos_account_deletion_code: SENT_RESEND_LATER,
+    })
+    world.state({ deletion: null })
+    await nextTick()
+    byId('account-deletion-open').click()
+    await flushPromises()
+    byId('account-deletion-continue').click()
+    await flushPromises()
+    tellSend(
+      sendLine(ACCOUNT_DELETION_OPERATION, 'first', CODE_SEND_STATE_SENT),
+    )
+    await nextTick()
+
+    const row = byId('account-deletion-send')
+    expect(row.textContent).toContain('Sent to me@example.test')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).toBe('Sent to me@example.test')
+    expect(calmText()).not.toContain('Send again in')
   })
 })
 

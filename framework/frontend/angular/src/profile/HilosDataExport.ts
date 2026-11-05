@@ -13,10 +13,13 @@ import {
   dataExportStatusText,
   hilosImpersonation,
   hilosTimeZone,
+  sendProgressLine,
   subscribeSignal,
+  type CodeSendProgress,
   type DataExportNode,
   type HilosDataExportStore,
   type HilosDataExportFlow,
+  type HilosStepUpOpening,
 } from '@hilos/core/base'
 import { hilosSignal } from '../hilosSignal.js'
 import { HilosFormError } from '../HilosFormError.js'
@@ -118,6 +121,14 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
         <div class="visually-hidden" role="alert" aria-live="assertive">
           {{ stepRefusal() ?? refusal() }}
         </div>
+        <div
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="data-export-live-polite"
+        >
+          {{ sendVoice() }}
+        </div>
         <form
           id="hilos-data-export-proof"
           data-id="data-export-step-up"
@@ -168,6 +179,8 @@ export class HilosDataExport {
   protected readonly stepUpBusy = signal(false)
   protected readonly refusal = signal<string | null>(null)
   protected readonly stepRefusal = signal<string | null>(null)
+  protected readonly stepOpening = signal<HilosStepUpOpening | null>(null)
+  protected readonly stepSendProgress = signal<CodeSendProgress | null>(null)
   protected readonly open = signal(false)
   protected readonly status = computed(() => {
     this.timeZone()
@@ -184,6 +197,20 @@ export class HilosDataExport {
       sizeBytes: null,
     })
   })
+  /**
+   * What the window's calm region says: the confirmation's send line, to the
+   * address its block names, while the window is open and only when it sent a
+   * code; the order has no send of its own. The block only shows it
+   * (accessibility.md, "Live regions").
+   */
+  protected readonly sendVoice = computed(() => {
+    const opening = this.stepOpening()
+    return this.open() &&
+      (opening?.method === 'email_code' || opening?.method === 'sms_code')
+      ? (sendProgressLine(this.stepSendProgress(), opening.destination ?? '')
+          ?.text ?? '')
+      : ''
+  })
 
   constructor() {
     effect((onCleanup) => {
@@ -195,6 +222,8 @@ export class HilosDataExport {
       this.open.set(flow.open.get())
       this.refusal.set(flow.refusal.get())
       this.stepRefusal.set(flow.stepUp.refusal.get())
+      this.stepOpening.set(flow.stepUp.opening.get())
+      this.stepSendProgress.set(flow.stepUp.sendProgress.get())
       const off = [
         subscribeSignal(store.state, (value) => this.node.set(value)),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
@@ -205,6 +234,12 @@ export class HilosDataExport {
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepRefusal.set(value),
+        ),
+        subscribeSignal(flow.stepUp.opening, (value) =>
+          this.stepOpening.set(value),
+        ),
+        subscribeSignal(flow.stepUp.sendProgress, (value) =>
+          this.stepSendProgress.set(value),
         ),
       ]
       onCleanup(() => off.forEach((stop) => stop()))

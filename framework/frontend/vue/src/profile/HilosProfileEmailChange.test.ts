@@ -1,15 +1,27 @@
 // Covers what the email window's view owns (HIL-1169): the step list marking
 // the step on screen, the address in the text of step one, a refusal kept on
 // its step, the send block of each code step asking for another code, and the
-// outcome naming what the address was and is now, and the window held with its
-// body locked while a step is out (HIL-1763). The steps
+// outcome naming what the address was and is now, the window held with its
+// body locked while a step is out (HIL-1763), and the dialog's calm region
+// saying the send line of the code step on screen (HIL-1810). The steps
 // are the session's record (HIL-1182), so the fake server tells it before it
 // answers, as the session holder does.
 import {
   ActionError,
+  AUTH_CODE_REASON_RATE_LIMITED,
+  bindCodeSendProgress,
   bindProfileFlows,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_HELD,
+  CODE_SEND_STATE_NOT_SENT,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createHilosProfileEmailChangeFlow,
+  EMAIL_CHANGE_OPERATION,
   profileFlowsSchema,
+  SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_PROFILE_FLOWS,
   type ActionLifecycle,
   type HilosConnection,
@@ -24,6 +36,7 @@ import HilosProfileEmailChange from './HilosProfileEmailChange.vue'
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  tellSend({ state: null })
 })
 enableAutoUnmount(afterEach)
 
@@ -54,6 +67,76 @@ const SENT_RESEND_OPEN = {
   sent: true,
   resendAt: Date.now() - 60_000,
   expiresAt: Date.now() + 600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
+  expiresAt: Date.now() + 600_000,
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+}
+
+/**
+ * One frame of the line a send of this window follows.
+ *
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail or the gate's reason, when the frame carries one.
+ */
+function windowLine(
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    state,
+    channel: 'email',
+    purpose: EMAIL_CHANGE_OPERATION,
+    ticket,
+    ...more,
+  }
+}
+
+/** What the dialog's calm region says now. */
+function calmText(): string | null {
+  return byId('profile-email-live-polite').textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
 }
 
 /** Tell the session's record of the email change, as the frame carries it. */
@@ -319,5 +402,256 @@ describe('HilosProfileEmailChange', () => {
     expect(call?.payload).toMatchObject({
       password: 'secret',
     })
+  })
+
+  it('says every turn of the send through one calm region standing in the dialog before the first send', async () => {
+    const { flow } = setup({
+      profile_change_email_current_request: SENT_RESEND_LATER,
+      profile_change_email_current_confirm: 'That code is not right',
+    })
+    await flow.open('old@example.test')
+    await settle()
+    const calm = byId('profile-email-live-polite')
+    expect(calm.getAttribute('role')).toBe('status')
+    expect(calm.getAttribute('aria-live')).toBe('polite')
+    expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    byId('profile-email-send-current').click()
+    await settle()
+    for (const [frame, said] of [
+      [windowLine('first', CODE_SEND_STATE_QUEUED), 'Queued for sending…'],
+      [
+        windowLine('first', CODE_SEND_STATE_SENDING),
+        'Sending to old@example.test…',
+      ],
+      [windowLine('first', CODE_SEND_STATE_SENT), 'Sent to old@example.test'],
+      [
+        windowLine('first', CODE_SEND_STATE_FAILED, {
+          detail: 'mailbox unavailable',
+        }),
+        'Could not send: mailbox unavailable',
+      ],
+      [
+        windowLine('first', CODE_SEND_STATE_HELD),
+        'The last code sent to old@example.test was already used',
+      ],
+      [
+        windowLine('first', CODE_SEND_STATE_NOT_SENT),
+        'Not really sent to old@example.test — letters are written here, not mailed',
+      ],
+      [
+        windowLine('first', CODE_SEND_STATE_SENT, {
+          reason: AUTH_CODE_REASON_RATE_LIMITED,
+        }),
+        'Sent to old@example.test earlier — that code still works',
+      ],
+    ] as const) {
+      tellSend(frame)
+      await nextTick()
+      expect(byId('profile-email-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+    }
+
+    // The countdown and the line show on the row, which has no voice of its own.
+    const row = byId('profile-email-current-send')
+    expect(row.textContent).toContain('Send again in')
+    expect(row.textContent).toContain(
+      'Sent to old@example.test earlier — that code still works',
+    )
+    expect(selfOrInside(row, '[role], [aria-live]')).toBeNull()
+
+    // A refusal interrupts through its own region; the send line stays calm.
+    typeInto('profile-email-code-current', '000000')
+    await nextTick()
+    byId('profile-email-confirm-current').click()
+    await settle()
+    expect(byId('profile-email-live-assertive').textContent).toContain(
+      'That code is not right',
+    )
+    expect(calmText()).toBe(
+      'Sent to old@example.test earlier — that code still works',
+    )
+  })
+
+  it('says the line to the address of each code step and falls silent between them', async () => {
+    const { flow } = setup({
+      profile_change_email_current_request: SENT_RESEND_OPEN,
+      profile_change_email_new_request: SENT_RESEND_OPEN,
+    })
+    await flow.open('old@example.test')
+    await settle()
+    const calm = byId('profile-email-live-polite')
+    byId('profile-email-send-current').click()
+    await settle()
+    tellSend(windowLine('current', CODE_SEND_STATE_SENT))
+    await nextTick()
+    expect(calmText()).toBe('Sent to old@example.test')
+
+    typeInto('profile-email-code-current', '111111')
+    await nextTick()
+    byId('profile-email-confirm-current').click()
+    await settle()
+    expect(byId('profile-email-new')).toBeDefined()
+    expect(byId('profile-email-live-polite')).toBe(calm)
+    expect(calmText()).toBe('')
+
+    typeInto('profile-email-new', ' New@Example.test ')
+    await nextTick()
+    byId('profile-email-send-new').click()
+    await settle()
+    tellSend(windowLine('new', CODE_SEND_STATE_SENDING))
+    await nextTick()
+    expect(byId('profile-email-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Sending to new@example.test…')
+    expect(byId('profile-email-new-send').textContent).toContain(
+      'Sending to new@example.test…',
+    )
+
+    // The confirmation's line belongs to another step: the window's code step
+    // does not take it up.
+    tellSend({
+      state: CODE_SEND_STATE_SENT,
+      channel: 'email',
+      purpose: CODE_SEND_PURPOSE_STEP_UP,
+      ticket: 'confirmation',
+    })
+    await nextTick()
+    expect(calmText()).toBe('')
+  })
+
+  it('leaves the line of a closed window behind and says the next attempt from a new region', async () => {
+    const { flow } = setup({
+      profile_change_email_current_request: SENT_RESEND_OPEN,
+    })
+    await flow.open('old@example.test')
+    await settle()
+    const first = byId('profile-email-live-polite')
+    byId('profile-email-send-current').click()
+    await settle()
+    tellSend(windowLine('closed', CODE_SEND_STATE_SENT))
+    await nextTick()
+    expect(calmText()).toBe('Sent to old@example.test')
+
+    flow.close()
+    await settle()
+    tell(null)
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+
+    await flow.open('old@example.test')
+    await settle()
+    expect(byId('profile-email-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    byId('profile-email-send-current').click()
+    await settle()
+    tellSend(windowLine('again', CODE_SEND_STATE_QUEUED))
+    await nextTick()
+    expect(calmText()).toBe('Queued for sending…')
+  })
+
+  it.each([
+    {
+      method: 'email_code',
+      destination: 'person@example.test',
+      said: 'The last code sent to person@example.test was already used',
+    },
+    {
+      method: 'sms_code',
+      destination: '+15550001111',
+      said: 'The last code sent to +15550001111 was already used',
+    },
+    { method: 'password', destination: undefined, said: '' },
+    { method: 'passkey', destination: undefined, said: '' },
+    { method: 'second_factor', destination: undefined, said: '' },
+  ])(
+    'says the confirmation line only for a sent $method code, to its destination',
+    async ({ method, destination, said }) => {
+      const { flow } = setup({
+        hilos_step_up_start: {
+          required: true,
+          purpose: 'change your email',
+          method,
+          destination,
+        },
+      })
+      await flow.open('old@example.test')
+      await settle()
+      const calm = byId('profile-email-live-polite')
+      expect(calmText()).toBe('')
+
+      // The window's own line is not the confirmation's.
+      tellSend(windowLine('own', CODE_SEND_STATE_SENT))
+      await nextTick()
+      expect(calmText()).toBe('')
+
+      tellSend({
+        state: CODE_SEND_STATE_HELD,
+        channel: 'email',
+        purpose: CODE_SEND_PURPOSE_STEP_UP,
+        ticket: 'confirmation',
+      })
+      await nextTick()
+      expect(byId('profile-email-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+      expect(
+        selfOrInside(
+          byId('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+    },
+  )
+
+  it('keeps a refused confirmation in the alert and says no line without an opening', async () => {
+    const { flow } = setup({ hilos_step_up_start: 'Too many attempts' })
+    await flow.open('old@example.test')
+    await settle()
+    tellSend({
+      state: CODE_SEND_STATE_SENT,
+      channel: 'email',
+      purpose: CODE_SEND_PURPOSE_STEP_UP,
+      ticket: 'confirmation',
+    })
+    await nextTick()
+    expect(byId('profile-email-live-assertive').textContent).toContain(
+      'Too many attempts',
+    )
+    expect(calmText()).toBe('')
+  })
+
+  it('leaves the confirmation line behind once the window stands on its own code step', async () => {
+    const { flow } = setup({
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'change your email',
+        method: 'email_code',
+        destination: 'person@example.test',
+      },
+      profile_change_email_current_request: SENT_RESEND_OPEN,
+    })
+    await flow.open('old@example.test')
+    await settle()
+    tellSend({
+      state: CODE_SEND_STATE_SENT,
+      channel: 'email',
+      purpose: CODE_SEND_PURPOSE_STEP_UP,
+      ticket: 'confirmation',
+    })
+    await nextTick()
+    expect(calmText()).toBe('Sent to person@example.test')
+
+    typeInto('step-up-code', '123456')
+    byId('profile-email-step-up').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    )
+    await settle()
+    byId('profile-email-send-current').click()
+    await settle()
+    expect(byId('profile-email-code-current')).toBeDefined()
+    expect(calmText()).toBe('')
+    tellSend(windowLine('own', CODE_SEND_STATE_SENT))
+    await nextTick()
+    expect(calmText()).toBe('Sent to old@example.test')
   })
 })

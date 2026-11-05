@@ -485,8 +485,9 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   `@hilos/core` `primitives/sendProgress`; Vue, React, and Angular only render
   them. It reserves the line and repeat row before the first send, opens the
   complete line in `HilosModal`, and carries no live region of its own, so the
-  changing line is never read twice. The profile windows' regions voice their
-  refusals only, so the line itself is not announced yet (P-486);
+  changing line is never read twice. The profile windows announce it through a
+  polite region of their own, beside the assertive one for refusals
+  ([accessibility.md](accessibility.md), "Live regions");
 - the **upload field** (HIL-140) is three tags over one state: the page creates
   `createHilosUploadField({ target })` from `@hilos/core` `primitives/uploadField`,
   hands it to every tag, and disposes it itself. **`HilosUploadDrop`** wraps the

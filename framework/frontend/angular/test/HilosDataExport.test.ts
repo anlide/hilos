@@ -2,12 +2,19 @@ import { By } from '@angular/platform-browser'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionError,
+  bindCodeSendProgress,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createConnectionInteractionState,
   createSignal,
   bindImpersonation,
   dataExportStatusText,
   ingest,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   createHilosDataExportFlow,
   type ActionLifecycle,
   type HilosConnection,
@@ -75,7 +82,136 @@ afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  tellSend({ state: null })
 })
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ * @param fixture The window to draw once the frame is in, when there is one.
+ */
+function tellSend(
+  line: Record<string, unknown>,
+  fixture?: ComponentFixture<unknown>,
+): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+  fixture?.detectChanges()
+}
+
+/**
+ * One frame of the confirmation's send line.
+ *
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail, when the frame carries one.
+ */
+function confirmationLine(
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    state,
+    channel: 'email',
+    purpose: CODE_SEND_PURPOSE_STEP_UP,
+    ticket,
+    ...more,
+  }
+}
+
+/** What the window's calm region says now, past the template's own spacing. */
+function calmText(): string | undefined {
+  return document
+    .querySelector('[data-id="data-export-live-polite"]')!
+    .textContent?.trim()
+}
+
+/**
+ * The block's element-host, or else its root, or else the first thing inside
+ * either, that matches the selector: the host and the root of a block are the
+ * likeliest places for a voice to return.
+ *
+ * @param block The root of a step-up or send block, drawn inside its host.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(block: Element, selector: string): Element | null {
+  const host = block.closest('hilos-step-up-step, hilos-send-progress') ?? block
+  return host.matches(selector) ? host : host.querySelector(selector)
+}
+
+/** A confirmation that texted its code, whose resend gate opens in a minute. */
+const SMS_STEP = {
+  destination: '+15550001111',
+  send: { sent: true, resendAt: Date.now() + 60_000, expiresAt: null },
+}
+
+/**
+ * Mount the real flow and window over replies the test controls.
+ *
+ * @param method The proof the server asks for.
+ * @param step What the confirmation's opening says beside its method: the
+ *   address a sent code went to, and the send's own reply.
+ */
+function mountExport(
+  method: 'password' | 'second_factor' | 'email_code' | 'sms_code',
+  step: { destination?: string; send?: object } = {},
+) {
+  const state = createSignal<DataExportNode | null>(null)
+  const store: HilosDataExportStore = { state, start() {}, dispose() {} }
+  const sent: string[] = []
+  const answers: Record<string, unknown> = {
+    hilos_step_up_start: {
+      required: true,
+      method,
+      purpose: 'export your data',
+      ...step,
+    },
+  }
+  const actions = {
+    dispatch(action: string) {
+      sent.push(action)
+      const answer = answers[action]
+      return {
+        done:
+          answer instanceof Promise
+            ? answer.then((reply) => ({ reply }))
+            : Promise.resolve({ reply: answer ?? [] }),
+      }
+    },
+  } as unknown as ActionLifecycle
+  const flow = createHilosDataExportFlow(actions, store)
+  const fixture = TestBed.createComponent(HilosDataExport)
+  fixture.componentRef.setInput('store', store)
+  fixture.componentRef.setInput('flow', flow)
+  fixture.detectChanges()
+  const node = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-id="${id}"]`)!
+  const type = (value: string): void => {
+    const code = node('step-up-code') as HTMLInputElement
+    code.value = value
+    code.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  return { answers, fixture, flow, node, sent, type }
+}
 
 it('projects the confirmation controls into the modal footer', async () => {
   const state = createSignal<DataExportNode | null>(null)
@@ -447,9 +583,10 @@ it.each(['email_code', 'sms_code'] as const)(
     expect(node('step-up-error').textContent).toContain(
       'Another code could not be sent',
     )
-    expect(form.previousElementSibling?.textContent).toContain(
-      'Another code could not be sent',
-    )
+    expect(
+      node('modal').querySelector('[role="alert"][aria-live="assertive"]')
+        ?.textContent,
+    ).toContain('Another code could not be sent')
     expect(node('modal-confirm')).toBeNull()
 
     code.value = '654321'
@@ -531,3 +668,119 @@ it.each(['email_code', 'sms_code'] as const)(
     interaction.dispose()
   },
 )
+
+it("says the confirmation's line to its number through a region that outlives every frame and keeps refusals apart", async () => {
+  const w = mountExport('sms_code', SMS_STEP)
+  await w.flow.prepare()
+  await settle(w.fixture)
+  const calm = w.node('data-export-live-polite')
+  expect(calm.getAttribute('role')).toBe('status')
+  expect(calm.getAttribute('aria-live')).toBe('polite')
+  expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+  expect(calmText()).toBe('')
+
+  tellSend(confirmationLine('this', CODE_SEND_STATE_SENDING), w.fixture)
+  expect(calmText()).toBe('Sending to +15550001111…')
+  tellSend(confirmationLine('this', CODE_SEND_STATE_SENT), w.fixture)
+  expect(w.node('data-export-live-polite')).toBe(calm)
+  expect(calmText()).toBe('Sent to +15550001111')
+  tellSend(
+    confirmationLine('this', CODE_SEND_STATE_FAILED, {
+      detail: 'number unreachable',
+    }),
+    w.fixture,
+  )
+  expect(calmText()).toBe('Could not send: number unreachable')
+
+  // The countdown and the line show on the row, which has no voice of its own.
+  const row = w.node('step-up-send')
+  expect(row.textContent).toContain('Could not send: number unreachable')
+  expect(row.textContent).toContain('Send again in')
+  expect(calmText()).not.toContain('Send again in')
+  expect(
+    selfOrInside(
+      w.node('step-up'),
+      '[role="status"], [role="alert"], [aria-live]',
+    ),
+  ).toBeNull()
+
+  // A refusal interrupts through the window's own alert; the line stays calm.
+  const proof = held<unknown>()
+  w.answers.hilos_step_up_confirm = proof.promise
+  w.type('000000')
+  w.node('data-export-confirm').click()
+  await flush(w.fixture)
+  proof.reject(
+    new ActionError('hilos_step_up_confirm', 'fail', 'That code is not right'),
+  )
+  await flush(w.fixture)
+  await settle(w.fixture)
+  expect(
+    w
+      .node('modal')
+      .querySelector('[role="alert"][aria-live="assertive"]')
+      ?.textContent?.trim(),
+  ).toBe('That code is not right')
+  expect(w.node('data-export-live-polite')).toBe(calm)
+  expect(calmText()).toBe('Could not send: number unreachable')
+
+  w.flow.dispose()
+  w.fixture.destroy()
+})
+
+it.each([
+  {
+    method: 'email_code',
+    destination: 'a@example.test',
+    said: 'Sent to a@example.test',
+  },
+  { method: 'second_factor', destination: undefined, said: '' },
+] as const)(
+  'says the confirmation line of a $method step only when a code was sent',
+  async ({ method, destination, said }) => {
+    const w = mountExport(method, { destination })
+    await w.flow.prepare()
+    await settle(w.fixture)
+    const calm = w.node('data-export-live-polite')
+    expect(calmText()).toBe('')
+
+    tellSend(confirmationLine('this', CODE_SEND_STATE_SENT), w.fixture)
+    expect(w.node('data-export-live-polite')).toBe(calm)
+    expect(calmText()).toBe(said)
+
+    w.flow.dispose()
+    w.fixture.destroy()
+  },
+)
+
+it('leaves the line of a window closed by its order behind and says the next attempt in a new dialog', async () => {
+  const w = mountExport('sms_code', SMS_STEP)
+  await w.flow.prepare()
+  await settle(w.fixture)
+  const first = w.node('modal')
+  tellSend(confirmationLine('ordered', CODE_SEND_STATE_SENT), w.fixture)
+  expect(calmText()).toBe('Sent to +15550001111')
+
+  w.type('123456')
+  w.node('data-export-confirm').click()
+  await settle(w.fixture)
+  expect(w.sent).toContain('hilos_data_export_order')
+  expect(w.flow.open.get()).toBe(false)
+  expect(w.node('modal')).toBeNull()
+
+  // The window opens as a new dialog; the region it projects stands in it
+  // with nothing to say.
+  w.node('data-export-prepare').click()
+  await settle(w.fixture)
+  expect(w.node('modal')).not.toBeNull()
+  expect(w.node('modal')).not.toBe(first)
+  expect(w.node('data-export-live-polite').closest('[aria-modal="true"]')).toBe(
+    w.node('modal'),
+  )
+  expect(calmText()).toBe('')
+  tellSend(confirmationLine('again', CODE_SEND_STATE_QUEUED), w.fixture)
+  expect(calmText()).toBe('Queued for sending…')
+
+  w.flow.dispose()
+  w.fixture.destroy()
+})

@@ -1,8 +1,15 @@
 import * as core from '@hilos/core/base'
 import {
+  bindCodeSendProgress,
   bindTimeZoneState,
   ActionError,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createSignal,
+  SIGNAL_CODE_SEND_PROGRESS,
   bindImpersonation,
   ingest,
   ScopeManager,
@@ -24,6 +31,7 @@ afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
   vi.restoreAllMocks()
+  tellSend({ state: null })
 })
 
 /**
@@ -31,8 +39,14 @@ afterEach(() => {
  *
  * @param required Whether the confirmation step asks for the password.
  * @param hold Actions whose reply stays in flight until the test settles or refuses it.
+ * @param step What the confirmation's opening says beside the password it asks
+ *   for by default.
  */
-function mountExport(required = false, hold: string[] = []) {
+function mountExport(
+  required = false,
+  hold: string[] = [],
+  step: Record<string, unknown> = {},
+) {
   const state = createSignal<DataExportNode | null>(null)
   const store: HilosDataExportStore = { state, start() {}, dispose() {} }
   const sent: string[] = []
@@ -53,7 +67,12 @@ function mountExport(required = false, hold: string[] = []) {
         done: Promise.resolve({
           reply:
             name === 'hilos_step_up_start'
-              ? { required, purpose: 'export your data', method: 'password' }
+              ? {
+                  required,
+                  purpose: 'export your data',
+                  method: 'password',
+                  ...step,
+                }
               : {},
         }),
       }
@@ -104,6 +123,83 @@ function typePassword(value: string): void {
   const field = byId('step-up-password') as HTMLInputElement
   field.value = value
   field.dispatchEvent(new Event('input'))
+}
+
+/** Type into the confirmation's code field as a person does. */
+function typeCode(value: string): void {
+  const field = byId('step-up-code') as HTMLInputElement
+  field.value = value
+  field.dispatchEvent(new Event('input'))
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+}
+
+/**
+ * One frame of the confirmation's send line.
+ *
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail, when the frame carries one.
+ */
+function confirmationLine(
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    state,
+    channel: 'email',
+    purpose: CODE_SEND_PURPOSE_STEP_UP,
+    ticket,
+    ...more,
+  }
+}
+
+/** What the window's calm region says now. */
+function calmText(): string | null {
+  return byId('data-export-live-polite').textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
+}
+
+/** A confirmation that texted its code, whose resend gate opens in a minute. */
+const SMS_STEP = {
+  method: 'sms_code',
+  destination: '+15550001111',
+  send: { sent: true, resendAt: Date.now() + 60_000, expiresAt: null },
 }
 
 describe('HilosDataExport', () => {
@@ -363,6 +459,113 @@ describe('HilosDataExport', () => {
     w.held[4]!.settle()
     await flushPromises()
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    w.flow.dispose()
+  })
+
+  it("says the confirmation's line to its number through a region that outlives every frame and keeps refusals apart", async () => {
+    const w = mountExport(true, ['hilos_step_up_confirm'], SMS_STEP)
+    await w.wrapper.get('[data-id="data-export-prepare"]').trigger('click')
+    await flushPromises()
+    const calm = byId('data-export-live-polite')
+    expect(calm.getAttribute('role')).toBe('status')
+    expect(calm.getAttribute('aria-live')).toBe('polite')
+    expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    tellSend(confirmationLine('this', CODE_SEND_STATE_SENDING))
+    await flushPromises()
+    expect(calmText()).toBe('Sending to +15550001111…')
+    tellSend(confirmationLine('this', CODE_SEND_STATE_SENT))
+    await flushPromises()
+    expect(byId('data-export-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Sent to +15550001111')
+    tellSend(
+      confirmationLine('this', CODE_SEND_STATE_FAILED, {
+        detail: 'number unreachable',
+      }),
+    )
+    await flushPromises()
+    expect(calmText()).toBe('Could not send: number unreachable')
+
+    // The countdown and the line show on the row, which has no voice of its own.
+    const row = byId('step-up-send')
+    expect(row.textContent).toContain('Could not send: number unreachable')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).not.toContain('Send again in')
+    expect(
+      selfOrInside(
+        byId('step-up'),
+        '[role="status"], [role="alert"], [aria-live]',
+      ),
+    ).toBeNull()
+
+    // A refusal interrupts through the window's own alert; the line stays calm.
+    typeCode('000000')
+    await flushPromises()
+    byId('data-export-confirm').click()
+    await flushPromises()
+    w.held[0]!.refuse('That code is not right')
+    await flushPromises()
+    expect(
+      byId('modal').querySelector('[role="alert"][aria-live="assertive"]')
+        ?.textContent,
+    ).toContain('That code is not right')
+    expect(byId('data-export-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Could not send: number unreachable')
+    w.flow.dispose()
+  })
+
+  it.each([
+    {
+      method: 'email_code',
+      destination: 'a@example.test',
+      said: 'Sent to a@example.test',
+    },
+    { method: 'password', destination: undefined, said: '' },
+  ])(
+    'says the confirmation line of a $method step only when a code was sent',
+    async ({ method, destination, said }) => {
+      const w = mountExport(true, [], { method, destination })
+      await w.wrapper.get('[data-id="data-export-prepare"]').trigger('click')
+      await flushPromises()
+      const calm = byId('data-export-live-polite')
+      expect(calmText()).toBe('')
+
+      tellSend(confirmationLine('this', CODE_SEND_STATE_SENT))
+      await flushPromises()
+      expect(byId('data-export-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+      w.flow.close()
+      await flushPromises()
+      w.flow.dispose()
+    },
+  )
+
+  it('leaves the line of a window closed by its order behind and says the next attempt from a new region', async () => {
+    const w = mountExport(true, [], SMS_STEP)
+    await w.wrapper.get('[data-id="data-export-prepare"]').trigger('click')
+    await flushPromises()
+    const first = byId('data-export-live-polite')
+    tellSend(confirmationLine('ordered', CODE_SEND_STATE_SENT))
+    await flushPromises()
+    expect(calmText()).toBe('Sent to +15550001111')
+
+    typeCode('123456')
+    await flushPromises()
+    byId('data-export-confirm').click()
+    await flushPromises()
+    expect(w.sent).toContain('hilos_data_export_order')
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+
+    await w.wrapper.get('[data-id="data-export-prepare"]').trigger('click')
+    await flushPromises()
+    expect(byId('data-export-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    tellSend(confirmationLine('again', CODE_SEND_STATE_QUEUED))
+    await flushPromises()
+    expect(calmText()).toBe('Queued for sending…')
+    w.flow.close()
+    await flushPromises()
     w.flow.dispose()
   })
 })

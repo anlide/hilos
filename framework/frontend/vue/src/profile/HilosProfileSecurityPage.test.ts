@@ -9,8 +9,14 @@
 // window is held with its body locked while its request is out (HIL-1763).
 import {
   ActionError,
+  bindCodeSendProgress,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createSignal,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
@@ -33,6 +39,7 @@ import HilosProfileSecurityPage from './HilosProfileSecurityPage.vue'
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  tellSend({ state: null })
 })
 
 enableAutoUnmount(afterEach)
@@ -227,6 +234,78 @@ function expectFreed(): void {
   expect(bodyLock()?.disabled).toBe(false)
   expect(cancelButton().disabled).toBe(false)
   expect((byId('modal-close') as HTMLButtonElement).disabled).toBe(false)
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+}
+
+/**
+ * One frame of the confirmation's send line.
+ *
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail, when the frame carries one.
+ */
+function confirmationLine(
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    state,
+    channel: 'email',
+    purpose: CODE_SEND_PURPOSE_STEP_UP,
+    ticket,
+    ...more,
+  }
+}
+
+/** What the connect window's calm region says now. */
+function calmText(): string | null {
+  return byId('profile-2fa-enroll-live-polite').textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
+}
+
+/** A confirmation that emailed its code, whose resend gate opens in a minute. */
+const EMAIL_STEP = {
+  required: true,
+  purpose: 'add an authenticator app',
+  method: 'email_code',
+  destination: 'a@example.test',
+  send: { sent: true, resendAt: Date.now() + 60_000, expiresAt: null },
 }
 
 /** Open "Add an app" and name the app. */
@@ -473,6 +552,137 @@ describe('HilosProfileSecurityPage', () => {
       false,
     )
     expect(wrapper.find('[data-id="profile-2fa-add"]').exists()).toBe(true)
+  })
+
+  it("says the confirmation's line to its address through a region that outlives the step and falls silent at the name", async () => {
+    const replies: Record<string, unknown> = {
+      ...REPLIES,
+      hilos_step_up_start: EMAIL_STEP,
+    }
+    const { wrapper } = pageWorld(replies)
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    const calm = byId('profile-2fa-enroll-live-polite')
+    expect(calm.getAttribute('role')).toBe('status')
+    expect(calm.getAttribute('aria-live')).toBe('polite')
+    expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    tellSend(confirmationLine('this', CODE_SEND_STATE_QUEUED))
+    await flushPromises()
+    expect(calmText()).toBe('Queued for sending…')
+    tellSend(confirmationLine('this', CODE_SEND_STATE_SENT))
+    await flushPromises()
+    expect(byId('profile-2fa-enroll-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Sent to a@example.test')
+    tellSend(
+      confirmationLine('this', CODE_SEND_STATE_FAILED, {
+        detail: 'mailbox unavailable',
+      }),
+    )
+    await flushPromises()
+    expect(calmText()).toBe('Could not send: mailbox unavailable')
+
+    // The countdown and the line show on the row, which has no voice of its own.
+    const row = byId('step-up-send')
+    expect(row.textContent).toContain('Could not send: mailbox unavailable')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).not.toContain('Send again in')
+    expect(
+      selfOrInside(
+        byId('step-up'),
+        '[role="status"], [role="alert"], [aria-live]',
+      ),
+    ).toBeNull()
+
+    // A refusal interrupts through its own region; the send line stays calm.
+    const confirm = holdReply(replies, 'hilos_step_up_confirm')
+    typeInto('step-up-code', '000000')
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    confirm.refuse('That code is not right')
+    await flushPromises()
+    expect(byId('profile-2fa-enroll-live').textContent).toContain(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Could not send: mailbox unavailable')
+
+    // The name follows, and the app's own code later on is typed, not sent.
+    replies.hilos_step_up_confirm = []
+    typeInto('step-up-code', '123456')
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await nextTick()
+    expect(byId('profile-2fa-enroll-label')).toBeTruthy()
+    expect(byId('profile-2fa-enroll-live-polite')).toBe(calm)
+    expect(calmText()).toBe('')
+  })
+
+  it.each([
+    {
+      method: 'sms_code',
+      destination: '+15550001111',
+      said: 'Sent to +15550001111',
+    },
+    { method: 'second_factor', destination: undefined, said: '' },
+  ])(
+    'says the confirmation line of a $method step only when a code was sent',
+    async ({ method, destination, said }) => {
+      const { wrapper } = pageWorld(
+        {
+          ...REPLIES,
+          hilos_step_up_start: {
+            required: true,
+            purpose: 'add an authenticator app',
+            method,
+            destination,
+          },
+        },
+        SECTION_ON,
+      )
+      await nextTick()
+      await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+      await flushPromises()
+      await nextTick()
+      const calm = byId('profile-2fa-enroll-live-polite')
+      expect(calmText()).toBe('')
+
+      tellSend(confirmationLine('this', CODE_SEND_STATE_SENT))
+      await flushPromises()
+      expect(byId('profile-2fa-enroll-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+    },
+  )
+
+  it('leaves the line of a closed window behind and says the next attempt from a new region', async () => {
+    const { wrapper } = pageWorld({
+      ...REPLIES,
+      hilos_step_up_start: EMAIL_STEP,
+    })
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    const first = byId('profile-2fa-enroll-live-polite')
+    tellSend(confirmationLine('closed', CODE_SEND_STATE_SENT))
+    await flushPromises()
+    expect(calmText()).toBe('Sent to a@example.test')
+
+    cancelButton().click()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(byId('step-up')).toBeTruthy()
+    expect(byId('profile-2fa-enroll-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    tellSend(confirmationLine('again', CODE_SEND_STATE_QUEUED))
+    await flushPromises()
+    expect(calmText()).toBe('Queued for sending…')
   })
 })
 

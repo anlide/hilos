@@ -27,6 +27,7 @@ import {
   formatCalendarDate,
   hilosTimeZone,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
 } from '@hilos/core/base'
 import type {
   HilosBackupCodeEntry,
@@ -201,10 +202,26 @@ export function HilosProfileSecurityPage({
       }),
     [context],
   )
+  const enrollStepUpOpening = useSignal(enrollStepUp.opening)
   const enrollStepUpRefusal = useSignal(enrollStepUp.refusal)
+  const enrollStepUpSendProgress = useSignal(enrollStepUp.sendProgress)
   const enrollStepUpBusy = useSignal(enrollStepUp.busy)
   const [enrollOpen, setEnrollOpen] = useState(false)
   const [enrollStep, setEnrollStep] = useState<EnrollStep>('name')
+  // What the window's calm region says: the confirmation's send line, to the
+  // address its block names, while it stands in front of the steps and only
+  // when it sent a code. The app's own code is typed, not sent: every other step
+  // says nothing. The block only shows it (accessibility.md, "Live regions").
+  const enrollSendVoice =
+    enrollOpen &&
+    enrollStep === 'step-up' &&
+    (enrollStepUpOpening?.method === 'email_code' ||
+      enrollStepUpOpening?.method === 'sms_code')
+      ? (sendProgressLine(
+          enrollStepUpSendProgress,
+          enrollStepUpOpening.destination ?? '',
+        )?.text ?? '')
+      : ''
   // The step as the async opening sees it, past the render it was set in.
   const enrollStepRef = useRef<EnrollStep>('name')
   function moveEnroll(next: EnrollStep): void {
@@ -712,6 +729,14 @@ export function HilosProfileSecurityPage({
           data-id="profile-2fa-enroll-live"
         >
           {enrollStepUpRefusal}
+        </div>
+        <div
+          className="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="profile-2fa-enroll-live-polite"
+        >
+          {enrollSendVoice}
         </div>
         <HilosActionError
           action={enrollAction}

@@ -5,6 +5,7 @@ import {
   dataExportStatusText,
   hilosImpersonation,
   hilosTimeZone,
+  sendProgressLine,
   type HilosDataExportStore,
   type HilosDataExportFlow,
 } from '@hilos/core/base'
@@ -33,8 +34,20 @@ export function HilosDataExport({
   const node = useSignal(store.state)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
+  const stepOpening = useSignal(flow.stepUp.opening)
   const stepRefusal = useSignal(flow.stepUp.refusal)
+  const stepSendProgress = useSignal(flow.stepUp.sendProgress)
   const open = useSignal(flow.open)
+  // What the window's calm region says: the confirmation's send line, to the
+  // address its block names, while the window is open and only when it sent a
+  // code; the order has no send of its own. The block only shows it
+  // (accessibility.md, "Live regions").
+  const sendVoice =
+    open &&
+    (stepOpening?.method === 'email_code' || stepOpening?.method === 'sms_code')
+      ? (sendProgressLine(stepSendProgress, stepOpening.destination ?? '')
+          ?.text ?? '')
+      : ''
   const status = dataExportStatusText(node)
   const preparingRoom = dataExportStatusText({
     state: 'preparing',
@@ -151,6 +164,14 @@ export function HilosDataExport({
       >
         <div className="visually-hidden" role="alert" aria-live="assertive">
           {stepRefusal ?? refusal}
+        </div>
+        <div
+          className="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="data-export-live-polite"
+        >
+          {sendVoice}
         </div>
         <form
           id="hilos-data-export-proof"

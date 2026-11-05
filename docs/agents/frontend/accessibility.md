@@ -318,12 +318,20 @@ The rules to apply when building a view or an SDK component:
   stack (`framework/frontend/vue/src/HilosToastHost.vue`), the sign-in screen
   (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`), the profile dialogs
   (`framework/frontend/vue/src/profile/HilosProfileRename.vue`,
-  `HilosProfileEmailChange.vue`), the user-rename dialog
+  `HilosProfileEmailChange.vue`, `HilosProfilePasswordChange.vue`,
+  `HilosAccountDeletion.vue`, `HilosDataExport.vue`, and the add-a-way-in and
+  authenticator dialogs of `HilosProfileSignInPage.vue` and
+  `HilosProfileSecurityPage.vue`), the user-rename dialog
   (`framework/frontend/vue/src/admin/users/HilosUserPage.vue`) and the refusal
   of a tracked action (`framework/frontend/vue/src/HilosActionError.vue`),
   whose region is the slot the row stands in — the row itself carries no
   role, and the room stays taken by an invisible twin while there is nothing to
-  announce.
+  announce. Each of those profile dialogs keeps a pair inside the dialog: a
+  polite one says the send line of the code step on screen, and an assertive
+  one says a refusal. On the identity confirmation (`HilosStepUpStep`) the
+  polite one says the confirmation's own line, and only for a code sent by
+  email or text message; on a step with no code it is empty. The visible send
+  block (`HilosSendProgress`) and the swapped step carry no role of their own.
 - **The room belongs to the block, the voice to the surface.** A form's refusal
   is drawn by `HilosFormError`, which holds its one line of room and carries no
   role; the announcement comes from a live region that outlives the block — on

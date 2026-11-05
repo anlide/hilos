@@ -3,6 +3,7 @@ import {
   focusInitial,
   HILOS_PROFILE_RENAME_COPY as COPY,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   type HilosProfileRenameFlow,
 } from '@hilos/core/base'
 import { ConflictActions } from '../ConflictActions.js'
@@ -32,12 +33,24 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
   const stepUpOpening = useSignal(flow.stepUp.opening)
   const stepUpBusy = useSignal(flow.stepUp.busy)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
+  const stepUpSendProgress = useSignal(flow.stepUp.sendProgress)
   const body = useRef<HTMLDivElement | null>(null)
   const previous = useRef(step)
   const saveLabel = edit.gone ? COPY.deleted : COPY.save
   const bounds = COPY.bounds
     .replace('{min}', String(flow.minLength))
     .replace('{max}', String(flow.maxLength))
+  // What the calm region says: the confirmation's send line, to the address its
+  // block names, while it stands in front of the form and only when it sent a
+  // code; the form has no send of its own. The block only shows it
+  // (accessibility.md, "Live regions").
+  const sendVoice =
+    step === 'step-up' &&
+    (stepUpOpening?.method === 'email_code' ||
+      stepUpOpening?.method === 'sms_code')
+      ? (sendProgressLine(stepUpSendProgress, stepUpOpening.destination ?? '')
+          ?.text ?? '')
+      : ''
 
   // Focus the field when confirmation arrives or gives way to the name form.
   useEffect(() => {
@@ -133,6 +146,14 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
         data-id="profile-rename-live-assertive"
       >
         {step === 'form' ? refusal : stepUpRefusal}
+      </div>
+      <div
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="profile-rename-live-polite"
+      >
+        {sendVoice}
       </div>
       <div ref={body}>
         {step !== 'form' ? (

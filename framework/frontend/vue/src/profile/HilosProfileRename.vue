@@ -4,6 +4,7 @@ import {
   focusInitial,
   HILOS_PROFILE_RENAME_COPY as COPY,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   type HilosProfileRenameFlow,
 } from '@hilos/core/base'
 import { computed, nextTick, ref, watch } from 'vue'
@@ -29,6 +30,7 @@ const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const stepUpOpening = useSignal(props.flow.stepUp.opening)
 const stepUpBusy = useSignal(props.flow.stepUp.busy)
 const stepUpRefusal = useSignal(props.flow.stepUp.refusal)
+const stepUpSendProgress = useSignal(props.flow.stepUp.sendProgress)
 const body = ref<HTMLElement | null>(null)
 const open = computed({
   get: () => step.value !== 'closed',
@@ -42,6 +44,21 @@ const bounds = computed(() =>
     .replace('{min}', String(props.flow.minLength))
     .replace('{max}', String(props.flow.maxLength)),
 )
+// What the calm region says: the confirmation's send line, to the address its
+// block names, while it stands in front of the form and only when it sent a
+// code; the form has no send of its own. The block only shows it
+// (accessibility.md, "Live regions").
+const sendVoice = computed(() => {
+  const confirmation = stepUpOpening.value
+  return step.value === 'step-up' &&
+    (confirmation?.method === 'email_code' ||
+      confirmation?.method === 'sms_code')
+    ? (sendProgressLine(
+        stepUpSendProgress.value,
+        confirmation.destination ?? '',
+      )?.text ?? '')
+    : ''
+})
 
 // The confirmation's body is replaced by the form: focus its field.
 watch(step, (next, previous) => {
@@ -78,6 +95,14 @@ watch(step, (next, previous) => {
       data-id="profile-rename-live-assertive"
     >
       {{ step === 'form' ? refusal : stepUpRefusal }}
+    </div>
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      data-id="profile-rename-live-polite"
+    >
+      {{ sendVoice }}
     </div>
 
     <div ref="body">

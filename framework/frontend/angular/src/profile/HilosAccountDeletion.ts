@@ -34,6 +34,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosTimeZone,
+  sendProgressLine,
   subscribeSignal,
 } from '@hilos/core/base'
 import type {
@@ -41,6 +42,7 @@ import type {
   HilosAccountDeletionState,
   HilosAccountDeletionStep,
   HilosSecondFactorContext,
+  HilosStepUpOpening,
   CodeSendProgress,
 } from '@hilos/core/base'
 
@@ -119,6 +121,14 @@ import { hilosSignal } from '../hilosSignal.js'
           data-id="account-deletion-live"
         >
           {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
+        </div>
+        <div
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="account-deletion-live-polite"
+        >
+          {{ sendVoice() }}
         </div>
         <div #body data-id="account-deletion-modal">
           @if (step() === 'step-up') {
@@ -316,8 +326,9 @@ export class HilosAccountDeletion {
   protected readonly refusal = signal<string | null>(null)
   protected readonly sendProgress = signal<CodeSendProgress | null>(null)
   protected readonly resendAt = signal<number | null>(null)
-  protected readonly stepUpOpening = signal<unknown>(null)
+  protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
+  protected readonly stepUpSendProgress = signal<CodeSendProgress | null>(null)
   private readonly timeZone = hilosSignal(hilosTimeZone)
   private readonly now = signal(Date.now())
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
@@ -330,6 +341,30 @@ export class HilosAccountDeletion {
   protected readonly stepNumber = computed(() =>
     this.step() === 'code' ? 2 : 1,
   )
+  /**
+   * What the calm region says: the send line of the code step on screen, to
+   * the address its block names - the confirmation's own while it stands in
+   * front of the steps. The blocks only show it (accessibility.md, "Live
+   * regions").
+   */
+  protected readonly sendVoice = computed(() => {
+    const step = this.step()
+    if (step === 'step-up') {
+      const opening = this.stepUpOpening()
+      return opening?.method === 'email_code' || opening?.method === 'sms_code'
+        ? (sendProgressLine(
+            this.stepUpSendProgress(),
+            opening.destination ?? '',
+          )?.text ?? '')
+        : ''
+    }
+    return step === 'code'
+      ? (sendProgressLine(
+          this.sendProgress(),
+          this.opening()?.destination ?? '',
+        )?.text ?? '')
+      : ''
+  })
   private readonly daysLeft = computed(() => {
     this.timeZone()
     const deletion = this.deletion()
@@ -355,6 +390,7 @@ export class HilosAccountDeletion {
       store.start()
       flow.follow()
       this.state.set(store.state.get())
+      this.stepUpSendProgress.set(flow.stepUp.sendProgress.get())
       const off = [
         subscribeSignal(store.state, (value) => this.state.set(value)),
         subscribeSignal(flow.step, (value) => this.step.set(value)),
@@ -371,6 +407,9 @@ export class HilosAccountDeletion {
         ),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepUpRefusal.set(value),
+        ),
+        subscribeSignal(flow.stepUp.sendProgress, (value) =>
+          this.stepUpSendProgress.set(value),
         ),
       ]
       onCleanup(() => {

@@ -7,6 +7,7 @@ import {
   SEND_AGAIN_LABEL,
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
+  sendProgressLine,
   type HilosProfilePasswordChangeFlow,
 } from '@hilos/core/base'
 import { computed, nextTick, ref, useId, watch } from 'vue'
@@ -28,7 +29,9 @@ const busy = useSignal(props.flow.busy)
 const refusal = useSignal(props.flow.refusal)
 const sendProgress = useSignal(props.flow.sendProgress)
 const resendAt = useSignal(props.flow.resendAt)
+const stepUpOpening = useSignal(props.flow.stepUp.opening)
 const stepUpRefusal = useSignal(props.flow.stepUp.refusal)
+const stepUpSendProgress = useSignal(props.flow.stepUp.sendProgress)
 const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const body = ref<HTMLElement | null>(null)
 const id = useId()
@@ -57,6 +60,25 @@ const stepNumber = computed(() =>
 const voice = computed(() =>
   step.value === 'step-up' ? stepUpRefusal.value : refusal.value,
 )
+// What the calm region says: the send line of the code step on screen, to the
+// address its block names - the confirmation's own while it stands in front of
+// the steps. The blocks only show it (accessibility.md, "Live regions").
+const sendVoice = computed(() => {
+  if (step.value === 'step-up') {
+    const confirmation = stepUpOpening.value
+    return confirmation?.method === 'email_code' ||
+      confirmation?.method === 'sms_code'
+      ? (sendProgressLine(
+          stepUpSendProgress.value,
+          confirmation.destination ?? '',
+        )?.text ?? '')
+      : ''
+  }
+  return step.value === 'code'
+    ? (sendProgressLine(sendProgress.value, opening.value?.destination ?? '')
+        ?.text ?? '')
+    : ''
+})
 function fill(text: string): string {
   return text.replace('{destination}', opening.value?.destination ?? '')
 }
@@ -84,6 +106,14 @@ watch(step, () => {
       data-id="profile-password-live"
     >
       {{ voice }}
+    </div>
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      data-id="profile-password-live-polite"
+    >
+      {{ sendVoice }}
     </div>
     <div ref="body" data-id="profile-password-modal">
       <div class="hilos-stack">

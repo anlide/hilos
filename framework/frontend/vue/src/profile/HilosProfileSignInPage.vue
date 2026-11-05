@@ -19,6 +19,7 @@ import {
   SEND_AGAIN_LABEL,
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
+  sendProgressLine,
   sessionAuthMethods,
   watchHilosProfilePasswordUpdated,
   type HilosAuthContext,
@@ -157,9 +158,34 @@ const resendAt = useSignal(flow.resendAt)
 const sentEmail = useSignal(flow.email)
 const sentPhone = useSignal(flow.phone)
 const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
+const stepUpOpening = useSignal(flow.stepUp.opening)
 const stepUpRefusal = useSignal(flow.stepUp.refusal)
+const stepUpSendProgress = useSignal(flow.stepUp.sendProgress)
 const stepUpBusy = useSignal(flow.stepUp.busy)
 const pendingProvider = useSignal(flow.provider)
+// What the add dialog's calm region says: the send line of the code step on
+// screen, to the address or number its block names - the confirmation's own
+// while it stands in front of the steps. The blocks only show it
+// (accessibility.md, "Live regions").
+const addSendVoice = computed(() => {
+  if (step.value === 'step-up') {
+    const confirmation = stepUpOpening.value
+    return confirmation?.method === 'email_code' ||
+      confirmation?.method === 'sms_code'
+      ? (sendProgressLine(
+          stepUpSendProgress.value,
+          confirmation.destination ?? '',
+        )?.text ?? '')
+      : ''
+  }
+  if (step.value === 'password-code') {
+    return sendProgressLine(sendProgress.value, sentEmail.value)?.text ?? ''
+  }
+  if (step.value === 'phone-code') {
+    return sendProgressLine(sendProgress.value, sentPhone.value)?.text ?? ''
+  }
+  return ''
+})
 // Every request of the add dialog in flight - a step of the flow and its own
 // confirmation: nothing closes the dialog, its fields and plain buttons stay
 // locked and Cancel waits with it, while a pressed LoadingButton locks itself.
@@ -506,6 +532,14 @@ onUnmounted(() => {
             data-id="profile-sign-in-add-live"
           >
             {{ step === 'step-up' ? stepUpRefusal : refusal }}
+          </div>
+          <div
+            class="visually-hidden"
+            role="status"
+            aria-live="polite"
+            data-id="profile-sign-in-add-live-polite"
+          >
+            {{ addSendVoice }}
           </div>
           <div class="hilos-stack">
             <div class="invisible" aria-hidden="true" inert>

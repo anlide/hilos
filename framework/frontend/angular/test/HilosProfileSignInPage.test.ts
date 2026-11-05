@@ -1,16 +1,23 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionError,
+  ADD_SIGN_IN_METHOD_OPERATION,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+  bindCodeSendProgress,
   bindProfileFlows,
   bindTimeZoneState,
   cancelOAuthTrip,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createConnectionInteractionState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
   PROFILE_UNLINK_IDENTITY_ACTION,
   profileFlowsSchema,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_PROFILE_FLOWS,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
@@ -32,6 +39,20 @@ const PASSWORD_STEP = {
   required: true,
   purpose: 'add a way to sign in',
   method: 'password',
+}
+
+/** The answer to a code request: the code is out, and the next one may be asked for in years. */
+const SENT = {
+  sent: true,
+  resendAt: 1_900_000_000_000,
+  expiresAt: 1_900_000_600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
+  expiresAt: Date.now() + 600_000,
 }
 
 /** The two ways that ask for a code, and what each step of theirs is called. */
@@ -201,6 +222,7 @@ function setup(
   opening: object = NO_STEP,
   methods = resolveHilosProfileSignInMethods([], []),
   offered: readonly object[] = OFFERED,
+  codeAnswer: object = SENT,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   let frameCount = 0
@@ -251,13 +273,7 @@ function setup(
             ? { reply: opening }
             : action === 'profile_add_sms_request' ||
                 action === 'profile_add_password_request'
-              ? {
-                  reply: {
-                    sent: true,
-                    resendAt: 1_900_000_000_000,
-                    expiresAt: 1_900_000_600_000,
-                  },
-                }
+              ? { reply: codeAnswer }
               : {},
         ),
       }
@@ -328,9 +344,76 @@ function setup(
 afterEach(() => {
   releaseTimeZone?.()
   releaseTimeZone = undefined
+  tellSend({ state: null })
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ * @param fixture The page to draw once the frame is in, when there is one.
+ */
+function tellSend(
+  line: Record<string, unknown>,
+  fixture?: ComponentFixture<unknown>,
+): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+  fixture?.detectChanges()
+}
+
+/**
+ * One frame of the line a send follows.
+ *
+ * @param purpose The operation that ordered the send.
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ */
+function sendLine(
+  purpose: string,
+  ticket: string,
+  state: string,
+): Record<string, unknown> {
+  return { state, channel: 'email', purpose, ticket }
+}
+
+/** What the add dialog's calm region says now, past the template's own spacing. */
+function calmText(): string | undefined {
+  return document
+    .querySelector('[data-id="profile-sign-in-add-live-polite"]')!
+    .textContent?.trim()
+}
+
+/**
+ * The block's element-host, or else its root, or else the first thing inside
+ * either, that matches the selector: the host and the root of a block are the
+ * likeliest places for a voice to return.
+ *
+ * @param block The root of a step-up or send block, drawn inside its host.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(block: Element, selector: string): Element | null {
+  const host = block.closest('hilos-step-up-step, hilos-send-progress') ?? block
+  return host.matches(selector) ? host : host.querySelector(selector)
+}
 
 it('renders each profile method with its glyph and normalized subtitle', () => {
   const { node } = setup(NO_STEP, PROFILE_METHODS, [
@@ -1569,6 +1652,210 @@ describe('profile sign-in add modal busy body', () => {
     expect(node('profile-add-sms-error').textContent).toContain(
       'Try this number again.',
     )
+    fixture.destroy()
+  })
+})
+
+describe('profile sign-in add dialog send line', () => {
+  it.each(CODE_WAYS)(
+    'says the line of the $way code step to where the code went and nothing on the steps before it',
+    async (way) => {
+      const { fill, fixture, node } = setup()
+      tellSend(
+        sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'earlier', CODE_SEND_STATE_SENT),
+      )
+      node('profile-sign-in-add').click()
+      await settle(fixture)
+      const calm = node('profile-sign-in-add-live-polite')
+      expect(calm.getAttribute('role')).toBe('status')
+      expect(calm.getAttribute('aria-live')).toBe('polite')
+      expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+      expect(calmText()).toBe('')
+
+      node(way.choose).click()
+      fixture.detectChanges()
+      expect(node(way.address)).not.toBeNull()
+      expect(node('profile-sign-in-add-live-polite')).toBe(calm)
+      expect(calmText()).toBe('')
+
+      fill(way.address, way.value)
+      node(way.submit).click()
+      await settle(fixture)
+      expect(node(way.code)).not.toBeNull()
+      expect(calmText()).toBe('')
+      tellSend(
+        sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'this', CODE_SEND_STATE_SENDING),
+        fixture,
+      )
+      expect(node('profile-sign-in-add-live-polite')).toBe(calm)
+      expect(calmText()).toBe(`Sending to ${way.value}…`)
+      expect(node(way.send).textContent).toContain(`Sending to ${way.value}…`)
+      expect(selfOrInside(node(way.send), '[role], [aria-live]')).toBeNull()
+
+      // The confirmation's line is not this step's.
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+        fixture,
+      )
+      expect(calmText()).toBe('')
+      fixture.destroy()
+    },
+  )
+
+  it('leaves the line of a discarded dialog behind and says the next attempt in a new dialog', async () => {
+    const { fill, fixture, node } = setup()
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    const first = node('modal')
+    node('profile-sign-in-choose-phone').click()
+    fixture.detectChanges()
+    fill('profile-add-sms-phone', '+15557654321')
+    node('profile-add-sms-request').click()
+    await settle(fixture)
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'discarded', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+    expect(calmText()).toBe('Sent to +15557654321')
+
+    node('profile-sign-in-add-cancel').click()
+    fixture.detectChanges()
+    node('modal-confirm-discard').click()
+    await settle(fixture)
+    expect(node('profile-sign-in-add-modal')).toBeNull()
+
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    expect(node('modal')).not.toBe(first)
+    expect(
+      node('profile-sign-in-add-live-polite').closest('[aria-modal="true"]'),
+    ).toBe(node('modal'))
+    expect(calmText()).toBe('')
+    node('profile-sign-in-choose-phone').click()
+    fixture.detectChanges()
+    fill('profile-add-sms-phone', '+15557654321')
+    node('profile-add-sms-request').click()
+    await settle(fixture)
+    expect(node('profile-add-sms-code')).not.toBeNull()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'again', CODE_SEND_STATE_QUEUED),
+      fixture,
+    )
+    expect(calmText()).toBe('Queued for sending…')
+    fixture.destroy()
+  })
+
+  it.each([
+    {
+      opening: {
+        required: true,
+        purpose: 'add a way to sign in',
+        method: 'email_code',
+        destination: 'a@example.test',
+      },
+      said: 'Sent to a@example.test',
+    },
+    { opening: PASSWORD_STEP, said: '' },
+  ])(
+    'says the confirmation line only when its $opening.method step sent a code',
+    async ({ opening, said }) => {
+      const { fixture, node } = setup(opening)
+      node('profile-sign-in-add').click()
+      await settle(fixture)
+      const calm = node('profile-sign-in-add-live-polite')
+      tellSend(
+        sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'own', CODE_SEND_STATE_SENT),
+        fixture,
+      )
+      expect(calmText()).toBe('')
+
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+        fixture,
+      )
+      expect(node('profile-sign-in-add-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+      expect(
+        selfOrInside(
+          node('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+      fixture.destroy()
+    },
+  )
+
+  it('keeps a refused code in the alert and the send line in the calm region', async () => {
+    const { dispatch, fill, fixture, node } = setup()
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    node('profile-sign-in-choose-phone').click()
+    fixture.detectChanges()
+    fill('profile-add-sms-phone', '+15557654321')
+    node('profile-add-sms-request').click()
+    await settle(fixture)
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'this', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+    expect(calmText()).toBe('Sent to +15557654321')
+    expect(node('profile-sign-in-add-live').textContent?.trim()).toBe('')
+
+    fill('profile-add-sms-code', '000000')
+    const proof = node('profile-add-sms-code') as HTMLInputElement
+    const confirmation = held()
+    dispatch.mockImplementationOnce(() => confirmation.answer)
+    proof.form!.dispatchEvent(new Event('submit', { cancelable: true }))
+    fixture.detectChanges()
+    confirmation.reject(
+      new ActionError(
+        'profile_add_sms_confirm',
+        'fail',
+        'That code is not right',
+      ),
+    )
+    await flush(fixture)
+    expect(node('profile-sign-in-add-live').textContent?.trim()).toBe(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Sent to +15557654321')
+    expect(node('profile-add-sms-code')).toBe(proof)
+    fixture.destroy()
+  })
+
+  it('draws the countdown on the send row and keeps it out of the calm region', async () => {
+    const { fill, fixture, node } = setup(
+      NO_STEP,
+      undefined,
+      undefined,
+      SENT_RESEND_LATER,
+    )
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    node('profile-sign-in-choose-phone').click()
+    fixture.detectChanges()
+    fill('profile-add-sms-phone', '+15557654321')
+    node('profile-add-sms-request').click()
+    await settle(fixture)
+    tellSend(
+      sendLine(ADD_SIGN_IN_METHOD_OPERATION, 'this', CODE_SEND_STATE_SENT),
+      fixture,
+    )
+
+    const row = node('profile-add-sms-send')
+    expect(row.textContent).toContain('Sent to +15557654321')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).toBe('Sent to +15557654321')
+    expect(calmText()).not.toContain('Send again in')
     fixture.destroy()
   })
 })

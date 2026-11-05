@@ -28,6 +28,7 @@ import {
   formatCalendarDate,
   hilosTimeZone,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   type HilosBackupCodeEntry,
   type HilosSecondFactorAuthenticator,
   type HilosSecondFactorContext,
@@ -138,7 +139,9 @@ const enrollStepUp = createHilosStepUpStep(
     if (enrollStep.value === 'step-up') enrollStep.value = 'name'
   },
 )
+const enrollStepUpOpening = useSignal(enrollStepUp.opening)
 const enrollStepUpRefusal = useSignal(enrollStepUp.refusal)
+const enrollStepUpSendProgress = useSignal(enrollStepUp.sendProgress)
 const enrollStepUpBusy = useSignal(enrollStepUp.busy)
 const enrollOpen = ref(false)
 const enrollStep = ref<EnrollStep>('name')
@@ -147,6 +150,22 @@ const enrollTitle = computed(() =>
     ? HILOS_STEP_UP_COPY.title
     : 'Add an authenticator app',
 )
+// What the window's calm region says: the confirmation's send line, to the
+// address its block names, while it stands in front of the steps and only when
+// it sent a code. The app's own code is typed, not sent: every other step says
+// nothing. The block only shows it (accessibility.md, "Live regions").
+const enrollSendVoice = computed(() => {
+  const confirmation = enrollStepUpOpening.value
+  return enrollOpen.value &&
+    enrollStep.value === 'step-up' &&
+    (confirmation?.method === 'email_code' ||
+      confirmation?.method === 'sms_code')
+    ? (sendProgressLine(
+        enrollStepUpSendProgress.value,
+        confirmation.destination ?? '',
+      )?.text ?? '')
+    : ''
+})
 // A modal closed while its opening is out drops the answer when it comes.
 watch(enrollOpen, (open) => {
   if (!open && enrollStep.value === 'opening') enrollStep.value = 'name'
@@ -673,6 +692,14 @@ watch(view, (current) => {
         data-id="profile-2fa-enroll-live"
       >
         {{ enrollStepUpRefusal }}
+      </div>
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="profile-2fa-enroll-live-polite"
+      >
+        {{ enrollSendVoice }}
       </div>
       <HilosActionError
         :action="enrollAction"

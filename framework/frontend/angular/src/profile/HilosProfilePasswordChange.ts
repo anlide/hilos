@@ -16,10 +16,12 @@ import {
   SEND_AGAIN_LABEL,
   SEND_PROGRESS_DETAILS_CLASS,
   SEND_PROGRESS_ROW_CLASS,
+  sendProgressLine,
   subscribeSignal,
   type HilosProfilePasswordChangeFlow,
   type HilosProfilePasswordChangeStep,
   type HilosProfilePasswordChangeOpening,
+  type HilosStepUpOpening,
   type CodeSendProgress,
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
@@ -58,6 +60,14 @@ let passwordChangeSequence = 0
         data-id="profile-password-live"
       >
         {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
+      </div>
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="profile-password-live-polite"
+      >
+        {{ sendVoice() }}
       </div>
       <div #body data-id="profile-password-modal">
         <div class="hilos-stack">
@@ -347,7 +357,9 @@ export class HilosProfilePasswordChange {
   protected readonly refusal = signal<string | null>(null)
   protected readonly sendProgress = signal<CodeSendProgress | null>(null)
   protected readonly resendAt = signal<number | null>(null)
+  protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
+  protected readonly stepUpSendProgress = signal<CodeSendProgress | null>(null)
   protected readonly asksBeforeClosing = signal(false)
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
   protected readonly open = computed(
@@ -369,6 +381,30 @@ export class HilosProfilePasswordChange {
           ? 4
           : 1,
   )
+  /**
+   * What the calm region says: the send line of the code step on screen, to
+   * the address its block names - the confirmation's own while it stands in
+   * front of the steps. The blocks only show it (accessibility.md, "Live
+   * regions").
+   */
+  protected readonly sendVoice = computed(() => {
+    const step = this.step()
+    if (step === 'step-up') {
+      const opening = this.stepUpOpening()
+      return opening?.method === 'email_code' || opening?.method === 'sms_code'
+        ? (sendProgressLine(
+            this.stepUpSendProgress(),
+            opening.destination ?? '',
+          )?.text ?? '')
+        : ''
+    }
+    return step === 'code'
+      ? (sendProgressLine(
+          this.sendProgress(),
+          this.opening()?.destination ?? '',
+        )?.text ?? '')
+      : ''
+  })
 
   constructor() {
     effect((onCleanup) => {
@@ -384,7 +420,9 @@ export class HilosProfilePasswordChange {
       this.refusal.set(flow.refusal.get())
       this.sendProgress.set(flow.sendProgress.get())
       this.resendAt.set(flow.resendAt.get())
+      this.stepUpOpening.set(flow.stepUp.opening.get())
       this.stepUpRefusal.set(flow.stepUp.refusal.get())
+      this.stepUpSendProgress.set(flow.stepUp.sendProgress.get())
       this.asksBeforeClosing.set(flow.asksBeforeClosing.get())
       const off = [
         subscribeSignal(flow.step, (value) => this.step.set(value)),
@@ -408,8 +446,14 @@ export class HilosProfilePasswordChange {
           this.sendProgress.set(value),
         ),
         subscribeSignal(flow.resendAt, (value) => this.resendAt.set(value)),
+        subscribeSignal(flow.stepUp.opening, (value) =>
+          this.stepUpOpening.set(value),
+        ),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepUpRefusal.set(value),
+        ),
+        subscribeSignal(flow.stepUp.sendProgress, (value) =>
+          this.stepUpSendProgress.set(value),
         ),
         subscribeSignal(flow.asksBeforeClosing, (value) =>
           this.asksBeforeClosing.set(value),

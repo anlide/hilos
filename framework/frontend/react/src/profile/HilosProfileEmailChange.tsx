@@ -4,6 +4,7 @@ import {
   HILOS_PROFILE_EMAIL_CHANGE_COPY as COPY,
   HILOS_PROFILE_EMAIL_CHANGE_STEPS,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   type HilosProfileEmailChangeFlow,
   type WritableSignal,
 } from '@hilos/core/base'
@@ -51,6 +52,7 @@ export function HilosProfileEmailChange({
   const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
   const stepUpOpening = useSignal(flow.stepUp.opening)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
+  const stepUpSendProgress = useSignal(flow.stepUp.sendProgress)
   const body = useRef<HTMLDivElement | null>(null)
   const previous = useRef(step)
   const title =
@@ -59,6 +61,21 @@ export function HilosProfileEmailChange({
       : step === 'done'
         ? COPY.doneTitle
         : COPY.title
+  // What the calm region says: the send line of the code step on screen, to the
+  // address its block names - the confirmation's own while it stands in front of
+  // the steps. The blocks only show it (accessibility.md, "Live regions").
+  const sendVoice =
+    step === 'step-up'
+      ? stepUpOpening?.method === 'email_code' ||
+        stepUpOpening?.method === 'sms_code'
+        ? (sendProgressLine(stepUpSendProgress, stepUpOpening.destination ?? '')
+            ?.text ?? '')
+        : ''
+      : step === 'confirm-current'
+        ? (sendProgressLine(sendProgress, was)?.text ?? '')
+        : step === 'confirm-new'
+          ? (sendProgressLine(sendProgress, newEmail.trim())?.text ?? '')
+          : ''
   // The step's place in the list: 1 to 5, 0 on the confirmation.
   const stepNumber =
     HILOS_PROFILE_EMAIL_CHANGE_STEPS.indexOf(
@@ -188,8 +205,9 @@ export function HilosProfileEmailChange({
         )
       }
     >
-      {/* This dialog's own voice; one region for all the steps, since only one
-          step is on screen at a time. */}
+      {/* This dialog's own voice; one pair of regions for all the steps, since
+          only one step is on screen at a time: a refusal interrupts, the send
+          line waits its turn. */}
       <div
         className="visually-hidden"
         role="alert"
@@ -197,6 +215,14 @@ export function HilosProfileEmailChange({
         data-id="profile-email-live-assertive"
       >
         {step === 'step-up' ? stepUpRefusal : refusal}
+      </div>
+      <div
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="profile-email-live-polite"
+      >
+        {sendVoice}
       </div>
       <div ref={body}>
         {step === 'step-up' ? (

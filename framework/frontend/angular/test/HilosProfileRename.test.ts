@@ -1,10 +1,17 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  bindCodeSendProgress,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createConnectionInteractionState,
   createHilosProfileRenameFlow,
   createSignal,
   PROFILE_RENAME_MEMORY_STORAGE_KEY,
+  SIGNAL_CODE_SEND_PROGRESS,
   type ActionLifecycle,
+  type HilosConnection,
   type HilosProfileRename as HilosProfileRenameBinding,
 } from '@hilos/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,11 +31,93 @@ afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
   TestBed.resetTestingModule()
+  tellSend({ state: null })
 })
 
 async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
   await fixture.whenStable()
   fixture.detectChanges()
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ * @param fixture The window to draw once the frame is in, when there is one.
+ */
+function tellSend(
+  line: Record<string, unknown>,
+  fixture?: ComponentFixture<unknown>,
+): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+  fixture?.detectChanges()
+}
+
+/**
+ * One frame of the confirmation's send line.
+ *
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail, when the frame carries one.
+ */
+function confirmationLine(
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    state,
+    channel: 'email',
+    purpose: CODE_SEND_PURPOSE_STEP_UP,
+    ticket,
+    ...more,
+  }
+}
+
+/** What the window's calm region says now, past the template's own spacing. */
+function calmText(): string | undefined {
+  return document
+    .querySelector('[data-id="profile-rename-live-polite"]')!
+    .textContent?.trim()
+}
+
+/**
+ * The block's element-host, or else its root, or else the first thing inside
+ * either, that matches the selector: the host and the root of a block are the
+ * likeliest places for a voice to return.
+ *
+ * @param block The root of a step-up or send block, drawn inside its host.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(block: Element, selector: string): Element | null {
+  const host = block.closest('hilos-step-up-step, hilos-send-progress') ?? block
+  return host.matches(selector) ? host : host.querySelector(selector)
+}
+
+/** A confirmation that emailed its code, whose resend gate opens in a minute. */
+const EMAIL_STEP = {
+  required: true,
+  purpose: 'change your name',
+  method: 'email_code',
+  destination: 'a@example.test',
+  send: { sent: true, resendAt: Date.now() + 60_000, expiresAt: null },
 }
 
 function setup() {
@@ -568,5 +657,134 @@ describe('the standard rename binding in the Angular window', () => {
     expect(window.node('modal-close').matches(':disabled')).toBe(false)
     expect(nameInput(window.node).value).toBe('Ann')
     expect(window.tab.names()).toHaveLength(0)
+  })
+})
+
+describe('the confirmation send line in the Angular name window', () => {
+  it("says the confirmation's line to its address through a region that outlives the step and falls silent on the form", async () => {
+    const window = standardWindow({
+      stepUp: EMAIL_STEP,
+      hold: ['hilos_step_up_confirm'],
+    })
+    await openName(window.flow, window.fixture)
+    const calm = window.node('profile-rename-live-polite')
+    expect(calm.getAttribute('role')).toBe('status')
+    expect(calm.getAttribute('aria-live')).toBe('polite')
+    expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    tellSend(confirmationLine('this', CODE_SEND_STATE_QUEUED), window.fixture)
+    expect(calmText()).toBe('Queued for sending…')
+    tellSend(confirmationLine('this', CODE_SEND_STATE_SENT), window.fixture)
+    expect(window.node('profile-rename-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Sent to a@example.test')
+    tellSend(
+      confirmationLine('this', CODE_SEND_STATE_FAILED, {
+        detail: 'mailbox unavailable',
+      }),
+      window.fixture,
+    )
+    expect(calmText()).toBe('Could not send: mailbox unavailable')
+
+    // The countdown and the line show on the row, which has no voice of its own.
+    const row = window.node('step-up-send')
+    expect(row.textContent).toContain('Could not send: mailbox unavailable')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).not.toContain('Send again in')
+    expect(
+      selfOrInside(
+        window.node('step-up'),
+        '[role="status"], [role="alert"], [aria-live]',
+      ),
+    ).toBeNull()
+
+    // A refusal interrupts through its own region; the send line stays calm.
+    const confirmations = () =>
+      window.tab.frames.filter(
+        (frame) => frame.action === 'hilos_step_up_confirm',
+      )
+    const confirm = vi.spyOn(window.flow, 'confirmStepUp')
+    const code = window.node('step-up-code') as HTMLInputElement
+    code.value = '000000'
+    code.dispatchEvent(new Event('input', { bubbles: true }))
+    window
+      .node('profile-name-step-up')
+      .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+    await settle(window.fixture)
+    expect(confirmations()).toHaveLength(1)
+    window.tab.reply(confirmations()[0]!, 'That code is not right')
+    await confirm.mock.results[0]!.value
+    await settle(window.fixture)
+    expect(
+      window.node('profile-rename-live-assertive').textContent?.trim(),
+    ).toBe('That code is not right')
+    expect(window.node('profile-rename-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Could not send: mailbox unavailable')
+
+    code.value = '123456'
+    code.dispatchEvent(new Event('input', { bubbles: true }))
+    window
+      .node('profile-name-step-up')
+      .dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+    await settle(window.fixture)
+    expect(confirmations()).toHaveLength(2)
+    window.tab.reply(confirmations()[1]!)
+    await confirm.mock.results[1]!.value
+    await settle(window.fixture)
+    expect(nameInput(window.node)).not.toBeNull()
+    expect(window.node('profile-rename-live-polite')).toBe(calm)
+    expect(calmText()).toBe('')
+  })
+
+  it.each([
+    {
+      method: 'sms_code',
+      destination: '+15550001111',
+      said: 'Sent to +15550001111',
+    },
+    { method: 'passkey', destination: undefined, said: '' },
+  ])(
+    'says the confirmation line of a $method step only when a code was sent',
+    async ({ method, destination, said }) => {
+      const window = standardWindow({
+        stepUp: {
+          required: true,
+          purpose: 'change your name',
+          method,
+          destination,
+        },
+      })
+      await openName(window.flow, window.fixture)
+      const calm = window.node('profile-rename-live-polite')
+      expect(calmText()).toBe('')
+
+      tellSend(confirmationLine('this', CODE_SEND_STATE_SENT), window.fixture)
+      expect(window.node('profile-rename-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+    },
+  )
+
+  it('leaves the line of a closed window behind and says the next attempt in a new dialog', async () => {
+    const window = standardWindow({ stepUp: EMAIL_STEP })
+    await openName(window.flow, window.fixture)
+    const first = window.node('modal')
+    tellSend(confirmationLine('closed', CODE_SEND_STATE_SENT), window.fixture)
+    expect(calmText()).toBe('Sent to a@example.test')
+
+    window.flow.close()
+    await settle(window.fixture)
+    expect(window.exists('modal')).toBe(false)
+
+    // The window opens as a new dialog; the region it projects stands in it
+    // with nothing to say.
+    await openName(window.flow, window.fixture)
+    expect(window.node('profile-name-step-up')).not.toBeNull()
+    expect(window.node('modal')).not.toBe(first)
+    expect(
+      window.node('profile-rename-live-polite').closest('[aria-modal="true"]'),
+    ).toBe(window.node('modal'))
+    expect(calmText()).toBe('')
+    tellSend(confirmationLine('again', CODE_SEND_STATE_QUEUED), window.fixture)
+    expect(calmText()).toBe('Queued for sending…')
   })
 })

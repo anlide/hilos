@@ -23,6 +23,7 @@ import {
   HILOS_DATA_EXPORT_COPY,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  sendProgressLine,
 } from '@hilos/core/base'
 import type { HilosSecondFactorContext } from '@hilos/core/base'
 
@@ -65,6 +66,7 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
   const resendAt = useSignal(flow.resendAt)
   const stepUpOpening = useSignal(flow.stepUp.opening)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
+  const stepUpSendProgress = useSignal(flow.stepUp.sendProgress)
   const [now, setNow] = useState(() => Date.now())
   const body = useRef<HTMLDivElement | null>(null)
 
@@ -96,6 +98,20 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
   }, [deletion?.effectiveAt ?? null])
   const open = step !== 'closed' && step !== 'opening'
   const stepNumber = step === 'code' ? 2 : 1
+  // What the calm region says: the send line of the code step on screen, to the
+  // address its block names - the confirmation's own while it stands in front of
+  // the steps. The blocks only show it (accessibility.md, "Live regions").
+  const sendVoice =
+    step === 'step-up'
+      ? stepUpOpening?.method === 'email_code' ||
+        stepUpOpening?.method === 'sms_code'
+        ? (sendProgressLine(stepUpSendProgress, stepUpOpening.destination ?? '')
+            ?.text ?? '')
+        : ''
+      : step === 'code'
+        ? (sendProgressLine(sendProgress, opening?.destination ?? '')?.text ??
+          '')
+        : ''
   const daysLeft =
     deletion === null
       ? ''
@@ -257,6 +273,14 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
           data-id="account-deletion-live"
         >
           {step === 'step-up' ? stepUpRefusal : refusal}
+        </div>
+        <div
+          className="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="account-deletion-live-polite"
+        >
+          {sendVoice}
         </div>
         <div ref={body} data-id="account-deletion-modal">
           {step === 'step-up' ? (

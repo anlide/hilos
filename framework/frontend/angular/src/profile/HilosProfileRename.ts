@@ -14,6 +14,8 @@ import {
   HILOS_PROFILE_RENAME_COPY as COPY,
   HILOS_STEP_UP_COPY,
   hilosRowEditIdle,
+  sendProgressLine,
+  type CodeSendProgress,
   type HilosProfileRenameFields,
   type HilosProfileRenameFlow,
   type HilosProfileRenameStep,
@@ -66,6 +68,14 @@ import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
         data-id="profile-rename-live-assertive"
       >
         {{ step() === 'form' ? refusal() : stepUpRefusal() }}
+      </div>
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="profile-rename-live-polite"
+      >
+        {{ sendVoice() }}
       </div>
       <div #body>
         @if (step() !== 'form') {
@@ -216,6 +226,7 @@ export class HilosProfileRename {
   protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
   protected readonly stepUpBusy = signal(false)
   protected readonly stepUpRefusal = signal<string | null>(null)
+  protected readonly stepUpSendProgress = signal<CodeSendProgress | null>(null)
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
   private previous: HilosProfileRenameStep = 'closed'
   protected readonly saveLabel = computed(() =>
@@ -226,6 +237,20 @@ export class HilosProfileRename {
       .replace('{min}', String(this.flow().minLength))
       .replace('{max}', String(this.flow().maxLength)),
   )
+  /**
+   * What the calm region says: the confirmation's send line, to the address
+   * its block names, while it stands in front of the form and only when it sent
+   * a code; the form has no send of its own. The block only shows it
+   * (accessibility.md, "Live regions").
+   */
+  protected readonly sendVoice = computed(() => {
+    const opening = this.stepUpOpening()
+    return this.step() === 'step-up' &&
+      (opening?.method === 'email_code' || opening?.method === 'sms_code')
+      ? (sendProgressLine(this.stepUpSendProgress(), opening.destination ?? '')
+          ?.text ?? '')
+      : ''
+  })
 
   constructor() {
     effect((onCleanup) => {
@@ -243,6 +268,7 @@ export class HilosProfileRename {
         mirror(flow.stepUp.opening, this.stepUpOpening),
         mirror(flow.stepUp.busy, this.stepUpBusy),
         mirror(flow.stepUp.refusal, this.stepUpRefusal),
+        mirror(flow.stepUp.sendProgress, this.stepUpSendProgress),
       ]
       onCleanup(() => off.forEach((stop) => stop()))
     })

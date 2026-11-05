@@ -1,8 +1,15 @@
 import {
   ActionError,
+  bindCodeSendProgress,
   bindProfileFlows,
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENT,
   createHilosProfilePasswordChangeFlow,
+  PASSWORD_CHANGE_OPERATION,
   profileFlowsSchema,
+  SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_PROFILE_FLOWS,
   type ActionLifecycle,
   type HilosConnection,
@@ -14,6 +21,7 @@ import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  tellSend({ state: null })
 })
 enableAutoUnmount(afterEach)
 function byId(id: string): HTMLElement {
@@ -59,6 +67,72 @@ const SENT_RESEND_OPEN = {
   sent: true,
   resendAt: Date.now() - 60_000,
   expiresAt: Date.now() + 600_000,
+}
+
+/** A code request's answer whose resend gate opens in a minute. */
+const SENT_RESEND_LATER = {
+  sent: true,
+  resendAt: Date.now() + 60_000,
+  expiresAt: Date.now() + 600_000,
+}
+
+/**
+ * Tell the session's send line as the server frames it, through the binding the
+ * application boots with; the binding is let go once the frame is in, and a
+ * null state takes the line away.
+ *
+ * @param line The frame's fields beside its message, which is none.
+ */
+function tellSend(line: Record<string, unknown>): void {
+  const sendListeners: ((signal: { type: string; data: unknown }) => void)[] =
+    []
+  const unbind = bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      sendListeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  for (const listener of sendListeners)
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { message: null, ...line },
+    })
+  unbind()
+}
+
+/**
+ * One frame of the line a send follows.
+ *
+ * @param purpose The operation that ordered the send.
+ * @param ticket The send the line follows.
+ * @param state The step the send reached.
+ * @param more The provider's detail, when the frame carries one.
+ */
+function sendLine(
+  purpose: string,
+  ticket: string,
+  state: string,
+  more: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { state, channel: 'email', purpose, ticket, ...more }
+}
+
+/** What the dialog's calm region says now. */
+function calmText(): string | null {
+  return byId('profile-password-live-polite').textContent
+}
+
+/**
+ * The element itself, or else the first thing inside it, that matches the
+ * selector: the root of a block is the likeliest place for a voice to return.
+ *
+ * @param element The block to look through, root included.
+ * @param selector What a live voice looks like.
+ */
+function selfOrInside(element: Element, selector: string): Element | null {
+  return element.matches(selector) ? element : element.querySelector(selector)
 }
 
 const FRAME_AFTER: Record<string, string | null> = {
@@ -314,4 +388,166 @@ describe('password change modal', () => {
       password: 'current-secret',
     })
   })
+  it('says the code step line to the opening destination through a region that outlives the step', async () => {
+    const { flow, answers } = setup()
+    answers.profile_change_password_code_request = SENT_RESEND_OPEN
+    await flow.open()
+    await flushPromises()
+    const calm = byId('profile-password-live-polite')
+    expect(calm.getAttribute('role')).toBe('status')
+    expect(calm.getAttribute('aria-live')).toBe('polite')
+    expect(calm.closest('[aria-modal="true"]')).not.toBeNull()
+    expect(calmText()).toBe('')
+
+    byId('profile-password-send-code').click()
+    await flushPromises()
+    tellSend(sendLine(PASSWORD_CHANGE_OPERATION, 'own', CODE_SEND_STATE_SENT))
+    await flushPromises()
+    expect(byId('profile-password-live-polite')).toBe(calm)
+    expect(calmText()).toBe('Sent to a@example.test')
+    tellSend(
+      sendLine(PASSWORD_CHANGE_OPERATION, 'own', CODE_SEND_STATE_FAILED, {
+        detail: 'mailbox unavailable',
+      }),
+    )
+    await flushPromises()
+    expect(calmText()).toBe('Could not send: mailbox unavailable')
+    expect(byId('profile-password-send').textContent).toContain(
+      'Could not send: mailbox unavailable',
+    )
+    expect(
+      selfOrInside(byId('profile-password-send'), '[role], [aria-live]'),
+    ).toBeNull()
+
+    // The confirmation's line is not this step's.
+    tellSend(
+      sendLine(CODE_SEND_PURPOSE_STEP_UP, 'confirmation', CODE_SEND_STATE_SENT),
+    )
+    await flushPromises()
+    expect(calmText()).toBe('')
+    tellSend(sendLine(PASSWORD_CHANGE_OPERATION, 'own', CODE_SEND_STATE_SENT))
+    await flushPromises()
+
+    flow.code.set('123456')
+    await flushPromises()
+    byId('profile-password-confirm-code').click()
+    await flushPromises()
+    expect(byId('profile-password-new')).toBeDefined()
+    expect(byId('profile-password-live-polite')).toBe(calm)
+    expect(calmText()).toBe('')
+  })
+  it('keeps a refused code in the alert and the send line in the calm region', async () => {
+    const { flow, answers } = setup()
+    answers.profile_change_password_code_request = SENT_RESEND_OPEN
+    answers.profile_change_password_code_confirm = 'That code is not right'
+    await flow.open()
+    await flushPromises()
+    byId('profile-password-send-code').click()
+    await flushPromises()
+    tellSend(sendLine(PASSWORD_CHANGE_OPERATION, 'own', CODE_SEND_STATE_SENT))
+    await flushPromises()
+    expect(calmText()).toBe('Sent to a@example.test')
+    expect(byId('profile-password-live').textContent).toBe('')
+
+    flow.code.set('000000')
+    await flushPromises()
+    byId('profile-password-confirm-code').click()
+    await flushPromises()
+    expect(byId('profile-password-live').textContent).toBe(
+      'That code is not right',
+    )
+    expect(calmText()).toBe('Sent to a@example.test')
+    expect(byId('profile-password-code')).toBeDefined()
+  })
+  it('draws the countdown on the send row and keeps it out of the calm region', async () => {
+    const { flow, answers } = setup()
+    answers.profile_change_password_code_request = SENT_RESEND_LATER
+    await flow.open()
+    await flushPromises()
+    byId('profile-password-send-code').click()
+    await flushPromises()
+    tellSend(sendLine(PASSWORD_CHANGE_OPERATION, 'own', CODE_SEND_STATE_SENT))
+    await flushPromises()
+
+    const row = byId('profile-password-send')
+    expect(row.textContent).toContain('Sent to a@example.test')
+    expect(row.textContent).toContain('Send again in')
+    expect(calmText()).toBe('Sent to a@example.test')
+    expect(calmText()).not.toContain('Send again in')
+  })
+  it('leaves the line of a closed window behind and says the next attempt from a new region', async () => {
+    const { flow, answers } = setup()
+    answers.profile_change_password_code_request = SENT_RESEND_OPEN
+    await flow.open()
+    await flow.sendCode()
+    await flushPromises()
+    const first = byId('profile-password-live-polite')
+    tellSend(
+      sendLine(PASSWORD_CHANGE_OPERATION, 'closed', CODE_SEND_STATE_SENT),
+    )
+    await flushPromises()
+    expect(calmText()).toBe('Sent to a@example.test')
+
+    flow.close()
+    await flushPromises()
+    tell(null)
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+
+    await flow.open()
+    await flushPromises()
+    expect(byId('profile-password-live-polite')).not.toBe(first)
+    expect(calmText()).toBe('')
+    await flow.sendCode()
+    await flushPromises()
+    expect(byId('profile-password-code')).toBeDefined()
+    expect(calmText()).toBe('')
+    tellSend(
+      sendLine(PASSWORD_CHANGE_OPERATION, 'again', CODE_SEND_STATE_QUEUED),
+    )
+    await flushPromises()
+    expect(calmText()).toBe('Queued for sending…')
+  })
+  it.each([
+    {
+      method: 'sms_code',
+      destination: '+15550001111',
+      said: 'Sent to +15550001111',
+    },
+    { method: 'second_factor', destination: undefined, said: '' },
+  ])(
+    'says the confirmation line of a $method step only when a code was sent',
+    async ({ method, destination, said }) => {
+      const { flow, answers } = setup()
+      answers.hilos_step_up_start = {
+        required: true,
+        purpose: 'change your password',
+        method,
+        destination,
+      }
+      await flow.open()
+      await flushPromises()
+      const calm = byId('profile-password-live-polite')
+      tellSend(sendLine(PASSWORD_CHANGE_OPERATION, 'own', CODE_SEND_STATE_SENT))
+      await flushPromises()
+      expect(calmText()).toBe('')
+
+      tellSend(
+        sendLine(
+          CODE_SEND_PURPOSE_STEP_UP,
+          'confirmation',
+          CODE_SEND_STATE_SENT,
+        ),
+      )
+      await flushPromises()
+      expect(byId('profile-password-live-polite')).toBe(calm)
+      expect(calmText()).toBe(said)
+      expect(
+        selfOrInside(
+          byId('step-up'),
+          '[role="status"], [role="alert"], [aria-live]',
+        ),
+      ).toBeNull()
+    },
+  )
 })

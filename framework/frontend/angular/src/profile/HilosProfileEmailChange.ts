@@ -14,6 +14,7 @@ import {
   HILOS_PROFILE_EMAIL_CHANGE_COPY,
   HILOS_PROFILE_EMAIL_CHANGE_STEPS,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   subscribeSignal,
   type HilosProfileEmailChangeFlow,
   type HilosProfileEmailChangeStep,
@@ -67,8 +68,9 @@ function mirror<T>(
       [busy]="busy() || stepUpBusy()"
       initialFocus="inner"
     >
-      <!-- This dialog's own voice; one region for all the steps, since only
-      one step is on screen at a time. -->
+      <!-- This dialog's own voice; one pair of regions for all the steps,
+      since only one step is on screen at a time: a refusal interrupts, the
+      send line waits its turn. -->
       <div
         class="visually-hidden"
         role="alert"
@@ -76,6 +78,14 @@ function mirror<T>(
         data-id="profile-email-live-assertive"
       >
         {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
+      </div>
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="profile-email-live-polite"
+      >
+        {{ sendVoice() }}
       </div>
       <div #body>
         @if (step() === 'step-up') {
@@ -350,6 +360,7 @@ export class HilosProfileEmailChange {
   protected readonly asksBeforeClosing = signal(false)
   protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
+  protected readonly stepUpSendProgress = signal<CodeSendProgress | null>(null)
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
   private previous: HilosProfileEmailChangeStep = 'closed'
   protected readonly title = computed(() =>
@@ -366,6 +377,34 @@ export class HilosProfileEmailChange {
         this.step() as (typeof HILOS_PROFILE_EMAIL_CHANGE_STEPS)[number],
       ) + 1,
   )
+  /**
+   * What the calm region says: the send line of the code step on screen, to
+   * the address its block names - the confirmation's own while it stands in
+   * front of the steps. The blocks only show it (accessibility.md, "Live
+   * regions").
+   */
+  protected readonly sendVoice = computed(() => {
+    const step = this.step()
+    if (step === 'step-up') {
+      const opening = this.stepUpOpening()
+      return opening?.method === 'email_code' || opening?.method === 'sms_code'
+        ? (sendProgressLine(
+            this.stepUpSendProgress(),
+            opening.destination ?? '',
+          )?.text ?? '')
+        : ''
+    }
+    if (step === 'confirm-current') {
+      return sendProgressLine(this.sendProgress(), this.was())?.text ?? ''
+    }
+    if (step === 'confirm-new') {
+      return (
+        sendProgressLine(this.sendProgress(), this.newEmail().trim())?.text ??
+        ''
+      )
+    }
+    return ''
+  })
 
   constructor() {
     effect((onCleanup) => {
@@ -386,6 +425,7 @@ export class HilosProfileEmailChange {
         mirror(flow.asksBeforeClosing, this.asksBeforeClosing),
         mirror(flow.stepUp.opening, this.stepUpOpening),
         mirror(flow.stepUp.refusal, this.stepUpRefusal),
+        mirror(flow.stepUp.sendProgress, this.stepUpSendProgress),
       ]
       onCleanup(() => off.forEach((stop) => stop()))
     })

@@ -39,9 +39,11 @@ import {
   formatCalendarDate,
   hilosTimeZone,
   HILOS_STEP_UP_COPY,
+  sendProgressLine,
   subscribeSignal,
 } from '@hilos/core/base'
 import type {
+  CodeSendProgress,
   HilosBackupCodeEntry,
   HilosSecondFactorAuthenticator,
   HilosSecondFactorContext,
@@ -49,6 +51,7 @@ import type {
   HilosSecondFactorProof,
   HilosSecondFactorState,
   HilosSecondFactorView,
+  HilosStepUpOpening,
 } from '@hilos/core/base'
 
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
@@ -337,6 +340,14 @@ function focusStep(form: HTMLFormElement | undefined): void {
           data-id="profile-2fa-enroll-live"
         >
           {{ enrollStepUpRefusal() }}
+        </div>
+        <div
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="profile-2fa-enroll-live-polite"
+        >
+          {{ enrollSendVoice() }}
         </div>
         <hilos-action-error
           [action]="enrollAction"
@@ -718,7 +729,13 @@ export class HilosProfileSecurityPage {
       },
     ),
   )
+  protected readonly enrollStepUpOpening = signal<HilosStepUpOpening | null>(
+    null,
+  )
   protected readonly enrollStepUpRefusal = signal<string | null>(null)
+  protected readonly enrollStepUpSendProgress = signal<CodeSendProgress | null>(
+    null,
+  )
   protected readonly enrollStepUpBusy = signal(false)
   protected readonly enrollOpen = signal(false)
   protected readonly enrollStep = signal<EnrollStep>('name')
@@ -727,6 +744,24 @@ export class HilosProfileSecurityPage {
       ? HILOS_STEP_UP_COPY.title
       : 'Add an authenticator app',
   )
+  /**
+   * What the window's calm region says: the confirmation's send line, to the
+   * address its block names, while it stands in front of the steps and only
+   * when it sent a code. The app's own code is typed, not sent: every other
+   * step says nothing. The block only shows it (accessibility.md, "Live
+   * regions").
+   */
+  protected readonly enrollSendVoice = computed(() => {
+    const opening = this.enrollStepUpOpening()
+    return this.enrollOpen() &&
+      this.enrollStep() === 'step-up' &&
+      (opening?.method === 'email_code' || opening?.method === 'sms_code')
+      ? (sendProgressLine(
+          this.enrollStepUpSendProgress(),
+          opening.destination ?? '',
+        )?.text ?? '')
+      : ''
+  })
   protected readonly enrollLabel = signal('')
   protected readonly enrollCode = signal('')
   protected readonly enrollment = signal<HilosSecondFactorEnrollment | null>(
@@ -871,8 +906,20 @@ export class HilosProfileSecurityPage {
     })
     effect((onCleanup) => {
       const stepUp = this.enrollStepUp()
+      this.enrollStepUpOpening.set(stepUp.opening.get())
       this.enrollStepUpRefusal.set(stepUp.refusal.get())
+      this.enrollStepUpSendProgress.set(stepUp.sendProgress.get())
       this.enrollStepUpBusy.set(stepUp.busy.get())
+      onCleanup(
+        subscribeSignal(stepUp.opening, (value) =>
+          this.enrollStepUpOpening.set(value),
+        ),
+      )
+      onCleanup(
+        subscribeSignal(stepUp.sendProgress, (value) =>
+          this.enrollStepUpSendProgress.set(value),
+        ),
+      )
       onCleanup(
         subscribeSignal(stepUp.refusal, (value) =>
           this.enrollStepUpRefusal.set(value),
