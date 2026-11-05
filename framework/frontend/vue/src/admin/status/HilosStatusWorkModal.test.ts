@@ -4,8 +4,12 @@ import {
   HilosPages,
   hilosToasts,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  type TableRow,
 } from '@hilos/core/base'
-import { localDateTimeValue } from '@hilos/core/admin/status'
+import {
+  localDateTimeValue,
+  type HilosStatusWorksData,
+} from '@hilos/core/admin/status'
 
 import {
   announcement,
@@ -13,7 +17,9 @@ import {
   settled,
   worksPage,
   workForm,
+  workRow,
   workSave,
+  worksData,
   field,
   fillWork,
 } from '../../../test/statusWorksFixtures.js'
@@ -27,15 +33,88 @@ afterEach(() => {
   hilosToasts.clear()
   vi.useRealTimers()
 })
-async function open(kind: 'create' | 'edit' = 'create') {
+async function open(
+  kind: 'create' | 'edit' = 'create',
+  rows: readonly TableRow[] = [workRow()],
+  data: HilosStatusWorksData = worksData,
+) {
   const h = await worksPage(cleanups)
-  h.window()
+  h.window(rows, data)
   await nextTick()
   const opener = await h.open(kind)
   return { ...h, opener }
 }
 
 describe('HilosStatusWorkModal with real creation and row-edit factories', () => {
+  it.each(['create', 'edit'] as const)(
+    'keeps component labels and selections separate from same-key fields during %s',
+    async (kind) => {
+      const components = [
+        { componentKey: 'title', name: 'Title service' },
+        { componentKey: 'starts', name: 'Starts service' },
+      ]
+      const zone = readerTimeZone()
+      cleanups.push(zone.release)
+      zone.choose('UTC')
+      const h = await open(kind, [workRow({ componentKeys: [] })], {
+        ...worksData!,
+        components,
+      })
+      const modals = h.wrapper.findAllComponents(HilosStatusWorkModal)
+      const activeModal = modals.find((modal) =>
+        modal.props('controller').opened.get(),
+      )!
+      const controller = activeModal.props('controller')
+      await field('title').setValue('Maintenance')
+      await field('description').setValue('Details for visitors')
+      await field('starts').setValue('2031-01-02T03:04:05')
+      await field('ends').setValue('2031-01-02T04:05:06')
+      const labels = [...workForm().element.querySelectorAll('label')]
+      const staticEntries = [
+        { key: 'title', label: 'Title' },
+        { key: 'starts', label: 'Starts, UTC' },
+        { key: 'ends', label: 'Ends, UTC' },
+        { key: 'description', label: 'What visitors read' },
+      ]
+      const staticFields = staticEntries.map(({ key, label: text }) => {
+        const control = field(key).element as
+          HTMLInputElement | HTMLTextAreaElement
+        const label = labels.find((node) => node.textContent?.trim() === text)!
+        expect.soft(label.control).toBe(control)
+        expect.soft([...(control.labels ?? [])]).toEqual([label])
+        return control
+      })
+      const values = staticFields.map((control) => control.value)
+      const selected: string[] = []
+      for (const { componentKey, name } of components) {
+        const checkbox = field(`component-${componentKey}`)
+          .element as HTMLInputElement
+        const label = labels.find((node) => node.textContent?.trim() === name)!
+        expect.soft(label.control).toBe(checkbox)
+        // Native labels supply the accessible name of these plain controls.
+        expect.soft([...(checkbox.labels ?? [])]).toEqual([label])
+        expect.soft(checkbox.labels?.[0]?.textContent?.trim()).toBe(name)
+        ;(field('close').element as HTMLElement).focus()
+        label.click()
+        await nextTick()
+        selected.push(componentKey)
+        expect.soft(checkbox.checked).toBe(true)
+        for (const item of components) {
+          const itemCheckbox = field(`component-${item.componentKey}`)
+            .element as HTMLInputElement
+          expect
+            .soft(itemCheckbox.checked)
+            .toBe(selected.includes(item.componentKey))
+        }
+        expect.soft(controller.form.get().componentKeys).toEqual(selected)
+        expect.soft(staticFields).not.toContain(document.activeElement)
+        expect
+          .soft(staticFields.map((control) => control.value))
+          .toEqual(values)
+      }
+    },
+  )
+
   it('uses the captured IANA zone, second precision and core payload; success waits for its correlated commit ack', async () => {
     const zone = readerTimeZone()
     cleanups.push(zone.release)

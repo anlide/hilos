@@ -11,8 +11,12 @@ import {
   HilosPages,
   hilosToasts,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  type TableRow,
 } from '@hilos/core/base'
-import { localDateTimeValue } from '@hilos/core/admin/status'
+import {
+  localDateTimeValue,
+  type HilosStatusWorksData,
+} from '@hilos/core/admin/status'
 
 import { HilosStatusWorkModal } from '../src/admin/status/HilosStatusWorkModal.js'
 import { readerTimeZone } from './readerTimeZone.js'
@@ -21,6 +25,8 @@ import {
   browserDateTimeValues,
   statusWorksHarness,
   statusWorksWindows,
+  workRow,
+  worksData,
 } from './statusFixtures.js'
 
 const cleanups: (() => void)[] = []
@@ -130,8 +136,15 @@ function WorksWindows({ initial }: { initial: Windows }) {
  *
  * @param kind Which window to open.
  * @param strict Whether to mount under StrictMode.
+ * @param rows The rows of the window.
+ * @param data The catalog and summary of the page answer.
  */
-async function open(kind: 'create' | 'edit' = 'create', strict = false) {
+async function open(
+  kind: 'create' | 'edit' = 'create',
+  strict = false,
+  rows: readonly TableRow[] = [workRow()],
+  data: HilosStatusWorksData = worksData,
+) {
   const h = statusWorksHarness()
   cleanups.push(h.dispose)
   const w = statusWorksWindows(h.context)
@@ -144,7 +157,7 @@ async function open(kind: 'create' | 'edit' = 'create', strict = false) {
     view.unmount()
   }
   cleanups.push(unmount)
-  h.window()
+  h.window(rows, data)
   const opener = get('works-opener')
   opener.focus()
   act(() => {
@@ -156,6 +169,65 @@ async function open(kind: 'create' | 'edit' = 'create', strict = false) {
 }
 
 describe('HilosStatusWorkModal with real creation and row-edit controllers', () => {
+  it.each(['create', 'edit'] as const)(
+    'keeps component labels and selections separate from same-key fields during %s',
+    async (kind) => {
+      const components = [
+        { componentKey: 'title', name: 'Title service' },
+        { componentKey: 'starts', name: 'Starts service' },
+      ]
+      readIn('UTC')
+      const { w } = await open(kind, false, [workRow({ componentKeys: [] })], {
+        ...worksData!,
+        components,
+      })
+      const controller = kind === 'create' ? w.create : w.edit
+      type('title', 'Maintenance')
+      type('description', 'Details for visitors')
+      type('starts', '2031-01-02T03:04:05')
+      type('ends', '2031-01-02T04:05:06')
+      const labels = [...workForm().querySelectorAll('label')]
+      const staticEntries = [
+        { key: 'title', label: 'Title' },
+        { key: 'starts', label: 'Starts, UTC' },
+        { key: 'ends', label: 'Ends, UTC' },
+        { key: 'description', label: 'What visitors read' },
+      ]
+      const staticFields = staticEntries.map(({ key, label: text }) => {
+        const control = field(key) as HTMLInputElement | HTMLTextAreaElement
+        const label = labels.find((node) => node.textContent?.trim() === text)!
+        expect.soft(label.control).toBe(control)
+        expect.soft([...(control.labels ?? [])]).toEqual([label])
+        return control
+      })
+      const values = staticFields.map((control) => control.value)
+      const selected: string[] = []
+      for (const { componentKey, name } of components) {
+        const checkbox = field(`component-${componentKey}`)
+        const label = labels.find((node) => node.textContent?.trim() === name)!
+        expect.soft(label.control).toBe(checkbox)
+        // Native labels supply the accessible name of these plain controls.
+        expect.soft([...(checkbox.labels ?? [])]).toEqual([label])
+        expect.soft(checkbox.labels?.[0]?.textContent?.trim()).toBe(name)
+        ;(field('close') as HTMLElement).focus()
+        fireEvent.click(label)
+        selected.push(componentKey)
+        expect.soft(checkbox.checked).toBe(true)
+        for (const item of components) {
+          const itemCheckbox = field(`component-${item.componentKey}`)
+          expect
+            .soft(itemCheckbox.checked)
+            .toBe(selected.includes(item.componentKey))
+        }
+        expect.soft(controller.form.get().componentKeys).toEqual(selected)
+        expect.soft(staticFields).not.toContain(document.activeElement)
+        expect
+          .soft(staticFields.map((control) => control.value))
+          .toEqual(values)
+      }
+    },
+  )
+
   it('uses the captured IANA zone, second precision and core payload; success waits for its correlated commit ack', async () => {
     const zone = readIn('Asia/Tokyo')
     const { h, w, opener } = await open()

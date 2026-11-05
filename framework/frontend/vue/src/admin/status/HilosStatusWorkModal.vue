@@ -215,7 +215,7 @@ function onEnter(event: KeyboardEvent): void {
           class="form-check form-check-inline"
         >
           <input
-            :id="`${fieldsId}-${component.componentKey}`"
+            :id="`${fieldsId}-component-${component.componentKey}`"
             :checked="form.componentKeys.includes(component.componentKey)"
             type="checkbox"
             class="form-check-input"
@@ -228,7 +228,7 @@ function onEnter(event: KeyboardEvent): void {
             "
           />
           <label
-            :for="`${fieldsId}-${component.componentKey}`"
+            :for="`${fieldsId}-component-${component.componentKey}`"
             class="form-check-label"
             >{{ component.name }}</label
           >

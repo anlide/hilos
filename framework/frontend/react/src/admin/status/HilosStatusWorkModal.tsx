@@ -348,7 +348,7 @@ export function HilosStatusWorkModal({
                 className="form-check form-check-inline"
               >
                 <input
-                  id={`${fieldsId}-${component.componentKey}`}
+                  id={`${fieldsId}-component-${component.componentKey}`}
                   checked={form.componentKeys.includes(component.componentKey)}
                   type="checkbox"
                   className="form-check-input"
@@ -361,7 +361,7 @@ export function HilosStatusWorkModal({
                   }
                 />
                 <label
-                  htmlFor={`${fieldsId}-${component.componentKey}`}
+                  htmlFor={`${fieldsId}-component-${component.componentKey}`}
                   className="form-check-label"
                 >
                   {component.name}
