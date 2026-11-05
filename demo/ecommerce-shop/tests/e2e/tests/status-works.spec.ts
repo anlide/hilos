@@ -547,19 +547,9 @@ test('an announced window closes nothing; the actual freeze stubs the shop but n
         const row = await scheduledRow(admin, announced)
         // The schedule keeps its strictly-future guard; a command, not a wait,
         // brings the announced start to now.
-        const first = await startStatusWork(row.publicId)
-        expect(first.startsAt).toBeLessThanOrEqual(Date.now())
-        // The command floors the start to its second, and the import refuses a
-        // freeze that starts inside the announcement's creation second: the
-        // server's answer of a start one second later keeps the freeze out of it.
-        let moved = first
-        await expect
-          .poll(async () => {
-            moved = await startStatusWork(row.publicId)
-            return moved.startsAt
-          })
-          .toBeGreaterThan(first.startsAt)
-        // The owner has read the moved start once its pair carries it: only
+        const started = await startStatusWork(row.publicId)
+        expect(started.startsAt).toBeLessThanOrEqual(Date.now())
+        // The owner has read the start once its pair carries it: only
         // then can an actual freeze find the announcement covering its start.
         await gotoPublicStatus(expect, page)
         const pair = await expectPublicStatusPair(
@@ -568,10 +558,13 @@ test('an announced window closes nothing; the actual freeze stubs the shop but n
           files,
           ({ status }) =>
             publishedWorks(status, [row.publicId])[0]?.startsAt ===
-            moved.startsAt,
+            started.startsAt,
         )
         expect(publishedWorks(pair.status, [row.publicId])).toEqual([
-          publicEntry(row.publicId, { ...announced, startsAt: moved.startsAt }),
+          publicEntry(row.publicId, {
+            ...announced,
+            startsAt: started.startsAt,
+          }),
         ])
         await expect(page.getByTestId('public-status-works')).toContainText(
           announced.title,
@@ -585,7 +578,7 @@ test('an announced window closes nothing; the actual freeze stubs the shop but n
         await expect(
           shownByTestId(page, `hilos-status-work-title-${row.id}`),
         ).toHaveText(announced.title)
-        return { draft: announced, work: row, started: moved }
+        return { draft: announced, work: row, started }
       })
 
     const period =

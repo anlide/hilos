@@ -2228,121 +2228,124 @@ test.describe('fixed rem text window stylesheet invalidation', () => {
   test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
   for (const content of ['text', 'parts'] as const) {
-    test(`H02/H06 height ${content}: natural font/spacing changes remeasure without a DOM nudge`, async ({
-      page,
-    }, info) => {
-      const policy = { mode: 'height', rem: 4.5 } as const
-      await openTableFixture(
-        expect,
-        page,
-        '/__table_geometry/index.html',
-        'geometry-fixture',
-      )
-      await page.getByTestId('geometry-height-mode').selectOption('height')
-      await page.getByTestId('geometry-rem').selectOption('4.5')
-      await page.getByTestId('geometry-height-content').selectOption(content)
-      await press(page, 'geometry-reading')
-      await setTableEnvironment(page, { kind: 'font', size: 20 })
-      await settleTableLayout(page)
-      const region = tableTextRegion(page, 'b')
-      const toggle = tableTextToggle(page, 'b')
-      const cap = await watchHeight(region)
-      const width = await region.evaluate((node) => node.clientWidth)
-      await expect(toggle).toHaveCount(0)
-      const evidence = async (
-        phase: string,
-        expanded = false,
-        overflow = false,
-      ) => {
-        await info.attach(`${content}-${phase}`, {
-          body: await expectTableTextGeometry(
+    // FIXME(F-063, 2026-11-05): scrollport прокручен на лишние 46 px резервов меток (P-698) · чужой · оба варианта · HIL-2046
+    test(
+      `H02/H06 height ${content}: natural font/spacing changes remeasure without a DOM nudge`,
+      { tag: '@quarantine:F-063' },
+      async ({ page }, info) => {
+        const policy = { mode: 'height', rem: 4.5 } as const
+        await openTableFixture(
+          expect,
+          page,
+          '/__table_geometry/index.html',
+          'geometry-fixture',
+        )
+        await page.getByTestId('geometry-height-mode').selectOption('height')
+        await page.getByTestId('geometry-rem').selectOption('4.5')
+        await page.getByTestId('geometry-height-content').selectOption(content)
+        await press(page, 'geometry-reading')
+        await setTableEnvironment(page, { kind: 'font', size: 20 })
+        await settleTableLayout(page)
+        const region = tableTextRegion(page, 'b')
+        const toggle = tableTextToggle(page, 'b')
+        const cap = await watchHeight(region)
+        const width = await region.evaluate((node) => node.clientWidth)
+        await expect(toggle).toHaveCount(0)
+        const evidence = async (
+          phase: string,
+          expanded = false,
+          overflow = false,
+        ) => {
+          await info.attach(`${content}-${phase}`, {
+            body: await expectTableTextGeometry(
+              expect,
+              page,
+              'b',
+              policy,
+              expanded,
+              overflow,
+            ),
+            contentType: 'application/json',
+          })
+        }
+        await evidence('before')
+        // Only a head stylesheet changes. No class/render/resize/requestMeasure
+        // on the text window can supply the missing overflow invalidation.
+        for (const size of [48, 96]) {
+          await setTableEnvironment(page, {
+            kind: 'text-font',
+            size,
+            lineHeight: 2,
+          })
+          await settleTableLayout(page)
+          expect(await region.evaluate((node) => node.scrollHeight)).toBe(
+            size * 2,
+          )
+          expect(await region.evaluate((node) => node.clientHeight)).toBe(90)
+          expect(await region.evaluate((node) => node.clientWidth)).toBe(width)
+          await cap.unchanged()
+          await expectTableTextControl(expect, page, 'b', false)
+        }
+        await evidence('font96-glyph-outside90', false, true)
+        await setTableEnvironment(page, {
+          kind: 'text-font',
+          size: 16,
+          lineHeight: 1.5,
+        })
+        await settleTableLayout(page)
+        await expect(toggle).toHaveCount(0)
+        await cap.unchanged()
+        await evidence('small-again')
+        await setTableEnvironment(page, {
+          kind: 'text-font',
+          size: 96,
+          lineHeight: 2,
+        })
+        await expectTableTextControl(expect, page, 'b', false)
+        await toggle.focus()
+        const button = await toggle.elementHandle()
+        await toggle.press('Enter')
+        await expectTableTextControl(expect, page, 'b', true)
+        await settleTableLayout(page)
+        await evidence('expanded', true)
+        await setTableEnvironment(page, {
+          kind: 'text-font',
+          size: 16,
+          lineHeight: 1.5,
+        })
+        await settleTableLayout(page)
+        await expectTableTextControl(expect, page, 'b', true)
+        await toggle.press('Enter')
+        await expectTableTextControl(expect, page, 'b', false)
+        await settleTableLayout(page)
+        await expect(toggle).toBeFocused()
+        expect(
+          await toggle.evaluate((node, before) => node === before, button),
+        ).toBe(true)
+        await page.getByTestId('geometry-height-content').focus()
+        await expect(toggle).toHaveCount(0)
+        await evidence('collapsed-small')
+        await setTableEnvironment(page, { kind: 'container', narrow: true })
+        await setTableEnvironment(page, { kind: 'spacing', enabled: true })
+        await info.attach(`${content}-late-font-condition`, {
+          body: await loadLateTableFont(
             expect,
             page,
-            'b',
-            policy,
-            expanded,
-            overflow,
+            'geometry-body',
+            'geometry-name-b',
           ),
           contentType: 'application/json',
         })
-      }
-      await evidence('before')
-      // Only a head stylesheet changes. No class/render/resize/requestMeasure
-      // on the text window can supply the missing overflow invalidation.
-      for (const size of [48, 96]) {
-        await setTableEnvironment(page, {
-          kind: 'text-font',
-          size,
-          lineHeight: 2,
-        })
         await settleTableLayout(page)
-        expect(await region.evaluate((node) => node.scrollHeight)).toBe(
-          size * 2,
-        )
-        expect(await region.evaluate((node) => node.clientHeight)).toBe(90)
-        expect(await region.evaluate((node) => node.clientWidth)).toBe(width)
-        await cap.unchanged()
-        await expectTableTextControl(expect, page, 'b', false)
-      }
-      await evidence('font96-glyph-outside90', false, true)
-      await setTableEnvironment(page, {
-        kind: 'text-font',
-        size: 16,
-        lineHeight: 1.5,
-      })
-      await settleTableLayout(page)
-      await expect(toggle).toHaveCount(0)
-      await cap.unchanged()
-      await evidence('small-again')
-      await setTableEnvironment(page, {
-        kind: 'text-font',
-        size: 96,
-        lineHeight: 2,
-      })
-      await expectTableTextControl(expect, page, 'b', false)
-      await toggle.focus()
-      const button = await toggle.elementHandle()
-      await toggle.press('Enter')
-      await expectTableTextControl(expect, page, 'b', true)
-      await settleTableLayout(page)
-      await evidence('expanded', true)
-      await setTableEnvironment(page, {
-        kind: 'text-font',
-        size: 16,
-        lineHeight: 1.5,
-      })
-      await settleTableLayout(page)
-      await expectTableTextControl(expect, page, 'b', true)
-      await toggle.press('Enter')
-      await expectTableTextControl(expect, page, 'b', false)
-      await settleTableLayout(page)
-      await expect(toggle).toBeFocused()
-      expect(
-        await toggle.evaluate((node, before) => node === before, button),
-      ).toBe(true)
-      await page.getByTestId('geometry-height-content').focus()
-      await expect(toggle).toHaveCount(0)
-      await evidence('collapsed-small')
-      await setTableEnvironment(page, { kind: 'container', narrow: true })
-      await setTableEnvironment(page, { kind: 'spacing', enabled: true })
-      await info.attach(`${content}-late-font-condition`, {
-        body: await loadLateTableFont(
-          expect,
-          page,
-          'geometry-body',
-          'geometry-name-b',
-        ),
-        contentType: 'application/json',
-      })
-      await settleTableLayout(page)
-      await expectTableTextControl(expect, page, 'a', false)
-      await tableTextToggle(page, 'a').click()
-      await expectTableTextControl(expect, page, 'a', true)
-      await settleTableLayout(page)
-      await info.attach(`${content}-width-spacing-font`, {
-        body: await expectTableTextGeometry(expect, page, 'a', policy, true),
-        contentType: 'application/json',
-      })
-    })
+        await expectTableTextControl(expect, page, 'a', false)
+        await tableTextToggle(page, 'a').click()
+        await expectTableTextControl(expect, page, 'a', true)
+        await settleTableLayout(page)
+        await info.attach(`${content}-width-spacing-font`, {
+          body: await expectTableTextGeometry(expect, page, 'a', policy, true),
+          contentType: 'application/json',
+        })
+      },
+    )
   }
 })

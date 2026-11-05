@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -95,6 +96,7 @@ class StatusWorkActions extends DbActions
 
     /**
      * Joins the import transaction using the observation's validated announcement window.
+     * Creation within the proven start's half-open second still proves use; the next second does not.
      * A restore may move the current schedule but cannot undo proven use of the same public identity.
      *
      * @param StatusMaintenanceObservation $observation Own sanitized observation with a proven announcement snapshot
@@ -107,7 +109,7 @@ class StatusWorkActions extends DbActions
             throw new DatabaseException('Observed work consumption requires the caller transaction');
         }
         if ($observation->work === null || $observation->period->workId !== $this->object->public_id
-            || $observation->period->startedAt < $this->object->created_at) {
+            || $observation->period->startedAt + TimeConstants::MS_PER_SECOND <= $this->object->created_at) {
             throw new ValidationException('Maintenance must prove use of this announcement.');
         }
         if ($this->object->consumed_at !== null) {

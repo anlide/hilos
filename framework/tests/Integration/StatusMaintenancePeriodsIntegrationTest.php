@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Exception\ValidationException;
@@ -201,7 +202,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
     public function testAnInactiveObservationProvesASnapshotPublishedWithinTheFreezeSecond(bool $announced): void
     {
         $work = $announced ? Database::transaction(DatabaseNames::PRIMARY, fn() => Hilos::$db->statusWorks->actions->create(
-            'Subsecond upgrade', null, $this->now, $this->now + 10000, $this->now - 1000, ['service'],
+            'Subsecond upgrade', null, $this->now, $this->now + 10000, $this->now + 50, ['service'],
         )) : null;
         $this->settle($this->now + 100);
         self::assertGreaterThanOrEqual($this->now + 100, (new StatusPublicFiles())->restore()->generatedAt);
@@ -221,6 +222,40 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             Hilos::$db = $database;
             Hilos::$setting = $settings;
         }
+        if ($work === null) {
+            return;
+        }
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_INACTIVE);
+        $this->settle($this->now + 1000);
+        $rows = $this->rows();
+        self::assertCount(1, $rows);
+        self::assertSame($work->id, (int)$rows[0]['work_id']);
+        self::assertSame($work->publicId, $rows[0]['work_public_id']);
+        self::assertSame($this->now, (int)$rows[0]['started_at']);
+        self::assertSame($this->now + 1000, (int)$rows[0]['ended_at']);
+        self::assertSame($rows[0]['ended_at'], $rows[0]['completion_observed_at']);
+        self::assertSame($this->now, (int)Database::sql(
+            'SELECT consumed_at FROM hilos_status_work WHERE id = ?', [$work->id],
+        )->rows()[0]['consumed_at']);
+        self::assertSame([], (new StatusMaintenanceObservationStore())->discover());
+    }
+
+    /** Creation exactly one second after the proven start does not consume the announcement. */
+    public function testTheExactRightBoundaryOfTheStartSecondRefusesConsumption(): void
+    {
+        $work = Database::transaction(DatabaseNames::PRIMARY, fn() => Hilos::$db->statusWorks->actions->create(
+            'Boundary upgrade', null, $this->now, $this->now + 10000, $this->now + TimeConstants::MS_PER_SECOND, ['service'],
+        ));
+        $observation = StatusMaintenanceObservation::start($this->now, $this->now, true, StatusPublicWork::fromWork($work));
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, fn() => $work->actions->consumeObservation($observation));
+            self::fail('Creation on the exact right boundary must not consume the announcement');
+        } catch (ValidationException $refusal) {
+            self::assertSame('Maintenance must prove use of this announcement.', $refusal->getMessage());
+        }
+        self::assertNull(Database::sql(
+            'SELECT consumed_at FROM hilos_status_work WHERE id = ?', [$work->id],
+        )->rows()[0]['consumed_at']);
     }
 
     /** @return iterable<string, array{string}> No first classification without a fully proven pair */
