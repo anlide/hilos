@@ -1265,6 +1265,10 @@ keep their existing behavior.
   § "Time-based features: no universal clock". Add a small, per-feature
   test-only CLI (`extends TestOnlyCommand`) that brings the one moment to now
   and stamps it where its reader reads it; never build a shared time-travel
-  knob. A test does not wait a period out, and a stand does not shorten a
-  production timer through env or a compose overlay — a deviation is the
-  owner's to approve in the leaf's contract.
+  knob. For a setup without clock waiting or a short temporary e2e real wait,
+  follow the canonical
+  [Time rules](frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now).
+  Real-clock waits outside that exception, every such PHP-test wait regardless
+  of duration, and shortening a stand's production timer through env or a
+  compose overlay require the owner's approval in the leaf's contract
+  ([approval gate](../../agents.md#contract-approval-gate-hard-stop)).

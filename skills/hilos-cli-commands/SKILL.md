@@ -14,8 +14,10 @@ canonical rule before writing or moving command code.
   [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
 - The rule, the five sites (including source generation), and the guard: `docs/agents/cli/command-execution.md`
 - The command catalog and how a project registers its own: `docs/agents/cli/commands.md`
-- A test-only command that brings a feature's timer to now, so no test waits it out:
-  `docs/agents/cli/commands.md`, "Time-based features: no universal clock"
+- A feature's test-only command that brings its timer to now:
+  `docs/agents/cli/commands.md`, "Time-based features: no universal clock"; for
+  setups without clock waiting, the temporary e2e exception and approval boundaries,
+  follow the canonical [Time rules](../../docs/agents/frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now).
 - The transport a `daemon` command rides: `docs/agents/architecture/command-server.md`
 - Where an agent answers a command: `docs/agents/architecture/agent-lifecycle.md`
 - Keeping the answering side light: `docs/agents/antipatterns/heavy-work-in-master.md`

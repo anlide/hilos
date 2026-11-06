@@ -51,9 +51,9 @@ use `$hilos-testing-cli`.
   `framework/frontend/scripts/*.mjs` modules — for example `standCommand.mjs`,
   `commandChannel.mjs`, `i18n.mjs`, `i18nFixtures.mjs`, `testUser.mjs`, `mail.mjs`
   and `standMailbox.mjs`.
-- A scenario meets a timer — a command brings its moment to now; never wait it
-  out or shorten it on the stand: `docs/agents/frontend/testing-strategy.md`,
-  "Time — a command brings the moment to now, the spec never waits it out".
+- A scenario meets a timer — the feature command, setups without clock waiting,
+  the temporary e2e real-wait exception and approval boundaries:
+  [Time — a command brings the moment to now](../../docs/agents/frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now).
 - Test-owned setup/cleanup and account preparation:
   `docs/agents/frontend/testing-strategy.md`, "Preconditions — test commands with
   owned cleanup" and "People and administrators as preconditions".
@@ -130,10 +130,11 @@ use `$hilos-testing-cli`.
     surface/dialog closed on success, or the inline error shown — before asserting
     its result. Asserting through an in-flight action races the reply and flakes.
 12. Assert on **state that arrives over the socket**, not on fixed timeouts. A
-    timer the scenario meets is brought to now by the feature's own test-only
-    command, never waited out and never shortened through stand env or a compose
-    overlay; a missing command is the leaf's contract work, and a real wait is the
-    owner's to approve: "Time" in `docs/agents/frontend/testing-strategy.md`.
+    timer the assertion depends on is brought to now by the feature's own
+    test-only command by default; a missing command is the leaf's contract work.
+    Follow the canonical [Time rules](../../docs/agents/frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now)
+    for setups without clock waiting, the temporary e2e exception and approval
+    boundaries, including stand timer changes.
 13. Where the action makes the application **reload itself** — today the lift of
     protected mode — do not navigate at all: mark the document beforehand with
     `markDocument`, wait for the mark to go with `expectSelfReload`, then add

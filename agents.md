@@ -252,11 +252,14 @@ the user for explicit confirmation:
   signal DTO payload shape, topology DTO class declarations in page `SIGNALS`
   or agent `AGENT_SIGNALS`, or declarative routing in `SignalRouter`,
   `PageSignalRouter`, or worker/page route config.
-- Time in tests: a test that waits a real clock out, or a stand that shortens a
-  production timer through test env or a compose overlay, instead of the
-  feature's own test-only command that brings the moment to now
-  ([docs/agents/cli/commands.md](docs/agents/cli/commands.md#time-based-features-no-universal-clock)).
-  The command is the default and needs no confirmation; the deviation does.
+- Time in tests: real-clock waits in PHP tests, e2e real-clock waits outside
+  the temporary exception below, or a stand that shortens a production timer
+  through test env or a compose overlay. Only temporary e2e waits totaling at
+  most 3000 ms per test under the canonical
+  [Time rules](docs/agents/frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now)
+  need no confirmation. The feature's own test-only command that brings the
+  moment to now remains the default and needs no confirmation under this gate
+  ([command rules](docs/agents/cli/commands.md#time-based-features-no-universal-clock)).
 
 The confirmation request must list the exact RT item fields, DB entity fields,
 signals, DTOs, and routes that would change, and for time in tests the timer,

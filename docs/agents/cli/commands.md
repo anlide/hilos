@@ -419,24 +419,26 @@ that browser's line at now, changing neither the production cooldown nor the cap
 [../architecture/verification-codes.md](../architecture/verification-codes.md)). Try this
 shape first whenever a test meets a timer.
 
-**A test does not wait a clock out, and a stand does not shorten one:**
+Use the feature command by default. The canonical
+[Time rules](../frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now)
+also allow a setup that catches the same regression without waiting for the clock and a
+narrow temporary e2e real-wait exception; follow their conditions. Real-clock waits outside
+that exception, including every such PHP-test wait, and any shortening of a production
+timer through test env or a compose overlay need the owner's approval in the leaf's contract
+([../../../agents.md](../../../agents.md#contract-approval-gate-hard-stop)). A smaller
+stand timer changes the clock for every spec on that stand.
 
-- no sleep, poll, raised timeout or `test.slow()` that exists to let a period pass;
-- no test env value or compose overlay that sets a production timer smaller — that is the
-  universal knob again, spread over a whole stand, and every other spec on the stand runs on
-  it too;
-- a production value is not proved by waiting it out: the default or the constant is a unit
-  test's assertion.
+A production value is not proved by waiting it out: the default or the constant is a unit
+test's assertion.
 
 Where the period itself is the behavior under test — the cadence of a delivery window — the
 test observes a few real periods at the value the product runs with, and a command drives the
-source instead of a slow UI; it does not stretch or shrink the period to fit.
+source instead of a slow UI; it does not stretch or shrink the period to fit. Those real
+waits follow the same exception and approval boundaries in the canonical Time rules.
 
 **A test-only command is not a production lever.** It extends `TestOnlyCommand` and is refused
 on production and on the socket (above), so a plan does not rule one out as "a new CLI" or "a
-new production action". Waiting a real clock or shortening a stand's clock instead is a
-deviation the owner approves in the leaf's contract
-([../../../agents.md](../../../agents.md), "Contract approval gate").
+new production action". The feature command needs no approval under the time gate.
 
 Specs written before this rule still wait one clock: the OAuth agent's request deadline, waited
 out through a stand gateway delay or hold. It is debt, not a pattern to copy.

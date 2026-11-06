@@ -953,33 +953,61 @@ If the needed command operation does not exist, resolve it through the task's
 normal contract process, including approval for any gated contract change.
 Do not silently add SQL or a general reset, or invent an API in the spec.
 
-### Time — a command brings the moment to now, the spec never waits it out
+### Time — a command brings the moment to now
 
 When a scenario meets a timer — an expiry, a cooldown, a delivery window, a
 polling or reporting interval, a heartbeat and its staleness, a cron rule, a
-rotation by age, a delayed answer — the spec calls the feature's own test-only
-command, which brings that one moment to now and stamps it where the browser
-reads it, and then waits for the state that arrives over the socket. Try that
-shape first: `test:verification:end-pause` ages the resend gate and stamps the
-browser's line at now (HIL-1186), so the step after the pause runs at once and
-the production cooldown stays what it is. A missing command is the leaf's
-contract work, not a reason to wait.
+rotation by age, a delayed answer — and the assertion depends on that period
+expiring, the default is the feature's own test-only command. It brings that
+one moment to now and stamps it where the browser reads it; the spec then waits
+for the state that arrives over the socket. Try that shape first:
+`test:verification:end-pause` ages the resend gate and stamps the browser's line
+at now (HIL-1186), so the step after the pause runs at once and the production
+cooldown stays what it is. A missing command is the leaf's contract work.
 
-- No `waitForTimeout`, sleep, `expect.poll`, `toPass` or raised timeout whose job
-  is to let a period pass, and no `test.slow()` bought for it.
-- No test env value or compose overlay that sets a production timer smaller for
-  the stand: every spec on that stand runs on the changed clock, and two specs
-  that need different clocks end up split into phases with daemon restarts
-  between them.
-- A production value is not proved by waiting it out; the default or the
-  constant is a unit test's assertion.
-- Where the period itself is the subject — a delivery window's cadence — observe
-  a few real periods at the value the product runs with and drive the source by
-  a command, not through a slow UI; do not stretch or shrink the period to fit.
+A setup that avoids waiting for the clock is also allowed when it catches the
+same regression and leaves the stand's timer unchanged — for example,
+subscribe before the action and assert on the same event. Ordinary waiting for
+result delivery or a subscription update, without depending on a period
+expiring, does not count toward the real-wait budget below.
 
-A real wait or a shortened stand clock is a deviation the owner approves in the
-leaf's contract (`agents.md`, "Contract approval gate"). The rule and its debt —
-specs written before it that still wait clocks — are in
+**Temporary e2e exception.** The executor may keep real-clock waits without
+approval only in e2e, with a total of **at most 3000 ms per test**, calculated as
+the sum of the upper limits of all real-clock waits in that test. Use bounded
+polling of an observable server response or page state, for example
+`expect.poll`. Put this line directly above each poll, naming its upper limit
+and the observable state:
+
+```text
+// real-wait: <limit> ms — <observable state>; replace with a feature test command
+```
+
+If a real wait remains, the executor must **file a proposal** to replace it with
+the feature's test command. A proposal number on the comment line is optional.
+Two waits bounded by 1000 ms and 2000 ms fit the exception with those comments
+and the proposal; 1000 ms and 2001 ms require approval. Fixed pauses
+(`waitForTimeout` or sleep), raised general timeouts and `test.slow()` bought to
+let a period pass do not qualify for this exception.
+
+Real-clock waits outside that exception, including every such wait in a PHP
+test regardless of duration, require the owner's approval in the leaf's
+contract ([agents.md](../../../agents.md#contract-approval-gate-hard-stop)).
+Shortening a production timer on the stand through test env or a compose
+overlay always requires that approval: every spec on that stand runs on the
+changed clock, and two specs that need different clocks end up split into
+phases with daemon restarts between them. Name the timer, its production value
+and why no feature command can bring its moment to now in the approval request.
+The feature's own test command needs no approval under this time gate.
+
+A production value is not proved by waiting it out; assert the default or the
+constant in a unit test. Where the period itself is the subject — a delivery
+window's cadence — observe a few real periods at the value the product runs
+with and drive the source by a command, not through a slow UI; do not stretch
+or shrink the period to fit. Those real waits follow the same exception and
+approval boundaries above.
+
+Command isolation, the absence of a universal clock and the existing OAuth
+clock-wait debt are in
 [`../cli/commands.md`](../cli/commands.md#time-based-features-no-universal-clock).
 
 ### People and administrators as preconditions
@@ -1979,7 +2007,7 @@ over `test.info().timeout` when it does not (`SIGN_IN_LINK_TIMEOUT_FACTOR` in
 `demo/polls/tests/e2e/tests/auth.spec.ts` is the sample), with the measured
 duration and the reason in a comment. A wait for a period to pass is not such
 work: a command brings the moment to now
-([Time](#time--a-command-brings-the-moment-to-now-the-spec-never-waits-it-out)).
+([Time](#time--a-command-brings-the-moment-to-now)).
 
 Do not lean on the host factor as a budget: it is 1.0 on an idle box, and a test
 that passes only because the box was loaded goes red on the day the box is quiet
