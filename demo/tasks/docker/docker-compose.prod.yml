@@ -1,11 +1,48 @@
 # Docker Compose configuration for PRODUCTION (Linux)
-# Both frontend (nginx) and backend run in Docker. The database is external
-# (managed), configured through ../.env — no mysql service here, unlike the
-# local/test stacks.
+# The whole installation runs in Docker: its own database, the daemon, and the
+# nginx that serves the built frontend.
+#
+# Every ${...} below is compose interpolation, read from the shell or from
+# docker/.env (see docker/.env.example), never from ../.env. Two of them belong to
+# the installation and have no default: MYSQL_ROOT_PASSWORD and MYSQL_PASSWORD.
+# Without them the stack refuses to start rather than run production on a
+# password published in this repository.
+#
+# HILOS_DATA_ROOT is where the installation keeps everything that must outlive
+# its code: the database, uploads, exports, Status files and logs. It defaults to
+# ../data inside this checkout. An installation that replaces its code by
+# unpacking a new release beside the old one sets it to an absolute path outside
+# both, and every service below mounts its data from there.
 
 name: hilos-tasks-prod
 
 services:
+  # The installation's database. Not published on the host: only the services of
+  # this network talk to it. The database and user names default to the ones
+  # mysql/init.sql grants.
+  tasks-mysql-prod:
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+    container_name: tasks-mysql-prod
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in docker/.env}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
+      - MYSQL_USER=${MYSQL_USER:-hilos}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker/.env}
+      - TZ=UTC
+    volumes:
+      - ${HILOS_DATA_ROOT:-../data}/mysql:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/10-change-log.sh:ro
+      - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --skip-character-set-client-handshake
+    restart: unless-stopped
+    networks:
+      hilos-tasks-prod-network:
+        ipv4_address: ${DOCKER_MYSQL_IP:-10.197.0.10}
+
   tasks-prod:
     build: .
     env_file:
@@ -18,7 +55,9 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
-      - ../data/logs-prod:/var/log/hilos
+      # The installation's data over the checkout's own data directory.
+      - ${HILOS_DATA_ROOT:-../data}:/app/data
+      - ${HILOS_DATA_ROOT:-../data}/logs-prod:/var/log/hilos
     working_dir: /app
     environment:
       - APP_ENV=prod
@@ -33,10 +72,9 @@ services:
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
       # Trust this stand's own nginx, by address, to name the visitor behind it
-      # (HIL-680). One address and not a pool: the websocket port below is published
-      # as well, and a connection that reaches it without passing through nginx
-      # arrives from the docker network's gateway - a peer that must never be
-      # trusted to name anyone.
+      # (HIL-680). One address and not a pool: every other peer on this network,
+      # the CLI and monitor containers and the docker gateway among them, must
+      # never be trusted to name anyone.
       - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-10.197.0.12}/32
       # The CLI command channel, the socket admin:create / admin:grant /
       # admin:revoke / protected-mode:open speak.
@@ -52,11 +90,16 @@ services:
       # DemoStackComposeGuardTest - a production node started without it closes the
       # mode on the installation for good.
       - HILOS_ADMIN_VIEW_MODE_ENABLED=true
+      - DB_HOST=${DB_HOST:-tasks-mysql-prod}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker/.env}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
-    ports:
-      # Expose WebSocket port to host for frontend access
-      - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+    depends_on:
+      - tasks-mysql-prod
+    # Nothing is published: the browser reaches the websocket through nginx (/ws).
     expose:
       - "${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}"
@@ -95,16 +138,23 @@ services:
     container_name: tasks-frontend-prod
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
-      - ../data/data_export:/data_export:ro
-      - ../data/status:/status:ro
-      - ../data/legal_export:/legal_export:ro
-      - ../data/files/published:/published:ro
+      - ${HILOS_DATA_ROOT:-../data}/data_export:/data_export:ro
+      - ${HILOS_DATA_ROOT:-../data}/status:/status:ro
+      - ${HILOS_DATA_ROOT:-../data}/legal_export:/legal_export:ro
+      - ${HILOS_DATA_ROOT:-../data}/files/published:/published:ro
       - nginx-ssl-prod:/etc/nginx/ssl
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      # The public front door on every address by default. An installation behind
+      # a proxy of its own on the same host sets HILOS_BIND_HOST=127.0.0.1 and
+      # moves the ports aside in docker/.env.
+      - "${HILOS_BIND_HOST:-0.0.0.0}:${NGINX_HTTP_PORT:-80}:80"
+      - "${HILOS_BIND_HOST:-0.0.0.0}:${NGINX_HTTPS_PORT:-443}:443"
     environment:
       - FRONTEND_HTML_UPSTREAM=tasks-prod
+      # The proxy in front of this nginx whose X-Real-IP names the visitor,
+      # comma-separated CIDRs. Empty trusts nobody, which is right for a front
+      # door; behind a proxy it would make every visitor the proxy's one address.
+      - NGINX_REAL_IP_FROM=${NGINX_REAL_IP_FROM:-}
     depends_on:
       - tasks-prod
     restart: unless-stopped
@@ -123,6 +173,7 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
+      - ${HILOS_DATA_ROOT:-../data}:/app/data
     working_dir: /app
     environment:
       - APP_ENV=prod
@@ -131,6 +182,11 @@ services:
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - COMMAND_PORT=8094
+      - DB_HOST=${DB_HOST:-tasks-mysql-prod}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in docker/.env}
     profiles:
       - composer
     networks:

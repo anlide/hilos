@@ -75,9 +75,27 @@ editing the repo. One value is one address — docker takes a single bind per
 publish, and a bogus one fails at `up` with docker's own "bind: cannot assign
 requested address".
 
-Only two surfaces face outward on purpose and keep no knob: prod `nginx`
-(`docker-compose.prod.yml`), which is the public front door, and the preview
-lane's Caddy (`framework/docker`, host-network), which fronts `*.hilos`.
+Two surfaces face outward on purpose. The preview lane's Caddy
+(`framework/docker`, host-network), which fronts `*.hilos`, keeps no knob. Prod
+`nginx` (`docker-compose.prod.yml`) is the public front door, so the same
+`HILOS_BIND_HOST` defaults to `0.0.0.0` there. An installation behind a proxy of
+its own on the same host sets it to `127.0.0.1`, moves `NGINX_HTTP_PORT` /
+`NGINX_HTTPS_PORT` aside, and names that proxy in `NGINX_REAL_IP_FROM`
+(comma-separated CIDRs). The nginx entrypoint turns it into `set_real_ip_from`
+and believes the proxy's `X-Real-IP`. Empty trusts nobody, `0.0.0.0/0` and `::/0`
+are refused. Without it every visitor behind the proxy reaches the daemon as the
+proxy's one address.
+
+The prod stack carries its own database (`<demo>-mysql-prod`, `mysql-prod` in
+chat), published nowhere. `MYSQL_ROOT_PASSWORD` and `MYSQL_PASSWORD` have no
+default, so the stack refuses to start without them. Everything that must
+outlive the code — database, uploads, exports, Status files, logs — lives under
+`HILOS_DATA_ROOT`. It defaults to `../data` inside the checkout. An installation
+that unpacks each release beside the previous one points it at an absolute path
+outside both. It is a mount over `/app/data`, not a symlink: the daemon opens
+its data inside the container, where a link to a host path leads nowhere. The
+daemon's websocket port is not published; the browser reaches it through
+nginx's `/ws`.
 
 Ollama is the one carve-out: its consumer is the chat daemon in **another**
 compose project, reached across the docker bridge rather than over loopback, so

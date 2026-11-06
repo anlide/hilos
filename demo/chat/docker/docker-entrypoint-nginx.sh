@@ -21,6 +21,26 @@ if [ ! -f /etc/nginx/ssl/cert.pem ]; then
         -addext "subjectAltName=DNS:localhost,DNS:*.hilos,IP:127.0.0.1"
 fi
 
+# The proxy in front of this nginx names the visitor in X-Real-IP, and only the
+# addresses in NGINX_REAL_IP_FROM (comma-separated CIDRs) are believed. Unset or
+# empty leaves the file empty: $remote_addr stays the TCP peer, which is right for
+# a front door. Trusting every address would let any client name its own, so
+# 0.0.0.0/0 and ::/0 are refused, as the daemon refuses them in
+# HILOS_TRUSTED_PROXIES.
+: > /etc/nginx/real-ip.conf
+if [ -n "${NGINX_REAL_IP_FROM:-}" ]; then
+    for cidr in $(printf '%s' "$NGINX_REAL_IP_FROM" | tr ',' ' '); do
+        case "$cidr" in
+            0.0.0.0/0|::/0)
+                echo "nginx: NGINX_REAL_IP_FROM must not trust every address ($cidr)" >&2
+                exit 1
+                ;;
+        esac
+        printf 'set_real_ip_from %s;\n' "$cidr" >> /etc/nginx/real-ip.conf
+    done
+    printf 'real_ip_header X-Real-IP;\n' >> /etc/nginx/real-ip.conf
+fi
+
 # Substitute env vars in nginx config
 export FRONTEND_HTML_UPSTREAM="${FRONTEND_HTML_UPSTREAM:-chat-prod}"
 envsubst '${FRONTEND_HTML_UPSTREAM}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
