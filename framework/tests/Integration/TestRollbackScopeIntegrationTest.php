@@ -14,6 +14,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\TestRollbackRefusedException;
+use Hilos\Database\Exception\TestRollbackSqlRefusedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
@@ -165,7 +166,8 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         try {
             Database::transactionCommit();
             self::fail('RELEASE of the missing savepoint must fail');
-        } catch (DatabaseRuntimeException) {
+        } catch (DatabaseRuntimeException $failure) {
+            self::assertNotInstanceOf(TestRollbackSqlRefusedException::class, $failure);
             self::assertNull($request->id);
         }
         Database::transactionRollback();
@@ -254,7 +256,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
                     "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, NOW(), NOW()); " . $sql,
                 );
                 self::fail('Unsupported statement must refuse: ' . $sql);
-            } catch (DatabaseRuntimeException) {
+            } catch (TestRollbackSqlRefusedException) {
                 self::assertSame([100], self::localUsers());
             }
         }
@@ -331,7 +333,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
                 'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, NOW(), NOW()); ' . $tail,
             );
             self::fail('The whole multi-query must refuse before its first write');
-        } catch (DatabaseRuntimeException) {
+        } catch (TestRollbackSqlRefusedException) {
             self::assertSame([100], self::localUsers());
             self::assertSame([100], $this->persistedUsers());
         }
@@ -349,7 +351,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
                 [new SqlParam('1; COMMIT', SqlBindType::INTEGER)],
             );
             self::fail('Rendered SQL must refuse before its first write');
-        } catch (DatabaseRuntimeException) {
+        } catch (TestRollbackSqlRefusedException) {
             self::assertSame([100], self::localUsers());
             self::assertSame([100], $this->persistedUsers());
         }
@@ -366,7 +368,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         try {
             Database::sqlRun("SELECT '\\'; COMMIT; -- '");
             self::fail('The actual session mode must expose and refuse COMMIT');
-        } catch (DatabaseRuntimeException) {
+        } catch (TestRollbackSqlRefusedException) {
             self::assertSame([100], $this->persistedUsers());
         }
         $this->scope->rollback();
@@ -382,7 +384,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         try {
             Database::sqlRun('SELECT "\\"; COMMIT; -- "');
             self::fail('The identifier quote must expose and refuse COMMIT');
-        } catch (DatabaseRuntimeException) {
+        } catch (TestRollbackSqlRefusedException) {
             self::assertSame([100], $this->persistedUsers());
         }
         $this->scope->rollback();
@@ -459,7 +461,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         try {
             self::request(1563);
             self::fail('The failed root must refuse another write');
-        } catch (DatabaseRuntimeException) {
+        } catch (TestRollbackSqlRefusedException) {
             self::assertSame([100], $this->persistedUsers());
         }
         try {
@@ -491,7 +493,8 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         try {
             Database::sql('SELECT 1');
             self::fail('Lost transaction must refuse SQL');
-        } catch (DatabaseRuntimeException) {
+        } catch (DatabaseRuntimeException $failure) {
+            self::assertNotInstanceOf(TestRollbackSqlRefusedException::class, $failure);
             self::assertNull($first->id, 'Connection loss restores the ORM immediately');
         }
         Database::transactionRollback();
@@ -504,7 +507,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         try {
             self::request(1564);
             self::fail('The next write must not run in autocommit');
-        } catch (DatabaseRuntimeException) {
+        } catch (TestRollbackSqlRefusedException) {
             $this->assertNothingPublished();
         }
         self::assertSame([100, 1563], self::localUsers(2));

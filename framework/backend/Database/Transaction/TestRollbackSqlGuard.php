@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Transaction;
 
-use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\TestRollbackSqlRefusedException;
 
 /** Narrow SQL admission for a test scope, before any statement of a multi-query is sent. */
 final class TestRollbackSqlGuard
@@ -18,7 +18,7 @@ final class TestRollbackSqlGuard
      * @param string $sql Whole query, including every statement
      * @param bool $backslashEscapes Whether the connection uses backslash escapes in strings
      * @param bool $ansiQuotes Whether double quotes delimit identifiers instead of strings
-     * @throws DatabaseRuntimeException When a statement family or an ambiguous lexical boundary is unsafe
+     * @throws TestRollbackSqlRefusedException When a statement family or an ambiguous lexical boundary is unsafe
      */
     public static function check(string $sql, bool $backslashEscapes = true, bool $ansiQuotes = false): void
     {
@@ -39,11 +39,11 @@ final class TestRollbackSqlGuard
             }
             if ($char === '/' && $next === '*') {
                 if (substr($sql, $i, 3) === '/*!' || strtoupper(substr($sql, $i, 4)) === '/*M!') {
-                    throw new DatabaseRuntimeException('Executable SQL comments are refused inside a test rollback scope');
+                    throw new TestRollbackSqlRefusedException('Executable SQL comments are refused inside a test rollback scope');
                 }
                 $end = strpos($sql, '*/', $i + 2);
                 if ($end === false) {
-                    throw new DatabaseRuntimeException('Unterminated SQL comment inside a test rollback scope');
+                    throw new TestRollbackSqlRefusedException('Unterminated SQL comment inside a test rollback scope');
                 }
                 $i = $end + 1;
                 continue;
@@ -59,7 +59,7 @@ final class TestRollbackSqlGuard
                 }
                 $family = strtoupper(substr($sql, $start, $i - $start));
                 if (!in_array($family, self::FAMILIES, true)) {
-                    throw new DatabaseRuntimeException('SQL statement family is refused inside a test rollback scope: ' . $family);
+                    throw new TestRollbackSqlRefusedException('SQL statement family is refused inside a test rollback scope: ' . $family);
                 }
                 $needsFamily = false;
                 $i--;
@@ -85,7 +85,7 @@ final class TestRollbackSqlGuard
                     break;
                 }
                 if (!$closed) {
-                    throw new DatabaseRuntimeException('Ambiguous or unterminated SQL quote inside a test rollback scope');
+                    throw new TestRollbackSqlRefusedException('Ambiguous or unterminated SQL quote inside a test rollback scope');
                 }
             }
         }

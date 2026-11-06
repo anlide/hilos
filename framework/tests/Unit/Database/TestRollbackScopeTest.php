@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Database;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\TestRollbackRefusedException;
+use Hilos\Database\Exception\TestRollbackSqlRefusedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
@@ -275,21 +276,21 @@ final class TestRollbackScopeTest extends TestCase
     #[DataProvider('refusedSql')]
     public function testSqlGuardChecksTheWholeQuery(string $sql): void
     {
-        $this->expectException(DatabaseRuntimeException::class);
+        $this->expectException(TestRollbackSqlRefusedException::class);
         TestRollbackSqlGuard::check($sql);
     }
 
     /** An inherited escape mode cannot hide a command behind a quote. */
     public function testSqlGuardRespectsNoBackslashEscapes(): void
     {
-        $this->expectException(DatabaseRuntimeException::class);
+        $this->expectException(TestRollbackSqlRefusedException::class);
         TestRollbackSqlGuard::check("SELECT '\\'; COMMIT; -- '", false);
     }
 
     /** ANSI double quotes are identifiers and cannot hide a command through a backslash. */
     public function testSqlGuardRespectsAnsiQuotes(): void
     {
-        $this->expectException(DatabaseRuntimeException::class);
+        $this->expectException(TestRollbackSqlRefusedException::class);
         TestRollbackSqlGuard::check('SELECT "\\"; COMMIT; -- "', ansiQuotes: true);
     }
 
@@ -305,5 +306,22 @@ final class TestRollbackScopeTest extends TestCase
             self::assertInstanceOf(NestedTransactionRefusedException::class, $failure->getPrevious());
         }
         self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** SQL during cleanup is its own refusal, and the outer cleanup still reports it. */
+    public function testCleanupRefusesReentrantSqlWithItsOwnException(): void
+    {
+        $this->scope = Database::beginRollbackScopeForTest();
+        Database::onRollback(static function (): void { Database::sql('SELECT 1'); });
+        try {
+            $this->scope->rollback();
+            self::fail('SQL during cleanup must refuse');
+        } catch (TestRollbackRefusedException $failure) {
+            $refusal = $failure->getPrevious();
+            self::assertInstanceOf(TestRollbackSqlRefusedException::class, $refusal);
+            self::assertInstanceOf(DatabaseRuntimeException::class, $refusal);
+        }
+        self::assertFalse(Database::hasOpenTransactions());
+        $this->scope->rollback();
     }
 }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle\Rule;
 
-use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\TestRollbackSqlRefusedException;
 use Hilos\Database\Transaction\TestRollbackSqlGuard;
 use Hilos\Tests\CodeStyle\Throws\CallResolver;
 use Hilos\Tests\CodeStyle\Throws\ClassRecord;
@@ -420,7 +420,7 @@ final readonly class IntegrationTestRule implements CrossFileRule
                     TestRollbackSqlGuard::check($sql, $backslashEscapes, $ansiQuotes);
 
                     return false;
-                } catch (DatabaseRuntimeException) {
+                } catch (TestRollbackSqlRefusedException) {
                     // Another session mode may admit the same literal; the source cannot decide it.
                 }
             }

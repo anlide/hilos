@@ -13,6 +13,7 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Exception\TestRollbackRefusedException;
+use Hilos\Database\Exception\TestRollbackSqlRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\CrossConnectionWriteException;
 use Hilos\Database\Exception\Transaction\MemoryRollbackFailedException;
@@ -656,6 +657,8 @@ class Database
     }
 
     /**
+     * Test-scope SQL admission refuses with {@see TestRollbackSqlRefusedException}.
+     *
      * @param string $sql SQL with ? placeholders
      * @param array|SqlParamCollection|null $params Bound parameters
      * @param bool $tryReconnect Whether to reconnect on connection loss; never inside a transaction, whose loss ends it
@@ -674,11 +677,11 @@ class Database
         $index ??= self::$currentIndex;
         if (self::$testRollbackScope !== null) {
             if (self::$cleaningTestScope) {
-                throw new DatabaseRuntimeException('SQL is refused while a test rollback scope is closing');
+                throw new TestRollbackSqlRefusedException('SQL is refused while a test rollback scope is closing');
             }
             self::ensureTestRoot($index);
             if (self::$transactions[$index][0]->isFailed()) {
-                throw new DatabaseRuntimeException('SQL is refused on a failed test rollback scope');
+                throw new TestRollbackSqlRefusedException('SQL is refused on a failed test rollback scope');
             }
         }
         $mysqli = self::openLink($index, $tryReconnect);
@@ -1619,6 +1622,7 @@ class Database
     /**
      * Reads session syntax through the driver after draining results, before sending user SQL.
      * SET is refused by the scope, but the connection may have inherited a non-default SQL mode.
+     * A probe failure is a mapped server exception. Admission refusal is {@see TestRollbackSqlRefusedException}.
      *
      * @param int $index Connection owning the scope root
      * @param mysqli $mysqli Connection that will execute the query

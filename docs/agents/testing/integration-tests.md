@@ -86,8 +86,12 @@ The lexer accounts for quoted strings, identifiers, and comments, so SQL words
 inside data are not statements. Executable comments and ambiguous or unterminated
 quotes are refused. `Database` checks rendered SQL against the connection's
 actual `sql_mode`, including `ANSI_QUOTES` and `NO_BACKSLASH_ESCAPES`; beginning
-the scope itself remains lazy and sends no SQL. A SQL-family refusal uses the
-existing `DatabaseRuntimeException`.
+the scope itself remains lazy and sends no SQL. Every SQL refusal raised by the
+test rollback scope uses `TestRollbackSqlRefusedException`, a subclass of
+`DatabaseRuntimeException`. This includes unsafe statement families or lexical
+boundaries, SQL attempted during cleanup, and SQL on a failed scope root. A
+failure of the `sql_mode` probe is a server error and keeps its mapped database
+exception.
 
 Prepare schema before the scope with the existing migration stubs. Do not edit
 those stubs to make them transactional.
