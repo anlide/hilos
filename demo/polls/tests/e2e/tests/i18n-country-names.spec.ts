@@ -230,6 +230,9 @@ test('country-names.life', async ({ page, context, i18n }) => {
 
   await test.step('Cancel an Add, then add/rename/save empty/delete the default-language name with a cold check after every write', async () => {
     const before = actions()
+    const nameCount = overview.getByTestId('country-overview-name-count')
+    await expect(nameCount).toHaveText(/^\d+$/)
+    const fixtureNames = Number(await nameCount.innerText())
     await openI18nName(expect, page, 'country', 'add-en')
     await expect(page.getByTestId(WINDOW)).toContainText('built-in catalog')
     await typeInto(page.getByTestId(INPUT), 'Canceled base')
@@ -238,6 +241,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
     await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText(
       'No name',
     )
+    await expect(nameCount).toHaveText(String(fixtureNames))
     await live.unchanged()
 
     async function checkColdCountryName(name: string | null): Promise<void> {
@@ -298,6 +302,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         control: 'add-en',
         value: 'Country from UI',
         operation: 'add',
+        nameCountDelta: 1,
         message: 'Name of Country from UI (qj) in English (en) added.',
       },
       {
@@ -305,6 +310,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         control: 'edit-en',
         value: 'Renamed country',
         operation: 'update',
+        nameCountDelta: 1,
         message: 'Name of Renamed country (qj) in English (en) saved.',
         previous: 'Country from UI',
       },
@@ -313,6 +319,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         control: 'edit-en',
         value: '',
         operation: 'update',
+        nameCountDelta: 0,
         message: 'Name of qj in English (en) saved.',
         previous: 'Renamed country',
       },
@@ -352,6 +359,9 @@ test('country-names.life', async ({ page, context, i18n }) => {
           name: episode.value === '' ? UNNAMED : episode.value,
           currentPage: OVERVIEW,
         })
+        await expect(nameCount).toHaveText(
+          String(fixtureNames + episode.nameCountDelta),
+        )
         if (episode.value === '') {
           await expectI18nName(expect, page, 'country', 'en', '')
           await expect(page.getByTestId('i18n-names-none-en')).toHaveCount(0)
@@ -398,6 +408,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
         name: UNNAMED,
         currentPage: OVERVIEW,
       })
+      await expect(nameCount).toHaveText(String(fixtureNames))
       await live.unchanged()
       await test.step('Reload the writer Names page and enter Overview after deleting the name', async () => {
         await checkColdCountryName(null)

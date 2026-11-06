@@ -119,8 +119,25 @@ describe('HilosI18nCountryPage', () => {
     expect(h.el('country-card-default-locale')?.textContent?.trim()).toBe(
       'not chosen',
     )
+    expect(
+      h.el('country-card-main')?.querySelector('h2')?.textContent?.trim(),
+    ).toBe('Main')
+    expect(
+      h.el('country-card-state')?.querySelector('h2')?.textContent?.trim(),
+    ).toBe('State')
     expect(h.el('country-card-frozen')).toBeNull()
-    expect(h.el('country-card-enabled')?.textContent?.trim()).toBe('Disabled')
+    expect(h.el('country-card-editable')?.textContent?.trim()).toBe(
+      'Country switched off — edit freely',
+    )
+    expect(h.el('country-card-enabled')?.textContent?.trim()).toBe(
+      'Country switched off',
+    )
+    expect(h.el('country-card-delete')?.getAttribute('aria-label')).toBe(
+      HILOS_I18N_COUNTRY_DELETE_COPY.open,
+    )
+    expect(
+      document.getElementById('country-card-delete-reason')?.textContent,
+    ).toContain('the built-in catalog knows this country')
     expect(h.el('hilos-page-tabs')?.getAttribute('aria-label')).toBe(
       'Country pages',
     )
@@ -156,11 +173,24 @@ describe('HilosI18nCountryPage', () => {
       'Currency € EUR · Default locale en-US',
     )
     expect(h.el('country-card-frozen')?.textContent?.trim()).toBe(
-      'Country enabled — frozen',
+      'Country switched on — frozen',
+    )
+    expect(h.el('country-card-editable')).toBeNull()
+    expect(h.el('country-card-enabled')?.textContent?.trim()).toBe(
+      'Country switched on',
     )
     expect(h.el('country-card-view')?.getAttribute('title')).toBe(
       'View country: nothing to edit',
     )
+    expect(h.el('country-card-view')?.getAttribute('aria-label')).toBe(
+      'View country: nothing to edit',
+    )
+    expect(
+      h
+        .el('country-card-view')
+        ?.querySelector('i')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
     expect(h.el('country-card-edit')).toBeNull()
     expect(h.el('country-card-switch-on')).toBeNull()
     expect(h.el('country-card-switch-off')).not.toBeNull()
@@ -173,6 +203,156 @@ describe('HilosI18nCountryPage', () => {
     expect(h.el('country-head-tile')).toBeNull()
     expect(h.el('country-head-description')).toBeNull()
     expect(title()).toBe('Country')
+  })
+
+  it('links both overview tiles for this country, keeps zero as a link, and falls back to text', () => {
+    const h = setup()
+    h.act(() => h.countryCard())
+    expect(h.el('country-card-code')?.textContent?.trim()).toBe('us')
+    const namesSection = h.el('country-overview-names')!
+    expect(namesSection.querySelector('h2')?.textContent?.trim()).toBe('Names')
+    expect(namesSection.textContent).toContain(
+      'Non-empty base names in other languages; corrections do not count.',
+    )
+    const names = h.el('country-overview-name-count')!
+    expect(names.tagName).toBe('A')
+    expect(names.textContent?.trim()).toBe('3')
+    expect(names.getAttribute('aria-label')).toBe('Names: 3')
+    expect(names.getAttribute('href')).toBe('/hilos/i18n/country/102/names')
+    h.click('country-overview-name-count')
+    expect(h.navigate).toHaveBeenCalledExactlyOnceWith(
+      '/hilos/i18n/country/102/names',
+    )
+    const locales = h.el('country-overview-locales')!
+    expect(locales.querySelector('h2')?.textContent?.trim()).toBe('Locales')
+    expect(locales.querySelector('a, button, [role="link"]')).toBeNull()
+    expect(locales.textContent).toContain('Edited in their language cards.')
+    expect(h.el('country-overview-locale-count')?.textContent?.trim()).toBe('2')
+    expect(
+      h.el('country-overview-enabled-locale-count')?.textContent?.trim(),
+    ).toBe('1')
+
+    h.act(() =>
+      h.countryCard({
+        ...countryCard,
+        summary: {
+          ...countryCard.summary,
+          nameCount: 0,
+          localeCount: 0,
+          locales: [],
+        },
+      }),
+    )
+    const zero = h.el('country-overview-name-count')!
+    expect(zero.tagName).toBe('A')
+    expect(zero.textContent?.trim()).toBe('0')
+    expect(zero.getAttribute('aria-label')).toBe('Names: 0')
+    expect(zero.getAttribute('href')).toBe('/hilos/i18n/country/102/names')
+    expect(h.el('country-overview-locale-count')?.textContent?.trim()).toBe('0')
+    expect(
+      h.el('country-overview-enabled-locale-count')?.textContent?.trim(),
+    ).toBe('0')
+    expect(
+      h
+        .el('country-overview-locales')
+        ?.querySelector('a, button, [role="link"]'),
+    ).toBeNull()
+
+    h.act(() => {
+      h.paths.resolvePath = () => undefined
+      h.countryCard({
+        ...countryCard,
+        summary: { ...countryCard.summary, nameCount: 0 },
+      })
+    })
+    const text = h.el('country-overview-name-count')!
+    expect(text.tagName).toBe('SPAN')
+    expect(text.textContent?.trim()).toBe('0')
+    expect(text.getAttribute('href')).toBeNull()
+    expect(h.navigate).toHaveBeenCalledOnce()
+  })
+
+  it('recounts switched-on locales as the summary changes and follows another country until the card is gone', () => {
+    const h = setup()
+    h.act(() =>
+      h.countryCard({
+        ...countryCard,
+        summary: {
+          ...countryCard.summary,
+          nameCount: 4,
+          localeCount: 3,
+          locales: [
+            { localeId: 1, code: 'en-US', enabled: true },
+            { localeId: 2, code: 'es-US', enabled: false },
+            { localeId: 3, code: 'fr-US', enabled: true },
+          ],
+        },
+      }),
+    )
+    expect(h.el('country-overview-name-count')?.textContent?.trim()).toBe('4')
+    expect(h.el('country-overview-locale-count')?.textContent?.trim()).toBe('3')
+    expect(
+      h.el('country-overview-enabled-locale-count')?.textContent?.trim(),
+    ).toBe('2')
+    expect(
+      h
+        .el('country-overview-locales')
+        ?.querySelector('a, button, [role="link"]'),
+    ).toBeNull()
+
+    h.act(() =>
+      h.countryCard({
+        ...countryCard,
+        summary: {
+          ...countryCard.summary,
+          nameCount: 4,
+          localeCount: 1,
+          locales: [{ localeId: 2, code: 'es-US', enabled: true }],
+        },
+      }),
+    )
+    expect(h.el('country-overview-locale-count')?.textContent?.trim()).toBe('1')
+    expect(
+      h.el('country-overview-enabled-locale-count')?.textContent?.trim(),
+    ).toBe('1')
+
+    h.act(() =>
+      h.route.set({
+        page: HilosPages.I18N_COUNTRY,
+        params: { countryId: '140' },
+        admin: true,
+      }),
+    )
+    expect(h.el('country-overview-names')).toBeNull()
+    expect(h.el('country-overview-locales')).toBeNull()
+    h.act(() =>
+      h.countryCard({
+        ...countryCard,
+        countryId: 140,
+        code: 'ie',
+        summary: {
+          ...countryCard.summary,
+          nameCount: 1,
+          localeCount: 1,
+          locales: [{ localeId: 9, code: 'en-IE', enabled: false }],
+        },
+      }),
+    )
+    expect(h.el('country-card-code')?.textContent?.trim()).toBe('ie')
+    expect(h.el('country-overview-name-count')?.getAttribute('href')).toBe(
+      '/hilos/i18n/country/140/names',
+    )
+    expect(h.el('country-overview-name-count')?.textContent?.trim()).toBe('1')
+    expect(
+      h.el('country-overview-enabled-locale-count')?.textContent?.trim(),
+    ).toBe('0')
+
+    h.act(() => h.countryCard([]))
+    expect(h.el('country-overview-names')).toBeNull()
+    expect(h.el('country-overview-locales')).toBeNull()
+    expect(h.el('country-card-unavailable')?.textContent).toContain(
+      'no longer available',
+    )
   })
 
   it.each([null, ''])(
@@ -295,6 +475,12 @@ describe('HilosI18nCountryPage', () => {
         }),
       )
       const control = h.el<HTMLButtonElement>('country-card-delete')!
+      expect(control.getAttribute('aria-label')).toBe(
+        HILOS_I18N_COUNTRY_DELETE_COPY.open,
+      )
+      expect(control.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
       expect(control.getAttribute('aria-disabled')).toBe('true')
       expect(control.getAttribute('aria-describedby')).toBe(
         'country-card-delete-reason',

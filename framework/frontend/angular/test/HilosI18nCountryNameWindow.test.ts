@@ -1,6 +1,7 @@
 // The Angular window of a country name over the core name window and the real
 // names table: add and edit of the base and of a locale correction with their
-// empty-value hints and the catalog's word on a base, a stored empty value told
+// empty-value hints, a base hint that follows live occupancy while the opening
+// title stays, and the catalog's word on a base, a stored empty value told
 // from no value, one door for Save and Enter, a refusal that stays and a busy
 // save that holds every close, the conflict choices and the expected value they
 // send, a draft kept after its subject disappears, a late failure of a previous
@@ -116,13 +117,16 @@ describe('HilosI18nCountryNameWindow', () => {
       expect(
         document.querySelector(`label[for="${h.input().id}"]`)?.textContent,
       ).toBe('Name')
+      const copy = HILOS_I18N_COUNTRY_NAME_COPY
+      const baseLead =
+        h.window.mode.get() === 'add' ? copy.hints.baseAdd : copy.hints.baseEdit
       expect(
         document.getElementById(h.input().getAttribute('aria-describedby')!)
           ?.textContent,
       ).toBe(
         kind === 'value'
-          ? HILOS_I18N_COUNTRY_NAME_COPY.hints.base
-          : HILOS_I18N_COUNTRY_NAME_COPY.hints.correction,
+          ? `${baseLead} ${copy.hints.base}`
+          : copy.hints.correction,
       )
       expect(
         window.textContent?.includes(
@@ -137,6 +141,37 @@ describe('HilosI18nCountryNameWindow', () => {
       expect(h.focuses.at(-1)).toBe(code)
     },
   )
+
+  it('follows live occupation in the base hint while keeping the opening title, draft and save guard', () => {
+    const h = setup()
+    const copy = HILOS_I18N_COUNTRY_NAME_COPY
+    h.act(() => h.window.open('13'))
+    const hint = document.getElementById(
+      h.input().getAttribute('aria-describedby')!,
+    )!
+    expect(hint.textContent).toBe(`${copy.hints.baseAdd} ${copy.hints.base}`)
+    h.type('i18n-country-name-input', 'My draft')
+    h.act(() => h.delta({ ...usInFrench, nameId: 701, name: 'Theirs' }))
+    expect(h.window.mode.get()).toBe('edit')
+    expect(hint.textContent).toBe(`${copy.hints.baseEdit} ${copy.hints.base}`)
+    expect(
+      document.getElementById(h.input().getAttribute('aria-describedby')!),
+    ).toBe(hint)
+    expect(h.el('i18n-country-name-title')?.textContent).toContain(
+      'Add name · United States',
+    )
+    expect(h.el('i18n-country-name-window')?.textContent).toContain(
+      copy.hints.catalog,
+    )
+    expect(h.input().value).toBe('My draft')
+    expect(h.el('i18n-country-name-notice')?.textContent).toContain(
+      'Name changed elsewhere to "Theirs".',
+    )
+    expect(h.button('submit').disabled).toBe(true)
+    h.submit()
+    h.button('submit').click()
+    expect(h.calls).toHaveLength(0)
+  })
 
   it('sends an empty add, keeps the refusal, and closes only on the ack of the literal text', async () => {
     const h = setup()

@@ -804,7 +804,7 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
       PAGE_READY,
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await clickSubmit(expect, page.getByTestId('country-card-edit'))
     await page
@@ -853,7 +853,7 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
       'ql-QQ',
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
   })
 })

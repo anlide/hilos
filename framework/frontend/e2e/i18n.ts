@@ -499,7 +499,6 @@ export async function expectBuiltInCountryCard(
   await expect(page.getByTestId('country-card-default-locale')).toHaveText(
     'not chosen',
   )
-  await expect(page.getByTestId('country-card-enabled')).toHaveText('Disabled')
   await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
   await expect(page.getByTestId('country-card-edit')).toBeVisible()
   await expect(page.getByTestId('country-card-switch-on')).toBeVisible()

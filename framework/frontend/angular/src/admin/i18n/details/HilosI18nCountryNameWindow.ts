@@ -2,16 +2,16 @@
 // language: the base name or one locale correction of it, added where there is
 // none and edited where there is one. The session is the core's
 // (createHilosI18nCountryNameWindow): the writing language's row held in focus,
-// the title fixed at opening, live occupancy, the baseline/draft/incoming merge,
-// its notice and the one canSave verdict. This view mirrors it, starts and
-// disposes it with itself and with a new session bound in its place, and gives
-// every opening a tracked action of its own, so a late refusal from a previous
-// address paints nothing on the next one. An empty text is a value the server
-// stores, never a deletion. The window closes on the server's `::success`, a
-// refusal stays in its reserved row, and a busy save holds Cancel, Esc, the
-// backdrop and the close button. A viewer of the admin view mode reads and
-// fills the form, the conflict choices stay live, and neither Save nor Enter
-// sends. Bootstrap classes only (styling-rules.md).
+// the title fixed at opening, live occupancy choosing the base hint, the
+// baseline/draft/incoming merge, its notice and the one canSave verdict. This
+// view mirrors it, starts and disposes it with itself and with a new session
+// bound in its place, and gives every opening a tracked action of its own, so
+// a late refusal from a previous address paints nothing on the next one. An
+// empty text is a value the server stores, never a deletion. The window closes
+// on the server's `::success`, a refusal stays in its reserved row, and a busy
+// save holds Cancel, Esc, the backdrop and the close button. A viewer of the
+// admin view mode reads and fills the form, the conflict choices stay live,
+// and neither Save nor Enter sends. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -171,6 +171,7 @@ export class HilosI18nCountryNameWindow {
   protected readonly nameMax = HILOS_I18N_COUNTRY_NAME_MAX
   protected readonly opened = signal(false)
   protected readonly target = signal<HilosI18nCountryNameTarget | null>(null)
+  protected readonly mode = signal<'add' | 'edit' | null>(null)
   protected readonly form = signal({ name: '' })
   protected readonly state = signal(hilosRowEditIdle({ name: '' }))
   protected readonly dirty = signal(false)
@@ -199,9 +200,14 @@ export class HilosI18nCountryNameWindow {
 
     return `${this.copy.title[key]} · ${held.countryName}`
   })
+  // Live occupancy chooses the base hint. The title stays on target.mode.
   protected readonly hint = computed(() =>
     this.target()?.localeCode === null
-      ? this.copy.hints.base
+      ? `${
+          this.mode() === 'add'
+            ? this.copy.hints.baseAdd
+            : this.copy.hints.baseEdit
+        } ${this.copy.hints.base}`
       : this.copy.hints.correction,
   )
 
@@ -214,6 +220,7 @@ export class HilosI18nCountryNameWindow {
       const stops = [
         mirrorHilosSignal(window.opened, this.opened),
         mirrorHilosSignal(window.target, this.target),
+        mirrorHilosSignal(window.mode, this.mode),
         mirrorHilosSignal(window.form, this.form),
         mirrorHilosSignal(window.state, this.state),
         mirrorHilosSignal(window.dirty, this.dirty),
