@@ -28,6 +28,7 @@ use Hilos\Backup\RestoreMigrationDecision;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
+use Hilos\Backup\RestoreWorkLog;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
@@ -416,6 +417,9 @@ HELP;
     ): int {
         $id = $metadata->id;
         echo "Restoring {$id} (scope={$scope->value}) cold, in this process\n";
+        if ($scope === BackupScope::FULL) {
+            echo 'Restore operation log: ' . (RestoreWorkLog::address() ?? 'DAEMON_LOG_FILE is not configured') . "\n";
+        }
 
         // The cold path has no index to read, so it builds one: a single scan of the store before
         // the run, for the same estimate the hot path is given by the agent. Without it the ETA

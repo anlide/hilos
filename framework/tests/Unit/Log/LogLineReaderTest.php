@@ -129,6 +129,25 @@ final class LogLineReaderTest extends TestCase
         $this->assertSame($agentLine, LogLineReader::entryText($agentLine));
     }
 
+    public function testRestoreRecordAfterWarningHasItsOwnHeadAndMoment(): void
+    {
+        $warning = '[2026-07-28T12:00:00.003Z] WARNING: retrying';
+        $restore = '[2026-07-28T12:00:00.004Z] Restore: {"step":"prepared"}';
+        $this->writeLines('worker-1.log', [$warning, $restore]);
+
+        $page = new LogLineReader($this->root)->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
+
+        $this->assertSame([false, false], array_map(static fn(LogLine $line): bool => $line->isContinuation, $page->lines));
+        $this->assertSame(
+            [Logger::LEVEL_WARNING, Logger::LEVEL_INFO],
+            array_map(static fn(LogLine $line): string => $line->detectedLevel, $page->lines),
+        );
+        $this->assertSame(
+            ['2026-07-28T12:00:00.003Z', '2026-07-28T12:00:00.004Z'],
+            array_map(static fn(LogLine $line): ?string => LogLineReader::stampText($line->text), $page->lines),
+        );
+    }
+
     /** Quoted ISO stamps remain continuations between the crash entry and the next real entry. */
     public function testQuotedIsoStampsRemainCrashContinuations(): void
     {

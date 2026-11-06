@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Database;
 
 use Hilos\Backup\RestoreMigrationGuard;
+use Hilos\Database\Exception\MigrationNumberTakenTwiceException;
+use Hilos\Database\Exception\MigrationSkippedBelowLevelException;
 
 /**
  * The two ways a migration track goes unapplied in silence, judged from names and numbers (HIL-1238).
@@ -30,6 +32,36 @@ final class MigrationTrackCheck
 
     /** A down file: `001_create_users_down.sql` or `1_down.sql`. */
     public const string DOWN_FILE_PATTERN = '/^(\d+)_(?:.*_)?down\.sql$/';
+
+    /**
+     * Shared startup/restore check, with the existing lowest-row and failed-row semantics.
+     *
+     * @param list<string> $fileNames Entry names of the track directory
+     * @param ?MigrationHistory $history Actual rows, or an absent table
+     * @param string $name Track name used in diagnostics
+     * @throws MigrationNumberTakenTwiceException When a number has multiple files of one direction
+     * @throws MigrationSkippedBelowLevelException When an interior UP file has no recorded row
+     */
+    public static function assertConsistent(array $fileNames, ?MigrationHistory $history, string $name): void
+    {
+        $takenTwice = self::takenTwice($fileNames);
+        if ($takenTwice !== []) {
+            throw MigrationNumberTakenTwiceException::forNumbers($name, $takenTwice);
+        }
+        $upFiles = [];
+        foreach ($fileNames as $fileName) {
+            if (preg_match(self::UP_FILE_PATTERN, $fileName, $matches) === 1) {
+                $upFiles[(int)$matches[1]] = $fileName;
+            }
+        }
+        $level = $history?->level() ?? 0;
+        $skipped = self::skipped(array_keys($upFiles), $history?->recordedIndices() ?? [], $level);
+        if ($skipped !== []) {
+            $skippedFiles = array_map(static fn (int $number): string => $upFiles[$number], $skipped);
+            sort($skippedFiles);
+            throw MigrationSkippedBelowLevelException::forFiles($name, $skippedFiles, $level);
+        }
+    }
 
     /**
      * Finds the numbers taken by more than one file of one direction.

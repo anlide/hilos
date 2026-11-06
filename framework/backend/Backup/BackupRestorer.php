@@ -11,6 +11,7 @@ use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Backup\FullRestore\PreparedTarget;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
@@ -51,9 +52,10 @@ use Throwable;
  * The order of steps is the safety argument: everything that can refuse (locate,
  * sidecar read, digest check, migration gate, anonymizer availability via the decision,
  * and the anonymizer's own verdict on the archive's schema) runs before the first import
- * touches a database. Import replaces tables as the dump
- * directs (mysqldump's default DROP TABLE IF EXISTS + CREATE); tables present in the
- * target but absent from the dump are left alone - reconciling those is HIL-436.
+ * touches a database. FULL also proves the entire migration replay and any necessary
+ * target-only table removal before writing. Only proven late tables are dropped, in
+ * dependency order; independent target-only objects stay. Import then replaces the
+ * archived tables as the dump directs (mysqldump's DROP TABLE IF EXISTS + CREATE).
  *
  * Dumps carry no triggers. After importing every connection, the engine migrates the
  * data databases (the primary track also moves the journal schema), anonymizes, settles
@@ -110,156 +112,238 @@ final class BackupRestorer
         ?int $migrationIndexOverride = null,
         ?Closure $onPhase = null,
     ): void {
-        $targetCarriesJournal = RestoreMigrationGuard::targetCarriesJournal();
-        if ($decision === RestoreEnvDecision::REFUSE) {
-            throw new RestoreFailedException('Restore refused by the environment guard');
-        }
-        if (preg_match(BackupCreator::ID_PATTERN, $id) !== 1) {
-            throw new RestoreFailedException("Invalid backup id: {$id}");
-        }
-
-        $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
-        if ($root === '') {
-            throw new RestoreFailedException('Backup directory (BACKUP_DIR) is not configured');
-        }
-
-        $archivePath = self::locateArchive($root, $id, $scope);
-        $metadata = self::readSidecarForArchive($archivePath);
-
-        $migration = RestoreMigrationGuard::decide(
-            $metadata->connections,
-            RestoreMigrationGuard::codeMigrationIndex(),
-            $targetCarriesJournal,
-        );
-        if ($migration->decision === RestoreMigrationDecision::REFUSE) {
-            throw new RestoreFailedException("Restore refused by the migration guard: {$migration->reason}");
-        }
-
-        // Built before the first destructive step rather than after the imports: the refusals
-        // it carries - a malformed verdict, a salt the platform will not mint - must land while
-        // a REQUIRE_ANONYMIZATION run still holds whatever the target held.
-        $anonymizer = null;
-        if ($decision === RestoreEnvDecision::REQUIRE_ANONYMIZATION) {
-            if ($scope === BackupScope::SCHEMA_ONLY) {
-                // Asked before the anonymizer is built: a schema-only archive carries no rows,
-                // so there is nothing to anonymize and nothing the coverage gate could refuse
-                // over. Building it here would let a configuration gap block a restore that
-                // this run cannot be harmed by.
-                Logger::info('Restore: anonymization skipped, this archive carries schema only', [
-                    'id' => $id,
-                    'scope' => $scope->value,
-                ]);
-            } else {
-                $anonymizer = $this->resolveAnonymizer();
+        $callerIndex = Database::getCurrentIndex();
+        try {
+            $targetCarriesJournal = RestoreMigrationGuard::targetCarriesJournal();
+            if ($decision === RestoreEnvDecision::REFUSE) {
+                throw new RestoreFailedException('Restore refused by the environment guard');
             }
-        }
+            if (preg_match(BackupCreator::ID_PATTERN, $id) !== 1) {
+                throw new RestoreFailedException("Invalid backup id: {$id}");
+            }
 
-        if ($onPhase !== null) {
-            $onPhase(RestorePhase::VERIFYING);
-        }
-        try {
-            $this->verifyArchive($archivePath, $metadata);
-        } catch (RestoreFailedException $e) {
-            throw RestoreFailedException::beforeDestructive($e->getMessage(), $e);
-        }
+            $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
+            if ($root === '') {
+                throw new RestoreFailedException('Backup directory (BACKUP_DIR) is not configured');
+            }
 
-        $workDir = sys_get_temp_dir() . '/' . self::WORKDIR_PREFIX . getmypid() . '-' . $id;
-        try {
+            $archivePath = self::locateArchive($root, $id, $scope);
+            $metadata = self::readSidecarForArchive($archivePath);
+
+            $migration = RestoreMigrationGuard::decide(
+                $metadata->connections,
+                RestoreMigrationGuard::codeMigrationIndex(),
+                $targetCarriesJournal,
+            );
+            if ($migration->decision === RestoreMigrationDecision::REFUSE) {
+                throw new RestoreFailedException("Restore refused by the migration guard: {$migration->reason}");
+            }
+
+            // Built before the first destructive step rather than after the imports: the refusals
+            // it carries - a malformed verdict, a salt the platform will not mint - must land while
+            // a REQUIRE_ANONYMIZATION run still holds whatever the target held.
+            $anonymizer = null;
+            if ($decision === RestoreEnvDecision::REQUIRE_ANONYMIZATION) {
+                if ($scope === BackupScope::SCHEMA_ONLY) {
+                    // Asked before the anonymizer is built: a schema-only archive carries no rows,
+                    // so there is nothing to anonymize and nothing the coverage gate could refuse
+                    // over. Building it here would let a configuration gap block a restore that
+                    // this run cannot be harmed by.
+                    Logger::info('Restore: anonymization skipped, this archive carries schema only', [
+                        'id' => $id,
+                        'scope' => $scope->value,
+                    ]);
+                } else {
+                    $anonymizer = $this->resolveAnonymizer();
+                }
+            }
+
             if ($onPhase !== null) {
-                $onPhase(RestorePhase::EXTRACTING);
+                $onPhase(RestorePhase::VERIFYING);
             }
             try {
-                $this->ensureWorkDir($workDir);
-                $this->extract($archivePath, $workDir);
+                $this->verifyArchive($archivePath, $metadata);
             } catch (RestoreFailedException $e) {
                 throw RestoreFailedException::beforeDestructive($e->getMessage(), $e);
             }
 
-            $connections = $metadata->connections;
-            usort($connections, static fn (BackupConnectionMeta $a, BackupConnectionMeta $b): int
-                => $a->index <=> $b->index);
-
-            // First of the two refusals that read the unpacked archive, because it judges the
-            // dump's form rather than its data: a schema archive that names no migration level
-            // cannot be restored correctly by anyone, so it is refused before the registry is
-            // even consulted.
-            $levels = $this->resolveMarkerLevels($scope, $connections, $workDir, $migrationIndexOverride);
-
-            // The last refusal, and the only one that needs the archive open: the registry is
-            // judged against the tables the dump declares, while the target database still
-            // holds whatever it held. Every failure past this line leaves data behind.
-            if ($anonymizer !== null) {
-                $anonymizer->validateArchive($this->readArchiveSchemas($connections, $workDir));
-            }
-
-            // Read before the import replaces the table it lives in; put back after the migrations,
-            // which create the table on an archive that did not carry it.
-            $restoresPrimary = $this->carriesPrimary($connections);
-            $keptMarker = $restoresPrimary ? $this->readKeptMarker() : null;
-
-            // The destructive window opens here and does not close: from the first import on, a
-            // failure leaves the database partially replaced, and everything raised inside says so
-            // (HIL-436). Wrapped as a region rather than tagged step by step, because the boundary
-            // is a property of where the run got to, not of which helper happened to throw.
+            $workDir = sys_get_temp_dir() . '/' . self::WORKDIR_PREFIX . getmypid() . '-' . $id;
             try {
                 if ($onPhase !== null) {
-                    $onPhase(RestorePhase::IMPORTING);
+                    $onPhase(RestorePhase::EXTRACTING);
                 }
-                foreach ($connections as $connection) {
-                    $this->importConnection($connection, $workDir);
-                }
-
-                // Before anonymization, not after: the anonymizer (HIL-275) works against the
-                // schema the CODE knows, which is the schema these migrations produce - and
-                // since HIL-600 that is true of its second gate as well, which reads that
-                // schema back out of the database rather than believing the archive's.
-                if ($onPhase !== null) {
-                    $onPhase(RestorePhase::MIGRATING);
-                }
-                foreach ($connections as $connection) {
-                    if (ChangeLogDatabase::isJournalConnection($connection->index, $this->targetDatabaseOf($connection->index))) {
-                        continue;
-                    }
-                    $this->migrateConnection($connection, $levels[$connection->index] ?? null);
-                }
-                if ($restoresPrimary) {
-                    $this->keepMarker($keptMarker);
+                try {
+                    $this->ensureWorkDir($workDir);
+                    $this->extract($archivePath, $workDir);
+                } catch (RestoreFailedException $e) {
+                    throw RestoreFailedException::beforeDestructive($e->getMessage(), $e);
                 }
 
+                $connections = $metadata->connections;
+                usort($connections, static fn (BackupConnectionMeta $a, BackupConnectionMeta $b): int
+                    => $a->index <=> $b->index);
+
+                // First of the two refusals that read the unpacked archive, because it judges the
+                // dump's form rather than its data: a schema archive that names no migration level
+                // cannot be restored correctly by anyone, so it is refused before the registry is
+                // even consulted.
+                $levels = $this->resolveMarkerLevels($scope, $connections, $workDir, $migrationIndexOverride);
+
+                // Judge the registry against the extracted declarations while the target still
+                // holds its original data. FULL input and destination preparation follows this gate.
                 if ($anonymizer !== null) {
-                    if ($onPhase !== null) {
-                        $onPhase(RestorePhase::ANONYMIZING);
-                    }
-                    // Every connection is judged before any is rewritten: a refusal on the
-                    // second one is bad news either way, but it must not arrive over a first
-                    // one that has already been anonymized and can no longer be compared with
-                    // the archive it came from.
-                    foreach ($connections as $connection) {
-                        $anonymizer->validateTargetSchema(
-                            $connection->index,
-                            $this->targetDatabaseOf($connection->index),
-                        );
-                    }
-                    foreach ($connections as $connection) {
-                        $anonymizer->anonymizeConnection(
-                            $connection->index,
-                            $this->targetDatabaseOf($connection->index),
-                        );
-                    }
+                    $anonymizer->validateArchive($this->readArchiveSchemas($connections, $workDir));
                 }
 
-                $this->settleRestoredDeliveries($scope, $restoresPrimary);
-                if ($targetCarriesJournal) {
-                    if ($onPhase !== null) {
-                        $onPhase(RestorePhase::INSTALLING_TRIGGERS);
-                    }
-                    $this->installJournalTriggers();
+                // FULL admits every input and pins every target before any import can run. Its primary
+                // stream omits the marker block, so even a killed mysql cannot install the archive's marker.
+                $plan = $scope === BackupScope::FULL
+                    ? FullRestorePlanner::prepare(FullRestorePlan::prepare($connections, $workDir))
+                    : null;
+                if ($plan !== null) {
+                    $connections = array_map(static fn (PreparedTarget $target): BackupConnectionMeta => $target->connection,
+                        $plan->inputs->targets);
                 }
-            } catch (DatabaseException | RestoreFailedException $e) {
-                throw RestoreFailedException::afterDestructive($e->getMessage(), $e);
+                $restoresPrimary = $this->carriesPrimary($connections);
+                $keptMarker = $plan !== null ? $plan->inputs->marker : ($restoresPrimary ? $this->readKeptMarker() : null);
+
+                $phase = RestorePhase::IMPORTING;
+                $affected = array_map(static fn (BackupConnectionMeta $connection): int => $connection->index, $connections);
+                $step = 'recheck prepared inputs';
+                $databaseTouched = false;
+                $beforeWrite = static function () use ($plan, $archivePath, $metadata, &$databaseTouched): void {
+                    if (!$databaseTouched && $plan !== null) {
+                        if (self::readSidecarForArchive($archivePath) != $metadata) {
+                            throw new RestoreFailedException('The archive sidecar changed after preparation');
+                        }
+                        $plan->assertUnchanged();
+                    }
+                    // The next operation can write even when it reports failure. DDL has no rollback here.
+                    $databaseTouched = true;
+                };
+                try {
+                    if ($onPhase !== null) {
+                        $onPhase(RestorePhase::IMPORTING);
+                    }
+                    if ($plan !== null) {
+                        RestoreWorkLog::begin($archivePath, $plan->inputs);
+                        foreach ($plan->cleanup as $drop) {
+                            $affected = [$drop->index];
+                            $step = 'drop ' . $drop->table;
+                            RestoreWorkLog::starting($id, $phase, $affected, $step);
+                            Database::useConnection($drop->index);
+                            $beforeWrite();
+                            Database::sql('DROP TABLE `' . str_replace('`', '``', $drop->table) . '`', index: $drop->index);
+                        }
+                    }
+                    foreach ($connections as $position => $connection) {
+                        $affected = [$connection->index];
+                        $step = 'import';
+                        if ($plan !== null) {
+                            RestoreWorkLog::starting($id, $phase, $affected, $step);
+                        }
+                        $this->importConnection(
+                            $connection,
+                            $workDir,
+                            $plan?->inputs->targets[$position],
+                            $beforeWrite,
+                        );
+                    }
+
+                    // Before anonymization, not after: the anonymizer (HIL-275) works against the
+                    // schema the CODE knows, which is the schema these migrations produce - and
+                    // since HIL-600 that is true of its second gate as well, which reads that
+                    // schema back out of the database rather than believing the archive's.
+                    $phase = RestorePhase::MIGRATING;
+                    $affected = array_map(static fn (BackupConnectionMeta $connection): int => $connection->index, $connections);
+                    $step = 'begin migrations';
+                    if ($onPhase !== null) {
+                        $onPhase(RestorePhase::MIGRATING);
+                    }
+                    foreach ($connections as $connection) {
+                        if (ChangeLogDatabase::isJournalConnection($connection->index, $this->targetDatabaseOf($connection->index))) {
+                            continue;
+                        }
+                        $affected = [$connection->index];
+                        $step = 'migrate';
+                        if ($plan !== null) {
+                            RestoreWorkLog::starting($id, $phase, $affected, $step);
+                        }
+                        $this->migrateConnection($connection, $levels[$connection->index] ?? null);
+                    }
+                    if ($restoresPrimary && $plan === null) {
+                        $affected = [DatabaseConnectionDefaults::PRIMARY_INDEX];
+                        $step = 'keep marker';
+                        $this->keepMarker($keptMarker);
+                    }
+
+                    if ($anonymizer !== null) {
+                        $phase = RestorePhase::ANONYMIZING;
+                        $affected = array_map(static fn (BackupConnectionMeta $connection): int => $connection->index, $connections);
+                        $step = 'begin anonymization';
+                        if ($onPhase !== null) {
+                            $onPhase(RestorePhase::ANONYMIZING);
+                        }
+                        // Every connection is judged before any is rewritten: a refusal on the
+                        // second one is bad news either way, but it must not arrive over a first
+                        // one that has already been anonymized and can no longer be compared with
+                        // the archive it came from.
+                        foreach ($connections as $connection) {
+                            $affected = [$connection->index];
+                            $step = 'validate anonymization';
+                            if ($plan !== null) {
+                                RestoreWorkLog::starting($id, $phase, $affected, $step);
+                            }
+                            $anonymizer->validateTargetSchema(
+                                $connection->index,
+                                $this->targetDatabaseOf($connection->index),
+                            );
+                        }
+                        foreach ($connections as $connection) {
+                            $affected = [$connection->index];
+                            $step = 'anonymize';
+                            if ($plan !== null) {
+                                RestoreWorkLog::starting($id, $phase, $affected, $step);
+                            }
+                            $anonymizer->anonymizeConnection(
+                                $connection->index,
+                                $this->targetDatabaseOf($connection->index),
+                            );
+                        }
+                    }
+
+                    $affected = [DatabaseConnectionDefaults::PRIMARY_INDEX];
+                    $step = 'settle restored deliveries';
+                    if ($plan !== null) {
+                        RestoreWorkLog::starting($id, $phase, $affected, $step);
+                    }
+                    $this->settleRestoredDeliveries($scope, $restoresPrimary);
+                    if ($targetCarriesJournal) {
+                        $phase = RestorePhase::INSTALLING_TRIGGERS;
+                        $affected = [DatabaseConnectionDefaults::PRIMARY_INDEX, ChangeLogDatabase::CONNECTION_INDEX];
+                        $step = 'install journal triggers';
+                        if ($onPhase !== null) {
+                            $onPhase(RestorePhase::INSTALLING_TRIGGERS);
+                        }
+                        if ($plan !== null) {
+                            RestoreWorkLog::starting($id, $phase, $affected, $step);
+                        }
+                        $this->installJournalTriggers();
+                    }
+                } catch (Throwable $e) {
+                    $detail = 'phase=' . $phase->value . ', connections=' . implode(',', $affected)
+                        . ', step=' . $step . ': ' . $e->getMessage();
+                    throw $databaseTouched
+                        ? RestoreFailedException::afterDestructive($detail, $e)
+                        : RestoreFailedException::beforeDestructive($detail, $e);
+                }
+            } finally {
+                $this->removeDirectory($workDir);
             }
         } finally {
-            $this->removeDirectory($workDir);
+            if (Database::getCurrentIndex() !== $callerIndex) {
+                Database::useConnection($callerIndex);
+            }
         }
     }
 
@@ -424,12 +508,19 @@ final class BackupRestorer
      *
      * @param BackupConnectionMeta $connection Dumped connection being restored
      * @param string $workDir Temp workdir holding the extracted dump files
+     * @param ?PreparedTarget $prepared FULL input and target checked before the destructive window
+     * @param ?Closure(): void $beforeImport Called immediately before starting the writing client
      * @throws RestoreFailedException When the dump file is missing, credentials cannot be
      *     written, or the import client exits non-zero
+     * @throws DatabaseException When the connection is no longer configured
      */
-    private function importConnection(BackupConnectionMeta $connection, string $workDir): void
-    {
-        $sqlPath = self::dumpPath($connection->index, $workDir);
+    private function importConnection(
+        BackupConnectionMeta $connection,
+        string $workDir,
+        ?PreparedTarget $prepared = null,
+        ?Closure $beforeImport = null,
+    ): void {
+        $sqlPath = $prepared?->sqlPath ?? self::dumpPath($connection->index, $workDir);
         if (!is_file($sqlPath)) {
             throw new RestoreFailedException(
                 "Archive carries no dump for connection {$connection->index}",
@@ -437,10 +528,13 @@ final class BackupRestorer
         }
 
         Database::useConnection($connection->index);
-        $config = Database::getConnectionConfig($connection->index);
+        $config = $prepared?->config ?? Database::getConnectionConfig($connection->index);
 
         $iniPath = $this->writeClientIni($config);
         try {
+            if ($beforeImport !== null) {
+                $beforeImport();
+            }
             $this->runProcess(
                 self::MYSQL_BIN,
                 ['--defaults-extra-file=' . $iniPath, $config->database],

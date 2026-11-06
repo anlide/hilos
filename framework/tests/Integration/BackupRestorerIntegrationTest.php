@@ -19,12 +19,15 @@ use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifier;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Backup\FullRestorePlan;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -35,26 +38,30 @@ use Hilos\Database\DatabaseMarkerRow;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
+use Hilos\Database\MigrationSqlReader;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Log\LogLineReader;
 use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Notification\Delivery\RestoredDeliveries;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\AdminAudience;
+use Hilos\Utils\LogLevel;
+use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 
 /**
  * Integration coverage for the restore engine against the live test database.
  *
- * The archive fixtures are hand-written (a real dump needs mysqldump and a run of the
- * create engine; the restore contract is only "replay `db-<index>.sql` files the
- * creator's layout carries"), stored and named exactly as {@see BackupCreator}
- * publishes them, with a real sha256 in the sidecar so the digest gate is exercised
- * for real.
+ * Hand-written mysqldump fixtures carry completed SQL streams and explicit migration rows
+ * for migration scenarios, in the creator's archive layout with a real sidecar digest.
  */
 final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -63,6 +70,11 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
     /** Token-shaped table the anonymization fixtures purge; dropped on teardown. */
     public const string TOKEN_TABLE = 'hilos_fw_restore_token';
+
+    /** Late tables deliberately absent from the old FULL archive. */
+    private const string LATE_TABLE = 'hilos_fw_restore_late';
+    private const string CHILD_TABLE = 'hilos_fw_restore_child';
+    private const string INDEPENDENT_TABLE = 'hilos_fw_restore_independent';
 
     /** Fixture backup id; also the stem of the stored archive/sidecar names. */
     private const string BACKUP_ID = '2026-08-08_12-00-00';
@@ -79,6 +91,10 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
     /** Level the fixture archive records: one behind the code, the migrate-forward case. */
     private const int ARCHIVE_MIGRATION_INDEX = 9000;
+
+    /** Live history rows that a safe preparation refusal must preserve, including failed history. */
+    private const int TARGET_APPLIED_INDEX = 9002;
+    private const int TARGET_FAILED_INDEX = 9003;
 
     /**
      * Column the archive-level migration adds, and which a schema archive taken at that level
@@ -130,6 +146,9 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     /** Whether a restore fixture raised the delivery journal table. */
     private bool $deliveryTableRaised = false;
 
+    /** Previous operation-log address; every case writes its evidence in its own fixture store. */
+    private string|false $previousLogFile = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -147,6 +166,8 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
         putenv('BACKUP_DIR=' . $this->storeRoot);
+        $this->previousLogFile = getenv('DAEMON_LOG_FILE');
+        putenv('DAEMON_LOG_FILE=' . $this->storeRoot . '/daemon.log');
 
         // Point the migration list at an empty fixture tree: the gate then reads no code
         // level, which is what the cases that are not about migrations want. The one case
@@ -163,7 +184,12 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     {
         Hilos::$env = $this->previousEnv;
         putenv('BACKUP_DIR');
+        putenv($this->previousLogFile === false ? 'DAEMON_LOG_FILE' : 'DAEMON_LOG_FILE=' . $this->previousLogFile);
         $this->removeTree($this->storeRoot);
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::sql('DROP TABLE IF EXISTS `' . self::CHILD_TABLE . '`');
+        Database::sql('DROP TABLE IF EXISTS `' . self::LATE_TABLE . '`');
+        Database::sql('DROP TABLE IF EXISTS `' . self::INDEPENDENT_TABLE . '`');
         Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
         Database::sql('DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . '`');
         if ($this->deliveryTableRaised) {
@@ -203,6 +229,452 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
 
         $this->assertSame([['1', 'alpha'], ['2', 'beta']], $this->probeRows());
+    }
+
+    /** Old FULL data returns, while proven late tables are recreated without target rows, on every run. */
+    public function testOldFullRecreatesLateTablesWithoutInheritingTheirRows(): void
+    {
+        $this->prepareLateTables();
+        $marker = DatabaseMarker::current();
+        $this->configureSecondTarget($this->databaseName());
+        $first = null;
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            Database::sql('DELETE FROM `' . self::PROBE_TABLE . '`');
+            Database::sql('INSERT INTO `' . self::PROBE_TABLE . "` VALUES (7, 'target')");
+            Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES (11)');
+            Database::sql('INSERT INTO `' . self::CHILD_TABLE . '` VALUES (12,11)');
+            Database::useConnection(2);
+
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $this->assertSame(2, Database::getCurrentIndex());
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            $this->assertSame([['1', 'archive']], $this->probeRows());
+            $this->assertSame([], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+            $this->assertSame([], Database::sql('SELECT * FROM `' . self::CHILD_TABLE . '`')->rows());
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            $this->assertSame([self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX], Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+            $state = [$this->probeRows(), Migration::appliedIndices(), DatabaseMarker::current()];
+            if ($first !== null) {
+                $this->assertEquals($first, $state);
+            }
+            $first = $state;
+        }
+        $log = (string)file_get_contents($this->storeRoot . '/daemon.log');
+        $this->assertStringContainsString('"phase":"importing","connections":[0],"starting":"drop ' . self::CHILD_TABLE . '"', $log);
+        $this->assertLessThan(strpos($log, '"starting":"drop ' . self::LATE_TABLE . '"'),
+            strpos($log, '"starting":"drop ' . self::CHILD_TABLE . '"'));
+        DatabaseMarker::clear();
+    }
+
+    /** Real BOOLEAN defaults and COLLATE-only declarations must authorize the same cleanup as SHOW CREATE. */
+    public function testFullRecreatesBooleanAndCollateOnlyTablesWithoutTheirRows(): void
+    {
+        $this->prepareLateTables();
+        Database::sql('DROP TABLE `' . self::CHILD_TABLE . '`');
+        Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
+        $sql = 'CREATE TABLE `' . self::LATE_TABLE . '` (id INT PRIMARY KEY, confirmed BOOLEAN NOT NULL DEFAULT FALSE,'
+            . ' enabled BOOL DEFAULT TRUE, label VARCHAR(10), code VARCHAR(10) COLLATE ascii_bin) COLLATE=latin1_bin';
+        file_put_contents($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql', $sql . ";\n");
+        Database::sql($sql);
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . "`(id,label,code) VALUES(11,'old','old')");
+        $physical = Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table');
+        $this->assertStringContainsString('`confirmed` tinyint(1) NOT NULL DEFAULT 0', $physical);
+        $this->assertStringContainsString('`enabled` tinyint(1) DEFAULT 1', $physical);
+        $this->assertStringContainsString('DEFAULT CHARSET=latin1 COLLATE=latin1_bin', $physical);
+        $this->assertStringContainsString('CHARACTER SET ascii COLLATE ascii_bin', $physical);
+        $marker = DatabaseMarker::current();
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+        $this->assertSame([], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+        $this->assertSame($physical, Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table'));
+        $this->assertSame([['1', 'archive']], $this->probeRows());
+        $this->assertSame([self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX], Migration::appliedIndices());
+        $this->assertEquals($marker, DatabaseMarker::current());
+        DatabaseMarker::clear();
+    }
+
+    /** @param string $change A real material difference from the successful source CREATE */
+    #[DataProvider('booleanAndCollationChanges')]
+    public function testBooleanOrCollationMismatchRefusesBeforeRestoreWrites(string $change): void
+    {
+        $this->prepareLateTables();
+        Database::sql('ALTER TABLE `' . self::LATE_TABLE . '` ADD confirmed BOOLEAN NOT NULL DEFAULT FALSE,'
+            . ' ADD label VARCHAR(10) COLLATE latin1_bin');
+        file_put_contents($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
+            'CREATE TABLE `' . self::LATE_TABLE . '` (id INT PRIMARY KEY,'
+            . ' confirmed BOOLEAN NOT NULL DEFAULT FALSE, label VARCHAR(10) COLLATE latin1_bin);' . "\n"
+            . ' CREATE TABLE `' . self::CHILD_TABLE . '` (id INT PRIMARY KEY, parent_id INT, CONSTRAINT restore_late_fk'
+            . ' FOREIGN KEY(parent_id) REFERENCES `' . self::LATE_TABLE . '`(id) ON DELETE CASCADE);' . "\n");
+        Database::sql('ALTER TABLE `' . self::LATE_TABLE . '` ' . $change);
+        $this->assertLatePreparationRefuses('structure');
+    }
+
+    /** @return iterable<string, array{string}> Literal, nullability, type and collation mismatches */
+    public static function booleanAndCollationChanges(): iterable
+    {
+        yield 'boolean default' => ['MODIFY confirmed BOOLEAN NOT NULL DEFAULT TRUE'];
+        yield 'boolean nullable' => ['MODIFY confirmed BOOLEAN DEFAULT FALSE'];
+        yield 'boolean type' => ['MODIFY confirmed SMALLINT NOT NULL DEFAULT FALSE'];
+        yield 'column collation' => ['MODIFY label VARCHAR(10) COLLATE latin1_general_ci'];
+        yield 'table collation' => ['DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci'];
+    }
+
+    /** A real creator archive rolls back both schemas, with only the primary track recreating late objects. */
+    public function testFullRestoresTheJournalThroughThePrimaryTrack(): void
+    {
+        $this->prepareLateTables();
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(index: ChangeLogDatabase::CONNECTION_INDEX, host: $config->host, user: $config->user,
+            password: $config->password, database: ChangeLogDatabase::configuredName(), port: $config->port, charset: $config->charset);
+        Database::connect(ChangeLogDatabase::CONNECTION_INDEX);
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $journalTables = ['hilos_change_log_field', 'hilos_change_log_value', 'hilos_change_log_change',
+            'hilos_change_log', 'hilos_change_log_receipt', 'hilos_change_log_table'];
+        $previousDb = Hilos::$db;
+        $triggerPath = new ReflectionProperty(JournalTriggerFiles::class, 'path')->getValue();
+        mkdir($this->storeRoot . '/triggers');
+        JournalTriggerFiles::setPath($this->storeRoot . '/triggers');
+        Hilos::$db = null;
+        try {
+            $stub = (string)file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_hilos_change_log.sql');
+            foreach (MigrationSqlReader::statements($stub) as $statement) {
+                Database::sql($statement);
+            }
+            Database::sql('INSERT INTO ' . $journal . ".hilos_change_log_table (id, name) VALUES (1, 'archive')");
+            Database::sql('DROP TABLE `' . self::CHILD_TABLE . '`');
+            Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
+            Database::sql('DELETE FROM migration WHERE `index` = ?', [self::CODE_MIGRATION_INDEX]);
+            Database::sql('UPDATE `' . self::PROBE_TABLE . "` SET label='archive'");
+            DatabaseMarker::put(new DatabaseMarkerRow(self::ARCHIVED_MARKER, 'archive-node', '2026-08-08 11:59:59'));
+            $metadata = new BackupCreator()->create('journal-old-full', BackupScope::FULL);
+            $this->assertNotNull($metadata->sha256);
+            $this->assertSame([0, 1], array_column($metadata->connections, 'index'));
+
+            file_put_contents($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
+                'CREATE TABLE {{change_log_database}}.`journal_late` (id INT PRIMARY KEY);' . "\n", FILE_APPEND);
+            Migration::migrateUp();
+            Database::sql('INSERT INTO ' . $journal . '.journal_late VALUES (15)');
+            Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES (11)');
+            Database::sql('INSERT INTO `' . self::CHILD_TABLE . '` VALUES (12,11)');
+            Database::sql('UPDATE ' . $journal . ".hilos_change_log_table SET name='target'");
+            $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+            DatabaseMarker::put($marker);
+            $phases = [];
+            new BackupRestorer()->restore('journal-old-full', BackupScope::FULL, RestoreEnvDecision::ALLOW, null,
+                static function (RestorePhase $phase) use (&$phases): void {
+                    $phases[] = $phase;
+                });
+
+            $this->assertSame(RestorePhase::INSTALLING_TRIGGERS, $phases[array_key_last($phases)]);
+            $this->assertSame([['7', 'archive']], $this->probeRows());
+            $this->assertSame([], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+            $this->assertSame([], Database::sql('SELECT * FROM `' . self::CHILD_TABLE . '`')->rows());
+            $this->assertSame([], Database::sql('SELECT * FROM ' . $journal . '.journal_late')->rows());
+            $this->assertSame('archive', Database::sql('SELECT name FROM ' . $journal . '.hilos_change_log_table WHERE id=1')->field('name'));
+            $this->assertSame([self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX], Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+            $this->assertSame([], Database::sql('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?'
+                . ' AND TABLE_NAME IN (?, ?, ?, ?)', [ChangeLogDatabase::configuredName(), 'migration', MigrationClaim::TABLE,
+                    AdminViewModeLatchTable::TABLE, DatabaseMarker::TABLE])->rows());
+            $log = (string)file_get_contents($this->storeRoot . '/daemon.log');
+            $this->assertStringContainsString('"connections":[1],"starting":"drop journal_late"', $log);
+            $this->assertStringContainsString('"connections":[0,1],"starting":"install journal triggers"', $log);
+            $this->assertSame(1, substr_count($log, '"starting":"migrate"'));
+        } finally {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            Database::sql('DROP TABLE IF EXISTS ' . $journal . '.journal_late');
+            foreach ($journalTables as $table) {
+                Database::sql('DROP TABLE IF EXISTS ' . $journal . '.`' . $table . '`');
+            }
+            DatabaseMarker::clear();
+            Hilos::$db = $previousDb;
+            new ReflectionProperty(JournalTriggerFiles::class, 'path')->setValue(null, $triggerPath);
+        }
+    }
+
+    /** Cleanup cannot remove a successful live INSERT's source before that source is recreated. */
+    public function testDmlBeforeCreateRefusesBeforeAnyRestoreWrite(): void
+    {
+        $this->prepareLateTables();
+        $path = $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql';
+        $source = FsPath::read($path);
+        FsPath::write($path, 'INSERT INTO `' . self::PROBE_TABLE . "`(id,label) SELECT id, 'copied' FROM `"
+            . self::LATE_TABLE . "`;\n" . $source);
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES(11)');
+        $this->assertLatePreparationRefuses('absent table');
+        $this->assertSame([['id' => '11']], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+    }
+
+    /** @param string $verb Mutation of an unproven retained table */
+    #[DataProvider('retainedDataVerbs')]
+    public function testRetainedDmlRefusesAndPreservesItsTrigger(string $verb): void
+    {
+        $this->prepareLateTables();
+        $path = $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql';
+        FsPath::write($path, ($verb === 'UPDATE' ? 'UPDATE `' . self::INDEPENDENT_TABLE . '` SET id=14'
+            : 'DELETE FROM `' . self::INDEPENDENT_TABLE . '`') . " WHERE id=13;\n" . FsPath::read($path));
+        Database::sql('CREATE TRIGGER restore_retained_trigger BEFORE DELETE ON `' . self::INDEPENDENT_TABLE . '` FOR EACH ROW SET @seen=1');
+        try {
+            $this->assertLatePreparationRefuses('unproven target-only');
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            $this->assertSame('restore_retained_trigger', Database::sql('SELECT TRIGGER_NAME FROM information_schema.TRIGGERS'
+                . ' WHERE TRIGGER_SCHEMA=? AND TRIGGER_NAME=?', [$this->databaseName(), 'restore_retained_trigger'])->field('TRIGGER_NAME'));
+        } finally {
+            Database::sql('DROP TRIGGER IF EXISTS restore_retained_trigger');
+        }
+    }
+
+    /** @return iterable<string, array{string}> Both writes previously admitted as OTHER */
+    public static function retainedDataVerbs(): iterable
+    {
+        yield 'delete' => ['DELETE'];
+        yield 'update' => ['UPDATE'];
+    }
+
+    /**
+     * An UP alias is refused during preparation; the target is never handed to the migration DDL.
+     *
+     * @param bool $hasMarker Whether the target initially carries a marker
+     */
+    #[DataProvider('markerStates')]
+    public function testLegacyPhysicalAliasInFutureUpRefusesBeforeAnyRestoreWrite(bool $hasMarker): void
+    {
+        $this->prepareLateTables();
+        if (!$hasMarker) {
+            DatabaseMarker::clear();
+        }
+        FsPath::write($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/'
+            . self::CODE_MIGRATION_INDEX . '_up.sql', 'DROP TABLE IF EXISTS `#mysql50#' . self::INDEPENDENT_TABLE . '`;' . "\n");
+        $history = Database::sql('SELECT * FROM migration ORDER BY `index`')->rows();
+        $marker = DatabaseMarker::current();
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->fail('An aliased target-only DROP must refuse during preparation');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertSame('Full restore planner, connection 0: Opaque UP operation in '
+                . self::CODE_MIGRATION_INDEX . '_up.sql', $failure->getMessage());
+            $this->assertSame([['7', 'untouched']], $this->probeRows());
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            $this->assertSame($history, Database::sql('SELECT * FROM migration ORDER BY `index`')->rows());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /**
+     * The fixture records live success without ever executing the destructive future call itself.
+     *
+     * @param bool $cleanup Whether independent late tables also require cleanup
+     * @param bool $bootstrap Whether the function targets the database's bootstrap marker
+     */
+    #[DataProvider('indirectFutureWrites')]
+    public function testFutureFunctionCannotWritePreservedRows(bool $cleanup, bool $bootstrap): void
+    {
+        $this->prepareLateTables();
+        $path = $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql';
+        $source = "SELECT restore_touch_kept();\n";
+        if ($cleanup) {
+            $source = FsPath::read($path) . $source;
+        } else {
+            Database::sql('DROP TABLE `' . self::CHILD_TABLE . '`');
+            Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
+        }
+        FsPath::write($path, $source);
+        $table = $bootstrap ? DatabaseMarker::TABLE : self::INDEPENDENT_TABLE;
+        Database::sql('CREATE FUNCTION restore_touch_kept() RETURNS INT NO SQL BEGIN DELETE FROM `' . $table . '`; RETURN 1; END');
+        try {
+            $this->assertLatePreparationRefuses('restore_touch_kept');
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            if ($cleanup) {
+                $this->assertCount(1, Database::sql("SHOW TABLES LIKE '" . self::LATE_TABLE . "'")->rows());
+                $this->assertCount(1, Database::sql("SHOW TABLES LIKE '" . self::CHILD_TABLE . "'")->rows());
+            }
+        } finally {
+            Database::sql('DROP FUNCTION IF EXISTS restore_touch_kept');
+        }
+    }
+
+    /** @return iterable<string, array{bool, bool}> Retained rows and marker, independent of cleanup */
+    public static function indirectFutureWrites(): iterable
+    {
+        yield 'retained without cleanup' => [false, false];
+        yield 'retained with cleanup' => [true, false];
+        yield 'bootstrap without cleanup' => [false, true];
+        yield 'bootstrap with cleanup' => [true, true];
+    }
+
+    /** Safe scalar SQL still executes against archive data while retained rows and marker survive. */
+    public function testBuiltinFutureSqlPreservesIndependentRowsWithoutCleanup(): void
+    {
+        $this->prepareLateTables();
+        Database::sql('DROP TABLE `' . self::CHILD_TABLE . '`');
+        Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
+        FsPath::write($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
+            "SELECT COALESCE(ABS(-1),0), 'restore_touch_kept()';\n"
+            . 'INSERT INTO `' . self::PROBE_TABLE . "`(id,label) VALUES(ABS(-2),CONCAT('built','in'));\n");
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->assertSame([['1', 'archive'], ['2', 'builtin']], $this->probeRows());
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            $this->assertSame([self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX], Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** Even the absence of a routine is rechecked before import when cleanup is empty. */
+    public function testFutureFunctionCatalogDriftRefusesWithoutCleanup(): void
+    {
+        $this->prepareLateTables();
+        Database::sql('DROP TABLE `' . self::CHILD_TABLE . '`');
+        Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
+        FsPath::write($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
+            "SELECT restore_touch_kept();\n");
+        $history = Database::sql('SELECT * FROM migration ORDER BY `index`')->rows();
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW, null,
+                static function (RestorePhase $phase): void {
+                    if ($phase === RestorePhase::IMPORTING) {
+                        Database::sql('CREATE FUNCTION restore_touch_kept() RETURNS INT NO SQL BEGIN DELETE FROM `'
+                            . self::INDEPENDENT_TABLE . '`; RETURN 1; END');
+                    }
+                });
+            $this->fail('Changed routine catalog must refuse before import');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString('changed', $failure->getMessage());
+            $this->assertSame([['7', 'untouched']], $this->probeRows());
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            $this->assertSame($history, Database::sql('SELECT * FROM migration ORDER BY `index`')->rows());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            Database::sql('DROP FUNCTION IF EXISTS restore_touch_kept');
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** A late table gets only the data its real UP derives from the newly imported archive. */
+    public function testDmlAfterCreateUsesArchiveRowsWithoutInheritingTargetRows(): void
+    {
+        $this->prepareLateTables();
+        $path = $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql';
+        FsPath::append($path, 'INSERT INTO `' . self::LATE_TABLE . '`(id) SELECT p.id FROM `' . $this->databaseName()
+            . '`.`' . self::PROBE_TABLE . "` p;\n");
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES(11)');
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->assertSame([['id' => '1']], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+            $this->assertSame([['1', 'archive']], $this->probeRows());
+            $this->assertSame([self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX], Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** A matching name and CREATE file do not prove that this target ever applied that CREATE. */
+    public function testUnprovenLateTableRefusesBeforeAnyRestoreWrite(): void
+    {
+        $this->prepareLateTables();
+        Database::sql('DELETE FROM migration WHERE `index` = ?', [self::CODE_MIGRATION_INDEX]);
+        $this->assertLatePreparationRefuses('unproven target-only rows');
+    }
+
+    /** Incoming CASCADE from a preserved schema must refuse, rather than deleting that schema's rows. */
+    public function testExternalForeignKeyRefusesBeforeAnyRestoreWrite(): void
+    {
+        $this->prepareLateTables();
+        $external = '`' . $this->databaseName() . '-change-log`.' . '`' . self::CHILD_TABLE . '`';
+        Database::sql('CREATE TABLE ' . $external . ' (id INT PRIMARY KEY, parent_id INT, CONSTRAINT restore_external_fk'
+            . ' FOREIGN KEY(parent_id) REFERENCES `' . $this->databaseName() . '`.`' . self::LATE_TABLE . '`(id) ON DELETE CASCADE)');
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES (11)');
+        Database::sql('INSERT INTO ' . $external . ' VALUES (14,11)');
+        try {
+            $this->assertLatePreparationRefuses('restore_external_fk');
+            $this->assertSame([['id' => '14', 'parent_id' => '11']], Database::sql('SELECT * FROM ' . $external)->rows());
+        } finally {
+            Database::sql('DROP TABLE ' . $external);
+        }
+    }
+
+    /** @return iterable<string, array{string}> Proof dimensions changed at the connected apply boundary */
+    public static function lateProofChanges(): iterable
+    {
+        foreach (['schema', 'history', 'track', 'dependency'] as $change) {
+            yield $change => [$change];
+        }
+    }
+
+    /** @param string $change Deterministic change after planner preparation, before its final recheck */
+    #[DataProvider('lateProofChanges')]
+    public function testChangedPlannerProofRefusesAtTheRestoreBoundary(string $change): void
+    {
+        $this->prepareLateTables();
+        $expectedHistory = Migration::appliedIndices();
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW, null,
+                function (RestorePhase $phase) use ($change, &$expectedHistory): void {
+                    if ($phase !== RestorePhase::IMPORTING) {
+                        return;
+                    }
+                    match ($change) {
+                        'schema' => Database::sql('ALTER TABLE `' . self::LATE_TABLE . '` ADD changed INT'),
+                        'history' => Database::sql('DELETE FROM migration WHERE `index` = ?', [self::CODE_MIGRATION_INDEX]),
+                        'track' => file_put_contents($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/'
+                            . self::CODE_MIGRATION_INDEX . '_up.sql', "SELECT 1;\n"),
+                        'dependency' => Database::sql('CREATE VIEW `' . self::INDEPENDENT_TABLE . '_view` AS SELECT id FROM `'
+                            . self::LATE_TABLE . '`'),
+                    };
+                    $expectedHistory = Migration::appliedIndices();
+                });
+            $this->fail('Changed planner evidence must refuse before cleanup');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString('changed', $failure->getMessage());
+            $this->assertSame([['7', 'untouched']], $this->probeRows());
+            $this->assertSame($expectedHistory, Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+        } finally {
+            Database::sql('DROP VIEW IF EXISTS `' . self::INDEPENDENT_TABLE . '_view`');
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** @param bool $hasMarker Whether the target had a marker before cleanup */
+    #[DataProvider('markerStates')]
+    public function testImportFailureAfterCleanupRemainsPartialAndKeepsTheMarker(bool $hasMarker): void
+    {
+        $this->prepareLateTables(duplicateRow: true);
+        if (!$hasMarker) {
+            DatabaseMarker::clear();
+        }
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->fail('Duplicate data must fail after the proven DROP operations');
+        } catch (RestoreFailedException $failure) {
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringStartsWith('phase=importing, connections=0, step=import:', $failure->getMessage());
+            $this->assertSame([['1', 'archive']], $this->probeRows());
+            $this->assertSame([], Database::sql('SHOW TABLES LIKE ?', [self::LATE_TABLE])->rows());
+            $this->assertSame([], Database::sql('SHOW TABLES LIKE ?', [self::CHILD_TABLE])->rows());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+        }
     }
 
     /**
@@ -258,7 +730,10 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
     public function testFailedImportThrowsAndCleansItsTempWorkdir(): void
     {
-        $this->publishFixtureBackup("THIS IS NOT SQL;\n");
+        // Both INSERTs are admitted literal dump data. The second fails in mysql after the
+        // table was replaced and the first row committed, rather than failing dump admission.
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']])
+            . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES (1, 'duplicate');\n");
         $workDir = sys_get_temp_dir() . '/hilos-restore-' . getmypid() . '-' . self::BACKUP_ID;
 
         try {
@@ -266,9 +741,483 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             $this->fail('A failing import must surface as RestoreFailedException');
         } catch (RestoreFailedException $failure) {
             $this->assertStringContainsString('import into connection 0', $failure->getMessage());
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringStartsWith('phase=importing, connections=0, step=import:', $failure->getMessage());
         }
 
+        $this->assertSame([['1', 'alpha']], $this->probeRows());
         $this->assertDirectoryDoesNotExist($workDir, 'The temp workdir must be swept even on failure');
+    }
+
+    /** Even an error from the first write-capable SQL cannot promise that replacement never began. */
+    public function testFailureOfTheFirstImportStatementStillReportsPartialReplacement(): void
+    {
+        $this->publishFixtureBackup('CREATE TABLE `' . self::TOKEN_TABLE . "` (id INT NOT NULL DEFAULT NULL);\n");
+        $this->raiseUntouchedProbe();
+        Migration::initialize();
+        $history = Migration::appliedIndices();
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+        DatabaseMarker::put($marker);
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->fail('Invalid SQL default must fail in the first mysql statement');
+        } catch (RestoreFailedException $failure) {
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringStartsWith('phase=importing, connections=0, step=import:', $failure->getMessage());
+            $this->assertStringContainsString('Invalid default value', $failure->getMessage());
+            $this->assertSame([['7', 'untouched']], $this->probeRows());
+            $this->assertSame($history, Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** A metadata session hiding a physical change must refuse with the old target intact. */
+    public function testTruncatedPhysicalDeclarationRefusesBeforeAnyRestoreWrite(): void
+    {
+        $this->prepareLateTables();
+        Database::sql('ALTER TABLE `' . self::LATE_TABLE . '` MODIFY id INT NOT NULL AUTO_INCREMENT');
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES(11)');
+        $originalMode = Database::sql('SELECT @@SESSION.sql_mode AS mode')->field('mode');
+        try {
+            Database::sql("SET SESSION sql_mode = 'NO_FIELD_OPTIONS'");
+            $this->assertLatePreparationRefuses('SHOW CREATE');
+            $this->assertSame(11, (int)Database::sql('SELECT id FROM `' . self::LATE_TABLE . '`')->field('id'));
+        } finally {
+            Database::sql('SET SESSION sql_mode = ?', [$originalMode]);
+        }
+    }
+
+    /** Actual future FULL history cannot bypass the code gate through a null sidecar or an empty cleanup. */
+    public function testActualFutureArchiveRefusesBeforeAnyRestoreWrite(): void
+    {
+        $this->listFixtureMigration();
+        $futureLevel = self::CODE_MIGRATION_INDEX + 1;
+        $dump = $this->probeDumpSql([['1', 'archive']]) . $this->markerDumpSql(self::ARCHIVED_MARKER)
+            . "DROP TABLE IF EXISTS migration;\nCREATE TABLE migration (`index` INT PRIMARY KEY, failed TINYINT NOT NULL);\n"
+            . "INSERT INTO migration VALUES ({$futureLevel},0);\n";
+        $this->publishFixtureBackup($dump, migrationIndex: null);
+        $this->assertPreparationKeepsPrimary('archive at migration ' . $futureLevel . ', code expects ' . self::CODE_MIGRATION_INDEX);
+    }
+
+    /** A missing later input refuses with the first target's sentinel, history and marker intact. */
+    public function testMissingSecondDumpRefusesBeforeTheFirstTargetIsWritten(): void
+    {
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $this->configureSecondTarget($config->database . '-change-log');
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'archive']]),
+            connections: [new BackupConnectionMeta(0, 'source-primary', 0), new BackupConnectionMeta(2, 'source-second', 0)],
+        );
+        $this->assertPreparationKeepsPrimary('connection 2', restoreIndex: 2);
+    }
+
+    /** Availability of later connections is checked while the primary still holds its old data. */
+    public function testUnavailableSecondTargetRefusesBeforeTheFirstTargetIsWritten(): void
+    {
+        $this->configureSecondTarget($this->databaseName(), port: 1);
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'archive']]),
+            connections: [new BackupConnectionMeta(0, 'source-primary', 0), new BackupConnectionMeta(2, 'source-second', 0)],
+            extraDumps: [2 => "-- Dump completed on 2026-08-08 12:00:00\n"],
+        );
+        $this->assertPreparationKeepsPrimary('connection 2');
+    }
+
+    /** Different indices do not permit two imports into one physical schema. */
+    public function testDuplicatePhysicalTargetRefusesBeforeAnyImport(): void
+    {
+        $this->configureSecondTarget($this->databaseName());
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'archive']]),
+            connections: [new BackupConnectionMeta(0, 'source', 0), new BackupConnectionMeta(2, 'another-source', 0)],
+        );
+        $this->assertPreparationKeepsPrimary('Duplicate physical target');
+    }
+
+    /** Repeated sidecar indices must never cause the same schema to be imported twice. */
+    public function testDuplicateConnectionIndexRefusesBeforeAnyImport(): void
+    {
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'archive']]),
+            connections: [new BackupConnectionMeta(0, 'source', 0), new BackupConnectionMeta(0, 'source', 0)],
+        );
+        $this->assertPreparationKeepsPrimary('Duplicate connection index');
+    }
+
+    /** An unsupported marker mutation after ordinary table data is refused before primary is imported. */
+    public function testUnrecognizedMarkerWriteRefusesBeforeAnyImport(): void
+    {
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'archive']])
+            . 'UPDATE `' . DatabaseMarker::TABLE . "` SET marker='" . self::ARCHIVED_MARKER . "';\n");
+        $this->assertPreparationKeepsPrimary('Unsupported full dump statement family');
+    }
+
+    /**
+     * Admission refusals preserve target data, complete history and the original marker through the public restore engine.
+     *
+     * @param string $sql Unsafe fragment appended to a complete archive
+     * @param string $reason Expected admission refusal
+     */
+    #[DataProvider('executionDependentDumps')]
+    public function testExecutionDependentFullDumpCannotWriteTheTarget(string $sql, string $reason): void
+    {
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'archive']]) . $sql, migrationIndex: null);
+        $this->assertPreparationKeepsPrimary($reason);
+    }
+
+    /** @return iterable<string, array{string, string}> Unsafe dump fragments and the required admission refusal */
+    public static function executionDependentDumps(): iterable
+    {
+        yield 'conditional migration history' => ['CREATE TABLE migration (`index` INT, failed TINYINT);'
+            . ' INSERT INTO migration VALUES (1,0); /*!999999 INSERT INTO migration VALUES (2,0) */;', 'executable comment'];
+        yield 'conditional object' => ['/*!999999 CREATE TABLE later(id INT) */;', 'executable comment'];
+        yield 'inherited quote mode' => [<<<'SQL'
+CREATE TABLE notes(text LONGTEXT);
+INSERT INTO notes VALUES ('x\'); DROP TABLE hilos_database_marker; -- ');
+SQL, 'SQL mode'];
+        yield 'mixed marker setup' => [<<<'SQL'
+SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO', @saved_cs_client=@@character_set_client;
+CREATE TABLE hilos_database_marker(id TINYINT UNSIGNED, marker CHAR(32), written_by VARCHAR(255), written_at DATETIME);
+SET character_set_client=@saved_cs_client;
+SQL, 'mixed'];
+        yield 'legacy marker alias' => ['DROP TABLE IF EXISTS `#mysql50#hilos_database_marker`;'
+            . ' CREATE TABLE `#mysql50#hilos_database_marker`(id INT);', 'legacy'];
+    }
+
+    /**
+     * The mysql child inherits both quote-affecting modes while PHP's already-open preparation session does not.
+     *
+     * @param bool $setsMode Whether the retained dump explicitly establishes safe quoting
+     */
+    #[DataProvider('dumpModeSetups')]
+    public function testMysqlQuoteModeIsEstablishedByTheExecutedDump(bool $setsMode): void
+    {
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(index: DatabaseConnectionDefaults::PRIMARY_INDEX, host: $config->host, user: 'root',
+            password: Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string(), database: $config->database,
+            port: $config->port, charset: $config->charset, socket: $config->socket);
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $originalMode = Database::sql('SELECT @@GLOBAL.sql_mode AS sql_mode')->row()['sql_mode'];
+        try {
+            Database::sql('SET GLOBAL sql_mode = ?', ['NO_BACKSLASH_ESCAPES,ANSI_QUOTES']);
+            if (!$setsMode) {
+                $this->publishFixtureBackup(<<<'SQL'
+CREATE TABLE notes(text LONGTEXT);
+INSERT INTO notes VALUES ('x\'); DROP TABLE hilos_database_marker; -- ');
+SQL);
+                $this->assertPreparationKeepsPrimary('SQL mode');
+                return;
+            }
+            Migration::initialize();
+            $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+            DatabaseMarker::put($marker);
+            $this->publishFixtureBackup("SET SQL_MODE='';\n" . $this->markerDumpSql(self::ARCHIVED_MARKER)
+                . $this->probeDumpSql([['1', 'backslash\\\\end "quoted"']]));
+
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $this->assertSame([['1', 'backslash\\end "quoted"']], $this->probeRows());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            Database::sql('SET GLOBAL sql_mode = ?', [$originalMode]);
+            DatabaseMarker::clear();
+            Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            Database::configure(index: DatabaseConnectionDefaults::PRIMARY_INDEX, host: $config->host, user: $config->user,
+                password: $config->password, database: $config->database, port: $config->port,
+                charset: $config->charset, socket: $config->socket);
+            Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
+    }
+
+    /** @return iterable<string, array{bool}> Retained safe setup and the unsafe inherited-mode legacy stream */
+    public static function dumpModeSetups(): iterable
+    {
+        yield 'explicit safe setup' => [true];
+        yield 'no mode setup' => [false];
+    }
+
+    /** A partial later SQL file must be admitted before any earlier destination is overwritten. */
+    public function testIncompleteSecondDumpRefusesBeforeTheFirstTargetIsWritten(): void
+    {
+        $this->configureSecondTarget($this->databaseName() . '-change-log');
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'archive']]),
+            connections: [new BackupConnectionMeta(0, 'source-primary', 0), new BackupConnectionMeta(2, 'source-second', 0)],
+            extraDumps: [2 => 'CREATE TABLE `truncated_dump` (`id` int);'],
+        );
+        $this->assertPreparationKeepsPrimary('Incomplete full dump');
+    }
+
+    /** Identical schema names on two real servers remain distinct, with every import using its checked binding. */
+    public function testEveryPreparedTargetIsImportedIntoItsConfiguredSchema(): void
+    {
+        Database::configure(
+            index: 2,
+            host: (string)getenv('HILOS_TEST_REMOTE_DB_HOST'),
+            user: (string)getenv('HILOS_TEST_REMOTE_DB_USERNAME'),
+            password: (string)getenv('HILOS_TEST_REMOTE_DB_PASSWORD'),
+            database: $this->databaseName(),
+            port: (int)getenv('HILOS_TEST_REMOTE_DB_PORT'),
+            charset: DatabaseConnectionDefaults::CHARSET,
+        );
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'primary']]),
+            connections: [new BackupConnectionMeta(2, 'source-second', 0), new BackupConnectionMeta(0, 'source-primary', 0)],
+            extraDumps: [2 => $this->probeDumpSql([['2', 'second']]) . "-- Dump completed on 2026-08-08 12:00:00\n"],
+        );
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $this->assertSame([['1', 'primary']], $this->probeRows());
+            Database::useConnection(2);
+            $this->assertSame([['2', 'second']], $this->probeRows());
+            $this->assertStringContainsString('"connections":[2],"starting":"import"',
+                (string)file_get_contents($this->storeRoot . '/daemon.log'));
+        } finally {
+            Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`', index: 2);
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
+    }
+
+    /** The archived database name describes the source and never selects a mysql destination. */
+    public function testSourceSchemaNameDoesNotSelectTheImportTarget(): void
+    {
+        $this->configureSecondTarget($this->databaseName());
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'archive']]),
+            connections: [new BackupConnectionMeta(0, 'source_schema_that_does_not_exist', 0)],
+        );
+
+        Database::useConnection(2);
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+        $this->assertSame(2, Database::getCurrentIndex());
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $this->assertSame([['1', 'archive']], $this->probeRows());
+    }
+
+    /** Required operation evidence is written even with ordinary logging disabled. */
+    public function testOperationLogRecordsTargetsAndMarkerAtErrorOnlyLevel(): void
+    {
+        Migration::initialize();
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+        DatabaseMarker::put($marker);
+        $this->publishFixtureBackup($this->markerDumpSql(self::ARCHIVED_MARKER) . $this->probeDumpSql([['1', 'archive']]));
+        $previousLevel = Logger::writeLevel();
+        try {
+            Logger::setWriteLevel(LogLevel::Error);
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $lines = file($this->storeRoot . '/daemon.log', FILE_IGNORE_NEW_LINES);
+            $this->assertIsArray($lines);
+            $this->assertNotNull(LogLineReader::stampText($lines[0]));
+            $this->assertNotNull(LogLineReader::stampMilliseconds($lines[0]));
+            $this->assertStringStartsWith('Restore: ', LogLineReader::entryText($lines[0]));
+            $this->assertStringContainsString('"archive":', $lines[0]);
+            $this->assertStringContainsString('"index":0', $lines[0]);
+            $this->assertStringContainsString('"database":"' . $this->databaseName() . '"', $lines[0]);
+            $this->assertStringContainsString('"host":', $lines[0]);
+            $this->assertStringContainsString('"server":', $lines[0]);
+            $this->assertStringContainsString('"primaryMarker":"' . self::TARGET_MARKER . '"', $lines[0]);
+            $this->assertStringContainsString('"phase":"importing","connections":[0],"starting":"import"', $lines[1]);
+            $this->assertStringContainsString('"phase":"migrating","connections":[0],"starting":"migrate"', $lines[2]);
+            $this->assertStringNotContainsString('password', implode("\n", $lines));
+            $this->assertStringNotContainsString('INSERT', implode("\n", $lines));
+            $this->assertStringNotContainsString(self::ARCHIVED_MARKER, implode("\n", $lines));
+        } finally {
+            Logger::setWriteLevel($previousLevel);
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** A log that cannot accept the pre-replacement record is a safe refusal. */
+    public function testUnwritableOperationLogRefusesBeforeAnyImport(): void
+    {
+        putenv('DAEMON_LOG_FILE=' . $this->storeRoot);
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'archive']]));
+        $this->assertPreparationKeepsPrimary('Cannot write the restore operation log');
+    }
+
+    /** Preparing a plan reads history and stages primary without initializing or changing the target. */
+    public function testFullPlanPreparationDoesNotWriteTheTarget(): void
+    {
+        $this->raiseUntouchedProbe();
+        Migration::initialize();
+        $history = Migration::appliedIndices();
+        $marker = DatabaseMarker::current();
+        $workDir = $this->storeRoot . '/plan-input';
+        mkdir($workDir);
+        file_put_contents($workDir . '/db-0.sql', $this->probeDumpSql([['1', 'archive']])
+            . "CREATE TABLE `migration` (`index` int, `failed` tinyint);\n"
+            . "INSERT INTO `migration` VALUES (7,0);\n-- Dump completed on 2026-08-08 12:00:00\n");
+        $this->configureSecondTarget($this->databaseName());
+        Database::useConnection(2);
+
+        $plan = FullRestorePlan::prepare([new BackupConnectionMeta(0, 'source-only', 7)], $workDir);
+        $plan->assertUnchanged();
+
+        $this->assertSame(2, Database::getCurrentIndex());
+        $this->assertSame(0, $plan->targets[0]->connection->index);
+        $this->assertSame($this->databaseName(), $plan->targets[0]->config->database);
+        $this->assertSame(7, $plan->targets[0]->dump->migrationHistory->rows[0]->index);
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $this->assertSame([['7', 'untouched']], $this->probeRows());
+        $this->assertSame($history, Migration::appliedIndices());
+        $this->assertEquals($marker, DatabaseMarker::current());
+    }
+
+    /** @return iterable<string, array{bool}> Target marker presence */
+    public static function markerStates(): iterable
+    {
+        yield 'existing marker' => [true];
+        yield 'absent marker' => [false];
+    }
+
+    /**
+     * The archive's marker never reaches a target, even when SQL fails after committed writes.
+     *
+     * @param bool $hasMarker Whether the target initially carries a marker
+     */
+    #[DataProvider('markerStates')]
+    public function testSqlFailureCannotInstallArchivedMarker(bool $hasMarker): void
+    {
+        Migration::initialize();
+        DatabaseMarker::clear();
+        $marker = $hasMarker ? new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00') : null;
+        if ($marker !== null) {
+            DatabaseMarker::put($marker);
+        }
+        $this->publishFixtureBackup($this->markerDumpSql(self::ARCHIVED_MARKER)
+            . $this->probeDumpSql([['1', 'archive']])
+            . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES (1, 'duplicate');\n");
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->fail('Duplicate data must fail in mysql after replacement started');
+        } catch (RestoreFailedException $failure) {
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringStartsWith('phase=importing, connections=0, step=import:', $failure->getMessage());
+        } finally {
+            $this->assertEquals($marker, DatabaseMarker::current());
+            DatabaseMarker::clear();
+        }
+        $this->assertSame([['1', 'archive']], $this->probeRows());
+        $log = (string)file_get_contents($this->storeRoot . '/daemon.log');
+        $this->assertStringContainsString('"starting":"import"', $log);
+        $this->assertStringNotContainsString(self::ARCHIVED_MARKER, $log);
+    }
+
+    /**
+     * A process lost after import but before migrations cannot leave the archive's marker behind.
+     *
+     * @param bool $hasMarker Whether the target initially carries a marker
+     */
+    #[DataProvider('markerStates')]
+    public function testMarkerIsAlreadyPreservedBeforeTheMigrateStep(bool $hasMarker): void
+    {
+        Migration::initialize();
+        DatabaseMarker::clear();
+        $marker = $hasMarker ? new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00') : null;
+        if ($marker !== null) {
+            DatabaseMarker::put($marker);
+        }
+        $this->publishFixtureBackup($this->markerDumpSql(self::ARCHIVED_MARKER) . $this->probeDumpSql([['1', 'archive']]));
+
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW, null,
+                function (RestorePhase $phase) use ($marker): void {
+                    if ($phase === RestorePhase::MIGRATING) {
+                        $this->assertEquals($marker, DatabaseMarker::current());
+                        throw new RestoreFailedException('Interrupted after the import');
+                    }
+                },
+            );
+            $this->fail('The interruption must surface');
+        } catch (RestoreFailedException $failure) {
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringContainsString('Interrupted after the import', $failure->getMessage());
+        } finally {
+            $this->assertEquals($marker, DatabaseMarker::current());
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** @return iterable<string, array{string}> Inputs and bindings that can drift after admission */
+    public static function preparedChanges(): iterable
+    {
+        foreach (['source', 'staged', 'config', 'indices', 'marker', 'rollout', 'sidecar'] as $change) {
+            yield $change => [$change];
+        }
+    }
+
+    /**
+     * Visible drift at the last pre-import phase refuses while the primary sentinel is intact.
+     *
+     * @param string $change Evidence changed after preparation
+     */
+    #[DataProvider('preparedChanges')]
+    public function testPreparedChangesRefuseBeforeWriting(string $change): void
+    {
+        $archive = $this->publishFixtureBackup($this->probeDumpSql([['1', 'archive']]));
+        $this->raiseUntouchedProbe();
+        Migration::initialize();
+        DatabaseMarker::clear();
+        $history = Migration::appliedIndices();
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW, null,
+                function (RestorePhase $phase) use ($change, $archive, $config): void {
+                    if ($phase !== RestorePhase::IMPORTING) {
+                        return;
+                    }
+                    $source = sys_get_temp_dir() . '/hilos-restore-' . getmypid() . '-' . self::BACKUP_ID . '/db-0.sql';
+                    switch ($change) {
+                        case 'source':
+                        case 'staged':
+                            file_put_contents($change === 'staged' ? $source . '.staged' : $source, "\n-- changed\n", FILE_APPEND);
+                            break;
+                        case 'config':
+                            Database::configure(index: 0, host: $config->host, user: $config->user, password: $config->password,
+                                database: $config->database, port: 1, charset: $config->charset);
+                            break;
+                        case 'indices':
+                            $this->configureSecondTarget($config->database);
+                            break;
+                        case 'marker':
+                            DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'other-node', '2026-09-01 10:00:00'));
+                            break;
+                        case 'rollout':
+                            Database::sql('INSERT INTO `' . MigrationClaim::TABLE . '` VALUES (?, ?, ?)',
+                                [MigrationClaim::CLAIM_ID, 'foreign-process', '2026-09-01 10:00:00']);
+                            break;
+                        case 'sidecar':
+                            $path = substr($archive, 0, -strlen(BackupCreator::ARCHIVE_EXTENSION)) . BackupCreator::SIDECAR_EXTENSION;
+                            $metadata = json_decode((string)file_get_contents($path), true);
+                            $metadata[BackupMetadata::keep] = true;
+                            file_put_contents($path, json_encode($metadata));
+                            break;
+                    }
+                },
+            );
+            $this->fail('Changed preparation evidence must refuse the import');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString('connections=0', $failure->getMessage());
+        } finally {
+            if ($change === 'config') {
+                Database::configure(index: 0, host: $config->host, user: $config->user, password: $config->password,
+                    database: $config->database, port: $config->port, charset: $config->charset, socket: $config->socket);
+            }
+            MigrationClaim::clear();
+            DatabaseMarker::clear();
+        }
+        $this->assertSame([['7', 'untouched']], $this->probeRows());
+        $this->assertSame($history, Migration::appliedIndices());
     }
 
     public function testAnArchiveBehindTheCodeIsMigratedForwardAfterTheImport(): void
@@ -846,25 +1795,134 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
+     * @param string $database Target schema on the same stand server
+     * @param ?int $port Override for the unavailable-connection scenario
+     */
+    private function configureSecondTarget(string $database, ?int $port = null): void
+    {
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(index: 2, host: $config->host, user: $config->user, password: $config->password,
+            database: $database, port: $port ?? $config->port, charset: $config->charset, socket: $config->socket);
+    }
+
+    /** @param bool $duplicateRow Whether mysql should fail after the archive's first committed row */
+    private function prepareLateTables(bool $duplicateRow = false): void
+    {
+        // DROP proof needs the real server-wide metadata that the stand's application account cannot see.
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(index: DatabaseConnectionDefaults::PRIMARY_INDEX, host: $config->host, user: 'root',
+            password: Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string(), database: $config->database,
+            port: $config->port, charset: $config->charset, socket: $config->socket);
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $lateSql = 'CREATE TABLE IF NOT EXISTS `' . self::LATE_TABLE . "` (id INT PRIMARY KEY);\n"
+            . 'CREATE TABLE `' . self::CHILD_TABLE . '` (id INT PRIMARY KEY, parent_id INT, CONSTRAINT restore_late_fk'
+            . ' FOREIGN KEY(parent_id) REFERENCES `' . self::LATE_TABLE . '`(id) ON DELETE CASCADE)';
+        $this->listFixtureMigration($lateSql);
+        $dump = $this->markerDumpSql(self::ARCHIVED_MARKER) . $this->probeDumpSql([['1', 'archive']]);
+        if ($duplicateRow) {
+            $dump .= 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES (1, 'duplicate');\n";
+        }
+        $this->publishFixtureBackup($dump, self::ARCHIVE_MIGRATION_INDEX);
+        $this->raiseUntouchedProbe();
+        Migration::initialize();
+        Database::sql('DELETE FROM migration');
+        Database::sql('INSERT INTO migration (`index`, failed) VALUES (?,0),(?,0)',
+            [self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX]);
+        Database::sql('CREATE TABLE IF NOT EXISTS `' . self::LATE_TABLE . '` (id INT PRIMARY KEY)');
+        Database::sql('CREATE TABLE `' . self::CHILD_TABLE . '` (id INT PRIMARY KEY, parent_id INT, CONSTRAINT restore_late_fk'
+            . ' FOREIGN KEY(parent_id) REFERENCES `' . self::LATE_TABLE . '`(id) ON DELETE CASCADE)');
+        Database::sql('CREATE TABLE `' . self::INDEPENDENT_TABLE . '` (id INT PRIMARY KEY)');
+        Database::sql('INSERT INTO `' . self::INDEPENDENT_TABLE . '` VALUES (13)');
+        DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00'));
+    }
+
+    /** @param string $reason Exact proof that should refuse this restore */
+    private function assertLatePreparationRefuses(string $reason): void
+    {
+        $history = Database::sql('SELECT * FROM migration ORDER BY `index`')->rows();
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->fail('Unproven cleanup must refuse before any restore write');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString($reason, $failure->getMessage());
+            $this->assertSame([['7', 'untouched']], $this->probeRows());
+            $this->assertSame($history, Database::sql('SELECT * FROM migration ORDER BY `index`')->rows());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /**
+     * @param string $reason Expected refusal detail
+     * @param int $restoreIndex Caller connection to preserve through the failed restore
+     */
+    private function assertPreparationKeepsPrimary(string $reason, int $restoreIndex = DatabaseConnectionDefaults::PRIMARY_INDEX): void
+    {
+        $this->raiseUntouchedProbe();
+        Migration::initialize();
+        Database::sql('INSERT INTO `migration` (`index`, `failed`) VALUES (?,0),(?,1)',
+            [self::TARGET_APPLIED_INDEX, self::TARGET_FAILED_INDEX]);
+        $history = Database::sql('SELECT `index`, `failed` FROM `migration` ORDER BY `index`')->rows();
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+        DatabaseMarker::put($marker);
+        Database::useConnection($restoreIndex);
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->fail('Preparation must refuse before the primary import');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString($reason, $failure->getMessage());
+            $this->assertSame($restoreIndex, Database::getCurrentIndex());
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            $this->assertSame([['7', 'untouched']], $this->probeRows());
+            $this->assertSame($history, Database::sql('SELECT `index`, `failed` FROM `migration` ORDER BY `index`')->rows());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            DatabaseMarker::clear();
+            Database::sql('DELETE FROM `migration` WHERE `index` IN (?, ?)',
+                [self::TARGET_APPLIED_INDEX, self::TARGET_FAILED_INDEX], index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
+    }
+
+    /**
      * Builds and publishes one fixture backup exactly as the create path lays it out.
      *
      * @param string $dumpSql Contents of the connection-0 dump inside the archive
      * @param ?int $migrationIndex Migration level recorded for connection 0
      * @param BackupScope $scope Scope the fixture claims to have been captured under
+     * @param ?list<BackupConnectionMeta> $connections Explicit sidecar connections, defaulting to primary
+     * @param array<int, string> $extraDumps Further extracted files by connection index
      * @return string Absolute path of the published archive
      */
     private function publishFixtureBackup(
         string $dumpSql,
         ?int $migrationIndex = 0,
         BackupScope $scope = BackupScope::FULL,
+        ?array $connections = null,
+        array $extraDumps = [],
     ): string {
         $scopeDir = $this->storeRoot . '/' . $scope->value;
         $workDir = $this->storeRoot . '/build';
         mkdir($workDir, 0700);
+        if ($scope === BackupScope::FULL) {
+            if ($migrationIndex !== null && $migrationIndex > 0) {
+                $dumpSql .= "DROP TABLE IF EXISTS `migration`;\n"
+                    . "CREATE TABLE `migration` (`index` int NOT NULL PRIMARY KEY, `failed` tinyint NOT NULL);\n"
+                    . "INSERT INTO `migration` VALUES ({$migrationIndex},0);\n";
+            }
+            $dumpSql .= "-- Dump completed on 2026-08-08 12:00:00\n";
+        }
         file_put_contents(
             $workDir . '/' . BackupCreator::SQL_FILE_PREFIX . '0' . BackupCreator::SQL_FILE_SUFFIX,
             $dumpSql,
         );
+        foreach ($extraDumps as $index => $sql) {
+            file_put_contents($workDir . '/' . BackupCreator::SQL_FILE_PREFIX . $index . BackupCreator::SQL_FILE_SUFFIX, $sql);
+        }
 
         $base = BackupCreator::archiveBaseName(self::BACKUP_ID, 'test', $scope);
         $archivePath = $scopeDir . '/' . $base . BackupCreator::ARCHIVE_EXTENSION;
@@ -880,7 +1938,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             createdAt: '2026-08-08T12:00:00+00:00',
             env: 'test',
             scope: $scope,
-            connections: [new BackupConnectionMeta(0, $this->databaseName(), $migrationIndex)],
+            connections: $connections ?? [new BackupConnectionMeta(0, $this->databaseName(), $migrationIndex)],
             sizeBytes: (int)filesize($archivePath),
             durationSeconds: 1,
             keep: false,

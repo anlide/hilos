@@ -81,20 +81,26 @@ class Migration
      */
     public static function appliedIndices(): array
     {
-        $previous = Database::getCurrentIndex();
-        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
-        try {
-            try {
-                Database::sql('SELECT `index` FROM `migration` WHERE `failed` = 0 ORDER BY `index`');
-            } catch (TableNotFoundException) {
-                return [];
-            }
-            $indices = [];
-            while ($row = Database::row()) {
-                $indices[] = (int)$row['index'];
-            }
+        return self::readHistory(DatabaseConnectionDefaults::PRIMARY_INDEX)?->successfulIndices() ?? [];
+    }
 
-            return $indices;
+    /**
+     * Reads actual rows without initialize(), a rollout claim or any bootstrap DDL.
+     *
+     * @param int $index Connection whose own migration table is to be read
+     * @return ?MigrationHistory Present table with every row, or null for an absent table
+     * @throws DatabaseException When the connection or history cannot be read
+     */
+    public static function readHistory(int $index): ?MigrationHistory
+    {
+        $previous = Database::getCurrentIndex();
+        try {
+            Database::useConnection($index);
+            try {
+                return self::readCurrentHistory();
+            } catch (TableNotFoundException) {
+                return null;
+            }
         } finally {
             Database::useConnection($previous);
         }
@@ -242,6 +248,26 @@ class Migration
     }
 
     /**
+     * Reads the same UP files, in the same order, with the same SQL reader as migrateUp().
+     *
+     * @return MigrationUpTrack Whole-track evidence, without reading or initializing a database
+     * @throws DatabaseException When track configuration, a file or journal substitution cannot be read
+     * @throws MigrationNumberTakenTwiceException When a number has multiple files of one direction
+     * @throws MigrationSkippedBelowLevelException When the shared track check refuses history
+     */
+    public static function readUpTrack(): MigrationUpTrack
+    {
+        $fileNames = self::trackFileNames();
+        MigrationTrackCheck::assertConsistent($fileNames, null, self::$migrationName);
+        $path = self::trackPath();
+        $files = [];
+        foreach (self::upFilesByNumber($fileNames) as $index => $names) {
+            $files[] = MigrationUpFile::read($index, $path . '/' . $names[0]);
+        }
+        return new MigrationUpTrack($path, self::$migrationName, $fileNames, $files);
+    }
+
+    /**
      * Refuses a track the database cannot follow: a number taken by more than one file, or a file
      * below the database's level that was never applied there (HIL-1238).
      *
@@ -267,24 +293,21 @@ class Migration
             throw MigrationNumberTakenTwiceException::forNumbers(self::$migrationName, $takenTwice);
         }
 
-        Database::sql('SELECT `index`, `failed` FROM `migration`');
-        $recorded = [];
-        $level = 0;
-        while ($row = Database::row()) {
-            $index = (int)$row['index'];
-            $recorded[] = $index;
-            if ((int)$row['failed'] === 0) {
-                $level = max($level, $index);
-            }
-        }
+        MigrationTrackCheck::assertConsistent($fileNames, self::readCurrentHistory(), self::$migrationName);
+    }
 
-        $upFiles = self::upFilesByNumber($fileNames);
-        $skipped = MigrationTrackCheck::skipped(array_keys($upFiles), $recorded, $level);
-        if ($skipped !== []) {
-            $skippedFiles = array_merge(...array_map(static fn (int $number): array => $upFiles[$number], $skipped));
-            sort($skippedFiles);
-            throw MigrationSkippedBelowLevelException::forFiles(self::$migrationName, $skippedFiles, $level);
+    /**
+     * @return MigrationHistory Actual rows of the selected database, without initialization or absence conversion
+     * @throws DatabaseException When the table is absent or cannot be read
+     */
+    private static function readCurrentHistory(): MigrationHistory
+    {
+        Database::sql('SELECT `index`, `failed` FROM `migration` ORDER BY `index`');
+        $rows = [];
+        while ($row = Database::row()) {
+            $rows[] = new MigrationRecord((int)$row['index'], (int)$row['failed'] !== 0);
         }
+        return new MigrationHistory($rows);
     }
 
     /**
@@ -612,56 +635,7 @@ class Migration
      */
     private static function runSqlWithDelimiter(string $content): void
     {
-        if (str_contains($content, '{{change_log_database}}')) {
-            $content = str_replace(
-                '{{change_log_database}}',
-                ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName()),
-                $content,
-            );
-        }
-        $delimiter = ';';
-        $lines = explode("\n", $content);
-        $statement = '';
-
-        foreach ($lines as $line) {
-            $line = trim($line);
-
-            // Skip comments
-            if (empty($line) || str_starts_with($line, '--') || str_starts_with($line, '#')) {
-                continue;
-            }
-
-            // Check for DELIMITER change
-            if (preg_match('/^DELIMITER\s+(.+)$/i', $line, $matches)) {
-                $delimiter = trim($matches[1]);
-                continue;
-            }
-
-            $statement .= $line . "\n";
-
-            // Check if statement is complete
-            if (str_ends_with(rtrim($line), $delimiter)) {
-                // Remove delimiter from statement
-                $statement = rtrim($statement);
-                if ($delimiter !== ';') {
-                    $statement = substr($statement, 0, -strlen($delimiter));
-                } else {
-                    $statement = rtrim($statement, ';');
-                }
-
-                $statement = trim($statement);
-
-                if (!empty($statement)) {
-                    Database::sql($statement);
-                }
-
-                $statement = '';
-            }
-        }
-
-        // Execute remaining statement
-        $statement = trim($statement);
-        if (!empty($statement)) {
+        foreach (MigrationSqlReader::statements($content) as $statement) {
             Database::sql($statement);
         }
     }

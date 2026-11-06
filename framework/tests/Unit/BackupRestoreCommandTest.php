@@ -411,14 +411,16 @@ final class BackupRestoreCommandTest extends TestCase
                 BackupConstants::FIELD_RESTORE_RUNNING => false,
                 BackupConstants::FIELD_RESTORE_PHASE => RestorePhase::FAILED->value,
                 BackupConstants::FIELD_RESTORE_OUTCOME => BackupStatus::ERROR->value,
-                BackupConstants::FIELD_RESTORE_FAILURE => 'import into connection 0 exited with code 1',
+                BackupConstants::FIELD_RESTORE_FAILURE => 'phase=importing, connections=0, step=import: mysql exited with code 1',
+                BackupConstants::FIELD_DATABASE_TOUCHED => true,
             ]),
         ];
 
         $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
         $this->assertSame(ExitCode::ERROR, $output['code']);
-        $this->assertStringContainsString('import into connection 0', $output['text']);
+        $this->assertStringContainsString('phase=importing, connections=0, step=import:', $output['text']);
+        $this->assertStringContainsString('may be left partially replaced', $output['text']);
     }
 
     public function testSilentDaemonIsAnErrorSuggestingColdNotAFallback(): void
@@ -495,14 +497,22 @@ final class BackupRestoreCommandTest extends TestCase
         $this->storeBackup('b1', 'archive payload');
         $probe = new BackupRestoreCommandProbe();
 
-        $output = $this->runCommand($probe, ['b1'], [
-            BackupConstants::YES_OPTION => true,
-            BackupConstants::COLD_OPTION => true,
-        ]);
+        $previousLogFile = getenv('DAEMON_LOG_FILE');
+        putenv('DAEMON_LOG_FILE=' . $this->root . '/daemon.log');
+        try {
+            $output = $this->runCommand($probe, ['b1'], [
+                BackupConstants::YES_OPTION => true,
+                BackupConstants::COLD_OPTION => true,
+            ]);
+        } finally {
+            putenv($previousLogFile === false ? 'DAEMON_LOG_FILE' : 'DAEMON_LOG_FILE=' . $previousLogFile);
+        }
 
         $this->assertSame(ExitCode::ERROR, $output['code']);
         $this->assertStringContainsString(RestorePhase::VERIFYING->value, $output['text']);
         $this->assertStringContainsString(RestorePhase::EXTRACTING->value, $output['text']);
+        $this->assertStringContainsString('Restore operation log: ' . $this->root . '/daemon.log', $output['text']);
+        $this->assertStringContainsString('The database was not touched', $output['text']);
         $this->assertStringContainsString('tar', $output['text']);
         $this->assertSame([], $probe->sent, 'The cold path must never talk to the daemon');
     }
