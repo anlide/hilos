@@ -1,8 +1,8 @@
 // The React peer of vue/src/admin/backup/HilosBackupPage.test.ts, the cases of the
 // admin view mode (HIL-1260, HIL-1261, HIL-1264): the mark where a free text is
 // hidden, and every control of the page a viewer finds standing — create, delete,
-// keep, restore, reopen and the bulk delete — with Cancel and Clear alive.
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+// keep, restore and the bulk delete — with navigation, Cancel and Clear alive.
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type TableViewportController,
@@ -15,10 +15,17 @@ import {
   createSignal,
 } from '@hilos/core'
 import {
+  createAppPageRouter,
   formatMoment,
   hilosBrowserTimeZone,
   hilosTimeZone,
+  type HilosPageIdentity,
+  type HilosTableProgressFrame,
 } from '@hilos/core/base'
+import {
+  BACKUP_RESTORE_PROGRESS_SIGNAL,
+  type HilosRestoreStatus,
+} from '@hilos/core/admin/backup'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -149,6 +156,7 @@ interface SeededOptions {
   appliedFilter?: Readonly<Record<string, unknown>>
   backupRestore?: { uiEnabled: boolean; targetEnv?: string }
   backupReopen?: { offered: boolean }
+  progress?: readonly HilosTableProgressFrame[]
 }
 
 interface SeededBackupsContext extends HilosBackupsContext {
@@ -156,6 +164,14 @@ interface SeededBackupsContext extends HilosBackupsContext {
    * @param row The updated archive row.
    */
   updateBackupRow(row: BackupFixture): void
+  /** Deliver the next table progress frame.
+   * @param progress The server's running or ended work.
+   */
+  updateProgress(progress: HilosTableProgressFrame): void
+  /** Deliver the initiator's restore status.
+   * @param status The server's restore snapshot.
+   */
+  updateRestoreStatus(status: HilosRestoreStatus): void
 }
 
 /** A backups context whose window serves the given archives and whose actions are the given ones. */
@@ -176,6 +192,8 @@ function seededContext(
 
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const progressListeners = new Set<(signal: { data: unknown }) => void>()
+  const projectListeners = new Set<(signal: { data: unknown }) => void>()
   const serveWindow = (
     pageKey: string = HilosPages.BACKUP,
     tableKey: string = BACKUPS_TABLE,
@@ -210,7 +228,7 @@ function seededContext(
         10,
         [{ field: 'createdAt', direction: 'desc' }],
         options.appliedFilter ?? {},
-        [],
+        options.progress ?? [],
       )
     },
     unregisterTableWindow(): void {},
@@ -243,6 +261,16 @@ function seededContext(
 
         return () => deltaListeners.delete(listener)
       }
+      if (event === 'tableProgress') {
+        progressListeners.add(listener)
+
+        return () => progressListeners.delete(listener)
+      }
+      if (event === 'projectSignal') {
+        projectListeners.add(listener)
+
+        return () => projectListeners.delete(listener)
+      }
 
       return () => {}
     },
@@ -252,6 +280,29 @@ function seededContext(
     connection: connection as unknown as HilosBackupsContext['connection'],
     scopes,
     actions,
+    updateProgress(progress): void {
+      act(() => {
+        for (const listener of progressListeners) {
+          listener({
+            data: {
+              ...progress,
+              page: HilosPages.BACKUP,
+              tableKey: BACKUPS_TABLE,
+            },
+          })
+        }
+      })
+    },
+    updateRestoreStatus(status): void {
+      act(() => {
+        for (const listener of projectListeners) {
+          listener({
+            type: BACKUP_RESTORE_PROGRESS_SIGNAL,
+            data: status,
+          } as ProjectSignal)
+        }
+      })
+    },
     updateBackupRow(row): void {
       act(() => {
         const rowIndex = rows.findIndex((current) => current.id === row.id)
@@ -276,9 +327,12 @@ function seededContext(
   }
 }
 
-function mountPage(context: HilosBackupsContext): HTMLElement {
+function mountPage(
+  context: HilosBackupsContext,
+  pageRouter: HilosRouter = router(),
+): HTMLElement {
   return render(
-    <HilosRouterContext.Provider value={router()}>
+    <HilosRouterContext.Provider value={pageRouter}>
       <HilosBackupPage context={context} />
     </HilosRouterContext.Provider>,
   ).container
@@ -324,6 +378,184 @@ function inBackupCard<T extends HTMLElement = HTMLElement>(
 afterEach(() => {
   cleanup()
   document.body.classList.remove('modal-open')
+})
+
+describe('HilosBackupPage Maintenance navigation and run messages', () => {
+  it('draws the catalog section head with one heading and no Overview-only tab row', () => {
+    const identity: HilosPageIdentity = {
+      label: 'Backups',
+      lead: 'Stored backups and restore history.',
+      breadcrumb: [
+        { page: HilosPages.DASHBOARD, label: 'Hilos' },
+        { page: HilosPages.BACKUP, label: 'Backups' },
+      ],
+      children: [],
+      pageHeadOwner: {
+        page: HilosPages.BACKUP,
+        label: 'Backups',
+        lead: 'Stored backups and restore history.',
+        icon: 'bi-safe2',
+      },
+      pageTabs: [{ page: HilosPages.BACKUP, label: 'Overview' }],
+    }
+    const container = mountPage(seededContext(), {
+      ...router(),
+      pageIdentity: createSignal(identity),
+      resolvePath: createAppPageRouter({}).path,
+    })
+
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+    expect(container.querySelector('h1')?.textContent).toBe('Backups')
+    expect(container.textContent).toContain(
+      'Stored backups and restore history.',
+    )
+    const breadcrumb = container.querySelector('nav[aria-label="Breadcrumb"]')
+    expect(breadcrumb?.querySelector('a')?.getAttribute('href')).toBe('/hilos')
+    expect(
+      within(breadcrumb as HTMLElement)
+        .getByText('Backups')
+        .getAttribute('aria-current'),
+    ).toBe('page')
+    expect(container.querySelector('[data-id="hilos-page-tabs"]')).toBeNull()
+  })
+
+  it('holds the section head skeleton until the page identity arrives', () => {
+    const container = mountPage(seededContext())
+
+    expect(byId('hilos-page-head-skeleton')).not.toBeNull()
+    expect(container.querySelector('h1')).toBeNull()
+    expect(byId('hilos-breadcrumb')).toBeNull()
+    expect(byId('hilos-page-tabs')).toBeNull()
+  })
+
+  it.each([
+    { databaseTouched: false, rehydrateComplete: false },
+    { databaseTouched: true, rehydrateComplete: false },
+    { databaseTouched: false, rehydrateComplete: true },
+    { databaseTouched: true, rehydrateComplete: true },
+  ])(
+    'reports databaseTouched=$databaseTouched and rehydrateComplete=$rehydrateComplete independently',
+    (state) => {
+      const context = seededContext()
+      mountPage(context)
+      context.updateRestoreStatus({
+        running: false,
+        backupId: ARCHIVE_ID,
+        scope: 'full',
+        phase: 'failed',
+        phaseStartedAt: null,
+        startedAt: null,
+        finishedAt: null,
+        outcome: 'error',
+        failureReason: 'The archive could not be imported.',
+        estimatedSeconds: null,
+        rehydrateProblems: [],
+        ...state,
+      })
+      const panel = byId('hilos-backup-restore-phase')
+      expect(panel?.getAttribute('role')).toBe('status')
+      expect(panel?.textContent).toContain('The archive could not be imported.')
+      expect(
+        panel?.textContent?.includes(
+          'The database was already being replaced when this failed.',
+        ),
+      ).toBe(state.databaseTouched)
+      expect(panel?.textContent?.includes('The system stays closed:')).toBe(
+        !state.rehydrateComplete,
+      )
+      expect(panel?.textContent?.includes('Open it in Maintenance')).toBe(
+        !state.rehydrateComplete,
+      )
+      expect(panel?.textContent?.includes('/hilos/maintenance')).toBe(
+        !state.rehydrateComplete,
+      )
+      expect(
+        panel?.textContent?.includes('php cli.php protected-mode:open'),
+      ).toBe(!state.rehydrateComplete)
+    },
+  )
+
+  it('names the backup in the initial progress caption and status, then follows live updates and the end', () => {
+    const initial: HilosTableProgressFrame = {
+      scope: 'table',
+      progressKey: 'backup-create',
+      current: 25,
+      total: 100,
+      detail: {
+        backupId: ARCHIVE_ID,
+        env: 'dev',
+        scope: 'full',
+        phase: 'dumping',
+        remainingSeconds: 12,
+      },
+    }
+    const context = seededContext([], undefined, { progress: [initial] })
+    mountPage(context)
+    const title = `Backup ${ARCHIVE_ID} · dev · full`
+    expect(
+      byId('hilos-table-progress')?.querySelector('strong')?.textContent,
+    ).toBe(title)
+    expect(byId('hilos-table-progress')?.textContent).toBe(
+      `${title} — dumping · 25% · ~12s left`,
+    )
+    expect(byId('hilos-table-live-status')?.getAttribute('role')).toBe('status')
+    expect(byId('hilos-table-live-status')?.textContent).toBe(
+      `${title} — dumping · 25% · ~12s left`,
+    )
+
+    context.updateProgress({
+      ...initial,
+      current: 75,
+      detail: { ...initial.detail, phase: 'archiving', remainingSeconds: 4 },
+    })
+    expect(byId('hilos-table-progress')?.textContent).toBe(
+      `${title} — archiving · 75% · ~4s left`,
+    )
+    expect(byId('hilos-table-live-status')?.textContent).toBe(
+      `${title} — archiving · 75% · ~4s left`,
+    )
+
+    context.updateProgress({ ...initial, ended: true })
+    expect(byId('hilos-table-progress')).toBeNull()
+    expect(byId('hilos-table-live-status')?.textContent).toBe('')
+  })
+
+  it('keeps old progress frames readable and names missing environment and scope without an estimate', () => {
+    const context = seededContext([], undefined, {
+      progress: [
+        {
+          scope: 'table',
+          progressKey: 'legacy',
+          current: 0,
+          detail: { phase: 'dumping', remainingSeconds: 12 },
+        },
+      ],
+    })
+    mountPage(context)
+    expect(byId('hilos-table-progress')?.querySelector('strong')).toBeNull()
+    expect(byId('hilos-table-progress')?.textContent).toBe('dumping')
+    expect(byId('hilos-table-live-status')?.textContent).toBe('dumping')
+
+    context.updateProgress({
+      scope: 'table',
+      progressKey: 'legacy',
+      current: 0,
+      detail: {
+        backupId: ARCHIVE_ID,
+        phase: 'archiving',
+        remainingSeconds: 10,
+      },
+    })
+    expect(
+      byId('hilos-table-progress')?.querySelector('strong')?.textContent,
+    ).toBe(`Backup ${ARCHIVE_ID} · — · —`)
+    expect(byId('hilos-table-progress')?.textContent).toBe(
+      `Backup ${ARCHIVE_ID} · — · — — archiving`,
+    )
+    expect(byId('hilos-table-live-status')?.textContent).toBe(
+      `Backup ${ARCHIVE_ID} · — · — — archiving`,
+    )
+  })
 })
 
 describe('HilosBackupPage reader-zone moments', () => {
@@ -1163,35 +1395,116 @@ describe('HilosBackupPage in the admin view mode', () => {
     expect(byId('hilos-backup-restore-id')).toBeNull()
   })
 
-  it('a viewer opens the reopen dialog and has nothing to reopen with', async () => {
+  it.each([undefined, { offered: false }])(
+    'hides verification navigation without a personal offer: %s',
+    (backupReopen) => {
+      const { actions, dispatched } = makeActions()
+      const context = seededContext([ARCHIVE_FIXTURE], actions, {
+        backupReopen,
+      })
+      bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+      mountPage(context)
+
+      expect(byId('hilos-backup-reopen-panel')).toBeNull()
+      expect(byId('hilos-backup-reopen')).toBeNull()
+      expect(dispatched).toHaveLength(0)
+    },
+  )
+
+  it('withdraws the verification navigation when the personal offer is removed live', () => {
+    const { actions, dispatched } = makeActions()
+    const context = seededContext([ARCHIVE_FIXTURE], actions, {
+      backupReopen: { offered: true },
+    })
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    mountPage(context)
+
+    const panel = byId('hilos-backup-reopen-panel')
+    expect(panel?.getAttribute('role')).toBe('status')
+    expect(panel?.textContent).toContain('Verification window open')
+    expect(panel?.textContent).toContain(
+      'The verification window is open and the system remains closed to visitors. Check the system, then open it in Maintenance. Every connected page reloads when you do.',
+    )
+    expect(byId('hilos-backup-reopen')?.textContent).toBe('Open the system')
+    act(() =>
+      context.scopes.page()!.data.set('backupReopen', { offered: false }),
+    )
+    expect(byId('hilos-backup-reopen-panel')).toBeNull()
+    expect(byId('hilos-backup-reopen')).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('a viewer follows the verification and Circle links without opening a mutation dialog', async () => {
     const { actions, dispatched } = makeActions()
     const context = seededContext([ARCHIVE_FIXTURE], actions, {
       backupReopen: { offered: true },
     })
     bindSession(context.scopes).handshake(null, true)
-    mountPage(context)
+    const pageRouter = router()
+    const navigate = vi.spyOn(pageRouter, 'navigate')
+    mountPage(context, pageRouter)
 
-    const reopenButton = byId<HTMLButtonElement>('hilos-backup-reopen')
-    expect(reopenButton).not.toBeNull()
-    expect(reopenButton?.disabled).toBe(false)
-    fireEvent.click(reopenButton as Element)
-
-    const reopenConfirm = byId<HTMLButtonElement>('hilos-backup-reopen-confirm')
-    expect(reopenConfirm).not.toBeNull()
-    expect(reopenConfirm?.disabled).toBe(true)
-    expect(reopenConfirm?.getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-
-    fireEvent.click(reopenConfirm as Element)
+    const link = byId<HTMLAnchorElement>('hilos-backup-reopen')
+    expect(link?.tagName).toBe('A')
+    expect(link?.getAttribute('href')).toBe('/hilos/maintenance')
+    expect(link?.hasAttribute('aria-disabled')).toBe(false)
+    expect(link?.hasAttribute('aria-describedby')).toBe(false)
+    expect(link?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    fireEvent.click(link as Element)
     await settled()
+
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('/hilos/maintenance')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(byId('hilos-backup-reopen-confirm')).toBeNull()
     expect(dispatched).toHaveLength(0)
 
-    const cancelButton = byId<HTMLButtonElement>('hilos-backup-reopen-cancel')
-    expect(cancelButton).not.toBeNull()
-    expect(cancelButton?.disabled).toBe(false)
-    fireEvent.click(cancelButton as Element)
-    expect(byId('hilos-backup-reopen-confirm')).toBeNull()
+    const circle = byId<HTMLAnchorElement>('hilos-backup-circle-pointer-open')
+    expect(circle?.tagName).toBe('A')
+    expect(circle?.getAttribute('href')).toBe('/hilos/maintenance/circle')
+    expect(circle?.textContent).toBe('Open Maintenance')
+    expect(byId('hilos-backup-circle-pointer')?.textContent).toContain(
+      'The verifier circle is kept at /hilos/maintenance/circle.',
+    )
+    expect(circle?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    fireEvent.click(circle as Element)
+    expect(navigate).toHaveBeenLastCalledWith('/hilos/maintenance/circle')
+    expect(navigate).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it.each([
+    { ctrlKey: true },
+    { metaKey: true },
+    { shiftKey: true },
+    { altKey: true },
+    { button: 1 },
+  ])('leaves modified verification clicks to the browser: %s', (modifiers) => {
+    const { actions, dispatched } = makeActions()
+    const context = seededContext([ARCHIVE_FIXTURE], actions, {
+      backupReopen: { offered: true },
+    })
+    bindSession(context.scopes).handshake(null, true)
+    const pageRouter = router()
+    const navigate = vi.spyOn(pageRouter, 'navigate')
+    mountPage(context, pageRouter)
+    let intercepted: boolean | undefined
+    // Observe React's decision, then stop jsdom from attempting native navigation.
+    document.addEventListener(
+      'click',
+      (event) => {
+        intercepted = event.defaultPrevented
+        event.preventDefault()
+      },
+      { once: true },
+    )
+    fireEvent.click(byId('hilos-backup-reopen') as Element, modifiers)
+
+    expect(intercepted).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(dispatched).toHaveLength(0)
   })
 
   it('a viewer marks a row and finds the bulk delete standing in view mode', async () => {

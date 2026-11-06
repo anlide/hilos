@@ -736,9 +736,9 @@ automatically, the human path out has to actually work.
   on the strength of a parse failure. A missing file is the ordinary startup.
   Every accept key is dropped: it was minted on a 101 that died with the daemon.
   `restoreFromDisk()` keeps the restore initiator's session hash: the legacy
-  Backups reopen button in React and Angular uses `belongsToInitiator()`, which
-  refuses null, so losing it would lock out the restore operator. Vue, React and
-  Angular now send restore control from Maintenance. Passes, admitted sessions
+  Backups reopen button in Angular uses `belongsToInitiator()`, which refuses
+  null, so losing it would lock out the restore operator. Vue, React and Angular
+  now send restore control from Maintenance. Passes, admitted sessions
   and the circle are cleared by choice: a code lasts minutes, and a verifier asks
   for a new one. The restored window admits only the initiating browser. A restored row is still frozen even
   before this node remembers its leader. It accepts the current leader's frames
@@ -1106,10 +1106,11 @@ the agent could not read — no frame is sent at all, there being nothing to
 address it to.
 
 **Leaving the stub is not the whole way back, so the pages are answered again
-(HIL-911, HIL-912).** Those tabs come out onto the pages they already had, answered while
-the phase was still inactive — and the backup page built its reopen block from that phase,
-so the banner would tell the operator to reopen the system from a page offering nothing
-to press. Every browser the window lets in therefore has its personal frame followed by
+(HIL-911, HIL-912).** Those tabs come out onto the pages they already had,
+answered while the phase was still inactive. The Backups verification notice
+depends on that answer, so a fresh answer is needed for the page to show the
+notice when the verification window opens. Every browser the window lets in
+therefore has its personal frame followed by
 `ProtectedModeClientNotifier::reassessPagesOfSession()`, which re-decides every open page
 of that session: the operator and the circle from `finishVerifying()`, a pass holder on
 the crossing in `admitProtectedModeSession()`. It is the ordinary re-decision of an open
@@ -1249,10 +1250,11 @@ before forwarding. `maintenance_agent_disable` carries
 index agent, which repeats `PageAccessGate::assertAction()` and admission before
 calling `disableManualMaintenance()`. The existing agent-type/index and
 single-request checks remain. The CLI may also disable through `maintenance:disable`; the exit
-is the same `inactive` and reload for everyone. Restore's window still opens
-from Backups only for its initiating browser. Minting in Maintenance is only for
-this window and shows the code once. The CLI mints too via `maintenance:pass`,
-only in the manual window. The code uses secure randomness; only its hash
+is the same `inactive` and reload for everyone. For restore, only its
+initiating browser may use the browser controls to open the system. React
+Backups links that operator to Maintenance. Minting
+there is only for this window and shows the code once. The CLI mints too via
+`maintenance:pass`, only in the manual window. The code uses secure randomness; only its hash
 stands on the row, its clear value in the reply. One code admits several
 browser sessions while the window lasts. Closing the result does not revoke
 it; disabling maintenance or restarting the daemon invalidates every code.
@@ -1485,9 +1487,11 @@ does.
 Vue, React and Angular draw the ladder and send the reopen control from
 Maintenance. The React and Angular Overviews give the initiating browser the
 three actions, each confirmed in its own window, and show every other admitted
-administrator the one status line instead. The React and Angular Backups pages
-keep the legacy reopen action, which still uses `backup_reopen`, beside the
-Maintenance ladder.
+administrator the one status line instead. React Backups links to the
+Maintenance verification window and directly to the Maintenance Circle; it has
+no local Reopen action. Angular Backups remains the only page consumer of the
+legacy `backup_reopen` action, whose SDK API and compatibility exports remain
+for that consumer.
 
 ## This Node's Live Hold (HIL-1679)
 

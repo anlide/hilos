@@ -109,6 +109,8 @@ export interface HilosViewportTableProps<R> {
    * of the room of live messages above the rows.
    */
   tableProgress?: (progress: TableProgressBar) => ReactNode
+  /** The full phrase announced when table progress is the room's main message. */
+  tableProgressAnnouncement?: (progress: TableProgressBar) => string
   /** The project's own control for that work, standing where a button stands. */
   tableProgressAction?: (progress: TableProgressBar) => ReactNode
   /**
@@ -157,6 +159,7 @@ export function HilosViewportTable<R>({
   empty,
   dataId = 'hilos-viewport-table',
   tableProgress,
+  tableProgressAnnouncement,
   tableProgressAction,
   rowProgress,
   bulkUntouched,
@@ -1012,6 +1015,7 @@ export function HilosViewportTable<R>({
         controller={controller}
         columns={frameColumns}
         tableProgress={tableProgress}
+        tableProgressAnnouncement={tableProgressAnnouncement}
         tableProgressAction={tableProgressAction}
         bulkUntouched={bulkUntouched}
       />

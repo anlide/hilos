@@ -1105,16 +1105,21 @@ final class PageCatalogResolverTest extends TestCase
         }
     }
 
-    /** Chat and Binance adopt Backups; the framework facade and the other four providers stay legacy. */
-    public function testVueProvidersAdoptTheBackupsHeadWithOnlyOverviewServed(): void
+    /** Chat, Binance and both React providers adopt Backups; Angular stays legacy. */
+    public function testVueAndReactProvidersAdoptTheBackupsHeadWithOnlyOverviewServed(): void
     {
         BackupsPageHeadTestHilos::initBrowser();
         self::assertNull(PageCatalogResolver::head(HilosPageConstants::HILOS_BACKUP, new PageRouteParams([])));
-        foreach ([TasksPageCatalog::class, EcommercePageCatalog::class, PollsPageCatalog::class, OnlineTestingPageCatalog::class] as $provider) {
+        foreach ([PollsPageCatalog::class, OnlineTestingPageCatalog::class] as $provider) {
             self::assertArrayNotHasKey(HilosPageConstants::HILOS_BACKUP, $provider::pages());
         }
 
-        foreach ([ChatBackupsPageHeadTestHilos::class, BinanceBackupsPageHeadTestHilos::class] as $hilos) {
+        foreach ([
+            ChatBackupsPageHeadTestHilos::class,
+            BinanceBackupsPageHeadTestHilos::class,
+            TasksBackupsPageHeadTestHilos::class,
+            EcommerceBackupsPageHeadTestHilos::class,
+        ] as $hilos) {
             $hilos::initBrowser();
             self::assertSame(array_replace(
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_BACKUP],
@@ -2761,6 +2766,18 @@ abstract class ChatBackupsPageHeadTestHilos extends BackupsPageHeadTestHilos
 abstract class BinanceBackupsPageHeadTestHilos extends BackupsPageHeadTestHilos
 {
     protected const string PAGE_CATALOG = BinancePageCatalog::class;
+}
+
+/** The Tasks provider opts Backups into the shared head for React. */
+abstract class TasksBackupsPageHeadTestHilos extends BackupsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = TasksPageCatalog::class;
+}
+
+/** The ecommerce-shop provider opts Backups into the shared head for React. */
+abstract class EcommerceBackupsPageHeadTestHilos extends BackupsPageHeadTestHilos
+{
+    protected const string PAGE_CATALOG = EcommercePageCatalog::class;
 }
 
 /** Settings is served directly from the framework catalog without a project override. */

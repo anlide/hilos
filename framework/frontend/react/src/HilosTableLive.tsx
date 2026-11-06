@@ -55,6 +55,8 @@ export interface HilosTableLiveProps<R> {
   columns: readonly HilosTableColumn[]
   /** The project's own words about the work running on the table, on the line itself. */
   tableProgress?: (progress: TableProgressBar) => ReactNode
+  /** The full phrase announced when table progress is the room's main message. */
+  tableProgressAnnouncement?: (progress: TableProgressBar) => string
   /** The project's own control for that work, standing where a button stands. */
   tableProgressAction?: (progress: TableProgressBar) => ReactNode
   /**
@@ -129,6 +131,7 @@ export function HilosTableLive<R>({
   controller,
   columns,
   tableProgress,
+  tableProgressAnnouncement,
   tableProgressAction,
   bulkUntouched,
 }: HilosTableLiveProps<R>) {
@@ -202,7 +205,7 @@ export function HilosTableLive<R>({
   const top = live.top
 
   // What the hidden region says: the sentence of the message on the line, then the
-  // others by name. The track of running work is not in it — it moves every second.
+  // others by name. The page can name its running work from the delivered bar.
   const sentences: Record<HilosTableLiveKind, string> = {
     report: `${reportTitle}.`,
     bulk: `${bulkBarCaption}.`,
@@ -210,7 +213,11 @@ export function HilosTableLive<R>({
     announce: `${announceLabel}.`,
     frozen: frozenLabel ?? '',
     stale: staleLabel ?? '',
-    progress: 'Work is running on this table.',
+    progress:
+      top === 'progress' && tableBar !== null
+        ? (tableProgressAnnouncement?.(tableBar) ??
+          'Work is running on this table.')
+        : 'Work is running on this table.',
   }
   const restWords = live.rest.map((kind) => REST_WORDS[kind])
   const announcement =
